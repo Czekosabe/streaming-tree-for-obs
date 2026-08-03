@@ -18,6 +18,7 @@ import (
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/httpapi"
+	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
 
 func main() {
@@ -42,6 +43,38 @@ func run() error {
 
 	startedAt := time.Now()
 
+	// Cancelled on Ctrl+C or SIGTERM. Created before the database so a signal
+	// during startup still unwinds cleanly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := sqlite.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		return err
+	}
+	// Closed on every exit path, including a failed migration.
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			logger.Error("failed to close the database", slog.Any("error", closeErr))
+		}
+	}()
+
+	logger.Info("database ready",
+		// The path holds no credentials - the application stores none anywhere.
+		slog.String("path", db.Path()),
+		slog.String("journal_mode", db.JournalMode()),
+	)
+
+	appliedVersions, err := sqlite.Migrate(ctx, db.DB)
+	if err != nil {
+		return err
+	}
+	if len(appliedVersions) > 0 {
+		logger.Info("applied database migrations", slog.Any("versions", appliedVersions))
+	} else {
+		logger.Info("database schema is up to date")
+	}
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:         logger,
 		AllowedOrigins: cfg.AllowedOrigins,
@@ -54,10 +87,6 @@ func run() error {
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
-
-	// Cancelled on Ctrl+C or SIGTERM.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serverErrors := make(chan error, 1)
 

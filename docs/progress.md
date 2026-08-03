@@ -649,3 +649,203 @@ the first entry.
 The capability table labels are already translation keys, so moving that data to
 the backend must keep sending keys (or capability identifiers) rather than
 display text, so the server never decides the interface language.
+
+---
+
+## 2026-08-03 16:10 — feat(server): add SQLite persistence and migrations
+
+### Status
+Completed
+
+### Scope
+Introduce the persistence foundation: SQLite storage, an embedded migration
+runner, the schema for configured platforms and their metadata, the built-in
+provider registry, and the domain layer that validates and orchestrates them.
+This entry covers storage and domain only; the REST API that exposes them is
+the next commit.
+
+### Changes
+
+**Database location and connection (`internal/config`, `internal/storage/sqlite`)**
+- Added `STREAMING_TREE_DB_PATH` (full path to the file) and
+  `STREAMING_TREE_DATA_DIR` (directory that will hold the default filename).
+  `STREAMING_TREE_DB_PATH` wins when both are set.
+- Without either, the path is derived from `os.UserConfigDir()` plus
+  `StreamingTree/streaming-tree.db`, so the default lands outside the working
+  copy and a repository clone never accumulates a database file.
+- Relative paths are made absolute at load time.
+- The parent directory is created automatically with `0o700`.
+- `foreign_keys`, `busy_timeout`, WAL journal mode and `synchronous=NORMAL` are
+  requested through the DSN so they apply to every pooled connection, and are
+  then read back and verified. A missing `foreign_keys` or `busy_timeout` is a
+  startup failure, never a silent warning, because cascading deletes depend on
+  it. The journal mode is recorded rather than enforced, since WAL is
+  unavailable on some filesystems and is a performance choice, not a
+  correctness one.
+- Connection pool capped at 4 connections: SQLite serialises writers, so a
+  large pool would only increase lock contention.
+
+**Migration runner**
+- Migrations are `.sql` files embedded with `go:embed`, named
+  `<version>_<name>.sql`. No external migration CLI exists or is needed.
+- Order is by numeric version, so it never depends on filesystem iteration.
+  Duplicate versions are rejected at load time.
+- Each migration runs inside its own transaction together with its
+  `schema_migrations` insert, so a failure rolls back the schema change and the
+  bookkeeping row alike: a failed migration is never recorded as applied and is
+  retried on the next start.
+- `schema_migrations` records version, name and applied timestamp.
+- Pending migrations run automatically at startup.
+
+**Schema (migration 0001)**
+- `platforms`: `id` TEXT primary key, `provider_id`, `display_name`, `enabled`,
+  `sort_order`, `created_at`, `updated_at`, with indexes on
+  `(sort_order, created_at, id)` for the dashboard ordering and on
+  `provider_id` for lookup. The provider index is deliberately non-unique
+  because several destinations may share one provider.
+- `platform_metadata`: one row per platform, cascading on delete. Every
+  optional column is nullable, and NULL specifically means "the provider does
+  not support this field", which is a different statement from an empty string
+  the user actually left blank.
+- `platform_metadata_tags`: separate ordered rows with
+  `PRIMARY KEY (platform_id, position)` and a unique index on
+  `(platform_id, lower(value))`, so case-insensitive tag uniqueness is enforced
+  by the database as well as by the domain layer. Tags cascade on delete.
+- Timestamps are RFC 3339 with nanosecond precision in UTC, stored as TEXT
+  because that format sorts lexicographically in chronological order.
+
+**Seed (migration 0002)**
+- Four configured platforms, one per provider, with stable predefined IDs
+  (`pf_seed_twitch` and so on), unique sort orders 0-3, and example metadata
+  mirroring what the dashboard previously showed.
+- All four are disabled. No runtime state, no stream key, no token, no
+  credential is seeded.
+- Twitch is the only seeded platform with tags, stored in order.
+- Because the seed is an ordinary migration recorded in `schema_migrations`, it
+  runs exactly once: deleting a seeded platform is permanent and a restart does
+  not bring it back.
+
+**Domain layer (`internal/domain/platform`)**
+- `model.go` separates the three concepts explicitly: built-in
+  `ProviderDefinition`, user-created `Platform`, and runtime state - which is
+  deliberately absent from both.
+- `definitions.go` holds the built-in registry for Twitch, YouTube, Kick and
+  TikTok, moved here from the frontend so the backend is the single source of
+  truth for capabilities. Twitch retains tag support; it is still the only
+  provider with it. The definitions carry only semantic identifiers
+  (`category`, `topic`, `public`, `ultra-low`), never localized labels.
+- `validation.go` validates display names, sort orders and metadata against the
+  provider's capability table, limits and option lists. A field the provider
+  does not support is rejected when it carries a meaningful value and silently
+  reset when empty, so a client that always sends the whole object does not
+  need to know the capability table.
+- `errors.go` provides typed domain errors (not found, unknown provider,
+  conflict, storage) plus a `ValidationError` carrying per-field violations
+  with a stable rule identifier, English fallback message and parameters.
+- `service.go` owns ID generation, timestamps and the use cases. IDs are
+  random 16-byte values prefixed `pf_`, never sequential integers, so they do
+  not leak how many destinations exist or invite enumeration.
+
+**Repository (`internal/storage/sqlite/platform_repository.go`)**
+- Implements the domain's `Repository` port. Every driver error is converted
+  into a domain sentinel, so no SQLite text can reach an HTTP response.
+- `List` loads all platforms and all tags in two queries regardless of how many
+  destinations exist, avoiding an N+1 pattern.
+- `Create` inserts the platform and its metadata row in one transaction, so a
+  platform can never exist without exactly one metadata record.
+- `SaveMetadata` replaces the metadata row and the whole ordered tag list in a
+  single transaction.
+
+**Startup wiring**
+- `main.go` opens the database, logs the resolved path and journal mode, runs
+  pending migrations and closes the database on every exit path including a
+  failed migration. The signal context is created before the database so a
+  signal during startup still unwinds cleanly.
+- The logged path contains no credentials, because the application stores none.
+
+### Files changed
+- `apps/server/go.mod`, `go.sum` (added `modernc.org/sqlite`)
+- `apps/server/internal/config/config.go`, `config_test.go`
+- `apps/server/internal/storage/sqlite/` - `database.go`, `migrations.go`,
+  `platform_repository.go`, `errors.go`, `migrations/0001_initial_schema.sql`,
+  `migrations/0002_seed_default_platforms.sql`, and four test files
+- `apps/server/internal/domain/platform/` - `model.go`, `definitions.go`,
+  `errors.go`, `repository.go`, `service.go`, `validation.go`, `unicode.go`,
+  `validation_test.go`
+- `apps/server/cmd/server/main.go`
+
+### Technical decisions
+
+1. **`modernc.org/sqlite` rather than `mattn/go-sqlite3`.** It is a pure-Go
+   translation of SQLite, so the server still builds with plain `go build` and
+   cross-compiles without a C toolchain. The cost is a larger binary and
+   slightly lower throughput, neither of which matters for a local single-user
+   control panel.
+
+2. **The Go directive moved from 1.22 to 1.25.** `modernc.org/sqlite` requires
+   it. The router still only needs 1.22 for method-aware patterns; the comment
+   in `go.mod` now records both facts. `README.md` is updated in the
+   documentation commit.
+
+3. **No ORM.** `database/sql` with hand-written SQL in the repository layer.
+   The query surface is small and explicit, and it keeps the N+1 avoidance in
+   `List` visible instead of hidden behind lazy loading.
+
+4. **Provider definitions are code, not rows.** `platforms.provider_id` is
+   therefore not a foreign key. Providers ship with the binary, cannot be
+   created or deleted by a user, and validating against a table would imply
+   otherwise.
+
+5. **NULL means "unsupported", not "empty".** The repository writes NULL for
+   every field the provider's capability table disables, and reads NULL back as
+   the Go zero value. This keeps the database self-describing: a row shows at a
+   glance which fields the provider ever had.
+
+6. **Case-insensitive tag uniqueness is enforced twice.** The domain rejects it
+   with a helpful field error; the unique index is the backstop that makes a
+   bug in that logic a failed transaction rather than corrupted data. A
+   repository test bypasses the domain deliberately to prove the transaction
+   rolls the metadata write back too.
+
+7. **Random identifiers with a `pf_` prefix.** Sequential IDs would be a public
+   enumeration surface, and the prefix makes an identifier recognisable in logs
+   and support requests.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - one file reformatted, then clean |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - config, domain and storage packages |
+| Backend build | `go build ./...` | Passed - 0 errors |
+
+Tests added in this scope: 8 configuration tests (default path, data-dir
+override, `STREAMING_TREE_DB_PATH` precedence, relative-path resolution,
+invalid ports, origins, blank values), 6 database tests (parent directory
+creation, foreign keys on, busy timeout, journal mode, empty path rejected,
+unusable path rejected), 8 migration tests (empty database, idempotence,
+recorded metadata, failed migration not recorded and not partially applied,
+ordering, seed applied once, deleted seed not recreated, seed tag order, NULL
+for unsupported fields) and 15 repository tests (ordering, tag loading, not
+found, second configuration per provider, metadata row creation, duplicate ID
+conflict, update, cascade deletes, ordered tag save and replacement,
+transaction rollback, Unicode preservation, next sort order).
+
+No manual testing was performed.
+
+### Known limitations
+- The provider capability tables are still the approximate values carried over
+  from the frontend. They have NOT been verified against the real Twitch,
+  YouTube, Kick or TikTok APIs, and the code says so.
+- No HTTP endpoint exposes any of this yet; that is the next commit.
+- `go test ./...` still reports "no test files" for `cmd/server` and
+  `internal/buildinfo`.
+- WAL mode is requested but not required, so a database on a filesystem that
+  refuses WAL falls back silently to another journal mode. The mode actually in
+  use is logged at startup.
+
+### Next step
+Expose the persisted configuration over REST: provider definitions, platform
+CRUD and metadata replacement, with the existing error envelope extended by an
+optional per-field map.

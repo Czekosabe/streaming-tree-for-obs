@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,10 @@ type Config struct {
 	// ShutdownTimeout bounds how long in-flight requests may finish during a
 	// graceful shutdown.
 	ShutdownTimeout time.Duration
+
+	// DatabasePath is the resolved absolute path of the SQLite file. It is safe
+	// to log: the application stores no credentials anywhere.
+	DatabasePath string
 }
 
 const (
@@ -38,6 +43,12 @@ const (
 	defaultPort              = 8080
 	defaultReadHeaderTimeout = 5 * time.Second
 	defaultShutdownTimeout   = 10 * time.Second
+
+	// DatabaseFileName is the SQLite file created inside the data directory.
+	DatabaseFileName = "streaming-tree.db"
+
+	// AppDirName is the per-user folder holding application data.
+	AppDirName = "StreamingTree"
 )
 
 // defaultAllowedOrigins covers the Vite dev server on both loopback spellings.
@@ -81,7 +92,51 @@ func Load() (Config, error) {
 		cfg.AllowedOrigins = origins
 	}
 
+	dbPath, err := resolveDatabasePath()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.DatabasePath = dbPath
+
 	return cfg, nil
+}
+
+// resolveDatabasePath decides where the SQLite file lives.
+//
+// Precedence:
+//  1. STREAMING_TREE_DB_PATH - the full path to the file,
+//  2. STREAMING_TREE_DATA_DIR - a directory that will hold the default filename,
+//  3. the per-user config directory from os.UserConfigDir, plus "StreamingTree".
+//
+// The default deliberately lands outside the Git repository, so a working copy
+// never accumulates a database file. os.UserConfigDir resolves to
+// %AppData% on Windows, ~/Library/Application Support on macOS and
+// $XDG_CONFIG_HOME (or ~/.config) on Linux.
+func resolveDatabasePath() (string, error) {
+	if raw, ok := lookup("STREAMING_TREE_DB_PATH"); ok {
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return "", fmt.Errorf("STREAMING_TREE_DB_PATH: %q is not a usable path: %w", raw, err)
+		}
+		return absolute, nil
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_DATA_DIR"); ok {
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return "", fmt.Errorf("STREAMING_TREE_DATA_DIR: %q is not a usable path: %w", raw, err)
+		}
+		return filepath.Join(absolute, DatabaseFileName), nil
+	}
+
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf(
+			"cannot determine the per-user configuration directory; "+
+				"set STREAMING_TREE_DATA_DIR or STREAMING_TREE_DB_PATH: %w", err)
+	}
+
+	return filepath.Join(base, AppDirName, DatabaseFileName), nil
 }
 
 // Address returns the host:port string accepted by net.Listen.
