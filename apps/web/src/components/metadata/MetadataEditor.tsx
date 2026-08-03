@@ -1,4 +1,5 @@
 import { SlidersHorizontal } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import type { PlatformId, PlatformMetadata, StreamPlatform } from '@/models/platform';
 
@@ -21,22 +22,23 @@ type MetadataEditorProps = {
  * that platform's stored metadata instead of leaking values across platforms.
  */
 export function MetadataEditor({ platforms, activeId, onSelect, onSave }: MetadataEditorProps) {
+  const { t } = useTranslation('metadata');
   const activePlatform = platforms.find((platform) => platform.id === activeId);
 
   return (
     <Panel>
       <PanelHeader
-        title="Metadata editor"
-        description="Fields are derived from each platform's capability table"
+        title={t('editor.heading')}
+        description={t('editor.description')}
         icon={<SlidersHorizontal className="size-4" />}
-        actions={<DemoBadge title="Saved values stay in memory - no platform API is called" />}
+        actions={<DemoBadge title={t('editor.demoTooltip')} />}
       />
 
       <PlatformTabs platforms={platforms} activeId={activeId} onSelect={onSelect} />
 
       <PanelBody>
         {activePlatform === undefined ? (
-          <p className="text-sm text-ink-muted">Select a platform to edit its metadata.</p>
+          <p className="text-sm text-ink-muted">{t('editor.empty')}</p>
         ) : (
           <div
             role="tabpanel"

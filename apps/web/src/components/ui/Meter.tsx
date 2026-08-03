@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { cn } from '@/lib/cn';
 
 type MeterProps = {
@@ -16,6 +18,7 @@ function barClass(value: number): string {
 }
 
 export function Meter({ label, value, detail, className }: MeterProps) {
+  const { t } = useTranslation('common');
   const clamped = Math.min(100, Math.max(0, Math.round(value)));
 
   return (
@@ -30,7 +33,7 @@ export function Meter({ label, value, detail, className }: MeterProps) {
         aria-valuenow={clamped}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={`${clamped} percent`}
+        aria-valuetext={t('units.percentAccessible', { value: clamped })}
         className="h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken ring-1 ring-line ring-inset"
       >
         <div

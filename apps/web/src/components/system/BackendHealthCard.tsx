@@ -1,31 +1,13 @@
 import { PlugZap, RefreshCw, ServerCrash, ServerCog } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { useHealthQuery } from '@/hooks/use-health-query';
-import { ApiError } from '@/lib/api-client';
+import { resolveApiErrorMessage } from '@/lib/api-error-message';
 import { cn } from '@/lib/cn';
-import { formatUptime } from '@/lib/format';
+import { toDurationParts } from '@/lib/format';
 
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 import { StatusBadge } from '../ui/StatusBadge';
-
-/** Turns an unknown query error into one actionable sentence. */
-function describeError(error: unknown): string {
-  if (error instanceof ApiError) {
-    switch (error.kind) {
-      case 'network':
-        return 'The backend is not reachable. Start it with `go run ./cmd/server` in apps/server.';
-      case 'timeout':
-        return 'The backend did not answer in time. Check whether the process is still running.';
-      case 'http':
-        return `The backend answered with an error${error.status === null ? '' : ` (HTTP ${error.status})`}.`;
-      case 'parse':
-        return 'The backend answered with an unexpected payload. Frontend and backend versions may differ.';
-      default:
-        return error.message;
-    }
-  }
-  return 'Unknown error while contacting the backend.';
-}
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -45,21 +27,25 @@ function Row({ label, value }: { label: string; value: string }) {
  * "Backend unavailable" and offers a retry instead of throwing.
  */
 export function BackendHealthCard() {
+  const { t } = useTranslation(['dashboard', 'common', 'errors']);
+  const tErrors = useTranslation('errors').t;
   const { data, error, isPending, isError, isFetching, refetch } = useHealthQuery();
+
+  const uptime = data?.uptimeSeconds === undefined ? null : toDurationParts(data.uptimeSeconds);
 
   return (
     <Panel>
       <PanelHeader
-        title="Backend"
-        description="Go REST API"
+        title={t('dashboard:backend.heading')}
+        description={t('dashboard:backend.description')}
         icon={<ServerCog className="size-4" />}
         headingLevel={3}
         actions={
           <button
             type="button"
             onClick={() => void refetch()}
-            aria-label="Check backend health again"
-            title="Check again"
+            aria-label={t('dashboard:backend.refresh')}
+            title={t('dashboard:backend.refreshShort')}
             className="inline-flex size-7 items-center justify-center rounded-lg border border-line text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
           >
             <RefreshCw
@@ -73,20 +59,18 @@ export function BackendHealthCard() {
         {isPending && (
           <p className="flex items-center gap-2 text-xs text-ink-muted">
             <PlugZap aria-hidden="true" className="size-3.5 animate-pulse" />
-            Contacting the backend...
+            {t('dashboard:backend.pending')}
           </p>
         )}
 
         {isError && (
           <div className="space-y-2">
-            <StatusBadge status="error" label="Backend unavailable" />
+            <StatusBadge status="error" label={t('dashboard:backend.unavailable')} />
             <p className="flex gap-2 text-xs leading-relaxed text-ink-muted">
               <ServerCrash aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-              <span>{describeError(error)}</span>
+              <span>{resolveApiErrorMessage(tErrors, error)}</span>
             </p>
-            <p className="text-[11px] text-ink-faint">
-              The dashboard keeps working - demo values below are unaffected.
-            </p>
+            <p className="text-[11px] text-ink-faint">{t('dashboard:backend.unaffected')}</p>
           </div>
         )}
 
@@ -94,13 +78,21 @@ export function BackendHealthCard() {
           <div className="space-y-2">
             <StatusBadge
               status={data.status === 'ok' ? 'live' : 'error'}
-              label={data.status === 'ok' ? 'Connected' : data.status}
+              label={data.status === 'ok' ? t('dashboard:backend.connected') : data.status}
             />
             <div className="space-y-1.5 border-t border-line pt-2">
-              <Row label="Service" value={data.service} />
-              <Row label="Version" value={data.version} />
-              {data.uptimeSeconds !== undefined && (
-                <Row label="Uptime" value={formatUptime(data.uptimeSeconds)} />
+              {/* Service name and version are API identifiers, not prose. */}
+              <Row label={t('dashboard:backend.service')} value={data.service} />
+              <Row label={t('dashboard:backend.version')} value={data.version} />
+              {uptime !== null && (
+                <Row
+                  label={t('dashboard:backend.uptime')}
+                  value={t(`common:duration.${uptime.unit}`, {
+                    hours: uptime.hours,
+                    minutes: uptime.minutes,
+                    seconds: uptime.seconds,
+                  })}
+                />
               )}
             </div>
           </div>

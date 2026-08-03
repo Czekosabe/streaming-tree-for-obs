@@ -14,6 +14,8 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    /* Translation resources are plain JSON imported at build time. */
+    "resolveJsonModule": true,
 
     /* Strictness - the project deliberately runs with every strict flag on. */
     "strict": true,

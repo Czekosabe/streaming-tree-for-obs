@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
 
 import { cn } from '@/lib/cn';
@@ -9,10 +10,12 @@ import { NAV_ITEMS } from './nav-items';
  * so the current section is exposed to assistive technology as well.
  */
 export function SidebarNav({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
+  const { t } = useTranslation('navigation');
+
   return (
-    <nav aria-label="Primary" className="px-3">
+    <nav aria-label={t('primaryLabel')} className="px-3">
       <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-        Navigation
+        {t('sectionLabel')}
       </p>
       <ul className="space-y-0.5">
         {NAV_ITEMS.map((item) => {
@@ -41,13 +44,13 @@ export function SidebarNav({ onNavigate }: { onNavigate?: (() => void) | undefin
                         isActive ? 'text-accent-soft' : 'text-ink-faint group-hover:text-ink-muted',
                       )}
                     />
-                    <span className="truncate">{item.label}</span>
+                    <span className="truncate">{t(item.labelKey)}</span>
                     {item.planned && (
                       <span
                         className="ml-auto rounded border border-line px-1 text-[9px] font-semibold uppercase tracking-wide text-ink-faint"
-                        title="Placeholder view - feature planned for a later stage"
+                        title={t('plannedBadgeTooltip')}
                       >
-                        Soon
+                        {t('plannedBadge')}
                       </span>
                     )}
                   </>

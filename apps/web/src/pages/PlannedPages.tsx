@@ -1,4 +1,9 @@
 import { FileText, Radio, Settings, SlidersHorizontal, Tv } from 'lucide-react';
+import { useId } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 
 import { PlaceholderPage } from './PlaceholderPage';
 
@@ -12,14 +17,14 @@ import { PlaceholderPage } from './PlaceholderPage';
 export function PlatformsPage() {
   return (
     <PlaceholderPage
-      title="Platforms"
-      description="Connect and configure destinations for the streaming tree."
+      titleKey="platforms.title"
+      descriptionKey="platforms.description"
       icon={Tv}
-      plannedFor={[
-        'Adding and removing platform branches',
-        'OAuth sign-in per platform',
-        'Stream keys stored in the OS credential store, never in the browser',
-        'Per-branch encoding profile (bitrate, resolution, keyframe interval)',
+      plannedKeys={[
+        'platforms.planned.manageBranches',
+        'platforms.planned.oauth',
+        'platforms.planned.credentials',
+        'platforms.planned.encoding',
       ]}
     />
   );
@@ -28,14 +33,14 @@ export function PlatformsPage() {
 export function StreamsPage() {
   return (
     <PlaceholderPage
-      title="Streams"
-      description="Live control of the ingest and of every outgoing branch."
+      titleKey="streams.title"
+      descriptionKey="streams.description"
       icon={Radio}
-      plannedFor={[
-        'MediaMTX ingest state and OBS connection details',
-        'Start/stop of individual FFmpeg processes per branch',
-        'Live bitrate, dropped frames and reconnect counters',
-        'Automatic restart policy for a failed branch',
+      plannedKeys={[
+        'streams.planned.ingest',
+        'streams.planned.processControl',
+        'streams.planned.metrics',
+        'streams.planned.restartPolicy',
       ]}
     />
   );
@@ -44,45 +49,67 @@ export function StreamsPage() {
 export function MetadataPage() {
   return (
     <PlaceholderPage
-      title="Metadata"
-      description="Stream metadata presets shared across platforms."
+      titleKey="metadata.title"
+      descriptionKey="metadata.description"
       icon={SlidersHorizontal}
-      plannedFor={[
-        'Reusable presets applied to several platforms at once',
-        'Per-platform overrides driven by the capability model',
-        'Pushing metadata to platform APIs before going live',
-        'History of previously used titles and categories',
+      plannedKeys={[
+        'metadata.planned.presets',
+        'metadata.planned.overrides',
+        'metadata.planned.push',
+        'metadata.planned.history',
       ]}
     />
   );
 }
 
+/**
+ * Settings is the one placeholder route with a working section: the interface
+ * language. It is genuinely implemented, so it is shown as a real panel above
+ * the "planned" card rather than being listed as a future feature.
+ */
 export function SettingsPage() {
+  const { t } = useTranslation('pages');
+  const labelId = useId();
+
   return (
     <PlaceholderPage
-      title="Settings"
-      description="Global application and router configuration."
+      titleKey="settings.title"
+      descriptionKey="settings.description"
       icon={Settings}
-      plannedFor={[
-        'Local ingest configuration (RTMP port, path, authentication)',
-        'Paths to the MediaMTX and FFmpeg binaries',
-        'Backend address, for the future remote-router deployment',
-        'Credential store management',
+      plannedKeys={[
+        'settings.planned.ingest',
+        'settings.planned.binaries',
+        'settings.planned.backendAddress',
+        'settings.planned.credentialStore',
       ]}
-    />
+    >
+      <Panel>
+        <PanelHeader
+          title={t('settings.language.heading')}
+          description={t('settings.language.description')}
+        />
+        <PanelBody className="space-y-2">
+          <span id={labelId} className="sr-only">
+            {t('settings.language.heading')}
+          </span>
+          <LanguageSwitcher labelledBy={labelId} className="w-48 max-w-full" />
+          <p className="text-[11px] text-ink-faint">{t('settings.language.note')}</p>
+        </PanelBody>
+      </Panel>
+    </PlaceholderPage>
   );
 }
 
 export function LogsPage() {
   return (
     <PlaceholderPage
-      title="Logs"
-      description="Diagnostics from the router and from every branch."
+      titleKey="logs.title"
+      descriptionKey="logs.description"
       icon={FileText}
-      plannedFor={[
-        'Structured backend logs streamed over SSE or WebSocket',
-        'Per-branch FFmpeg output with severity filtering',
-        'Export of a diagnostic bundle with secrets stripped',
+      plannedKeys={[
+        'logs.planned.backendLogs',
+        'logs.planned.ffmpegOutput',
+        'logs.planned.diagnosticBundle',
       ]}
     />
   );

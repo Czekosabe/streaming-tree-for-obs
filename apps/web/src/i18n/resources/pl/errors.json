@@ -1,0 +1,15 @@
+{
+  "backend": {
+    "network": "Backend jest nieosiągalny. Uruchom go poleceniem `go run ./cmd/server` w katalogu apps/server.",
+    "timeout": "Backend nie odpowiedział na czas. Sprawdź, czy proces nadal działa.",
+    "http": "Backend zwrócił błąd.",
+    "httpWithStatus": "Backend zwrócił błąd (HTTP {{status}}).",
+    "parse": "Backend zwrócił nieoczekiwaną odpowiedź. Wersje frontendu i backendu mogą się różnić.",
+    "unknown": "Nieznany błąd podczas komunikacji z backendem."
+  },
+  "codes": {
+    "not_found": "Ten endpoint API nie istnieje.",
+    "method_not_allowed": "Ten endpoint nie akceptuje użytej metody HTTP.",
+    "internal_error": "Serwer napotkał nieoczekiwany błąd."
+  }
+}

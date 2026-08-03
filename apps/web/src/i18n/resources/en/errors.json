@@ -1,0 +1,15 @@
+{
+  "backend": {
+    "network": "The backend is not reachable. Start it with `go run ./cmd/server` in apps/server.",
+    "timeout": "The backend did not answer in time. Check whether the process is still running.",
+    "http": "The backend answered with an error.",
+    "httpWithStatus": "The backend answered with an error (HTTP {{status}}).",
+    "parse": "The backend answered with an unexpected payload. Frontend and backend versions may differ.",
+    "unknown": "Unknown error while contacting the backend."
+  },
+  "codes": {
+    "not_found": "This API endpoint does not exist.",
+    "method_not_allowed": "This endpoint does not accept the HTTP method that was used.",
+    "internal_error": "The server encountered an unexpected error."
+  }
+}

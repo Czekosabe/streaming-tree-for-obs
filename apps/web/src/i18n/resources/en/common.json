@@ -1,0 +1,29 @@
+{
+  "app": {
+    "skipToContent": "Skip to main content"
+  },
+  "actions": {
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "demo": {
+    "badge": "Demo",
+    "defaultTooltip": "Demo data - not produced by the backend yet"
+  },
+  "language": {
+    "label": "Interface language",
+    "switcherLabel": "Change interface language"
+  },
+  "units": {
+    "percentAccessible": "{{value}} percent",
+    "megabitsPerSecond": "{{value}} Mb/s"
+  },
+  "duration": {
+    "hoursMinutesSeconds": "{{hours}}h {{minutes}}m {{seconds}}s",
+    "minutesSeconds": "{{minutes}}m {{seconds}}s",
+    "seconds": "{{seconds}}s"
+  },
+  "values": {
+    "empty": "--"
+  }
+}

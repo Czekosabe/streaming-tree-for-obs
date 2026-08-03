@@ -1,0 +1,66 @@
+{
+  "placeholder": {
+    "notImplemented": "This section is not implemented yet. It is part of a later stage of the project and intentionally ships empty rather than as a fake screen.",
+    "plannedHeading": "Planned for this view"
+  },
+  "platforms": {
+    "title": "Platforms",
+    "description": "Connect and configure destinations for the streaming tree.",
+    "planned": {
+      "manageBranches": "Adding and removing platform branches",
+      "oauth": "OAuth sign-in per platform",
+      "credentials": "Stream keys stored in the OS credential store, never in the browser",
+      "encoding": "Per-branch encoding profile (bitrate, resolution, keyframe interval)"
+    }
+  },
+  "streams": {
+    "title": "Streams",
+    "description": "Live control of the ingest and of every outgoing branch.",
+    "planned": {
+      "ingest": "MediaMTX ingest state and OBS connection details",
+      "processControl": "Start/stop of individual FFmpeg processes per branch",
+      "metrics": "Live bitrate, dropped frames and reconnect counters",
+      "restartPolicy": "Automatic restart policy for a failed branch"
+    }
+  },
+  "metadata": {
+    "title": "Metadata",
+    "description": "Stream metadata presets shared across platforms.",
+    "planned": {
+      "presets": "Reusable presets applied to several platforms at once",
+      "overrides": "Per-platform overrides driven by the capability model",
+      "push": "Pushing metadata to platform APIs before going live",
+      "history": "History of previously used titles and categories"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Global application and router configuration.",
+    "planned": {
+      "ingest": "Local ingest configuration (RTMP port, path, authentication)",
+      "binaries": "Paths to the MediaMTX and FFmpeg binaries",
+      "backendAddress": "Backend address, for the future remote-router deployment",
+      "credentialStore": "Credential store management"
+    },
+    "language": {
+      "heading": "Interface language",
+      "description": "Applies immediately and is remembered in this browser.",
+      "note": "Only the language preference is stored locally. Stream keys, tokens and metadata are never kept in the browser."
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "description": "Diagnostics from the router and from every branch.",
+    "planned": {
+      "backendLogs": "Structured backend logs streamed over SSE or WebSocket",
+      "ffmpegOutput": "Per-branch FFmpeg output with severity filtering",
+      "diagnosticBundle": "Export of a diagnostic bundle with secrets stripped"
+    }
+  },
+  "notFound": {
+    "title": "Not found",
+    "description": "This route does not exist.",
+    "message": "The page you were looking for is not part of the application.",
+    "backToDashboard": "Back to dashboard"
+  }
+}

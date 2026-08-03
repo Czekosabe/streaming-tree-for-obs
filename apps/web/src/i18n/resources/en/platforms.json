@@ -1,0 +1,50 @@
+{
+  "status": {
+    "offline": "Offline",
+    "starting": "Starting",
+    "live": "Live",
+    "error": "Error"
+  },
+  "quality": {
+    "excellent": "Excellent",
+    "good": "Good",
+    "fair": "Fair",
+    "poor": "Poor",
+    "unknown": "Unknown"
+  },
+  "card": {
+    "ingestHint": "RTMP ingest (demo placeholder)",
+    "noTitle": "No title set",
+    "viewers": "Viewers",
+    "viewersAccessible_one": "{{count}} viewer",
+    "viewersAccessible_other": "{{count}} viewers",
+    "quality": "Quality",
+    "start": "Start",
+    "stop": "Stop",
+    "demoControl": "Demo control - no real stream",
+    "openMetadata": "Open {{platform}} metadata"
+  },
+  "statusDetail": {
+    "noStreamKey": "Demo state: no stream key configured."
+  },
+  "fields": {
+    "category": "Category",
+    "topic": "Topic"
+  },
+  "categoryPlaceholder": {
+    "twitch": "e.g. Software and Game Development",
+    "youtube": "e.g. Science & Technology",
+    "kick": "e.g. Just Chatting",
+    "tiktok": "e.g. Gaming"
+  },
+  "visibility": {
+    "public": "Public",
+    "unlisted": "Unlisted",
+    "private": "Private"
+  },
+  "latency": {
+    "normal": "Normal latency",
+    "low": "Low latency",
+    "ultraLow": "Ultra low latency"
+  }
+}

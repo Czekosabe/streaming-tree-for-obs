@@ -5,7 +5,7 @@ node_modules/
 
 # --- Build output ---
 dist/
-build/
+/build/
 *.tsbuildinfo
 
 # --- Go ---
@@ -26,11 +26,13 @@ secrets/
 credentials/
 
 # --- Runtime data (added in later stages) ---
-data/
+# Anchored to the repository root on purpose: unanchored "data/" and "logs/"
+# also matched source directories such as apps/web/src/data/.
+/data/
+/logs/
 *.db
 *.sqlite
 *.sqlite3
-logs/
 *.log
 
 # --- Third party binaries downloaded locally (later stages) ---

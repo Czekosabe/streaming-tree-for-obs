@@ -1,37 +1,56 @@
+import type { ParseKeys } from 'i18next';
 import { Activity } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
 import type { PlatformStatus, StreamPlatform } from '@/models/platform';
 
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 
-const COUNTER_CLASSES: Record<'live' | 'starting' | 'offline' | 'error', string> = {
+type CounterTone = 'live' | 'starting' | 'offline' | 'error';
+
+const COUNTER_CLASSES: Record<CounterTone, string> = {
   live: 'text-status-live',
   starting: 'text-status-starting',
   offline: 'text-status-offline',
   error: 'text-status-error',
 };
 
-function Counter({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: keyof typeof COUNTER_CLASSES;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
-      <p className={cn('font-mono text-xl leading-none tabular-nums', COUNTER_CLASSES[tone])}>
-        {value}
-      </p>
-      <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-        {label}
-      </p>
-    </div>
-  );
-}
+/**
+ * Each counter carries a short visible label and a pluralized accessible label,
+ * so a screen reader announces "2 live branches" rather than "2, Live".
+ */
+const COUNTERS: readonly {
+  tone: CounterTone;
+  status: PlatformStatus;
+  labelKey: ParseKeys<'dashboard'>;
+  accessibleKey: ParseKeys<'dashboard'>;
+}[] = [
+  {
+    tone: 'live',
+    status: 'live',
+    labelKey: 'counters.live',
+    accessibleKey: 'counters.liveAccessible',
+  },
+  {
+    tone: 'starting',
+    status: 'starting',
+    labelKey: 'counters.starting',
+    accessibleKey: 'counters.startingAccessible',
+  },
+  {
+    tone: 'offline',
+    status: 'offline',
+    labelKey: 'counters.offline',
+    accessibleKey: 'counters.offlineAccessible',
+  },
+  {
+    tone: 'error',
+    status: 'error',
+    labelKey: 'counters.error',
+    accessibleKey: 'counters.errorAccessible',
+  },
+];
 
 function countByStatus(platforms: readonly StreamPlatform[], status: PlatformStatus): number {
   return platforms.filter((platform) => platform.status === status).length;
@@ -44,20 +63,45 @@ function countByStatus(platforms: readonly StreamPlatform[], status: PlatformSta
  * state - not measurements of actual transmissions.
  */
 export function StreamCountersCard({ platforms }: { platforms: readonly StreamPlatform[] }) {
+  const { t } = useTranslation('dashboard');
+
   return (
     <Panel>
       <PanelHeader
-        title="Stream branches"
-        description="Counted from local demo state"
+        title={t('counters.heading')}
+        description={t('counters.description')}
         icon={<Activity className="size-4" />}
         headingLevel={3}
       />
       <PanelBody>
         <div className="grid grid-cols-2 gap-2">
-          <Counter label="Live" value={countByStatus(platforms, 'live')} tone="live" />
-          <Counter label="Starting" value={countByStatus(platforms, 'starting')} tone="starting" />
-          <Counter label="Offline" value={countByStatus(platforms, 'offline')} tone="offline" />
-          <Counter label="Error" value={countByStatus(platforms, 'error')} tone="error" />
+          {COUNTERS.map((counter) => {
+            const value = countByStatus(platforms, counter.status);
+            return (
+              <div
+                key={counter.tone}
+                className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5"
+                aria-label={t(counter.accessibleKey, { count: value })}
+                role="group"
+              >
+                <p
+                  aria-hidden="true"
+                  className={cn(
+                    'font-mono text-xl leading-none tabular-nums',
+                    COUNTER_CLASSES[counter.tone],
+                  )}
+                >
+                  {value}
+                </p>
+                <p
+                  aria-hidden="true"
+                  className="mt-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint"
+                >
+                  {t(counter.labelKey)}
+                </p>
+              </div>
+            );
+          })}
         </div>
       </PanelBody>
     </Panel>

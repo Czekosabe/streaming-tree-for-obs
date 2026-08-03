@@ -1,0 +1,55 @@
+import enCommon from './resources/en/common.json';
+import enDashboard from './resources/en/dashboard.json';
+import enErrors from './resources/en/errors.json';
+import enMetadata from './resources/en/metadata.json';
+import enNavigation from './resources/en/navigation.json';
+import enPages from './resources/en/pages.json';
+import enPlatforms from './resources/en/platforms.json';
+import plCommon from './resources/pl/common.json';
+import plDashboard from './resources/pl/dashboard.json';
+import plErrors from './resources/pl/errors.json';
+import plMetadata from './resources/pl/metadata.json';
+import plNavigation from './resources/pl/navigation.json';
+import plPages from './resources/pl/pages.json';
+import plPlatforms from './resources/pl/platforms.json';
+
+/**
+ * Static translation bundle.
+ *
+ * Resources are imported at build time rather than fetched at runtime: the app
+ * runs locally, both languages together are a few kilobytes, and bundling them
+ * removes an entire class of "translation not loaded yet" states.
+ *
+ * There is no runtime translation service of any kind. Every string below is a
+ * version-controlled resource reviewed like the rest of the codebase.
+ */
+export const enResources = {
+  common: enCommon,
+  navigation: enNavigation,
+  dashboard: enDashboard,
+  platforms: enPlatforms,
+  metadata: enMetadata,
+  pages: enPages,
+  errors: enErrors,
+} as const;
+
+const plResources = {
+  common: plCommon,
+  navigation: plNavigation,
+  dashboard: plDashboard,
+  platforms: plPlatforms,
+  metadata: plMetadata,
+  pages: plPages,
+  errors: plErrors,
+} as const;
+
+export const resources = {
+  en: enResources,
+  pl: plResources,
+} as const;
+
+/**
+ * Shape of the English bundle. It is the canonical key structure that every
+ * other language must mirror, and it drives i18next's key type-checking.
+ */
+export type AppResources = typeof enResources;

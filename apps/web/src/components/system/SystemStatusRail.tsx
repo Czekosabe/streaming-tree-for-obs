@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import type { StreamPlatform } from '@/models/platform';
 
 import { BackendHealthCard } from './BackendHealthCard';
@@ -11,8 +13,10 @@ import { StreamCountersCard } from './StreamCountersCard';
  * content instead of squeezing it - see `DashboardPage`.
  */
 export function SystemStatusRail({ platforms }: { platforms: readonly StreamPlatform[] }) {
+  const { t } = useTranslation('dashboard');
+
   return (
-    <aside aria-label="System status" className="space-y-4">
+    <aside aria-label={t('systemStatus.railLabel')} className="space-y-4">
       <BackendHealthCard />
       <StreamCountersCard platforms={platforms} />
       <ResourcesCard />

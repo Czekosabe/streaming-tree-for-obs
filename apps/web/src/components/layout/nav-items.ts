@@ -1,3 +1,4 @@
+import type { ParseKeys } from 'i18next';
 import {
   FileText,
   LayoutDashboard,
@@ -10,17 +11,18 @@ import {
 
 export type NavItem = {
   to: string;
-  label: string;
+  /** Key in the `navigation` namespace; resolved when the item renders. */
+  labelKey: ParseKeys<'navigation'>;
   icon: LucideIcon;
   /** Marks routes that are still empty placeholder views. */
   planned: boolean;
 };
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, planned: false },
-  { to: '/platforms', label: 'Platforms', icon: Tv, planned: true },
-  { to: '/streams', label: 'Streams', icon: Radio, planned: true },
-  { to: '/metadata', label: 'Metadata', icon: SlidersHorizontal, planned: true },
-  { to: '/settings', label: 'Settings', icon: Settings, planned: true },
-  { to: '/logs', label: 'Logs', icon: FileText, planned: true },
+  { to: '/', labelKey: 'items.dashboard', icon: LayoutDashboard, planned: false },
+  { to: '/platforms', labelKey: 'items.platforms', icon: Tv, planned: true },
+  { to: '/streams', labelKey: 'items.streams', icon: Radio, planned: true },
+  { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: true },
+  { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
+  { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];

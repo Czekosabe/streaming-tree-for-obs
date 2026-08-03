@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
 
@@ -10,7 +11,6 @@ type TagInputProps = {
   inputId: string;
   describedBy?: string | undefined;
   invalid?: boolean;
-  placeholder?: string;
 };
 
 /**
@@ -27,8 +27,8 @@ export function TagInput({
   inputId,
   describedBy,
   invalid = false,
-  placeholder = 'Type a tag and press Enter',
 }: TagInputProps) {
+  const { t } = useTranslation('metadata');
   const [draft, setDraft] = useState('');
   const limitReached = tags.length >= maxTags;
 
@@ -86,7 +86,7 @@ export function TagInput({
                 <button
                   type="button"
                   onClick={() => removeTag(index)}
-                  aria-label={`Remove tag ${tag}`}
+                  aria-label={t('tags.remove', { tag })}
                   className={cn(
                     'inline-flex size-5 items-center justify-center rounded',
                     'text-accent-soft/70 transition-colors hover:bg-accent/25 hover:text-ink',
@@ -109,17 +109,18 @@ export function TagInput({
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={commitDraft}
-          placeholder={limitReached ? `Limit of ${maxTags} tags reached` : placeholder}
+          placeholder={
+            limitReached ? t('tags.limitReached', { max: maxTags }) : t('tags.placeholder')
+          }
           className={cn(
-            'min-w-[10rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-ink outline-none',
+            'min-w-40 flex-1 bg-transparent px-1 py-0.5 text-sm text-ink outline-none',
             'placeholder:text-ink-faint disabled:cursor-not-allowed',
           )}
         />
       </div>
 
       <p className="text-[11px] text-ink-faint">
-        {tags.length} / {maxTags} tags. Press Enter or comma to add, Backspace to remove the last
-        one.
+        {t('tags.help', { count: tags.length, max: maxTags })}
       </p>
     </div>
   );

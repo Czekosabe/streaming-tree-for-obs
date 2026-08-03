@@ -1,0 +1,63 @@
+{
+  "editor": {
+    "heading": "Metadata editor",
+    "description": "Fields are derived from each platform's capability table",
+    "demoTooltip": "Saved values stay in memory - no platform API is called",
+    "tabsLabel": "Platform metadata",
+    "empty": "Select a platform to edit its metadata."
+  },
+  "fields": {
+    "title": "Title",
+    "description": "Description",
+    "category": "Category",
+    "tags": "Tags",
+    "language": "Language",
+    "visibility": "Visibility",
+    "matureContent": "Mature content",
+    "dvr": "DVR",
+    "latencyMode": "Latency mode"
+  },
+  "placeholders": {
+    "title": "What are you streaming?",
+    "description": "Describe the stream"
+  },
+  "hints": {
+    "latencyMode": "Affects how quickly viewers receive the stream."
+  },
+  "toggles": {
+    "matureContentDescription": "Flag the stream as intended for adult audiences.",
+    "dvrDescription": "Allow viewers to rewind the live stream."
+  },
+  "counter": "{{current}} / {{max}}",
+  "tags": {
+    "placeholder": "Type a tag and press Enter",
+    "limitReached": "Limit of {{max}} tags reached",
+    "remove": "Remove tag {{tag}}",
+    "help_one": "{{count}} of {{max}} tag used. Press Enter or comma to add, Backspace to remove the last one.",
+    "help_other": "{{count}} of {{max}} tags used. Press Enter or comma to add, Backspace to remove the last one."
+  },
+  "unsupported": "Not available for {{platform}}: {{fields}}. Fields are driven by the platform capability table, so unsupported fields are not rendered at all.",
+  "actions": {
+    "save": "Save metadata",
+    "reset": "Reset"
+  },
+  "status": {
+    "saved": "Saved to local demo state only",
+    "idle": "Changes are kept in memory - nothing is sent to any platform."
+  },
+  "validation": {
+    "titleRequired": "Title is required.",
+    "titleMaxLength": "Title must be at most {{max}} characters.",
+    "descriptionMaxLength": "Description must be at most {{max}} characters.",
+    "categoryRequired": "{{field}} is required.",
+    "categoryMaxLength": "{{field}} must be at most {{max}} characters.",
+    "tagMinLength": "A tag needs at least {{min}} characters.",
+    "tagMaxLength": "A tag may be at most {{max}} characters.",
+    "tagPattern": "Tags may only contain letters, digits, spaces, - and _.",
+    "tagsMaxCount": "At most {{max}} tags are allowed.",
+    "tagsUnique": "Tags must be unique.",
+    "languageUnsupported": "Select a supported language.",
+    "visibilityUnsupported": "Select a supported visibility option.",
+    "latencyModeUnsupported": "Select a supported latency mode."
+  }
+}

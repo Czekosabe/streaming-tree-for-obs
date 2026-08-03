@@ -1,0 +1,52 @@
+{
+  "status": {
+    "offline": "Offline",
+    "starting": "Uruchamianie",
+    "live": "Na żywo",
+    "error": "Błąd"
+  },
+  "quality": {
+    "excellent": "Doskonała",
+    "good": "Dobra",
+    "fair": "Przeciętna",
+    "poor": "Słaba",
+    "unknown": "Nieznana"
+  },
+  "card": {
+    "ingestHint": "Odbiór RTMP (atrapa demonstracyjna)",
+    "noTitle": "Brak tytułu",
+    "viewers": "Widzowie",
+    "viewersAccessible_one": "{{count}} widz",
+    "viewersAccessible_few": "{{count}} widzów",
+    "viewersAccessible_many": "{{count}} widzów",
+    "viewersAccessible_other": "{{count}} widza",
+    "quality": "Jakość",
+    "start": "Uruchom",
+    "stop": "Zatrzymaj",
+    "demoControl": "Sterowanie demonstracyjne - brak realnej transmisji",
+    "openMetadata": "Otwórz metadane platformy {{platform}}"
+  },
+  "statusDetail": {
+    "noStreamKey": "Stan demonstracyjny: nie skonfigurowano klucza transmisji."
+  },
+  "fields": {
+    "category": "Kategoria",
+    "topic": "Temat"
+  },
+  "categoryPlaceholder": {
+    "twitch": "np. Software and Game Development",
+    "youtube": "np. Science & Technology",
+    "kick": "np. Just Chatting",
+    "tiktok": "np. Gaming"
+  },
+  "visibility": {
+    "public": "Publiczna",
+    "unlisted": "Niepubliczna",
+    "private": "Prywatna"
+  },
+  "latency": {
+    "normal": "Zwykłe opóźnienie",
+    "low": "Niskie opóźnienie",
+    "ultraLow": "Bardzo niskie opóźnienie"
+  }
+}

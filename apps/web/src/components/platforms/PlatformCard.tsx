@@ -1,9 +1,11 @@
 import { Loader2, Play, Settings2, Square, Users, Wifi } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
+import { useLanguage } from '@/i18n/use-language';
 import { cn } from '@/lib/cn';
 import { formatViewers } from '@/lib/format';
 import {
-  CONNECTION_QUALITY_LABELS,
+  CONNECTION_QUALITY_LABEL_KEYS,
   type ConnectionQuality,
   type PlatformId,
   type StreamPlatform,
@@ -55,8 +57,14 @@ function MetaRow({ label, value }: { label: string; value: string }) {
  * The Start/Stop button only mutates the local DEMO store - it does not spawn
  * FFmpeg, does not contact any platform and does not transmit anything. The
  * "Demo control" caption under the button states this in the UI itself.
+ *
+ * The stream title, category and tags shown here are user-authored content and
+ * are rendered verbatim - they are never translated.
  */
 export function PlatformCard({ platform, onStart, onStop, onConfigure }: PlatformCardProps) {
+  const { t } = useTranslation(['platforms', 'common']);
+  const { locale } = useLanguage();
+
   const isBusy = platform.status === 'starting';
   const isRunning = platform.status === 'live' || platform.status === 'starting';
   const showViewers = platform.status === 'live' && platform.viewers !== null;
@@ -78,13 +86,14 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
         <div className="flex min-w-0 items-center gap-3">
           <PlatformGlyph id={platform.id} label={platform.shortLabel} />
           <div className="min-w-0">
+            {/* Brand name - never translated. */}
             <h3
               id={`platform-${platform.id}-name`}
               className="truncate text-sm font-semibold text-ink"
             >
               {platform.name}
             </h3>
-            <p className="truncate text-[11px] text-ink-faint">{platform.ingestHint}</p>
+            <p className="truncate text-[11px] text-ink-faint">{t('platforms:card.ingestHint')}</p>
           </div>
         </div>
         <StatusBadge status={platform.status} />
@@ -92,11 +101,11 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
 
       <div className="space-y-3 px-4 pb-3">
         <p
-          className="line-clamp-2 min-h-[2.25rem] text-sm text-ink"
+          className="line-clamp-2 min-h-9 text-sm text-ink"
           title={platform.metadata.title}
         >
           {platform.metadata.title === '' ? (
-            <span className="text-ink-faint italic">No title set</span>
+            <span className="text-ink-faint italic">{t('platforms:card.noTitle')}</span>
           ) : (
             platform.metadata.title
           )}
@@ -104,23 +113,34 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
 
         <dl className="grid grid-cols-3 gap-3">
           <MetaRow
-            label={platform.options.categoryLabel}
-            value={platform.metadata.category === '' ? '--' : platform.metadata.category}
+            label={t(platform.options.categoryLabelKey)}
+            value={
+              platform.metadata.category === ''
+                ? t('common:values.empty')
+                : platform.metadata.category
+            }
           />
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              Viewers
+              {t('platforms:card.viewers')}
             </dt>
             <dd className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
               <Users aria-hidden="true" className="size-3 shrink-0" />
-              <span className="font-mono tabular-nums">
-                {showViewers ? formatViewers(platform.viewers) : '--'}
+              <span
+                className="font-mono tabular-nums"
+                title={
+                  showViewers && platform.viewers !== null
+                    ? t('platforms:card.viewersAccessible', { count: platform.viewers })
+                    : undefined
+                }
+              >
+                {showViewers ? formatViewers(platform.viewers, locale) : t('common:values.empty')}
               </span>
             </dd>
           </div>
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              Quality
+              {t('platforms:card.quality')}
             </dt>
             <dd
               className={cn(
@@ -129,14 +149,14 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
               )}
             >
               <Wifi aria-hidden="true" className="size-3 shrink-0" />
-              <span className="truncate">{CONNECTION_QUALITY_LABELS[platform.quality]}</span>
+              <span className="truncate">{t(CONNECTION_QUALITY_LABEL_KEYS[platform.quality])}</span>
             </dd>
           </div>
         </dl>
 
-        {platform.statusDetail !== null && (
+        {platform.statusDetailKey !== null && (
           <p className="rounded-md border border-status-error/30 bg-status-error/10 px-2 py-1.5 text-[11px] text-status-error">
-            {platform.statusDetail}
+            {t(platform.statusDetailKey)}
           </p>
         )}
       </div>
@@ -150,7 +170,7 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
               onClick={() => onStop(platform.id)}
               icon={<Square className="size-3.5" />}
             >
-              Stop
+              {t('platforms:card.stop')}
             </Button>
           ) : (
             <Button
@@ -165,14 +185,14 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
                 )
               }
             >
-              Start
+              {t('platforms:card.start')}
             </Button>
           )}
-          <span className="text-[10px] text-ink-faint">Demo control - no real stream</span>
+          <span className="text-[10px] text-ink-faint">{t('platforms:card.demoControl')}</span>
         </div>
 
         <IconButton
-          label={`Open ${platform.name} metadata`}
+          label={t('platforms:card.openMetadata', { platform: platform.name })}
           variant="ghost"
           onClick={() => onConfigure(platform.id)}
           icon={<Settings2 className="size-4" />}

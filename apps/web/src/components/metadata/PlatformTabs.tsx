@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { cn } from '@/lib/cn';
 import type { PlatformId, StreamPlatform } from '@/models/platform';
 
@@ -14,6 +16,7 @@ type PlatformTabsProps = {
  * only the selected tab is in the tab order, and each tab points at its panel.
  */
 export function PlatformTabs({ platforms, activeId, onSelect }: PlatformTabsProps) {
+  const { t } = useTranslation('metadata');
   const activeIndex = platforms.findIndex((platform) => platform.id === activeId);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -36,7 +39,7 @@ export function PlatformTabs({ platforms, activeId, onSelect }: PlatformTabsProp
   return (
     <div
       role="tablist"
-      aria-label="Platform metadata"
+      aria-label={t('editor.tabsLabel')}
       className="flex gap-1 overflow-x-auto border-b border-line px-2"
     >
       {platforms.map((platform) => {

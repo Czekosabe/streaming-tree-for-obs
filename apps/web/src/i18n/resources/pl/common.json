@@ -1,0 +1,29 @@
+{
+  "app": {
+    "skipToContent": "Przejdź do treści głównej"
+  },
+  "actions": {
+    "openMenu": "Otwórz menu",
+    "closeMenu": "Zamknij menu"
+  },
+  "demo": {
+    "badge": "Demo",
+    "defaultTooltip": "Dane demonstracyjne - nie pochodzą jeszcze z backendu"
+  },
+  "language": {
+    "label": "Język interfejsu",
+    "switcherLabel": "Zmień język interfejsu"
+  },
+  "units": {
+    "percentAccessible": "{{value}} procent",
+    "megabitsPerSecond": "{{value}} Mb/s"
+  },
+  "duration": {
+    "hoursMinutesSeconds": "{{hours}} g {{minutes}} min {{seconds}} s",
+    "minutesSeconds": "{{minutes}} min {{seconds}} s",
+    "seconds": "{{seconds}} s"
+  },
+  "values": {
+    "empty": "--"
+  }
+}

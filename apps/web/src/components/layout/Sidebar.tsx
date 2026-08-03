@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
 
@@ -44,6 +45,7 @@ type MobileSidebarProps = {
  * itself is focused on open so keyboard users land inside the dialog.
  */
 export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
+  const { t } = useTranslation(['navigation', 'common']);
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -84,7 +86,7 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
         ref={panelRef}
         role="dialog"
         aria-modal={open}
-        aria-label="Main menu"
+        aria-label={t('navigation:mainMenu')}
         tabIndex={-1}
         className={cn(
           'absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-line bg-surface',
@@ -95,7 +97,7 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close menu"
+          aria-label={t('common:actions.closeMenu')}
           className="absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-lg border border-line text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
         >
           <X aria-hidden="true" className="size-4" />

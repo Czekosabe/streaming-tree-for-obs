@@ -19,12 +19,53 @@ export type ApiErrorKind = 'network' | 'timeout' | 'http' | 'parse';
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | null;
+  /**
+   * Stable machine-readable code from the backend error payload, e.g.
+   * "not_found". The UI maps it to a localized message; it is an identifier,
+   * not display text, so it is never translated itself.
+   */
+  readonly code: string | null;
+  /**
+   * The backend's own English message. Used as a last-resort fallback when no
+   * localized mapping exists for `code`.
+   */
+  readonly serverMessage: string | null;
 
-  constructor(kind: ApiErrorKind, message: string, status: number | null = null) {
+  constructor(
+    kind: ApiErrorKind,
+    message: string,
+    options: { status?: number | null; code?: string | null; serverMessage?: string | null } = {},
+  ) {
     super(message);
     this.name = 'ApiError';
     this.kind = kind;
-    this.status = status;
+    this.status = options.status ?? null;
+    this.code = options.code ?? null;
+    this.serverMessage = options.serverMessage ?? null;
+  }
+}
+
+/**
+ * Best-effort extraction of the backend's `{ error, message }` envelope.
+ *
+ * Returns nulls for any response that does not follow it - an error path must
+ * never throw while reporting another error.
+ */
+async function readErrorEnvelope(
+  response: Response,
+): Promise<{ code: string | null; serverMessage: string | null }> {
+  try {
+    const payload: unknown = await response.json();
+    if (typeof payload !== 'object' || payload === null) {
+      return { code: null, serverMessage: null };
+    }
+
+    const record: Record<string, unknown> = { ...payload };
+    const code = typeof record.error === 'string' ? record.error : null;
+    const serverMessage = typeof record.message === 'string' ? record.message : null;
+    return { code, serverMessage };
+  } catch {
+    return { code: null, serverMessage: null };
   }
 }
 
@@ -65,10 +106,11 @@ export async function apiGet<TSchema extends z.ZodType>(
   }
 
   if (!response.ok) {
+    const envelope = await readErrorEnvelope(response);
     throw new ApiError(
       'http',
       `Backend responded with ${response.status} ${response.statusText}.`,
-      response.status,
+      { status: response.status, ...envelope },
     );
   }
 

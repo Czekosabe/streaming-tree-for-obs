@@ -1,0 +1,26 @@
+{
+  "primaryLabel": "Główna",
+  "sectionLabel": "Nawigacja",
+  "mainMenu": "Menu główne",
+  "plannedBadge": "Wkrótce",
+  "plannedBadgeTooltip": "Widok zastępczy - funkcja planowana na późniejszy etap",
+  "items": {
+    "dashboard": "Pulpit",
+    "platforms": "Platformy",
+    "streams": "Transmisje",
+    "metadata": "Metadane",
+    "settings": "Ustawienia",
+    "logs": "Logi"
+  },
+  "obs": {
+    "sectionLabel": "Połączenie z OBS",
+    "heading": "OBS",
+    "demoTooltip": "Stan połączenia z OBS jest na tym etapie wartością zastępczą",
+    "waiting": "Oczekiwanie na OBS",
+    "waitingDetail": "Lokalny odbiór strumienia nie działa na tym etapie",
+    "ingestLabel": "Lokalny odbiór",
+    "copyIngest": "Skopiuj lokalny adres odbioru",
+    "ingestHint": "Adres planowany - żaden serwer jeszcze nie nasłuchuje."
+  },
+  "version": "Wersja {{version}} - kompilacja lokalna"
+}

@@ -1,5 +1,6 @@
 import { Plus, Settings } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
@@ -17,6 +18,7 @@ import { useDemoStream } from '@/state/use-demo-stream';
  * status rail on the right). Below `xl` the rail moves underneath the content.
  */
 export function DashboardPage() {
+  const { t } = useTranslation('dashboard');
   const navigate = useNavigate();
   const { platforms, startPlatform, stopPlatform, updateMetadata } = useDemoStream();
 
@@ -31,8 +33,8 @@ export function DashboardPage() {
 
   return (
     <AppShell
-      title="Dashboard"
-      description="One OBS output, several independent platform branches."
+      title={t('title')}
+      description={t('description')}
       actions={
         <>
           <Button
@@ -40,15 +42,15 @@ export function DashboardPage() {
             icon={<Plus className="size-4" />}
             onClick={() => void navigate('/platforms')}
           >
-            <span className="hidden sm:inline">Add Platform</span>
-            <span className="sm:hidden">Add</span>
+            <span className="hidden sm:inline">{t('actions.addPlatform')}</span>
+            <span className="sm:hidden">{t('actions.addPlatformShort')}</span>
           </Button>
           <Button
             icon={<Settings className="size-4" />}
             onClick={() => void navigate('/settings')}
           >
-            <span className="hidden md:inline">Global Settings</span>
-            <span className="md:hidden">Settings</span>
+            <span className="hidden md:inline">{t('actions.globalSettings')}</span>
+            <span className="md:hidden">{t('actions.globalSettingsShort')}</span>
           </Button>
         </>
       }
@@ -58,11 +60,9 @@ export function DashboardPage() {
           <section aria-labelledby="branches-heading">
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 id="branches-heading" className="text-sm font-semibold tracking-tight text-ink">
-                Platform branches
+                {t('branches.heading')}
               </h2>
-              <p className="text-[11px] text-ink-faint">
-                Each branch runs independently - one failure does not stop the others.
-              </p>
+              <p className="text-[11px] text-ink-faint">{t('branches.note')}</p>
             </div>
 
             <PlatformGrid

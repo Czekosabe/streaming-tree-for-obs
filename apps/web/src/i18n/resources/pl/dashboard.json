@@ -1,0 +1,82 @@
+{
+  "title": "Pulpit",
+  "description": "Jedno wyjście z OBS, kilka niezależnych gałęzi transmisji.",
+  "actions": {
+    "addPlatform": "Dodaj platformę",
+    "addPlatformShort": "Dodaj",
+    "globalSettings": "Ustawienia globalne",
+    "globalSettingsShort": "Ustawienia"
+  },
+  "branches": {
+    "heading": "Gałęzie transmisji",
+    "note": "Każda gałąź działa niezależnie - awaria jednej nie zatrzymuje pozostałych."
+  },
+  "systemStatus": {
+    "railLabel": "Stan systemu",
+    "idle": "System bezczynny",
+    "checking": "Sprawdzanie systemu",
+    "backendUnavailable": "Backend niedostępny",
+    "live_one": "{{count}} aktywna transmisja",
+    "live_few": "{{count}} aktywne transmisje",
+    "live_many": "{{count}} aktywnych transmisji",
+    "live_other": "{{count}} aktywnej transmisji",
+    "starting_one": "{{count}} uruchamiana transmisja",
+    "starting_few": "{{count}} uruchamiane transmisje",
+    "starting_many": "{{count}} uruchamianych transmisji",
+    "starting_other": "{{count}} uruchamianej transmisji",
+    "errors_one": "{{count}} gałąź z błędem",
+    "errors_few": "{{count}} gałęzie z błędem",
+    "errors_many": "{{count}} gałęzi z błędem",
+    "errors_other": "{{count}} gałęzi z błędem"
+  },
+  "counters": {
+    "heading": "Gałęzie transmisji",
+    "description": "Zliczone z lokalnego stanu demonstracyjnego",
+    "live": "Na żywo",
+    "starting": "Uruchamiane",
+    "offline": "Offline",
+    "error": "Błąd",
+    "liveAccessible_one": "{{count}} gałąź na żywo",
+    "liveAccessible_few": "{{count}} gałęzie na żywo",
+    "liveAccessible_many": "{{count}} gałęzi na żywo",
+    "liveAccessible_other": "{{count}} gałęzi na żywo",
+    "startingAccessible_one": "{{count}} uruchamiana gałąź",
+    "startingAccessible_few": "{{count}} uruchamiane gałęzie",
+    "startingAccessible_many": "{{count}} uruchamianych gałęzi",
+    "startingAccessible_other": "{{count}} uruchamianej gałęzi",
+    "offlineAccessible_one": "{{count}} gałąź offline",
+    "offlineAccessible_few": "{{count}} gałęzie offline",
+    "offlineAccessible_many": "{{count}} gałęzi offline",
+    "offlineAccessible_other": "{{count}} gałęzi offline",
+    "errorAccessible_one": "{{count}} gałąź z błędem",
+    "errorAccessible_few": "{{count}} gałęzie z błędem",
+    "errorAccessible_many": "{{count}} gałęzi z błędem",
+    "errorAccessible_other": "{{count}} gałęzi z błędem"
+  },
+  "backend": {
+    "heading": "Backend",
+    "description": "REST API w Go",
+    "refresh": "Sprawdź ponownie stan backendu",
+    "refreshShort": "Sprawdź ponownie",
+    "pending": "Łączenie z backendem...",
+    "unavailable": "Backend niedostępny",
+    "unaffected": "Pulpit działa dalej - poniższe wartości demonstracyjne pozostają bez zmian.",
+    "connected": "Połączono",
+    "service": "Usługa",
+    "version": "Wersja",
+    "uptime": "Czas działania"
+  },
+  "resources": {
+    "heading": "Zasoby systemowe",
+    "description": "Wartości zastępcze",
+    "demoTooltip": "Backend nie zbiera jeszcze metryk hosta",
+    "cpu": "Procesor",
+    "cpuDetail": "8 rdzeni / wartość demonstracyjna",
+    "memory": "Pamięć",
+    "memoryDetail": "8,6 GB z 16 GB / wartość demonstracyjna",
+    "disk": "Dysk",
+    "diskDetail": "712 GB z 1 TB / wartość demonstracyjna",
+    "networkStable": "Sieć: stabilna",
+    "networkDetail": "Wartość demonstracyjna - pomiar nie jest jeszcze wykonywany"
+  }
+}

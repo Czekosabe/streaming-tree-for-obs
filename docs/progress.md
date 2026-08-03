@@ -293,3 +293,216 @@ Etap 2: trwałe przechowywanie konfiguracji.
 4. Zastąpienie magazynu demonstracyjnego w `src/state/` zapytaniami TanStack
    Query, z zachowaniem obecnych komponentów prezentacyjnych.
 5. Utrzymanie stanu `Backend unavailable` jako w pełni obsłużonej ścieżki.
+
+---
+
+## 2026-08-03 14:55 — feat(web): add English and Polish localization
+
+> From this entry onward the journal is written in English. The historical
+> entry above is translated in the following commit
+> (`docs: migrate project documentation to English`); its facts are preserved
+> unchanged.
+
+### Status
+Completed
+
+### Scope
+Introduce the internationalization foundation for the frontend: English and
+Polish interface resources, a language switcher, a persisted language
+preference, localized backend error messages, an automated resource
+consistency check and focused tests. No product feature was added or redesigned.
+
+### Changes
+
+**Localization core (`apps/web/src/i18n/`)**
+- Added i18next + react-i18next with a static, build-time resource bundle. No
+  translation service, API or runtime auto-translation is used anywhere.
+- Centralized every language code, namespace name, locale tag and the storage
+  key in `config.ts`, so no component contains a literal `'en'` or `'pl'`.
+- Added a validated `SupportedLanguage` type with `isSupportedLanguage` and
+  `toSupportedLanguage` guards used at every untrusted boundary.
+- Configured English as both default and fallback language, `escapeValue: false`
+  (React escapes on render), `load: 'languageOnly'` so `pl-PL` resolves to `pl`,
+  and a development-only missing-key warning. Production silently falls back to
+  English - a raw key is never shown to a user.
+- Added an i18next module augmentation so translation keys are checked against
+  the English bundle at compile time.
+
+**Language preference**
+- Stored under `streaming-tree.language` in localStorage. This remains the only
+  value the application persists in the browser.
+- The stored value is validated before use; an unsupported or corrupted value
+  falls back to English. Reads and writes are wrapped so a disabled or full
+  localStorage cannot break the switcher.
+- The browser language is deliberately ignored: first launch is always English.
+- `changeAppLanguage` updates i18next, the stored preference and
+  `<html lang>` together, so the three cannot drift apart.
+
+**Language switcher**
+- Added `LanguageSwitcher`, a native `<select>` with endonym labels
+  ("English", "Polski") and no flag icons. Native markup gives keyboard
+  operation, the platform picker on mobile, and the existing focus ring for
+  free.
+- Placed in the top bar (all pages) and in a working "Interface language" panel
+  on the Settings page. Switching re-renders immediately; no page reload.
+
+**Interface translation**
+- Extracted every user-facing string into seven namespaces: `common`,
+  `navigation`, `dashboard`, `platforms`, `metadata`, `pages`, `errors`.
+- Covered navigation, headings, buttons, status and quality labels, Demo badges
+  and their explanations, platform cards, system status panels, resource
+  labels, the metadata editor, form labels, placeholders, hints, validation
+  messages, loading, empty and "Backend unavailable" states, planned-page
+  descriptions, the OBS connection panel, the version footer and the mobile
+  menu dialog.
+- Proper pluralization for active streams, starting streams, branches in error,
+  branch counters, viewer counts and the tag counter. Polish uses its full CLDR
+  set (`one`, `few`, `many`, `other`).
+- Numbers, compact viewer counts and list joins are locale-aware via `Intl`.
+- Sentences are never assembled from translated fragments: each is one entry
+  with interpolation.
+
+**Repository fix found while staging this change**
+- `.gitignore` contained unanchored `data/`, `logs/` and `build/` rules. The
+  `data/` rule silently matched `apps/web/src/data/`, so the demo data modules
+  were never committed in `chore: bootstrap streaming tree project` and a fresh
+  clone could not build. The rules are now anchored to the repository root
+  (`/data/`, `/logs/`, `/build/`) and the two source files are added here.
+  `dist/` stays unanchored because build output lives in `apps/web/dist`.
+
+**Not translated, by design**
+- User-authored content (stream titles, descriptions, tags), platform brand
+  names, URLs, the RTMP address, API identifiers such as service name and
+  version, backend error codes, and stream-language endonyms.
+
+**Backend error handling**
+- `ApiError` now carries the backend's stable `code` and its English `message`
+  from the `{ error, message }` envelope. The API contract itself is unchanged.
+- `resolveApiErrorMessage` prefers a localized message mapped from the stable
+  code, then the backend's own English message for HTTP failures it explained,
+  then a localized transport-level message. Arbitrary server text is shown
+  verbatim, never machine-translated.
+
+**Consistency check**
+- Added `apps/web/scripts/check-i18n.mjs` and `npm run i18n:check`. English
+  defines the canonical structure; the script reports missing keys, extra keys,
+  object/value structure mismatches, empty values and plural-form problems,
+  printing the full dotted path of each and exiting non-zero.
+- The check is plural-aware: plural groups are compared by base key, and each
+  language is validated against the categories `Intl.PluralRules` requires for
+  it. Without this, Polish `_few`/`_many` entries would be reported as
+  mismatches against English `_one`/`_other`.
+
+**Tests**
+- Added Vitest with jsdom (no browser automation). 32 tests across three files
+  cover: invalid, corrupted and missing stored values falling back to English;
+  a valid stored Polish preference being accepted; localStorage failures being
+  survivable; only the language key being persisted; language switching
+  updating instance, storage and `<html lang>`; unsupported languages being
+  ignored; Polish resource lookup; Polish plural categories; fallback to
+  English for a missing Polish key; and the parity checker both passing on the
+  shipped resources and correctly detecting each class of defect on fixtures.
+
+### Files changed
+- `apps/web/src/i18n/` - `config.ts`, `types.ts`, `resources.ts`, `index.ts`,
+  `language-storage.ts`, `document-language.ts`, `use-language.ts`,
+  `i18next.d.ts`, `resources/{en,pl}/*.json` (7 namespaces per language), and
+  three test files.
+- `apps/web/scripts/check-i18n.mjs`, `apps/web/scripts/check-i18n.d.mts`
+- `apps/web/src/components/` - layout, ui, platforms, system and metadata
+  components; new `ui/LanguageSwitcher.tsx` and
+  `metadata/use-validation-messages.ts`.
+- `apps/web/src/pages/` - all pages; `PlaceholderPage` now accepts real content
+  above the placeholder card, used by the Settings language panel.
+- `apps/web/src/models/platform.ts`, `metadata-schema.ts`
+- `apps/web/src/data/demo-platforms.ts`, `demo-system.ts`
+- `apps/web/src/lib/format.ts`, `api-client.ts`, new `api-error-message.ts`
+- `apps/web/package.json`, `tsconfig.app.json`, `tsconfig.node.json`,
+  `vitest.config.ts`, `src/App.tsx`
+- `.gitignore` (anchored the runtime-data rules; see above)
+
+### Technical decisions
+
+1. **Static bundled resources instead of runtime loading.** Both languages
+   together are a few kilobytes and the app runs locally, so bundling removes an
+   entire class of "translation not loaded yet" states and needs no HTTP backend
+   plugin.
+
+2. **The data and model layers carry translation keys, not text.** Demo data,
+   the platform capability model and navigation items store keys such as
+   `latency.low`. Typed with i18next's `ParseKeys`, a renamed or deleted key
+   becomes a compile error instead of text rendered as its own key.
+
+3. **Validation messages are injected into the Zod schema.** `metadata-schema.ts`
+   receives an explicit, fully typed `MetadataValidationMessages` object rather
+   than a translate callback. The schema module stays free of display language,
+   and every message key is checked once, in one hook.
+
+4. **No language detector plugin.** The requirement is that first launch is
+   always English, which browser detection would break. Dropping the plugin also
+   drops a dependency.
+
+5. **Endonyms for stream languages and for the switcher.** Language names are
+   proper nouns and are conventionally shown in their own language, so they are
+   not translation resources. This also keeps them out of parity checking.
+
+6. **The consistency check is plain ESM JavaScript.** It runs through `node`
+   with no build step and no extra dependency, and its comparison function is
+   exported so the test suite asserts on it directly rather than duplicating the
+   logic. A hand-written `.d.mts` keeps the TypeScript import type-safe.
+
+7. **jsdom pinned to 26.** jsdom 30 pulls a transitive dependency that requires
+   an ESM module from CommonJS, which Node 22.11 cannot do (`require(ESM)` is
+   unflagged only from Node 22.12). Same root cause as the Vite 6 pin recorded
+   in the previous entry.
+
+8. **`Intl.ListFormat` for the unsupported-fields list.** The list separator and
+   final conjunction differ per language, so joining is delegated to `Intl`
+   rather than hard-coded.
+
+9. **The `.gitignore` fix is included in this commit rather than a separate
+   one.** The affected files (`src/data/`) now carry translation keys and are
+   part of this change; committing the localization without them would leave
+   `origin/main` unbuildable.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 7 namespaces, no differences against `en` |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 3 files, 32 tests |
+| Frontend build | `npm run build` | Passed - 2035 modules |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - no test files (backend untouched this stage) |
+| Backend build | `go build ./...` | Passed - 0 errors |
+
+Two checks failed on the first run and were fixed before completion: the
+strict key typing rejected a test that used unknown keys (rewritten to exercise
+fallback through the real bundles), and ESLint flagged a type-only import.
+
+No manual UI testing was performed.
+
+### Known limitations
+- The English and Polish wording of the platform capability tables remains
+  approximate and illustrative, as recorded in the previous entry. Localization
+  did not change that.
+- Polish plural forms were written by hand and reviewed against CLDR
+  categories, but have not been reviewed by a second Polish speaker.
+- Adding a third language currently requires editing `SUPPORTED_LANGUAGES`,
+  adding a resource directory and adding a locale tag; there is no automated
+  scaffolding for it.
+- The `starting -> live` demo transition, the fixed viewer counts, the
+  placeholder host metrics and the in-memory metadata store are unchanged and
+  remain demo behaviour, still marked as such in the interface.
+- The consistency check treats any leaf key ending in `_one`, `_few`, `_many`,
+  `_other`, `_two` or `_zero` as a plural form. A non-plural key with such a
+  suffix would be misclassified; none exists today.
+- No Go tests exist yet, so `go test ./...` reports "no test files".
+
+### Next step
+Migrate the project documentation to English (`README.md`,
+`docs/project-overview.md`, `docs/progress.md`, `config/README.md`), preserving
+every historical fact, and document the localization workflow.

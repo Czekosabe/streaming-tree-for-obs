@@ -9,6 +9,9 @@ import type { PlatformDefinition, PlatformMetadata } from './platform';
  * on which fields exist or how long they may be. Instead a Zod schema is built
  * per platform from its capability table and field limits, so a platform that
  * does not support tags is never validated against tag rules.
+ *
+ * Messages are injected rather than hard-coded: this module must stay free of
+ * display language so the same schema can produce English or Polish errors.
  */
 
 export type MetadataFieldName = keyof PlatformMetadata;
@@ -19,21 +22,60 @@ export type MetadataValidationResult =
   | { success: true; errors: MetadataErrors }
   | { success: false; errors: MetadataErrors };
 
+/**
+ * Already-translated validation messages.
+ *
+ * Declared as an explicit object (rather than a generic translate callback) so
+ * a missing or misspelled message is a compile error, and so this module never
+ * has to know about i18next.
+ */
+export type MetadataValidationMessages = {
+  titleRequired: string;
+  titleMaxLength: (max: number) => string;
+  descriptionMaxLength: (max: number) => string;
+  categoryRequired: (field: string) => string;
+  categoryMaxLength: (field: string, max: number) => string;
+  tagMinLength: (min: number) => string;
+  tagMaxLength: (max: number) => string;
+  tagPattern: string;
+  tagsMaxCount: (max: number) => string;
+  tagsUnique: string;
+  languageUnsupported: string;
+  visibilityUnsupported: string;
+  latencyModeUnsupported: string;
+};
+
+export type MetadataValidationContext = {
+  messages: MetadataValidationMessages;
+  /** Translated label of the category-like field ("Category", "Temat", ...). */
+  categoryLabel: string;
+};
+
+/** Shortest tag accepted by the editor. */
+const MIN_TAG_LENGTH = 2;
+
+/** Longest value accepted in the category-like field. */
+const MAX_CATEGORY_LENGTH = 100;
+
 function optionValues(options: readonly { value: string }[]): string[] {
   return options.map((option) => option.value);
 }
 
 /** Builds the Zod schema describing the fields a given platform accepts. */
-export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
+export function buildMetadataSchema(
+  definition: PlatformDefinition,
+  context: MetadataValidationContext,
+): z.ZodType {
   const { capabilities, limits, options } = definition;
+  const { messages, categoryLabel } = context;
   const shape: Record<string, z.ZodType> = {};
 
   if (capabilities.title) {
     shape.title = z
       .string()
       .trim()
-      .min(1, 'Title is required.')
-      .max(limits.titleMaxLength, `Title must be at most ${limits.titleMaxLength} characters.`);
+      .min(1, messages.titleRequired)
+      .max(limits.titleMaxLength, messages.titleMaxLength(limits.titleMaxLength));
   }
 
   if (capabilities.description) {
@@ -41,7 +83,7 @@ export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
       .string()
       .max(
         limits.descriptionMaxLength,
-        `Description must be at most ${limits.descriptionMaxLength} characters.`,
+        messages.descriptionMaxLength(limits.descriptionMaxLength),
       );
   }
 
@@ -49,8 +91,8 @@ export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
     shape.category = z
       .string()
       .trim()
-      .min(1, `${options.categoryLabel} is required.`)
-      .max(100, `${options.categoryLabel} must be at most 100 characters.`);
+      .min(1, messages.categoryRequired(categoryLabel))
+      .max(MAX_CATEGORY_LENGTH, messages.categoryMaxLength(categoryLabel, MAX_CATEGORY_LENGTH));
   }
 
   if (capabilities.tags) {
@@ -59,14 +101,14 @@ export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
         z
           .string()
           .trim()
-          .min(2, 'A tag needs at least 2 characters.')
-          .max(limits.tagMaxLength, `A tag may be at most ${limits.tagMaxLength} characters.`)
-          .regex(/^[\p{L}\p{N} _-]+$/u, 'Tags may only contain letters, digits, spaces, - and _.'),
+          .min(MIN_TAG_LENGTH, messages.tagMinLength(MIN_TAG_LENGTH))
+          .max(limits.tagMaxLength, messages.tagMaxLength(limits.tagMaxLength))
+          .regex(/^[\p{L}\p{N} _-]+$/u, messages.tagPattern),
       )
-      .max(limits.maxTags, `At most ${limits.maxTags} tags are allowed.`)
+      .max(limits.maxTags, messages.tagsMaxCount(limits.maxTags))
       .refine(
         (tags) => new Set(tags.map((tag) => tag.toLowerCase())).size === tags.length,
-        'Tags must be unique.',
+        messages.tagsUnique,
       );
   }
 
@@ -74,14 +116,14 @@ export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
     const allowed = optionValues(options.languages);
     shape.language = z
       .string()
-      .refine((value) => allowed.includes(value), 'Select a supported language.');
+      .refine((value) => allowed.includes(value), messages.languageUnsupported);
   }
 
   if (capabilities.visibility) {
     const allowed = optionValues(options.visibility);
     shape.visibility = z
       .string()
-      .refine((value) => allowed.includes(value), 'Select a supported visibility option.');
+      .refine((value) => allowed.includes(value), messages.visibilityUnsupported);
   }
 
   if (capabilities.matureContent) {
@@ -96,7 +138,7 @@ export function buildMetadataSchema(definition: PlatformDefinition): z.ZodType {
     const allowed = optionValues(options.latencyModes);
     shape.latencyMode = z
       .string()
-      .refine((value) => allowed.includes(value), 'Select a supported latency mode.');
+      .refine((value) => allowed.includes(value), messages.latencyModeUnsupported);
   }
 
   return z.object(shape);
@@ -130,8 +172,9 @@ export function pickSupportedFields(
 export function validateMetadata(
   definition: PlatformDefinition,
   metadata: PlatformMetadata,
+  context: MetadataValidationContext,
 ): MetadataValidationResult {
-  const schema = buildMetadataSchema(definition);
+  const schema = buildMetadataSchema(definition, context);
   const result = schema.safeParse(pickSupportedFields(definition, metadata));
 
   if (result.success) {

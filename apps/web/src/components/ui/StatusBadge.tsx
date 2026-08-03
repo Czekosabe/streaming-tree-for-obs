@@ -1,5 +1,7 @@
+import { useTranslation } from 'react-i18next';
+
 import { cn } from '@/lib/cn';
-import { PLATFORM_STATUS_LABELS, type PlatformStatus } from '@/models/platform';
+import { PLATFORM_STATUS_LABEL_KEYS, type PlatformStatus } from '@/models/platform';
 
 /**
  * Status colours are semantic and consistent across the whole app:
@@ -43,6 +45,8 @@ export function StatusBadge({
   /** Overrides the default status label. */
   label?: string;
 }) {
+  const { t } = useTranslation('platforms');
+
   return (
     <span
       className={cn(
@@ -53,7 +57,7 @@ export function StatusBadge({
       )}
     >
       <StatusDot status={status} />
-      {label ?? PLATFORM_STATUS_LABELS[status]}
+      {label ?? t(PLATFORM_STATUS_LABEL_KEYS[status])}
     </span>
   );
 }

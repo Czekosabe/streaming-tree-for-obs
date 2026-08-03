@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { useHealthQuery } from '@/hooks/use-health-query';
 import { cn } from '@/lib/cn';
 import type { PlatformStatus } from '@/models/platform';
@@ -12,6 +14,7 @@ import { StatusBadge } from '../ui/StatusBadge';
  * then a branch in error, then live/starting branches, then idle.
  */
 export function SystemStatusPill({ className }: { className?: string }) {
+  const { t } = useTranslation('dashboard');
   const { platforms } = useDemoStream();
   const { isError: backendDown, isPending } = useHealthQuery();
 
@@ -20,23 +23,23 @@ export function SystemStatusPill({ className }: { className?: string }) {
   const startingCount = platforms.filter((platform) => platform.status === 'starting').length;
 
   let status: PlatformStatus = 'offline';
-  let label = 'System idle';
+  let label = t('systemStatus.idle');
 
   if (isPending) {
     status = 'starting';
-    label = 'Checking system';
+    label = t('systemStatus.checking');
   } else if (backendDown) {
     status = 'error';
-    label = 'Backend unavailable';
+    label = t('systemStatus.backendUnavailable');
   } else if (errorCount > 0) {
     status = 'error';
-    label = `${errorCount} branch${errorCount === 1 ? '' : 'es'} in error`;
+    label = t('systemStatus.errors', { count: errorCount });
   } else if (liveCount > 0) {
     status = 'live';
-    label = `${liveCount} live`;
+    label = t('systemStatus.live', { count: liveCount });
   } else if (startingCount > 0) {
     status = 'starting';
-    label = `${startingCount} starting`;
+    label = t('systemStatus.starting', { count: startingCount });
   }
 
   return (

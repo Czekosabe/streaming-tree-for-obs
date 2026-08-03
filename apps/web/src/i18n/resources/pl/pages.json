@@ -1,0 +1,66 @@
+{
+  "placeholder": {
+    "notImplemented": "Ta sekcja nie jest jeszcze zaimplementowana. Należy do późniejszego etapu projektu i celowo pozostaje pusta, zamiast udawać gotowy ekran.",
+    "plannedHeading": "Planowane w tym widoku"
+  },
+  "platforms": {
+    "title": "Platformy",
+    "description": "Podłączanie i konfiguracja celów drzewa transmisji.",
+    "planned": {
+      "manageBranches": "Dodawanie i usuwanie gałęzi transmisji",
+      "oauth": "Logowanie OAuth dla każdej platformy",
+      "credentials": "Klucze transmisji w magazynie poświadczeń systemu, nigdy w przeglądarce",
+      "encoding": "Profil kodowania dla każdej gałęzi (bitrate, rozdzielczość, odstęp klatek kluczowych)"
+    }
+  },
+  "streams": {
+    "title": "Transmisje",
+    "description": "Sterowanie odbiorem strumienia i każdą gałęzią wychodzącą na żywo.",
+    "planned": {
+      "ingest": "Stan odbioru w MediaMTX i szczegóły połączenia z OBS",
+      "processControl": "Uruchamianie i zatrzymywanie pojedynczych procesów FFmpeg dla gałęzi",
+      "metrics": "Bieżący bitrate, zgubione klatki i liczniki ponownych połączeń",
+      "restartPolicy": "Polityka automatycznego restartu gałęzi po awarii"
+    }
+  },
+  "metadata": {
+    "title": "Metadane",
+    "description": "Zestawy metadanych transmisji współdzielone przez platformy.",
+    "planned": {
+      "presets": "Zestawy wielokrotnego użytku stosowane na kilku platformach naraz",
+      "overrides": "Nadpisania dla pojedynczych platform oparte na modelu możliwości",
+      "push": "Wysyłanie metadanych do API platform przed wejściem na żywo",
+      "history": "Historia wcześniej używanych tytułów i kategorii"
+    }
+  },
+  "settings": {
+    "title": "Ustawienia",
+    "description": "Globalna konfiguracja aplikacji i routera transmisji.",
+    "planned": {
+      "ingest": "Konfiguracja lokalnego odbioru (port RTMP, ścieżka, uwierzytelnianie)",
+      "binaries": "Ścieżki do plików wykonywalnych MediaMTX i FFmpeg",
+      "backendAddress": "Adres backendu, na potrzeby przyszłego wdrożenia zdalnego routera",
+      "credentialStore": "Zarządzanie magazynem poświadczeń"
+    },
+    "language": {
+      "heading": "Język interfejsu",
+      "description": "Zmiana działa natychmiast i jest zapamiętywana w tej przeglądarce.",
+      "note": "Lokalnie zapisywana jest wyłącznie preferencja języka. Klucze transmisji, tokeny i metadane nigdy nie są przechowywane w przeglądarce."
+    }
+  },
+  "logs": {
+    "title": "Logi",
+    "description": "Diagnostyka routera transmisji i każdej gałęzi.",
+    "planned": {
+      "backendLogs": "Strukturalne logi backendu przesyłane przez SSE lub WebSocket",
+      "ffmpegOutput": "Wyjście FFmpeg dla każdej gałęzi z filtrowaniem po ważności",
+      "diagnosticBundle": "Eksport pakietu diagnostycznego z usuniętymi sekretami"
+    }
+  },
+  "notFound": {
+    "title": "Nie znaleziono",
+    "description": "Ta trasa nie istnieje.",
+    "message": "Strona, której szukasz, nie jest częścią aplikacji.",
+    "backToDashboard": "Powrót do pulpitu"
+  }
+}

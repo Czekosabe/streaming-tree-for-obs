@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { DesktopSidebar, MobileSidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -18,12 +19,13 @@ type AppShellProps = {
  * only exists on the dashboard.
  */
 export function AppShell({ title, description, actions, children }: AppShellProps) {
+  const { t } = useTranslation('common');
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex min-h-dvh bg-canvas">
       <a href="#main-content" className="skip-link">
-        Skip to main content
+        {t('app.skipToContent')}
       </a>
 
       <DesktopSidebar />
