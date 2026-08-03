@@ -17,6 +17,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
@@ -75,10 +76,13 @@ func run() error {
 		logger.Info("database schema is up to date")
 	}
 
+	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:         logger,
 		AllowedOrigins: cfg.AllowedOrigins,
 		StartedAt:      startedAt,
+		Platforms:      platformService,
 	})
 
 	server := &http.Server{

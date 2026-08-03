@@ -849,3 +849,141 @@ No manual testing was performed.
 Expose the persisted configuration over REST: provider definitions, platform
 CRUD and metadata replacement, with the existing error envelope extended by an
 optional per-field map.
+
+---
+
+## 2026-08-03 16:35 — feat(server): add platform configuration API
+
+### Status
+Completed
+
+### Scope
+Expose the persisted configuration over REST: built-in provider definitions,
+full CRUD for configured platforms, and atomic metadata replacement. Adds the
+scripted restart-persistence verification that proves the whole path works
+across a process restart.
+
+### Changes
+
+**Endpoints**
+- `GET /api/platform-definitions` - all four built-in definitions, as semantic
+  identifiers and capability data only.
+- `GET /api/platforms` - configured platforms ordered by sort order then
+  creation time then id, each with its provider definition and metadata
+  inlined, so the dashboard renders from one request and needs no per-card
+  metadata call.
+- `POST /api/platforms` - creates a configuration, responds 201 with a
+  `Location` header and the complete record.
+- `GET /api/platforms/{id}`, `PUT /api/platforms/{id}`,
+  `DELETE /api/platforms/{id}` - read, full replacement of the mutable fields,
+  and delete returning 204 with cascading metadata and tag removal.
+- `GET /api/platforms/{id}/metadata`, `PUT /api/platforms/{id}/metadata` -
+  read and atomic replacement of metadata plus ordered tags.
+
+**Request handling**
+- Bodies are capped at 64 KiB and answered with 413 when exceeded.
+- Unknown JSON fields are rejected with 400 rather than silently dropped, so a
+  client that tries to send a `streamKey` gets an error instead of the field
+  quietly disappearing. The rejected value is not echoed back.
+- Malformed JSON, a wrong content type and trailing JSON after the object are
+  each distinguished from validation failures.
+- All write endpoints take full replacement payloads, avoiding the ambiguity of
+  partial PATCH semantics.
+
+**Error contract**
+- The existing `{error, message}` envelope is preserved everywhere.
+- Validation failures add `fields` (one English fallback sentence per field,
+  matching the documented shape) and `details` (a stable `rule` plus `params`
+  per field), both built from one internal violation list so they cannot drift
+  apart. The frontend localizes from `details` and falls back to `fields`.
+- Status codes: 400 malformed JSON or unknown field, 404 missing record, 405
+  unsupported method with an `Allow` header, 409 genuine conflict, 413
+  oversized body, 415 wrong content type, 422 validation failure, 500
+  unexpected internal failure.
+- Storage failures are logged with their cause and answered with a generic
+  message; a test asserts that no response mentions SQLite, SQL keywords,
+  constraints or the database file.
+
+**Route matching**
+- Every path is registered twice: with its allowed methods, and once bare so a
+  wrong verb produces 405 with `Allow` instead of falling through to the
+  `/api/` catch-all as 404. Existing health, 404 and 405 behaviour is covered
+  by tests to prove it did not regress.
+
+**Scripted persistence verification (`scripts/verify-persistence.mjs`)**
+- Starts the real backend against a temporary database, exercises definitions,
+  the seed, create, update, metadata save with ordered tags and read-back,
+  stops the process, restarts it against the same file, verifies everything
+  survived and that the seed did not run again, deletes the created platform,
+  confirms the 404, stops the backend and removes the temporary directory.
+- It never opens the real user database.
+
+### Files changed
+- `apps/server/internal/httpapi/` - new `platforms.go`, `platform_metadata.go`,
+  `decode.go`, `errors.go`, `platforms_test.go`; modified `router.go` and
+  `respond.go`
+- `apps/server/cmd/server/main.go` (service wiring)
+- `scripts/verify-persistence.mjs`
+
+### Technical decisions
+
+1. **The commit split follows the suggested boundary.** Storage and domain
+   landed first, the HTTP surface second. `main.go` is touched by both because
+   the first commit opens and migrates the database while the second injects
+   the service into the router; the intermediate state compiles and passes its
+   own tests.
+
+2. **`fields` and `details` rather than one map.** The task specifies `fields`
+   as a field-to-message map, and separately requires that the frontend
+   localize field validation identifiers. An English sentence cannot be
+   localized, so `details` carries the stable rule and its parameters
+   alongside. Both are derived from the same violation list in one place.
+
+3. **Only the first violation per field is reported.** Forms show one message
+   per input, so additional violations for the same field would be discarded by
+   the client anyway.
+
+4. **Handler tests run against a real database.** `httptest` drives the real
+   router over the real service and repository, each test with its own
+   temporary file. Testing through the whole stack is what catches a route,
+   serialization or transaction mistake; a mocked service would not.
+
+5. **The provider definition is inlined into every platform response.** It
+   costs a few hundred bytes and removes a second round trip plus a
+   client-side join for every card.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - all packages |
+| Backend build | `go build ./...` | Passed - 0 errors |
+| Restart persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps, 30 assertions, exit code 0 |
+
+24 handler tests were added covering every endpoint, malformed JSON, unknown
+fields, an oversized body, an unknown provider, missing records, validation
+field details with parameters, 405 with `Allow` on four paths, JSON content
+type, the preserved 404 and health behaviour, no SQLite leakage and no
+credential-shaped fields in any payload.
+
+No manual testing was performed.
+
+### Known limitations
+- The frontend still uses its own demo platform configuration; it is switched
+  over in the next commit, so until then two sources of truth exist in the
+  repository.
+- There is no pagination or filtering on `GET /api/platforms`. A local control
+  panel has a handful of destinations, so it would be unused complexity.
+- `PUT /api/platforms/{id}` replaces the mutable fields only; the provider of
+  an existing configuration cannot be changed. Deleting and recreating is the
+  intended path, since metadata validity depends on the provider.
+- The seeded and created configurations still have no runtime state, and the
+  API exposes none, because no streaming engine exists.
+
+### Next step
+Replace the frontend demo store with real API data: TanStack Query hooks with
+Zod validation, an Add Platform dialog, a platform settings editor with
+deletion, a metadata editor wired to the API, and removal of the fake
+Start/Stop transitions.

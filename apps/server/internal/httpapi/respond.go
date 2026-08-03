@@ -8,9 +8,25 @@ import (
 
 // ErrorBody is the single error shape returned by every endpoint, so the
 // frontend only has to understand one contract.
+//
+// Fields and Details are populated for validation failures only. Fields holds
+// an English fallback sentence per field, matching the documented envelope;
+// Details carries the stable rule identifier and its parameters so the frontend
+// can render a localized message instead. Both are built from one internal list
+// of violations, so they cannot drift apart.
 type ErrorBody struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Error   string            `json:"error"`
+	Message string            `json:"message"`
+	Fields  map[string]string `json:"fields,omitempty"`
+	Details map[string]Detail `json:"details,omitempty"`
+}
+
+// Detail is the localization payload for one failed field.
+type Detail struct {
+	// Rule is a stable identifier such as "too_long" or "not_supported_by_provider".
+	Rule string `json:"rule"`
+	// Params carries the numbers a localized message needs, e.g. {"max": 140}.
+	Params map[string]any `json:"params,omitempty"`
 }
 
 // writeJSON serialises v as JSON with the given status code.

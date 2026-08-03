@@ -17,6 +17,9 @@ type Options struct {
 	AllowedOrigins []string
 	// StartedAt is used to report uptime on the health endpoint.
 	StartedAt time.Time
+	// Platforms serves the configuration API. When nil those routes are not
+	// registered, which keeps the health-only server usable in tests.
+	Platforms PlatformService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -34,6 +37,10 @@ func NewRouter(opts Options) http.Handler {
 	// above, so a wrong verb yields 405 instead of being swallowed by the
 	// /api/ catch-all below.
 	mux.HandleFunc("/api/health", methodNotAllowed(logger, http.MethodGet))
+
+	if opts.Platforms != nil {
+		registerPlatformRoutes(mux, logger, opts.Platforms)
+	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
 	// default plain-text response, so the frontend can parse every failure.
@@ -55,6 +62,33 @@ func NewRouter(opts Options) http.Handler {
 		withLogging(logger),
 		withCORS(opts.AllowedOrigins),
 	)
+}
+
+// registerPlatformRoutes wires the platform configuration API.
+//
+// Each path is registered twice: once with its allowed methods, and once
+// without a method so a wrong verb produces a 405 with an Allow header instead
+// of falling through to the /api/ catch-all as a 404. Go's ServeMux prefers the
+// more specific method-aware pattern, so the bare pattern only ever matches
+// when no method pattern did.
+func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService) {
+	mux.HandleFunc("GET /api/platform-definitions", handleListDefinitions(logger, service))
+	mux.HandleFunc("/api/platform-definitions", methodNotAllowed(logger, http.MethodGet))
+
+	mux.HandleFunc("GET /api/platforms", handleListPlatforms(logger, service))
+	mux.HandleFunc("POST /api/platforms", handleCreatePlatform(logger, service))
+	mux.HandleFunc("/api/platforms", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
+
+	mux.HandleFunc("GET /api/platforms/{id}", handleGetPlatform(logger, service))
+	mux.HandleFunc("PUT /api/platforms/{id}", handleUpdatePlatform(logger, service))
+	mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatform(logger, service))
+	mux.HandleFunc("/api/platforms/{id}",
+		methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
+
+	mux.HandleFunc("GET /api/platforms/{id}/metadata", handleGetMetadata(logger, service))
+	mux.HandleFunc("PUT /api/platforms/{id}/metadata", handleSaveMetadata(logger, service))
+	mux.HandleFunc("/api/platforms/{id}/metadata",
+		methodNotAllowed(logger, http.MethodGet, http.MethodPut))
 }
 
 // methodNotAllowed returns a 405 carrying the Allow header, as required by the
