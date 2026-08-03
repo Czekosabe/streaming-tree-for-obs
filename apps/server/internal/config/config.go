@@ -7,8 +7,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +38,42 @@ type Config struct {
 	// DatabasePath is the resolved absolute path of the SQLite file. It is safe
 	// to log: the application stores no credentials anywhere.
 	DatabasePath string
+
+	// DataDir is the per-user application data directory. It holds the managed
+	// MediaMTX installation and the generated runtime configuration.
+	DataDir string
+
+	// MediaMTX groups the local ingest runtime settings.
+	MediaMTX MediaMTXConfig
+}
+
+// MediaMTXConfig configures the local MediaMTX ingest service.
+//
+// Both listeners are restricted to loopback in this local version: MediaMTX
+// accepts an unauthenticated publisher on the configured path, and the Control
+// API can change its configuration, so neither may be reachable from the
+// network.
+type MediaMTXConfig struct {
+	// ExecutablePath is an explicit override for the MediaMTX binary. Empty
+	// means "use the application-managed installation".
+	ExecutablePath string
+
+	// AutoStart starts MediaMTX when the backend starts.
+	AutoStart bool
+
+	// AutoRestart restarts MediaMTX after an unexpected exit.
+	AutoRestart bool
+
+	// RTMPAddress is the loopback address OBS publishes to.
+	RTMPAddress string
+
+	// APIAddress is the loopback address of the MediaMTX Control API. Only the
+	// Go backend ever talks to it; it is never exposed to the browser.
+	APIAddress string
+
+	// IngestPath is the single MediaMTX path publishing is allowed on. It is a
+	// route identifier, not a secret.
+	IngestPath string
 }
 
 const (
@@ -49,6 +87,16 @@ const (
 
 	// AppDirName is the per-user folder holding application data.
 	AppDirName = "StreamingTree"
+
+	// DefaultRTMPAddress is the loopback address OBS publishes to.
+	DefaultRTMPAddress = "127.0.0.1:1935"
+
+	// DefaultAPIAddress is the loopback address of the MediaMTX Control API.
+	DefaultAPIAddress = "127.0.0.1:9997"
+
+	// DefaultIngestPath is the single MediaMTX path publishing is allowed on.
+	// It is a route identifier, not a secret.
+	DefaultIngestPath = "live"
 )
 
 // defaultAllowedOrigins covers the Vite dev server on both loopback spellings.
@@ -92,41 +140,41 @@ func Load() (Config, error) {
 		cfg.AllowedOrigins = origins
 	}
 
-	dbPath, err := resolveDatabasePath()
+	dataDir, err := resolveDataDir()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.DataDir = dataDir
+
+	dbPath, err := resolveDatabasePath(dataDir)
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.DatabasePath = dbPath
 
+	mediaMTX, err := loadMediaMTX()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MediaMTX = mediaMTX
+
 	return cfg, nil
 }
 
-// resolveDatabasePath decides where the SQLite file lives.
+// resolveDataDir decides where application data lives.
 //
-// Precedence:
-//  1. STREAMING_TREE_DB_PATH - the full path to the file,
-//  2. STREAMING_TREE_DATA_DIR - a directory that will hold the default filename,
-//  3. the per-user config directory from os.UserConfigDir, plus "StreamingTree".
-//
-// The default deliberately lands outside the Git repository, so a working copy
-// never accumulates a database file. os.UserConfigDir resolves to
-// %AppData% on Windows, ~/Library/Application Support on macOS and
-// $XDG_CONFIG_HOME (or ~/.config) on Linux.
-func resolveDatabasePath() (string, error) {
-	if raw, ok := lookup("STREAMING_TREE_DB_PATH"); ok {
-		absolute, err := filepath.Abs(raw)
-		if err != nil {
-			return "", fmt.Errorf("STREAMING_TREE_DB_PATH: %q is not a usable path: %w", raw, err)
-		}
-		return absolute, nil
-	}
-
+// STREAMING_TREE_DATA_DIR wins; otherwise the per-user configuration directory
+// plus "StreamingTree" is used, which keeps runtime data out of the working
+// copy. os.UserConfigDir resolves to %AppData% on Windows,
+// ~/Library/Application Support on macOS and $XDG_CONFIG_HOME (or ~/.config)
+// on Linux.
+func resolveDataDir() (string, error) {
 	if raw, ok := lookup("STREAMING_TREE_DATA_DIR"); ok {
 		absolute, err := filepath.Abs(raw)
 		if err != nil {
 			return "", fmt.Errorf("STREAMING_TREE_DATA_DIR: %q is not a usable path: %w", raw, err)
 		}
-		return filepath.Join(absolute, DatabaseFileName), nil
+		return absolute, nil
 	}
 
 	base, err := os.UserConfigDir()
@@ -136,8 +184,189 @@ func resolveDatabasePath() (string, error) {
 				"set STREAMING_TREE_DATA_DIR or STREAMING_TREE_DB_PATH: %w", err)
 	}
 
-	return filepath.Join(base, AppDirName, DatabaseFileName), nil
+	return filepath.Join(base, AppDirName), nil
 }
+
+// loadMediaMTX reads and validates the local ingest settings.
+func loadMediaMTX() (MediaMTXConfig, error) {
+	cfg := MediaMTXConfig{
+		AutoStart:   true,
+		AutoRestart: true,
+		RTMPAddress: DefaultRTMPAddress,
+		APIAddress:  DefaultAPIAddress,
+		IngestPath:  DefaultIngestPath,
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_MEDIAMTX_PATH"); ok {
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return MediaMTXConfig{}, fmt.Errorf(
+				"STREAMING_TREE_MEDIAMTX_PATH: %q is not a usable path: %w", raw, err)
+		}
+		cfg.ExecutablePath = absolute
+	}
+
+	autoStart, err := lookupBool("STREAMING_TREE_MEDIAMTX_AUTOSTART", cfg.AutoStart)
+	if err != nil {
+		return MediaMTXConfig{}, err
+	}
+	cfg.AutoStart = autoStart
+
+	autoRestart, err := lookupBool("STREAMING_TREE_MEDIAMTX_AUTO_RESTART", cfg.AutoRestart)
+	if err != nil {
+		return MediaMTXConfig{}, err
+	}
+	cfg.AutoRestart = autoRestart
+
+	if raw, ok := lookup("STREAMING_TREE_MEDIAMTX_RTMP_ADDRESS"); ok {
+		cfg.RTMPAddress = raw
+	}
+	if err := validateLoopbackAddress("STREAMING_TREE_MEDIAMTX_RTMP_ADDRESS", cfg.RTMPAddress); err != nil {
+		return MediaMTXConfig{}, err
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_MEDIAMTX_API_ADDRESS"); ok {
+		cfg.APIAddress = raw
+	}
+	if err := validateLoopbackAddress("STREAMING_TREE_MEDIAMTX_API_ADDRESS", cfg.APIAddress); err != nil {
+		return MediaMTXConfig{}, err
+	}
+
+	if cfg.RTMPAddress == cfg.APIAddress {
+		return MediaMTXConfig{}, fmt.Errorf(
+			"the MediaMTX RTMP and Control API addresses must differ, both are %q", cfg.RTMPAddress)
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_INGEST_PATH"); ok {
+		cfg.IngestPath = raw
+	}
+	if err := ValidateIngestPath(cfg.IngestPath); err != nil {
+		return MediaMTXConfig{}, err
+	}
+
+	return cfg, nil
+}
+
+// PublishURL is the full RTMP URL a publisher such as OBS connects to.
+func (m MediaMTXConfig) PublishURL() string {
+	return m.ServerURL() + "/" + m.IngestPath
+}
+
+// ServerURL is the value that goes in the OBS "Server" field.
+func (m MediaMTXConfig) ServerURL() string {
+	return "rtmp://" + m.RTMPAddress
+}
+
+// APIBaseURL is the loopback base URL of the MediaMTX Control API.
+func (m MediaMTXConfig) APIBaseURL() string {
+	return "http://" + m.APIAddress
+}
+
+// resolveDatabasePath decides where the SQLite file lives.
+//
+// STREAMING_TREE_DB_PATH names the file directly; otherwise the default
+// filename is placed inside the already-resolved data directory.
+func resolveDatabasePath(dataDir string) (string, error) {
+	if raw, ok := lookup("STREAMING_TREE_DB_PATH"); ok {
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return "", fmt.Errorf("STREAMING_TREE_DB_PATH: %q is not a usable path: %w", raw, err)
+		}
+		return absolute, nil
+	}
+
+	return filepath.Join(dataDir, DatabaseFileName), nil
+}
+
+// lookupBool reads a boolean environment variable.
+//
+// Only the spellings strconv.ParseBool understands are accepted; a typo such as
+// "yes" is an error rather than a silent false, because silently disabling
+// autostart would look like a bug in the application.
+func lookupBool(key string, fallback bool) (bool, error) {
+	raw, ok := lookup(key)
+	if !ok {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf(
+			"%s: %q is not a boolean; use true/false, 1/0, t/f", key, raw)
+	}
+	return parsed, nil
+}
+
+// validateLoopbackAddress rejects anything that is not a loopback host:port.
+//
+// MediaMTX is configured to accept an unauthenticated publisher and to expose a
+// Control API that can rewrite its own configuration. Binding either to a
+// routable interface would put both on the network, so a non-loopback address
+// is refused outright rather than warned about.
+func validateLoopbackAddress(key, address string) error {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("%s: %q must be in host:port form: %w", key, address, err)
+	}
+
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return fmt.Errorf("%s: %q has a non-numeric port", key, address)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s: port %d is outside the range 1-65535", key, port)
+	}
+
+	if host == "localhost" {
+		return nil
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf(
+			"%s: %q must be a loopback address such as 127.0.0.1 or localhost", key, host)
+	}
+	if !ip.IsLoopback() {
+		return fmt.Errorf(
+			"%s: %q is not a loopback address; MediaMTX must not be reachable from the network",
+			key, host)
+	}
+
+	return nil
+}
+
+// ValidateIngestPath checks the MediaMTX path publishing is allowed on.
+//
+// The value ends up both in the generated MediaMTX configuration and in an RTMP
+// URL, so it is restricted to a conservative character set: no slashes, no
+// query strings, no relative segments.
+func ValidateIngestPath(path string) error {
+	const key = "STREAMING_TREE_INGEST_PATH"
+
+	if path == "" {
+		return fmt.Errorf("%s: must not be empty", key)
+	}
+	if len(path) > 64 {
+		return fmt.Errorf("%s: %q is longer than 64 characters", key, path)
+	}
+	if path == "." || path == ".." {
+		return fmt.Errorf("%s: %q is a relative path segment", key, path)
+	}
+	if !ingestPathPattern.MatchString(path) {
+		return fmt.Errorf(
+			"%s: %q may only contain letters, digits, '-' and '_'", key, path)
+	}
+	// "all" and "all_others" are MediaMTX wildcard path names; using one would
+	// silently widen publishing to every path.
+	if path == "all" || path == "all_others" {
+		return fmt.Errorf("%s: %q is a MediaMTX wildcard name and cannot be used", key, path)
+	}
+
+	return nil
+}
+
+// ingestPathPattern deliberately excludes '/', '.', '?' and '#'.
+var ingestPathPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Address returns the host:port string accepted by net.Listen.
 func (c Config) Address() string {

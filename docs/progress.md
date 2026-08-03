@@ -1290,3 +1290,184 @@ Stage 4: MediaMTX integration.
 The separation recorded in section 8.1 of the project overview is the constraint
 to respect here: runtime state must not leak into the SQLite configuration
 schema.
+
+---
+
+## 2026-08-03 19:05 — feat(server): add managed MediaMTX dependency
+
+### Status
+Completed
+
+### Scope
+Locate, download and verify the MediaMTX binary. This entry covers the pinned
+version, the platform asset matrix, the binary resolver, the secure installer
+and the third-party licence record. Process supervision and the runtime API are
+the next commit.
+
+### Changes
+
+**Pinned version**
+- `SupportedVersion = "v1.19.3"` is declared once, in
+  `internal/runtime/mediamtx/version.go`, and every asset name, install path and
+  compatibility check derives from it. No code resolves a `latest` release.
+- `ParseVersionOutput` reads `mediamtx --version`, which prints a bare `v1.19.3`.
+  Anything unparseable is rejected rather than guessed at, and untrusted output
+  is truncated before it reaches a message or a log.
+- An incompatible binary is never started by default. It resolves to an
+  `mediamtx_incompatible_version` state whose English message names both the
+  version found and the version expected.
+
+**Platform matrix**
+- Official assets are mapped for windows/amd64, linux/amd64, linux/arm64,
+  darwin/amd64 and darwin/arm64. The names were verified against the published
+  `checksums.sha256` for v1.19.3 rather than assumed.
+- An unmapped OS/architecture produces a stable `mediamtx_unsupported_platform`
+  error naming the override variable, instead of a guessed asset name that would
+  surface later as a confusing 404.
+
+**Binary resolution**
+- Order: `STREAMING_TREE_MEDIAMTX_PATH`, then the managed installation, then
+  missing. The system PATH is deliberately **not** searched.
+- The override path is made absolute, must exist, must be a regular file, and
+  must carry an executable bit on Unix. Its version is probed like any other.
+- Managed installations live at
+  `<data dir>/runtime/mediamtx/v1.19.3/<os>-<arch>/`, so versions and platforms
+  sit side by side and a future upgrade is install-then-switch rather than an
+  in-place overwrite of a running binary.
+- The resolved filesystem path is kept out of every API response.
+
+**Installer**
+- Installation is an explicit action; nothing downloads at startup.
+- Sequence: fetch `checksums.sha256`, find the exact entry for the selected
+  asset, download the archive while hashing it in one pass, compare, extract
+  into a temporary directory, locate the executable and `LICENSE`, set the
+  executable bit, run `--version` once to verify, then move the staged directory
+  into place with a rename.
+- Nothing unverified is ever executed: the checksum is compared before the
+  archive is opened, and the binary is only run after extraction has already
+  been constrained.
+- Bounded throughout: 10-minute install timeout, 60-second checksum timeout,
+  5 redirects, 128 MB archive, 64 KB checksum manifest, 256 MB extraction,
+  256 archive entries.
+- Response bodies are never logged - they are either a checksum manifest or,
+  when something upstream fails, an arbitrary error page.
+
+**Archive safety**
+- Rejected: absolute entry paths, Windows drive-letter paths, any `..` segment,
+  entries resolving outside the extraction root, symlinks, hard links, and
+  non-regular entries.
+- Links are refused rather than validated. The official archives contain none,
+  so accepting them would add attack surface for no benefit.
+- `O_EXCL` on every extracted file, so a duplicated archive entry fails loudly
+  instead of overwriting the first copy.
+
+**Failure behaviour**
+- The temporary directory is removed after success and failure alike.
+- An existing installation is moved aside, not deleted, and restored if the
+  final rename fails - so a failed reinstall cannot degrade a working setup.
+- A failed install never leaves a directory that would look valid to the
+  resolver.
+
+**Configuration**
+- `STREAMING_TREE_DATA_DIR` now resolves the application data directory in its
+  own right, and the database path is derived from it. `STREAMING_TREE_DB_PATH`
+  still wins for the database file.
+- Added `STREAMING_TREE_MEDIAMTX_PATH`, `..._AUTOSTART`, `..._AUTO_RESTART`,
+  `..._RTMP_ADDRESS`, `..._API_ADDRESS` and `STREAMING_TREE_INGEST_PATH`, all
+  validated at load time.
+- Both listener addresses must be loopback. MediaMTX accepts an unauthenticated
+  publisher and its Control API can rewrite its own configuration, so a routable
+  bind address is refused outright rather than warned about.
+- The RTMP and Control API addresses must differ. The ingest path is restricted
+  to letters, digits, `-` and `_`, excluding slashes, relative segments, query
+  strings and the MediaMTX wildcard names `all` and `all_others`.
+- A malformed boolean is an error, not a silent `false`: silently disabling
+  autostart would look like an application bug.
+
+**Third-party licence**
+- Added `THIRD_PARTY_NOTICES.md` recording MediaMTX, the pinned version, its MIT
+  licence, that it is downloaded from the official release, and where the
+  installed `LICENSE` lives. An archive without a licence file is rejected.
+
+**Repository fix found while staging this change**
+- `.gitignore` contained an unanchored `mediamtx` rule, added during the
+  bootstrap stage to ignore a manually downloaded binary. It matched the new
+  source package `apps/server/internal/runtime/mediamtx/`, which would have been
+  committed empty - the same failure mode as the unanchored `data/` rule that
+  once hid `apps/web/src/data/`.
+- The third-party binary rules are now anchored to the repository root
+  (`/mediamtx`, `/mediamtx.exe`, `/ffmpeg`, `/ffmpeg.exe`). Managed binaries are
+  installed into the per-user data directory and never into the working copy, so
+  these rules only guard against a manual download left at the root.
+- Verified afterwards that `git status --ignored` reports nothing inside
+  `apps/`, `config/`, `docs/` or `scripts/`.
+
+### Files changed
+- `apps/server/internal/runtime/mediamtx/` - `version.go`, `platform.go`,
+  `errors.go`, `resolver.go`, `archive.go`, `installer.go`, `util.go`, and
+  three test files
+- `apps/server/internal/config/config.go`, `config_test.go`
+- `THIRD_PARTY_NOTICES.md`
+
+### Technical decisions
+
+1. **The system PATH is not searched.** On a developer machine it could pick up
+   an unrelated or unsupported build. This application starts the binary as a
+   long-lived child process with a generated configuration, so it should only
+   ever run a copy it can identify.
+
+2. **The release base URL is a constant, overridable only in Go.**
+   `WithReleaseBaseURL` exists so tests can serve fixtures from `httptest`. It
+   is not reachable from any HTTP request: the install endpoint will accept no
+   body, so a browser cannot influence where a download comes from.
+
+3. **The version is verified twice.** Once on the freshly extracted binary
+   before it is installed, and again by the resolver on every startup. The first
+   stops a wrong archive from ever landing; the second catches an override or a
+   directory replaced behind the application's back.
+
+4. **The asset matrix omits linux/armv6 and armv7**, which upstream does publish.
+   They are untested here, and the task scope lists five platforms. An explicit
+   unsupported-platform error plus the override variable is more honest than an
+   untested mapping.
+
+5. **Staging happens inside the runtime directory**, not the system temp
+   directory, so the final publish is a rename on the same filesystem rather
+   than a cross-device copy that could fail halfway.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend build | `go build ./...` | Passed - 0 errors |
+| Backend tests | `go test ./internal/config/... ./internal/runtime/...` | Passed |
+
+Tests added: 8 version and platform tests (pinned value, real `--version`
+format, malformed output, hostile output truncation, the five required asset
+names verified against the published checksums, unsupported platforms),
+12 resolver tests (missing, managed, override precedence, non-existent override,
+directory as override, incompatible version, unreadable version, unsupported
+platform, versioned install path, metadata parsing) and 18 installer tests
+covering asset selection per platform, checksum success, mismatch, missing
+entry, malformed manifest, oversized response, six unsafe-archive shapes,
+missing executable, missing licence, wrong version, staging cleanup, atomic
+install and an existing installation surviving a failed reinstall.
+
+No archive built by a test is ever executed: the version probe is injected.
+
+No manual testing was performed.
+
+### Known limitations
+- linux/armv6 and linux/armv7 are published upstream but not mapped here.
+- The installer verifies the archive checksum against the official manifest, but
+  the manifest itself is trusted because it is fetched over HTTPS from the same
+  release. Signature verification is not implemented.
+- Nothing supervises MediaMTX yet; that is the next commit.
+- Concurrent-install protection lives in the supervisor, so it is not yet
+  enforced at this layer.
+
+### Next step
+Supervise the process: generate the v1.19.3 configuration, start MediaMTX as a
+child process, confirm readiness through its Control API, poll `/v3/paths/list`
+for OBS ingest, and expose all of it through a runtime API.

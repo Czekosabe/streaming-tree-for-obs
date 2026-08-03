@@ -35,12 +35,19 @@ credentials/
 *.sqlite3
 *.log
 
-# --- Third party binaries downloaded locally (later stages) ---
+# --- Third party binaries downloaded locally ---
+# Anchored to the repository root on purpose. Unanchored "mediamtx" also
+# matched the source package apps/server/internal/runtime/mediamtx/, exactly as
+# an unanchored "data/" once hid apps/web/src/data/.
+#
+# Managed third-party binaries are installed into the per-user application data
+# directory, never into the working copy, so these rules only guard against a
+# manual download left at the repository root.
 vendor/bin/
-mediamtx
-mediamtx.exe
-ffmpeg
-ffmpeg.exe
+/mediamtx
+/mediamtx.exe
+/ffmpeg
+/ffmpeg.exe
 
 # --- Local tooling settings ---
 .claude/settings.local.json
