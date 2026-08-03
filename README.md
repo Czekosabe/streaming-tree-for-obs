@@ -1,54 +1,57 @@
 # Streaming Tree for OBS
 
-Lokalna aplikacja, która pozwala wysłać **jeden** strumień z OBS i rozgałęzić go
-na wiele platform jednocześnie — Twitch, YouTube, Kick, TikTok.
+A local application that lets you send **one** stream from OBS and branch it out
+to several platforms at once — Twitch, YouTube, Kick, TikTok.
 
-Nazwa opisuje model działania: strumień z OBS to „pień", a każda platforma to
-niezależna „gałąź" transmisji. Awaria jednej gałęzi nie zatrzymuje pozostałych.
+The name describes the model: the stream from OBS is the "trunk", and every
+platform is an independent "branch". One branch failing does not stop the
+others.
 
-> ## Stan projektu: etap fundamentów
+> ## Project state: foundations
 >
-> **Aplikacja nie transmituje jeszcze niczego.** Ten etap obejmuje strukturę
-> projektu, dokumentację, panel operatorski w React oraz minimalny backend w Go
-> z endpointem statusowym.
+> **The application does not transmit anything yet.** What exists so far is the
+> project structure, the documentation, the React operator panel with English
+> and Polish interface languages, and a minimal Go backend with a health
+> endpoint.
 >
-> MediaMTX, FFmpeg, logowanie OAuth, integracje z API platform oraz baza danych
-> **zostaną dodane w kolejnych etapach**. Wszystkie elementy demonstracyjne są
-> oznaczone w interfejsie znacznikiem **Demo** — pełna lista znajduje się
-> w sekcji [Co jest obecnie tylko demonstracyjne](#co-jest-obecnie-tylko-demonstracyjne).
+> MediaMTX, FFmpeg, OAuth sign-in, platform API integrations and the database
+> **will be added in later stages**. Everything that is only a placeholder is
+> marked with a **Demo** badge in the interface — the full list is in
+> [What is currently demo-only](#what-is-currently-demo-only).
 
-Szczegółowy opis projektu: [`docs/project-overview.md`](docs/project-overview.md)
-Dziennik prac: [`docs/progress.md`](docs/progress.md)
+Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
+Work journal: [`docs/progress.md`](docs/progress.md)
 
 ---
 
-## Spis treści
+## Table of contents
 
-- [Wymagania](#wymagania)
-- [Szybki start](#szybki-start)
-- [Frontend — instalacja i uruchomienie](#frontend--instalacja-i-uruchomienie)
-- [Backend Go — uruchomienie](#backend-go--uruchomienie)
-- [Build produkcyjny](#build-produkcyjny)
-- [Lint, typecheck i pozostałe kontrole](#lint-typecheck-i-pozostałe-kontrole)
-- [Struktura katalogów](#struktura-katalogów)
-- [Co jest obecnie tylko demonstracyjne](#co-jest-obecnie-tylko-demonstracyjne)
-- [Bezpieczeństwo kluczy transmisji](#bezpieczeństwo-kluczy-transmisji)
-- [Najczęstsze problemy](#najczęstsze-problemy)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Frontend — install and run](#frontend--install-and-run)
+- [Go backend — running it](#go-backend--running-it)
+- [Production build](#production-build)
+- [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
+- [Interface languages](#interface-languages)
+- [Directory structure](#directory-structure)
+- [What is currently demo-only](#what-is-currently-demo-only)
+- [Stream key security](#stream-key-security)
+- [Common problems](#common-problems)
 
 ---
 
-## Wymagania
+## Requirements
 
-| Narzędzie | Wersja | Do czego służy | Wymagane teraz? |
-| --------- | ------ | -------------- | --------------- |
-| **Node.js** | 20.19+ lub 22.12+ (zalecane 22 LTS lub nowsze) | uruchomienie panelu React | tak |
-| **npm** | 10+ | instalacja zależności frontendu | tak |
-| **Go** | 1.22 lub nowsze | kompilacja i uruchomienie backendu | tak |
-| OBS Studio | 30+ | źródło transmisji | jeszcze nie |
-| MediaMTX | — | odbiór strumienia RTMP | jeszcze nie |
-| FFmpeg | — | rozsyłanie gałęzi transmisji | jeszcze nie |
+| Tool | Version | Purpose | Needed now? |
+| ---- | ------- | ------- | ----------- |
+| **Node.js** | 20.19+ or 22.12+ (22 LTS or newer recommended) | running the React panel | yes |
+| **npm** | 10+ | installing frontend dependencies | yes |
+| **Go** | 1.22 or newer | building and running the backend | yes |
+| OBS Studio | 30+ | the source of the stream | not yet |
+| MediaMTX | — | receiving the RTMP stream | not yet |
+| FFmpeg | — | distributing the stream branches | not yet |
 
-Sprawdzenie zainstalowanych wersji:
+Checking the installed versions:
 
 ```bash
 node --version
@@ -56,22 +59,22 @@ npm --version
 go version
 ```
 
-> **Uwaga dotycząca wersji Node.** Projekt został skonfigurowany tak, aby
-> działał również na Node 22.11. Jeżeli jednak masz Node starszy niż 22.12,
-> aktualizacja jest zalecana: nowsze narzędzia frontendowe (Vite 7/8) wymagają
-> Node `^20.19 || >=22.12`, a przy starszej wersji npm pomija ich zależności
-> natywne. Szczegóły w [`docs/progress.md`](docs/progress.md).
+> **Note about the Node version.** The project is configured so that it also
+> works on Node 22.11. If your Node is older than 22.12, an upgrade is still
+> recommended: newer frontend tooling (Vite 7/8, jsdom 30) requires Node
+> `^20.19 || >=22.12`, and older versions silently skip their native optional
+> dependencies. Details are in [`docs/progress.md`](docs/progress.md).
 
-Jeżeli nie masz jeszcze Go, pobierz je ze strony <https://go.dev/dl/> i wykonaj
-instalację dla swojego systemu. Instalator dodaje `go` do zmiennej `PATH`; po
-instalacji otwórz **nowe** okno terminala.
+If you do not have Go yet, download it from <https://go.dev/dl/> and run the
+installer for your system. It adds `go` to `PATH`; open a **new** terminal
+window afterwards.
 
 ---
 
-## Szybki start
+## Quick start
 
-Aplikacja składa się z dwóch procesów, które uruchamia się w **dwóch osobnych
-terminalach**.
+The application consists of two processes, started in **two separate
+terminals**.
 
 **Terminal 1 — backend:**
 
@@ -88,75 +91,75 @@ npm install
 npm run dev
 ```
 
-Następnie otwórz <http://localhost:5173>.
+Then open <http://localhost:5173>.
 
-Panel działa również **bez uruchomionego backendu** — w sekcji statusu systemu
-pojawi się wtedy czytelny komunikat „Backend unavailable", a reszta interfejsu
-pozostanie sprawna.
+The panel also works **without the backend running** — the system status section
+then shows a clear "Backend unavailable" message and the rest of the interface
+keeps working.
 
 ---
 
-## Frontend — instalacja i uruchomienie
+## Frontend — install and run
 
-### Instalacja zależności
+### Installing dependencies
 
 ```bash
 cd apps/web
 npm install
 ```
 
-Polecenie wykonuje się raz, a potem po każdej zmianie zależności. Zależności
-trafiają do katalogu `apps/web/node_modules`, który nie jest wersjonowany.
+Run this once, and again after any dependency change. Dependencies land in
+`apps/web/node_modules`, which is not version-controlled.
 
-### Uruchomienie w trybie deweloperskim
+### Running in development mode
 
 ```bash
 npm run dev
 ```
 
-Serwer deweloperski wystartuje pod adresem <http://localhost:5173> i będzie
-przeładowywał aplikację po każdej zmianie w kodzie. Zapytania do `/api` są
-automatycznie przekazywane do backendu na `http://127.0.0.1:8080`.
+The dev server starts at <http://localhost:5173> and reloads the application on
+every code change. Requests to `/api` are proxied to the backend at
+`http://127.0.0.1:8080`.
 
-Zatrzymanie: `Ctrl + C`.
+Stop it with `Ctrl + C`.
 
-### Konfiguracja (opcjonalna)
+### Configuration (optional)
 
-Domyślne ustawienia wystarczają do pracy lokalnej. Jeżeli backend działa pod
-innym adresem, skopiuj `apps/web/.env.example` do `apps/web/.env.local`
-i dostosuj wartości.
+The defaults are enough for local work. If the backend runs at a different
+address, copy `apps/web/.env.example` to `apps/web/.env.local` and adjust the
+values.
 
-> **Nigdy nie umieszczaj sekretów w plikach `.env` frontendu.** Wszystko
-> z przedrostkiem `VITE_` jest wkompilowywane w publiczny pakiet JavaScript
-> i widoczne dla każdego, kto otworzy stronę.
+> **Never put secrets in frontend `.env` files.** Everything prefixed with
+> `VITE_` is compiled into the public JavaScript bundle and is visible to anyone
+> who opens the page.
 
 ---
 
-## Backend Go — uruchomienie
+## Go backend — running it
 
-### Uruchomienie bez kompilowania pliku wykonywalnego
+### Running without building an executable
 
 ```bash
 cd apps/server
 go run ./cmd/server
 ```
 
-W konsoli pojawi się log potwierdzający nasłuch:
+The console prints a line confirming that it is listening:
 
 ```
 level=INFO msg="http server listening" service=streaming-tree-server version=0.1.0 address=127.0.0.1:8080
 ```
 
-Zatrzymanie: `Ctrl + C`. Serwer zamyka się w sposób kontrolowany, czekając na
-dokończenie trwających żądań (maksymalnie 10 sekund).
+Stop it with `Ctrl + C`. The server shuts down gracefully, waiting for in-flight
+requests to finish (up to 10 seconds).
 
-### Sprawdzenie endpointu statusowego
+### Checking the health endpoint
 
 ```bash
 curl http://127.0.0.1:8080/api/health
 ```
 
-Przykładowa odpowiedź:
+Example response:
 
 ```json
 {
@@ -168,21 +171,21 @@ Przykładowa odpowiedź:
 }
 ```
 
-W systemie Windows bez `curl` można użyć PowerShella:
+On Windows without `curl`, use PowerShell:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/api/health
 ```
 
-### Konfiguracja przez zmienne środowiskowe
+### Configuration through environment variables
 
-| Zmienna | Domyślnie | Opis |
-| ------- | --------- | ---- |
-| `STREAMING_TREE_HOST` | `127.0.0.1` | Interfejs nasłuchu. Domyślnie tylko pętla zwrotna, aby nie wystawiać serwera do sieci lokalnej. |
-| `STREAMING_TREE_PORT` | `8080` | Port REST API. |
-| `STREAMING_TREE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Lista dozwolonych origin dla CORS, rozdzielona przecinkami. |
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `STREAMING_TREE_HOST` | `127.0.0.1` | Interface to bind to. Loopback only by default, so the server is not exposed to the local network by accident. |
+| `STREAMING_TREE_PORT` | `8080` | REST API port. |
+| `STREAMING_TREE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins accepted by CORS. |
 
-Przykład — uruchomienie na innym porcie:
+Example — running on a different port:
 
 ```bash
 # Linux / macOS
@@ -194,27 +197,27 @@ STREAMING_TREE_PORT=9000 go run ./cmd/server
 $env:STREAMING_TREE_PORT="9000"; go run ./cmd/server
 ```
 
-Niepoprawna wartość powoduje czytelny błąd przy starcie zamiast cichego powrotu
-do wartości domyślnej.
+An invalid value produces a clear error at startup instead of silently falling
+back to the default.
 
-### Kompilacja pliku wykonywalnego
+### Building an executable
 
 ```bash
 cd apps/server
 go build -o bin/streaming-tree-server ./cmd/server
 ```
 
-W systemie Windows:
+On Windows:
 
 ```powershell
 go build -o bin/streaming-tree-server.exe ./cmd/server
 ```
 
-Katalog `bin/` jest ignorowany przez Git.
+The `bin/` directory is ignored by Git.
 
 ---
 
-## Build produkcyjny
+## Production build
 
 ### Frontend
 
@@ -223,10 +226,10 @@ cd apps/web
 npm run build
 ```
 
-Wynik trafia do `apps/web/dist/`. Build wykonuje najpierw kontrolę typów, więc
-błąd typu przerywa budowanie.
+The result lands in `apps/web/dist/`. The build runs type checking first, so a
+type error stops it.
 
-Podgląd zbudowanej wersji:
+Previewing the built version:
 
 ```bash
 npm run preview
@@ -241,140 +244,292 @@ go build ./...
 
 ---
 
-## Lint, typecheck i pozostałe kontrole
+## Lint, typecheck, tests and other checks
 
-Kontrole automatyczne można i należy uruchamiać w trakcie pracy. Testy manualne
-interfejsu są etapem końcowym — patrz `docs/project-overview.md`, sekcja 13.
+Automated checks can and should be run while working. Manual interface testing
+is the final stage — see `docs/project-overview.md`, section 14.
 
-**Frontend** (z katalogu `apps/web`):
+**Frontend** (from `apps/web`):
 
 ```bash
+npm run i18n:check  # translation resource consistency
+npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run typecheck   # kontrola typów TypeScript (tsc -b)
-npm run build       # build produkcyjny
+npm run test        # unit tests (Vitest)
+npm run build       # production build
 ```
 
-**Backend** (z katalogu `apps/server`):
+**Backend** (from `apps/server`):
 
 ```bash
-go build ./...      # kompilacja
-go vet ./...        # analiza statyczna
-gofmt -l .          # lista plików wymagających sformatowania (pusta = wszystko OK)
+go build ./...      # compilation
+go vet ./...        # static analysis
+go test ./...       # tests
+gofmt -l .          # lists files needing formatting (empty output = all good)
 ```
 
 ---
 
-## Struktura katalogów
+## Interface languages
+
+The interface is available in **English** and **Polish**.
+
+**English is the source and fallback language.** Every string is written in
+English first; Polish is a translation of it. If a Polish entry were ever
+missing, the interface falls back to English — a user never sees a raw
+translation key.
+
+The project uses [i18next](https://www.i18next.com/) with static, version
+-controlled resource files. **No online translation API, browser translation
+service, AI translation service or runtime automatic translation is used
+anywhere.**
+
+### Switching the language
+
+The language switcher sits in the top bar on every page, and also under
+**Settings → Interface language**. Switching applies immediately, without
+reloading the page, and updates the `<html lang>` attribute.
+
+### How the choice is stored
+
+The selected language is saved in `localStorage` under the key
+**`streaming-tree.language`**, and that is the only value the application stores
+in the browser. It is validated on every read: an unsupported or corrupted value
+falls back to English. On first launch the interface is always English — the
+browser language is deliberately not detected.
+
+Stream keys, tokens, credentials, platform configuration and stream metadata are
+**never** stored in `localStorage`.
+
+### Translation directory structure
+
+```
+apps/web/src/i18n/
+├── config.ts                 # languages, namespaces, locales, storage key
+├── types.ts                  # SupportedLanguage type and guards
+├── index.ts                  # i18next instance and changeAppLanguage()
+├── language-storage.ts       # reading/writing the preference
+├── document-language.ts      # <html lang> synchronization
+├── use-language.ts           # useLanguage() hook
+├── i18next.d.ts              # compile-time key checking
+└── resources/
+    ├── en/                   # canonical source language
+    │   ├── common.json       # shared labels, demo badge, units, durations
+    │   ├── navigation.json   # sidebar, menu, OBS panel, version footer
+    │   ├── dashboard.json    # dashboard, system status, backend, resources
+    │   ├── platforms.json    # platform cards, statuses, quality, field options
+    │   ├── metadata.json     # metadata editor, form labels, validation
+    │   ├── pages.json        # page titles and planned-feature descriptions
+    │   └── errors.json       # backend error messages and code mappings
+    └── pl/                   # Polish translation, same structure
+```
+
+### Adding a new translation key
+
+1. Add the key to the appropriate namespace in `resources/en/`. English defines
+   the canonical structure.
+2. Add the same key to `resources/pl/`.
+3. Use it in a component: `const { t } = useTranslation('dashboard');` then
+   `t('backend.heading')`.
+4. Run `npm run i18n:check` and `npm run typecheck`.
+
+Keys are type-checked against the English bundle, so a typo or a key removed
+from English becomes a compile error rather than text rendered as its own key.
+
+For countable values use pluralization instead of composing a sentence:
+
+```jsonc
+// en
+"live_one": "{{count}} active stream",
+"live_other": "{{count}} active streams"
+```
+
+```jsonc
+// pl — Polish needs the full CLDR set
+"live_one": "{{count}} aktywna transmisja",
+"live_few": "{{count}} aktywne transmisje",
+"live_many": "{{count}} aktywnych transmisji",
+"live_other": "{{count}} aktywnej transmisji"
+```
+
+Never build a sentence by concatenating translated fragments — use one complete
+entry with interpolation.
+
+### Adding a future language
+
+1. Create `apps/web/src/i18n/resources/<code>/` and copy the English namespace
+   files into it.
+2. Translate the values, using the plural categories that language requires
+   (`npm run i18n:check` reports which ones are missing).
+3. Register the language in `apps/web/src/i18n/config.ts`: add the code to
+   `SUPPORTED_LANGUAGES`, its endonym to `LANGUAGE_LABELS` and its BCP 47 tag to
+   `LANGUAGE_LOCALES`.
+4. Add the imports to `apps/web/src/i18n/resources.ts`.
+5. Run `npm run i18n:check`, `npm run typecheck` and `npm run test`.
+
+The switcher picks up the new language automatically — it is rendered from
+`SUPPORTED_LANGUAGES`.
+
+### Checking translation consistency
+
+```bash
+cd apps/web
+npm run i18n:check
+```
+
+English defines the canonical key structure. The script reports, with the full
+path of each problem and a non-zero exit code:
+
+- a key present in English but missing in another language,
+- a key present in another language but missing in English,
+- incompatible structures (an object where a string is expected, or vice versa),
+- empty or whitespace-only values,
+- missing or unexpected plural forms for that language.
+
+It is plural-aware: Polish `_few` and `_many` entries are not reported as
+mismatches against English `_one` and `_other`.
+
+### What is not translated
+
+- **User-created stream metadata** — titles, descriptions, tags and display
+  names you type in are stored and shown verbatim, and are never translated
+  automatically.
+- **Platform brand names** — Twitch, YouTube, Kick, TikTok.
+- **URLs and the RTMP address.**
+- **API identifiers** — service name, version, backend error codes.
+- **Stream language names** — shown as endonyms ("English", "Polski") the way
+  the platforms themselves present them.
+
+### Secrets and translation resources
+
+Translation files are ordinary, version-controlled source files. **Stream keys,
+tokens and any other secrets must never be placed in them**, exactly as with the
+rest of the repository.
+
+---
+
+## Directory structure
 
 ```
 .
 ├── apps/
-│   ├── web/                    # Panel operatorski (React + TypeScript + Vite)
+│   ├── web/                    # Operator panel (React + TypeScript + Vite)
+│   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── app/            # Konfiguracja TanStack Query
+│   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
-│   │   │   │   ├── layout/     # Powłoka: panel boczny, górny pasek
-│   │   │   │   ├── metadata/   # Edytor metadanych z zakładkami platform
-│   │   │   │   ├── platforms/  # Karty gałęzi transmisji
-│   │   │   │   ├── system/     # Panel statusu systemu i backendu
-│   │   │   │   └── ui/         # Elementy bazowe (przyciski, pola, panele)
-│   │   │   ├── data/           # DANE DEMONSTRACYJNE
-│   │   │   ├── hooks/          # Hooki (m.in. zapytanie o stan backendu)
-│   │   │   ├── lib/            # Klient API, pomocnicze funkcje
-│   │   │   ├── models/         # Model domeny + schematy Zod
-│   │   │   ├── pages/          # Widoki tras
-│   │   │   └── state/          # STAN DEMONSTRACYJNY (atrapa)
-│   │   └── ...                 # Konfiguracja Vite, TypeScript, ESLint
+│   │   │   │   ├── layout/     # Shell: sidebar, top bar
+│   │   │   │   ├── metadata/   # Metadata editor with platform tabs
+│   │   │   │   ├── platforms/  # Stream branch cards
+│   │   │   │   ├── system/     # System and backend status panels
+│   │   │   │   └── ui/         # Base elements (buttons, inputs, panels)
+│   │   │   ├── data/           # DEMO DATA
+│   │   │   ├── hooks/          # Hooks (including the backend health query)
+│   │   │   ├── i18n/           # Localization: config, resources, tests
+│   │   │   ├── lib/            # API client, helper functions
+│   │   │   ├── models/         # Domain model + Zod schemas
+│   │   │   ├── pages/          # Route views
+│   │   │   └── state/          # DEMO STATE (placeholder)
+│   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
 │   └── server/                 # Backend (Go)
-│       ├── cmd/server/         # Punkt wejścia, kontrolowane zamykanie
+│       ├── cmd/server/         # Entry point, graceful shutdown
 │       └── internal/
-│           ├── buildinfo/      # Nazwa usługi i wersja
-│           ├── config/         # Konfiguracja ze zmiennych środowiskowych
-│           └── httpapi/        # Router, handlery, middleware, odpowiedzi JSON
+│           ├── buildinfo/      # Service name and version
+│           ├── config/         # Configuration from environment variables
+│           └── httpapi/        # Router, handlers, middleware, JSON responses
 │
-├── config/                     # Konfiguracja MediaMTX i FFmpeg (etap przyszły)
+├── config/                     # MediaMTX and FFmpeg configuration (future stage)
 ├── docs/
-│   ├── project-overview.md     # Pełny opis projektu
-│   └── progress.md             # Dziennik prac
+│   ├── project-overview.md     # Full project description
+│   └── progress.md             # Work journal
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-## Co jest obecnie tylko demonstracyjne
+## What is currently demo-only
 
-Wszystkie poniższe elementy są oznaczone w interfejsie znacznikiem **Demo** lub
-opisem wprost przy kontrolce.
+Every item below is marked with a **Demo** badge in the interface, or described
+directly next to the control.
 
-| Element | Rzeczywiste zachowanie |
-| ------- | ---------------------- |
-| Przyciski **Start / Stop** na kartach platform | Zmieniają wyłącznie stan w pamięci przeglądarki. Nie uruchamiają żadnego procesu i nie wysyłają żadnych danych. |
-| Statusy platform (offline / starting / live / error) | Stan początkowy jest zapisany na stałe w kodzie; „starting" przechodzi w „live" po ok. 1,8 s. |
-| Liczba widzów, jakość połączenia | Wartości stałe. Żadna platforma nie jest odpytywana. |
-| CPU, pamięć, dysk, sieć | Wartości stałe. Backend nie zbiera metryk hosta. |
-| Status połączenia OBS | Zawsze „Waiting for OBS". Nic nie nasłuchuje na porcie RTMP. |
-| Adres RTMP w panelu bocznym | Adres planowany, nie działający. |
-| Zapis metadanych | Trafia wyłącznie do pamięci przeglądarki. Odświeżenie strony przywraca wartości początkowe. |
-| Tabele możliwości platform | Konfiguracja przybliżona, przygotowana na potrzeby demonstracji edytora. Wymaga weryfikacji przy wdrażaniu realnych integracji. |
-| Podstrony Platforms, Streams, Metadata, Settings, Logs | Widoki informacyjne opisujące planowany zakres. Bez implementacji. |
+| Element | What actually happens |
+| ------- | --------------------- |
+| **Start / Stop** buttons on platform cards | They only change state in the browser's memory. No process is started and no data is sent. |
+| Platform statuses (offline / starting / live / error) | The initial state is hard-coded; "starting" becomes "live" after about 1.8 s. |
+| Viewer count, connection quality | Fixed values. No platform is queried. |
+| CPU, memory, disk, network | Fixed values. The backend does not collect host metrics. |
+| OBS connection status | Always "Waiting for OBS". Nothing is listening on the RTMP port. |
+| RTMP address in the sidebar | A planned address; it does not work. |
+| Saving metadata | Goes only to the browser's memory. Reloading the page restores the initial values. |
+| Platform capability tables | An approximate configuration prepared to demonstrate the editor. It needs verification when real integrations are implemented. |
+| Platforms, Streams, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
-**Jedyne realne połączenie z backendem** w tym etapie to `GET /api/health`.
-Wynik tego zapytania jest prezentowany w karcie „Backend" w prawej kolumnie.
+**The only real backend connection** at this stage is `GET /api/health`. Its
+result is shown in the "Backend" card in the right-hand column.
 
-### Co zostanie dodane później
+The language switcher on the Settings page is **not** a placeholder — it is a
+working feature.
 
-- **MediaMTX** — lokalny serwer odbierający strumień RTMP z OBS.
-- **FFmpeg** — po jednym procesie na każdą gałąź transmisji.
-- **SQLite** — trwałe przechowywanie konfiguracji platform i metadanych.
-- **SSE lub WebSocket** — statusy na żywo zamiast odpytywania.
-- **Magazyn poświadczeń systemu** — bezpieczne przechowywanie kluczy transmisji.
-- **OAuth i API platform** — logowanie oraz wysyłanie metadanych.
+### What will be added later
 
----
-
-## Bezpieczeństwo kluczy transmisji
-
-Klucz transmisji pozwala nadawać na cudzym kanale, więc traktujemy go jak hasło.
-
-- **Repozytorium nie zawiera żadnych sekretów** i nie może ich zawierać.
-  `.gitignore` blokuje pliki `.env` oraz katalogi danych.
-- **Klucze nie będą przechowywane w przeglądarce** — ani w `localStorage`, ani
-  w `sessionStorage`, ani w stanie aplikacji.
-- **Docelowym miejscem przechowywania jest magazyn poświadczeń systemu
-  operacyjnego** (Windows Credential Manager, macOS Keychain, Secret Service).
-- Backend odczyta klucz dopiero w chwili uruchamiania gałęzi i nie zapisze go
-  w logach.
-
-Obsługa kluczy transmisji **nie została jeszcze rozpoczęta**.
+- **MediaMTX** — the local server receiving the RTMP stream from OBS.
+- **FFmpeg** — one process per stream branch.
+- **SQLite** — persistent storage of platform configuration and metadata.
+- **SSE or WebSocket** — live status instead of polling.
+- **System credential store** — secure storage of stream keys.
+- **OAuth and platform APIs** — sign-in and metadata publishing.
 
 ---
 
-## Najczęstsze problemy
+## Stream key security
 
-**Panel pokazuje „Backend unavailable".**
-Backend nie jest uruchomiony albo działa na innym porcie. Uruchom go w drugim
-terminalu (`cd apps/server && go run ./cmd/server`) i użyj przycisku odświeżania
-w karcie „Backend". To oczekiwany, w pełni obsłużony stan — panel nie ulega
-awarii.
+A stream key allows broadcasting on someone's channel, so we treat it like a
+password.
 
-**`go: command not found` lub `'go' nie jest rozpoznawane`.**
-Go nie jest zainstalowane lub nie znalazło się w `PATH`. Zainstaluj je ze strony
-<https://go.dev/dl/> i otwórz nowe okno terminala.
+- **The repository contains no secrets** and must never contain any.
+  `.gitignore` blocks `.env` files and data directories.
+- **Keys will not be stored in the browser** — not in `localStorage`, not in
+  `sessionStorage`, not in application state. The only value stored locally is
+  the interface language preference.
+- **The target location is the operating system credential store** (Windows
+  Credential Manager, macOS Keychain, Secret Service).
+- The backend will read a key only when starting a branch, and will not write it
+  to the logs.
 
-**`npm install` kończy się błędem „Cannot find native binding".**
-Wersja Node jest starsza niż wymagana przez zależności natywne. Zaktualizuj Node
-do 22.12+ lub 24 LTS, usuń `apps/web/node_modules` oraz
-`apps/web/package-lock.json` i powtórz instalację.
+Stream key handling **has not been started yet**.
 
-**Port 8080 lub 5173 jest zajęty.**
-Backend: uruchom z inną wartością `STREAMING_TREE_PORT` i dopisz nowy adres do
-`VITE_DEV_API_PROXY_TARGET` w `apps/web/.env.local`.
-Frontend: Vite sam zaproponuje kolejny wolny port; pamiętaj wtedy o dodaniu
-nowego origin do `STREAMING_TREE_ALLOWED_ORIGINS`.
+---
 
-**Zmiany w interfejsie nie są widoczne.**
-Sprawdź, czy `npm run dev` nadal działa i czy w konsoli przeglądarki nie ma
-błędów. W razie potrzeby przeładuj stronę z pominięciem pamięci podręcznej
+## Common problems
+
+**The panel shows "Backend unavailable".**
+The backend is not running, or is running on a different port. Start it in a
+second terminal (`cd apps/server && go run ./cmd/server`) and use the refresh
+button in the "Backend" card. This is an expected, fully handled state — the
+panel does not crash.
+
+**`go: command not found` or `'go' is not recognized`.**
+Go is not installed or is not on `PATH`. Install it from <https://go.dev/dl/>
+and open a new terminal window.
+
+**`npm install` fails with "Cannot find native binding".**
+Your Node version is older than the native dependencies require. Upgrade Node to
+22.12+ or 24 LTS, delete `apps/web/node_modules` and
+`apps/web/package-lock.json`, then install again.
+
+**Port 8080 or 5173 is already in use.**
+Backend: start it with a different `STREAMING_TREE_PORT` and add the new address
+to `VITE_DEV_API_PROXY_TARGET` in `apps/web/.env.local`.
+Frontend: Vite will offer the next free port; remember to add the new origin to
+`STREAMING_TREE_ALLOWED_ORIGINS`.
+
+**Interface changes are not visible.**
+Check that `npm run dev` is still running and that there are no errors in the
+browser console. If needed, reload the page bypassing the cache
 (`Ctrl + Shift + R`).
+
+**A label shows in English while the interface is set to Polish.**
+That is the fallback working: the Polish entry is missing. Run
+`npm run i18n:check` — it prints the exact path of every missing key.

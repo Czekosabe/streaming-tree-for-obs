@@ -1,28 +1,27 @@
 # `config/`
 
-Katalog przeznaczony na konfigurację komponentów infrastrukturalnych, które
-zostaną dodane w kolejnych etapach projektu.
+Directory reserved for the configuration of infrastructure components that will
+be added in later stages of the project.
 
-## Stan obecny
+## Current state
 
-**Katalog nie zawiera jeszcze żadnej działającej konfiguracji.** Aplikacja
-w obecnej wersji nie uruchamia MediaMTX ani FFmpeg, więc nie ma czego
-konfigurować.
+**This directory does not contain any working configuration yet.** The current
+build does not run MediaMTX or FFmpeg, so there is nothing to configure.
 
-## Planowana zawartość
+## Planned contents
 
-| Plik (planowany)     | Przeznaczenie                                                             |
-| -------------------- | ------------------------------------------------------------------------- |
-| `mediamtx.yml`       | Konfiguracja MediaMTX: nasłuch RTMP z OBS, ścieżki, uwierzytelnianie lokalne. |
-| `ffmpeg-profiles.json` | Profile parametrów FFmpeg per platforma (bitrate, keyframe interval, format wyjściowy). |
-| `server.example.yml` | Przykładowa konfiguracja backendu Go (port, ścieżki, limity).              |
+| File (planned)         | Purpose                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `mediamtx.yml`         | MediaMTX configuration: RTMP listener for OBS, paths, local authentication.       |
+| `ffmpeg-profiles.json` | Per-platform FFmpeg parameter profiles (bitrate, keyframe interval, output format). |
+| `server.example.yml`   | Example backend configuration (port, paths, limits).                              |
 
-## Zasady
+## Rules
 
-1. W tym katalogu **nie wolno** przechowywać kluczy transmisji, tokenów OAuth
-   ani żadnych innych sekretów. Trafią one do systemowego magazynu poświadczeń
-   (Windows Credential Manager / macOS Keychain / Secret Service).
-2. Pliki konfiguracyjne trzymane w repozytorium to wyłącznie szablony
-   i wartości domyślne. Konfiguracja lokalna użytkownika (`*.local.yml`, `.env`)
-   jest ignorowana przez `.gitignore`.
-3. Każdy plik dodany tutaj musi zostać opisany w `docs/progress.md`.
+1. Stream keys, OAuth tokens and any other secrets **must never** be stored
+   here. They will live in the operating system credential store (Windows
+   Credential Manager / macOS Keychain / Secret Service).
+2. Configuration files kept in the repository are templates and defaults only.
+   A user's local configuration (`*.local.yml`, `.env`) is ignored by
+   `.gitignore`.
+3. Every file added here must be described in `docs/progress.md`.

@@ -1,36 +1,46 @@
-# Dziennik projektu — Streaming Tree for OBS
+# Project journal — Streaming Tree for OBS
 
-Plik jest trwałym dziennikiem prac nad projektem. Opisuje, co zostało wykonane,
-dlaczego oraz jaki jest rzeczywisty stan każdej funkcji.
+This file is the permanent journal of work on the project. It records what was
+done, why, and what the real state of every feature is.
 
 ---
 
-## Zasady prowadzenia dziennika
+## Journal rules
 
-1. **Plik jest aktualizowany przy każdej logicznej zmianie.**
-2. **Wpis powstaje przed utworzeniem odpowiadającego mu commita.**
-3. **Każdy commit musi mieć odpowiadający mu wpis.**
-4. **Historia wcześniejszych wpisów nie może być bez powodu przepisywana ani
-   usuwana.** Korektę błędnego wpisu dopisujemy jako nowy wpis, nie przez
-   nadpisanie starego.
-5. **Nie zapisujemy w tym pliku kluczy streamu, tokenów ani innych sekretów.**
-   Dotyczy to również przykładowych wartości i fragmentów logów.
-6. **Nie oznaczamy funkcji jako ukończonej, jeżeli jest tylko atrapą
-   interfejsu.** Atrapy trafiają do sekcji „Znane ograniczenia".
-7. **Testy manualne pozostają etapem końcowym** — wykonywane dopiero po
-   ukończeniu funkcjonalności aplikacji.
-8. **Build, lint oraz typecheck mogą i powinny być uruchamiane podczas
-   implementacji**, a ich wynik jest odnotowywany w sekcji „Walidacja
-   automatyczna".
+1. **The file is updated on every logical change.**
+2. **An entry is written before the commit it describes is created.**
+3. **Every commit must have a corresponding entry.**
+4. **The history of earlier entries must not be rewritten or deleted without a
+   reason.** A correction to a wrong entry is added as a new entry, not by
+   overwriting the old one.
+5. **Stream keys, tokens and any other secrets are never written to this file.**
+   This includes example values and log excerpts.
+6. **A feature is not marked as completed if it is only an interface
+   placeholder.** Placeholders belong in the "Known limitations" section.
+7. **Manual testing remains the final stage** — performed only after the
+   application functionality is complete.
+8. **Build, lint and typecheck can and should be run during implementation**,
+   and their results are recorded in the "Automated validation" section.
 
-### Identyfikacja wpisów
+### Working language
 
-Identyfikatorem wpisu jest **treść komunikatu commita**, a nie hash Git.
-Hashy nie zapisujemy: modyfikacja tego pliku po utworzeniu commita zmieniałaby
-sam hash, więc zapis byłby z definicji nieaktualny.
+From the entry `feat(web): add English and Polish localization` onward, the
+code, comments, documentation, commit messages, progress entries and API
+documentation are written in **English**. The interface itself remains
+bilingual (English and Polish).
 
-Obowiązuje konwencja [Conventional Commits](https://www.conventionalcommits.org/),
-na przykład:
+Entries written before that point were originally in Polish and were translated
+into English in the commit `docs: migrate project documentation to English`.
+The translation preserved all facts; nothing was added, removed or softened.
+
+### Entry identification
+
+An entry is identified by the **commit message**, not by a Git hash. Hashes are
+not recorded: modifying this file after creating a commit would change the hash
+itself, so the record would be stale by definition.
+
+The [Conventional Commits](https://www.conventionalcommits.org/) convention
+applies, for example:
 
 - `docs: add initial project documentation`
 - `chore: bootstrap project structure`
@@ -38,122 +48,122 @@ na przykład:
 - `feat(server): add health endpoint`
 - `fix(web): correct platform status rendering`
 
-### Format wpisu
+### Entry format
 
 ```
-## YYYY-MM-DD HH:MM — typ(scope): krótki opis commita
+## YYYY-MM-DD HH:MM — type(scope): short commit description
 
 ### Status
-### Zakres
-### Wprowadzone zmiany
-### Zmienione pliki
-### Decyzje techniczne
-### Walidacja automatyczna
-### Znane ograniczenia
-### Następny krok
+### Scope
+### Changes
+### Files changed
+### Technical decisions
+### Automated validation
+### Known limitations
+### Next step
 ```
 
 ---
 
-# Wpisy
+# Entries
 
 ## 2026-08-03 11:45 — chore: bootstrap streaming tree project
 
 ### Status
-Ukończone
+Completed
 
-### Zakres
-Etap fundamentów projektu. Utworzenie struktury repozytorium, dokumentacji,
-panelu operatorskiego w React oraz minimalnego backendu w Go wraz z endpointem
-statusowym, z którym łączy się frontend. Etap nie obejmuje realnego
-streamowania.
+### Scope
+The project foundations stage. Creating the repository structure, the
+documentation, the React operator panel and a minimal Go backend with a health
+endpoint that the frontend connects to. The stage does not cover real
+streaming.
 
-### Wprowadzone zmiany
+### Changes
 
-**Struktura repozytorium**
-- Utworzono układ `apps/web`, `apps/server`, `docs`, `config`.
-- Dodano `.gitignore` obejmujący zależności, artefakty budowania, pliki
-  środowiskowe, katalogi danych oraz binaria MediaMTX i FFmpeg.
-- Dodano `config/README.md` opisujący planowaną zawartość katalogu
-  konfiguracyjnego (obecnie pusty, bez działającej konfiguracji).
+**Repository structure**
+- Created the `apps/web`, `apps/server`, `docs`, `config` layout.
+- Added a `.gitignore` covering dependencies, build artifacts, environment
+  files, data directories and the MediaMTX and FFmpeg binaries.
+- Added `config/README.md` describing the planned contents of the configuration
+  directory (currently empty, with no working configuration).
 
-**Dokumentacja**
-- Utworzono `docs/project-overview.md` z pełnym opisem projektu: problem,
-  założenia, grupa docelowa, zakres i wyłączenia wersji 1.0, architektura, role
-  OBS / React / Go / MediaMTX / FFmpeg, model niezależnych gałęzi, model
-  metadanych oparty na możliwościach platformy, bezpieczeństwo kluczy, wersja
-  serwerowa, plan rozwoju, zasada testów manualnych.
-- Utworzono ten dziennik wraz z zasadami prowadzenia.
-- Utworzono `README.md` z instrukcją uruchomienia dla osoby technicznej i dla
-  osoby wdrażającej się w projekt.
+**Documentation**
+- Created `docs/project-overview.md` with a full project description: the
+  problem, the core idea, the target audience, the scope and exclusions of
+  version 1.0, the architecture, the roles of OBS / React / Go / MediaMTX /
+  FFmpeg, the independent branch model, the capability-driven metadata model,
+  stream key security, the server version, the roadmap and the manual testing
+  rule.
+- Created this journal together with its rules.
+- Created `README.md` with setup instructions for both a technical reader and
+  someone new to the project.
 
 **Frontend (`apps/web`)**
-- Skonfigurowano React 19 + TypeScript (tryb strict) + Vite 6 + Tailwind CSS 4 +
+- Configured React 19 + TypeScript (strict mode) + Vite 6 + Tailwind CSS 4 +
   React Router 7 + TanStack Query 5 + Zod 4 + Lucide React.
-- Zbudowano system tokenów wizualnych (`src/index.css`): ciemne granatowe tło,
-  jaśniejsze panele, fioletowy akcent, cztery semantyczne kolory statusów,
-  delikatne obramowania i cienie, widoczne stany focus, obsługa
-  `prefers-reduced-motion`.
-- Zaimplementowano powłokę aplikacji: lewy panel nawigacyjny (logo tekstowe,
-  sześć pozycji menu, status OBS, lokalny adres RTMP, numer wersji), górny pasek
-  (tytuł, opis, `Add Platform`, `Global Settings`, zagregowany status systemu),
-  treść główną oraz prawą kolumnę statusu.
-- Zaimplementowano karty czterech platform (Twitch, YouTube, Kick, TikTok) ze
-  statusem, tytułem transmisji, kategorią, liczbą widzów, jakością połączenia,
-  przyciskiem Start/Stop oraz przyciskiem ustawień.
-- Zaimplementowano panel statusu: liczniki gałęzi live / starting / offline /
-  error, karta stanu backendu oraz karta zasobów systemowych (CPU, pamięć, dysk,
-  sieć).
-- Zaimplementowano model możliwości platform (`PlatformCapabilities`,
-  `PlatformFieldLimits`, `PlatformFieldOptions`) oraz edytor metadanych
-  z zakładkami, renderujący wyłącznie pola obsługiwane przez wybraną platformę.
-- Zaimplementowano edytor tagów, w którym każdy tag jest osobnym, usuwalnym
-  elementem interfejsu. Tagi są aktywne wyłącznie dla Twitcha.
-- Walidację formularza metadanych oparto na schemacie Zod budowanym dynamicznie
-  z tabeli możliwości platformy.
-- Podłączono `GET /api/health` przez TanStack Query; wynik jest prezentowany
-  w sekcji statusu systemu, a niedostępny backend daje czytelny stan
-  „Backend unavailable" bez awarii interfejsu.
-- Podstrony Platforms, Streams, Metadata, Settings i Logs to estetyczne widoki
-  informujące o planowanym zakresie, bez pozorowanych widżetów.
-- Zapewniono responsywność: prawa kolumna przechodzi pod treść główną poniżej
-  `xl`, karty układają się w jedną kolumnę na wąskich ekranach, a nawigacja
-  zmienia się w wysuwane menu poniżej `lg`.
+- Built a visual token system (`src/index.css`): dark navy background, lighter
+  panels, a violet accent, four semantic status colours, subtle borders and
+  shadows, visible focus states and `prefers-reduced-motion` support.
+- Implemented the application shell: left navigation panel (text logo, six menu
+  items, OBS status, local RTMP address, version number), top bar (title,
+  description, `Add Platform`, `Global Settings`, aggregated system status), the
+  main content area and the right-hand status column.
+- Implemented cards for four platforms (Twitch, YouTube, Kick, TikTok) with
+  status, stream title, category, viewer count, connection quality, a
+  Start/Stop button and a settings button.
+- Implemented the status panel: live / starting / offline / error branch
+  counters, the backend state card and the system resources card (CPU, memory,
+  disk, network).
+- Implemented the platform capability model (`PlatformCapabilities`,
+  `PlatformFieldLimits`, `PlatformFieldOptions`) and a tabbed metadata editor
+  that renders only the fields the selected platform supports.
+- Implemented a tag editor in which every tag is a separate, removable interface
+  element. Tags are enabled for Twitch only.
+- Based metadata form validation on a Zod schema built dynamically from the
+  platform capability table.
+- Connected `GET /api/health` through TanStack Query; the result is shown in the
+  system status section, and an unavailable backend produces a clear
+  "Backend unavailable" state without crashing the interface.
+- The Platforms, Streams, Metadata, Settings and Logs pages are presentable
+  views describing the planned scope, with no fake widgets.
+- Ensured responsiveness: the right column moves below the main content under
+  `xl`, cards collapse to a single column on narrow screens, and the navigation
+  becomes an off-canvas menu below `lg`.
 
 **Backend (`apps/server`)**
-- Utworzono moduł Go z podziałem na pakiety: `cmd/server`, `internal/config`,
+- Created a Go module split into packages: `cmd/server`, `internal/config`,
   `internal/httpapi`, `internal/buildinfo`.
-- Zaimplementowano `GET /api/health` zwracające `status`, `service`, `version`,
-  `uptimeSeconds` oraz `time`.
-- Dodano konfigurację przez zmienne środowiskowe (`STREAMING_TREE_HOST`,
-  `STREAMING_TREE_PORT`, `STREAMING_TREE_ALLOWED_ORIGINS`) z walidacją wartości
-  i czytelnym błędem przy starcie.
-- Dodano middleware: obsługę paniki (odzyskiwanie z panic zamiast wyłączenia
-  procesu), log dostępowy oraz CORS z jawną listą dozwolonych origin.
-- Dodano kontrolowane zamykanie serwera na SIGINT/SIGTERM z limitem czasu na
-  dokończenie żądań.
-- Ujednolicono format błędów JSON (`error`, `message`) oraz zwracanie 405 wraz
-  z nagłówkiem `Allow` dla nieprawidłowej metody.
+- Implemented `GET /api/health` returning `status`, `service`, `version`,
+  `uptimeSeconds` and `time`.
+- Added configuration through environment variables (`STREAMING_TREE_HOST`,
+  `STREAMING_TREE_PORT`, `STREAMING_TREE_ALLOWED_ORIGINS`) with value validation
+  and a clear error at startup.
+- Added middleware: panic handling (recovering from a panic instead of killing
+  the process), an access log, and CORS with an explicit allow-list of origins.
+- Added graceful shutdown on SIGINT/SIGTERM with a timeout for in-flight
+  requests to finish.
+- Unified the JSON error format (`error`, `message`) and returning 405 together
+  with an `Allow` header for an incorrect method.
 
-### Zmienione pliki
+### Files changed
 
-Dokumentacja i konfiguracja repozytorium:
+Documentation and repository configuration:
 - `README.md`
 - `.gitignore`
 - `docs/project-overview.md`
 - `docs/progress.md`
 - `config/README.md`
 
-Frontend — konfiguracja:
+Frontend — configuration:
 - `apps/web/package.json`, `apps/web/vite.config.ts`, `apps/web/eslint.config.js`
 - `apps/web/tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`
 - `apps/web/index.html`, `apps/web/.env.example`
 
-Frontend — kod:
-- `apps/web/src/index.css` (tokeny wizualne)
+Frontend — code:
+- `apps/web/src/index.css` (visual tokens)
 - `apps/web/src/models/platform.ts`, `metadata-schema.ts`, `health.ts`
 - `apps/web/src/data/demo-platforms.ts`, `demo-system.ts`, `app-info.ts`
-- `apps/web/src/state/` (magazyn stanu demonstracyjnego)
+- `apps/web/src/state/` (demo state store)
 - `apps/web/src/lib/api-client.ts`, `cn.ts`, `format.ts`
 - `apps/web/src/hooks/use-health-query.ts`
 - `apps/web/src/components/layout/`, `ui/`, `platforms/`, `system/`, `metadata/`
@@ -167,132 +177,133 @@ Backend:
 - `apps/server/internal/httpapi/router.go`, `health.go`, `middleware.go`, `respond.go`
 - `apps/server/internal/buildinfo/buildinfo.go`
 
-### Decyzje techniczne
+### Technical decisions
 
-1. **Struktura `apps/` zgodna z propozycją.** Nie wprowadzono zmian w układzie
-   katalogów poza dodaniem `config/README.md`, który opisuje przeznaczenie
-   pustego katalogu, aby Git go zachował i aby jego rola była jednoznaczna.
+1. **The `apps/` structure follows the proposal.** No changes were made to the
+   directory layout other than adding `config/README.md`, which describes the
+   purpose of the empty directory so that Git keeps it and its role is
+   unambiguous.
 
-2. **Vite 6 zamiast najnowszego Vite.** Środowisko ma Node 22.11, a bieżące
-   wydania Vite (7/8) wymagają Node `^20.19 || >=22.12`. Przy Node 22.11 npm
-   pomija opcjonalne zależności natywne z powodu niespełnionego pola `engines`,
-   przez co Vite 8 nie startował („Cannot find native binding"). Wybrano
-   najnowszą linię działającą w tym środowisku, aby build, lint i typecheck były
-   faktycznie weryfikowalne. Po aktualizacji Node do 22.12+ można podnieść Vite
-   bez zmian w kodzie aplikacji.
+2. **Vite 6 instead of the newest Vite.** The environment runs Node 22.11, while
+   current Vite releases (7/8) require Node `^20.19 || >=22.12`. On Node 22.11
+   npm skips native optional dependencies because the `engines` field is not
+   satisfied, which made Vite 8 fail to start ("Cannot find native binding").
+   The newest line that works in this environment was chosen so that build, lint
+   and typecheck are genuinely verifiable. After upgrading Node to 22.12+, Vite
+   can be raised without changes to the application code.
 
-3. **Tailwind CSS 4 z konfiguracją w CSS.** Tokeny w dyrektywie `@theme`
-   zamiast pliku `tailwind.config.js` — mniej plików konfiguracyjnych i jedno
-   miejsce definiujące paletę.
+3. **Tailwind CSS 4 configured in CSS.** Tokens live in the `@theme` directive
+   instead of a `tailwind.config.js` file — fewer configuration files and a
+   single place defining the palette.
 
-4. **Model metadanych oparty na możliwościach platformy, nie na wspólnym
-   formularzu.** Schemat Zod jest budowany funkcją z tabeli możliwości i limitów
-   danej platformy. Dzięki temu reguła walidacji tagów nie istnieje dla
-   platformy bez tagów, a dodanie platformy nie wymaga modyfikacji formularza.
+4. **A capability-driven metadata model rather than a shared form.** The Zod
+   schema is built by a function from a given platform's capability table and
+   limits. As a result, the tag validation rule does not exist for a platform
+   without tags, and adding a platform does not require modifying the form.
 
-5. **Pola nieobsługiwane nie są renderowane, a nie wyłączane.** Wyłączone pole
-   sugerowałoby, że platforma zna dane pojęcie, ale chwilowo go nie udostępnia.
+5. **Unsupported fields are not rendered, rather than disabled.** A disabled
+   field would suggest the platform knows the concept but is temporarily not
+   offering it.
 
-6. **Stan demonstracyjny odseparowany w `src/state/` i `src/data/`.** Kontekst
-   Reacta z reducerem, wyraźnie opisany jako atrapa. Docelowo zostanie zastąpiony
-   danymi z backendu bez zmian w komponentach prezentacyjnych.
+6. **Demo state isolated in `src/state/` and `src/data/`.** A React context with
+   a reducer, explicitly documented as a placeholder. It will eventually be
+   replaced by backend data without changes to the presentational components.
 
-7. **Walidacja odpowiedzi backendu po stronie frontendu.** `GET /api/health`
-   jest parsowane schematem Zod. Niezgodność kształtu daje czytelny komunikat
-   zamiast błędu w drzewie renderowania.
+7. **Backend response validation on the frontend side.** `GET /api/health` is
+   parsed with a Zod schema. A shape mismatch produces a readable message
+   instead of an error somewhere in the render tree.
 
-8. **Proxy `/api` w serwerze deweloperskim Vite.** Frontend wykonuje zapytania
-   względne (same-origin), co upraszcza pracę lokalną. Backend mimo to ma własny
-   middleware CORS, ponieważ w wersji serwerowej panel będzie serwowany z innego
-   origin.
+8. **An `/api` proxy in the Vite dev server.** The frontend issues relative
+   (same-origin) requests, which simplifies local work. The backend still has
+   its own CORS middleware, because in the server version the panel will be
+   served from a different origin.
 
-9. **`net/http` bez zewnętrznego routera.** ServeMux z Go 1.22 obsługuje wzorce
-   z metodą (`GET /api/health`), co pokrywa obecne potrzeby. Brak zależności
-   zewnętrznych upraszcza dystrybucję binarium.
+9. **`net/http` without an external router.** The Go 1.22 ServeMux supports
+   method-aware patterns (`GET /api/health`), which covers the current needs.
+   Having no external dependencies simplifies distributing the binary.
 
-10. **Middleware odzyskujący z panic.** Awaria pojedynczego handlera nie może
-    zatrzymać procesu — ta sama zasada, która później zapewni niezależność
-    gałęzi transmisji.
+10. **Panic-recovering middleware.** A single handler failing must not stop the
+    process — the same principle that will later keep the stream branches
+    independent.
 
-11. **CORS z jawną listą origin zamiast wildcardu.** Serwer będzie docelowo
-    sterował realnymi transmisjami, więc dostęp z dowolnej strony otwartej
-    w przeglądarce jest niedopuszczalny.
+11. **CORS with an explicit origin list instead of a wildcard.** The server will
+    eventually control real transmissions, so access from any page open in the
+    browser is unacceptable.
 
-12. **TypeScript w trybie strict z dodatkowymi flagami** (`noUncheckedIndexedAccess`,
-    `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters`).
-    W kodzie nie występuje typ `any`; reguła ESLint `@typescript-eslint/no-explicit-any`
-    ustawiona na `error`.
+12. **TypeScript in strict mode with additional flags**
+    (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noUnusedLocals`,
+    `noUnusedParameters`). The code contains no `any` type; the ESLint rule
+    `@typescript-eslint/no-explicit-any` is set to `error`.
 
-### Walidacja automatyczna
+### Automated validation
 
-| Kontrola | Polecenie | Wynik |
-| -------- | --------- | ----- |
-| Typecheck frontendu | `npm run typecheck` (`tsc -b`) | Przeszła — 0 błędów |
-| Lint frontendu | `npm run lint` (`eslint .`) | Przeszła — 0 błędów, 0 ostrzeżeń |
-| Build frontendu | `npm run build` | Przeszła — 1982 moduły, `dist/` wygenerowany |
-| Kompilacja backendu | `go build ./...` | Przeszła — 0 błędów |
-| Analiza statyczna backendu | `go vet ./...` | Przeszła — 0 uwag |
-| Formatowanie backendu | `gofmt -l .` | Przeszła — brak plików do sformatowania |
-| Kontrakt endpointu (skryptowa) | `GET /api/health` na uruchomionym binarium | 200, `application/json`, ładunek zgodny ze schematem Zod |
-| Obsługa błędów (skryptowa) | `POST /api/health`, `GET /api/nieistniejacy` | 405 z nagłówkiem `Allow: GET`; 404 z ładunkiem JSON |
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Frontend typecheck | `npm run typecheck` (`tsc -b`) | Passed — 0 errors |
+| Frontend lint | `npm run lint` (`eslint .`) | Passed — 0 errors, 0 warnings |
+| Frontend build | `npm run build` | Passed — 1982 modules, `dist/` generated |
+| Backend compilation | `go build ./...` | Passed — 0 errors |
+| Backend static analysis | `go vet ./...` | Passed — 0 findings |
+| Backend formatting | `gofmt -l .` | Passed — no files need formatting |
+| Endpoint contract (scripted) | `GET /api/health` against the running binary | 200, `application/json`, payload matching the Zod schema |
+| Error handling (scripted) | `POST /api/health`, `GET /api/<nonexistent>` | 405 with an `Allow: GET` header; 404 with a JSON payload |
 
-Uwaga: kontrole oznaczone jako „skryptowa" to automatyczne zapytania HTTP
-wykonane skryptem powłoki w celu weryfikacji kontraktu API. Nie są to testy
-manualne interfejsu — te pozostają etapem końcowym.
+Note: the checks marked "scripted" are automated HTTP requests made by a shell
+script to verify the API contract. They are not manual interface tests — those
+remain the final stage.
 
-Uwaga środowiskowa: Go nie jest zainstalowane w systemie użytkownika. Kontrole
-backendu wykonano przenośnym zestawem narzędzi Go 1.26.5 rozpakowanym do
-katalogu tymczasowego, bez modyfikowania środowiska systemowego. Aby uruchamiać
-backend samodzielnie, należy zainstalować Go — patrz `README.md`.
+Environment note: Go was not installed on the user's system at the time. The
+backend checks were run with a portable Go 1.26.5 toolchain unpacked into a
+temporary directory, without modifying the system environment. To run the
+backend yourself, Go must be installed — see `README.md`.
 
-### Znane ograniczenia
+### Known limitations
 
-**Elementy niezaimplementowane**
-- Brak realnego streamowania: MediaMTX, FFmpeg i sterowanie procesami nie
-  istnieją.
-- Brak logowania OAuth i integracji z API Twitcha, YouTube, Kicka i TikToka.
-- Brak bazy danych — konfiguracja i metadane nie są utrwalane; odświeżenie
-  strony przywraca stan początkowy.
-- Brak magazynu poświadczeń; obsługa kluczy transmisji nie została rozpoczęta.
-- Brak SSE/WebSocket — stan backendu jest odpytywany co 15 sekund.
-- Podstrony Platforms, Streams, Metadata, Settings i Logs nie mają
-  implementacji.
+**Unimplemented items**
+- No real streaming: MediaMTX, FFmpeg and process control do not exist.
+- No OAuth sign-in and no integrations with the Twitch, YouTube, Kick or TikTok
+  APIs.
+- No database — configuration and metadata are not persisted; reloading the page
+  restores the initial state.
+- No credential store; stream key handling has not been started.
+- No SSE/WebSocket — the backend state is polled every 15 seconds.
+- The Platforms, Streams, Metadata, Settings and Logs pages have no
+  implementation.
 
-**Atrapy (oznaczone w interfejsie znacznikiem „Demo")**
-- Przyciski Start/Stop zmieniają wyłącznie lokalny stan w przeglądarce; po
-  ok. 1,8 s status przechodzi ze `starting` na `live`. Żaden proces nie jest
-  uruchamiany.
-- Liczba widzów i jakość połączenia to wartości stałe.
-- Metryki CPU, pamięci, dysku i sieci to stałe wartości demonstracyjne —
-  backend nie zbiera metryk hosta.
-- Status połączenia OBS jest stały („Waiting for OBS"); nic nie nasłuchuje na
-  porcie RTMP.
-- Lokalny adres RTMP w panelu bocznym to adres planowany, nie działający.
-- Zapis metadanych trafia wyłącznie do pamięci przeglądarki.
-- Tabele możliwości platform są przybliżone i poglądowe; wymagają weryfikacji
-  przy wdrażaniu realnych integracji.
+**Placeholders (marked with a "Demo" badge in the interface)**
+- The Start/Stop buttons only change local state in the browser; after about
+  1.8 s the status moves from `starting` to `live`. No process is started.
+- The viewer count and connection quality are fixed values.
+- The CPU, memory, disk and network metrics are fixed demo values — the backend
+  does not collect host metrics.
+- The OBS connection status is fixed ("Waiting for OBS"); nothing is listening on
+  the RTMP port.
+- The local RTMP address in the sidebar is a planned address, not a working one.
+- Saving metadata goes only to the browser's memory.
+- The platform capability tables are approximate and illustrative; they need
+  verification when real integrations are implemented.
 
-**Problemy środowiskowe**
-- Node 22.11 nie spełnia wymagań `engines` najnowszych narzędzi frontendowych.
-  Zalecana aktualizacja do Node 22.12+ lub 24 LTS. Obecny zestaw wersji działa
-  poprawnie na Node 22.11.
-- Repozytorium nie było zainicjalizowane jako repozytorium Git w chwili
-  wykonywania tego etapu, więc commit nie został utworzony automatycznie.
-  Polecenia do wykonania znajdują się w podsumowaniu etapu.
+**Environment problems**
+- Node 22.11 does not satisfy the `engines` requirements of the newest frontend
+  tooling. An upgrade to Node 22.12+ or 24 LTS is recommended. The current set of
+  versions works correctly on Node 22.11.
+- The repository was not initialized as a Git repository at the time this stage
+  was carried out, so the commit was not created automatically. The commands to
+  run were provided in the stage summary.
 
-### Następny krok
+### Next step
 
-Etap 2: trwałe przechowywanie konfiguracji.
+Stage 2: persistent configuration storage.
 
-1. Dodanie SQLite w backendzie wraz z migracjami schematu.
-2. Model platform i metadanych po stronie backendu, jako źródło prawdy zamiast
-   danych demonstracyjnych w przeglądarce.
-3. REST API: `GET/POST/PUT/DELETE /api/platforms` oraz
-   `GET/PUT /api/platforms/{id}/metadata`, z walidacją opartą na tej samej
-   tabeli możliwości co frontend.
-4. Zastąpienie magazynu demonstracyjnego w `src/state/` zapytaniami TanStack
-   Query, z zachowaniem obecnych komponentów prezentacyjnych.
-5. Utrzymanie stanu `Backend unavailable` jako w pełni obsłużonej ścieżki.
+1. Adding SQLite to the backend together with schema migrations.
+2. A platform and metadata model on the backend side, as the source of truth
+   instead of demo data in the browser.
+3. REST API: `GET/POST/PUT/DELETE /api/platforms` and
+   `GET/PUT /api/platforms/{id}/metadata`, with validation based on the same
+   capability table as the frontend.
+4. Replacing the demo store in `src/state/` with TanStack Query requests, keeping
+   the current presentational components.
+5. Keeping the `Backend unavailable` state as a fully handled path.
 
 ---
 
@@ -506,3 +517,135 @@ No manual UI testing was performed.
 Migrate the project documentation to English (`README.md`,
 `docs/project-overview.md`, `docs/progress.md`, `config/README.md`), preserving
 every historical fact, and document the localization workflow.
+
+---
+
+## 2026-08-03 15:20 — docs: migrate project documentation to English
+
+### Status
+Completed
+
+### Scope
+Translate the project documentation from Polish to English and document the
+localization workflow. English becomes the working language of the project for
+code, comments, documentation, commit messages and progress entries. No
+application code behaviour was changed in this commit.
+
+### Changes
+
+**`README.md`** — fully rewritten in English, and extended with an
+"Interface languages" section covering: the supported interface languages;
+English as the source and fallback language; how the language choice is stored
+(`streaming-tree.language` in localStorage, validated on read); the translation
+directory structure with a description of each namespace; how to add a new
+translation key, including the pluralization convention; how to add a future
+language as a numbered procedure; how to run `npm run i18n:check` and what it
+detects; the rule that user-created stream metadata is never translated
+automatically; and the rule that secrets must never appear in translation
+resources. The check list, the directory tree and the demo-only table were
+updated for the new files, and a troubleshooting entry was added for the case
+where a label appears in English while the interface is set to Polish.
+
+**`docs/project-overview.md`** — fully translated, plus a new section 11
+"Localization" describing English as the canonical product language, Polish as
+the second supported UI language, static resource-based translations, the
+absence of any runtime automatic translation, and extensibility to further
+languages. The stream key security section now states explicitly that the
+language preference is the only value persisted in the browser. The roadmap was
+updated: localization is recorded as a completed stage and the later stages were
+renumbered accordingly. The manual testing section now lists the full current
+check set, including `npm run i18n:check` and `npm run test`.
+
+**`docs/progress.md`** — the journal header, the rules and the historical entry
+`chore: bootstrap streaming tree project` were translated into English. All
+facts were preserved: the same scope, the same twelve technical decisions, the
+same validation table with the same results, the same known limitations
+including every placeholder, and the same next step. Nothing was added, removed
+or made to sound more complete than it was; the Vite 6 rationale, the portable
+Go toolchain note and the "repository was not a Git repository at the time"
+note are all still there. A "Working language" subsection was added to the rules
+recording when the switch to English took effect and that the historical entry
+is a translation.
+
+**`config/README.md`** — fully translated.
+
+**`apps/web/package.json`** — the `description` field was translated.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/progress.md`
+- `config/README.md`
+- `apps/web/package.json` (description field only)
+
+### Technical decisions
+
+1. **The documentation migration is a separate commit from the localization
+   feature.** The first commit changes application behaviour and can be reviewed
+   for correctness; this one changes only prose. Splitting them keeps the
+   feature diff readable, which a combined ~5000-line commit would not be. This
+   matches the commit split suggested for the task.
+
+2. **The historical entry was translated rather than reprinted in Polish or
+   replaced by a summary.** Journal rule 4 forbids rewriting history without a
+   reason; the task explicitly permits translating it. A translation preserves
+   every fact while making the whole journal readable in one language.
+   Retaining the Polish text alongside would have doubled the file with no
+   added information.
+
+3. **Polish plural examples remain in `README.md`.** They are code samples
+   showing the CLDR categories a translator must supply, not prose, so they stay
+   in Polish deliberately.
+
+4. **Language endonyms in the documentation are not translated.** "Polski" is a
+   proper noun and is written the same way in an English document, matching how
+   the switcher renders it.
+
+### Automated validation
+
+Re-run after the documentation change to confirm no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 7 namespaces, no differences against `en` |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 3 files, 32 tests |
+| Frontend build | `npm run build` | Passed - 2035 modules |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - no test files |
+| Backend build | `go build ./...` | Passed - 0 errors |
+
+Environment note: Go 1.26.5 is now installed system-wide, so the backend checks
+were run with the user's own toolchain rather than the portable copy used in the
+previous stage.
+
+No manual UI testing was performed.
+
+### Known limitations
+- The documentation describes the localization workflow but there is no
+  automated check that the documentation itself stays in sync with the code; a
+  renamed namespace would have to be corrected in `README.md` by hand.
+- The English documentation has not been reviewed by a second reader.
+- All product limitations recorded in the two previous entries still stand. This
+  commit changed no application behaviour.
+
+### Next step
+
+Stage 3: persistent configuration storage, unchanged from the plan recorded in
+the first entry.
+
+1. Adding SQLite to the backend together with schema migrations.
+2. A platform and metadata model on the backend side, as the source of truth
+   instead of demo data in the browser.
+3. REST API: `GET/POST/PUT/DELETE /api/platforms` and
+   `GET/PUT /api/platforms/{id}/metadata`, with validation based on the same
+   capability table as the frontend.
+4. Replacing the demo store in `src/state/` with TanStack Query requests, keeping
+   the current presentational components.
+5. Keeping the `Backend unavailable` state as a fully handled path.
+
+The capability table labels are already translation keys, so moving that data to
+the backend must keep sending keys (or capability identifiers) rather than
+display text, so the server never decides the interface language.

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Frontend dashboardu Streaming Tree for OBS",
+  "description": "Streaming Tree for OBS - operator dashboard frontend",
   "engines": {
     "node": ">=20.19"
   },

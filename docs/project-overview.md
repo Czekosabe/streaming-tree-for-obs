@@ -1,183 +1,187 @@
-# Streaming Tree for OBS — opis projektu
+# Streaming Tree for OBS — project overview
 
-> Dokument opisuje założenia, architekturę i plan rozwoju projektu.
-> Sekcje oznaczone jako **planowane** nie są jeszcze zaimplementowane.
-> Aktualny stan prac znajduje się w [progress.md](progress.md).
+> This document describes the goals, architecture and roadmap of the project.
+> Sections marked as **planned** are not implemented yet.
+> The current state of the work is recorded in [progress.md](progress.md).
 
 ---
 
-## 1. Nazwa projektu
+## 1. Project name
 
 **Streaming Tree for OBS**
 
-Nazwa opisuje model działania: pojedynczy strumień wychodzący z OBS jest
-„pniem", a każda platforma docelowa stanowi niezależną „gałąź" transmisji.
+The name describes how the application works: a single stream leaving OBS is the
+"trunk", and every destination platform is an independent "branch".
 
 ---
 
-## 2. Problem, który rozwiązujemy
+## 2. The problem we are solving
 
-Osoba prowadząca transmisję na żywo, która chce nadawać jednocześnie na kilka
-platform, napotyka dziś następujące trudności:
+A live streamer who wants to broadcast to several platforms at once runs into
+the following difficulties today:
 
-1. **Ograniczenia sprzętowe.** OBS potrafi wysyłać wiele wyjść, ale każde z nich
-   kosztuje osobne kodowanie lub osobne wysyłanie tego samego strumienia. Przy
-   czterech platformach obciążenie procesora lub łącza rośnie kilkukrotnie.
-2. **Uzależnienie od usług zewnętrznych.** Komercyjne serwisy do multistreamingu
-   wymagają przesłania strumienia na cudzy serwer oraz powierzenia im kluczy
-   transmisji, zwykle za abonament.
-3. **Rozproszone metadane.** Tytuł, kategoria, tagi i ustawienia widoczności
-   trzeba wprowadzać osobno w panelu każdej platformy, w różnych formatach i przy
-   różnych limitach.
-4. **Brak izolacji awarii.** Jeżeli jedna platforma odrzuci połączenie lub
-   zerwie sesję, typowe konfiguracje potrafią zakłócić pozostałe wyjścia.
+1. **Hardware cost.** OBS can send multiple outputs, but each one costs either a
+   separate encode or a separate upload of the same stream. With four platforms
+   the CPU or upstream bandwidth load grows several times over.
+2. **Dependence on third-party services.** Commercial multistreaming services
+   require sending the stream to someone else's server and handing over the
+   stream keys, usually for a subscription fee.
+3. **Scattered metadata.** Title, category, tags and visibility settings have to
+   be entered separately in each platform's dashboard, in different formats and
+   under different limits.
+4. **No failure isolation.** If one platform refuses the connection or drops the
+   session, typical setups can disturb the remaining outputs.
 
-## 3. Główne założenie
+## 3. Core idea
 
-OBS wysyła **jeden** lokalny strumień do aplikacji. Aplikacja odbiera go i
-rozgałęzia na dowolną liczbę platform, przy czym:
+OBS sends **one** local stream to the application. The application receives it
+and branches it out to any number of platforms, with these properties:
 
-- rozgałęzianie odbywa się **bez ponownego kodowania obrazu** tam, gdzie jest to
-  możliwe (kopiowanie strumienia),
-- każda gałąź jest **niezależnym procesem** — awaria jednej nie przerywa innych,
-- **klucze transmisji nie opuszczają komputera użytkownika** i nie trafiają do
-  repozytorium ani do przeglądarki,
-- metadata każdej platformy są opisane **modelem możliwości (capabilities)**, a
-  nie wspólnym, sztucznie ujednoliconym formularzem.
+- branching happens **without re-encoding the video** wherever possible (stream
+  copy),
+- every branch is an **independent process** - one failing does not interrupt
+  the others,
+- **stream keys never leave the user's machine** and are never committed to the
+  repository or exposed to the browser,
+- each platform's metadata is described by a **capability model** rather than a
+  single, artificially unified form.
 
-## 4. Grupa docelowa
+## 4. Target audience
 
-- Twórcy transmisji na żywo nadający równolegle na kilka platform.
-- Osoby techniczne, które wolą uruchomić narzędzie lokalnie niż powierzać klucze
-  transmisji usłudze zewnętrznej.
-- Małe zespoły produkcyjne i operatorzy transmisji wydarzeń, potrzebujący
-  czytelnego panelu kontrolnego stanu wszystkich wyjść.
-- W przyszłości: użytkownicy, którzy przeniosą router transmisji na własny
-  serwer (VPS) i będą sterować nim z przeglądarki.
-
----
-
-## 5. Zakres pierwszej wersji lokalnej
-
-Wersja 1.0 (lokalna) ma obejmować:
-
-- odbiór jednego strumienia RTMP z OBS na komputerze użytkownika,
-- konfigurację listy platform docelowych,
-- niezależne uruchamianie i zatrzymywanie każdej gałęzi transmisji,
-- podgląd stanu każdej gałęzi (offline / starting / live / error),
-- edycję metadanych transmisji zależną od możliwości platformy,
-- bezpieczne przechowywanie kluczy transmisji w magazynie systemowym,
-- podgląd logów i podstawowej diagnostyki,
-- panel operatorski w przeglądarce, uruchamiany lokalnie.
-
-## 6. Poza zakresem pierwszej wersji
-
-Świadomie **nie** wchodzą w zakres wersji 1.0:
-
-- nagrywanie i archiwizacja transmisji,
-- transkodowanie do wielu rozdzielczości (ABR),
-- czat zbiorczy z wielu platform w jednym oknie,
-- statystyki historyczne i analityka widowni,
-- system kont, ról i uprawnień,
-- automatyczne klipy, powiadomienia, integracje z botami,
-- aplikacja mobilna,
-- wtyczka działająca wewnątrz OBS.
+- Live streamers broadcasting to several platforms in parallel.
+- Technically minded people who prefer running a tool locally over entrusting
+  their stream keys to an external service.
+- Small production teams and event stream operators who need a clear control
+  panel showing the state of every output.
+- Later: users who move the stream router to their own server (VPS) and control
+  it from a browser.
 
 ---
 
-## 7. Architektura ogólna
+## 5. Scope of the first local version
+
+Version 1.0 (local) is intended to cover:
+
+- receiving a single RTMP stream from OBS on the user's machine,
+- configuring the list of destination platforms,
+- starting and stopping each stream branch independently,
+- showing the state of every branch (offline / starting / live / error),
+- editing stream metadata according to each platform's capabilities,
+- storing stream keys securely in the system credential store,
+- viewing logs and basic diagnostics,
+- an operator panel in the browser, served locally.
+
+## 6. Out of scope for the first version
+
+Deliberately **not** part of version 1.0:
+
+- recording and archiving streams,
+- transcoding to multiple resolutions (ABR),
+- an aggregated chat from several platforms in one window,
+- historical statistics and audience analytics,
+- accounts, roles and permissions,
+- automatic clips, notifications, bot integrations,
+- a mobile application,
+- a plugin running inside OBS.
+
+---
+
+## 7. Overall architecture
 
 ```
                 ┌───────────────────────────────────────────────┐
-                │  Panel operatorski (React + TypeScript)        │
-                │  przeglądarka, http://localhost:5173           │
+                │  Operator panel (React + TypeScript)          │
+                │  browser, http://localhost:5173               │
                 └───────────────────────┬───────────────────────┘
-                                        │ REST  (+ SSE/WebSocket w przyszłości)
+                                        │ REST  (+ SSE/WebSocket later)
                                         ▼
                 ┌───────────────────────────────────────────────┐
                 │  Backend (Go)                                 │
-                │  API, stan gałęzi, metadane, nadzór procesów  │
+                │  API, branch state, metadata, process control │
                 └──────┬─────────────────────────┬──────────────┘
-                       │ nadzór                  │ nadzór
+                       │ supervises              │ supervises
                        ▼                         ▼
         ┌──────────────────────┐    ┌──────────────────────────────────┐
-  OBS ─▶│  MediaMTX            │───▶│  FFmpeg (osobny proces / gałąź)  │
-  RTMP  │  lokalny odbiór RTMP │    │  ffmpeg #1 ─▶ Twitch             │
+  OBS ─▶│  MediaMTX            │───▶│  FFmpeg (one process per branch) │
+  RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch             │
         └──────────────────────┘    │  ffmpeg #2 ─▶ YouTube            │
                                     │  ffmpeg #3 ─▶ Kick               │
                                     │  ffmpeg #4 ─▶ TikTok             │
                                     └──────────────────────────────────┘
 ```
 
-Warstwy są celowo rozdzielone: panel nie komunikuje się bezpośrednio z MediaMTX
-ani z FFmpeg. Całość sterowania przechodzi przez backend Go, co pozwoli
-w przyszłości przenieść backend na zdalny serwer bez zmian w panelu.
+The layers are separated on purpose: the panel never talks directly to MediaMTX
+or FFmpeg. All control flows through the Go backend, which is what will later
+allow the backend to be moved to a remote server without changing the panel.
 
-### 7.1 Rola OBS
+### 7.1 The role of OBS
 
-OBS pozostaje narzędziem produkcyjnym: sceny, źródła, miksowanie dźwięku,
-kodowanie obrazu. Konfiguruje się w nim **jedno** wyjście — Custom / RTMP
-wskazujące na lokalny adres aplikacji (docelowo `rtmp://127.0.0.1:1935/live`).
+OBS remains the production tool: scenes, sources, audio mixing, video encoding.
+It is configured with **one** output - a Custom / RTMP target pointing at the
+application's local address (eventually `rtmp://127.0.0.1:1935/live`).
 
-OBS nie wie, na ile platform trafi strumień. Z jego perspektywy istnieje jeden
-odbiorca.
+OBS does not know how many platforms the stream will reach. From its point of
+view there is a single recipient.
 
-### 7.2 Rola frontendu React
+### 7.2 The role of the React frontend
 
-Frontend to **panel operatorski**, nie element toru transmisji. Odpowiada za:
+The frontend is an **operator panel**, not part of the streaming path. It is
+responsible for:
 
-- prezentację stanu wszystkich gałęzi transmisji,
-- uruchamianie i zatrzymywanie gałęzi (przez API backendu),
-- edycję metadanych zależną od możliwości platformy,
-- prezentację diagnostyki i logów.
+- presenting the state of all stream branches,
+- starting and stopping branches (through the backend API),
+- editing metadata according to platform capabilities,
+- presenting diagnostics and logs.
 
-Frontend **nigdy** nie przechowuje kluczy transmisji ani tokenów — również w
-`localStorage` czy `sessionStorage`.
+The frontend **never** stores stream keys or tokens - not in `localStorage`, not
+in `sessionStorage`, not in application state.
 
-### 7.3 Rola backendu Go
+### 7.3 The role of the Go backend
 
-Backend jest jedynym miejscem, w którym podejmowane są decyzje:
+The backend is the only place where decisions are made:
 
-- udostępnia REST API dla panelu,
-- przechowuje konfigurację platform i metadane,
-- uruchamia i nadzoruje MediaMTX oraz procesy FFmpeg,
-- odczytuje klucze transmisji z magazynu systemowego w chwili uruchomienia gałęzi,
-- pilnuje izolacji awarii i polityki ponownego uruchamiania,
-- w kolejnych etapach przekazuje stan na żywo przez SSE lub WebSocket.
+- it exposes the REST API for the panel,
+- it holds platform configuration and metadata,
+- it starts and supervises MediaMTX and the FFmpeg processes,
+- it reads stream keys from the system credential store at branch start time,
+- it enforces failure isolation and the restart policy,
+- in later stages it pushes live state over SSE or WebSocket.
 
-Wybór Go wynika z trzech przesłanek: dystrybucja jako pojedynczy plik binarny
-bez środowiska uruchomieniowego, dobra obsługa nadzoru procesów potomnych oraz
-prosty model współbieżności dla wielu niezależnych gałęzi.
+Go was chosen for three reasons: distribution as a single binary with no
+runtime to install, good support for supervising child processes, and a simple
+concurrency model for many independent branches.
 
-### 7.4 Planowana rola MediaMTX
+### 7.4 Planned role of MediaMTX
 
-**Status: nie zaimplementowane.**
+**Status: not implemented.**
 
-MediaMTX ma pełnić rolę lokalnego serwera odbierającego strumień z OBS. Zamiast
-pisać własną implementację RTMP, aplikacja uruchomi MediaMTX jako proces
-potomny z wygenerowaną konfiguracją i będzie z niego pobierać pojedynczy
-strumień źródłowy dla wszystkich gałęzi.
+MediaMTX will act as the local server receiving the stream from OBS. Instead of
+writing an RTMP implementation, the application will run MediaMTX as a child
+process with a generated configuration and pull a single source stream from it
+for all branches.
 
-Dzięki temu OBS koduje obraz **raz**, a gałęzie korzystają ze wspólnego źródła.
+This is what lets OBS encode the video **once** while every branch shares the
+same source.
 
-### 7.5 Planowana rola FFmpeg
+### 7.5 Planned role of FFmpeg
 
-**Status: nie zaimplementowane.**
+**Status: not implemented.**
 
-Dla każdej aktywnej platformy backend uruchomi osobny proces FFmpeg, który
-pobiera strumień z MediaMTX i wysyła go pod adres RTMP danej platformy.
+For each active platform the backend will start a separate FFmpeg process that
+reads the stream from MediaMTX and pushes it to that platform's RTMP endpoint.
 
-Założenia:
+Design assumptions:
 
-- domyślnie kopiowanie strumienia (`-c copy`) — bez ponownego kodowania,
-- ewentualne przekodowanie tylko wtedy, gdy platforma wymaga innych parametrów,
-- osobny proces = osobny cykl życia, osobne logi, osobna polityka restartu.
+- stream copy by default (`-c copy`) - no re-encoding,
+- re-encoding only where a platform requires different parameters,
+- one process per branch means a separate lifecycle, separate logs and a
+  separate restart policy.
 
 ---
 
-## 8. Model niezależnych gałęzi transmisji
+## 8. The independent branch model
 
-Każda platforma to niezależna gałąź o własnym cyklu życia:
+Every platform is an independent branch with its own lifecycle:
 
 ```
 offline ──▶ starting ──▶ live
@@ -186,23 +190,22 @@ offline ──▶ starting ──▶ live
    └────────── error ◀──────┘
 ```
 
-Zasady:
+Rules:
 
-1. **Izolacja procesów.** Jedna gałąź = jeden proces FFmpeg. Awaria procesu nie
-   dotyka pozostałych.
-2. **Izolacja błędów.** Odrzucenie klucza przez jedną platformę przenosi w stan
-   `error` wyłącznie tę gałąź.
-3. **Niezależne sterowanie.** Gałęzie można uruchamiać i zatrzymywać osobno, bez
-   przerywania transmisji na pozostałych platformach.
-4. **Niezależny restart.** Polityka ponownych prób jest ustawiana per gałąź.
-5. **Wspólne źródło.** Wszystkie gałęzie czytają ten sam strumień z MediaMTX,
-   więc dodanie platformy nie obciąża dodatkowo OBS.
+1. **Process isolation.** One branch means one FFmpeg process. A process failure
+   does not touch the others.
+2. **Error isolation.** One platform rejecting a stream key moves only that
+   branch into the `error` state.
+3. **Independent control.** Branches can be started and stopped individually
+   without interrupting the stream on the remaining platforms.
+4. **Independent restart.** The retry policy is configured per branch.
+5. **Shared source.** All branches read the same stream from MediaMTX, so adding
+   a platform puts no extra load on OBS.
 
-## 9. Model metadanych zależny od możliwości platformy
+## 9. Capability-driven metadata model
 
-Platformy nie oferują tych samych pól metadanych i nie stosują tych samych
-ograniczeń. Zamiast wspólnego formularza, każda platforma deklaruje swoje
-możliwości:
+Platforms do not offer the same metadata fields and do not apply the same
+limits. Instead of one shared form, each platform declares its capabilities:
 
 ```ts
 type PlatformCapabilities = {
@@ -218,114 +221,162 @@ type PlatformCapabilities = {
 };
 ```
 
-Uzupełniają go **limity** (maksymalna długość tytułu, liczba tagów) oraz
-**słownik opcji** (nazwa pola kategorii, dostępne poziomy widoczności i tryby
-opóźnienia).
+This is complemented by **limits** (maximum title length, number of tags) and an
+**option vocabulary** (the name of the category field, the available visibility
+levels and latency modes).
 
-Konsekwencje przyjęte w kodzie:
+Consequences adopted in the code:
 
-- pole nieobsługiwane przez platformę **nie jest renderowane** — nie jest
-  jedynie wyłączone,
-- schemat walidacji Zod jest **budowany dynamicznie** z tabeli możliwości, więc
-  reguły dotyczące tagów nie działają na platformie bez tagów,
-- dodanie nowej platformy polega na dopisaniu jej opisu, a nie na przebudowie
-  formularza.
+- a field a platform does not support is **not rendered at all** - it is not
+  merely disabled,
+- the Zod validation schema is **built dynamically** from the capability table,
+  so tag rules do not exist for a platform without tags,
+- adding a new platform means describing it, not rebuilding the form.
 
-W obecnej, demonstracyjnej konfiguracji obsługę tagów ma włączoną wyłącznie
-Twitch. Konfiguracje te są **przybliżone i poglądowe** — zostaną zweryfikowane
-przy okazji wdrażania realnych integracji z API.
-
----
-
-## 10. Bezpieczeństwo kluczy transmisji
-
-Klucz transmisji pozwala nadawać na cudzym kanale, dlatego traktujemy go jak
-hasło.
-
-Zasady obowiązujące w projekcie:
-
-1. **Żadnych sekretów w repozytorium.** Ani kluczy, ani tokenów, ani plików
-   `.env` z wartościami. `.gitignore` blokuje pliki środowiskowe i katalogi
-   danych.
-2. **Żadnych sekretów w przeglądarce.** Klucze nie trafiają do `localStorage`,
-   `sessionStorage`, cookies ani do stanu aplikacji React. Zmienne `VITE_*` są
-   wkompilowywane w publiczny pakiet JavaScript i nigdy nie mogą zawierać
-   sekretów.
-3. **Magazyn systemowy.** Docelowo klucze będą przechowywane w mechanizmie
-   systemu operacyjnego (Windows Credential Manager, macOS Keychain, Secret
-   Service w Linuksie), a nie w plikach aplikacji.
-4. **Odczyt w ostatniej chwili.** Backend pobiera klucz dopiero w momencie
-   uruchamiania gałęzi i przekazuje go procesowi FFmpeg, nie zapisując go w
-   logach.
-5. **Maskowanie w diagnostyce.** Logi i eksporty diagnostyczne muszą mieć
-   usunięte wartości wrażliwe.
-6. **Nie zapisujemy sekretów w dokumentacji**, w tym w `docs/progress.md`.
-
-## 11. Przyszła wersja serwerowa
-
-Pierwsza wersja działa w całości lokalnie, ale architektura jest przygotowana na
-przeniesienie routera transmisji na zdalny serwer:
-
-- panel komunikuje się z backendem wyłącznie przez REST (a w przyszłości
-  SSE/WebSocket) — nigdy bezpośrednio z MediaMTX ani z FFmpeg,
-- adres API jest konfigurowalny po stronie frontendu,
-- backend ma jawną, wąską listę dozwolonych źródeł (CORS) zamiast wildcardu,
-- port i interfejs nasłuchu są konfigurowane zmiennymi środowiskowymi, domyślnie
-  z ograniczeniem do pętli zwrotnej.
-
-Wersja serwerowa będzie dodatkowo wymagać: uwierzytelnienia panelu, transportu
-TLS oraz przemyślanego modelu przechowywania sekretów po stronie serwera. Żaden
-z tych elementów nie jest jeszcze zaimplementowany.
+In the current demo configuration only Twitch has tag support enabled. These
+configurations are **approximate and illustrative** - they will be verified when
+real API integrations are implemented.
 
 ---
 
-## 12. Plan rozwoju projektu
+## 10. Stream key security
 
-| Etap | Zakres | Status |
-| ---- | ------ | ------ |
-| 1 | Fundamenty: struktura repozytorium, dokumentacja, panel React, minimalny backend Go, endpoint `/api/health` | **Ukończony** |
-| 2 | Trwałe przechowywanie konfiguracji platform (SQLite), pełne CRUD API dla platform i metadanych | Planowany |
-| 3 | Integracja z MediaMTX: uruchamianie procesu, generowanie konfiguracji, wykrywanie połączenia z OBS | Planowany |
-| 4 | Gałęzie FFmpeg: uruchamianie, nadzór, restarty, izolacja awarii | Planowany |
-| 5 | Statusy na żywo przez SSE lub WebSocket zamiast odpytywania | Planowany |
-| 6 | Magazyn poświadczeń systemu operacyjnego dla kluczy transmisji | Planowany |
-| 7 | Integracje z API platform: OAuth, wysyłanie metadanych, odczyt liczby widzów | Planowany |
-| 8 | Widok logów i diagnostyka, eksport pakietu diagnostycznego | Planowany |
-| 9 | Pakowanie aplikacji i tryb serwerowy | Planowany |
+A stream key allows broadcasting on someone's channel, so we treat it like a
+password.
 
-Kolejność może ulec zmianie, ale etapy 3 i 4 są zależne od etapu 2, a etap 7 od
-etapu 6.
+Rules in force for this project:
 
-## 13. Zasada testów manualnych
+1. **No secrets in the repository.** No keys, no tokens, no `.env` files with
+   real values. `.gitignore` blocks environment files and data directories.
+2. **No secrets in the browser.** Keys never go into `localStorage`,
+   `sessionStorage`, cookies or React state. `VITE_*` variables are compiled
+   into the public JavaScript bundle and must never contain secrets. The only
+   value the application persists in the browser is the interface language
+   preference.
+3. **System credential store.** Keys will eventually be held by an operating
+   system mechanism (Windows Credential Manager, macOS Keychain, Secret Service
+   on Linux) rather than in application files.
+4. **Read at the last moment.** The backend fetches a key only when starting a
+   branch and hands it to the FFmpeg process without writing it to the logs.
+5. **Masked in diagnostics.** Logs and diagnostic exports must have sensitive
+   values stripped.
+6. **No secrets in documentation**, including `docs/progress.md` and the
+   translation resources.
 
-**Testy manualne są etapem końcowym i wykonuje się je dopiero po ukończeniu
-funkcjonalności aplikacji.**
+## 11. Localization
 
-Uzasadnienie: dopóki większość toru transmisji stanowią atrapy, testowanie
-ręczne sprawdzałoby wyłącznie zachowanie danych demonstracyjnych i dawałoby
-złudne poczucie gotowości.
+The interface is bilingual; the product itself is developed in English.
 
-W trakcie implementacji obowiązują natomiast kontrole automatyczne, które można
-i należy uruchamiać na bieżąco:
+### 11.1 English is the canonical product language
 
-- `npm run build` — build produkcyjny frontendu,
-- `npm run lint` — analiza statyczna ESLint,
-- `npm run typecheck` — kontrola typów TypeScript,
-- `go build ./...` — kompilacja backendu,
-- `go vet ./...` — analiza statyczna backendu,
-- `gofmt -l .` — kontrola formatowania.
+English is the source language for everything: the interface, the code,
+comments, documentation, commit messages and progress entries. Every new string
+is written in English first, and English is what the rest of the project is
+reviewed against.
 
-## 14. Uczciwość opisu stanu prac
+### 11.2 Polish is the second supported interface language
 
-W dokumentacji i w interfejsie obowiązuje zasada: **funkcja niezaimplementowana
-nie jest przedstawiana jako gotowa.**
+Polish is a full translation of the English resources, maintained to parity with
+them. It is a translation of the product, not a second source of truth: a string
+that does not exist in English must not exist in Polish either.
 
-W praktyce oznacza to, że:
+English is also the **fallback language**. If a Polish entry is ever missing, the
+user sees the English text - never a raw translation key.
 
-- dane demonstracyjne są oznaczone znacznikiem „Demo" w interfejsie oraz
-  komentarzem w kodzie,
-- przyciski, które nie wykonują realnej operacji, jasno to komunikują,
-- podstrony bez implementacji pokazują informację o planowanym zakresie zamiast
-  pozorowanych widżetów,
-- wpis w `docs/progress.md` nie oznacza funkcji jako ukończonej, jeżeli jest ona
-  wyłącznie atrapą interfejsu.
+### 11.3 Static, version-controlled resources
+
+Translations are JSON files under `apps/web/src/i18n/resources/<language>/`,
+split into namespaces by feature area. They are reviewed like any other source
+file and bundled at build time.
+
+### 11.4 No runtime automatic translation
+
+The project does not use an online translation API, a browser translation
+service, an AI translation service or any form of runtime automatic
+translation. Every string is a resource written and reviewed by a person.
+
+Content authored by the user - stream titles, descriptions, tags - is rendered
+verbatim and is never translated. The same applies to platform brand names,
+URLs, the RTMP address, API identifiers and backend error codes.
+
+### 11.5 Extensibility to further languages
+
+Adding a language means adding a resource directory, registering the language
+code and its locale tag, and translating the English bundle. The consistency
+check (`npm run i18n:check`) then validates the new language against English,
+including the plural categories that language actually requires. The procedure
+is documented in `README.md`.
+
+## 12. Future server version
+
+The first version runs entirely locally, but the architecture is prepared for
+moving the stream router to a remote server:
+
+- the panel talks to the backend only over REST (and later SSE/WebSocket) -
+  never directly to MediaMTX or FFmpeg,
+- the API address is configurable on the frontend side,
+- the backend has an explicit, narrow allow-list of origins (CORS) instead of a
+  wildcard,
+- the listening port and interface are configured through environment
+  variables, restricted to the loopback interface by default.
+
+The server version will additionally require panel authentication, TLS
+transport and a considered model for storing secrets server-side. None of these
+is implemented yet.
+
+---
+
+## 13. Roadmap
+
+| Stage | Scope | Status |
+| ----- | ----- | ------ |
+| 1 | Foundations: repository structure, documentation, React panel, minimal Go backend, `/api/health` endpoint | **Completed** |
+| 2 | English and Polish localization of the frontend | **Completed** |
+| 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | Planned |
+| 4 | MediaMTX integration: process startup, configuration generation, OBS connection detection | Planned |
+| 5 | FFmpeg branches: startup, supervision, restarts, failure isolation | Planned |
+| 6 | Live status over SSE or WebSocket instead of polling | Planned |
+| 7 | Operating system credential store for stream keys | Planned |
+| 8 | Platform API integrations: OAuth, pushing metadata, reading viewer counts | Planned |
+| 9 | Log view and diagnostics, diagnostic bundle export | Planned |
+| 10 | Application packaging and server mode | Planned |
+
+The order may change, but stages 4 and 5 depend on stage 3, and stage 8 depends
+on stage 7.
+
+## 14. The manual testing rule
+
+**Manual testing is the final stage and is performed only after the application
+functionality is complete.**
+
+Rationale: as long as most of the streaming path consists of placeholders,
+manual testing would only exercise demo data and create a false sense of
+readiness.
+
+During implementation the following automated checks apply instead, and should
+be run continuously:
+
+- `npm run i18n:check` - translation resource consistency,
+- `npm run typecheck` - TypeScript type checking,
+- `npm run lint` - ESLint static analysis,
+- `npm run test` - frontend unit tests,
+- `npm run build` - frontend production build,
+- `go build ./...` - backend compilation,
+- `go vet ./...` - backend static analysis,
+- `go test ./...` - backend tests,
+- `gofmt -l .` - backend formatting check.
+
+## 15. Honesty about the state of the work
+
+Both the documentation and the interface follow one rule: **an unimplemented
+feature is never presented as finished.**
+
+In practice this means:
+
+- demo data is marked with a "Demo" badge in the interface and with a comment in
+  the code,
+- buttons that perform no real operation say so clearly,
+- unimplemented pages show a description of the planned scope instead of fake
+  widgets,
+- an entry in `docs/progress.md` does not mark a feature as completed if it is
+  only an interface placeholder.
