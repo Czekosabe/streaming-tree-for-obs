@@ -1,69 +1,49 @@
-import type { ParseKeys } from 'i18next';
 import { Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { cn } from '@/lib/cn';
-import type { PlatformStatus, StreamPlatform } from '@/models/platform';
 
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 
-type CounterTone = 'live' | 'starting' | 'offline' | 'error';
-
-const COUNTER_CLASSES: Record<CounterTone, string> = {
-  live: 'text-status-live',
-  starting: 'text-status-starting',
-  offline: 'text-status-offline',
-  error: 'text-status-error',
-};
-
 /**
- * Each counter carries a short visible label and a pluralized accessible label,
- * so a screen reader announces "2 live branches" rather than "2, Live".
- */
-const COUNTERS: readonly {
-  tone: CounterTone;
-  status: PlatformStatus;
-  labelKey: ParseKeys<'dashboard'>;
-  accessibleKey: ParseKeys<'dashboard'>;
-}[] = [
-  {
-    tone: 'live',
-    status: 'live',
-    labelKey: 'counters.live',
-    accessibleKey: 'counters.liveAccessible',
-  },
-  {
-    tone: 'starting',
-    status: 'starting',
-    labelKey: 'counters.starting',
-    accessibleKey: 'counters.startingAccessible',
-  },
-  {
-    tone: 'offline',
-    status: 'offline',
-    labelKey: 'counters.offline',
-    accessibleKey: 'counters.offlineAccessible',
-  },
-  {
-    tone: 'error',
-    status: 'error',
-    labelKey: 'counters.error',
-    accessibleKey: 'counters.errorAccessible',
-  },
-];
-
-function countByStatus(platforms: readonly StreamPlatform[], status: PlatformStatus): number {
-  return platforms.filter((platform) => platform.status === status).length;
-}
-
-/**
- * Branch counters.
+ * Configured destination counters.
  *
- * These are derived from the DEMO store, so they are real counts of local demo
- * state - not measurements of actual transmissions.
+ * These count CONFIGURATION, not runtime state: how many destinations exist and
+ * how many are enabled. There is no live/starting/error breakdown, because no
+ * streaming engine exists to produce one - inventing those counters next to
+ * real saved data would be misleading.
  */
-export function StreamCountersCard({ platforms }: { platforms: readonly StreamPlatform[] }) {
+export function StreamCountersCard({ platforms }: { platforms: readonly ConfiguredPlatform[] }) {
   const { t } = useTranslation('dashboard');
+
+  const total = platforms.length;
+  const enabled = platforms.filter((platform) => platform.enabled).length;
+  const disabled = total - enabled;
+
+  const counters = [
+    {
+      key: 'configured',
+      value: total,
+      label: t('counters.configured'),
+      accessible: t('counters.configuredAccessible', { count: total }),
+      tone: 'text-ink',
+    },
+    {
+      key: 'enabled',
+      value: enabled,
+      label: t('counters.enabled'),
+      accessible: t('counters.enabledAccessible', { count: enabled }),
+      tone: 'text-accent-soft',
+    },
+    {
+      key: 'disabled',
+      value: disabled,
+      label: t('counters.disabled'),
+      accessible: t('counters.disabledAccessible', { count: disabled }),
+      tone: 'text-status-offline',
+    },
+  ];
 
   return (
     <Panel>
@@ -73,36 +53,34 @@ export function StreamCountersCard({ platforms }: { platforms: readonly StreamPl
         icon={<Activity className="size-4" />}
         headingLevel={3}
       />
-      <PanelBody>
-        <div className="grid grid-cols-2 gap-2">
-          {COUNTERS.map((counter) => {
-            const value = countByStatus(platforms, counter.status);
-            return (
-              <div
-                key={counter.tone}
-                className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5"
-                aria-label={t(counter.accessibleKey, { count: value })}
-                role="group"
+      <PanelBody className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          {counters.map((counter) => (
+            <div
+              key={counter.key}
+              role="group"
+              aria-label={counter.accessible}
+              className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5"
+            >
+              <p
+                aria-hidden="true"
+                className={cn('font-mono text-xl leading-none tabular-nums', counter.tone)}
               >
-                <p
-                  aria-hidden="true"
-                  className={cn(
-                    'font-mono text-xl leading-none tabular-nums',
-                    COUNTER_CLASSES[counter.tone],
-                  )}
-                >
-                  {value}
-                </p>
-                <p
-                  aria-hidden="true"
-                  className="mt-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint"
-                >
-                  {t(counter.labelKey)}
-                </p>
-              </div>
-            );
-          })}
+                {counter.value}
+              </p>
+              <p
+                aria-hidden="true"
+                className="mt-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint"
+              >
+                {counter.label}
+              </p>
+            </div>
+          ))}
         </div>
+
+        <p className="text-[11px] leading-relaxed text-ink-faint">
+          {t('counters.noRuntimeState')}
+        </p>
       </PanelBody>
     </Panel>
   );

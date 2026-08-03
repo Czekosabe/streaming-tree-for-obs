@@ -13,19 +13,16 @@
     "unknown": "Unknown"
   },
   "card": {
-    "ingestHint": "RTMP ingest (demo placeholder)",
     "noTitle": "No title set",
-    "viewers": "Viewers",
-    "viewersAccessible_one": "{{count}} viewer",
-    "viewersAccessible_other": "{{count}} viewers",
-    "quality": "Quality",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "stateLabel": "State",
+    "offlineConfigured": "Configured, offline",
     "start": "Start",
-    "stop": "Stop",
-    "demoControl": "Demo control - no real stream",
-    "openMetadata": "Open {{platform}} metadata"
-  },
-  "statusDetail": {
-    "noStreamKey": "Demo state: no stream key configured."
+    "streamingNotImplemented": "Streaming engine not implemented",
+    "editMetadata": "Edit metadata for {{platform}}",
+    "openSettings": "Open settings for {{platform}}",
+    "unknownProvider": "This destination uses the provider \"{{providerId}}\", which this version does not recognise. Update the application or delete the destination."
   },
   "fields": {
     "category": "Category",
@@ -46,5 +43,44 @@
     "normal": "Normal latency",
     "low": "Low latency",
     "ultraLow": "Ultra low latency"
+  },
+  "addDialog": {
+    "title": "Add platform",
+    "description": "Configure a destination branch. You can add several destinations for the same platform.",
+    "providerLabel": "Platform",
+    "displayNameLabel": "Display name",
+    "displayNameHint": "Only used inside this application to tell your destinations apart.",
+    "displayNamePlaceholder": "e.g. Main Twitch channel",
+    "submit": "Add platform",
+    "creating": "Adding...",
+    "noCredentialsNote": "No stream key is requested or stored. Credentials will be handled by the operating system credential store in a later stage."
+  },
+  "settings": {
+    "title": "Platform settings",
+    "description": "Configuration for {{platform}}.",
+    "providerLabel": "Platform",
+    "providerImmutable": "The platform cannot be changed. Delete this destination and add a new one instead.",
+    "displayNameLabel": "Display name",
+    "sortOrderLabel": "Sort order",
+    "sortOrderHint": "Lower values appear first on the dashboard.",
+    "enabledLabel": "Enabled",
+    "enabledDescription": "Include this destination once streaming is implemented.",
+    "save": "Save changes",
+    "saving": "Saving...",
+    "saved": "Configuration saved",
+    "delete": "Delete",
+    "hint": "Changes are saved to the local database."
+  },
+  "deleteDialog": {
+    "title": "Delete this destination?",
+    "message": "\"{{platform}}\" and its saved metadata and tags will be permanently removed from the database. This cannot be undone.",
+    "confirm": "Delete permanently"
+  },
+  "validation": {
+    "displayNameRequired": "A display name is required.",
+    "displayNameTooLong": "The display name cannot exceed {{max}} characters.",
+    "providerRequired": "Select a platform.",
+    "providerUnsupported": "This platform is not supported.",
+    "sortOrderInvalid": "Enter a sort order between 0 and 10000."
   }
 }

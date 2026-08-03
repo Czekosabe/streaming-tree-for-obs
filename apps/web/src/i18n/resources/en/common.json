@@ -4,7 +4,9 @@
   },
   "actions": {
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "close": "Close",
+    "cancel": "Cancel"
   },
   "demo": {
     "badge": "Demo",

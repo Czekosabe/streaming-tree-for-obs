@@ -987,3 +987,167 @@ Replace the frontend demo store with real API data: TanStack Query hooks with
 Zod validation, an Add Platform dialog, a platform settings editor with
 deletion, a metadata editor wired to the API, and removal of the fake
 Start/Stop transitions.
+
+---
+
+## 2026-08-03 17:35 — feat(web): persist platforms and metadata
+
+### Status
+Completed
+
+### Scope
+Replace the frontend's demo platform configuration with real API data. The
+backend becomes the only source of truth for provider capabilities and
+configured destinations; the fake Start/Stop lifecycle is removed.
+
+### Changes
+
+**Data layer**
+- `src/api/platform-schemas.ts` holds Zod contracts for provider definitions,
+  configured platforms and metadata; `src/api/platforms.ts` is a thin transport
+  layer. Every response is validated before it reaches a component.
+- `api-client.ts` gained POST/PUT/DELETE, a parsed error envelope including
+  `fields` and `details`, and a failure taxonomy the UI can act on: `network`,
+  `timeout`, `http`, `parse`, `validation`, `not-found`, `server`.
+- `src/hooks/use-platforms.ts` exposes `usePlatformDefinitionsQuery`,
+  `usePlatformsQuery` and create/update/delete/metadata mutations. Cache
+  updates live in `platform-cache.ts` as pure functions. Nothing calls
+  `window.location.reload()`.
+
+**Provider identifiers to labels**
+- `src/models/provider-labels.ts` maps backend identifiers (`category`,
+  `topic`, `public`, `ultra-low`) onto translation keys. Every lookup is total:
+  an unrecognised identifier returns null and the raw identifier is rendered,
+  so a newer backend degrades to "an unfamiliar word" rather than a crash.
+- Stream languages are rendered as endonyms; a platform whose provider this
+  build does not know renders a clear warning instead of failing.
+
+**Dashboard**
+- Cards show configuration only: destination name, brand, saved title, saved
+  category, and enabled/disabled. Fake viewer counts and fake connection
+  quality are gone; showing invented numbers next to real saved data would be
+  misleading.
+- Start is disabled with a localized "Streaming engine not implemented"
+  explanation. The metadata and settings actions are real.
+- The counters card now counts configuration (total / enabled / disabled) and
+  states explicitly that no live state is shown.
+- Explicit states for loading, empty, load failure and definitions
+  unavailable, each with a retry where it makes sense. When the backend is
+  down the shell keeps working and the page says the configuration lives in the
+  backend database - it never falls back to demo platforms.
+
+**Add Platform and settings**
+- A new accessible `Modal` primitive: focus moves in on open and returns to the
+  trigger on close, Tab is trapped, Escape closes when safe, background scroll
+  is locked.
+- `AddPlatformDialog` selects a provider, takes a display name and an enabled
+  flag. Duplicate providers are allowed. No stream key is requested, and the
+  dialog says so.
+- `PlatformSettingsDialog` edits display name, enabled state and sort order,
+  and deletes behind `ConfirmDialog`. `window.confirm` is not used anywhere.
+- Both show backend field errors next to the field and general failures above
+  the form, and block double submits while a request is in flight.
+
+**Metadata editor**
+- Tabs come from configured platforms; capabilities, limits and option lists
+  come from the backend definition. Save performs a real PUT.
+- Switching tabs with unsaved edits asks for confirmation rather than silently
+  discarding them. Deleting the selected platform moves the selection.
+- Client-side validation still runs for immediate feedback, driven entirely by
+  the backend-supplied capability data, with the backend as the authority.
+
+**Removed**
+- `src/data/demo-platforms.ts` and the whole `src/state/` demo store. Only
+  `demo-system.ts` remains, for host metrics that are still unimplemented and
+  still labelled Demo.
+
+### Files changed
+- Added: `src/api/`, `src/hooks/use-platforms.ts`, `platform-cache.ts`,
+  `use-api-field-errors.ts`, `src/lib/field-error-rules.ts`,
+  `src/models/provider-labels.ts`, `platform-constraints.ts`,
+  `src/components/ui/Modal.tsx`, `ConfirmDialog.tsx`,
+  `src/components/platforms/AddPlatformDialog.tsx`,
+  `PlatformSettingsDialog.tsx`, `add-platform-validation.ts`,
+  `src/components/metadata/metadata-draft.ts`, and seven test files
+- Modified: `PlatformCard`, `PlatformGrid`, `PlatformGlyph`, `MetadataEditor`,
+  `MetadataForm`, `PlatformTabs`, `StreamCountersCard`, `SystemStatusPill`,
+  `SystemStatusRail`, `DashboardPage`, `App.tsx`, `api-client.ts`,
+  `models/platform.ts`, `models/metadata-schema.ts`, and the `en`/`pl`
+  `common`, `dashboard`, `metadata` and `platforms` namespaces
+- Removed: `src/data/demo-platforms.ts`, `src/state/`
+
+### Technical decisions
+
+1. **Unknown identifiers degrade, never throw.** Zod keeps option identifiers
+   as plain strings rather than enums, and the label mappings return null for
+   anything unrecognised. A backend that adds an option must not blank the
+   dashboard of an older frontend.
+
+2. **Runtime status was removed rather than faked.** The previous cards showed
+   a `starting -> live` transition, viewer counts and connection quality, all
+   invented. Beside genuinely persisted configuration those would read as real,
+   so they are gone. `PlatformStatus` survives only for system-level states
+   (checking, backend unavailable).
+
+3. **Validation logic extracted into pure modules.** Add Platform validation,
+   the unsaved-changes rule, the cache updates and the field-error mapping are
+   plain functions, tested directly. This covers the required behaviour without
+   adding a browser automation suite or asserting on markup that refactoring
+   would break.
+
+4. **Field errors are localized from `details`, with the English `fields`
+   sentence as the fallback.** An unmapped rule still produces a sentence, never
+   a rule identifier.
+
+5. **Metadata saves patch the cache; configuration changes refetch.** A metadata
+   save cannot affect ordering, so patching is enough. `sortOrder` can reorder
+   the whole list, so those mutations invalidate and let the backend decide.
+
+6. **A local mirror of two backend limits** (`platform-constraints.ts`) drives
+   `maxLength` and instant feedback. It is documented as a mirror, and the
+   backend validates everything again.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 7 namespaces, no differences |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 12 files, 133 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend tests | `go test ./...` | Passed - unchanged by this commit |
+| Restart persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+
+52 frontend tests were added: provider-definition, configured-platform and
+metadata Zod parsing including unknown identifiers and a missing provider;
+identifier-to-key mapping with unknown and hostile input; capability-driven
+validation including Twitch tags, duplicates, limits and unsupported options;
+API client failure classification and the validation envelope; localized error
+codes with the English fallback; backend field-error mapping; Add Platform form
+validation; unsaved-change detection including tag reordering; and cache
+behaviour after create, update and delete.
+
+One lint warning was found and fixed: the platform list needed `useMemo` so its
+identity did not change on every render.
+
+No manual testing was performed.
+
+### Known limitations
+- The production bundle is now ~505 KB (151 KB gzipped) and Vite warns about
+  chunk size. It is a local application loaded from disk, so this is not worth
+  code-splitting yet.
+- Sort order is edited as a number in the settings dialog; there is no
+  drag-and-drop reordering.
+- The provider of an existing destination cannot be changed, matching the API.
+- Host metrics in `demo-system.ts` remain demo values, isolated and labelled.
+- Provider capability tables are still the approximate values, now served by the
+  backend, and still unverified against real platform APIs.
+- The frontend has no component-level rendering tests; behaviour is covered
+  through the extracted pure modules instead.
+
+### Next step
+Update the documentation for persistent configuration: database locations per
+operating system, the new environment variables, migrations, seeding, the API
+endpoints, development-database handling and the corrected record of the
+`.gitignore` incident.

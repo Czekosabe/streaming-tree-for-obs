@@ -1,10 +1,9 @@
 {
   "editor": {
     "heading": "Metadata editor",
-    "description": "Fields are derived from each platform's capability table",
-    "demoTooltip": "Saved values stay in memory - no platform API is called",
+    "description": "Fields come from each platform's capabilities, reported by the backend",
     "tabsLabel": "Platform metadata",
-    "empty": "Select a platform to edit its metadata."
+    "empty": "Add a destination to edit its metadata."
   },
   "fields": {
     "title": "Title",
@@ -39,11 +38,18 @@
   "unsupported": "Not available for {{platform}}: {{fields}}. Fields are driven by the platform capability table, so unsupported fields are not rendered at all.",
   "actions": {
     "save": "Save metadata",
+    "saving": "Saving...",
     "reset": "Reset"
   },
   "status": {
-    "saved": "Saved to local demo state only",
-    "idle": "Changes are kept in memory - nothing is sent to any platform."
+    "saved": "Saved to the local database",
+    "unsaved": "Unsaved changes",
+    "idle": "Metadata is stored locally and is not sent to any platform yet."
+  },
+  "unsaved": {
+    "title": "Discard unsaved changes?",
+    "message": "This destination has metadata changes that have not been saved. Switching now discards them.",
+    "discard": "Discard changes"
   },
   "validation": {
     "titleRequired": "Title is required.",
@@ -58,6 +64,7 @@
     "tagsUnique": "Tags must be unique.",
     "languageUnsupported": "Select a supported language.",
     "visibilityUnsupported": "Select a supported visibility option.",
-    "latencyModeUnsupported": "Select a supported latency mode."
+    "latencyModeUnsupported": "Select a supported latency mode.",
+    "notSupported": "This platform does not support this field."
   }
 }

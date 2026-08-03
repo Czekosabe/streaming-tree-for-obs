@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import type { StreamPlatform } from '@/models/platform';
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 
 import { BackendHealthCard } from './BackendHealthCard';
 import { ResourcesCard } from './ResourcesCard';
@@ -12,7 +12,7 @@ import { StreamCountersCard } from './StreamCountersCard';
  * Below the `xl` breakpoint the dashboard grid drops it underneath the main
  * content instead of squeezing it - see `DashboardPage`.
  */
-export function SystemStatusRail({ platforms }: { platforms: readonly StreamPlatform[] }) {
+export function SystemStatusRail({ platforms }: { platforms: readonly ConfiguredPlatform[] }) {
   const { t } = useTranslation('dashboard');
 
   return (

@@ -44,9 +44,10 @@ describe('translation lookup', () => {
     const i18n = createI18n();
     await i18n.changeLanguage('pl');
 
-    expect(i18n.t('dashboard:systemStatus.live', { count: 1 })).toBe('1 aktywna transmisja');
-    expect(i18n.t('dashboard:systemStatus.live', { count: 3 })).toBe('3 aktywne transmisje');
-    expect(i18n.t('dashboard:systemStatus.live', { count: 7 })).toBe('7 aktywnych transmisji');
+    // Polish needs one/few/many, unlike English's one/other.
+    expect(i18n.t('dashboard:systemStatus.enabled', { count: 1 })).toBe('1 włączony cel');
+    expect(i18n.t('dashboard:systemStatus.enabled', { count: 3 })).toBe('3 włączone cele');
+    expect(i18n.t('dashboard:systemStatus.enabled', { count: 7 })).toBe('7 włączonych celów');
   });
 
   it('starts in the stored language', () => {

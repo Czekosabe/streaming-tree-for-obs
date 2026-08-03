@@ -1,60 +1,97 @@
 import { SlidersHorizontal } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { PlatformId, PlatformMetadata, StreamPlatform } from '@/models/platform';
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 
-import { DemoBadge } from '../ui/DemoBadge';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 import { MetadataForm } from './MetadataForm';
 import { PlatformTabs } from './PlatformTabs';
 
 type MetadataEditorProps = {
-  platforms: readonly StreamPlatform[];
-  activeId: PlatformId;
-  onSelect: (id: PlatformId) => void;
-  onSave: (id: PlatformId, metadata: PlatformMetadata) => void;
+  platforms: readonly ConfiguredPlatform[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
 };
 
 /**
- * Tabbed metadata editor - one tab per platform branch.
+ * Tabbed metadata editor, one tab per configured destination.
  *
  * The form is keyed by platform id so switching tabs starts a fresh draft from
- * that platform's stored metadata instead of leaking values across platforms.
+ * that platform's stored metadata. Switching away with unsaved edits is
+ * confirmed first, so work is never discarded silently.
  */
-export function MetadataEditor({ platforms, activeId, onSelect, onSave }: MetadataEditorProps) {
+export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditorProps) {
   const { t } = useTranslation('metadata');
+  const [dirty, setDirty] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
   const activePlatform = platforms.find((platform) => platform.id === activeId);
 
+  // Stable identity so the form's effect does not re-run on every render.
+  const handleDirtyChange = useCallback((next: boolean) => setDirty(next), []);
+
+  const requestSelect = (id: string) => {
+    if (id === activeId) return;
+    if (dirty) {
+      setPendingId(id);
+      return;
+    }
+    onSelect(id);
+  };
+
+  const confirmDiscard = () => {
+    if (pendingId !== null) {
+      setDirty(false);
+      onSelect(pendingId);
+      setPendingId(null);
+    }
+  };
+
   return (
-    <Panel>
-      <PanelHeader
-        title={t('editor.heading')}
-        description={t('editor.description')}
-        icon={<SlidersHorizontal className="size-4" />}
-        actions={<DemoBadge title={t('editor.demoTooltip')} />}
-      />
+    <>
+      <Panel>
+        <PanelHeader
+          title={t('editor.heading')}
+          description={t('editor.description')}
+          icon={<SlidersHorizontal className="size-4" />}
+        />
 
-      <PlatformTabs platforms={platforms} activeId={activeId} onSelect={onSelect} />
-
-      <PanelBody>
-        {activePlatform === undefined ? (
-          <p className="text-sm text-ink-muted">{t('editor.empty')}</p>
-        ) : (
-          <div
-            role="tabpanel"
-            id={`metadata-panel-${activePlatform.id}`}
-            aria-labelledby={`metadata-tab-${activePlatform.id}`}
-            tabIndex={0}
-            className="animate-fade-rise"
-          >
-            <MetadataForm
-              key={activePlatform.id}
-              platform={activePlatform}
-              onSave={(metadata) => onSave(activePlatform.id, metadata)}
-            />
-          </div>
+        {platforms.length > 0 && activeId !== null && (
+          <PlatformTabs platforms={platforms} activeId={activeId} onSelect={requestSelect} />
         )}
-      </PanelBody>
-    </Panel>
+
+        <PanelBody>
+          {activePlatform === undefined ? (
+            <p className="text-sm text-ink-muted">{t('editor.empty')}</p>
+          ) : (
+            <div
+              role="tabpanel"
+              id={`metadata-panel-${activePlatform.id}`}
+              aria-labelledby={`metadata-tab-${activePlatform.id}`}
+              tabIndex={0}
+              className="animate-fade-rise"
+            >
+              <MetadataForm
+                key={activePlatform.id}
+                platform={activePlatform}
+                onDirtyChange={handleDirtyChange}
+              />
+            </div>
+          )}
+        </PanelBody>
+      </Panel>
+
+      <ConfirmDialog
+        open={pendingId !== null}
+        title={t('unsaved.title')}
+        message={t('unsaved.message')}
+        confirmLabel={t('unsaved.discard')}
+        destructive
+        onConfirm={confirmDiscard}
+        onCancel={() => setPendingId(null)}
+      />
+    </>
   );
 }

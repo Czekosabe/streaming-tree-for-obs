@@ -1,10 +1,9 @@
 {
   "editor": {
     "heading": "Edytor metadanych",
-    "description": "Pola wynikają z tabeli możliwości każdej platformy",
-    "demoTooltip": "Zapisane wartości pozostają w pamięci - żadne API platformy nie jest wywoływane",
+    "description": "Pola wynikają z możliwości platformy zgłaszanych przez backend",
     "tabsLabel": "Metadane platform",
-    "empty": "Wybierz platformę, aby edytować jej metadane."
+    "empty": "Dodaj cel transmisji, aby edytować jego metadane."
   },
   "fields": {
     "title": "Tytuł",
@@ -41,11 +40,18 @@
   "unsupported": "Niedostępne dla platformy {{platform}}: {{fields}}. Pola wynikają z tabeli możliwości platformy, więc pola nieobsługiwane nie są w ogóle renderowane.",
   "actions": {
     "save": "Zapisz metadane",
+    "saving": "Zapisywanie...",
     "reset": "Przywróć"
   },
   "status": {
-    "saved": "Zapisano wyłącznie w lokalnym stanie demonstracyjnym",
-    "idle": "Zmiany pozostają w pamięci - nic nie jest wysyłane do żadnej platformy."
+    "saved": "Zapisano w lokalnej bazie danych",
+    "unsaved": "Niezapisane zmiany",
+    "idle": "Metadane są zapisywane lokalnie i nie są jeszcze wysyłane do żadnej platformy."
+  },
+  "unsaved": {
+    "title": "Odrzucić niezapisane zmiany?",
+    "message": "Ten cel ma niezapisane zmiany metadanych. Przełączenie teraz je odrzuci.",
+    "discard": "Odrzuć zmiany"
   },
   "validation": {
     "titleRequired": "Tytuł jest wymagany.",
@@ -60,6 +66,7 @@
     "tagsUnique": "Tagi nie mogą się powtarzać.",
     "languageUnsupported": "Wybierz obsługiwany język.",
     "visibilityUnsupported": "Wybierz obsługiwaną opcję widoczności.",
-    "latencyModeUnsupported": "Wybierz obsługiwany tryb opóźnienia."
+    "latencyModeUnsupported": "Wybierz obsługiwany tryb opóźnienia.",
+    "notSupported": "Ta platforma nie obsługuje tego pola."
   }
 }

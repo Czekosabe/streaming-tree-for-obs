@@ -13,25 +13,22 @@ import {
   SettingsPage,
   StreamsPage,
 } from '@/pages/PlannedPages';
-import { DemoStreamProvider } from '@/state/DemoStreamProvider';
 
 export function App() {
   return (
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <DemoStreamProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/platforms" element={<PlatformsPage />} />
-              <Route path="/streams" element={<StreamsPage />} />
-              <Route path="/metadata" element={<MetadataPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Routes>
-          </BrowserRouter>
-        </DemoStreamProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/platforms" element={<PlatformsPage />} />
+            <Route path="/streams" element={<StreamsPage />} />
+            <Route path="/metadata" element={<MetadataPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </BrowserRouter>
       </QueryClientProvider>
     </I18nextProvider>
   );

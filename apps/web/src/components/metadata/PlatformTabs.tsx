@@ -1,14 +1,12 @@
 import { useTranslation } from 'react-i18next';
 
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { cn } from '@/lib/cn';
-import type { PlatformId, StreamPlatform } from '@/models/platform';
-
-import { StatusDot } from '../ui/StatusBadge';
 
 type PlatformTabsProps = {
-  platforms: readonly StreamPlatform[];
-  activeId: PlatformId;
-  onSelect: (id: PlatformId) => void;
+  platforms: readonly ConfiguredPlatform[];
+  activeId: string;
+  onSelect: (id: string) => void;
 };
 
 /**
@@ -63,8 +61,15 @@ export function PlatformTabs({ platforms, activeId, onSelect }: PlatformTabsProp
                 : 'border-transparent text-ink-muted hover:border-line-strong hover:text-ink',
             )}
           >
-            <StatusDot status={platform.status} />
-            {platform.name}
+            <span
+              aria-hidden="true"
+              className={cn(
+                'size-1.5 rounded-full',
+                platform.enabled ? 'bg-accent-soft' : 'bg-status-offline',
+              )}
+            />
+            {/* User-chosen destination name, rendered verbatim. */}
+            <span className="max-w-40 truncate">{platform.displayName}</span>
           </button>
         );
       })}

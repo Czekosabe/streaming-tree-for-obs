@@ -1,45 +1,43 @@
 import { useTranslation } from 'react-i18next';
 
 import { useHealthQuery } from '@/hooks/use-health-query';
+import { usePlatformsQuery } from '@/hooks/use-platforms';
 import { cn } from '@/lib/cn';
 import type { PlatformStatus } from '@/models/platform';
-import { useDemoStream } from '@/state/use-demo-stream';
 
 import { StatusBadge } from '../ui/StatusBadge';
 
 /**
- * Aggregated "whole system" indicator shown in the top bar.
+ * Aggregated system indicator in the top bar.
  *
- * Priority: a backend that cannot be reached is the most severe condition,
- * then a branch in error, then live/starting branches, then idle.
+ * It reports the state of the SYSTEM, not of any transmission: whether the
+ * backend answers and how many destinations are configured and enabled. No
+ * live/starting state is ever shown, because nothing streams yet.
  */
 export function SystemStatusPill({ className }: { className?: string }) {
   const { t } = useTranslation('dashboard');
-  const { platforms } = useDemoStream();
-  const { isError: backendDown, isPending } = useHealthQuery();
-
-  const liveCount = platforms.filter((platform) => platform.status === 'live').length;
-  const errorCount = platforms.filter((platform) => platform.status === 'error').length;
-  const startingCount = platforms.filter((platform) => platform.status === 'starting').length;
+  const { isError: backendDown, isPending: healthPending } = useHealthQuery();
+  const platformsQuery = usePlatformsQuery();
 
   let status: PlatformStatus = 'offline';
   let label = t('systemStatus.idle');
 
-  if (isPending) {
+  if (healthPending || platformsQuery.isPending) {
     status = 'starting';
     label = t('systemStatus.checking');
   } else if (backendDown) {
     status = 'error';
     label = t('systemStatus.backendUnavailable');
-  } else if (errorCount > 0) {
+  } else if (platformsQuery.isError) {
     status = 'error';
-    label = t('systemStatus.errors', { count: errorCount });
-  } else if (liveCount > 0) {
-    status = 'live';
-    label = t('systemStatus.live', { count: liveCount });
-  } else if (startingCount > 0) {
-    status = 'starting';
-    label = t('systemStatus.starting', { count: startingCount });
+    label = t('systemStatus.configurationUnavailable');
+  } else {
+    const enabled = (platformsQuery.data ?? []).filter((platform) => platform.enabled).length;
+    if (enabled > 0) {
+      // Deliberately "enabled", not "live": these destinations are configured
+      // and ready, and nothing is transmitting.
+      label = t('systemStatus.enabled', { count: enabled });
+    }
   }
 
   return (

@@ -1,6 +1,7 @@
 {
   "title": "Dashboard",
   "description": "One OBS output, several independent platform branches.",
+  "definitionsUnavailable": "Platform definitions could not be loaded from the backend.",
   "actions": {
     "addPlatform": "Add Platform",
     "addPlatformShort": "Add",
@@ -11,33 +12,36 @@
     "heading": "Platform branches",
     "note": "Each branch runs independently - one failure does not stop the others."
   },
+  "states": {
+    "loading": "Loading configured platforms...",
+    "loadFailedTitle": "Configured platforms could not be loaded",
+    "noLocalFallback": "Nothing is shown from the browser: your saved configuration lives in the backend database, so it cannot be displayed while the backend is unreachable.",
+    "retry": "Try again",
+    "emptyTitle": "No destinations configured yet",
+    "emptyMessage": "Add a destination to start building your streaming tree. Configuration is stored locally and contains no credentials."
+  },
   "systemStatus": {
     "railLabel": "System status",
-    "idle": "System idle",
+    "idle": "No destinations enabled",
     "checking": "Checking system",
     "backendUnavailable": "Backend unavailable",
-    "live_one": "{{count}} active stream",
-    "live_other": "{{count}} active streams",
-    "starting_one": "{{count}} stream starting",
-    "starting_other": "{{count}} streams starting",
-    "errors_one": "{{count}} branch in error",
-    "errors_other": "{{count}} branches in error"
+    "configurationUnavailable": "Configuration unavailable",
+    "enabled_one": "{{count}} destination enabled",
+    "enabled_other": "{{count}} destinations enabled"
   },
   "counters": {
-    "heading": "Stream branches",
-    "description": "Counted from local demo state",
-    "live": "Live",
-    "starting": "Starting",
-    "offline": "Offline",
-    "error": "Error",
-    "liveAccessible_one": "{{count}} live branch",
-    "liveAccessible_other": "{{count}} live branches",
-    "startingAccessible_one": "{{count}} starting branch",
-    "startingAccessible_other": "{{count}} starting branches",
-    "offlineAccessible_one": "{{count}} offline branch",
-    "offlineAccessible_other": "{{count}} offline branches",
-    "errorAccessible_one": "{{count}} branch in error",
-    "errorAccessible_other": "{{count}} branches in error"
+    "heading": "Configured destinations",
+    "description": "Read from the local database",
+    "configured": "Total",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "noRuntimeState": "No live state is shown: the streaming engine is not implemented yet, so destinations are configuration only.",
+    "configuredAccessible_one": "{{count}} configured destination",
+    "configuredAccessible_other": "{{count}} configured destinations",
+    "enabledAccessible_one": "{{count}} enabled destination",
+    "enabledAccessible_other": "{{count}} enabled destinations",
+    "disabledAccessible_one": "{{count}} disabled destination",
+    "disabledAccessible_other": "{{count}} disabled destinations"
   },
   "backend": {
     "heading": "Backend",
@@ -46,7 +50,7 @@
     "refreshShort": "Check again",
     "pending": "Contacting the backend...",
     "unavailable": "Backend unavailable",
-    "unaffected": "The dashboard keeps working - demo values below are unaffected.",
+    "unaffected": "The application shell keeps working, but no configuration can be read or saved.",
     "connected": "Connected",
     "service": "Service",
     "version": "Version",

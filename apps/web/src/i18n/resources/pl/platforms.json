@@ -13,21 +13,16 @@
     "unknown": "Nieznana"
   },
   "card": {
-    "ingestHint": "Odbiór RTMP (atrapa demonstracyjna)",
     "noTitle": "Brak tytułu",
-    "viewers": "Widzowie",
-    "viewersAccessible_one": "{{count}} widz",
-    "viewersAccessible_few": "{{count}} widzów",
-    "viewersAccessible_many": "{{count}} widzów",
-    "viewersAccessible_other": "{{count}} widza",
-    "quality": "Jakość",
+    "enabled": "Włączona",
+    "disabled": "Wyłączona",
+    "stateLabel": "Stan",
+    "offlineConfigured": "Skonfigurowana, offline",
     "start": "Uruchom",
-    "stop": "Zatrzymaj",
-    "demoControl": "Sterowanie demonstracyjne - brak realnej transmisji",
-    "openMetadata": "Otwórz metadane platformy {{platform}}"
-  },
-  "statusDetail": {
-    "noStreamKey": "Stan demonstracyjny: nie skonfigurowano klucza transmisji."
+    "streamingNotImplemented": "Silnik transmisji nie jest zaimplementowany",
+    "editMetadata": "Edytuj metadane platformy {{platform}}",
+    "openSettings": "Otwórz ustawienia platformy {{platform}}",
+    "unknownProvider": "Ten cel korzysta z platformy „{{providerId}}”, której ta wersja nie rozpoznaje. Zaktualizuj aplikację albo usuń ten cel."
   },
   "fields": {
     "category": "Kategoria",
@@ -48,5 +43,44 @@
     "normal": "Zwykłe opóźnienie",
     "low": "Niskie opóźnienie",
     "ultraLow": "Bardzo niskie opóźnienie"
+  },
+  "addDialog": {
+    "title": "Dodaj platformę",
+    "description": "Skonfiguruj gałąź docelową. Możesz dodać kilka celów dla tej samej platformy.",
+    "providerLabel": "Platforma",
+    "displayNameLabel": "Nazwa wyświetlana",
+    "displayNameHint": "Używana wyłącznie w tej aplikacji, aby odróżnić od siebie cele transmisji.",
+    "displayNamePlaceholder": "np. Główny kanał Twitch",
+    "submit": "Dodaj platformę",
+    "creating": "Dodawanie...",
+    "noCredentialsNote": "Klucz transmisji nie jest pobierany ani zapisywany. Poświadczenia trafią do magazynu systemu operacyjnego na późniejszym etapie."
+  },
+  "settings": {
+    "title": "Ustawienia platformy",
+    "description": "Konfiguracja celu {{platform}}.",
+    "providerLabel": "Platforma",
+    "providerImmutable": "Platformy nie można zmienić. Usuń ten cel i dodaj nowy.",
+    "displayNameLabel": "Nazwa wyświetlana",
+    "sortOrderLabel": "Kolejność",
+    "sortOrderHint": "Niższe wartości pojawiają się wcześniej na pulpicie.",
+    "enabledLabel": "Włączona",
+    "enabledDescription": "Uwzględnij ten cel, gdy transmisja zostanie zaimplementowana.",
+    "save": "Zapisz zmiany",
+    "saving": "Zapisywanie...",
+    "saved": "Konfiguracja zapisana",
+    "delete": "Usuń",
+    "hint": "Zmiany są zapisywane w lokalnej bazie danych."
+  },
+  "deleteDialog": {
+    "title": "Usunąć ten cel transmisji?",
+    "message": "Cel „{{platform}}” wraz z zapisanymi metadanymi i tagami zostanie trwale usunięty z bazy danych. Tej operacji nie można cofnąć.",
+    "confirm": "Usuń trwale"
+  },
+  "validation": {
+    "displayNameRequired": "Nazwa wyświetlana jest wymagana.",
+    "displayNameTooLong": "Nazwa wyświetlana może mieć najwyżej {{max}} znaków.",
+    "providerRequired": "Wybierz platformę.",
+    "providerUnsupported": "Ta platforma nie jest obsługiwana.",
+    "sortOrderInvalid": "Podaj kolejność z zakresu od 0 do 10000."
   }
 }

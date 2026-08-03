@@ -1,73 +1,48 @@
-import { Loader2, Play, Settings2, Square, Users, Wifi } from 'lucide-react';
+import { Ban, Play, Settings2, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { useLanguage } from '@/i18n/use-language';
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { cn } from '@/lib/cn';
-import { formatViewers } from '@/lib/format';
-import {
-  CONNECTION_QUALITY_LABEL_KEYS,
-  type ConnectionQuality,
-  type PlatformId,
-  type StreamPlatform,
-} from '@/models/platform';
+import { categoryFieldLabelKey, providerGlyphClass } from '@/models/provider-labels';
 
 import { Button, IconButton } from '../ui/Button';
-import { StatusBadge } from '../ui/StatusBadge';
 import { PlatformGlyph } from './PlatformGlyph';
 
-const QUALITY_TEXT_CLASSES: Record<ConnectionQuality, string> = {
-  excellent: 'text-status-live',
-  good: 'text-status-live',
-  fair: 'text-status-warning',
-  poor: 'text-status-error',
-  unknown: 'text-ink-faint',
-};
-
-/** Left accent stripe reflecting the branch status. */
-const STATUS_STRIPE_CLASSES: Record<StreamPlatform['status'], string> = {
-  live: 'bg-status-live',
-  starting: 'bg-status-starting',
-  error: 'bg-status-error',
-  offline: 'bg-status-offline/50',
-};
-
 type PlatformCardProps = {
-  platform: StreamPlatform;
-  onStart: (id: PlatformId) => void;
-  onStop: (id: PlatformId) => void;
-  onConfigure: (id: PlatformId) => void;
+  platform: ConfiguredPlatform;
+  onOpenSettings: (id: string) => void;
+  onEditMetadata: (id: string) => void;
 };
-
-function MetaRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-        {label}
-      </dt>
-      <dd className="mt-0.5 truncate text-xs text-ink-muted" title={value}>
-        {value}
-      </dd>
-    </div>
-  );
-}
 
 /**
- * One branch of the streaming tree.
+ * One configured destination branch.
  *
- * The Start/Stop button only mutates the local DEMO store - it does not spawn
- * FFmpeg, does not contact any platform and does not transmit anything. The
- * "Demo control" caption under the button states this in the UI itself.
+ * The card shows CONFIGURATION only. There is no streaming engine yet, so it
+ * reports "configured / offline" and never a live state, no viewer count and no
+ * connection quality - previously those were demo values, and showing them next
+ * to real saved configuration would be misleading.
  *
- * The stream title, category and tags shown here are user-authored content and
- * are rendered verbatim - they are never translated.
+ * Start is disabled with an explanation; the settings and metadata actions are
+ * real and open editors backed by the API.
+ *
+ * The title and category shown here are user-authored content, rendered
+ * verbatim and never translated.
  */
-export function PlatformCard({ platform, onStart, onStop, onConfigure }: PlatformCardProps) {
+export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: PlatformCardProps) {
   const { t } = useTranslation(['platforms', 'common']);
-  const { locale } = useLanguage();
 
-  const isBusy = platform.status === 'starting';
-  const isRunning = platform.status === 'live' || platform.status === 'starting';
-  const showViewers = platform.status === 'live' && platform.viewers !== null;
+  const provider = platform.provider;
+  const brandName = provider?.brandName ?? platform.providerId;
+  const shortLabel = provider?.shortLabel ?? platform.providerId.slice(0, 2).toUpperCase();
+
+  // An unknown category-field identifier falls back to the generic label rather
+  // than blanking the row.
+  const categoryKey =
+    provider === undefined ? null : categoryFieldLabelKey(provider.categoryFieldType);
+  const categoryLabel = categoryKey === null ? t('platforms:fields.category') : t(categoryKey);
+
+  const hasTitle = platform.metadata.title.trim() !== '';
+  const hasCategory = platform.metadata.category.trim() !== '';
 
   return (
     <article
@@ -79,124 +54,119 @@ export function PlatformCard({ platform, onStart, onStop, onConfigure }: Platfor
     >
       <span
         aria-hidden="true"
-        className={cn('absolute inset-y-0 left-0 w-0.5', STATUS_STRIPE_CLASSES[platform.status])}
+        className={cn(
+          'absolute inset-y-0 left-0 w-0.5',
+          platform.enabled ? 'bg-accent/70' : 'bg-status-offline/50',
+        )}
       />
 
       <div className="flex items-start justify-between gap-3 p-4 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <PlatformGlyph id={platform.id} label={platform.shortLabel} />
+          <PlatformGlyph className={providerGlyphClass(platform.providerId)} label={shortLabel} />
           <div className="min-w-0">
-            {/* Brand name - never translated. */}
+            {/* User-chosen destination name; brand name sits underneath it. */}
             <h3
               id={`platform-${platform.id}-name`}
               className="truncate text-sm font-semibold text-ink"
+              title={platform.displayName}
             >
-              {platform.name}
+              {platform.displayName}
             </h3>
-            <p className="truncate text-[11px] text-ink-faint">{t('platforms:card.ingestHint')}</p>
+            <p className="truncate text-[11px] text-ink-faint">{brandName}</p>
           </div>
         </div>
-        <StatusBadge status={platform.status} />
+
+        <span
+          className={cn(
+            'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5',
+            'text-[11px] font-semibold uppercase tracking-wide',
+            platform.enabled
+              ? 'border-accent/40 bg-accent/12 text-accent-soft'
+              : 'border-status-offline/40 bg-status-offline/12 text-status-offline',
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-2 rounded-full',
+              platform.enabled ? 'bg-accent-soft' : 'bg-status-offline',
+            )}
+          />
+          {platform.enabled
+            ? t('platforms:card.enabled')
+            : t('platforms:card.disabled')}
+        </span>
       </div>
 
       <div className="space-y-3 px-4 pb-3">
-        <p
-          className="line-clamp-2 min-h-9 text-sm text-ink"
-          title={platform.metadata.title}
-        >
-          {platform.metadata.title === '' ? (
-            <span className="text-ink-faint italic">{t('platforms:card.noTitle')}</span>
-          ) : (
+        <p className="line-clamp-2 min-h-9 text-sm text-ink" title={platform.metadata.title}>
+          {hasTitle ? (
             platform.metadata.title
+          ) : (
+            <span className="text-ink-faint italic">{t('platforms:card.noTitle')}</span>
           )}
         </p>
 
-        <dl className="grid grid-cols-3 gap-3">
-          <MetaRow
-            label={t(platform.options.categoryLabelKey)}
-            value={
-              platform.metadata.category === ''
-                ? t('common:values.empty')
-                : platform.metadata.category
-            }
-          />
+        <dl className="grid grid-cols-2 gap-3">
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              {t('platforms:card.viewers')}
+              {categoryLabel}
             </dt>
-            <dd className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
-              <Users aria-hidden="true" className="size-3 shrink-0" />
-              <span
-                className="font-mono tabular-nums"
-                title={
-                  showViewers && platform.viewers !== null
-                    ? t('platforms:card.viewersAccessible', { count: platform.viewers })
-                    : undefined
-                }
-              >
-                {showViewers ? formatViewers(platform.viewers, locale) : t('common:values.empty')}
-              </span>
+            <dd
+              className="mt-0.5 truncate text-xs text-ink-muted"
+              title={platform.metadata.category}
+            >
+              {hasCategory ? platform.metadata.category : t('common:values.empty')}
             </dd>
           </div>
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              {t('platforms:card.quality')}
+              {t('platforms:card.stateLabel')}
             </dt>
-            <dd
-              className={cn(
-                'mt-0.5 flex items-center gap-1 text-xs',
-                QUALITY_TEXT_CLASSES[platform.quality],
-              )}
-            >
-              <Wifi aria-hidden="true" className="size-3 shrink-0" />
-              <span className="truncate">{t(CONNECTION_QUALITY_LABEL_KEYS[platform.quality])}</span>
+            <dd className="mt-0.5 truncate text-xs text-ink-muted">
+              {t('platforms:card.offlineConfigured')}
             </dd>
           </div>
         </dl>
 
-        {platform.statusDetailKey !== null && (
-          <p className="rounded-md border border-status-error/30 bg-status-error/10 px-2 py-1.5 text-[11px] text-status-error">
-            {t(platform.statusDetailKey)}
+        {provider === undefined && (
+          <p className="rounded-md border border-status-warning/30 bg-status-warning/10 px-2 py-1.5 text-[11px] text-status-warning">
+            {t('platforms:card.unknownProvider', { providerId: platform.providerId })}
           </p>
         )}
       </div>
 
       <footer className="flex items-center justify-between gap-2 border-t border-line px-4 py-3">
-        <div className="flex items-center gap-2">
-          {isRunning ? (
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => onStop(platform.id)}
-              icon={<Square className="size-3.5" />}
-            >
-              {t('platforms:card.stop')}
-            </Button>
-          ) : (
-            <Button
-              variant="success"
-              size="sm"
-              onClick={() => onStart(platform.id)}
-              icon={
-                isBusy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Play className="size-3.5" />
-                )
-              }
-            >
-              {t('platforms:card.start')}
-            </Button>
-          )}
-          <span className="text-[10px] text-ink-faint">{t('platforms:card.demoControl')}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled
+            title={t('platforms:card.streamingNotImplemented')}
+            icon={<Play className="size-3.5" />}
+          >
+            {t('platforms:card.start')}
+          </Button>
+          <span className="flex min-w-0 items-center gap-1 text-[10px] text-ink-faint">
+            <Ban aria-hidden="true" className="size-3 shrink-0" />
+            <span className="truncate">{t('platforms:card.streamingNotImplemented')}</span>
+          </span>
         </div>
 
-        <IconButton
-          label={t('platforms:card.openMetadata', { platform: platform.name })}
-          variant="ghost"
-          onClick={() => onConfigure(platform.id)}
-          icon={<Settings2 className="size-4" />}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton
+            label={t('platforms:card.editMetadata', { platform: platform.displayName })}
+            variant="ghost"
+            onClick={() => onEditMetadata(platform.id)}
+            icon={<SlidersHorizontal className="size-4" />}
+          />
+          <IconButton
+            label={t('platforms:card.openSettings', { platform: platform.displayName })}
+            variant="ghost"
+            onClick={() => onOpenSettings(platform.id)}
+            icon={<Settings2 className="size-4" />}
+          />
+        </div>
       </footer>
     </article>
   );
