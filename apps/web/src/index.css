@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+
+/*
+ * Streaming Tree for OBS - design tokens.
+ *
+ * The palette is intentionally narrow: one very dark navy canvas, two slightly
+ * lighter panel surfaces, one violet accent and four semantic status colours.
+ * Gradients are reserved for a small number of deliberate surfaces (the brand
+ * mark and the "live" progress meters) instead of being applied everywhere.
+ */
+@theme {
+  /* Surfaces */
+  --color-canvas: #070a16;
+  --color-surface: #0c1122;
+  --color-surface-raised: #121a2e;
+  --color-surface-hover: #18213a;
+  --color-surface-sunken: #090d1c;
+
+  /* Borders */
+  --color-line: #1d2740;
+  --color-line-strong: #2c3a5c;
+
+  /* Text */
+  --color-ink: #e9ecf7;
+  --color-ink-muted: #98a3c0;
+  --color-ink-faint: #6b7597;
+
+  /* Brand accent */
+  --color-accent: #8b5cf6;
+  --color-accent-soft: #a78bfa;
+  --color-accent-deep: #6d28d9;
+
+  /* Semantic status colours */
+  --color-status-live: #22c55e;
+  --color-status-starting: #3b82f6;
+  --color-status-error: #ef4444;
+  --color-status-offline: #64748b;
+  --color-status-warning: #f59e0b;
+
+  /* Typography */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+
+  /* Elevation - subtle, never heavy */
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-raised: 0 2px 4px rgb(0 0 0 / 0.45), 0 16px 40px -20px rgb(0 0 0 / 0.7);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    color-scheme: dark;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * Keyboard accessibility: every interactive element gets a clearly visible
+   * focus ring, but only when focus came from the keyboard.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-soft);
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent) 45%, transparent);
+    color: var(--color-ink);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  /* Respect users who prefer reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Skip link - visible only when focused. */
+  .skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -4rem;
+    z-index: 100;
+    border-radius: 0.5rem;
+    background-color: var(--color-accent);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fff;
+    transition: top 150ms ease;
+  }
+
+  .skip-link:focus {
+    top: 1rem;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.55;
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 0;
+  }
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@utility animate-fade-rise {
+  animation: fade-rise 260ms ease-out both;
+}

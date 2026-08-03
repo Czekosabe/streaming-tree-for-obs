@@ -1,0 +1,57 @@
+# --- Dependencies ---
+node_modules/
+.pnp/
+.pnp.js
+
+# --- Build output ---
+dist/
+build/
+*.tsbuildinfo
+
+# --- Go ---
+# Compiled server binaries (see apps/server)
+apps/server/bin/
+apps/server/streaming-tree-server
+apps/server/streaming-tree-server.exe
+*.exe
+*.test
+
+# --- Secrets / local configuration ---
+# Stream keys, OAuth tokens and any credentials must NEVER be committed.
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+credentials/
+
+# --- Runtime data (added in later stages) ---
+data/
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+
+# --- Third party binaries downloaded locally (later stages) ---
+vendor/bin/
+mediamtx
+mediamtx.exe
+ffmpeg
+ffmpeg.exe
+
+# --- Local tooling settings ---
+.claude/settings.local.json
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- Tooling caches ---
+.eslintcache
+.vite/
+coverage/
