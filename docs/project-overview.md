@@ -141,7 +141,8 @@ in `sessionStorage`, not in application state.
 The backend is the only place where decisions are made:
 
 - it exposes the REST API for the panel,
-- it holds platform configuration and metadata,
+- it holds platform configuration and metadata in a local SQLite database,
+- it is the single source of truth for provider capabilities,
 - it starts and supervises MediaMTX and the FFmpeg processes,
 - it reads stream keys from the system credential store at branch start time,
 - it enforces failure isolation and the restart policy,
@@ -150,6 +151,40 @@ The backend is the only place where decisions are made:
 Go was chosen for three reasons: distribution as a single binary with no
 runtime to install, good support for supervising child processes, and a simple
 concurrency model for many independent branches.
+
+### 7.3.1 Persistent storage (implemented)
+
+**Status: implemented.**
+
+Configuration lives in a local SQLite database, accessed through
+`database/sql` with the pure-Go `modernc.org/sqlite` driver, so the backend
+still builds and cross-compiles as a single binary without a C toolchain. No ORM
+is used.
+
+What the database holds:
+
+- configured destinations (which provider, display name, enabled state, ordering),
+- their stream metadata,
+- ordered metadata tags,
+- the record of which schema migrations have been applied.
+
+What it deliberately does **not** hold:
+
+- **runtime state** — no offline/starting/live status, viewer count, connection
+  quality or process state. Runtime state belongs to a streaming engine that
+  does not exist yet, and persisting it would make configuration and reality
+  indistinguishable,
+- **credentials** — no stream key, OAuth token or password. No table has a
+  column for one.
+
+Migrations are `.sql` files embedded in the binary and applied automatically at
+startup, each inside a transaction together with its bookkeeping row, so a
+failed migration is never recorded as applied. A one-time seed creates four
+disabled example destinations on a brand-new database; because the seed is an
+ordinary recorded migration, deleting a seeded destination is permanent.
+
+The database location, environment variables and reset procedure are documented
+in `README.md`.
 
 ### 7.4 Planned role of MediaMTX
 
@@ -202,6 +237,44 @@ Rules:
 5. **Shared source.** All branches read the same stream from MediaMTX, so adding
    a platform puts no extra load on OBS.
 
+## 8.1 Three concepts that must not be confused
+
+The domain deliberately separates three things that look similar and behave
+completely differently.
+
+### Provider definition
+
+A built-in description of an integration type: Twitch, YouTube, Kick, TikTok.
+It carries the brand name, the metadata capabilities, the field limits and the
+supported option identifiers.
+
+Provider definitions are **compiled into the backend binary**. They are not
+database rows, cannot be created or deleted by a user, and are not affected by
+platform CRUD. The backend is their single source of truth; the frontend holds
+no competing capability table.
+
+### Configured platform
+
+A destination branch the **user** created — for example "provider: Twitch,
+display name: Main Twitch channel".
+
+Several destinations may use the same provider, so the provider identifier is
+never the primary key. Every configured platform has a stable, random,
+backend-generated identifier. A configured platform stores **configuration
+only**.
+
+### Runtime stream state
+
+Whether a branch is offline, starting, live or failed, its viewer count,
+connection quality and FFmpeg process state.
+
+**Runtime state is not implemented and is not stored.** No streaming engine
+exists, so configured destinations are presented as configured and offline. The
+interface shows no live state and no invented viewer numbers, because beside
+genuinely persisted configuration those would read as real.
+
+---
+
 ## 9. Capability-driven metadata model
 
 Platforms do not offer the same metadata fields and do not apply the same
@@ -222,20 +295,45 @@ type PlatformCapabilities = {
 ```
 
 This is complemented by **limits** (maximum title length, number of tags) and an
-**option vocabulary** (the name of the category field, the available visibility
+**option vocabulary** (the type of the category field, the available visibility
 levels and latency modes).
+
+This table now lives in the Go backend and is served by
+`GET /api/platform-definitions`. The frontend receives booleans, numbers and
+option identifiers; it maintains no capability table of its own.
 
 Consequences adopted in the code:
 
 - a field a platform does not support is **not rendered at all** - it is not
   merely disabled,
-- the Zod validation schema is **built dynamically** from the capability table,
-  so tag rules do not exist for a platform without tags,
-- adding a new platform means describing it, not rebuilding the form.
+- the validation schema is **built dynamically** from the capability table on
+  both sides, so tag rules do not exist for a platform without tags,
+- the backend validates every save against the same table and is the authority;
+  the frontend's copy of the rules exists only for immediate feedback,
+- adding a new platform means describing it in the registry, not rebuilding the
+  form.
 
-In the current demo configuration only Twitch has tag support enabled. These
-configurations are **approximate and illustrative** - they will be verified when
-real API integrations are implemented.
+Only Twitch has tag support enabled. These definitions are **approximate and
+illustrative**: they have **not** been verified against the real Twitch,
+YouTube, Kick or TikTok APIs and will be re-checked when real integrations are
+implemented.
+
+### 9.1 The localization boundary
+
+The backend never decides the interface language. Provider definitions carry
+**semantic identifiers only** — `twitch`, `topic`, `public`, `ultra-low`, `tags`
+— and never localized prose such as "Public" or "Publiczny".
+
+The frontend maps those identifiers onto English and Polish translation
+resources. Every mapping is total: an identifier this build does not recognise
+is rendered as-is rather than crashing the dashboard, so a newer backend
+degrades gracefully.
+
+The one exception is brand names (Twitch, YouTube, Kick, TikTok), which are
+proper nouns and identical in every language.
+
+User-authored metadata — titles, descriptions, tags — is stored exactly as
+entered and is never translated.
 
 ---
 
@@ -247,7 +345,13 @@ password.
 Rules in force for this project:
 
 1. **No secrets in the repository.** No keys, no tokens, no `.env` files with
-   real values. `.gitignore` blocks environment files and data directories.
+   real values. `.gitignore` blocks environment files, database files and data
+   directories.
+
+   The SQLite database likewise stores no credentials: no table has a column for
+   a stream key, token or password, and no API payload carries one. Write
+   endpoints reject unknown JSON fields, so a stray credential field fails
+   loudly instead of being silently dropped.
 2. **No secrets in the browser.** Keys never go into `localStorage`,
    `sessionStorage`, cookies or React state. `VITE_*` variables are compiled
    into the public JavaScript bundle and must never contain secrets. The only
@@ -332,7 +436,7 @@ is implemented yet.
 | ----- | ----- | ------ |
 | 1 | Foundations: repository structure, documentation, React panel, minimal Go backend, `/api/health` endpoint | **Completed** |
 | 2 | English and Polish localization of the frontend | **Completed** |
-| 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | Planned |
+| 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | **Completed** |
 | 4 | MediaMTX integration: process startup, configuration generation, OBS connection detection | Planned |
 | 5 | FFmpeg branches: startup, supervision, restarts, failure isolation | Planned |
 | 6 | Live status over SSE or WebSocket instead of polling | Planned |
@@ -343,6 +447,10 @@ is implemented yet.
 
 The order may change, but stages 4 and 5 depend on stage 3, and stage 8 depends
 on stage 7.
+
+Stage 3 was marked completed only after all automated checks passed, including
+the scripted verification that configuration and metadata survive a backend
+restart.
 
 ## 14. The manual testing rule
 
@@ -364,7 +472,10 @@ be run continuously:
 - `go build ./...` - backend compilation,
 - `go vet ./...` - backend static analysis,
 - `go test ./...` - backend tests,
-- `gofmt -l .` - backend formatting check.
+- `gofmt -l .` - backend formatting check,
+- `node scripts/verify-persistence.mjs` - scripted verification that
+  configuration and metadata survive a backend restart, run against a temporary
+  database.
 
 ## 15. Honesty about the state of the work
 

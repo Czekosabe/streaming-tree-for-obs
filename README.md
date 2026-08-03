@@ -7,16 +7,21 @@ The name describes the model: the stream from OBS is the "trunk", and every
 platform is an independent "branch". One branch failing does not stop the
 others.
 
-> ## Project state: foundations
+> ## Project state: persistent configuration
 >
 > **The application does not transmit anything yet.** What exists so far is the
 > project structure, the documentation, the React operator panel with English
-> and Polish interface languages, and a minimal Go backend with a health
-> endpoint.
+> and Polish interface languages, and a Go backend that stores platform
+> configuration and stream metadata in a local SQLite database.
 >
-> MediaMTX, FFmpeg, OAuth sign-in, platform API integrations and the database
-> **will be added in later stages**. Everything that is only a placeholder is
-> marked with a **Demo** badge in the interface — the full list is in
+> You can add, edit and delete destinations and save their metadata, and it all
+> survives a browser refresh and a backend restart. **Streaming itself is not
+> implemented**: MediaMTX, FFmpeg, OAuth sign-in and platform API integrations
+> **will be added in later stages**, so destinations are configuration only and
+> the Start button is disabled.
+>
+> Whatever is still only a placeholder is marked with a **Demo** badge in the
+> interface — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -30,6 +35,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Quick start](#quick-start)
 - [Frontend — install and run](#frontend--install-and-run)
 - [Go backend — running it](#go-backend--running-it)
+- [Data storage](#data-storage)
+- [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
 - [Interface languages](#interface-languages)
@@ -184,6 +191,8 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_HOST` | `127.0.0.1` | Interface to bind to. Loopback only by default, so the server is not exposed to the local network by accident. |
 | `STREAMING_TREE_PORT` | `8080` | REST API port. |
 | `STREAMING_TREE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins accepted by CORS. |
+| `STREAMING_TREE_DATA_DIR` | per-user config directory | Directory that will hold the database file. See [Data storage](#data-storage). |
+| `STREAMING_TREE_DB_PATH` | — | Full path to the SQLite file. Takes precedence over `STREAMING_TREE_DATA_DIR`. |
 
 Example — running on a different port:
 
@@ -214,6 +223,153 @@ go build -o bin/streaming-tree-server.exe ./cmd/server
 ```
 
 The `bin/` directory is ignored by Git.
+
+---
+
+## Data storage
+
+Platform configuration and stream metadata are stored in a local **SQLite**
+database. The driver is `modernc.org/sqlite`, a pure-Go implementation, so the
+backend still builds with plain `go build` and needs no C toolchain.
+
+### Where the database lives
+
+The path is resolved in this order:
+
+1. **`STREAMING_TREE_DB_PATH`** — the full path to the file, including its name.
+2. **`STREAMING_TREE_DATA_DIR`** — a directory; the file `streaming-tree.db` is
+   created inside it.
+3. **The default** — the per-user configuration directory reported by Go's
+   `os.UserConfigDir()`, plus `StreamingTree/streaming-tree.db`:
+
+| System  | Default location |
+| ------- | ---------------- |
+| Windows | `%AppData%\StreamingTree\streaming-tree.db` (usually `C:\Users\<you>\AppData\Roaming\StreamingTree\streaming-tree.db`) |
+| macOS   | `~/Library/Application Support/StreamingTree/streaming-tree.db` |
+| Linux   | `$XDG_CONFIG_HOME/StreamingTree/streaming-tree.db`, or `~/.config/StreamingTree/streaming-tree.db` |
+
+The parent directory is created automatically. The default deliberately lives
+**outside the repository**, so a working copy never accumulates a database file,
+and `*.db` is ignored by Git in any case.
+
+The resolved path is printed at startup:
+
+```
+level=INFO msg="database ready" path=... journal_mode=wal
+```
+
+That line contains no credentials, because the application stores none.
+
+### Migrations
+
+The schema is created and updated by migrations embedded in the binary. They run
+automatically at startup — there is no separate migration command. Each
+migration commits together with its bookkeeping row, so a failed migration is
+never recorded as applied and is retried next time. Applied migrations are
+tracked in the `schema_migrations` table and never run twice.
+
+### Seeded configurations
+
+On a **brand-new** database, four destinations are created, one per supported
+platform (Twitch, YouTube, Kick, TikTok). They are **disabled** and carry example
+metadata. Because the seed is an ordinary recorded migration, it runs exactly
+once: **if you delete a seeded destination, restarting the application will not
+bring it back.**
+
+No stream key, token or credential is seeded, stored or accepted anywhere.
+
+### Using a development database
+
+Point the backend at a throwaway file so your real configuration is untouched:
+
+```bash
+# Linux / macOS
+STREAMING_TREE_DB_PATH=/tmp/streaming-tree-dev.db go run ./cmd/server
+```
+
+```powershell
+# Windows PowerShell
+$env:STREAMING_TREE_DB_PATH="$env:TEMP\streaming-tree-dev.db"; go run ./cmd/server
+```
+
+### Resetting a development database
+
+Stop the backend and delete the file. It is recreated, migrated and re-seeded on
+the next start:
+
+```bash
+# Linux / macOS
+rm -f /tmp/streaming-tree-dev.db /tmp/streaming-tree-dev.db-wal /tmp/streaming-tree-dev.db-shm
+```
+
+```powershell
+# Windows PowerShell
+Remove-Item "$env:TEMP\streaming-tree-dev.db*"
+```
+
+WAL mode creates `-wal` and `-shm` sidecar files next to the database; remove
+them too.
+
+> ### ⚠ Deleting a database deletes your configuration
+>
+> The database file **is** your saved data: every configured destination, its
+> display name and enabled state, and all stream metadata and tags. Deleting it
+> removes all of that permanently, and there is no backup or undo. Make sure you
+> are deleting a development database and not the default per-user one.
+
+---
+
+## REST API
+
+All endpoints live under `/api` and return `application/json`.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET` | `/api/health` | Liveness, service name, version and uptime. |
+| `GET` | `/api/platform-definitions` | Built-in provider definitions: capabilities, limits and supported option identifiers. |
+| `GET` | `/api/platforms` | All configured destinations, ordered, with their provider definition and metadata. |
+| `POST` | `/api/platforms` | Create a destination. Responds 201 with a `Location` header. |
+| `GET` | `/api/platforms/{id}` | One configured destination. |
+| `PUT` | `/api/platforms/{id}` | Replace display name, enabled state and sort order. |
+| `DELETE` | `/api/platforms/{id}` | Delete a destination; metadata and tags cascade. Responds 204. |
+| `GET` | `/api/platforms/{id}/metadata` | Stored metadata and ordered tags. |
+| `PUT` | `/api/platforms/{id}/metadata` | Replace metadata and tags atomically. |
+
+Example — listing configured destinations:
+
+```bash
+curl http://127.0.0.1:8080/api/platforms
+```
+
+Every error uses one envelope:
+
+```json
+{ "error": "not_found", "message": "The requested resource does not exist." }
+```
+
+Validation failures add a per-field map plus stable rule identifiers the
+frontend localizes:
+
+```json
+{
+  "error": "validation_failed",
+  "message": "Validation failed",
+  "fields": { "title": "Title cannot exceed 140 characters." },
+  "details": { "title": { "rule": "too_long", "params": { "max": 140 } } }
+}
+```
+
+Status codes: `400` malformed JSON or an unknown field, `404` missing record,
+`405` unsupported method (with `Allow`), `409` conflict, `413` body over 64 KiB,
+`415` wrong content type, `422` validation failure, `500` internal failure.
+
+**Provider definitions return semantic identifiers, never translated text.** The
+backend sends `public`, `ultra-low`, `topic`; the frontend maps those to English
+or Polish. The backend never decides the interface language.
+
+**No endpoint accepts or returns a stream key, token or credential.** Unknown
+JSON fields are rejected rather than silently ignored, so a stray credential
+field produces an error instead of disappearing quietly.
 
 ---
 
@@ -267,6 +423,20 @@ go vet ./...        # static analysis
 go test ./...       # tests
 gofmt -l .          # lists files needing formatting (empty output = all good)
 ```
+
+Backend tests always create their own temporary database in the test's temp
+directory, so running them never touches your real one.
+
+**Persistence check** (from the repository root):
+
+```bash
+node scripts/verify-persistence.mjs
+```
+
+This starts the backend against a temporary database, exercises the whole
+platform API, restarts the process against the same file, verifies the data
+survived, deletes what it created and removes the temporary directory. It never
+opens your real database. It needs Go and Node on `PATH` and uses port 8199.
 
 ---
 
@@ -416,33 +586,38 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
+│   │   │   ├── api/            # Zod contracts + transport for the platform API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
 │   │   │   │   ├── metadata/   # Metadata editor with platform tabs
-│   │   │   │   ├── platforms/  # Stream branch cards
+│   │   │   │   ├── platforms/  # Destination cards, add and settings dialogs
 │   │   │   │   ├── system/     # System and backend status panels
-│   │   │   │   └── ui/         # Base elements (buttons, inputs, panels)
-│   │   │   ├── data/           # DEMO DATA
-│   │   │   ├── hooks/          # Hooks (including the backend health query)
+│   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
+│   │   │   ├── data/           # DEMO DATA (host metrics only)
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers
 │   │   │   ├── i18n/           # Localization: config, resources, tests
-│   │   │   ├── lib/            # API client, helper functions
-│   │   │   ├── models/         # Domain model + Zod schemas
-│   │   │   ├── pages/          # Route views
-│   │   │   └── state/          # DEMO STATE (placeholder)
+│   │   │   ├── lib/            # API client, error mapping, helpers
+│   │   │   ├── models/         # UI types, validation, identifier mappings
+│   │   │   └── pages/          # Route views
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
 │   └── server/                 # Backend (Go)
 │       ├── cmd/server/         # Entry point, graceful shutdown
 │       └── internal/
 │           ├── buildinfo/      # Service name and version
-│           ├── config/         # Configuration from environment variables
-│           └── httpapi/        # Router, handlers, middleware, JSON responses
+│           ├── config/         # Configuration and database path resolution
+│           ├── domain/platform/# Provider registry, models, validation, service
+│           ├── httpapi/        # Router, handlers, middleware, JSON responses
+│           └── storage/sqlite/ # Connection, migrations, repository
+│               └── migrations/ # Embedded .sql schema and seed
 │
 ├── config/                     # MediaMTX and FFmpeg configuration (future stage)
 ├── docs/
 │   ├── project-overview.md     # Full project description
 │   └── progress.md             # Work journal
+├── scripts/
+│   └── verify-persistence.mjs  # Scripted restart-persistence check
 ├── .gitignore
 └── README.md
 ```
@@ -456,27 +631,28 @@ directly next to the control.
 
 | Element | What actually happens |
 | ------- | --------------------- |
-| **Start / Stop** buttons on platform cards | They only change state in the browser's memory. No process is started and no data is sent. |
-| Platform statuses (offline / starting / live / error) | The initial state is hard-coded; "starting" becomes "live" after about 1.8 s. |
-| Viewer count, connection quality | Fixed values. No platform is queried. |
-| CPU, memory, disk, network | Fixed values. The backend does not collect host metrics. |
+| **Start** button on platform cards | Disabled. There is no streaming engine, so nothing can be started. |
+| Live / starting status, viewer counts, connection quality | **Removed.** These were invented values and would be misleading next to genuinely saved configuration. Cards report configuration only: configured, and enabled or disabled. |
+| CPU, memory, disk, network | Fixed demo values. The backend does not collect host metrics. |
 | OBS connection status | Always "Waiting for OBS". Nothing is listening on the RTMP port. |
 | RTMP address in the sidebar | A planned address; it does not work. |
-| Saving metadata | Goes only to the browser's memory. Reloading the page restores the initial values. |
-| Platform capability tables | An approximate configuration prepared to demonstrate the editor. It needs verification when real integrations are implemented. |
+| Platform capability tables | An approximate configuration, now served by the backend. It has **not** been verified against the real Twitch, YouTube, Kick or TikTok APIs and needs re-checking when real integrations are implemented. |
 | Platforms, Streams, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
-**The only real backend connection** at this stage is `GET /api/health`. Its
-result is shown in the "Backend" card in the right-hand column.
+### What is real
 
-The language switcher on the Settings page is **not** a placeholder — it is a
-working feature.
+- **Adding, editing and deleting destinations** through the API, stored in
+  SQLite.
+- **Editing and saving stream metadata**, including ordered Twitch tags.
+- **Everything above survives a browser refresh and a backend restart.**
+- **Provider capabilities** come from the backend, which is the single source of
+  truth for them.
+- **The language switcher**, in the top bar and under Settings.
 
 ### What will be added later
 
 - **MediaMTX** — the local server receiving the RTMP stream from OBS.
 - **FFmpeg** — one process per stream branch.
-- **SQLite** — persistent storage of platform configuration and metadata.
 - **SSE or WebSocket** — live status instead of polling.
 - **System credential store** — secure storage of stream keys.
 - **OAuth and platform APIs** — sign-in and metadata publishing.
@@ -489,7 +665,11 @@ A stream key allows broadcasting on someone's channel, so we treat it like a
 password.
 
 - **The repository contains no secrets** and must never contain any.
-  `.gitignore` blocks `.env` files and data directories.
+  `.gitignore` blocks `.env` files, database files and data directories.
+- **The SQLite database stores no credentials.** No table has a column for a
+  stream key, token or password, and no API payload carries one. Write endpoints
+  reject unknown JSON fields, so a stray credential field produces an error
+  rather than being silently dropped.
 - **Keys will not be stored in the browser** — not in `localStorage`, not in
   `sessionStorage`, not in application state. The only value stored locally is
   the interface language preference.
@@ -508,7 +688,17 @@ Stream key handling **has not been started yet**.
 The backend is not running, or is running on a different port. Start it in a
 second terminal (`cd apps/server && go run ./cmd/server`) and use the refresh
 button in the "Backend" card. This is an expected, fully handled state — the
-panel does not crash.
+panel does not crash. Your configuration is safe: it lives in the backend
+database, which is why the dashboard cannot show it while the backend is down.
+
+**My destinations disappeared.**
+The backend is probably using a different database than before. Check the
+`path=` value in the startup log and whether `STREAMING_TREE_DB_PATH` or
+`STREAMING_TREE_DATA_DIR` is set in that terminal.
+
+**A seeded destination I deleted did not come back.**
+That is intended. The seed runs once, on a brand-new database, and is recorded
+like any other migration.
 
 **`go: command not found` or `'go' is not recognized`.**
 Go is not installed or is not on `PATH`. Install it from <https://go.dev/dl/>

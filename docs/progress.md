@@ -1151,3 +1151,142 @@ Update the documentation for persistent configuration: database locations per
 operating system, the new environment variables, migrations, seeding, the API
 endpoints, development-database handling and the corrected record of the
 `.gitignore` incident.
+
+---
+
+## 2026-08-03 18:05 — docs: document persistent configuration
+
+### Status
+Completed
+
+### Scope
+Document the persistence layer across `README.md`,
+`docs/project-overview.md` and `config/README.md`, and record a correction to an
+earlier entry. No code changed in this commit.
+
+### Changes
+
+**`README.md`**
+- The project-state banner now says configuration and metadata persist across a
+  refresh and a restart, while streaming remains unimplemented.
+- New **Data storage** section: SQLite and the CGO-free driver, the path
+  resolution order, a table of default locations for Windows, macOS and Linux,
+  the startup log line, automatic migrations, the one-time seed and the fact
+  that a deleted seeded destination stays deleted, how to use a development
+  database, how to reset one including the WAL sidecar files, and a prominent
+  warning that deleting a database permanently deletes configuration and
+  metadata with no undo.
+- New **REST API** section listing all nine endpoints, the error envelope, the
+  validation envelope with field details, the status codes, the rule that
+  definitions carry semantic identifiers rather than translated text, and the
+  rule that no endpoint accepts or returns credentials.
+- The two new environment variables were added to the backend configuration
+  table.
+- The check list gained the backend test note about temporary databases and the
+  scripted persistence command.
+- The demo-only table was rewritten: Start is disabled, and live status, viewer
+  counts and connection quality are recorded as **removed** rather than demo. A
+  "What is real" list was added.
+- The directory tree and troubleshooting section were updated, including
+  "my destinations disappeared" and "a deleted seeded destination did not come
+  back".
+
+**`docs/project-overview.md`**
+- Section 7.3.1 describes the implemented storage role, what the database holds
+  and what it deliberately does not: runtime state and credentials.
+- New section 8.1 separates provider definition, configured platform and runtime
+  stream state.
+- Section 9 records that the capability table now lives in the backend and that
+  the frontend keeps no competing copy, and section 9.1 states the localization
+  boundary explicitly.
+- The roadmap marks stage 3 completed, noting it was marked so only after the
+  restart-persistence verification passed. MediaMTX, FFmpeg and credential
+  storage remain planned.
+- The manual-testing section lists the persistence script; the stream key
+  section records that the database has no credential columns.
+
+**`config/README.md`**
+- Records what deliberately does not belong there: the database (user data,
+  outside the repository) and the migrations (embedded in the binary so the
+  schema cannot drift from the code that reads it).
+
+### Correction to an earlier entry
+
+The entry `feat(web): add English and Polish localization` states, under
+"Repository fix found while staging this change", that **two** source files were
+added after the `.gitignore` fix. That count is wrong.
+
+`git show --diff-filter=A 61b9457 -- apps/web/src/data` shows **three** files
+were added: `app-info.ts`, `demo-platforms.ts` and `demo-system.ts`. The "Files
+changed" list in the same entry also omits `app-info.ts`.
+
+Per journal rule 4 the historical entry is left as written and corrected here
+instead. Nothing else in that entry is affected: the `.gitignore` rules, the
+cause and the fix are all recorded accurately, and the omission did not change
+what was committed.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/progress.md`
+- `config/README.md`
+
+### Technical decisions
+
+1. **The commit split follows the suggested four-way boundary**: persistence,
+   API, frontend, documentation. Documentation is last so it describes what was
+   actually built rather than what was planned.
+
+2. **The database-deletion warning is prominent rather than a footnote.** The
+   file now holds the only copy of a user's configuration, there is no backup,
+   and the reset instructions sit directly above it.
+
+3. **The correction is a new entry, not an edit.** Journal rule 4 forbids
+   rewriting history without reason. A miscounted file is worth correcting for
+   the record but not worth altering a past entry over.
+
+### Automated validation
+
+Re-run after the documentation change to confirm no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 7 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 12 files, 133 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - 4 packages |
+| Backend build | `go build ./...` | Passed - 0 errors |
+| Restart persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+
+No manual testing was performed.
+
+### Known limitations
+- Nothing checks automatically that the documentation stays in sync with the
+  code; a renamed endpoint or environment variable must be corrected in
+  `README.md` by hand.
+- The default database locations are documented from the implemented
+  `os.UserConfigDir()` behaviour and verified on Windows only. The macOS and
+  Linux paths follow the documented Go behaviour but were not observed on those
+  systems.
+- The English documentation has not been reviewed by a second reader.
+- All product limitations from the three previous entries still stand.
+
+### Next step
+
+Stage 4: MediaMTX integration.
+
+1. Bundle or locate the MediaMTX binary and generate its configuration from
+   `config/`.
+2. Supervise it as a child process with health checks and graceful shutdown.
+3. Detect when OBS connects to the local RTMP ingest and report it through the
+   API, replacing the placeholder OBS panel.
+4. Introduce a runtime-state model that is explicitly separate from the
+   configuration tables, kept in memory rather than persisted.
+
+The separation recorded in section 8.1 of the project overview is the constraint
+to respect here: runtime state must not leak into the SQLite configuration
+schema.
