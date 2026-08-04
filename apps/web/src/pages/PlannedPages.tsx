@@ -1,4 +1,4 @@
-import { FileText, Radio, Settings, SlidersHorizontal, Tv } from 'lucide-react';
+import { FileText, Settings, SlidersHorizontal, Tv } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,21 +30,8 @@ export function PlatformsPage() {
   );
 }
 
-export function StreamsPage() {
-  return (
-    <PlaceholderPage
-      titleKey="streams.title"
-      descriptionKey="streams.description"
-      icon={Radio}
-      plannedKeys={[
-        'streams.planned.ingest',
-        'streams.planned.processControl',
-        'streams.planned.metrics',
-        'streams.planned.restartPolicy',
-      ]}
-    />
-  );
-}
+// StreamsPage is no longer a placeholder: it shows the real local ingest state
+// and lives in its own file, `StreamsPage.tsx`.
 
 export function MetadataPage() {
   return (

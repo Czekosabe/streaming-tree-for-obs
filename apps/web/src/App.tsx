@@ -6,13 +6,8 @@ import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-import {
-  LogsPage,
-  MetadataPage,
-  PlatformsPage,
-  SettingsPage,
-  StreamsPage,
-} from '@/pages/PlannedPages';
+import { LogsPage, MetadataPage, PlatformsPage, SettingsPage } from '@/pages/PlannedPages';
+import { StreamsPage } from '@/pages/StreamsPage';
 
 export function App() {
   return (

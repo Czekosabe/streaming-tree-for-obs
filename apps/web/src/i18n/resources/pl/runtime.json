@@ -1,0 +1,122 @@
+{
+  "mediamtx": {
+    "heading": "Lokalna usługa odbioru",
+    "componentName": "MediaMTX",
+    "supportedVersion": "Obsługiwana wersja",
+    "installedVersion": "Zainstalowana wersja",
+    "source": "Źródło",
+    "sourceManaged": "Instalacja zarządzana",
+    "sourceOverride": "Wskazana ścieżka",
+    "sourceMissing": "Niezainstalowana",
+    "restartCount": "Automatyczne restarty",
+    "startedAt": "Działa od",
+    "autoStart": "Uruchamia się razem z aplikacją",
+    "autoRestart": "Restartuje się automatycznie po awarii",
+    "state": {
+      "missing": "Niezainstalowana",
+      "installing": "Instalowanie...",
+      "incompatible": "Nieobsługiwana wersja",
+      "stopped": "Zatrzymana",
+      "starting": "Uruchamianie...",
+      "ready": "Działa",
+      "stopping": "Zatrzymywanie...",
+      "error": "Awaria"
+    }
+  },
+  "ingest": {
+    "heading": "Połączenie z OBS",
+    "state": {
+      "unavailable": "Odbiór nie działa",
+      "waiting": "Oczekiwanie na OBS lub inny nadajnik RTMP",
+      "receiving": "Odbieranie strumienia RTMP",
+      "error": "Stan niedostępny"
+    },
+    "path": "Ścieżka",
+    "sourceType": "Źródło",
+    "connectedAt": "Nadaje od",
+    "trackCount_one": "{{count}} ścieżka",
+    "trackCount_few": "{{count}} ścieżki",
+    "trackCount_many": "{{count}} ścieżek",
+    "trackCount_other": "{{count}} ścieżki",
+    "tracks": "Ścieżki",
+    "publisherNote": "Protokół RTMP nie identyfikuje aplikacji, więc akceptowany jest każdy nadajnik RTMP, nie tylko OBS."
+  },
+  "connection": {
+    "heading": "Ustawienia OBS",
+    "serverLabel": "Serwer",
+    "streamKeyLabel": "Klucz strumienia",
+    "publishUrlLabel": "Pełny adres nadawania",
+    "copyServer": "Skopiuj adres serwera",
+    "copyStreamKey": "Skopiuj klucz strumienia",
+    "copied": "Skopiowano",
+    "notASecret": "Ten klucz strumienia to lokalna nazwa trasy, a nie sekret ani klucz platformy docelowej. Można go bezpiecznie pokazać na zrzucie ekranu.",
+    "instructions": "W OBS otwórz Ustawienia, następnie Transmisja, wybierz Niestandardowy i wklej te dwie wartości."
+  },
+  "controls": {
+    "heading": "Sterowanie usługą",
+    "install": "Zainstaluj MediaMTX",
+    "installing": "Instalowanie...",
+    "start": "Uruchom usługę odbioru",
+    "starting": "Uruchamianie...",
+    "stop": "Zatrzymaj usługę odbioru",
+    "stopping": "Zatrzymywanie...",
+    "restart": "Uruchom ponownie",
+    "restarting": "Ponowne uruchamianie...",
+    "note": "Te przyciski uruchamiają i zatrzymują wyłącznie lokalną usługę odbioru. Nie rozpoczynają transmisji na żadną platformę."
+  },
+  "install": {
+    "title": "Zainstaluj MediaMTX",
+    "intro": "Streaming Tree potrzebuje MediaMTX, aby odbierać strumień z OBS. Nie jest jeszcze zainstalowany.",
+    "versionLine": "Wersja {{version}} zostanie pobrana z oficjalnego wydania MediaMTX na GitHubie.",
+    "checksumLine": "Pobrany plik jest weryfikowany oficjalną sumą kontrolną SHA-256 opublikowaną wraz z tym wydaniem i odrzucany, jeśli się nie zgadza.",
+    "thirdPartyLine": "MediaMTX to oprogramowanie firm trzecich na licencji MIT. Plik licencji jest instalowany razem z programem i wymieniony w THIRD_PARTY_NOTICES.md.",
+    "sizeLine": "Pobieranie to około 30 MB i może potrwać kilka minut.",
+    "confirm": "Pobierz i zainstaluj",
+    "cancel": "Nie teraz",
+    "successTitle": "MediaMTX zainstalowany",
+    "successMessage": "Wersja {{version}} została zainstalowana i zweryfikowana."
+  },
+  "system": {
+    "checking": "Sprawdzanie systemu",
+    "backendUnavailable": "Backend niedostępny",
+    "runtimeUnavailable": "Stan uruchomieniowy niedostępny",
+    "ingestNotInstalled": "Usługa odbioru niezainstalowana",
+    "ingestIncompatible": "Nieobsługiwana usługa odbioru",
+    "ingestInstalling": "Instalowanie usługi odbioru",
+    "ingestFailed": "Awaria usługi odbioru",
+    "ingestStopped": "Usługa odbioru zatrzymana",
+    "ingestStarting": "Uruchamianie usługi odbioru",
+    "ingestDegraded": "Stan odbioru niedostępny",
+    "waitingForInput": "Oczekiwanie na sygnał",
+    "receiving": "Odbieranie sygnału"
+  },
+  "errors": {
+    "notInstalled": "MediaMTX nie jest jeszcze zainstalowany. Zainstaluj go, aby odbierać strumień z OBS.",
+    "incompatibleVersion": "Znaleziony plik MediaMTX nie jest obsługiwaną wersją. Zainstaluj obsługiwaną wersję albo wskaż ją zmienną STREAMING_TREE_MEDIAMTX_PATH.",
+    "unsupportedPlatform": "Nie ma oficjalnego wydania MediaMTX dla tego systemu operacyjnego i architektury procesora. Możesz ustawić zmienną STREAMING_TREE_MEDIAMTX_PATH na własny zgodny plik wykonywalny.",
+    "checksumMismatch": "Pobrany plik nie zgadzał się z oficjalną sumą kontrolną i został odrzucony. Nic nie zostało zainstalowane. Spróbuj ponownie i sprawdź, czy proxy nie modyfikuje pobieranych plików.",
+    "downloadFailed": "Nie udało się pobrać MediaMTX. Sprawdź połączenie sieciowe i spróbuj ponownie.",
+    "archiveInvalid": "Pobranego archiwum nie dało się użyć i zostało odrzucone. Nic nie zostało zainstalowane.",
+    "installFailed": "Nie udało się zainstalować MediaMTX.",
+    "installInProgress": "Instalacja jest już w toku.",
+    "permissionDenied": "Nie udało się zainstalować ani uruchomić MediaMTX z powodu braku uprawnień do pliku. Sprawdź uprawnienia katalogu danych aplikacji.",
+    "portInUse": "Skonfigurowany port jest już używany przez inną aplikację. Zatrzymaj tamtą aplikację albo wybierz inny port.",
+    "startFailed": "Nie udało się uruchomić MediaMTX.",
+    "readinessTimeout": "MediaMTX wystartował, ale nie osiągnął gotowości na czas. Został zatrzymany.",
+    "exitedUnexpectedly": "MediaMTX zatrzymał się nieoczekiwanie.",
+    "restartLimit": "MediaMTX wielokrotnie zawiódł i nie będzie restartowany automatycznie. Usuń przyczynę problemu, a następnie uruchom go ręcznie.",
+    "apiUnreachable": "MediaMTX działa, ale nie udało się odczytać jego stanu.",
+    "invalidState": "Ta operacja nie jest teraz możliwa.",
+    "unknown": "Wystąpił nieoczekiwany błąd uruchomieniowy."
+  },
+  "page": {
+    "title": "Transmisje",
+    "description": "Lokalny odbiór z OBS. Wychodzące gałęzie platform to późniejszy etap.",
+    "componentHeading": "Usługa odbioru",
+    "destinationsHeading": "Wychodzące gałęzie platform",
+    "destinationsPlanned": "Przesyłanie odebranego strumienia dalej na Twitcha, YouTube, Kicka i TikToka wymaga osobnego procesu FFmpeg dla każdego celu. To następny etap i nie jest jeszcze zaimplementowane.",
+    "lastError": "Ostatni błąd",
+    "noError": "Nie zgłoszono błędów.",
+    "diagnostics": "Diagnostyka"
+  }
+}

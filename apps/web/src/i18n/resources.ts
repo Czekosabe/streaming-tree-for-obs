@@ -5,6 +5,7 @@ import enMetadata from './resources/en/metadata.json';
 import enNavigation from './resources/en/navigation.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
+import enRuntime from './resources/en/runtime.json';
 import plCommon from './resources/pl/common.json';
 import plDashboard from './resources/pl/dashboard.json';
 import plErrors from './resources/pl/errors.json';
@@ -12,6 +13,7 @@ import plMetadata from './resources/pl/metadata.json';
 import plNavigation from './resources/pl/navigation.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
+import plRuntime from './resources/pl/runtime.json';
 
 /**
  * Static translation bundle.
@@ -31,6 +33,7 @@ export const enResources = {
   metadata: enMetadata,
   pages: enPages,
   errors: enErrors,
+  runtime: enRuntime,
 } as const;
 
 const plResources = {
@@ -41,6 +44,7 @@ const plResources = {
   metadata: plMetadata,
   pages: plPages,
   errors: plErrors,
+  runtime: plRuntime,
 } as const;
 
 export const resources = {

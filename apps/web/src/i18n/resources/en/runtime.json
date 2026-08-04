@@ -1,0 +1,120 @@
+{
+  "mediamtx": {
+    "heading": "Local ingest service",
+    "componentName": "MediaMTX",
+    "supportedVersion": "Supported version",
+    "installedVersion": "Installed version",
+    "source": "Source",
+    "sourceManaged": "Managed installation",
+    "sourceOverride": "Explicit path",
+    "sourceMissing": "Not installed",
+    "restartCount": "Automatic restarts",
+    "startedAt": "Running since",
+    "autoStart": "Starts with the application",
+    "autoRestart": "Restarts automatically after a failure",
+    "state": {
+      "missing": "Not installed",
+      "installing": "Installing...",
+      "incompatible": "Unsupported version",
+      "stopped": "Stopped",
+      "starting": "Starting...",
+      "ready": "Running",
+      "stopping": "Stopping...",
+      "error": "Failed"
+    }
+  },
+  "ingest": {
+    "heading": "OBS connection",
+    "state": {
+      "unavailable": "Ingest not running",
+      "waiting": "Waiting for OBS or another RTMP publisher",
+      "receiving": "Receiving an RTMP stream",
+      "error": "Status unavailable"
+    },
+    "path": "Path",
+    "sourceType": "Source",
+    "connectedAt": "Publishing since",
+    "trackCount_one": "{{count}} track",
+    "trackCount_other": "{{count}} tracks",
+    "tracks": "Tracks",
+    "publisherNote": "RTMP does not identify the application, so any RTMP publisher is accepted, not only OBS."
+  },
+  "connection": {
+    "heading": "OBS settings",
+    "serverLabel": "Server",
+    "streamKeyLabel": "Stream key",
+    "publishUrlLabel": "Full publish URL",
+    "copyServer": "Copy the server address",
+    "copyStreamKey": "Copy the stream key",
+    "copied": "Copied",
+    "notASecret": "This stream key is a local route name, not a secret and not a destination platform key. It is safe to share in a screenshot.",
+    "instructions": "In OBS open Settings, then Stream, choose Custom, and paste these two values."
+  },
+  "controls": {
+    "heading": "Service controls",
+    "install": "Install MediaMTX",
+    "installing": "Installing...",
+    "start": "Start ingest service",
+    "starting": "Starting...",
+    "stop": "Stop ingest service",
+    "stopping": "Stopping...",
+    "restart": "Restart",
+    "restarting": "Restarting...",
+    "note": "These controls start and stop the local ingest service only. They do not start streaming to any platform."
+  },
+  "install": {
+    "title": "Install MediaMTX",
+    "intro": "Streaming Tree needs MediaMTX to receive the stream from OBS. It is not installed yet.",
+    "versionLine": "Version {{version}} will be downloaded from the official MediaMTX release on GitHub.",
+    "checksumLine": "The download is verified against the official SHA-256 checksum published with that release, and is discarded if it does not match.",
+    "thirdPartyLine": "MediaMTX is third-party software under the MIT licence. Its licence file is installed alongside the program and is listed in THIRD_PARTY_NOTICES.md.",
+    "sizeLine": "The download is roughly 30 MB and may take a few minutes.",
+    "confirm": "Download and install",
+    "cancel": "Not now",
+    "successTitle": "MediaMTX installed",
+    "successMessage": "Version {{version}} was installed and verified."
+  },
+  "system": {
+    "checking": "Checking system",
+    "backendUnavailable": "Backend unavailable",
+    "runtimeUnavailable": "Runtime state unavailable",
+    "ingestNotInstalled": "Ingest service not installed",
+    "ingestIncompatible": "Ingest service unsupported",
+    "ingestInstalling": "Installing ingest service",
+    "ingestFailed": "Ingest service failed",
+    "ingestStopped": "Ingest service stopped",
+    "ingestStarting": "Ingest service starting",
+    "ingestDegraded": "Ingest status unavailable",
+    "waitingForInput": "Waiting for input",
+    "receiving": "Receiving input"
+  },
+  "errors": {
+    "notInstalled": "MediaMTX is not installed yet. Install it to receive a stream from OBS.",
+    "incompatibleVersion": "The MediaMTX binary found is not the supported version. Install the supported version, or point STREAMING_TREE_MEDIAMTX_PATH at it.",
+    "unsupportedPlatform": "There is no official MediaMTX release for this operating system and processor architecture. You can set STREAMING_TREE_MEDIAMTX_PATH to a compatible binary you provide yourself.",
+    "checksumMismatch": "The downloaded file did not match the official checksum and was discarded. Nothing was installed. Try again, and check for a proxy that modifies downloads.",
+    "downloadFailed": "MediaMTX could not be downloaded. Check the network connection and try again.",
+    "archiveInvalid": "The downloaded archive could not be used and was discarded. Nothing was installed.",
+    "installFailed": "MediaMTX could not be installed.",
+    "installInProgress": "An installation is already running.",
+    "permissionDenied": "MediaMTX could not be installed or started because of a file permission error. Check the permissions on the application data directory.",
+    "portInUse": "The configured port is already used by another application. Stop that application, or choose a different port.",
+    "startFailed": "MediaMTX could not be started.",
+    "readinessTimeout": "MediaMTX started but did not become ready in time. It was stopped.",
+    "exitedUnexpectedly": "MediaMTX stopped unexpectedly.",
+    "restartLimit": "MediaMTX failed repeatedly and will not be restarted automatically. Fix the underlying problem, then start it manually.",
+    "apiUnreachable": "MediaMTX is running but its status could not be read.",
+    "invalidState": "That action is not possible right now.",
+    "unknown": "An unexpected runtime error occurred."
+  },
+  "page": {
+    "title": "Streams",
+    "description": "Local ingest from OBS. Outgoing platform branches are a later stage.",
+    "componentHeading": "Ingest service",
+    "destinationsHeading": "Outgoing platform branches",
+    "destinationsPlanned": "Sending the received stream on to Twitch, YouTube, Kick and TikTok requires one FFmpeg process per destination. That is the next stage and is not implemented yet.",
+    "lastError": "Last error",
+    "noError": "No errors reported.",
+    "diagnostics": "Diagnostics"
+  }
+}

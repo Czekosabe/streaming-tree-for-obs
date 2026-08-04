@@ -55,12 +55,6 @@ export const DEMO_NETWORK_STATUS: NetworkStatus = {
   uploadMbps: 18.4,
 };
 
-/**
- * DEMO connection state of OBS towards the (not yet existing) local ingest.
- * Hard-coded to "waiting" because nothing is listening on the RTMP port.
- */
-export const DEMO_OBS_CONNECTION = {
-  state: 'waiting' as const,
-  labelKey: 'obs.waiting',
-  detailKey: 'obs.waitingDetail',
-} as const;
+// The DEMO OBS connection constant was removed: the sidebar now reads the real
+// ingest state from GET /api/runtime. Only host metrics remain demo values in
+// this module, and they are still labelled as such in the interface.

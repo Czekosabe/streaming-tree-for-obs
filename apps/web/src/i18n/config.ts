@@ -50,6 +50,7 @@ export const NAMESPACES = [
   'metadata',
   'pages',
   'errors',
+  'runtime',
 ] as const;
 
 /** Namespace assumed when a component calls `t()` without naming one. */

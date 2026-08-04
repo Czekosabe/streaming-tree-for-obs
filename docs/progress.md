@@ -1666,3 +1666,151 @@ No manual testing was performed.
 Replace the placeholder OBS panel with real runtime data, add the installation
 flow and runtime controls, and turn the Streams placeholder into a local ingest
 status page.
+
+---
+
+## 2026-08-03 23:40 — feat(web): show MediaMTX and OBS ingest state
+
+### Status
+Completed
+
+### Scope
+Replace the placeholder OBS panel with real runtime data, add the installation
+flow and runtime controls, and turn the Streams placeholder into a local ingest
+status page.
+
+### Changes
+
+**Data layer**
+- `src/api/runtime-schemas.ts` holds the Zod contract; `runtime.ts` is the
+  transport. The payload is versioned and a mismatched version is rejected with
+  a parse error rather than rendered half-understood.
+- Process and ingest states are strict enums, because each one drives the
+  interface and an unknown value is a contract violation. Descriptive fields
+  (source type, tracks) stay tolerant, since MediaMTX may rename them.
+- `useRuntimeQuery` polls with an interval chosen from the current state: 1s
+  while ready, starting or stopping, 2s while installing, 10s when nothing can
+  change without a user action. Background refetching is off, so a hidden tab
+  stops polling. Four command mutations invalidate the snapshot on settle -
+  including on failure, because a rejected command means the assumed state was
+  wrong.
+- The browser never contacts the MediaMTX Control API; only the curated backend
+  endpoints exist.
+
+**Presentation rules**
+- `src/models/runtime-presentation.ts` maps state onto labels, tone and control
+  availability as pure exhaustive functions, so a new state cannot be forgotten
+  and the rules are testable without rendering.
+- `live` tone is reserved for "actually receiving a stream". A merely running
+  MediaMTX is not a live transmission, and configured destinations are never
+  shown as live.
+- The system summary never reports the system operational while MediaMTX is
+  missing or failed.
+
+**Sidebar**
+- The placeholder panel is gone. It now shows the service state, the ingest
+  state, the last error, compact controls, and the real Server and Stream key
+  with copy buttons.
+- Copy feedback is announced through a live region, and the value stays
+  selectable text so it remains usable when clipboard access is denied.
+- The stream key is labelled explicitly as a local route name that is not a
+  secret and not a destination platform key.
+
+**Streams page**
+- No longer a placeholder. Shows supported and installed version, binary source,
+  uptime, restart count, autostart and auto-restart flags, ingest state, path,
+  source type, connection time, tracks, the last error, the full control set and
+  the OBS settings with all three copyable values.
+- Outgoing platform branches remain explicitly marked as a later stage.
+
+**Installation flow**
+- An application-styled dialog states the exact version, that it comes from the
+  official GitHub release, that the checksum is verified, that MediaMTX is
+  third-party MIT software with its licence installed alongside it, and the
+  approximate download size. Nothing downloads without that confirmation, and
+  `window.confirm` is not used.
+- A second click while the request is in flight is ignored.
+
+**Removed placeholders**
+- `DEMO_OBS_CONNECTION` and the hard-coded RTMP address in `app-info.ts` are
+  gone, along with the now-dead `navigation:obs.*` keys in both languages. The
+  address is configurable on the backend, so duplicating it in the frontend
+  would let the two drift.
+- No bitrate, resolution or frame rate is rendered anywhere: the runtime API
+  reports none, and inventing them would make the panel untrustworthy.
+
+**Localization**
+- New `runtime` namespace in English and Polish, taking the count to eight.
+  Polish plural categories are complete for the track counter.
+
+### Files changed
+- Added: `src/api/runtime-schemas.ts`, `runtime.ts`, `src/hooks/use-runtime.ts`,
+  `src/models/runtime-presentation.ts`, `src/components/runtime/` (four files),
+  `src/pages/StreamsPage.tsx`, `src/i18n/resources/{en,pl}/runtime.json`, and
+  four test files
+- Modified: `SidebarFooter`, `SystemStatusPill`, `App.tsx`, `PlannedPages.tsx`,
+  `data/app-info.ts`, `data/demo-system.ts`, `i18n/config.ts`, `resources.ts`,
+  and the `navigation` namespace in both languages
+
+### Technical decisions
+
+1. **The runtime payload is versioned and the version is checked.** Runtime
+   state drives destructive-looking controls; rendering a payload this build
+   does not understand could show a Start button for a state that does not
+   exist. A hard parse error is safer than a half-rendered panel.
+
+2. **State enums are strict, descriptive fields are tolerant.** Every process
+   and ingest state has behaviour attached, so an unknown one must fail. A new
+   `sourceType` string has no behaviour attached and must not break anything.
+
+3. **Control availability comes from one exhaustive function.** Scattering
+   `state === 'ready'` checks across components would eventually enable a
+   control the backend rejects. `controlsFor` is a total function over the state
+   union, and a test asserts start and stop are never both enabled.
+
+4. **Polling adapts to state rather than running at a fixed rate.** One second
+   is right while a publisher may appear, and wasteful against a stopped
+   service that cannot change without a user action.
+
+5. **The install dialog closes as soon as the backend accepts the job.** The
+   download takes minutes; holding a modal open would block the interface for
+   the whole time, and the runtime panels already show `installing`.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 16 files, 235 tests |
+| Frontend build | `npm run build` | Passed |
+
+102 frontend tests were added: runtime snapshot parsing for every MediaMTX and
+ingest state, a missing installed version, a receiving snapshot with tracks,
+unknown future fields tolerated, unknown states and malformed payloads rejected,
+and a missing `lastError` rejected; state-to-label and state-to-tone mapping;
+control availability for every state including the invariant that start and stop
+are never both enabled; system-status aggregation across every state, including
+that a missing or failed component is never reported as operational and that
+"receiving" requires an actual stream; polling-interval selection; runtime cache
+invalidation touching only the runtime key; and runtime error localization
+including the English fallback for an unmapped code.
+
+No manual testing was performed.
+
+### Known limitations
+- There are no component-rendering tests; behaviour is covered through the
+  extracted pure modules, consistent with the approach taken in earlier stages.
+- The bundle grew to roughly 520 KB (155 KB gzipped) and Vite warns about chunk
+  size. Still not worth code-splitting for a locally loaded application.
+- The diagnostic ring the backend keeps is not surfaced; the Logs page remains a
+  later stage.
+- The Streams page renders timestamps as the backend's raw RFC 3339 strings
+  rather than formatting them per locale.
+
+### Next step
+Document the MediaMTX runtime integration: the pinned version, supported
+platforms, installation and checksum verification, all new environment
+variables, the loopback security model, the process lifecycle and restart
+policy, the runtime endpoints, OBS settings, and troubleshooting.

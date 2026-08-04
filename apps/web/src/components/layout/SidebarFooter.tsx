@@ -1,87 +1,121 @@
-import { Check, Copy, Radio } from 'lucide-react';
-import { useState } from 'react';
+import { Radio } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { CopyableValue } from '@/components/runtime/CopyableValue';
+import { RuntimeControls } from '@/components/runtime/RuntimeControls';
+import { runtimeErrorMessage } from '@/components/runtime/runtime-error-message';
+import { StatusDot } from '@/components/ui/StatusBadge';
 import { APP_INFO } from '@/data/app-info';
-import { DEMO_OBS_CONNECTION } from '@/data/demo-system';
+import { useRuntimeQuery } from '@/hooks/use-runtime';
 import { cn } from '@/lib/cn';
-
-import { DemoBadge } from '../ui/DemoBadge';
+import { ingestStateKey, ingestTone, mediaMtxStateKey, mediaMtxTone } from '@/models/runtime-presentation';
 
 /**
- * Bottom block of the sidebar: OBS connection state, the local ingest address
- * OBS will point at, and the application version.
+ * Bottom block of the sidebar: the real state of the local ingest service and
+ * the values OBS needs.
  *
- * The OBS state is a DEMO constant - nothing is listening on the RTMP port in
- * this stage, so the panel always reports "waiting".
+ * Everything here comes from `GET /api/runtime`. Nothing is a placeholder any
+ * more, and no bitrate, resolution or frame rate is shown, because the runtime
+ * API does not report any - inventing them would make the panel untrustworthy.
  */
 export function SidebarFooter() {
-  const { t } = useTranslation('navigation');
-  const [copied, setCopied] = useState(false);
+  const { t } = useTranslation(['runtime', 'navigation']);
+  const runtimeQuery = useRuntimeQuery();
 
-  const copyIngestUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(APP_INFO.localIngestUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1_500);
-    } catch {
-      // Clipboard access can be denied; the address stays selectable as text.
-      setCopied(false);
-    }
-  };
+  const snapshot = runtimeQuery.data;
+  const mediaMtx = snapshot?.mediaMtx;
+  const ingest = snapshot?.ingest;
+  const connection = snapshot?.connection;
+
+  const lastError = runtimeErrorMessage(t, mediaMtx?.lastError);
 
   return (
     <div className="mt-auto space-y-3 border-t border-line p-3">
       <section
-        aria-label={t('obs.sectionLabel')}
+        aria-label={t('runtime:ingest.heading')}
         className="rounded-lg border border-line bg-surface-sunken p-3"
       >
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
             <Radio aria-hidden="true" className="size-3" />
-            {t('obs.heading')}
+            {t('runtime:mediamtx.componentName')}
           </span>
-          <DemoBadge title={t('obs.demoTooltip')} />
+          {mediaMtx !== undefined && (
+            <span className="text-[10px] text-ink-faint">{mediaMtx.supportedVersion}</span>
+          )}
         </div>
 
-        <p className="mt-1.5 flex items-center gap-2 text-xs font-medium text-ink">
-          <span
-            aria-hidden="true"
-            className={cn('size-2 rounded-full bg-status-offline animate-pulse-ring')}
-          />
-          {t(DEMO_OBS_CONNECTION.labelKey)}
-        </p>
-        <p className="mt-0.5 text-[11px] text-ink-faint">{t(DEMO_OBS_CONNECTION.detailKey)}</p>
+        {runtimeQuery.isPending && (
+          <p className="mt-1.5 text-xs text-ink-muted">{t('runtime:system.checking')}</p>
+        )}
 
-        <div className="mt-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-            {t('obs.ingestLabel')}
+        {runtimeQuery.isError && (
+          <p className="mt-1.5 text-xs text-status-error">
+            {t('runtime:system.runtimeUnavailable')}
           </p>
-          <div className="mt-1 flex items-center gap-1">
-            {/* The address itself is a URL - never translated. */}
-            <code className="min-w-0 flex-1 truncate rounded border border-line bg-canvas px-1.5 py-1 font-mono text-[11px] text-ink-muted">
-              {APP_INFO.localIngestUrl}
-            </code>
-            <button
-              type="button"
-              onClick={() => void copyIngestUrl()}
-              aria-label={t('obs.copyIngest')}
-              title={t('obs.copyIngest')}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded border border-line text-ink-faint transition-colors hover:border-line-strong hover:text-ink"
-            >
-              {copied ? (
-                <Check aria-hidden="true" className="size-3 text-status-live" />
-              ) : (
-                <Copy aria-hidden="true" className="size-3" />
+        )}
+
+        {mediaMtx !== undefined && ingest !== undefined && (
+          <>
+            {/* Service state */}
+            <p className="mt-1.5 flex items-center gap-2 text-xs font-medium text-ink">
+              <StatusDot status={mediaMtxTone(mediaMtx.state)} />
+              {t(mediaMtxStateKey(mediaMtx.state))}
+            </p>
+
+            {/* Ingest state, only meaningful once the service runs */}
+            <p
+              className={cn(
+                'mt-1 flex items-center gap-2 text-[11px]',
+                ingest.state === 'receiving' ? 'text-status-live' : 'text-ink-muted',
               )}
-            </button>
+            >
+              <StatusDot status={ingestTone(ingest.state)} />
+              {t(ingestStateKey(ingest.state))}
+            </p>
+
+            {ingest.state === 'receiving' && ingest.trackCount !== null && (
+              <p className="mt-1 text-[11px] text-ink-faint">
+                {t('runtime:ingest.trackCount', { count: ingest.trackCount })}
+                {ingest.tracks.length > 0 && <> &middot; {ingest.tracks.join(', ')}</>}
+              </p>
+            )}
+
+            {lastError !== null && (
+              <p className="mt-1.5 rounded border border-status-error/30 bg-status-error/10 px-1.5 py-1 text-[10px] leading-relaxed text-status-error">
+                {lastError}
+              </p>
+            )}
+
+            <div className="mt-2.5">
+              <RuntimeControls mediaMtx={mediaMtx} compact />
+            </div>
+          </>
+        )}
+
+        {connection !== undefined && (
+          <div className="mt-3 space-y-2 border-t border-line pt-2.5">
+            <CopyableValue
+              label={t('runtime:connection.serverLabel')}
+              value={connection.serverUrl}
+              copyLabel={t('runtime:connection.copyServer')}
+            />
+            <CopyableValue
+              label={t('runtime:connection.streamKeyLabel')}
+              value={connection.streamKey}
+              copyLabel={t('runtime:connection.copyStreamKey')}
+            />
+            {/* Stated explicitly so nobody treats the local route name like a
+                destination platform key. */}
+            <p className="text-[10px] leading-relaxed text-ink-faint">
+              {t('runtime:connection.notASecret')}
+            </p>
           </div>
-          <p className="mt-1 text-[10px] text-ink-faint">{t('obs.ingestHint')}</p>
-        </div>
+        )}
       </section>
 
       <p className="px-1 text-[10px] text-ink-faint">
-        {t('version', { version: APP_INFO.version })}
+        {t('navigation:version', { version: APP_INFO.version })}
       </p>
     </div>
   );

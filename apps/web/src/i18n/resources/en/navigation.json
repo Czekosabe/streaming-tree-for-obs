@@ -12,15 +12,5 @@
     "settings": "Settings",
     "logs": "Logs"
   },
-  "obs": {
-    "sectionLabel": "OBS connection",
-    "heading": "OBS",
-    "demoTooltip": "OBS connection state is a placeholder in this stage",
-    "waiting": "Waiting for OBS",
-    "waitingDetail": "Local ingest is not running in this stage",
-    "ingestLabel": "Local ingest",
-    "copyIngest": "Copy local ingest address",
-    "ingestHint": "Planned address - no server is listening yet."
-  },
   "version": "Version {{version}} - local build"
 }
