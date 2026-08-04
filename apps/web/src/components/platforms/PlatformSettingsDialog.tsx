@@ -14,6 +14,7 @@ import { useDeletePlatformMutation, useUpdatePlatformMutation } from '@/hooks/us
 import { resolveApiErrorMessage } from '@/lib/api-error-message';
 import { DISPLAY_NAME_MAX_LENGTH, SORT_ORDER_MAX } from '@/models/platform-constraints';
 
+import { AccountLinkSection } from './AccountLinkSection';
 import { OutputSettingsSection } from './OutputSettingsSection';
 import { StreamKeySection } from './StreamKeySection';
 
@@ -242,6 +243,7 @@ export function PlatformSettingsDialog({
             remounts it fresh even if this dialog's own instance persists. */}
         <StreamKeySection key={platform.id} platform={platform} />
         <OutputSettingsSection key={`output-${platform.id}`} platform={platform} />
+        <AccountLinkSection key={`account-link-${platform.id}`} platform={platform} />
       </Modal>
 
       <ConfirmDialog

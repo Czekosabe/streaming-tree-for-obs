@@ -9,6 +9,7 @@ function metadata(overrides: Partial<PlatformMetadata> = {}): PlatformMetadata {
     title: '',
     description: '',
     category: '',
+    categoryId: '',
     tags: [],
     language: '',
     visibility: '',

@@ -1,0 +1,122 @@
+{
+  "integration": {
+    "heading": "Integracja z Twitch",
+    "description": "Połącz swoje konto Twitch, aby Streaming Tree mógł odczytywać i aktualizować metadane Twojego kanału. Nigdy nie prosimy o klucz tajny klienta ani go nie przechowujemy.",
+    "clientIdLabel": "Client ID Twitch",
+    "clientIdPlaceholder": "np. gp762nuuoqcoxypju8c569th9wz7q5",
+    "clientIdHint": "Zarejestruj aplikację w konsoli deweloperskiej Twitch i wklej tutaj jej Client ID.",
+    "clientIdSourceEnvironment": "Ustawione przez zmienną środowiskową STREAMING_TREE_TWITCH_CLIENT_ID i nie można tego zmienić tutaj.",
+    "clientIdSourceDatabase": "Zapisane w ustawieniach aplikacji.",
+    "clientIdSourceMissing": "Jeszcze nie skonfigurowane.",
+    "noSecretNote": "Streaming Tree nigdy nie przyjmuje ani nie przechowuje klucza tajnego klienta Twitch - tylko publiczne Client ID.",
+    "save": "Zapisz",
+    "saving": "Zapisywanie…",
+    "saved": "Zapisano",
+    "lockedNote": "Nie można zmienić Client ID, dopóki połączone jest konto Twitch. Najpierw odłącz każde konto Twitch."
+  },
+  "connect": {
+    "button": "Połącz z Twitch",
+    "connecting": "Uruchamianie…",
+    "notConfiguredNote": "Najpierw skonfiguruj Client ID Twitch powyżej, aby połączyć konto."
+  },
+  "deviceFlow": {
+    "title": "Połącz swoje konto Twitch",
+    "description": "Otwórz poniższy link na dowolnym urządzeniu, zaloguj się do Twitch i wprowadź pokazany tutaj kod.",
+    "userCodeLabel": "Kod",
+    "copyCode": "Skopiuj kod",
+    "copied": "Skopiowano",
+    "openTwitch": "Otwórz Twitch",
+    "verificationNote": "Przejdź na {{uri}} i wprowadź powyższy kod.",
+    "expiresIn_one": "Ten kod wygasa za {{count}} minutę",
+    "expiresIn_few": "Ten kod wygasa za {{count}} minuty",
+    "expiresIn_many": "Ten kod wygasa za {{count}} minut",
+    "expiresIn_other": "Ten kod wygasa za {{count}} minuty",
+    "expired": "Ten kod wygasł.",
+    "state": {
+      "requesting_code": "Rozpoczynanie żądania autoryzacji…",
+      "waiting_for_user": "Oczekiwanie na autoryzację na Twitch…",
+      "polling": "Oczekiwanie na autoryzację na Twitch…",
+      "authorized": "Połączono!",
+      "denied": "Autoryzacja została odrzucona na Twitch.",
+      "expired": "Ten kod wygasł przed użyciem.",
+      "cancelled": "Anulowano.",
+      "error": "Nie udało się zakończyć autoryzacji."
+    },
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "tryAgain": "Spróbuj ponownie",
+    "successNote": "Twoje konto Twitch jest teraz połączone."
+  },
+  "account": {
+    "heading": "Połączone konta Twitch",
+    "empty": "Żadne konto Twitch nie jest jeszcze połączone.",
+    "status": {
+      "connected": "Połączono",
+      "reconnect_required": "Wymagane ponowne połączenie"
+    },
+    "scopesLabel": "Przyznane uprawnienia",
+    "lastValidated": "Ostatnio sprawdzono {{time}}",
+    "neverValidated": "Jeszcze nie sprawdzono",
+    "validate": "Sprawdź teraz",
+    "validating": "Sprawdzanie…",
+    "reconnect": "Połącz ponownie",
+    "disconnect": "Odłącz",
+    "reconnectRequiredNote": "Twitch nie mógł potwierdzić dostępu tego konta. Połącz ponownie, aby dalej z niego korzystać.",
+    "disconnectDialog": {
+      "title": "Odłączyć {{login}}?",
+      "message": "Streaming Tree cofnie dostęp tego konta na Twitch, jeśli to możliwe, i usunie je lokalnie. Każdy cel powiązany z tym kontem będzie wymagał ponownego połączenia.",
+      "confirm": "Odłącz"
+    }
+  },
+  "link": {
+    "heading": "Połączone konto Twitch",
+    "description": "Połączenie konta Twitch pozwala odczytywać i publikować metadane tego celu. To odrębna funkcja od klucza strumienia celu.",
+    "notLinked": "Żadne konto Twitch nie jest połączone z tym celem.",
+    "linkedTo": "Połączono z {{login}}",
+    "chooseAccount": "Wybierz połączone konto",
+    "linkButton": "Połącz",
+    "unlinkButton": "Rozłącz",
+    "replaceNote": "Połączenie innego konta zastąpi obecne połączenie.",
+    "reconnectRequiredNote": "To konto wymaga ponownego połączenia, zanim będzie można go użyć.",
+    "missingScopeNote": "Temu kontu brakuje wymaganego uprawnienia; połącz je ponownie.",
+    "noAccountsAvailable": "Żadne konto Twitch nie jest jeszcze połączone. Najpierw połącz je w Ustawieniach.",
+    "notImplementedNote": "Łączenie kont nie jest jeszcze zaimplementowane dla tego dostawcy."
+  },
+  "category": {
+    "searchPlaceholder": "Szukaj gry lub kategorii…",
+    "searching": "Wyszukiwanie…",
+    "noResults": "Brak wyników.",
+    "current": "Obecnie: {{name}}",
+    "clear": "Wyczyść",
+    "linkAccountNote": "Połącz konto Twitch, aby wyszukać kategorię.",
+    "staleNote": "Ta kategoria nie ma pasującego identyfikatora Twitch i nie można jej opublikować, dopóki nie zostanie wybrana ponownie."
+  },
+  "publish": {
+    "heading": "Publikuj na Twitch",
+    "description": "Wysyła zapisane metadane na Twitch. To osobna czynność od zapisu lokalnego.",
+    "unsavedNote": "Zapisz lokalne zmiany przed publikacją na Twitch.",
+    "loadingPreview": "Sprawdzanie bieżących metadanych na Twitch…",
+    "fieldChanged": "zostanie zmienione",
+    "fieldUnchanged": "bez zmian",
+    "localValue": "Lokalnie",
+    "remoteValue": "Obecnie na Twitch",
+    "skippedFields": "Nie publikowane na Twitch (brak odpowiednika): {{fields}}",
+    "publishButton": "Publikuj na Twitch",
+    "publishing": "Publikowanie…",
+    "confirmDialog": {
+      "title": "Opublikować na Twitch?",
+      "message": "To wyśle na Twitch zmienione pola pokazane poniżej, natychmiast.",
+      "confirm": "Publikuj"
+    },
+    "success": "Opublikowano na Twitch.",
+    "blockers": {
+      "accountNotLinked": "Najpierw połącz konto Twitch z tym celem.",
+      "accountReconnectRequired": "Połączone konto Twitch wymaga ponownego połączenia.",
+      "credentialStoreUnavailable": "Bezpieczne przechowywanie jest obecnie niedostępne.",
+      "missingRequiredScope": "Połączonemu kontu brakuje wymaganego uprawnienia.",
+      "categoryNotSelected": "Wybierz kategorię z wyników wyszukiwania przed publikacją.",
+      "providerUnavailable": "Nie udało się połączyć z Twitch.",
+      "rateLimited": "Osiągnięto limit zapytań Twitch; spróbuj ponownie za chwilę."
+    }
+  }
+}

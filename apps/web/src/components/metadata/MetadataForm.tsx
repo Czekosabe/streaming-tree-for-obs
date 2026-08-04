@@ -27,7 +27,9 @@ import { SelectInput } from '../ui/SelectInput';
 import { TagInput } from '../ui/TagInput';
 import { TextArea, TextInput } from '../ui/TextInput';
 import { ToggleSwitch } from '../ui/ToggleSwitch';
+import { CategoryPicker } from './CategoryPicker';
 import { isDirty, toDraft } from './metadata-draft';
+import { PublishPanel } from './PublishPanel';
 import { useValidationMessages } from './use-validation-messages';
 
 type MetadataFormProps = {
@@ -234,19 +236,33 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
 
         {capabilities.category && (
           <FormField label={categoryLabel} error={errorFor('category')}>
-            {({ inputId, describedBy }) => (
-              <TextInput
-                id={inputId}
-                aria-describedby={describedBy}
-                aria-invalid={errorFor('category') !== undefined}
-                value={draft.category}
-                disabled={busy}
-                placeholder={
-                  placeholderKey === null ? undefined : t(`platforms:${placeholderKey}` as const)
-                }
-                onChange={(event) => patch('category', event.target.value)}
-              />
-            )}
+            {({ inputId, describedBy }) =>
+              provider.categoryRequiresRemoteId ? (
+                <CategoryPicker
+                  platformId={platform.id}
+                  value={draft.category}
+                  categoryId={draft.categoryId}
+                  disabled={busy}
+                  invalid={errorFor('category') !== undefined}
+                  onChange={(category, categoryId) => {
+                    patch('category', category);
+                    patch('categoryId', categoryId);
+                  }}
+                />
+              ) : (
+                <TextInput
+                  id={inputId}
+                  aria-describedby={describedBy}
+                  aria-invalid={errorFor('category') !== undefined}
+                  value={draft.category}
+                  disabled={busy}
+                  placeholder={
+                    placeholderKey === null ? undefined : t(`platforms:${placeholderKey}` as const)
+                  }
+                  onChange={(event) => patch('category', event.target.value)}
+                />
+              )
+            }
           </FormField>
         )}
 
@@ -381,6 +397,8 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
           )}
         </p>
       </div>
+
+      <PublishPanel platform={platform} dirty={dirty} />
     </form>
   );
 }

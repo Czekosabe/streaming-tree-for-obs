@@ -3985,3 +3985,162 @@ failure.
 The frontend: Connected Accounts settings, the device-flow modal, platform
 settings account linking, and the metadata editor's category picker and
 publish panel.
+
+## 2026-08-04 17:10 — feat(web): manage and publish Twitch connected accounts
+
+### Status
+Stage 7A in progress. This is the frontend counterpart to the three
+backend commits above - it is the last implementation commit before local
+integration verification and documentation.
+
+### Split from the suggested plan
+The task suggested separate `feat(web): manage Twitch connected accounts`
+and `feat(web): publish Twitch metadata` commits. They are combined here for
+the same reason the backend combined device-auth and metadata-publish: the
+publish UI (`PublishPanel`, `CategoryPicker`) and the account-management UI
+(`ConnectedAccountsPanel`, `TwitchDeviceFlowModal`, `AccountLinkSection`)
+share one data layer (`api/account-schemas.ts`, `api/accounts.ts`,
+`hooks/use-accounts.ts`, `models/account-presentation.ts`) and one i18n
+namespace (`accounts`) added together in this same change; splitting them
+would mean an artificial partial commit of that shared layer.
+
+### Scope
+Everything the task's frontend section asked for: a rendered-component test
+harness, the full data layer, the Connected Accounts settings panel and
+device-flow modal, platform-settings account linking, and the metadata
+editor's category picker and publish panel - all in English and Polish.
+Not in scope: any UI for YouTube/Kick/TikTok account linking (they keep
+their existing "not implemented" state), and no change to how local
+metadata saving behaves for platforms without a connected-account concept.
+
+### Changes
+
+**Test harness** - `@testing-library/react@16.3.2`,
+`@testing-library/user-event@14.6.3` and `@testing-library/jest-dom@7.0.0`
+(all confirmed React 19-compatible; Node version matches the project's
+existing `engines` requirement, unchanged by this addition).
+`vitest.config.ts` now includes `.test.tsx` and loads `vitest.setup.ts`,
+which registers `@testing-library/jest-dom/vitest` matchers and an
+`afterEach(cleanup)` so no rendered tree leaks into the next test.
+`src/test/render.tsx` wraps a component with the same `I18nextProvider` +
+`QueryClientProvider` pair `App.tsx` supplies, so rendered tests exercise
+real translations and real query-cache behavior rather than stubs.
+
+**Data layer** - `api/account-schemas.ts` (Zod contracts for every new
+endpoint; no schema has a token, refresh token, device code, or client
+secret field - the backend responses never carry one, so there is nothing
+to strip), `api/accounts.ts` (transport functions; `cancelDeviceFlow` does
+a DELETE then re-fetches the snapshot, since that endpoint returns the
+final snapshot as its body rather than a bare 204), `hooks/use-accounts.ts`
+(TanStack Query hooks; the device-flow query polls every second only while
+the attempt is non-terminal; category search is enabled only with a real
+account id and a 2+ character query, matching the backend's own minimum),
+`models/account-presentation.ts` (exhaustive state-to-label/tone mapping
+for device-flow state, account status, and publish blockers, mirroring the
+project's existing `branch-presentation.ts` convention).
+
+**Connected Accounts settings** (`components/settings/`) -
+`ConnectedAccountsPanel` (Client ID form showing its source - environment
+or database - with the database-managed editor disabled once a Client ID
+came from the environment; the connected-account list with status,
+granted scopes, last-validation time, and per-account Validate/Reconnect/
+Disconnect actions) and `TwitchDeviceFlowModal` (an accessible modal
+reused for both the initial Connect and per-account Reconnect; shows the
+user code and a copy button, an explicit "Open Twitch" link that never
+auto-opens a popup, and a live authorization state; a `useRef` guard
+ensures exactly one attempt starts per modal open even across re-renders).
+Disconnect goes through `ConfirmDialog`, the project's existing
+application-styled replacement for `window.confirm` - never the browser's
+own dialog.
+
+**Platform linking** (`components/platforms/AccountLinkSection.tsx`) -
+shows connected accounts compatible with the destination's provider, links
+one, replaces explicitly, unlinks, and surfaces reconnect-required status;
+non-Twitch destinations show an honest "not implemented yet" state instead
+of a fake selector. Wired into `PlatformSettingsDialog.tsx` as its own
+section, deliberately never merged with the existing `StreamKeySection` -
+an OAuth account and a stream key are different credentials for different
+purposes.
+
+**Metadata editor** (`components/metadata/`) - `CategoryPicker.tsx` (a
+search box backed by the linked account's Twitch category search, replacing
+the plain text field only for providers where
+`provider.categoryRequiresRemoteId` is true; selecting a result stores both
+the display name and the provider's stable category ID; editing the text
+without selecting a result leaves a stale ID, which the publish preview
+reports as a blocker rather than guessing) and `PublishPanel.tsx` (shows
+the publish preview's blockers and changed/unchanged/skipped fields behind
+a loading and error state; the Publish action sits behind `ConfirmDialog`;
+publishing is disabled outright, with an explanation, whenever the local
+form has unsaved edits - "Save" and "Publish to Twitch" are never combined
+behind one button). Both wired into `MetadataForm.tsx`.
+
+**Metadata-model correction carried into the frontend** -
+`platform-schemas.ts` gained `categoryId` on `platformMetadataSchema` and
+`categoryRequiresRemoteId` on `providerDefinitionSchema`, matching the
+backend's stage-1 correction; `metadata-draft.ts` and existing fixtures
+were updated to carry the field through save/dirty-checking.
+
+**i18n** - new `accounts` namespace registered in both `en` and `pl`,
+covering integration config, device flow, account list, linking, category
+search, and publish. `deviceFlow.expiresIn` uses real CLDR pluralization
+on the namespace itself (`_one`/`_other` in English, the full
+`_one/_few/_many/_other` set in Polish) rather than composing a shared
+"N minutes" key that did not exist.
+
+### Rendered-component tests
+A representative subset, not the full interaction list the task
+enumerates - an explicit, acknowledged scope reduction given the size of
+this stage. Added: `TwitchDeviceFlowModal.test.tsx` (opens and starts an
+attempt exactly once; displays the user code and proves an arbitrary extra
+field such as a hypothetical device code never renders; copy feedback;
+pending-authorization state; cancellation; expired state offers only
+Close, never Cancel; `onAuthorized` fires on the authorized state; no
+duplicate attempt on re-render), `ConnectedAccountsPanel.test.tsx`
+(disconnect requires the application dialog and never calls
+`window.confirm`; cancelling the confirmation performs no disconnect; no
+token/refresh-token/device-code string ever appears in the rendered
+output), `PublishPanel.test.tsx` (unsaved edits block publishing with an
+explanation; publishing requires the confirmation dialog and shows the
+fields that will change; an unlinked destination explains that linking is
+required first).
+
+### A real testing-environment issue found and fixed here
+Two things were not obvious going in, since this is the project's first
+rendered-component test file:
+1. The project's `restoreMocks: true` Vitest option does **not** clear call
+   history on the `vi.fn()` instances an automocked module
+   (`vi.mock('@/api/accounts')`) exports, across tests within the same
+   file - confirmed with a minimal repro. Every new test file calls
+   `vi.clearAllMocks()` in its own `beforeEach` rather than relying on that
+   global setting.
+2. `@testing-library/user-event`'s `userEvent.setup()` installs its own
+   `navigator.clipboard` stub. A `navigator.clipboard` override written
+   before calling `userEvent.setup()` gets silently replaced; the copy-code
+   test now defines its clipboard stub after `userEvent.setup()`.
+
+Both are recorded here since they will affect any future rendered-component
+test in this project, not just this stage's.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Lint | `npm run lint` | Passed |
+| Typecheck | `npm run typecheck` | Passed |
+| Unit + rendered tests | `npm run test -- --run` | Passed (439 tests, 33 files - 426 pre-existing plus 13 new rendered-component tests) |
+| Build | `npm run build` | Passed |
+| i18n parity | `npm run i18n:check` | Passed (9 namespaces, en/pl in parity) |
+
+### Known limitations
+- The rendered-component test list in the task is longer than what was
+  implemented; the subset above covers the highest-risk interactions
+  (secret non-leakage, confirmation-gated destructive/external actions,
+  duplicate-submission prevention) rather than every state transition.
+- No real Twitch account or browser session has exercised this UI; that is
+  covered by the local integration script next, not by manual testing.
+
+### Next step
+The local Twitch integration script (`scripts/verify-twitch-account-
+integration.mjs`), then the existing three integration scripts for
+regression, then the documentation pass.

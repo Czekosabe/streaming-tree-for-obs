@@ -1,3 +1,4 @@
+import enAccounts from './resources/en/accounts.json';
 import enCommon from './resources/en/common.json';
 import enDashboard from './resources/en/dashboard.json';
 import enErrors from './resources/en/errors.json';
@@ -6,6 +7,7 @@ import enNavigation from './resources/en/navigation.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
+import plAccounts from './resources/pl/accounts.json';
 import plCommon from './resources/pl/common.json';
 import plDashboard from './resources/pl/dashboard.json';
 import plErrors from './resources/pl/errors.json';
@@ -34,6 +36,7 @@ export const enResources = {
   pages: enPages,
   errors: enErrors,
   runtime: enRuntime,
+  accounts: enAccounts,
 } as const;
 
 const plResources = {
@@ -45,6 +48,7 @@ const plResources = {
   pages: plPages,
   errors: plErrors,
   runtime: plRuntime,
+  accounts: plAccounts,
 } as const;
 
 export const resources = {

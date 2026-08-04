@@ -62,6 +62,7 @@ function draft(overrides: Partial<SaveMetadataInput> = {}): SaveMetadataInput {
     title: 'Building a multistream tool',
     description: '',
     category: 'Software and Game Development',
+    categoryId: '1469308723',
     tags: [],
     language: 'pl',
     visibility: '',

@@ -15,6 +15,7 @@ export function toDraft(platform: ConfiguredPlatform): SaveMetadataInput {
     title: metadata.title,
     description: metadata.description,
     category: metadata.category,
+    categoryId: metadata.categoryId,
     // Copied so editing the draft cannot mutate the query cache.
     tags: [...metadata.tags],
     language: metadata.language,
@@ -35,6 +36,7 @@ export function isDirty(draft: SaveMetadataInput, stored: SaveMetadataInput): bo
     draft.title !== stored.title ||
     draft.description !== stored.description ||
     draft.category !== stored.category ||
+    draft.categoryId !== stored.categoryId ||
     draft.language !== stored.language ||
     draft.visibility !== stored.visibility ||
     draft.matureContent !== stored.matureContent ||

@@ -14,6 +14,7 @@ const validDefinition = {
   brandName: 'Twitch',
   shortLabel: 'TW',
   categoryFieldType: 'category',
+  categoryRequiresRemoteId: true,
   capabilities: {
     title: true,
     description: false,
@@ -35,6 +36,7 @@ const validMetadata = {
   title: 'Live coding',
   description: '',
   category: 'Software and Game Development',
+  categoryId: '1469308723',
   tags: ['go', 'react'],
   language: 'pl',
   visibility: '',

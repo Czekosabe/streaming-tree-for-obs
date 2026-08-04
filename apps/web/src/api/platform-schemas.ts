@@ -39,6 +39,13 @@ export const providerDefinitionSchema = z.object({
   brandName: z.string().min(1),
   shortLabel: z.string().min(1),
   categoryFieldType: z.string().min(1),
+  /**
+   * True only when this provider cannot publish a category from display
+   * text alone - a category selected through the provider's own search must
+   * also supply a matching categoryId, or publishing that field is blocked.
+   * False for a provider with no metadata-publish integration yet.
+   */
+  categoryRequiresRemoteId: z.boolean(),
   capabilities: providerCapabilitiesSchema,
   limits: providerLimitsSchema,
   visibilityOptions: z.array(z.string()),
@@ -54,6 +61,13 @@ export const platformMetadataSchema = z.object({
   title: z.string(),
   description: z.string(),
   category: z.string(),
+  /**
+   * The provider's own stable remote category identifier, empty when no
+   * remote category has been selected - distinct from `category`, which is
+   * display text a user may type freely. See providerDefinitionSchema's
+   * categoryRequiresRemoteId.
+   */
+  categoryId: z.string(),
   tags: z.array(z.string()),
   language: z.string(),
   visibility: z.string(),
@@ -109,6 +123,7 @@ export type SaveMetadataInput = {
   title: string;
   description: string;
   category: string;
+  categoryId: string;
   tags: string[];
   language: string;
   visibility: string;

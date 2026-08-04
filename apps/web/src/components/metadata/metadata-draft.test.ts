@@ -17,6 +17,7 @@ function platform(tags: string[] = ['go', 'react']): ConfiguredPlatform {
       title: 'Live coding',
       description: '',
       category: 'Software and Game Development',
+      categoryId: '1469308723',
       tags,
       language: 'pl',
       visibility: '',
@@ -56,6 +57,7 @@ describe('unsaved change detection', () => {
   it.each([
     ['title', { title: 'Something else' }],
     ['category', { category: 'Just Chatting' }],
+    ['category id', { categoryId: '509658' }],
     ['language', { language: 'en' }],
     ['latency mode', { latencyMode: 'normal' }],
     ['mature content', { matureContent: true }],

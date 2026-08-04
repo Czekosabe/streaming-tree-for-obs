@@ -1,0 +1,120 @@
+{
+  "integration": {
+    "heading": "Twitch integration",
+    "description": "Connect your Twitch account so Streaming Tree can read and update your channel's metadata. No client secret is ever requested or stored.",
+    "clientIdLabel": "Twitch Client ID",
+    "clientIdPlaceholder": "e.g. gp762nuuoqcoxypju8c569th9wz7q5",
+    "clientIdHint": "Register an application at the Twitch developer console and paste its Client ID here.",
+    "clientIdSourceEnvironment": "Set by the STREAMING_TREE_TWITCH_CLIENT_ID environment variable and cannot be changed here.",
+    "clientIdSourceDatabase": "Saved in application settings.",
+    "clientIdSourceMissing": "Not configured yet.",
+    "noSecretNote": "Streaming Tree never accepts or stores a Twitch client secret - only the public Client ID.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "lockedNote": "The Client ID cannot be changed while a Twitch account is connected. Disconnect every Twitch account first."
+  },
+  "connect": {
+    "button": "Connect Twitch",
+    "connecting": "Starting…",
+    "notConfiguredNote": "Configure a Twitch Client ID above before connecting an account."
+  },
+  "deviceFlow": {
+    "title": "Connect your Twitch account",
+    "description": "Open the link below on any device, sign in to Twitch, and enter the code shown here.",
+    "userCodeLabel": "Code",
+    "copyCode": "Copy code",
+    "copied": "Copied",
+    "openTwitch": "Open Twitch",
+    "verificationNote": "Go to {{uri}} and enter the code above.",
+    "expiresIn_one": "This code expires in {{count}} minute",
+    "expiresIn_other": "This code expires in {{count}} minutes",
+    "expired": "This code has expired.",
+    "state": {
+      "requesting_code": "Starting the authorization request…",
+      "waiting_for_user": "Waiting for you to authorize on Twitch…",
+      "polling": "Waiting for you to authorize on Twitch…",
+      "authorized": "Connected!",
+      "denied": "Authorization was denied on Twitch.",
+      "expired": "This code expired before it was used.",
+      "cancelled": "Cancelled.",
+      "error": "The authorization attempt could not be completed."
+    },
+    "cancel": "Cancel",
+    "close": "Close",
+    "tryAgain": "Try again",
+    "successNote": "Your Twitch account is now connected."
+  },
+  "account": {
+    "heading": "Connected Twitch accounts",
+    "empty": "No Twitch account connected yet.",
+    "status": {
+      "connected": "Connected",
+      "reconnect_required": "Reconnect required"
+    },
+    "scopesLabel": "Permissions granted",
+    "lastValidated": "Last checked {{time}}",
+    "neverValidated": "Not checked yet",
+    "validate": "Check now",
+    "validating": "Checking…",
+    "reconnect": "Reconnect",
+    "disconnect": "Disconnect",
+    "reconnectRequiredNote": "Twitch could not confirm this account's access. Reconnect to keep using it.",
+    "disconnectDialog": {
+      "title": "Disconnect {{login}}?",
+      "message": "Streaming Tree will revoke this account's access on Twitch where possible and remove it locally. Any destination linked to it will need to be relinked.",
+      "confirm": "Disconnect"
+    }
+  },
+  "link": {
+    "heading": "Connected Twitch account",
+    "description": "Linking a Twitch account lets you read and publish this destination's metadata. It is separate from the destination's stream key.",
+    "notLinked": "No Twitch account linked to this destination.",
+    "linkedTo": "Linked to {{login}}",
+    "chooseAccount": "Choose a connected account",
+    "linkButton": "Link",
+    "unlinkButton": "Unlink",
+    "replaceNote": "Linking a different account replaces the current link.",
+    "reconnectRequiredNote": "This account needs to be reconnected before it can be used.",
+    "missingScopeNote": "This account is missing a required permission; reconnect it.",
+    "noAccountsAvailable": "No Twitch accounts are connected yet. Connect one in Settings first.",
+    "notImplementedNote": "Account linking is not implemented yet for this provider."
+  },
+  "category": {
+    "searchPlaceholder": "Search for a game or category…",
+    "searching": "Searching…",
+    "noResults": "No matches found.",
+    "current": "Current: {{name}}",
+    "clear": "Clear",
+    "linkAccountNote": "Link a Twitch account to search for a category.",
+    "staleNote": "This category has no matching Twitch ID and cannot be published until you select it again."
+  },
+  "publish": {
+    "heading": "Publish to Twitch",
+    "description": "Sends your saved metadata to Twitch. This is separate from saving locally.",
+    "unsavedNote": "Save your local changes before publishing to Twitch.",
+    "loadingPreview": "Checking current Twitch metadata…",
+    "fieldChanged": "will change",
+    "fieldUnchanged": "unchanged",
+    "localValue": "Local",
+    "remoteValue": "Currently on Twitch",
+    "skippedFields": "Not published to Twitch (no equivalent field): {{fields}}",
+    "publishButton": "Publish to Twitch",
+    "publishing": "Publishing…",
+    "confirmDialog": {
+      "title": "Publish to Twitch?",
+      "message": "This sends the changed fields shown below to Twitch right now.",
+      "confirm": "Publish"
+    },
+    "success": "Published to Twitch.",
+    "blockers": {
+      "accountNotLinked": "Link a Twitch account to this destination first.",
+      "accountReconnectRequired": "The linked Twitch account needs to be reconnected.",
+      "credentialStoreUnavailable": "Secure storage is currently unavailable.",
+      "missingRequiredScope": "The linked account is missing a required permission.",
+      "categoryNotSelected": "Select a category from the search results before publishing.",
+      "providerUnavailable": "Twitch could not be reached.",
+      "rateLimited": "Twitch's rate limit was reached; try again shortly."
+    }
+  }
+}
