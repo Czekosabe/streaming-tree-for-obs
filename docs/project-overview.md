@@ -84,6 +84,12 @@ Deliberately **not** part of version 1.0:
 - a mobile application,
 - a plugin running inside OBS.
 
+Several of these — an aggregated chat, alerts, and bot messages in
+particular — **are now part of the long-term product vision** (see §16) and
+are planned for stages well after version 1.0. Being out of scope for the
+first local version is not the same as being abandoned; it means the
+streaming router has to exist and work before anything reads from it.
+
 ---
 
 ## 7. Overall architecture
@@ -120,6 +126,13 @@ never contacts MediaMTX directly.
 The layers are separated on purpose: the panel never talks directly to MediaMTX
 or FFmpeg. All control flows through the Go backend, which is what will later
 allow the backend to be moved to a remote server without changing the panel.
+
+This diagram covers the **streaming path** only. The planned engagement and
+overlay platform (§16) is a separate, additive set of connectors and consumers
+sitting beside it in the backend, communicating with platforms independently
+of the RTMP/FFmpeg path; see
+[docs/engagement-architecture.md](engagement-architecture.md) for its own
+diagram.
 
 ### 7.1 The role of OBS
 
@@ -452,6 +465,11 @@ Rules in force for this project:
 6. **No secrets in documentation**, including `docs/progress.md` and the
    translation resources.
 
+The same `SecretStore` abstraction backing destination stream keys is designed
+to be reused, with a different secret type, for OAuth tokens once connected
+accounts exist (§16, engagement-architecture.md §17.1) - one credential-store
+foundation, not one bespoke mechanism per feature.
+
 ## 11. Localization
 
 The interface is bilingual; the product itself is developed in English.
@@ -517,21 +535,51 @@ is implemented yet.
 
 ## 13. Roadmap
 
+The roadmap now covers two eras of the product: the **streaming router**
+(stages 1–7) and the **engagement and overlay platform** (stages 8–19), plus
+ongoing hardening (stage 20). §16 explains why the second era exists and how
+it is architected; this table only tracks status and dependencies.
+
 | Stage | Scope | Status |
 | ----- | ----- | ------ |
 | 1 | Foundations: repository structure, documentation, React panel, minimal Go backend, `/api/health` endpoint | **Completed** |
 | 2 | English and Polish localization of the frontend | **Completed** |
 | 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | **Completed** |
 | 4 | MediaMTX integration: managed dependency, process supervision, configuration generation, OBS ingest detection | **Completed** |
-| 5 | FFmpeg branches: startup, supervision, restarts, failure isolation | Planned |
-| 6 | Live status over SSE or WebSocket instead of polling | Planned |
-| 7 | Operating system credential store for stream keys | Planned |
-| 8 | Platform API integrations: OAuth, pushing metadata, reading viewer counts | Planned |
-| 9 | Log view and diagnostics, diagnostic bundle export | Planned |
-| 10 | Application packaging and server mode | Planned |
+| 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | Planned |
+| 6 | FFmpeg destination branches: startup, supervision, restarts, failure isolation | Planned |
+| 7 | Connected accounts, OAuth, platform metadata publishing | Planned |
+| 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
+| 9 | Unified operator chat | Planned |
+| 10 | OBS chat overlay | Planned |
+| 11 | Outbound chat, scheduled bot messages and commands | Planned |
+| 12 | Alert engine and alert queue | Planned |
+| 13 | Visual overlay designers | Planned |
+| 14 | Built-in templates and template import/export | Planned |
+| 15 | YouTube and Kick engagement connectors | Planned |
+| 16 | External donation-service connectors | Planned |
+| 17 | TTS and audio queue | Planned |
+| 18 | Goals, counters and event widgets | Planned |
+| 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
+| 20 | Logs, diagnostics, packaging and remote-server hardening | Planned |
 
-The order may change, but stages 4 and 5 depend on stage 3, and stage 8 depends
-on stage 7.
+Key dependencies:
+
+- Stage 6 (FFmpeg) and stage 7 (OAuth) both need stage 5's credential store —
+  destination stream keys and OAuth tokens are different secret types behind
+  the same storage abstraction.
+- Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward.
+- Stage 11 (outbound/bot) needs connector send-message capability, declared as
+  part of a connector's capability set from stage 8 onward.
+- Stage 12 (alerts) needs stage 8's normalized events.
+- Stage 13 (designers) needs a stable overlay shape, which only exists once
+  stages 9/10 (chat) and 12 (alerts) establish what an overlay renders.
+- Stage 14 (templates) needs stage 13's designer output format.
+- Stage 17 (TTS) and stage 18 (goals/widgets) consume stage 8's bus directly
+  and do not depend on the designers.
+
+The full dependency reasoning and the normalized event model behind stages
+8–19 are in [docs/engagement-architecture.md](engagement-architecture.md).
 
 Stage 3 was marked completed only after all automated checks passed, including
 the scripted verification that configuration and metadata survive a backend
@@ -544,6 +592,10 @@ transition is covered against a fake Control API and captured real responses,
 but was **not** verified end to end with a real RTMP publisher. See the
 `feat(server): supervise MediaMTX runtime and ingest` entry in
 [progress.md](progress.md).
+
+Stage 5, like every stage before it, is marked completed only once its
+automated checks pass — see [progress.md](progress.md) for the entry recording
+that.
 
 ## 14. The manual testing rule
 
@@ -588,3 +640,42 @@ In practice this means:
   widgets,
 - an entry in `docs/progress.md` does not mark a feature as completed if it is
   only an interface placeholder.
+
+## 16. Engagement and overlay platform (planned)
+
+**Status: planned. Nothing in this section is implemented.**
+
+The product's long-term scope is larger than a streaming router. Streaming
+Tree is also planned to become a **local streaming engagement and overlay
+platform**: normalized chat and events from multiple platforms, a unified
+operator chat, OBS Browser Source overlays, outbound chat and scheduled bot
+messages, alerts and an alert queue, visual overlay designers with a safe
+template format, text-to-speech, and goal/counter widgets.
+
+The full architecture — the normalized event model, the connector interface
+and capability model, deduplication and ordering rules, the operator-chat vs.
+overlay distinction, bot automation, the alert and queue design, the template
+security model, TTS, and the staged implementation order — is documented
+separately in **[docs/engagement-architecture.md](engagement-architecture.md)**,
+so this overview is not doubled in length by planning detail that has no
+bearing on what is running today.
+
+Three things are worth stating plainly here, because they shape decisions this
+task makes now:
+
+1. **The credential-store foundation this task implements (§10) is a hard
+   prerequisite for this entire second era of the product.** FFmpeg
+   destination stream keys, OAuth tokens for connected accounts, and any
+   future outbound-bot credential all depend on the same `SecretStore`
+   abstraction, distinguished only by secret type.
+2. **A connected account (for reading chat/events) is a different concept
+   from a configured destination (for outgoing streaming), even for the same
+   provider**, because they depend on different credential types with
+   different lifecycles. See engagement-architecture.md §4.
+3. **Provider support is planned honestly**: Twitch first, YouTube and Kick
+   as separate adapters, and TikTok only if and when an official, stable
+   integration exists — never via scraping as a core feature. See
+   engagement-architecture.md §16.
+
+This section will be updated, and marked accordingly, only as each roadmap
+stage from §13 is actually completed - not before.

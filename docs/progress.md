@@ -1952,3 +1952,140 @@ Stage 5: FFmpeg destination branches.
 The constraint to carry forward: per-branch runtime state must stay in memory,
 and a destination must not be shown as live until an FFmpeg process is genuinely
 connected and sending.
+
+## 2026-08-04 08:07 — docs: expand roadmap for engagement and overlays
+
+### Status
+Completed
+
+### Scope
+Document a product-scope expansion decided before this stage's implementation
+work: Streaming Tree's long-term plan now includes a local streaming
+engagement and overlay platform (unified chat, OBS overlays, alerts, bot
+automation, visual designers, TTS, goal widgets) layered on top of the
+streaming router. No code changed and nothing described here is implemented.
+This entry exists so the roadmap and architecture documents are in place
+before the credential-store foundation (the next entry) is built against them.
+
+### Changes
+
+**`docs/engagement-architecture.md`** (new) - the full architecture for the
+planned engagement platform: terminology, the normalized event model and its
+core fields, the connector interface and inbound/outbound capability model,
+deduplication and ordering rules, deletion/moderation events, the in-memory
+buffer vs. optional persisted history, the operator-chat vs. OBS-overlay
+distinction with their separate settings, scheduled bot messages and the
+placeholder system for message text (explicitly no arbitrary code execution),
+chat commands, automation rules, the alert engine and alert queue, visual
+overlay and chat-overlay designers, the template security model (no
+JavaScript, no executables, no unrestricted HTML/filesystem/network access,
+reusing the archive-safety approach already used for the MediaMTX managed
+installation), template packaging and import/export, preview/test events,
+text-to-speech and the `TTSProvider` abstraction (no engine bundled), goals
+and counters, external donation connectors, privacy and security notes, the
+OAuth/credential-store dependency, and a staged implementation order. The
+document opens with an explicit "this is planning, not implementation"
+notice and repeats it at points where a reader might otherwise assume
+something works.
+
+**`docs/project-overview.md`**
+- Section 6 (out of scope for v1.0) now notes that several excluded items -
+  aggregated chat, alerts, bot messages - are part of the long-term vision
+  and points at the new section 16.
+- Section 7 (architecture) notes the diagram covers the streaming path only;
+  the engagement platform is a separate, additive set of connectors.
+- Section 10 (stream key security) notes the `SecretStore` abstraction is
+  designed to be reused for OAuth tokens once connected accounts exist.
+- Section 13 (roadmap) replaces the previous 10-stage table with the full
+  20-stage table: stages 1-4 completed, stage 5 (credential-store
+  foundation, this task's implementation target) through stage 20 (logs,
+  diagnostics, packaging, remote-server hardening) planned, with a "key
+  dependencies" list stating explicitly that stage 6 (FFmpeg) and stage 7
+  (OAuth) both need stage 5's credential store, that stage 8 (Event Bus) is
+  a prerequisite for every later engagement stage, and that stage 13
+  (designers) needs stages 9/10/12 to establish what an overlay renders
+  before stage 14 (templates) can define an import/export format for it.
+- New section 16, "Engagement and overlay platform (planned)", states plainly
+  that the credential-store foundation is a hard prerequisite for the entire
+  engagement era, that a connected account (for reading chat) is a different
+  concept from a configured destination (for outgoing streaming) even for the
+  same provider, and that provider support is planned honestly - Twitch
+  first, YouTube and Kick as separate adapters, TikTok only if an official
+  stable integration exists, never scraping as a core feature.
+
+**`README.md`**
+- New "Long-term vision" paragraph in the introduction, stating plainly that
+  none of the engagement platform exists yet and pointing at
+  `docs/engagement-architecture.md`.
+- New "Roadmap" section (linked from the table of contents) with a condensed
+  stage table and links to the full table in `project-overview.md` and the
+  detailed architecture document.
+
+### Files changed
+- `docs/engagement-architecture.md` (new)
+- `docs/project-overview.md`
+- `README.md`
+- `docs/progress.md`
+
+### Technical decisions
+
+1. **Existing section numbers in `project-overview.md` were preserved.** The
+   new engagement content was appended as section 16 and as short
+   forward-references inserted into sections 6, 7, 10 and 13, rather than
+   renumbering the document. `engagement-architecture.md` and other
+   documents link to specific section numbers (for example
+   `project-overview.md#13-roadmap`); renumbering would have silently broken
+   those anchors.
+2. **A dedicated architecture document, not an expanded section 16.** The
+   engagement platform touches roughly a dozen concerns (events, chat,
+   overlays, alerts, bot automation, templates, TTS, widgets). Folding all of
+   it into `project-overview.md` would have doubled that document's length
+   with planning detail that has no bearing on what is running today. Section
+   16 stays short and points at the dedicated document.
+3. **The 20-stage roadmap replaces, rather than merges with, the previous
+   10-stage one.** The previous table's "live status over SSE or WebSocket"
+   stage does not appear in the new table as its own stage; the underlying
+   intent ("later stages push live state over SSE or WebSocket") remains
+   documented in section 7 and section 12 without being tied to a specific
+   stage number, since the roadmap this task was given does not treat it as
+   a separate stage.
+
+### Automated validation
+
+Re-run to confirm this documentation-only change caused no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test -- --run` | Passed - 16 files, 235 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - 6 packages |
+| Backend build | `go build ./...` | Passed |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed. No OBS was connected by hand.
+
+### Known limitations
+- `docs/engagement-architecture.md` is planning, not a specification frozen
+  against implementation reality; details will shift once stage 8 (Event Bus)
+  is actually built, the same way earlier planning documents were refined
+  during implementation.
+- The 99designs/keyring library selected for the credential-store foundation
+  (next entry) is not yet pinned in `go.mod` as of this entry.
+- All product limitations from previous entries still stand.
+
+### Next step
+
+Stage 5: the secure credential-store foundation itself - a `SecretStore`
+interface backed by the operating system credential store (Windows Credential
+Manager, macOS Keychain, Linux Secret Service via `github.com/99designs/keyring`),
+an in-memory fake for tests, a centralized credential key namespace, stream-key
+validation, HTTP endpoints to set/check/delete a destination stream key without
+ever echoing it back, and platform-settings UI to manage it. FFmpeg itself is
+still not implemented; this stage only makes it possible to store the secret
+FFmpeg will eventually need.

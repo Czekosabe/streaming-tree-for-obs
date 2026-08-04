@@ -7,6 +7,16 @@ The name describes the model: the stream from OBS is the "trunk", and every
 platform is an independent "branch". One branch failing does not stop the
 others.
 
+**Long-term vision.** Beyond routing one stream to several platforms, Streaming
+Tree is planned to grow into a local streaming engagement and overlay
+platform: normalized chat and events from multiple platforms, a unified
+operator chat, OBS Browser Source overlays, alerts, scheduled bot messages and
+chat commands, visual overlay designers, text-to-speech and goal widgets. None
+of that exists yet — it is architecture and planning, detailed in
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md) — but it
+shapes decisions made today, starting with the credential-store foundation
+this stage adds.
+
 > ## Project state: local ingest works, outgoing streaming does not
 >
 > Streaming Tree can now **receive** a stream from OBS. It installs and
@@ -30,6 +40,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 
 ## Table of contents
 
+- [Roadmap](#roadmap)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Frontend — install and run](#frontend--install-and-run)
@@ -45,6 +56,25 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [What is currently demo-only](#what-is-currently-demo-only)
 - [Stream key security](#stream-key-security)
 - [Common problems](#common-problems)
+
+---
+
+## Roadmap
+
+| Stage | Scope | Status |
+| ----- | ----- | ------ |
+| 1–4 | Foundations, localization, SQLite configuration, MediaMTX ingest | **Completed** |
+| 5 | Secure credential-store foundation (this stage) | See [progress.md](docs/progress.md) |
+| 6 | FFmpeg destination branches | Planned |
+| 7 | Connected accounts, OAuth, metadata publishing | Planned |
+| 8–19 | Engagement Event Bus, unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, additional platform connectors | Planned |
+| 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
+
+The full table with dependencies is in
+[`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The
+engagement era (stages 8–19) is architected in detail in
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md) — read
+that document's opening notice before treating any part of it as implemented.
 
 ---
 
