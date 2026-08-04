@@ -19,6 +19,7 @@ import (
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
+	"github.com/streaming-tree/server/internal/runtime/mediamtx"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
 
@@ -78,11 +79,35 @@ func run() error {
 
 	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
 
+	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
+	// failed MediaMTX must never stop the Go API: platform configuration stays
+	// readable and writable regardless.
+	supervisor := mediamtx.NewSupervisor(mediamtx.Options{
+		DataDir:        cfg.DataDir,
+		RTMPAddress:    cfg.MediaMTX.RTMPAddress,
+		APIAddress:     cfg.MediaMTX.APIAddress,
+		IngestPath:     cfg.MediaMTX.IngestPath,
+		AutoStart:      cfg.MediaMTX.AutoStart,
+		AutoRestart:    cfg.MediaMTX.AutoRestart,
+		ExecutablePath: cfg.MediaMTX.ExecutablePath,
+		Logger:         logger,
+	})
+	supervisor.Start(ctx)
+
+	snapshot := supervisor.Snapshot()
+	logger.Info("mediamtx runtime",
+		slog.String("state", string(snapshot.MediaMTX.State)),
+		slog.String("source", string(snapshot.MediaMTX.Source)),
+		slog.String("supported_version", snapshot.MediaMTX.SupportedVersion),
+		slog.String("rtmp", snapshot.Connection.ServerURL),
+	)
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:         logger,
 		AllowedOrigins: cfg.AllowedOrigins,
 		StartedAt:      startedAt,
 		Platforms:      platformService,
+		Runtime:        supervisor,
 	})
 
 	server := &http.Server{
@@ -112,6 +137,10 @@ func run() error {
 	select {
 	case err := <-serverErrors:
 		// The listener failed outright, most often because the port is taken.
+		// MediaMTX may already be running, so it is stopped before returning.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		supervisor.Shutdown(shutdownCtx)
+		cancel()
 		return err
 
 	case <-ctx.Done():
@@ -125,13 +154,20 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 
-		if err := server.Shutdown(shutdownCtx); err != nil {
+		httpErr := server.Shutdown(shutdownCtx)
+
+		// MediaMTX is stopped after the HTTP server, so an in-flight runtime
+		// request cannot restart it on the way out. This also reaps the child
+		// process, so the backend never leaves one behind.
+		supervisor.Shutdown(shutdownCtx)
+
+		if httpErr != nil {
 			logger.Error("graceful shutdown failed, closing forcefully",
-				slog.Any("error", err))
+				slog.Any("error", httpErr))
 			if closeErr := server.Close(); closeErr != nil {
 				return closeErr
 			}
-			return err
+			return httpErr
 		}
 
 		logger.Info("server stopped cleanly")

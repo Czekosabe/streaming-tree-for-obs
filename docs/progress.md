@@ -1471,3 +1471,198 @@ No manual testing was performed.
 Supervise the process: generate the v1.19.3 configuration, start MediaMTX as a
 child process, confirm readiness through its Control API, poll `/v3/paths/list`
 for OBS ingest, and expose all of it through a runtime API.
+
+---
+
+## 2026-08-03 21:15 — feat(server): supervise MediaMTX runtime and ingest
+
+### Status
+Completed
+
+### Scope
+Generate the MediaMTX configuration, run it as a supervised child process,
+confirm readiness through its Control API, detect RTMP ingest, and expose all of
+it through a public runtime API. Adds the real-binary smoke verification.
+
+### Changes
+
+**Generated configuration**
+- `RenderConfig` emits a deterministic v1.19.3 configuration covered by a golden
+  test. Every key was verified against the reference configuration shipped in
+  the official archive: MediaMTX rejects an unknown key and refuses to start, so
+  a typo here would be a startup failure rather than a warning.
+- Enabled: RTMP on the configured loopback address, and the Control API on its
+  own loopback address. Disabled explicitly: `rtsp`, `hls`, `webrtc`, `srt`,
+  `moq`, `metrics`, `pprof`, `playback`. Each opens its own listener by default,
+  so none is left to the upstream default.
+- Exactly one path accepts publishing, with `source: publisher` and
+  `overridePublisher: false` - MediaMTX defaults that to `true`, which would let
+  a second publisher silently displace the first. No wildcard path exists.
+- `record: false`, no forwarding, no destination, no credential.
+- `logStructured: true`, so the supervisor can parse severity and message.
+- Written atomically into the runtime directory with restrictive permissions,
+  never into the repository.
+
+**Control API client**
+- Targets v1.19.3 and keeps its wire models internal; they are not the public
+  Streaming Tree schema.
+- Readiness uses `/v3/config/global/get`. v1.19.3 has no dedicated instance-info
+  endpoint, so a valid global-configuration answer is what proves the API is up
+  and the process finished loading. The version is verified from
+  `mediamtx --version` at resolve and install time instead, and this is
+  documented rather than glossed over.
+- Ingest uses `/v3/paths/list`. Unknown fields are tolerated; `name` and `ready`
+  are required, because treating a missing `ready` as `false` would report
+  "waiting" during an API fault.
+- Bounded: 3-second timeout, 4 MB response limit, loopback only. No shelling out
+  to curl, and no MediaMTX command hooks.
+
+**Process supervision**
+- Explicit state machine: `missing`, `installing`, `incompatible`, `stopped`,
+  `starting`, `ready`, `stopping`, `error`. One value, not a set of booleans, so
+  "ready and missing" is unrepresentable.
+- Both output streams are drained by their own goroutine. An undrained pipe
+  would wedge MediaMTX a few kilobytes into its logging, so this is a
+  correctness requirement rather than a nicety. Structured lines are parsed;
+  malformed lines are logged raw and never panic. A 100-line ring bounds memory.
+- Readiness is never inferred from process creation: MediaMTX exits milliseconds
+  later if its configuration is rejected. The Control API must answer first.
+- Ports are checked before spawning, so "address already in use" becomes an
+  actionable `mediamtx_port_in_use` rather than a readiness timeout. Nothing is
+  ever terminated to free a port.
+- The child gets a minimal environment and its own process group.
+- A generation counter makes late callbacks from a superseded process
+  harmless, so a stop during startup cannot be undone by the launch it raced.
+
+**Restart policy**
+- Bounded exponential backoff from 1s to 30s, at most 5 restarts in 5 minutes,
+  and a 60-second stable run resets both. A crash loop therefore stops with
+  `mediamtx_restart_limit_reached` instead of spinning.
+- An explicit Stop sets a flag the policy honours, so a deliberate stop is never
+  undone. Restart is one controlled stop followed by a start.
+
+**Shutdown**
+- The HTTP server drains first, then MediaMTX, so an in-flight runtime request
+  cannot restart it on the way out. Workers are awaited, so no goroutine and no
+  child process outlives the backend.
+- On Unix, SIGTERM then SIGKILL after a grace period - genuinely graceful. On
+  Windows the process is terminated immediately: there is no SIGTERM, and
+  MediaMTX is a console application with no message loop. `process_windows.go`
+  says so plainly rather than claiming graceful shutdown everywhere, and the
+  README repeats it.
+
+**Public runtime API**
+- `GET /api/runtime` returns one versioned snapshot: MediaMTX state, ingest
+  state and connection details. `POST /api/runtime/mediamtx/{install,start,stop,restart}`.
+- Install is asynchronous (202) because downloading and verifying ~30 MB far
+  exceeds a sensible browser request; progress is observed through the snapshot.
+- Command endpoints reject any request body. They are commands, not resources,
+  and accepting a body would invite a client to think it could pass a download
+  URL or a checksum.
+- The response carries no executable path, environment, command line or process
+  id, and the MediaMTX Control API is not proxied - the browser never reaches it.
+- The backend stays healthy while MediaMTX is missing or failed; `/api/health`
+  is unchanged and the platform API keeps working.
+
+### Files changed
+- `apps/server/internal/runtime/mediamtx/` - `config.go`, `apiclient.go`,
+  `state.go`, `process.go`, `process_unix.go`, `process_windows.go`,
+  `supervisor.go`, and four test files including the fake-process harness
+- `apps/server/internal/httpapi/runtime.go`, `runtime_test.go`, `router.go`,
+  `decode.go`
+- `apps/server/cmd/server/main.go`
+- `scripts/verify-mediamtx-runtime.mjs`
+
+### Technical decisions
+
+1. **The configuration was validated against the real binary before the code was
+   written.** The v1.19.3 archive was downloaded, its bundled `mediamtx.yml`
+   inspected for the exact key names, and a candidate configuration started to
+   confirm it loads. Guessing would have produced a config MediaMTX refuses,
+   discovered only at smoke-test time. This is also how `moq` was confirmed to
+   exist in v1.19.3 and `/v3/paths/list` response shape was captured.
+
+2. **Readiness uses the global-configuration endpoint.** There is no
+   `/v3/info` in v1.19.3. The alternative - treating a spawned process as ready -
+   is exactly the failure this must avoid.
+
+3. **The fake MediaMTX is the test binary re-executed.** `TestMain` checks an
+   environment variable and, when set, serves a fake Control API instead of
+   running tests. That avoids platform-specific shell scripts entirely. The
+   variable travels through an unexported `Options.extraEnv` that production
+   never populates, so it cannot weaken the real environment isolation.
+
+4. **A generation counter rather than a mutex held across I/O.** Start, stop and
+   restart all touch the same state while a child process is spawning, and
+   holding the lock across process creation would serialise the whole
+   supervisor. The counter lets a superseded launch detect that it lost.
+
+5. **`applyResolutionLocked` was extracted after the smoke test caught a real
+   bug.** The first version cleared the installing state before re-resolving,
+   leaving a window where a snapshot said "stopped" with no installed version -
+   which the script caught immediately. Resolution now happens before the state
+   transition, and the two are applied under one lock.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files need formatting |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - 6 packages |
+| Backend build | `go build ./...` | Passed - 0 errors |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - unchanged by this commit |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps against the real binary |
+
+Tests added: 12 configuration-generation tests (determinism, a golden file,
+loopback binding, every unused service disabled, only the configured path, the
+publisher source, no takeover, no recording, no destination or credential,
+atomic write, no leftover temporary file), 16 Control API tests using real
+v1.19.3 response bodies (readiness, unknown fields tolerated, a non-MediaMTX
+payload rejected, malformed JSON, non-success status, timeout, oversized
+response, waiting, receiving, disappeared path, other paths ignored, missing
+required fields rejected), 18 supervisor tests (missing binary does not stop the
+backend, start reaches ready through the API, readiness is not assumed from
+process creation, concurrent starts refused, explicit stop, stop suppresses
+restart, restart, unexpected exit detected, automatic restart counted, restart
+budget bounded, backoff capped, ingest waiting and receiving, port in use
+without touching the other listener, shutdown reaps the child, output drained,
+ring bounded) and 20 runtime HTTP tests.
+
+The smoke script verified, against the real downloaded binary: a clean data
+directory reports `missing`; the platform API still works while MediaMTX is
+missing; a request body is rejected; managed installation with official checksum
+verification succeeds; the installed version is v1.19.3 from the managed source;
+readiness is reached; ingest reports `waiting` with no invented track data; the
+payload leaks no filesystem path; explicit stop works and is not undone;
+a manual start works; after a backend restart the managed binary is reused
+without a second download, autostart brings it up, and the restart counter is
+back to zero - which is what demonstrates runtime state lives only in memory.
+
+No manual testing was performed.
+
+### Known limitations
+
+- **`waiting -> receiving -> waiting` was NOT verified end-to-end with a real
+  RTMP publisher.** Those transitions are covered thoroughly against a fake
+  v1.19.3 Control API and against captured real response bodies, and the
+  real-binary smoke test runs through readiness and `waiting` only. Writing a
+  correct test-only RTMP publisher means a full handshake, AMF0 command chain
+  and a valid H.264 sequence header before MediaMTX marks a path ready; that is
+  substantial protocol work, and FFmpeg is out of scope for this stage. The task
+  explicitly permits this fallback provided it is stated honestly, which it is
+  here and in the final report. Real publisher detection is therefore
+  **unverified end-to-end**.
+- Windows termination is forced, not graceful. Documented in code and README.
+- The diagnostic ring holds 100 lines and is not exposed through the API; the
+  Logs page remains a later stage.
+- Readiness cannot confirm the running process's version through the API,
+  because v1.19.3 exposes none. The binary's `--version` is checked instead.
+- The port pre-check has a small race: another process could take the port
+  between the check and MediaMTX binding it. MediaMTX then fails to bind and the
+  readiness timeout records it, so the outcome is correct if less specific.
+
+### Next step
+Replace the placeholder OBS panel with real runtime data, add the installation
+flow and runtime controls, and turn the Streams placeholder into a local ingest
+status page.

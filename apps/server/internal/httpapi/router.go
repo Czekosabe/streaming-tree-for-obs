@@ -20,6 +20,9 @@ type Options struct {
 	// Platforms serves the configuration API. When nil those routes are not
 	// registered, which keeps the health-only server usable in tests.
 	Platforms PlatformService
+	// Runtime serves the MediaMTX runtime API. When nil those routes are not
+	// registered.
+	Runtime RuntimeService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -40,6 +43,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Platforms != nil {
 		registerPlatformRoutes(mux, logger, opts.Platforms)
+	}
+
+	if opts.Runtime != nil {
+		registerRuntimeRoutes(mux, logger, opts.Runtime)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
@@ -89,6 +96,25 @@ func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service Pla
 	mux.HandleFunc("PUT /api/platforms/{id}/metadata", handleSaveMetadata(logger, service))
 	mux.HandleFunc("/api/platforms/{id}/metadata",
 		methodNotAllowed(logger, http.MethodGet, http.MethodPut))
+}
+
+// registerRuntimeRoutes wires the MediaMTX runtime API.
+//
+// The MediaMTX Control API is deliberately not proxied: the browser never talks
+// to it, directly or indirectly. Only these curated endpoints are exposed.
+func registerRuntimeRoutes(mux *http.ServeMux, logger *slog.Logger, service RuntimeService) {
+	mux.HandleFunc("GET /api/runtime", handleGetRuntime(logger, service))
+	mux.HandleFunc("/api/runtime", methodNotAllowed(logger, http.MethodGet))
+
+	for path, handler := range map[string]http.HandlerFunc{
+		"/api/runtime/mediamtx/install": handleInstallMediaMTX(logger, service),
+		"/api/runtime/mediamtx/start":   handleStartMediaMTX(logger, service),
+		"/api/runtime/mediamtx/stop":    handleStopMediaMTX(logger, service),
+		"/api/runtime/mediamtx/restart": handleRestartMediaMTX(logger, service),
+	} {
+		mux.HandleFunc("POST "+path, handler)
+		mux.HandleFunc(path, methodNotAllowed(logger, http.MethodPost))
+	}
 }
 
 // methodNotAllowed returns a 405 carrying the Allow header, as required by the

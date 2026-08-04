@@ -24,6 +24,21 @@ type decodeError struct {
 
 func (e *decodeError) Error() string { return e.message }
 
+// hasRequestBody reports whether the client sent a non-empty body.
+//
+// Used by command endpoints that document no body, so a client cannot smuggle
+// parameters past an endpoint that never reads them.
+func hasRequestBody(w http.ResponseWriter, r *http.Request) bool {
+	if r.Body == nil {
+		return false
+	}
+
+	limited := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	buffer := make([]byte, 1)
+	read, _ := limited.Read(buffer)
+	return read > 0
+}
+
 // decodeJSON reads a JSON request body strictly.
 //
 // Unknown fields are rejected so a client typo ("displayname") fails loudly
