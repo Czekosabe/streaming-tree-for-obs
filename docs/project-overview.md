@@ -455,15 +455,50 @@ Rules in force for this project:
    into the public JavaScript bundle and must never contain secrets. The only
    value the application persists in the browser is the interface language
    preference.
-3. **System credential store.** Keys will eventually be held by an operating
-   system mechanism (Windows Credential Manager, macOS Keychain, Secret Service
-   on Linux) rather than in application files.
-4. **Read at the last moment.** The backend fetches a key only when starting a
-   branch and hands it to the FFmpeg process without writing it to the logs.
+3. **System credential store.** A destination stream key is held by an
+   operating system mechanism - Windows Credential Manager, macOS Keychain, or
+   Linux Secret Service - via the `SecretStore` interface in
+   `apps/server/internal/secrets`, never in an application file. There is no
+   plaintext fallback: if the store cannot be reached, the key is left
+   unstored and the API reports a stable `credential_store_unavailable`
+   status rather than writing it anywhere else. The production implementation
+   (`KeyringStore`) wraps `github.com/99designs/keyring`, restricted to
+   exactly those three backends - the library's `pass` and `file` backends
+   (an external command and a password-encrypted file, respectively) are
+   excluded, since both are exactly the kind of fallback this rule forbids.
+   See `docs/progress.md`, entry `feat(server): add system credential store`,
+   for why this library was chosen over the alternative that was rejected
+   after reading its source.
+4. **Read at the last moment.** `credential.Service.RetrieveForProcessStart`
+   exists for this purpose and is not reachable through the HTTP API - the
+   interface `internal/httpapi` depends on has no method that returns a
+   secret value, so the web panel cannot obtain one even indirectly. It has
+   no caller yet: FFmpeg, the thing that will call it when starting a branch,
+   is not implemented.
 5. **Masked in diagnostics.** Logs and diagnostic exports must have sensitive
    values stripped.
 6. **No secrets in documentation**, including `docs/progress.md` and the
    translation resources.
+7. **Never re-displayed, never verified.** Once stored, a key cannot be read
+   back through this application - there is no "show saved key" control.
+   Replacing overwrites the previous value; deleting removes it. The
+   interface reports only "Stored", "Missing", or that secure storage is
+   unavailable - never "Valid", "Connected" or "Authenticated", since nothing
+   in this stage contacts a platform to check a key.
+8. **The credential key namespace is centralized**, not left to each call
+   site: `secrets.BuildKey(secretType, subjectID)` produces
+   `<secret-type>:<subject-id>`, for example `destination-stream-key:pf_abc123`.
+   `subjectID` is always a platform's generated ID, never its display name, so
+   a rename can never orphan a key, and two destinations configured for the
+   same provider always resolve to independent keys - the provider ID is
+   never part of the key at all.
+9. **Platform deletion and its credential are not one atomic operation** -
+   SQLite and the OS credential store cannot share a transaction. The
+   credential is deleted first; the platform row is only removed once that
+   succeeds, except when the store is merely unreachable (not failing), in
+   which case platform deletion proceeds rather than blocking ordinary CRUD
+   on a transient outage. See `docs/progress.md` for the full reasoning and
+   the accepted, documented risk this trade-off carries.
 
 The same `SecretStore` abstraction backing destination stream keys is designed
 to be reused, with a different secret type, for OAuth tokens once connected
@@ -546,7 +581,7 @@ it is architected; this table only tracks status and dependencies.
 | 2 | English and Polish localization of the frontend | **Completed** |
 | 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | **Completed** |
 | 4 | MediaMTX integration: managed dependency, process supervision, configuration generation, OBS ingest detection | **Completed** |
-| 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | Planned |
+| 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | **Completed** |
 | 6 | FFmpeg destination branches: startup, supervision, restarts, failure isolation | Planned |
 | 7 | Connected accounts, OAuth, platform metadata publishing | Planned |
 | 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
@@ -593,9 +628,17 @@ but was **not** verified end to end with a real RTMP publisher. See the
 `feat(server): supervise MediaMTX runtime and ingest` entry in
 [progress.md](progress.md).
 
-Stage 5, like every stage before it, is marked completed only once its
-automated checks pass — see [progress.md](progress.md) for the entry recording
-that.
+Stage 5 was marked completed only after all automated checks passed across
+both commits that implement it (backend and frontend) — see the
+`feat(server): add system credential store` and
+`feat(web): manage destination stream keys` entries in
+[progress.md](progress.md). Two limitations are recorded honestly there: the
+OS-backed store was built and tested on Windows only (the macOS and Linux
+backends were verified at the source level, not by running them), and the
+frontend controls were not exercised in a real browser, only typechecked,
+linted and covered by pure-logic tests — this project's frontend test suite
+has no component-rendering harness. FFmpeg itself, which is what will
+eventually use a stored key, remains stage 6 and does not exist yet.
 
 ## 14. The manual testing rule
 
@@ -660,14 +703,16 @@ separately in **[docs/engagement-architecture.md](engagement-architecture.md)**,
 so this overview is not doubled in length by planning detail that has no
 bearing on what is running today.
 
-Three things are worth stating plainly here, because they shape decisions this
-task makes now:
+Three things are worth stating plainly here, because they shape decisions
+made from stage 5 onward:
 
-1. **The credential-store foundation this task implements (§10) is a hard
+1. **The credential-store foundation implemented in stage 5 (§10) is a hard
    prerequisite for this entire second era of the product.** FFmpeg
    destination stream keys, OAuth tokens for connected accounts, and any
    future outbound-bot credential all depend on the same `SecretStore`
-   abstraction, distinguished only by secret type.
+   abstraction, distinguished only by secret type. Only the destination
+   stream key exists today; OAuth tokens and any other secret type remain
+   planned.
 2. **A connected account (for reading chat/events) is a different concept
    from a configured destination (for outgoing streaming), even for the same
    provider**, because they depend on different credential types with
@@ -677,5 +722,6 @@ task makes now:
    integration exists — never via scraping as a core feature. See
    engagement-architecture.md §16.
 
-This section will be updated, and marked accordingly, only as each roadmap
-stage from §13 is actually completed - not before.
+This section is updated, and marked accordingly, only as each roadmap stage
+from §13 is actually completed - not before. Stage 5 is the only one of the
+20 so far.

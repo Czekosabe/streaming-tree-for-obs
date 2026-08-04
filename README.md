@@ -578,6 +578,9 @@ All endpoints live under `/api` and return `application/json`.
 | `DELETE` | `/api/platforms/{id}` | Delete a destination; metadata and tags cascade. Responds 204. |
 | `GET` | `/api/platforms/{id}/metadata` | Stored metadata and ordered tags. |
 | `PUT` | `/api/platforms/{id}/metadata` | Replace metadata and tags atomically. |
+| `GET` | `/api/platforms/{id}/credentials` | Stream-key status: `{configured}`, plus whether the OS credential store is reachable. Never the key itself. |
+| `PUT` | `/api/platforms/{id}/credentials/stream-key` | Validate and store a new stream key, replacing any previous one. Body capped at 8 KiB, well below the general 64 KiB limit. |
+| `DELETE` | `/api/platforms/{id}/credentials/stream-key` | Delete the stored stream key. Idempotent: deleting an absent key still responds 204. |
 | `GET` | `/api/runtime` | One versioned snapshot: MediaMTX state, ingest state and OBS connection values. |
 | `POST` | `/api/runtime/mediamtx/install` | Start a managed installation. Responds 202; 409 if one is already running. |
 | `POST` | `/api/runtime/mediamtx/start` | Start the ingest service. 202 accepted, 409 if already running, 422 if missing or incompatible. |
@@ -658,9 +661,16 @@ Status codes: `400` malformed JSON or an unknown field, `404` missing record,
 backend sends `public`, `ultra-low`, `topic`; the frontend maps those to English
 or Polish. The backend never decides the interface language.
 
-**No endpoint accepts or returns a stream key, token or credential.** Unknown
-JSON fields are rejected rather than silently ignored, so a stray credential
-field produces an error instead of disappearing quietly.
+**No endpoint returns a stored stream key, token or credential value - not
+even the three credential endpoints above.** `PUT .../stream-key` accepts one
+to store, but every credential response, including that one, carries only
+`configured`/`available` booleans. Every other endpoint neither accepts nor
+returns a credential at all; unknown JSON fields are rejected rather than
+silently ignored, so a stray credential field on a non-credential endpoint
+produces an error instead of disappearing quietly. New stable error codes for
+the credential endpoints: `platform_not_found`, `credential_not_found`,
+`credential_store_unavailable` (503), `credential_store_failure` (500) - see
+"Stream key security" below.
 
 ---
 
@@ -952,7 +962,14 @@ directly next to the control.
 - **The Server and Stream Key values**, derived from the running configuration.
 - **Adding, editing and deleting destinations**, stored in SQLite.
 - **Editing and saving stream metadata**, including ordered Twitch tags.
-- **Everything stored survives a browser refresh and a backend restart.**
+- **Storing, replacing, checking the status of and deleting a destination's
+  stream key**, in the operating system credential store - see
+  [Stream key security](#stream-key-security). What is **not** yet real:
+  nothing reads a stored key to start an outgoing stream, because FFmpeg
+  itself does not exist yet.
+- **Everything stored survives a browser refresh and a backend restart** -
+  including a stream key, which survives in the OS credential store
+  independently of both.
 - **The language switcher**, in the top bar and under Settings.
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
@@ -960,10 +977,14 @@ API does not report them, so showing a number would mean inventing it.
 
 ### What will be added later
 
-- **FFmpeg** — one process per destination, to forward the received stream.
+- **FFmpeg** — one process per destination, to forward the received stream,
+  reading the stream key the credential store already holds.
 - **SSE or WebSocket** — live status instead of polling.
-- **System credential store** — secure storage of platform stream keys.
-- **OAuth and platform APIs** — sign-in and metadata publishing.
+- **OAuth and platform APIs** — sign-in and metadata publishing, reusing the
+  same credential-store abstraction with a different secret type.
+- **The engagement and overlay platform** — unified chat, OBS overlays,
+  alerts, bot automation and more; architecture only so far, see
+  [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---
@@ -971,23 +992,63 @@ API does not report them, so showing a number would mean inventing it.
 ## Stream key security
 
 A stream key allows broadcasting on someone's channel, so we treat it like a
-password.
+password. This section describes the destination-credential foundation added
+in this stage - not FFmpeg, which does not exist yet (see
+[Common problems](#common-problems) and
+[What is currently demo-only](#what-is-currently-demo-only)).
 
 - **The repository contains no secrets** and must never contain any.
-  `.gitignore` blocks `.env` files, database files and data directories.
-- **The SQLite database stores no credentials.** No table has a column for a
-  stream key, token or password, and no API payload carries one. Write endpoints
-  reject unknown JSON fields, so a stray credential field produces an error
-  rather than being silently dropped.
-- **Keys will not be stored in the browser** — not in `localStorage`, not in
-  `sessionStorage`, not in application state. The only value stored locally is
-  the interface language preference.
-- **The target location is the operating system credential store** (Windows
-  Credential Manager, macOS Keychain, Secret Service).
-- The backend will read a key only when starting a branch, and will not write it
-  to the logs.
+  `.gitignore` blocks `.env` files, database files and data directories - and
+  is anchored at the repository root everywhere it lists a directory name, so
+  a guard rule can never accidentally match a source directory.
+- **The SQLite database stores no credentials, and never will.** No table has
+  a column for a stream key, token or password, and no API payload for
+  platform or metadata endpoints carries one. Whether a credential is
+  configured is derived directly from the OS credential store on every
+  request, not cached in a database row that could go stale.
+- **A stream key is stored in the operating system credential store**:
+  Windows Credential Manager, macOS Keychain, or Linux Secret Service, via
+  [`github.com/99designs/keyring`](https://github.com/99designs/keyring) -
+  chosen specifically because none of its backends for these three platforms
+  shell out to an external command (see `THIRD_PARTY_NOTICES.md`). **There is
+  no plaintext fallback.** If the credential store cannot be reached, the API
+  reports that plainly and leaves the value unstored; it never writes it to a
+  file instead.
+- **The key is scoped by the destination's generated ID, not its display
+  name or provider.** Renaming a destination cannot orphan its key, and two
+  destinations configured for the same provider always get independent keys.
+- **Once saved, a key cannot be viewed again through this application.**
+  There is no "show saved key" control anywhere. Replacing overwrites the
+  previous value; deleting removes it and prevents outgoing streaming to that
+  destination until a new key is added. Both actions are described in the
+  platform settings dialog itself.
+- **A "Stored" status is not a claim that the key is valid.** Streaming Tree
+  never contacts a platform to verify a key, so the interface only ever says
+  "Stored" or "Missing" (or that secure storage is unavailable) - never
+  "Valid", "Connected" or "Authenticated".
+- **Keys are not stored in the browser.** Not in `localStorage`, not in
+  `sessionStorage`, not in application state beyond what a submit requires,
+  and not in TanStack Query's cache - only a `{configured, available}` status
+  is ever cached. The mutation that submits a new key is configured with a
+  zero garbage-collection time and resets itself immediately after every
+  attempt, so it does not linger in React Query Devtools either. The only
+  value this application stores in the browser at all is the interface
+  language preference.
+- **The backend will read a key only when starting an outgoing stream
+  process** (FFmpeg, not yet implemented - see the roadmap), and will not log
+  it or include it in a formatted error. The retrieval method for that is not
+  reachable through the HTTP API at all: the interface the web panel talks to
+  simply has no method that returns a value.
+- **This is unrelated to the local ingest path.** The `live` stream key OBS
+  uses to publish to this machine (see [Connecting OBS](#connecting-obs)) is
+  a route name on a loopback-only server, not a secret, and is never confused
+  with a destination's credential anywhere in the interface.
 
-Stream key handling **has not been started yet**.
+The full architecture - key-namespace format, validation rules, the HTTP
+contract, and the platform-deletion cleanup ordering - is in
+[`docs/project-overview.md`](docs/project-overview.md#10-stream-key-security)
+and the implementation notes in
+[`docs/progress.md`](docs/progress.md).
 
 ---
 
@@ -1008,6 +1069,24 @@ The backend is probably using a different database than before. Check the
 **A seeded destination I deleted did not come back.**
 That is intended. The seed runs once, on a brand-new database, and is recorded
 like any other migration.
+
+**The platform settings dialog says "Secure storage unavailable" for the
+stream key.** The operating system credential store could not be reached:
+common causes are a Linux session with no Secret Service running, a locked
+macOS Keychain, or a permission failure. The rest of the application is
+unaffected - SQLite, MediaMTX and everything else keep working - but a stream
+key cannot be saved until the store becomes available. This is not polled
+automatically; reopen the dialog after fixing the underlying cause to check
+again.
+
+**I deleted a destination while the credential store was unavailable - is its
+stream key still out there?** Possibly. Platform deletion does not block on a
+credential store it cannot reach (see "Stream key security"), so a key set
+earlier, when the store was reachable, may still exist under that platform's
+old ID. It is inert: the ID is never reused and nothing in this application
+can look it up again. If this matters to you, use your OS credential manager
+directly to remove any leftover entry under the `streaming-tree-for-obs`
+service name.
 
 **`go: command not found` or `'go' is not recognized`.**
 Go is not installed or is not on `PATH`. Install it from <https://go.dev/dl/>

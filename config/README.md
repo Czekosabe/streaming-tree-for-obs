@@ -50,9 +50,20 @@ natural first occupant.
 ## Rules
 
 1. Stream keys, OAuth tokens and any other secrets **must never** be stored
-   here. They will live in the operating system credential store (Windows
-   Credential Manager / macOS Keychain / Secret Service).
+   here. As of the credential-store foundation stage, destination stream
+   keys live in the operating system credential store (Windows Credential
+   Manager, macOS Keychain, or Linux Secret Service) via the `SecretStore`
+   abstraction in `apps/server/internal/secrets` - never in a file, and never
+   in this directory. See the "Stream key security" section of
+   `docs/project-overview.md` and `docs/engagement-architecture.md` for the
+   full model, including how this is designed to extend to OAuth tokens.
 2. Configuration files kept in the repository are templates and defaults only.
    A user's local configuration (`*.local.yml`, `.env`) is ignored by
    `.gitignore`.
 3. Every file added here must be described in `docs/progress.md`.
+4. **No secret template belongs here, and no future exported package -
+   overlay templates, chat-bot configurations, or anything else a user can
+   export and share - may contain a credential.** The planned template
+   import/export format (see `docs/engagement-architecture.md`) is scoped to
+   declarative, non-secret content; a template that referenced a credential
+   would leak it the moment the template was shared.

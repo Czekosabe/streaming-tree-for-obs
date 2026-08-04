@@ -2553,3 +2553,130 @@ yet updated to describe the frontend surface added here) to describe the
 credential-store feature end to end, and mark stage 5 as completed in the
 roadmap. That closes out this stage; stage 6 (FFmpeg destination branches) is
 next.
+
+## 2026-08-04 10:36 — docs: document secure credential handling
+
+### Status
+Completed
+
+### Scope
+Bring `README.md`, `docs/project-overview.md` and `config/README.md` up to
+date with what the previous two entries actually built, and mark stage 5
+completed in the roadmap. `THIRD_PARTY_NOTICES.md` was already updated in
+the `feat(server): add system credential store` entry and needed no further
+change - no new third-party dependency was added in the frontend entry. No
+code changed.
+
+### Changes
+
+**`README.md`**
+- "Stream key security" was rewritten from a forward-looking bullet list
+  ("has not been started yet") into an accurate description of what is
+  implemented: the OS credential store choice and why, no plaintext
+  fallback, the key-namespace scoping rule, "never re-displayed, never
+  verified" and the exact wording rule that enforces it, the browser-side
+  guarantees including the mutation `gcTime: 0` decision, that the retrieval
+  method for FFmpeg exists but is unreachable from the HTTP API and has no
+  caller yet, and the explicit distinction from the local MediaMTX ingest
+  path.
+- The REST API table gained the three credential endpoints; the "no endpoint
+  accepts or returns a credential" note was corrected to state precisely what
+  is true now (no endpoint **returns** one; one endpoint accepts a new value
+  to store) instead of a blanket claim that stopped being accurate the
+  moment the PUT endpoint existed.
+- "What is currently demo-only" moved credential storage from "what will be
+  added later" to "what is real", with an explicit note that reading a
+  stored key to start a stream is still not real, since FFmpeg is not
+  implemented.
+- Two new troubleshooting entries: a credential-store-unavailable status
+  message, and what happens to a stream key if a platform is deleted while
+  the store happens to be unreachable (see project-overview.md §10 point 9
+  for the underlying policy).
+
+**`docs/project-overview.md`**
+- Section 10 (stream key security) rules 3 and 4 were rewritten from
+  future tense to present tense, matching what stages 5's two commits
+  actually built, and five new rules were added: never re-displayed or
+  verified, the centralized key-namespace format, and the platform-deletion
+  ordering and its one accepted exception. Cross-references point at the
+  specific progress.md entries that explain the reasoning in full rather
+  than repeating it here.
+- Section 13 (roadmap): stage 5 marked **Completed**; the note after the
+  table now references both commits that implement it and records the two
+  honest limitations (Windows-only verification of the OS-backed store;
+  no browser-rendered verification of the frontend controls, since this
+  project's test suite has no component-rendering harness).
+- Section 16: the credential-store-is-a-hard-prerequisite point was
+  reworded from "this task implements" to "implemented in stage 5", and the
+  closing sentence now states plainly that stage 5 is the only one of the
+  twenty completed so far.
+
+**`config/README.md`**: rule 1 (no secrets in this directory) rewritten from
+a future promise into a statement of the actual mechanism now in place, with
+a pointer at where the full model is documented. A new rule 4 states
+explicitly that no future exported template package (overlay templates, bot
+configurations, anything a user can share) may contain a credential - the
+same principle rule 1 states for this directory, extended to the planned
+template-export format before that format exists, so it is a constraint from
+the start rather than a retrofit.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `config/README.md`
+- `docs/progress.md`
+
+### Technical decisions
+
+1. **`THIRD_PARTY_NOTICES.md` was left untouched in this entry.** It already
+   records `99designs/keyring` and its transitive dependencies accurately,
+   added in the `feat(server): add system credential store` entry; nothing
+   in the frontend entry introduced a new third-party dependency. Editing it
+   here with nothing to say would have been noise.
+2. **Every documentation change in this entry cross-references the specific
+   progress.md entry that explains a decision, rather than re-explaining
+   the reasoning in each file.** The full reasoning (why this library, why
+   this deletion ordering, why `gcTime: 0`) already lives in the two
+   implementation entries; repeating it in README.md and project-overview.md
+   would create three places that could drift out of sync with each other.
+
+### Automated validation
+
+Re-run to confirm this documentation-only change caused no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test -- --run` | Passed - 21 files, 279 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 8 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed. The optional real-OS-credential-store smoke
+test remains unrun in this entry too, for the same reason recorded in the
+`feat(server): add system credential store` entry: it requires an explicit
+opt-in environment variable that was not set.
+
+### Known limitations
+- All limitations recorded in the two implementation entries for this stage
+  still stand: Windows-only verification of the OS-backed credential store,
+  and no browser-rendered verification of the frontend controls.
+- Nothing checks automatically that documentation matches code; a renamed
+  endpoint or error code must be corrected by hand, same as every previous
+  documentation entry in this journal.
+
+### Next step
+
+Stage 6: FFmpeg destination branches. The credential store built in this
+stage exists specifically to be read here - `RetrieveForProcessStart` has no
+caller yet. Per the stream-key security rules (§10 point 4), the value it
+returns must not be logged, must not appear in a formatted error, and its
+exposure risk if a safer transport than process-list-visible command-line
+arguments is unavailable must be assessed as part of that stage, not assumed
+away here.
