@@ -3727,3 +3727,57 @@ more, in full, as its own step before pushing - see the next entry.
 One final full regression across every check (frontend, backend, all three
 integration scripts), confirm a clean working tree, push, and confirm
 `origin/main` matches local `main`.
+
+## 2026-08-04 15:10 — docs: define Twitch account integration scope
+
+### Status
+Completed
+
+### Scope
+Stage 7A: the connected-account foundation and the first real provider
+integration (Twitch). This entry covers the mandatory research pass and the
+document it produced, done before any code, per the task's explicit
+ordering requirement.
+
+### Research
+
+Inspected only primary Twitch sources (dev.twitch.tv, not remembered
+behaviour): Authentication overview, Getting OAuth Access Tokens (Device
+Code Grant Flow), Refreshing Access Tokens, Validating Requests, Revoking
+Access Tokens, Register Your App, and the API Reference for Get Users, Get
+Channel Information, Modify Channel Information and Search Categories, plus
+the API Concepts page for rate limiting.
+
+Findings recorded in full in `docs/provider-integrations/twitch.md`; the
+two that most changed the implementation:
+
+1. **Device Code Grant Flow, as a public client, needs no client secret at
+   any point** - including refresh, where Twitch's own documentation states
+   `client_secret` is "not required if your application's client type was
+   set to public." This confirmed the task's assumption; no conflict with
+   current documentation was found, so implementation proceeded.
+2. **Twitch's real Modify Channel Information endpoint has no field for
+   "mature content" or "latency mode"** as this application's existing,
+   pre-stage-7 provider table assumed (`content_classification_labels` is a
+   set of specific labels, not a boolean; `is_branded_content` is an
+   unrelated sponsorship flag; there is no latency-mode field on this
+   endpoint at all). Both capabilities are corrected to `false` for Twitch
+   in the next backend commit, with the full reasoning in the provider
+   document rather than repeated here.
+
+### OAuth flow decision
+
+Device Code Grant Flow, public client, no client secret in production -
+exactly as the task specified, confirmed safe by current documentation.
+
+### Files changed
+- `docs/provider-integrations/twitch.md` (new)
+
+### Technical decisions
+- The document explicitly states it is a dated snapshot that must be
+  re-reviewed if Twitch's API changes, per the task's requirement, rather
+  than presented as a permanent contract.
+
+### Next step
+Add the connected-account persistence layer: migrations, the
+provider-independent `internal/domain/account` package, and the SQLite
