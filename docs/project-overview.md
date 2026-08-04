@@ -138,7 +138,8 @@ diagram.
 
 OBS remains the production tool: scenes, sources, audio mixing, video encoding.
 It is configured with **one** output - a Custom / RTMP target pointing at the
-application's local address (eventually `rtmp://127.0.0.1:1935/live`).
+application's local address, `rtmp://127.0.0.1:1935/live` by default - this is
+implemented and working today (see [7.4](#74-the-role-of-mediamtx-implemented)).
 
 OBS does not know how many platforms the stream will reach. From its point of
 view there is a single recipient.
@@ -163,9 +164,14 @@ The backend is the only place where decisions are made:
 - it exposes the REST API for the panel,
 - it holds platform configuration and metadata in a local SQLite database,
 - it is the single source of truth for provider capabilities,
-- it starts and supervises MediaMTX and the FFmpeg processes,
-- it reads stream keys from the system credential store at branch start time,
-- it enforces failure isolation and the restart policy,
+- it starts and supervises MediaMTX (implemented, §7.4) and will start and
+  supervise the FFmpeg processes (planned, stage 6, §7.5),
+- it will read a stream key from the system credential store only at branch
+  start time (planned, stage 6) - the credential store itself is implemented
+  today (§10), but nothing calls into it yet,
+- it will enforce failure isolation and a restart policy for each FFmpeg
+  branch (planned, stage 6) - the same principle already governs MediaMTX
+  supervision today,
 - in later stages it pushes live state over SSE or WebSocket.
 
 Go was chosen for three reasons: distribution as a single binary with no

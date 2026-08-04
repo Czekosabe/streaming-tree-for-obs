@@ -17,20 +17,24 @@ of that exists yet — it is architecture and planning, detailed in
 shapes decisions made today, starting with the credential-store foundation
 this stage adds.
 
-> ## Project state: local ingest works, outgoing streaming does not
+> ## Project state: local ingest and secure key storage work, outgoing streaming does not
 >
 > Streaming Tree can now **receive** a stream from OBS. It installs and
 > supervises MediaMTX, exposes the real RTMP address and stream key, and shows
 > live ingest status — so you can point OBS at it and see the connection
 > detected.
 >
+> A destination's stream key can also be **stored securely**, in the operating
+> system credential store (Windows Credential Manager, macOS Keychain, or
+> Linux Secret Service) — see [Stream key security](#stream-key-security).
+>
 > **Nothing is sent onward to any platform yet.** Forwarding the received stream
 > to Twitch, YouTube, Kick or TikTok needs one FFmpeg process per destination,
-> which is the next stage. Configured destinations remain configuration only.
+> which is the next stage. A stored stream key is not read by anything yet.
+> Configured destinations remain configuration only.
 >
-> OAuth, platform API integrations and credential storage are also still
-> **planned**. Whatever remains a placeholder is marked with a **Demo** badge —
-> the full list is in
+> OAuth and platform API integrations are also still **planned**. Whatever
+> remains a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -84,9 +88,9 @@ that document's opening notice before treating any part of it as implemented.
 | ---- | ------- | ------- | ----------- |
 | **Node.js** | 20.19+ or 22.12+ (22 LTS or newer recommended) | running the React panel | yes |
 | **npm** | 10+ | installing frontend dependencies | yes |
-| **Go** | 1.22 or newer | building and running the backend | yes |
-| OBS Studio | 30+ | the source of the stream | not yet |
-| MediaMTX | — | receiving the RTMP stream | not yet |
+| **Go** | 1.25 or newer | building and running the backend (`go.mod` pins the floor) | yes |
+| OBS Studio | 30+ | the source of the stream | yes, to actually publish something — the backend runs without it |
+| MediaMTX | — | receiving the RTMP stream | yes — installed and supervised automatically, see [Local ingest with MediaMTX](#local-ingest-with-mediamtx) |
 | FFmpeg | — | distributing the stream branches | not yet |
 
 Checking the installed versions:
@@ -548,8 +552,10 @@ displayed values change with them.
 > you are publishing to. It is not a password, and it is not a destination
 > platform stream key. It is safe to show in a screenshot or a support request.
 >
-> Real platform stream keys are an entirely separate concept and are **not yet
-> handled at all**; they will live in the operating system credential store.
+> Real platform stream keys are an entirely separate concept. They are stored
+> securely in the operating system credential store — see
+> [Stream key security](#stream-key-security) — but nothing reads a stored key
+> yet: outgoing FFmpeg streaming does not exist in this build.
 
 Once OBS starts streaming, the ingest status changes from **Waiting for OBS or
 another RTMP publisher** to **Receiving an RTMP stream**, and the detected
@@ -801,7 +807,8 @@ apps/web/src/i18n/
     │   ├── platforms.json    # platform cards, statuses, quality, field options
     │   ├── metadata.json     # metadata editor, form labels, validation
     │   ├── pages.json        # page titles and planned-feature descriptions
-    │   └── errors.json       # backend error messages and code mappings
+    │   ├── errors.json       # backend error messages and code mappings
+    │   └── runtime.json      # MediaMTX/ingest state, dependency status
     └── pl/                   # Polish translation, same structure
 ```
 

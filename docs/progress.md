@@ -2680,3 +2680,103 @@ returns must not be logged, must not appear in a formatted error, and its
 exposure risk if a safer transport than process-list-visible command-line
 arguments is unavailable must be assessed as part of that stage, not assumed
 away here.
+
+## 2026-08-04 11:34 — fix(docs): correct stage 5 project status
+
+### Status
+Completed
+
+### Scope
+Stage 6 (FFmpeg destination branches) begins with a documentation audit: the
+stage 5 entries corrected `README.md`'s and `project-overview.md`'s major
+claims about the credential store, but a few statements were left stale
+because they lived in sections that stage 5 did not otherwise touch. This
+entry corrects them before any stage 6 code is written, so stage 6's own
+documentation changes start from an accurate baseline rather than compounding
+old drift. No code changed.
+
+### Changes
+
+**`README.md`**
+- The project-state banner said credential storage was still planned; it now
+  states plainly that a stream key can be stored securely today, and that
+  nothing reads a stored key yet (that is this stage).
+- The Connecting OBS callout said real platform stream keys are "not yet
+  handled at all" and "will live in" the credential store; both are stage 5
+  facts that were already false. It now says they are stored there today, and
+  that nothing reads a stored key yet - accurate on both counts as of the
+  start of this stage.
+- The Requirements table said Go 1.22+, while `go.mod` has required 1.25
+  since the SQLite persistence stage. Corrected. OBS and MediaMTX were marked
+  "not yet" needed, contradicting the fact that local ingest has worked since
+  stage 4; both are now marked accurately, with MediaMTX noted as installed
+  and supervised automatically.
+- The translation directory listing predated the `runtime` namespace added
+  during the MediaMTX runtime stage. Added.
+
+**`docs/project-overview.md`**
+- §7.1 said OBS points at the local address "eventually" - it has pointed
+  there since stage 4. Corrected to state plainly that this is implemented.
+- §7.3 listed "it starts and supervises MediaMTX and the FFmpeg processes"
+  and "it reads stream keys from the system credential store at branch start
+  time" as present-tense facts about the backend. Only the MediaMTX half of
+  the first claim, and none of the second, is true before this stage: FFmpeg
+  supervision and reading a stored key both begin in stage 6, which had not
+  started when this entry was written. Both bullets now distinguish what is
+  implemented from what stage 6 will add.
+
+Points 8, 9 and 10 of the requested audit (runtime-state wording, further
+"eventually" wording, and roadmap/stage-number consistency) were checked and
+found already accurate: the runtime-state section already distinguishes
+MediaMTX runtime (exists) from per-destination runtime (does not), no other
+stale "eventually" phrasing exists in `docs/project-overview.md`, and every
+stage 5/6 reference across `README.md`, `docs/project-overview.md` and
+`docs/engagement-architecture.md` already agrees with the 20-stage roadmap.
+No further edit was needed for those three points.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/progress.md`
+
+### Technical decisions
+
+1. **Wording still says FFmpeg supervision and key retrieval are planned, not
+   implemented.** This commit is a correction pass that runs before any stage
+   6 code exists in the working tree. Describing FFmpeg support as
+   implemented here - ahead of the commits that actually add it - would
+   create the exact kind of drift this audit exists to remove. The
+   corresponding present-tense update happens in the stage's closing
+   documentation commit, once the real integration verification has passed.
+
+### Automated validation
+
+Re-run to confirm this documentation-only change caused no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test -- --run` | Passed - 21 files, 279 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 8 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed.
+
+### Known limitations
+- All limitations recorded in prior entries still stand.
+- This entry does not touch `docs/engagement-architecture.md` or
+  `config/README.md`: neither contained a stage 5/6 inaccuracy, per the
+  cross-file consistency check above.
+
+### Next step
+
+FFmpeg research (executable resolution, compatibility probing, licensing),
+then the output-configuration schema and API that stage 6's branch
+supervision depends on.
