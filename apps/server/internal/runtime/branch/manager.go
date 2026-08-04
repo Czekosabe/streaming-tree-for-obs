@@ -32,6 +32,12 @@ const (
 	stopGracePeriod       = 5 * time.Second
 	reconcileInterval     = 2 * time.Second
 	ffmpegRefreshInterval = 5 * time.Minute
+
+	// ingestSettleWindow and ingestSettleInterval bound how long watchExit
+	// waits for the MediaMTX ingest snapshot to catch up before classifying
+	// an exit as a genuine crash - see waitForSettledIngest's doc comment.
+	ingestSettleWindow   = 1500 * time.Millisecond
+	ingestSettleInterval = 150 * time.Millisecond
 )
 
 // PlatformSource is the subset of the platform service the manager needs.
@@ -163,6 +169,12 @@ type Manager struct {
 	policyRestartWindow        time.Duration
 	policyStableRunDuration    time.Duration
 
+	// ingestSettleWindow/Interval default to the package constants of the
+	// same name; tests shorten them for the same reason as the restart
+	// policy fields above.
+	ingestSettleWindowFor   time.Duration
+	ingestSettleIntervalFor time.Duration
+
 	logger    *slog.Logger
 	lifecycle context.Context
 	cancel    context.CancelFunc
@@ -188,6 +200,9 @@ func NewManager(opts Options) *Manager {
 		policyMaxRestartsPerWindow: maxRestartsPerWindow,
 		policyRestartWindow:        restartWindow,
 		policyStableRunDuration:    stableRunDuration,
+
+		ingestSettleWindowFor:   ingestSettleWindow,
+		ingestSettleIntervalFor: ingestSettleInterval,
 	}
 }
 
@@ -303,6 +318,11 @@ func (m *Manager) attemptResume(platformID string) {
 	generation := b.generation
 	b.state = StateStarting
 	b.startedAt = time.Now()
+	// liveAt is scoped to the attempt about to be launched, not any earlier
+	// one - see scheduleRestart's stable-run check for why a stale value
+	// here would be a bug (a branch that went live once, long ago, and has
+	// failed on every attempt since must not keep looking "stable").
+	b.liveAt = time.Time{}
 	b.blockers = nil
 	m.mu.Unlock()
 
@@ -420,6 +440,7 @@ func (m *Manager) StartBranch(ctx context.Context, platformID string) (Outcome, 
 	generation := b.generation
 	b.state = StateStarting
 	b.startedAt = time.Now()
+	b.liveAt = time.Time{} // see attemptResume's comment on the same line
 	m.mu.Unlock()
 
 	m.launch(platformID, inputs, generation)
@@ -539,7 +560,16 @@ func (m *Manager) watchExit(platformID string, proc processHandle, generation ui
 	// Was this exit caused by the local input disappearing? If so, this is
 	// not a failure: wait for ingest to return rather than applying the
 	// restart policy against a missing input.
-	snapshot := m.opts.Ingest.Snapshot()
+	//
+	// MediaMTX can drop the branch's reader connection within milliseconds
+	// of its publisher disappearing, but this application's own ingest
+	// snapshot is only refreshed on a periodic poll (see
+	// mediamtx.ingestPollInterval) - so FFmpeg's exit can outrace that poll
+	// by a fraction of a second. waitForSettledIngest gives the poll a
+	// short, bounded window to catch up before this is classified as a
+	// genuine crash, so a plain ingest disconnect does not spuriously
+	// consume the restart-limit budget.
+	snapshot := m.waitForSettledIngest()
 	if snapshot.Ingest.State != mediamtx.IngestReceiving {
 		m.mu.Lock()
 		if b.generation == generation {
@@ -557,6 +587,22 @@ func (m *Manager) watchExit(platformID string, proc processHandle, generation ui
 	m.mu.Unlock()
 
 	m.scheduleRestart(platformID, generation)
+}
+
+// waitForSettledIngest polls the ingest snapshot for up to
+// ingestSettleWindowFor, returning as soon as it reports anything other than
+// "receiving" - see watchExit's call site for why this exists. If ingest
+// stays "receiving" for the whole window, the last snapshot taken is
+// returned, and the caller proceeds on the (now well-settled) assumption
+// that the exit was a genuine crash.
+func (m *Manager) waitForSettledIngest() mediamtx.Snapshot {
+	deadline := time.Now().Add(m.ingestSettleWindowFor)
+	snapshot := m.opts.Ingest.Snapshot()
+	for snapshot.Ingest.State == mediamtx.IngestReceiving && time.Now().Before(deadline) {
+		time.Sleep(m.ingestSettleIntervalFor)
+		snapshot = m.opts.Ingest.Snapshot()
+	}
+	return snapshot
 }
 
 // scheduleRestart applies the bounded-exponential-backoff restart policy.
@@ -666,6 +712,7 @@ func (m *Manager) retryAfterBackoff(platformID string, generation uint64) {
 
 	b.state = StateStarting
 	b.startedAt = time.Now()
+	b.liveAt = time.Time{} // see attemptResume's comment on the same line
 	b.blockers = nil
 	m.mu.Unlock()
 

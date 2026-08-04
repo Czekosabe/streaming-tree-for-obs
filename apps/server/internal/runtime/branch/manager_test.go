@@ -283,6 +283,8 @@ func newTestManager(t *testing.T, id string) (*Manager, *fakePlatforms, *fakeOut
 	m.policyMaxBackoff = 20 * time.Millisecond
 	m.policyRestartWindow = 10 * time.Second
 	m.policyStableRunDuration = time.Hour
+	m.ingestSettleWindowFor = 20 * time.Millisecond
+	m.ingestSettleIntervalFor = 5 * time.Millisecond
 	m.Start(context.Background())
 	t.Cleanup(func() { m.Shutdown(context.Background()) })
 
@@ -692,6 +694,53 @@ func TestRestartLimitEntersErrorAndStopsRetrying(t *testing.T) {
 	t.Fatal("the branch never reached the error state after repeated crashes")
 }
 
+// TestRestartLimitStillAppliesAfterAStableRunThatNeverRecurs reproduces a bug
+// caught by scripts/verify-ffmpeg-branches.mjs against a real destination
+// that permanently stopped accepting connections: once a branch had gone
+// live at least once, the stable-run backoff reset (scheduleRestart's
+// "b.liveAt", copied to a fresh timestamp only when actually going live)
+// kept comparing against that one distant liveAt on every subsequent crash
+// forever, wiping the restart-time history and restart limit before it could
+// ever trigger - an unbounded restart loop instead of a bounded one. Each
+// fresh launch attempt must clear liveAt so only a live period from THIS
+// attempt (not some earlier one) can reset the backoff.
+func TestRestartLimitStillAppliesAfterAStableRunThatNeverRecurs(t *testing.T) {
+	m, _, _, _, _, recorder := newTestManager(t, "pf_1")
+	m.policyStableRunDuration = 5 * time.Millisecond
+	m.policyMaxRestartsPerWindow = 3
+
+	if _, err := m.StartBranch(context.Background(), "pf_1"); err != nil {
+		t.Fatalf("StartBranch() error = %v", err)
+	}
+	proc := recorder.latest()
+	proc.report(Progress{OutTimeMs: 1000})
+	waitForState(t, m, "pf_1", StateLive)
+
+	// Long enough that every future crash sees "it's been stableRunDuration
+	// since liveAt" if liveAt is (buggily) never cleared again.
+	time.Sleep(20 * time.Millisecond)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		snap := snapshotFor(t, m, "pf_1")
+		if snap.State == StateError {
+			if snap.LastError == nil || snap.LastError.Code != CodeRestartLimit {
+				t.Errorf("LastError = %+v, want code %s", snap.LastError, CodeRestartLimit)
+			}
+			return
+		}
+		if proc := recorder.latest(); proc != nil {
+			select {
+			case <-proc.Exited():
+			default:
+				proc.crash() // never reports progress again: this attempt never goes live
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the branch never reached the error state: the restart limit was defeated by a stale liveAt")
+}
+
 // --- ingest loss and resume -------------------------------------------------
 
 func TestIngestLossTransitionsToWaitingForIngestAndRetainsDesire(t *testing.T) {
@@ -710,6 +759,36 @@ func TestIngestLossTransitionsToWaitingForIngestAndRetainsDesire(t *testing.T) {
 	snap := waitForState(t, m, "pf_1", StateWaitingForIngest)
 	if !snap.DesiredRunning {
 		t.Error("DesiredRunning = false while waiting for ingest to return - it should be retained")
+	}
+}
+
+// TestIngestLossRaceDoesNotConsumeARestart reproduces a race caught while
+// running scripts/verify-ffmpeg-branches.mjs against real FFmpeg and real
+// MediaMTX: FFmpeg's read of the local input can fail (and the process
+// exit) a little before this application's own polled ingest snapshot has
+// caught up to the same fact. Without waitForSettledIngest, watchExit would
+// read a still-stale "receiving" snapshot and misclassify the exit as a
+// genuine crash, spending one unit of the restart-limit budget for what is
+// really just an ordinary ingest disconnect.
+func TestIngestLossRaceDoesNotConsumeARestart(t *testing.T) {
+	m, _, _, _, ingest, recorder := newTestManager(t, "pf_1")
+	m.ingestSettleWindowFor = 200 * time.Millisecond
+	m.ingestSettleIntervalFor = 10 * time.Millisecond
+
+	if _, err := m.StartBranch(context.Background(), "pf_1"); err != nil {
+		t.Fatalf("StartBranch() error = %v", err)
+	}
+	proc := recorder.latest()
+	proc.report(Progress{OutTimeMs: 1000})
+	waitForState(t, m, "pf_1", StateLive)
+
+	proc.crash()
+	time.Sleep(5 * time.Millisecond)
+	ingest.setIngestState(mediamtx.IngestWaiting)
+
+	snap := waitForState(t, m, "pf_1", StateWaitingForIngest)
+	if snap.RestartCount != 0 {
+		t.Errorf("RestartCount = %d, want 0: a settling ingest snapshot must not be treated as a crash", snap.RestartCount)
 	}
 }
 

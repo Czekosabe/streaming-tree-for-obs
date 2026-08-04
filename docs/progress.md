@@ -3424,3 +3424,169 @@ instead of rendering.
 The real, loopback-only integration verification
 (`scripts/verify-ffmpeg-branches.mjs`) stage 6 cannot be marked complete
 without - then the closing documentation pass.
+
+## 2026-08-04 13:26 — test: verify FFmpeg branches against real FFmpeg and MediaMTX
+
+### Status
+Completed
+
+### Scope
+The real, loopback-only end-to-end verification Part 17 requires before
+stage 6 may be marked complete: `scripts/verify-ffmpeg-branches.mjs`,
+exercising the whole destination-branch feature against a real FFmpeg 8.1
+executable and two real MediaMTX v1.19.3 instances - no fakes, no mocks, no
+real platform account or credential. Running it against real timing (not the
+millisecond-scale fake clocks the unit tests use) surfaced two genuine bugs
+in `internal/runtime/branch/manager.go`, both fixed in this entry.
+
+### Test harness design
+
+**`apps/server/cmd/testserver/main.go`** (new, `//go:build integration`) - a
+byte-for-byte twin of `cmd/server/main.go` with exactly one difference: the
+credential store is `internal/secrets/secretstest.Store` (an in-memory fake)
+instead of `secrets.NewKeyringStore()` (the real OS keychain). The build tag
+is the safety boundary the task requires: this file does not exist as far as
+`go build ./...`, `go vet ./...`, `go test ./...` or a normal
+`go build ./cmd/server` are concerned - confirmed directly (see Automated
+validation below). A production environment variable was deliberately not
+used for this switch, per the task's explicit instruction that fake-store
+injection must be impossible in a normal production build.
+
+**Topology** (`scripts/verify-ffmpeg-branches.mjs`, new) - all on
+dynamically-selected loopback ports:
+
+```
+synthetic FFmpeg publisher (stand-in for OBS)
+  -> SOURCE MediaMTX (managed by the backend under test, the real local ingest)
+  -> Streaming Tree branch FFmpeg (spawned by the backend under test)
+  -> per-destination SINK MediaMTX (stand-in for the remote platform)
+```
+
+The two sink instances are started directly by the script (not managed by
+the backend), reusing the real MediaMTX binary the backend's own managed
+installer already downloaded and checksum-verified for the source instance -
+no second download. Each sink is configured with MediaMTX's documented
+`all_others` catch-all path, which was verified empirically (a throwaway
+probe, since this application's `buildDestinationURL` appends the stream key
+as an extra path segment onto the configured server URL): publishing to
+`rtmp://sink/out/<key>` makes MediaMTX report the path as literally named
+`out/<key>`, confirmed live before writing the rest of the script against
+that assumption.
+
+The script authenticates nothing against a real platform: it uses two of the
+four seeded destinations (Twitch, Kick), a fake single-run stream key per
+destination (`FAKE-INTEGRATION-KEY-{ONE,TWO}-<run id>`), and asserts their
+absence from everything the *application* produces at the end.
+
+**32 steps**, covering: FFmpeg prerequisite check (would stop and report
+honestly if absent - not applicable here, FFmpeg 8.1 is present), the
+managed MediaMTX install, the real waiting → receiving ingest transition
+(stage 4 could not verify this end-to-end), starting a destination before
+ingest exists (blocked, not started), real advancing progress and a real
+sink-side stream copy for two independent destinations, explicit-stop
+isolation, output-connection failure isolation (destination 2's sink is
+killed; destination 1 is provably unaffected), the restart limit reaching a
+real error state, manual recovery, ingest loss and graceful suspension,
+explicit-stop-while-waiting, ingest return resuming only the desired branch,
+bulk stop-all, a backend restart proving output settings persist while
+runtime state (desired-running, restart count) resets, and a final scan of
+every byte the script captured for the fake keys.
+
+### Bugs found and fixed by real timing
+
+1. **Ingest-loss race could consume a restart.** `watchExit` classified an
+   FFmpeg exit as "genuine crash" vs. "ingest disappeared" by reading
+   `IngestSource.Snapshot()`, which is itself refreshed on a 1-second poll
+   (`mediamtx.ingestPollInterval`). MediaMTX can drop the branch's reader
+   connection within milliseconds of its publisher disappearing - faster
+   than that poll - so FFmpeg's exit could be observed before the ingest
+   snapshot caught up, and a plain disconnect was misclassified as a crash
+   (consuming one unit of the 5-per-5-minute restart budget). Fixed by
+   `waitForSettledIngest` (manager.go): before classifying, watchExit now
+   polls the ingest snapshot for up to 1.5s (`ingestSettleWindow`,
+   `ingestSettleInterval`), returning as soon as it moves off "receiving".
+   Regression test: `TestIngestLossRaceDoesNotConsumeARestart`, which
+   reproduces the exact ordering (process exit before the ingest snapshot
+   updates) using the existing fake ingest source.
+2. **The restart limit could be defeated forever after one stable run.**
+   `scheduleRestart`'s "a branch that ran live for a while gets a fresh
+   backoff" reset compared `time.Now()` against `b.liveAt` - which was set
+   once, the first time a branch ever went live, and never cleared again.
+   Once any branch had been live for `stableRunDuration` (60s) at some point
+   in its history, *every subsequent crash forever* satisfied
+   `now.Sub(liveAt) >= stableRunDuration`, wiping `restartTimes` back to
+   empty right before the length check that is supposed to trigger
+   `StateError` - so the 5-restart cap could never fire, and a destination
+   whose output had permanently died would restart indefinitely instead of
+   giving up. This was invisible to the existing unit test
+   (`TestRestartLimitEntersErrorAndStopsRetrying`) because that test's
+   `newTestManager` sets `policyStableRunDuration` to one hour specifically
+   so the reset branch never fires - masking exactly the path that broke.
+   Fixed by clearing `b.liveAt` back to zero at the start of every fresh
+   launch attempt (`StartBranch`, `attemptResume`, `retryAfterBackoff`), so
+   the stable-run reset can only ever be triggered by a live period from the
+   *current* attempt, not some earlier one. Regression test:
+   `TestRestartLimitStillAppliesAfterAStableRunThatNeverRecurs`, which goes
+   live once, lets `policyStableRunDuration` (shortened to 5ms) elapse, and
+   then asserts the cap still reaches `StateError` on a permanently-failing
+   destination rather than restarting forever.
+
+Both bugs were real, present in the code pushed in the previous
+(`feat(server): supervise destination branches`) commit, and would not have
+been caught without exercising real process exit timing and real elapsed
+wall-clock time - the explicit reason Part 17 requires this script before
+stage 6 can be considered complete.
+
+### Secret-scan scoping
+
+The final step scans everything the script captured for the fake keys, but
+three categories are deliberately *excluded* from that scan, each with a
+comment at its source explaining why: the script's own outgoing
+`PUT .../credentials/stream-key` request bodies (it must send the key to set
+it - that is not a leak), and the two sink MediaMTX instances' own process
+output and Control API responses (a real destination platform's own
+server/dashboard would show the same path-with-embedded-key; that is
+inherent to RTMP and outside this application's control). What *is* scanned:
+the backend's own stdout/stderr and every HTTP response body the backend
+returned. Both exclusions were found by first shipping the scan broadly,
+watching it correctly fail, and inspecting exactly what matched (printing
+200 bytes of context around the hit) rather than guessing.
+
+### Files changed
+- `apps/server/cmd/testserver/main.go` (new)
+- `apps/server/internal/runtime/branch/manager.go`
+- `apps/server/internal/runtime/branch/manager_test.go`
+- `scripts/verify-ffmpeg-branches.mjs` (new)
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Integration binary builds under its tag | `go build -tags integration ./cmd/testserver` | Passed |
+| Integration binary is invisible otherwise | `go build ./...` / `go vet ./...` / `go build ./cmd/server` | Confirmed cmd/testserver is not compiled |
+| Backend tests | `go test ./...` | Passed - 11 packages, including the two new regression tests |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+| **Real FFmpeg branch verification** | `node scripts/verify-ffmpeg-branches.mjs` | **Passed - 32 steps, real FFmpeg 8.1, real MediaMTX v1.19.3** |
+
+No real Twitch, YouTube, Kick or TikTok account, credential, or stream key
+was used. No traffic left loopback. No manual OBS, browser, or platform
+testing was performed.
+
+### Known limitations
+- The script runs on one platform (Windows) in this environment; the
+  managed-MediaMTX-reuse and executable-location logic is written generically
+  (glob for the platform-specific subdirectory) but has not been exercised on
+  Linux or macOS.
+- The restart-limit scenario (step 24) takes roughly a minute of real wall
+  time (exponential backoff up to five attempts, each preceded by a bounded
+  ingest-settle check) - this script is a real end-to-end smoke test, not a
+  fast unit test, and is not intended to run on every commit.
+- All limitations recorded in previous entries still stand.
+
+### Next step
+The closing documentation pass (README, project-overview, config/README,
+THIRD_PARTY_NOTICES), then final regression and push.
