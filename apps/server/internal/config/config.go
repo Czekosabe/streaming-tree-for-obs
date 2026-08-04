@@ -45,6 +45,18 @@ type Config struct {
 
 	// MediaMTX groups the local ingest runtime settings.
 	MediaMTX MediaMTXConfig
+
+	// FFmpeg groups the destination-branch runtime settings.
+	FFmpeg FFmpegConfig
+}
+
+// FFmpegConfig configures FFmpeg executable resolution for destination
+// branches.
+type FFmpegConfig struct {
+	// ExecutablePath is an explicit override for the FFmpeg binary. Empty
+	// means "search the bundled location, then PATH" - see
+	// internal/runtime/ffmpeg.Resolver.
+	ExecutablePath string
 }
 
 // MediaMTXConfig configures the local MediaMTX ingest service.
@@ -157,6 +169,28 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.MediaMTX = mediaMTX
+
+	ffmpegCfg, err := loadFFmpeg()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.FFmpeg = ffmpegCfg
+
+	return cfg, nil
+}
+
+// loadFFmpeg reads the FFmpeg executable override, if any.
+func loadFFmpeg() (FFmpegConfig, error) {
+	var cfg FFmpegConfig
+
+	if raw, ok := lookup("STREAMING_TREE_FFMPEG_PATH"); ok {
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return FFmpegConfig{}, fmt.Errorf(
+				"STREAMING_TREE_FFMPEG_PATH: %q is not a usable path: %w", raw, err)
+		}
+		cfg.ExecutablePath = absolute
+	}
 
 	return cfg, nil
 }

@@ -2780,3 +2780,238 @@ No manual testing was performed.
 FFmpeg research (executable resolution, compatibility probing, licensing),
 then the output-configuration schema and API that stage 6's branch
 supervision depends on.
+
+## 2026-08-04 11:51 — feat(server): add FFmpeg output configuration
+
+### Status
+Completed
+
+### Scope
+The first half of stage 6: FFmpeg executable resolution and capability
+probing, and the non-secret output-configuration (destination RTMP/RTMPS
+server address, restart preference) each platform needs before a branch can
+be started. No process is started yet - that is the next entry. No stream key
+is read, stored differently, or exposed anywhere in this entry.
+
+### FFmpeg research (before writing the resolver)
+
+Checked directly rather than relied on memory, per this stage's instructions:
+
+- **`https://ffmpeg.org/download.html`** (fetched during this entry): FFmpeg
+  publishes **source releases only**; executable builds come from independent
+  third-party distributors the project does not vouch for. Currently
+  maintained release branches listed on that page: **9.0, 8.1, 8.0, 7.1, 6.1,
+  5.1, 4.4**. This directly confirms the task's instruction not to implement
+  a managed downloader the way MediaMTX has one: there is no single
+  "official" binary to pin a checksum against.
+- **`https://ffmpeg.org/legal.html`** (fetched during this entry): FFmpeg is
+  LGPL 2.1-or-later **by default**, but becomes GPL the moment any
+  GPL-covered optional component is compiled in - `--enable-gpl` is what
+  turns that on, and `--enable-version3` upgrades either license to version 3.
+  There is no license text FFmpeg is available under other than these; no
+  commercial licensing exists.
+- **`https://ffmpeg.org/ffmpeg.html`** (fetched during this entry): confirmed
+  `-progress url` emits periodic `key=value` lines ending in
+  `progress=continue` or `progress=end`; confirmed `-nostdin` disables
+  interactive stdin handling for background use; found no RTMP-specific
+  reconnect/timeout option in the documented CLI reference.
+- **Locally detected FFmpeg** (probed directly, both manually and through the
+  resolver written in this entry): `ffmpeg version 8.1-full_build-www.gyan.dev`,
+  a Windows build from gyan.dev, built with `--enable-gpl --enable-version3`
+  among many other flags - so this specific binary is **GPL v3-or-later**, not
+  the LGPL default, and must not be described as such. `-protocols` lists
+  `rtmp` under both Input and Output, and `rtmps` under Output; `-muxers`
+  lists `flv` with muxing support; a real `-progress pipe:1` invocation (a
+  0.1-second `anullsrc` encode) produced a genuine `progress=end` line. RTMP
+  network-layer options were checked via `ffmpeg -h protocol=rtmp` and
+  `-h protocol=tcp`: no RTMP-specific reconnect flag exists, but `tcp`
+  (the transport RTMP runs over) accepts a generic `-timeout` (microseconds),
+  and the generic AVIO `-rw_timeout` option applies regardless of protocol -
+  this is the bounded-timeout mechanism the branch process will use once
+  process launch is implemented (next entry), not an RTMP-specific one,
+  because no RTMP-specific one exists in this FFmpeg's documented options.
+
+### Compatibility policy
+
+`internal/runtime/ffmpeg.MinimumVersion = "4.4"` - the oldest branch the
+download page above still lists as maintained, checked at the time this was
+written, not remembered. This is a floor, not the real gate: `Capabilities`
+probing (RTMP input, RTMP output, RTMPS output, the FLV muxer, and a **real**
+`-progress` invocation, not merely `-h` listing the flag) is authoritative.
+A binary below the floor is rejected without probing further; a binary at or
+above it is rejected only if a capability probe actually fails - a newer
+release than anything named in this entry is accepted as long as it passes.
+A version string with no numeric meaning (a git/dev build such as
+`N-112233-gabcdef1234`) is not, by itself, a rejection reason either - it is
+still shown to the user as the detected version, and compatibility is decided
+by capability probing alone in that case.
+
+### Executable resolution order
+
+1. `STREAMING_TREE_FFMPEG_PATH` (absolute path required; a relative one is
+   resolved against the working directory at startup).
+2. A bundled location beside the running backend executable
+   (`<dir of the backend binary>/ffmpeg[.exe]`) - a convention for a future
+   packaged distribution. Nothing in this stage places a binary there, and
+   nothing is committed to the repository; nothing chooses this path unless a
+   regular file already exists there.
+3. The system `PATH`.
+4. Missing.
+
+Unlike the MediaMTX resolver, PATH **is** searched here - the task's explicit
+instruction, because there is no approved managed source to prefer over it in
+this stage. Every candidate from every step, wherever it came from, is still
+probed for every required capability before it is ever trusted; none is
+assumed compatible merely because it was found.
+
+`Resolution.Path` is a Go-level field only, exactly like the MediaMTX
+resolver's own `Resolution.Path` - it is never part of any JSON response.
+Source is reported as one of `override` / `bundled` / `path` / `missing`.
+
+### Why no managed downloader was implemented
+
+The task forbids it, and the research above independently confirms why it
+would be the wrong call for this stage specifically: FFmpeg has no single
+official executable to pin a checksum against the way MediaMTX does (its
+GitHub releases page publishes one asset per platform, officially, which is
+what stage 4's installer already verifies). Any FFmpeg binary source is a
+third party the project has not reviewed, so this stage resolves and probes
+whatever the operator already has instead of choosing a distributor for them.
+
+### Output-settings schema and migration
+
+New table `platform_output_settings` (migration `0003_platform_output_settings.sql`):
+`platform_id` (primary key, `REFERENCES platforms(id) ON DELETE CASCADE`),
+`server_url` (`TEXT NOT NULL DEFAULT ''` - empty means "not configured", not
+absent), `auto_restart` (`INTEGER NOT NULL DEFAULT 1`), `created_at`,
+`updated_at`. No stream key, no full destination URL, no runtime state (PID,
+restart count, live/error status) - all forbidden explicitly by this stage's
+instructions, and runtime state stays in memory exactly as MediaMTX's does.
+
+The migration backfills a default (empty `server_url`, `auto_restart = 1`)
+row for every platform that already exists, so no seeded destination becomes
+silently "ready to stream" as a side effect of running it. A newly created
+platform gets its default row in the **same SQL transaction** as its
+`platforms` and `platform_metadata` rows - `PlatformRepository.Create` (SQLite
+layer) now also calls `insertDefaultOutputSettingsRow`, so the invariant
+"every platform has output settings" holds without the `platform` domain
+package needing to know the `output` domain package, or the concept of output
+settings, exists at all. Deleting a platform cascades to its output-settings
+row via the same foreign key that already cascades metadata and tags -
+verified with a dedicated test - and does not touch the credential-cleanup
+ordering from stage 5 in any way, since they are entirely separate concerns
+(one SQL row, one OS credential store entry).
+
+### Server-URL validation
+
+`internal/domain/output.ValidateServerURL`: trims surrounding whitespace;
+empty (after trim) is valid and means "not configured" - the field is
+optional, so a destination can exist without one, and clearing it is a
+legitimate action, not an error. A non-empty value must be `rtmp://` or
+`rtmps://`, with a required host, a port that parses as 1-65535 when present,
+no userinfo, no `#` fragment, and (an explicit, tested decision) **no `?`
+query string** - no verified provider integration needs one for the base
+server address, and rejecting it keeps the field unambiguous; if a real
+provider integration is later found to need one, this is the one place that
+changes. A path is allowed (`/app` or `/app/instance`), since providers
+commonly use one. Control characters and embedded line breaks are rejected.
+Maximum length 2048 bytes. Reuses `*platform.ValidationError` for the
+response shape, the same trade-off made for the credential stream-key field
+in stage 5.
+
+### Output-settings API
+
+- `GET /api/platforms/{id}/output` → `{serverUrl, autoRestart}` (plus
+  `updatedAt`).
+- `PUT /api/platforms/{id}/output` → full replacement, same body shape.
+
+Both check platform existence first (reusing `requirePlatform` from the
+credential handlers) and answer `platform_not_found` for a missing platform,
+`validation_failed` with a `serverUrl` field for a bad address, and otherwise
+the existing 400/404/405/413/415/422/500 machinery already used by the
+platform and credential endpoints - no new decode or error-envelope code was
+needed.
+
+### Files changed
+- `apps/server/internal/runtime/ffmpeg/errors.go` (new)
+- `apps/server/internal/runtime/ffmpeg/version.go` (new)
+- `apps/server/internal/runtime/ffmpeg/version_test.go` (new)
+- `apps/server/internal/runtime/ffmpeg/capabilities.go` (new)
+- `apps/server/internal/runtime/ffmpeg/capabilities_test.go` (new)
+- `apps/server/internal/runtime/ffmpeg/resolver.go` (new)
+- `apps/server/internal/runtime/ffmpeg/resolver_test.go` (new)
+- `apps/server/internal/domain/output/model.go` (new)
+- `apps/server/internal/domain/output/errors.go` (new)
+- `apps/server/internal/domain/output/validation.go` (new)
+- `apps/server/internal/domain/output/validation_test.go` (new)
+- `apps/server/internal/domain/output/repository.go` (new)
+- `apps/server/internal/domain/output/service.go` (new)
+- `apps/server/internal/domain/output/service_test.go` (new)
+- `apps/server/internal/storage/sqlite/migrations/0003_platform_output_settings.sql` (new)
+- `apps/server/internal/storage/sqlite/output_repository.go` (new)
+- `apps/server/internal/storage/sqlite/output_repository_test.go` (new)
+- `apps/server/internal/storage/sqlite/platform_repository.go`
+- `apps/server/internal/httpapi/output.go` (new)
+- `apps/server/internal/httpapi/output_test.go` (new)
+- `apps/server/internal/httpapi/router.go`
+- `apps/server/internal/config/config.go`
+- `apps/server/internal/config/config_test.go`
+- `apps/server/cmd/server/main.go`
+
+### Technical decisions
+
+1. **`MinimumVersion` is a documented floor, capability probing is the real
+   gate.** Recorded above with the exact source checked and when.
+2. **The FFmpeg dependency gets its own package (`internal/runtime/ffmpeg`)
+   rather than extending `internal/runtime/mediamtx`.** The two dependencies
+   have almost nothing in common beyond both being external executables: one
+   has a managed, checksummed install; the other is resolved wherever it
+   already is and probed for capabilities. Sharing a package would have
+   forced one of the two models to bend toward the other for no real benefit.
+3. **Output settings are their own domain package, not fields added to
+   `platform`.** Mirrors the reasoning already recorded for `credential` in
+   stage 5: `platform` stays about configuration a user directly edits
+   through the existing dialog; `output` is a distinct concept with its own
+   validation and its own future consumer (the branch manager, next entry).
+4. **A query string in the server URL is rejected, not merely "handled".**
+   The task required an explicit, tested decision either way; this one was
+   chosen because no verified provider needs one and it keeps the field's
+   contents unambiguous - see the validation section above.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 10 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+Frontend checks were not re-run: no frontend file changed in this entry. They
+resume in the entry that adds the frontend for this stage.
+
+The FFmpeg capability-probe tests run twice: once entirely against an
+injected fake probe (the standard suite, no real FFmpeg required), and once
+(`TestProbeExecutableAgainstARealFFmpegBinary`, skipped rather than failed
+when none is found) against whatever real `ffmpeg` is on `PATH` in this
+environment - which is the 8.1 build described above, and passed for real.
+
+### Known limitations
+- FFmpeg process launch, branch supervision, and reading a stored key at
+  start time are not implemented yet - that is the next entry.
+- The bundled-location convention (`<backend dir>/ffmpeg[.exe]`) has no
+  packaging step that ever populates it in this stage; it is resolution-order
+  plumbing for a later stage.
+- `-rw_timeout` as the bounded-network-timeout mechanism is a research
+  finding recorded here for the next entry to use; it is not wired into any
+  process command yet, since no process is started in this entry.
+- All limitations recorded in previous entries still stand.
+
+### Next step
+
+Branch process supervision: the FFmpeg command itself (stream copy, FLV over
+RTMP/RTMPS, `-progress` parsing), the per-branch state machine, eligibility
+and blockers, secret retrieval at process-start time only, restart policy and
+ingest-loss handling, and the branch runtime HTTP API.

@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/credential"
+	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
@@ -86,6 +87,8 @@ func run() error {
 	// or prompts, even on a system where no credential store is available.
 	credentialService := credential.NewService(secrets.NewKeyringStore())
 
+	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
+
 	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
 	// failed MediaMTX must never stop the Go API: platform configuration stays
 	// readable and writable regardless.
@@ -116,6 +119,7 @@ func run() error {
 		Platforms:      platformService,
 		Runtime:        supervisor,
 		Credentials:    credentialService,
+		Outputs:        outputService,
 	})
 
 	server := &http.Server{

@@ -27,6 +27,9 @@ type Options struct {
 	// routes are not registered, and DELETE /api/platforms/{id} falls back
 	// to deleting the platform with no credential-cleanup step.
 	Credentials CredentialService
+	// Outputs serves the destination output-settings API (RTMP/RTMPS server
+	// address, restart preference). When nil those routes are not registered.
+	Outputs OutputService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -46,7 +49,7 @@ func NewRouter(opts Options) http.Handler {
 	mux.HandleFunc("/api/health", methodNotAllowed(logger, http.MethodGet))
 
 	if opts.Platforms != nil {
-		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials)
+		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials, opts.Outputs)
 	}
 
 	if opts.Runtime != nil {
@@ -82,7 +85,7 @@ func NewRouter(opts Options) http.Handler {
 // of falling through to the /api/ catch-all as a 404. Go's ServeMux prefers the
 // more specific method-aware pattern, so the bare pattern only ever matches
 // when no method pattern did.
-func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService) {
+func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService, outputs OutputService) {
 	mux.HandleFunc("GET /api/platform-definitions", handleListDefinitions(logger, service))
 	mux.HandleFunc("/api/platform-definitions", methodNotAllowed(logger, http.MethodGet))
 
@@ -109,6 +112,12 @@ func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service Pla
 
 	if credentials != nil {
 		registerCredentialRoutes(mux, logger, service, credentials)
+	}
+
+	if outputs != nil {
+		mux.HandleFunc("GET /api/platforms/{id}/output", handleGetOutputSettings(logger, service, outputs))
+		mux.HandleFunc("PUT /api/platforms/{id}/output", handleUpdateOutputSettings(logger, service, outputs))
+		mux.HandleFunc("/api/platforms/{id}/output", methodNotAllowed(logger, http.MethodGet, http.MethodPut))
 	}
 }
 

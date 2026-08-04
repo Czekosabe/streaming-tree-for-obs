@@ -242,6 +242,13 @@ func (r *PlatformRepository) Create(ctx context.Context, p platform.Platform) er
 		return err
 	}
 
+	// Every platform also gets a default (unconfigured) output-settings row in
+	// the same transaction, so it is never possible to observe a platform that
+	// exists without one - see internal/domain/output.
+	if err := insertDefaultOutputSettingsRow(ctx, tx, p.ID, platform.FormatTimestamp(p.CreatedAt)); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return storageErr("commit create", err)
 	}

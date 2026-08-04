@@ -22,6 +22,7 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_MEDIAMTX_RTMP_ADDRESS",
 		"STREAMING_TREE_MEDIAMTX_API_ADDRESS",
 		"STREAMING_TREE_INGEST_PATH",
+		"STREAMING_TREE_FFMPEG_PATH",
 	} {
 		t.Setenv(key, "")
 	}
@@ -110,6 +111,31 @@ func TestMediaMTXPathIsMadeAbsolute(t *testing.T) {
 	}
 	if !filepath.IsAbs(cfg.MediaMTX.ExecutablePath) {
 		t.Errorf("ExecutablePath = %q, want an absolute path", cfg.MediaMTX.ExecutablePath)
+	}
+}
+
+func TestFFmpegPathDefaultsToEmpty(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.FFmpeg.ExecutablePath != "" {
+		t.Errorf("ExecutablePath = %q, want empty by default", cfg.FFmpeg.ExecutablePath)
+	}
+}
+
+func TestFFmpegPathIsMadeAbsolute(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_FFMPEG_PATH", filepath.Join("relative", "ffmpeg"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if !filepath.IsAbs(cfg.FFmpeg.ExecutablePath) {
+		t.Errorf("ExecutablePath = %q, want an absolute path", cfg.FFmpeg.ExecutablePath)
 	}
 }
 
