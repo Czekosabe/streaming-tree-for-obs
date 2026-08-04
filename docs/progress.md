@@ -1814,3 +1814,141 @@ Document the MediaMTX runtime integration: the pinned version, supported
 platforms, installation and checksum verification, all new environment
 variables, the loopback security model, the process lifecycle and restart
 policy, the runtime endpoints, OBS settings, and troubleshooting.
+
+---
+
+## 2026-08-04 00:30 — docs: document MediaMTX runtime integration
+
+### Status
+Completed
+
+### Scope
+Document the MediaMTX runtime layer across `README.md`,
+`docs/project-overview.md` and `config/README.md`. No code changed.
+
+### Changes
+
+**`README.md`**
+- The project-state banner now says local ingest works and outgoing streaming
+  does not, rather than the previous "nothing transmits".
+- New **Local ingest with MediaMTX** section: the pinned v1.19.3 and why it is
+  pinned, the supported OS/architecture matrix and what happens outside it, the
+  three-step resolution order and why `PATH` is not searched, the installation
+  flow with all nine verification steps, the managed installation layout, how to
+  remove only the managed MediaMTX without touching the database, what the
+  generated configuration enables and disables, the loopback security model, the
+  process lifecycle, and the restart policy with its exact bounds.
+- The Windows shutdown difference is stated in a callout rather than buried: it
+  is forced, not graceful, and the reason is given.
+- New **Connecting OBS** section with the Server and Stream Key table, and a
+  prominent callout that the local stream key is a route name and not a secret,
+  distinct from a destination platform key.
+- Six new environment variables documented, including that a malformed boolean
+  is a startup error.
+- The API table gained the five runtime endpoints, an example snapshot, the
+  no-request-body rule, and a note that runtime state is in-memory only.
+- The demo table was rewritten: the Streams page and the OBS panel are no longer
+  placeholders, and per-platform live status is recorded as removed. A "what is
+  real" list now leads with receiving a stream from OBS.
+- Twelve MediaMTX and OBS troubleshooting entries, including port conflicts with
+  commands to find the holder on each platform, and an explicit note that
+  Streaming Tree never terminates another process to free a port.
+- The integration-check section covers both scripts and states that neither
+  touches the real database or managed installation.
+
+**`docs/project-overview.md`**
+- Section 7.4 changed from "planned" to implemented, covering the managed
+  dependency model, the process supervisor and the security boundary.
+- The runtime-state part of section 8.1 was rewritten: runtime state now exists,
+  lives only in memory, and is listed field by field - alongside what is
+  deliberately not tracked, and why.
+- New section 8.2 on OBS ingest detection, including why the interface says
+  "OBS or another RTMP publisher" and why MediaMTX command hooks are not used.
+- The architecture diagram marks what is implemented, shows the Control API on
+  loopback and notes that the browser never reaches it.
+- Stage 4 marked complete, with the honest note that the
+  `waiting -> receiving -> waiting` transition was not verified end to end with
+  a real publisher, pointing at the entry that explains it.
+- The stream-key section records that the local ingest path is a route
+  identifier and is never labelled as a secret.
+
+**`config/README.md`**
+- Records that no MediaMTX sample or template lives there, that the real
+  configuration is generated into the runtime directory on every start, why it
+  is generated rather than templated, and that binaries are never committed.
+
+**`THIRD_PARTY_NOTICES.md`** was added in the first commit of this stage and
+needed no change.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/progress.md`
+- `config/README.md`
+
+### Technical decisions
+
+1. **The commit split follows the suggested four-way boundary**: managed
+   dependency, supervision and runtime API, frontend, documentation.
+   Documentation comes last so it describes what was built rather than what was
+   intended.
+
+2. **The Windows shutdown limitation is a callout, not a footnote.** An operator
+   deciding whether to trust the application with a live stream should not have
+   to discover that in source comments.
+
+3. **"The local stream key is not a secret" is its own callout.** The word
+   "stream key" means something very specific and very sensitive to a streamer.
+   Reusing it for a local route name without saying so plainly would be a
+   genuine security-communication failure.
+
+### Automated validation
+
+Re-run after the documentation change to confirm no regression:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test` | Passed - 16 files, 235 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend tests | `go test ./...` | Passed - 6 packages |
+| Backend build | `go build ./...` | Passed |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed. No OBS was connected by hand.
+
+### Known limitations
+- Nothing checks automatically that the documentation matches the code; a
+  renamed environment variable or endpoint must be corrected by hand.
+- The documented default database and runtime paths were observed on Windows
+  only; the macOS and Linux paths follow documented `os.UserConfigDir()`
+  behaviour but were not observed on those systems.
+- The English documentation has not been reviewed by a second reader.
+- All product limitations from the three previous entries still stand, including
+  that the `waiting -> receiving -> waiting` transition is unverified end to end
+  with a real RTMP publisher.
+
+### Next step
+
+Stage 5: FFmpeg destination branches.
+
+1. Resolve or manage an FFmpeg binary the same way MediaMTX is handled now:
+   pinned version, checksum-verified installation, explicit path override.
+2. Start one FFmpeg process per enabled destination, pulling from the local
+   MediaMTX path and pushing to the platform's RTMP endpoint, defaulting to
+   stream copy so OBS still encodes once.
+3. Extend the in-memory runtime model with per-branch state, keeping it out of
+   SQLite exactly as the MediaMTX state is today.
+4. Give each branch independent start/stop and its own restart policy, so one
+   failing destination cannot disturb the others.
+5. Read destination stream keys from the operating system credential store,
+   which stage 5 or 6 must introduce - they are still not stored anywhere today.
+
+The constraint to carry forward: per-branch runtime state must stay in memory,
+and a destination must not be shown as live until an FFmpeg process is genuinely
+connected and sending.

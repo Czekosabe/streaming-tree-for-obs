@@ -10,8 +10,7 @@ build does not run MediaMTX or FFmpeg, so there is nothing to configure.
 
 ## What does not belong here
 
-Two things that arrived with persistent storage are deliberately **not** kept in
-this directory:
+Several things are deliberately **not** kept in this directory:
 
 - **The SQLite database.** It is user data, not configuration, and lives outside
   the repository — by default in the per-user configuration directory. Its
@@ -21,8 +20,24 @@ this directory:
   `apps/server/internal/storage/sqlite/migrations/`. They ship with the code
   rather than being editable configuration, so that the schema and the code that
   reads it can never drift apart.
+- **The MediaMTX configuration.** There is no sample or template here. The real
+  `mediamtx.yml` is **generated** by the backend on every start, from the
+  validated environment configuration, into
+  `<application data directory>/runtime/mediamtx.yml`. It is runtime output, not
+  something a user edits — manual changes are overwritten on the next start.
+
+  It is generated rather than templated on purpose: it must stay consistent with
+  the pinned MediaMTX version and with the addresses the backend validated, and
+  MediaMTX refuses to start on an unknown configuration key. A stale template
+  committed here would silently diverge from both.
+- **Binaries of any kind.** MediaMTX is downloaded on explicit user request into
+  the application data directory and is never committed. The `.gitignore` rules
+  for third-party binaries are anchored to the repository root so they cannot
+  accidentally match a source directory.
 
 This directory remains reserved for configuration a user may legitimately edit.
+Once FFmpeg destination branches exist, per-platform encoding profiles are the
+natural first occupant.
 
 ## Planned contents
 

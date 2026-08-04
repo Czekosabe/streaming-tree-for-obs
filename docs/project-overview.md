@@ -99,16 +99,23 @@ Deliberately **not** part of version 1.0:
                 │  Backend (Go)                                 │
                 │  API, branch state, metadata, process control │
                 └──────┬─────────────────────────┬──────────────┘
-                       │ supervises              │ supervises
+                       │ supervises              │ supervises (planned)
                        ▼                         ▼
         ┌──────────────────────┐    ┌──────────────────────────────────┐
-  OBS ─▶│  MediaMTX            │───▶│  FFmpeg (one process per branch) │
-  RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch             │
-        └──────────────────────┘    │  ffmpeg #2 ─▶ YouTube            │
-                                    │  ffmpeg #3 ─▶ Kick               │
-                                    │  ffmpeg #4 ─▶ TikTok             │
-                                    └──────────────────────────────────┘
+  OBS ─▶│  MediaMTX  [DONE]    │─ ─▶│  FFmpeg (one process per branch) │
+  RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch    [PLANNED]│
+        │  127.0.0.1:1935/live │    │  ffmpeg #2 ─▶ YouTube            │
+        └──────────────────────┘    │  ffmpeg #3 ─▶ Kick               │
+                 ▲                  │  ffmpeg #4 ─▶ TikTok             │
+                 │ Control API      └──────────────────────────────────┘
+                 │ 127.0.0.1:9997
+                 │ (backend only, never the browser)
+            readiness + ingest status
 ```
+
+Solid arrows are implemented; the dashed arrow to FFmpeg is the next stage. The
+backend supervises MediaMTX and reads its Control API on loopback; the browser
+never contacts MediaMTX directly.
 
 The layers are separated on purpose: the panel never talks directly to MediaMTX
 or FFmpeg. All control flows through the Go backend, which is what will later
@@ -186,17 +193,62 @@ ordinary recorded migration, deleting a seeded destination is permanent.
 The database location, environment variables and reset procedure are documented
 in `README.md`.
 
-### 7.4 Planned role of MediaMTX
+### 7.4 The role of MediaMTX (implemented)
 
-**Status: not implemented.**
+**Status: implemented.**
 
-MediaMTX will act as the local server receiving the stream from OBS. Instead of
-writing an RTMP implementation, the application will run MediaMTX as a child
-process with a generated configuration and pull a single source stream from it
-for all branches.
+MediaMTX is the local server receiving the stream from OBS. Rather than writing
+an RTMP implementation, the application runs MediaMTX v1.19.3 as a supervised
+child process with a generated configuration.
 
-This is what lets OBS encode the video **once** while every branch shares the
-same source.
+This is what lets OBS encode the video **once** while every branch will later
+share the same source.
+
+#### Managed dependency
+
+MediaMTX is third-party software, not part of this repository and never
+committed to it. The application resolves it in a deliberately narrow order:
+an explicit `STREAMING_TREE_MEDIAMTX_PATH`, then its own managed installation,
+then missing. The system `PATH` is not searched, because the binary is launched
+as a long-lived child process and should only ever be a copy the application can
+identify.
+
+Installation is an explicit user action. The installer verifies the archive
+against the checksum file published with the same official release, refuses
+unsafe archive entries, requires the upstream `LICENSE` to be present, confirms
+the extracted binary reports the pinned version, and only then moves it into
+place atomically. Nothing unverified is ever executed.
+
+The version is pinned to exactly **v1.19.3**. The generated configuration and
+the Control API client target that schema, and MediaMTX refuses to start when it
+meets an unknown configuration key, so a binary reporting any other version is
+reported as incompatible and is not started.
+
+#### Process supervisor
+
+The supervisor owns an explicit state machine — `missing`, `installing`,
+`incompatible`, `stopped`, `starting`, `ready`, `stopping`, `error` — rather
+than a set of booleans, so contradictory combinations are unrepresentable.
+
+Readiness means the MediaMTX Control API answered correctly, never merely that a
+process was spawned: a misconfigured MediaMTX exits milliseconds after starting.
+Both output streams are drained concurrently, because a child whose pipe fills
+blocks permanently. An unexpected exit triggers bounded exponential backoff with
+a cap per time window, so a crash loop stops rather than spinning; an explicit
+Stop suppresses restart entirely. Backend shutdown drains HTTP first, then stops
+and reaps the child.
+
+A missing or failed MediaMTX never stops the Go API: platform configuration
+stays fully readable and writable, and the component reports its own state.
+
+#### Security boundary
+
+Both the RTMP listener and the Control API bind to loopback only, and a
+non-loopback address is rejected at startup rather than warned about — MediaMTX
+here accepts an unauthenticated publisher and its Control API can rewrite its
+own configuration. The browser never contacts the Control API; only the Go
+backend does, and there is no proxy route. No runtime path, process environment
+or process id is exposed to the interface.
 
 ### 7.5 Planned role of FFmpeg
 
@@ -265,13 +317,41 @@ only**.
 
 ### Runtime stream state
 
-Whether a branch is offline, starting, live or failed, its viewer count,
-connection quality and FFmpeg process state.
+Whether the ingest service is running, whether a publisher is connected, process
+restart counts, the last runtime error — and later, per-branch FFmpeg state.
 
-**Runtime state is not implemented and is not stored.** No streaming engine
-exists, so configured destinations are presented as configured and offline. The
-interface shows no live state and no invented viewer numbers, because beside
-genuinely persisted configuration those would read as real.
+**Runtime state exists now, and lives only in memory.** It is never written to
+the SQLite tables and resets when the backend restarts, because it describes
+what is happening right now rather than what the user configured. No migration
+in this stage added a runtime column, and none should.
+
+What is tracked today: whether MediaMTX is installed, whether its version is
+compatible, its process state, readiness, restart count, the last error, whether
+a publisher is connected, when the input became available, the source type and
+the track identifiers MediaMTX reports.
+
+What is deliberately **not** tracked: bitrate, resolution, frame rate, dropped
+frames and viewer counts. The MediaMTX Control API does not report them, so any
+number shown would be invented. Per-destination runtime state does not exist
+either, because no outgoing streaming engine exists yet — configured
+destinations are still presented as configuration only.
+
+### 8.2 OBS ingest detection
+
+While MediaMTX is ready, the backend polls its Control API `/v3/paths/list` and
+maps the configured path onto an ingest state: `unavailable` when the service is
+not ready, `waiting` when it is ready with no publisher, `receiving` when a
+publisher is connected, and `error` when the service runs but its status cannot
+be read — which is reported honestly rather than being reported as "waiting".
+
+RTMP does not identify the publishing application. The interface therefore says
+"OBS or another RTMP publisher" and never asserts that a generic publisher is
+OBS. The source type MediaMTX reports (for example `rtmpConn`) is shown as-is,
+because it identifies the protocol rather than the program.
+
+MediaMTX command hooks (`runOnOnline`, `runOnOffline`) are deliberately not
+used: they run shell commands, and polling a loopback HTTP API is both simpler
+to reason about and safer.
 
 ---
 
@@ -352,6 +432,11 @@ Rules in force for this project:
    a stream key, token or password, and no API payload carries one. Write
    endpoints reject unknown JSON fields, so a stray credential field fails
    loudly instead of being silently dropped.
+
+   The generated MediaMTX configuration contains no credential either, and the
+   local ingest path (`live` by default) is a **route identifier, not a secret**.
+   It is deliberately never labelled as one in the interface, so it cannot be
+   confused with a destination platform stream key.
 2. **No secrets in the browser.** Keys never go into `localStorage`,
    `sessionStorage`, cookies or React state. `VITE_*` variables are compiled
    into the public JavaScript bundle and must never contain secrets. The only
@@ -437,7 +522,7 @@ is implemented yet.
 | 1 | Foundations: repository structure, documentation, React panel, minimal Go backend, `/api/health` endpoint | **Completed** |
 | 2 | English and Polish localization of the frontend | **Completed** |
 | 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | **Completed** |
-| 4 | MediaMTX integration: process startup, configuration generation, OBS connection detection | Planned |
+| 4 | MediaMTX integration: managed dependency, process supervision, configuration generation, OBS ingest detection | **Completed** |
 | 5 | FFmpeg branches: startup, supervision, restarts, failure isolation | Planned |
 | 6 | Live status over SSE or WebSocket instead of polling | Planned |
 | 7 | Operating system credential store for stream keys | Planned |
@@ -451,6 +536,14 @@ on stage 7.
 Stage 3 was marked completed only after all automated checks passed, including
 the scripted verification that configuration and metadata survive a backend
 restart.
+
+Stage 4 was marked completed only after all automated checks passed, including a
+scripted verification that installs and supervises the real MediaMTX binary. One
+limitation is recorded honestly: the `waiting -> receiving -> waiting` ingest
+transition is covered against a fake Control API and captured real responses,
+but was **not** verified end to end with a real RTMP publisher. See the
+`feat(server): supervise MediaMTX runtime and ingest` entry in
+[progress.md](progress.md).
 
 ## 14. The manual testing rule
 
@@ -475,7 +568,11 @@ be run continuously:
 - `gofmt -l .` - backend formatting check,
 - `node scripts/verify-persistence.mjs` - scripted verification that
   configuration and metadata survive a backend restart, run against a temporary
-  database.
+  database,
+- `node scripts/verify-mediamtx-runtime.mjs` - scripted verification that the
+  real MediaMTX binary is installed, checksum-verified, supervised and reused
+  across a backend restart, run against a temporary data directory on
+  dynamically chosen ports.
 
 ## 15. Honesty about the state of the work
 
