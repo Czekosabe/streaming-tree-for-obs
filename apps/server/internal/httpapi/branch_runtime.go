@@ -118,13 +118,22 @@ type branchCommandResponse struct {
 	Blockers []string `json:"blockers,omitempty"`
 }
 
+// writeOutcome renders a Start/Restart result.
+//
+// "Blocked" is answered 200, not an error status: it is a normal, structured
+// outcome the caller asked for and the response body describes fully (which
+// blockers), not a malformed-request or server failure. A genuine conflict
+// (already running) is a real HTTP error, since that is a state problem, not
+// an eligibility answer - see writeBranchError's ErrConflict case for the
+// path used when the manager itself returns that error rather than an
+// Outcome with Conflict set.
 func writeOutcome(w http.ResponseWriter, logger *slog.Logger, outcome branch.Outcome, acceptedStatus string) {
 	switch {
 	case outcome.Conflict:
 		writeError(w, logger, http.StatusConflict, "branch_conflict",
 			"This destination already has a process starting, live or restarting.")
 	case len(outcome.Blockers) > 0:
-		writeJSON(w, logger, http.StatusUnprocessableEntity, branchCommandResponse{
+		writeJSON(w, logger, http.StatusOK, branchCommandResponse{
 			Status:   "blocked",
 			Blockers: outcome.Blockers,
 		})

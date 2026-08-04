@@ -51,6 +51,9 @@ const FIELD_RULE_KEYS: Record<string, FieldMessageKey> = {
   'streamKey:required': 'platforms:validation.streamKeyRequired',
   'streamKey:too_long': 'platforms:validation.streamKeyTooLong',
   'streamKey:invalid': 'platforms:validation.streamKeyInvalid',
+  'serverUrl:required': 'platforms:validation.serverUrlRequired',
+  'serverUrl:too_long': 'platforms:validation.serverUrlTooLong',
+  'serverUrl:invalid': 'platforms:validation.serverUrlInvalid',
 };
 
 /**

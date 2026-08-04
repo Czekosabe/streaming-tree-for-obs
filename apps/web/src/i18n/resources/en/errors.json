@@ -14,6 +14,8 @@
     "platform_not_found": "This destination no longer exists.",
     "credential_not_found": "No credential is stored for this destination.",
     "credential_store_unavailable": "The secure credential store is not available right now.",
-    "credential_store_failure": "The credential store could not complete the request."
+    "credential_store_failure": "The credential store could not complete the request.",
+    "branch_not_running": "This destination is not currently running.",
+    "branch_conflict": "This destination already has a process starting, live or restarting."
   }
 }

@@ -216,13 +216,17 @@ func TestStartBranchAccepted(t *testing.T) {
 	}
 }
 
-func TestStartBranchReturnsBlockersAs422(t *testing.T) {
+func TestStartBranchReturnsBlockersAsAStructuredOutcome(t *testing.T) {
+	// Blocked is a normal, structured outcome, not an HTTP error: the caller
+	// asked "can this start" and the answer is "no, here is why" - the
+	// response is 200 with a blockers list, not a 4xx error envelope, so
+	// the frontend can read it through its ordinary success path.
 	stub := &stubBranches{startOutcome: branch.Outcome{Blockers: []string{branch.BlockerStreamKeyMissing}}}
 	handler := newBranchTestServer(t, &stubFFmpegRuntime{}, stub)
 
 	recorder := do(t, handler, http.MethodPost, "/api/runtime/branches/pf_1/start", nil)
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422, body: %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", recorder.Code, recorder.Body.String())
 	}
 
 	var body struct {

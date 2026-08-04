@@ -85,7 +85,22 @@
     "sortOrderInvalid": "Podaj kolejność z zakresu od 0 do 10000.",
     "streamKeyRequired": "Podaj klucz transmisji.",
     "streamKeyTooLong": "Klucz transmisji przekracza maksymalny dopuszczalny rozmiar.",
-    "streamKeyInvalid": "Klucz transmisji zawiera niedozwolone znaki."
+    "streamKeyInvalid": "Klucz transmisji zawiera niedozwolone znaki.",
+    "serverUrlRequired": "Podaj adres serwera albo zostaw pole puste.",
+    "serverUrlTooLong": "Adres serwera przekracza maksymalny dopuszczalny rozmiar.",
+    "serverUrlInvalid": "Podaj prawidłowy adres rtmp:// lub rtmps://, bez nazwy użytkownika, hasła, fragmentu ani parametrów zapytania."
+  },
+  "output": {
+    "sectionTitle": "Serwer docelowy",
+    "explanation": "Adres RTMP lub RTMPS podany przez Twoją platformę do publikowania - nie klucz transmisji i nie sekret. Znajdziesz go w ustawieniach transmisji swojej platformy.",
+    "serverKeyDistinction": "To osobna wartość od klucza transmisji powyżej: obie są potrzebne, zanim ten cel będzie mógł zacząć wysyłać.",
+    "serverUrlLabel": "Adres serwera",
+    "serverUrlPlaceholder": "rtmps://live.example.com/app",
+    "autoRestartLabel": "Uruchamiaj ponownie automatycznie",
+    "autoRestartDescription": "Automatycznie uruchamia ponownie proces tego celu po nieoczekiwanej awarii, z ograniczonym opóźnieniem narastającym.",
+    "save": "Zapisz adres serwera",
+    "saving": "Zapisywanie...",
+    "saved": "Adres serwera zapisany"
   },
   "credentials": {
     "sectionTitle": "Klucz transmisji dla tego celu",

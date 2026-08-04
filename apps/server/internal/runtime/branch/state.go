@@ -67,7 +67,11 @@ type Progress struct {
 	OutTimeMs  int64   `json:"outTimeMs"`
 	TotalSize  int64   `json:"totalSize"`
 	Speed      float64 `json:"speed"`
-	ObservedAt time.Time
+	// ObservedAt is when this application captured the block, not a value
+	// FFmpeg reported. Excluded from JSON: the branch snapshot has no other
+	// per-field timestamp either, and a caller needing freshness already has
+	// the snapshot's own fetch time.
+	ObservedAt time.Time `json:"-"`
 }
 
 // RuntimeError pairs a stable, sanitized code with an English message that

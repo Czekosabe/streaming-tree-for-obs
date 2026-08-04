@@ -3249,3 +3249,178 @@ loopback, with an injected fake credential store and no real platform
 account - the honest, real-process verification this entry's unit tests
 cannot provide on their own. Then the frontend: output-settings and branch
 controls, and the documentation that closes out the stage.
+
+## 2026-08-04 12:39 — feat(web): control destination branches
+
+### Status
+Completed
+
+### Scope
+The frontend half of stage 6: destination server-address management, real
+per-branch controls replacing the permanently-disabled "Start" button, an
+FFmpeg dependency panel, a full destination-branch table, and bulk
+start-enabled/stop-all controls with an application-styled confirmation
+before starting multiple real outputs. Plus the Zod schemas, API transport
+and TanStack Query hooks behind all of it.
+
+### Changes
+
+**`apps/web/src/api/output-schemas.ts` / `output.ts` / `hooks/use-output.ts`**
+(new) - the output-settings contract (`{serverUrl, autoRestart, updatedAt}`,
+no field for a key), transport, and query/mutation hooks, mirroring the
+existing platform/credential hook pattern. The server address is not a
+secret, so - unlike the stream-key mutation - this one is cached and
+pre-filled normally.
+
+**`apps/web/src/api/branch-schemas.ts` / `branches.ts` / `hooks/use-branches.ts`**
+(new) - the FFmpeg-dependency and branch-runtime contracts and their query
+hooks. `useBranchRuntimeQuery` and `useFfmpegRuntimeQuery` poll adaptively:
+roughly one second while any branch is active or desired-running, ten
+seconds otherwise (`branchPollIntervalFor`) - FFmpeg status itself changes
+rarely, so it polls every 30 seconds. Every command mutation
+(`useStart/Stop/RestartBranchMutation`, `useStartEnabledBranchesMutation`,
+`useStopAllBranchesMutation`) invalidates the branch list on settlement,
+success or failure alike, mirroring the existing MediaMTX command pattern.
+
+**`apps/web/src/models/branch-presentation.ts`** (new) - pure, exhaustive
+mapping from branch/FFmpeg state to a label key, a status tone, and which
+controls are usable (`branchControlsFor`): Start and Stop are never both
+enabled for the same state. `blockerKey` maps every backend blocker
+identifier to a localized message, falling back to the raw identifier for
+one this build does not recognise - a user must always see something.
+
+**`apps/web/src/components/platforms/OutputSettingsSection.tsx`** (new) -
+embedded in the platform settings dialog alongside `StreamKeySection`: a
+server-address input and an auto-restart toggle, with explanatory text that
+this is a separate value from the stream key and both are needed before the
+destination can send.
+
+**`apps/web/src/components/platforms/BranchControls.tsx`** (new) - compact
+real status and Start/Stop/Restart controls for one platform card, replacing
+the disabled "Start" button and its "streaming engine not implemented" note
+entirely.
+
+**`apps/web/src/components/platforms/PlatformCard.tsx`**: wired in
+`BranchControls`; removed the redundant "configured, offline" status row now
+that the card shows real branch state instead.
+
+**`apps/web/src/pages/StreamsPage.tsx`**: added an FFmpeg dependency panel
+(state, source, detected/minimum version, capability checklist, sanitized
+last error) and a full destination-branch table (per-platform state,
+blockers, restart count, real progress - output time, output size, speed,
+all locale-formatted - and per-branch Start/Stop/Restart), plus bulk
+"Start enabled destinations" and "Stop all outputs" controls. The page's
+former placeholder text ("that is the next stage and is not implemented
+yet") is gone.
+
+**`apps/web/src/components/runtime/StartEnabledConfirmDialog.tsx`** (new) -
+application-styled confirmation (never `window.confirm`) before starting
+every eligible enabled destination: lists which destinations will actually
+start and which are skipped and why, states that bandwidth use scales with
+destinations started, that no video is re-encoded, and that this begins real
+transmission.
+
+**`apps/web/src/lib/format.ts`**: added `formatBytes` and `formatSpeed`,
+locale-aware, alongside the existing `formatViewers`/`toDurationParts`.
+
+**`apps/server/internal/runtime/branch/state.go`**: `Progress.ObservedAt`
+had no JSON tag, so it would have serialized as a stray `"ObservedAt"` field
+using Go's default field-name casing - caught while writing the frontend
+schema, before any client ever depended on that shape. Excluded from JSON
+entirely (`json:"-"`): the branch snapshot has no other per-field timestamp,
+and a caller needing freshness already has the snapshot's own fetch time.
+
+**Error codes**: `branch_not_running` and `branch_conflict` added to
+`api-error-message.ts` and both language bundles, alongside the existing
+`platform_not_found` reuse for a branch on an unknown platform.
+
+### Files changed
+- `apps/web/src/api/output-schemas.ts` / `output.ts` (new)
+- `apps/web/src/api/output-schemas.test.ts` (new)
+- `apps/web/src/hooks/use-output.ts` (new)
+- `apps/web/src/hooks/use-output.test.ts` (new)
+- `apps/web/src/api/branch-schemas.ts` / `branches.ts` (new)
+- `apps/web/src/api/branch-schemas.test.ts` (new)
+- `apps/web/src/hooks/use-branches.ts` (new)
+- `apps/web/src/hooks/use-branches.test.ts` (new)
+- `apps/web/src/models/branch-presentation.ts` (new)
+- `apps/web/src/models/branch-presentation.test.ts` (new)
+- `apps/web/src/models/platform.ts`
+- `apps/web/src/components/platforms/output-validation.ts` (new)
+- `apps/web/src/components/platforms/output-validation.test.ts` (new)
+- `apps/web/src/components/platforms/OutputSettingsSection.tsx` (new)
+- `apps/web/src/components/platforms/BranchControls.tsx` (new)
+- `apps/web/src/components/platforms/PlatformCard.tsx`
+- `apps/web/src/components/platforms/PlatformSettingsDialog.tsx`
+- `apps/web/src/components/runtime/StartEnabledConfirmDialog.tsx` (new)
+- `apps/web/src/pages/StreamsPage.tsx`
+- `apps/web/src/lib/format.ts`
+- `apps/web/src/lib/field-error-rules.ts`
+- `apps/web/src/lib/api-error-message.ts`
+- `apps/web/src/lib/api-error-message.test.ts`
+- `apps/web/src/i18n/resources/{en,pl}/runtime.json`
+- `apps/web/src/i18n/resources/{en,pl}/platforms.json`
+- `apps/web/src/i18n/resources/{en,pl}/errors.json`
+- `apps/server/internal/runtime/branch/state.go`
+
+### Technical decisions
+
+1. **Every card independently calls `useBranchRuntimeQuery()`, same as the
+   credential-status pattern from stage 5.** TanStack Query dedupes
+   concurrent identical-key requests, so N cards produce one shared request
+   and cache entry, not N - the same reasoning already recorded for the
+   credential-status indicator.
+2. **The confirmation dialog computes eligible/skipped destinations from the
+   already-cached branch list, not a separate request.** The blockers a
+   `Start` attempt would report are the same blockers already visible in the
+   branch snapshot, so the dialog can show an accurate breakdown without
+   another round trip - and its content updates live if the underlying query
+   refetches while the dialog is open.
+3. **The server address is cached and pre-filled normally, unlike the stream
+   key.** It is not a secret; treating it with the stream key's extra
+   caution (no caching, no pre-fill, `gcTime: 0`) would be over-applying a
+   rule that exists specifically because a value is secret.
+4. **`ObservedAt`'s missing JSON tag was fixed in this entry, not the
+   previous one**, since writing the frontend schema against the real
+   response shape is what surfaced it. Recorded here rather than amending
+   the previous commit, per this project's no-amend rule.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test -- --run` | Passed - 27 files, 380 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 11 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed: this UI was not opened in a browser, per
+this stage's instruction to skip manual browser/OBS/platform testing and per
+this project's established practice (no component-rendering test harness -
+see the stage 5 entries for that decision) of testing pure logic thoroughly
+instead of rendering.
+
+### Known limitations
+- **This UI has not been exercised in a browser.** Typecheck, lint, build
+  and the pure-logic test suite verify the code is correct and internally
+  consistent; they do not confirm the panels render correctly, that the
+  confirmation dialog reads well in practice, or that the branch table
+  behaves sensibly with a real, changing branch list.
+- **No component-rendering test exists**, consistent with every other
+  dialog and page in this codebase.
+- Real end-to-end verification (a real destination actually going live) is
+  still the next entry, not this one.
+- All limitations recorded in previous entries still stand.
+
+### Next step
+
+The real, loopback-only integration verification
+(`scripts/verify-ffmpeg-branches.mjs`) stage 6 cannot be marked complete
+without - then the closing documentation pass.

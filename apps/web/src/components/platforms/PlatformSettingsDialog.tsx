@@ -14,6 +14,7 @@ import { useDeletePlatformMutation, useUpdatePlatformMutation } from '@/hooks/us
 import { resolveApiErrorMessage } from '@/lib/api-error-message';
 import { DISPLAY_NAME_MAX_LENGTH, SORT_ORDER_MAX } from '@/models/platform-constraints';
 
+import { OutputSettingsSection } from './OutputSettingsSection';
 import { StreamKeySection } from './StreamKeySection';
 
 type PlatformSettingsDialogProps = {
@@ -240,6 +241,7 @@ export function PlatformSettingsDialog({
             null) unmounts it entirely, and opening a different platform
             remounts it fresh even if this dialog's own instance persists. */}
         <StreamKeySection key={platform.id} platform={platform} />
+        <OutputSettingsSection key={`output-${platform.id}`} platform={platform} />
       </Modal>
 
       <ConfirmDialog

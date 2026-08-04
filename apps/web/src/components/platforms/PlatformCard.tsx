@@ -1,13 +1,16 @@
-import { Ban, Play, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Settings2, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { useCredentialStatusQuery } from '@/hooks/use-credentials';
+import { useBranchRuntimeQuery } from '@/hooks/use-branches';
 import { cn } from '@/lib/cn';
+import { branchFor } from '@/models/branch-presentation';
 import { presentCredentialStatus } from '@/models/credential-presentation';
 import { categoryFieldLabelKey, providerGlyphClass } from '@/models/provider-labels';
 
-import { Button, IconButton } from '../ui/Button';
+import { BranchControls } from './BranchControls';
+import { IconButton } from '../ui/Button';
 import { PlatformGlyph } from './PlatformGlyph';
 
 type PlatformCardProps = {
@@ -19,13 +22,12 @@ type PlatformCardProps = {
 /**
  * One configured destination branch.
  *
- * The card shows CONFIGURATION only. There is no streaming engine yet, so it
- * reports "configured / offline" and never a live state, no viewer count and no
- * connection quality - previously those were demo values, and showing them next
- * to real saved configuration would be misleading.
- *
- * Start is disabled with an explanation; the settings and metadata actions are
- * real and open editors backed by the API.
+ * Configuration (provider, display name, enabled state, credential status)
+ * and real branch runtime state (see `BranchControls`) are shown together,
+ * but they stay visibly distinct facts: a card can show a stream key
+ * "Stored" while the branch itself is "Blocked" for an unrelated reason, or
+ * "Sending" only once the backend reports real, advancing FFmpeg output -
+ * never a fake viewer count or connection quality.
  *
  * The title and category shown here are user-authored content, rendered
  * verbatim and never translated.
@@ -52,6 +54,11 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
     credentialStatus.data,
     credentialStatus.isLoading,
   );
+
+  // Shares one underlying request/cache entry across every rendered card,
+  // since every card queries the same ['branches'] key.
+  const branchesQuery = useBranchRuntimeQuery();
+  const branch = branchFor(branchesQuery.data, platform.id);
 
   return (
     <article
@@ -130,14 +137,6 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
           </div>
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              {t('platforms:card.stateLabel')}
-            </dt>
-            <dd className="mt-0.5 truncate text-xs text-ink-muted">
-              {t('platforms:card.offlineConfigured')}
-            </dd>
-          </div>
-          <div className="min-w-0">
-            <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               {t('platforms:card.streamKeyLabel')}
             </dt>
             <dd className="mt-0.5 truncate text-xs text-ink-muted">
@@ -154,23 +153,11 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
       </div>
 
       <footer className="flex items-center justify-between gap-2 border-t border-line px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled
-            title={t('platforms:card.streamingNotImplemented')}
-            icon={<Play className="size-3.5" />}
-          >
-            {t('platforms:card.start')}
-          </Button>
-          <span className="flex min-w-0 items-center gap-1 text-[10px] text-ink-faint">
-            <Ban aria-hidden="true" className="size-3 shrink-0" />
-            <span className="truncate">{t('platforms:card.streamingNotImplemented')}</span>
-          </span>
+        <div className="min-w-0">
+          <BranchControls platformId={platform.id} branch={branch} />
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-start gap-1">
           <IconButton
             label={t('platforms:card.editMetadata', { platform: platform.displayName })}
             variant="ghost"

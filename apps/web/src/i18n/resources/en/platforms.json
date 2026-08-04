@@ -85,7 +85,22 @@
     "sortOrderInvalid": "Enter a sort order between 0 and 10000.",
     "streamKeyRequired": "Enter a stream key.",
     "streamKeyTooLong": "The stream key exceeds the maximum allowed size.",
-    "streamKeyInvalid": "The stream key contains characters that are not allowed."
+    "streamKeyInvalid": "The stream key contains characters that are not allowed.",
+    "serverUrlRequired": "Enter a server address, or leave it empty.",
+    "serverUrlTooLong": "The server address exceeds the maximum allowed size.",
+    "serverUrlInvalid": "Enter a valid rtmp:// or rtmps:// address, with no username, password, fragment or query string."
+  },
+  "output": {
+    "sectionTitle": "Destination server",
+    "explanation": "The RTMP or RTMPS address your platform gives you for publishing - not the stream key, and not a secret. Ask your platform's stream settings page for it.",
+    "serverKeyDistinction": "This is separate from the stream key above: both are needed before this destination can start sending.",
+    "serverUrlLabel": "Server address",
+    "serverUrlPlaceholder": "rtmps://live.example.com/app",
+    "autoRestartLabel": "Restart automatically",
+    "autoRestartDescription": "Restart this destination's process automatically after an unexpected failure, following a bounded backoff.",
+    "save": "Save server address",
+    "saving": "Saving...",
+    "saved": "Server address saved"
   },
   "credentials": {
     "sectionTitle": "Destination stream key",

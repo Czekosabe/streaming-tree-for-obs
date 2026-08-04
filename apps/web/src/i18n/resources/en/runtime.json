@@ -109,12 +109,97 @@
   },
   "page": {
     "title": "Streams",
-    "description": "Local ingest from OBS. Outgoing platform branches are a later stage.",
+    "description": "Local ingest from OBS, and outgoing destination branches.",
     "componentHeading": "Ingest service",
-    "destinationsHeading": "Outgoing platform branches",
-    "destinationsPlanned": "Sending the received stream on to Twitch, YouTube, Kick and TikTok requires one FFmpeg process per destination. That is the next stage and is not implemented yet.",
+    "destinationsHeading": "Destination branches",
     "lastError": "Last error",
     "noError": "No errors reported.",
     "diagnostics": "Diagnostics"
+  },
+  "ffmpeg": {
+    "heading": "FFmpeg dependency",
+    "state": {
+      "missing": "Not found",
+      "ready": "Ready",
+      "incompatible": "Incompatible",
+      "error": "Error"
+    },
+    "detectedVersion": "Detected version",
+    "minimumVersion": "Minimum supported version",
+    "source": "Source",
+    "sourceOverride": "Explicit path (STREAMING_TREE_FFMPEG_PATH)",
+    "sourceBundled": "Bundled with the application",
+    "sourcePath": "Found on PATH",
+    "sourceMissing": "Not found",
+    "capabilitiesHeading": "Capabilities",
+    "capability": {
+      "rtmpInput": "RTMP input",
+      "rtmpOutput": "RTMP output",
+      "rtmpsOutput": "RTMPS output",
+      "flvMuxer": "FLV muxer",
+      "progress": "Progress reporting"
+    },
+    "notFoundNote": "Set STREAMING_TREE_FFMPEG_PATH, or install FFmpeg and make sure it is on PATH. Destinations cannot be started until a compatible FFmpeg is found.",
+    "incompatibleNote": "The FFmpeg found is missing a required capability, or is older than the minimum supported version. Destinations cannot be started until a compatible FFmpeg is available."
+  },
+  "branch": {
+    "heading": "Destination branches",
+    "tableHeadings": {
+      "destination": "Destination",
+      "status": "Status",
+      "restarts": "Restarts",
+      "progress": "Progress",
+      "actions": "Actions"
+    },
+    "noDestinations": "No destinations are configured yet. Add one from the dashboard.",
+    "state": {
+      "idle": "Not configured",
+      "blocked": "Blocked",
+      "waitingForIngest": "Waiting for input",
+      "starting": "Starting",
+      "live": "Sending",
+      "restarting": "Restarting",
+      "stopping": "Stopping",
+      "error": "Error"
+    },
+    "blockers": {
+      "platformDisabled": "This destination is disabled",
+      "outputServerMissing": "No server address is configured",
+      "streamKeyMissing": "No stream key is stored",
+      "credentialStoreUnavailable": "The secure credential store is not available",
+      "ffmpegMissing": "FFmpeg was not found",
+      "ffmpegIncompatible": "The FFmpeg found is not compatible",
+      "mediamtxNotReady": "The local ingest service is not ready",
+      "ingestNotReceiving": "No stream is currently being received from OBS"
+    },
+    "start": "Start",
+    "starting": "Starting...",
+    "stop": "Stop",
+    "stopping": "Stopping...",
+    "restart": "Restart",
+    "restarting": "Restarting...",
+    "startEnabled": "Start enabled destinations",
+    "stopAll": "Stop all outputs",
+    "restartCount_one": "{{count}} restart",
+    "restartCount_other": "{{count}} restarts",
+    "noProgressYet": "No output yet",
+    "outputTime": "Output time",
+    "outputSize": "Output size",
+    "speed": "Speed",
+    "startedAt": "Started",
+    "liveAt": "Sending since",
+    "confirmStart": {
+      "title": "Start outgoing streaming?",
+      "eligibleHeading": "Will start now:",
+      "skippedHeading": "Will be skipped:",
+      "bandwidthNote": "Outgoing bandwidth use increases once per destination started.",
+      "streamCopyNote": "No video is re-encoded: each destination receives the same encoded stream OBS already sends, copied as-is.",
+      "realTransmissionNote": "This begins real transmission to each started destination's platform.",
+      "confirm": "Start streaming",
+      "noneEligible": "No enabled destination is currently eligible to start."
+    },
+    "startSingleNote": "This begins real outgoing transmission to this destination's platform.",
+    "resultAccepted": "Started",
+    "resultConflict": "Already running"
   }
 }

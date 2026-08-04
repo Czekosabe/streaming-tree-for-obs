@@ -27,6 +27,36 @@ export function formatViewers(viewers: number | null, locale: string): string {
   return compactNumberFormatter(locale).format(viewers);
 }
 
+const byteCountFormatters = new Map<string, Intl.NumberFormat>();
+
+function byteCountFormatter(locale: string): Intl.NumberFormat {
+  const cached = byteCountFormatters.get(locale);
+  if (cached !== undefined) return cached;
+
+  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  byteCountFormatters.set(locale, formatter);
+  return formatter;
+}
+
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+
+/** 6_291_456 -> "6 MB" (locale-aware number, fixed unit label). */
+export function formatBytes(bytes: number, locale: string): string {
+  if (bytes <= 0) return `0 ${BYTE_UNITS[0]}`;
+
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    BYTE_UNITS.length - 1,
+  );
+  const value = bytes / 1024 ** exponent;
+  return `${byteCountFormatter(locale).format(value)} ${BYTE_UNITS[exponent]}`;
+}
+
+/** 1.02 -> "1.02x" with a locale-aware number. */
+export function formatSpeed(speed: number, locale: string): string {
+  return `${byteCountFormatter(locale).format(speed)}x`;
+}
+
 /** Split seconds into the parts a duration label needs. */
 export type DurationParts = {
   hours: number;

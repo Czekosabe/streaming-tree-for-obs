@@ -20,6 +20,8 @@ describe('mapping stable backend codes to localized messages', () => {
     ['credential_not_found', 'codes.credential_not_found'],
     ['credential_store_unavailable', 'codes.credential_store_unavailable'],
     ['credential_store_failure', 'codes.credential_store_failure'],
+    ['branch_not_running', 'codes.branch_not_running'],
+    ['branch_conflict', 'codes.branch_conflict'],
   ])('prefers the localized message for the %s code', (code, expected) => {
     const error = new ApiError('http', 'raw', {
       status: 400,

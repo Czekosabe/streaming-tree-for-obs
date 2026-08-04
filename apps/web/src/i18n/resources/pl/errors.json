@@ -14,6 +14,8 @@
     "platform_not_found": "Ten cel transmisji już nie istnieje.",
     "credential_not_found": "Dla tego celu nie zapisano żadnego poświadczenia.",
     "credential_store_unavailable": "Bezpieczny magazyn poświadczeń jest teraz niedostępny.",
-    "credential_store_failure": "Magazyn poświadczeń nie mógł zrealizować żądania."
+    "credential_store_failure": "Magazyn poświadczeń nie mógł zrealizować żądania.",
+    "branch_not_running": "Ten cel obecnie nie działa.",
+    "branch_conflict": "Ten cel ma już proces uruchamiający się, aktywny lub restartujący się."
   }
 }

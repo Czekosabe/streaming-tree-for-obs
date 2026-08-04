@@ -25,9 +25,10 @@ export type PlatformTranslationKey = ParseKeys<'platforms'>;
 /**
  * Status vocabulary used by the shared status badge.
  *
- * These describe SYSTEM state (is the backend reachable, is a check running),
- * not transmission state. No streaming engine exists, so nothing in the
- * application ever reports a `live` transmission.
+ * Originally SYSTEM state only (is the backend reachable, is a check
+ * running). Destination branches (see `models/branch-presentation.ts`) now
+ * also map onto this same vocabulary - `live` there means real, advancing
+ * FFmpeg output, never a claim that a provider has verified the stream.
  */
 export const PLATFORM_STATUSES = ['offline', 'starting', 'live', 'error'] as const;
 export type PlatformStatus = (typeof PLATFORM_STATUSES)[number];

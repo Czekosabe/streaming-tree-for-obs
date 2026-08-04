@@ -111,12 +111,99 @@
   },
   "page": {
     "title": "Transmisje",
-    "description": "Lokalny odbiór z OBS. Wychodzące gałęzie platform to późniejszy etap.",
+    "description": "Lokalny odbiór z OBS oraz wychodzące gałęzie docelowe.",
     "componentHeading": "Usługa odbioru",
-    "destinationsHeading": "Wychodzące gałęzie platform",
-    "destinationsPlanned": "Przesyłanie odebranego strumienia dalej na Twitcha, YouTube, Kicka i TikToka wymaga osobnego procesu FFmpeg dla każdego celu. To następny etap i nie jest jeszcze zaimplementowane.",
+    "destinationsHeading": "Gałęzie docelowe",
     "lastError": "Ostatni błąd",
     "noError": "Nie zgłoszono błędów.",
     "diagnostics": "Diagnostyka"
+  },
+  "ffmpeg": {
+    "heading": "Zależność FFmpeg",
+    "state": {
+      "missing": "Nie znaleziono",
+      "ready": "Gotowy",
+      "incompatible": "Niezgodny",
+      "error": "Błąd"
+    },
+    "detectedVersion": "Wykryta wersja",
+    "minimumVersion": "Minimalna obsługiwana wersja",
+    "source": "Źródło",
+    "sourceOverride": "Wskazana ścieżka (STREAMING_TREE_FFMPEG_PATH)",
+    "sourceBundled": "Dołączony do aplikacji",
+    "sourcePath": "Znaleziony w PATH",
+    "sourceMissing": "Nie znaleziono",
+    "capabilitiesHeading": "Możliwości",
+    "capability": {
+      "rtmpInput": "Wejście RTMP",
+      "rtmpOutput": "Wyjście RTMP",
+      "rtmpsOutput": "Wyjście RTMPS",
+      "flvMuxer": "Muxer FLV",
+      "progress": "Raportowanie postępu"
+    },
+    "notFoundNote": "Ustaw zmienną STREAMING_TREE_FFMPEG_PATH albo zainstaluj FFmpeg i upewnij się, że jest w PATH. Celów nie można uruchomić, dopóki nie znajdzie się zgodny FFmpeg.",
+    "incompatibleNote": "Znaleziony FFmpeg nie ma wymaganej możliwości albo jest starszy niż minimalna obsługiwana wersja. Celów nie można uruchomić, dopóki nie będzie dostępny zgodny FFmpeg."
+  },
+  "branch": {
+    "heading": "Gałęzie docelowe",
+    "tableHeadings": {
+      "destination": "Cel",
+      "status": "Stan",
+      "restarts": "Restarty",
+      "progress": "Postęp",
+      "actions": "Działania"
+    },
+    "noDestinations": "Nie skonfigurowano jeszcze żadnego celu. Dodaj go z pulpitu.",
+    "state": {
+      "idle": "Nieskonfigurowana",
+      "blocked": "Zablokowana",
+      "waitingForIngest": "Oczekiwanie na sygnał",
+      "starting": "Uruchamianie",
+      "live": "Wysyłanie",
+      "restarting": "Ponowne uruchamianie",
+      "stopping": "Zatrzymywanie",
+      "error": "Błąd"
+    },
+    "blockers": {
+      "platformDisabled": "Ten cel jest wyłączony",
+      "outputServerMissing": "Nie skonfigurowano adresu serwera",
+      "streamKeyMissing": "Nie zapisano klucza transmisji",
+      "credentialStoreUnavailable": "Bezpieczny magazyn poświadczeń jest niedostępny",
+      "ffmpegMissing": "Nie znaleziono FFmpeg",
+      "ffmpegIncompatible": "Znaleziony FFmpeg jest niezgodny",
+      "mediamtxNotReady": "Lokalna usługa odbioru nie jest gotowa",
+      "ingestNotReceiving": "Obecnie nie jest odbierany żaden strumień z OBS"
+    },
+    "start": "Uruchom",
+    "starting": "Uruchamianie...",
+    "stop": "Zatrzymaj",
+    "stopping": "Zatrzymywanie...",
+    "restart": "Uruchom ponownie",
+    "restarting": "Ponowne uruchamianie...",
+    "startEnabled": "Uruchom włączone cele",
+    "stopAll": "Zatrzymaj wszystkie transmisje",
+    "restartCount_one": "{{count}} restart",
+    "restartCount_few": "{{count}} restarty",
+    "restartCount_many": "{{count}} restartów",
+    "restartCount_other": "{{count}} restartu",
+    "noProgressYet": "Brak jeszcze danych wyjściowych",
+    "outputTime": "Czas wyjścia",
+    "outputSize": "Rozmiar wyjścia",
+    "speed": "Szybkość",
+    "startedAt": "Uruchomiono",
+    "liveAt": "Wysyła od",
+    "confirmStart": {
+      "title": "Uruchomić transmisję wychodzącą?",
+      "eligibleHeading": "Zostaną uruchomione teraz:",
+      "skippedHeading": "Zostaną pominięte:",
+      "bandwidthNote": "Wykorzystanie wychodzącego pasma wzrasta o jeden cel na każdy uruchomiony cel.",
+      "streamCopyNote": "Żaden obraz nie jest ponownie kodowany: każdy cel otrzymuje ten sam zakodowany strumień, który OBS już wysyła, skopiowany bez zmian.",
+      "realTransmissionNote": "To rozpoczyna rzeczywistą transmisję na platformę każdego uruchomionego celu.",
+      "confirm": "Uruchom transmisję",
+      "noneEligible": "Żaden włączony cel nie kwalifikuje się obecnie do uruchomienia."
+    },
+    "startSingleNote": "To rozpoczyna rzeczywistą transmisję wychodzącą na platformę tego celu.",
+    "resultAccepted": "Uruchomiono",
+    "resultConflict": "Już działa"
   }
 }
