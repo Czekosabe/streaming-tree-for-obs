@@ -48,6 +48,9 @@ const FIELD_RULE_KEYS: Record<string, FieldMessageKey> = {
   'displayName:too_long': 'platforms:validation.displayNameTooLong',
   'providerId:unsupported': 'platforms:validation.providerUnsupported',
   'sortOrder:invalid': 'platforms:validation.sortOrderInvalid',
+  'streamKey:required': 'platforms:validation.streamKeyRequired',
+  'streamKey:too_long': 'platforms:validation.streamKeyTooLong',
+  'streamKey:invalid': 'platforms:validation.streamKeyInvalid',
 };
 
 /**

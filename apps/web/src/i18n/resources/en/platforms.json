@@ -22,7 +22,8 @@
     "streamingNotImplemented": "Streaming engine not implemented",
     "editMetadata": "Edit metadata for {{platform}}",
     "openSettings": "Open settings for {{platform}}",
-    "unknownProvider": "This destination uses the provider \"{{providerId}}\", which this version does not recognise. Update the application or delete the destination."
+    "unknownProvider": "This destination uses the provider \"{{providerId}}\", which this version does not recognise. Update the application or delete the destination.",
+    "streamKeyLabel": "Stream key"
   },
   "fields": {
     "category": "Category",
@@ -53,7 +54,7 @@
     "displayNamePlaceholder": "e.g. Main Twitch channel",
     "submit": "Add platform",
     "creating": "Adding...",
-    "noCredentialsNote": "No stream key is requested or stored. Credentials will be handled by the operating system credential store in a later stage."
+    "noCredentialsNote": "No stream key is requested here. Add it from this destination's settings after creating it, once you know its display name."
   },
   "settings": {
     "title": "Platform settings",
@@ -81,6 +82,37 @@
     "displayNameTooLong": "The display name cannot exceed {{max}} characters.",
     "providerRequired": "Select a platform.",
     "providerUnsupported": "This platform is not supported.",
-    "sortOrderInvalid": "Enter a sort order between 0 and 10000."
+    "sortOrderInvalid": "Enter a sort order between 0 and 10000.",
+    "streamKeyRequired": "Enter a stream key.",
+    "streamKeyTooLong": "The stream key exceeds the maximum allowed size.",
+    "streamKeyInvalid": "The stream key contains characters that are not allowed."
+  },
+  "credentials": {
+    "sectionTitle": "Destination stream key",
+    "explanation": "Stored in your operating system's credential store (Windows Credential Manager, macOS Keychain, or Linux Secret Service). Streaming Tree never displays it again after you save it.",
+    "notVerifiedNote": "A stored key has not been checked against the platform - only that something was saved.",
+    "localIngestDistinction": "This is not the same as the local ingest path (\"live\") OBS connects to below. That path is a route name, not a secret, and is unrelated to this key.",
+    "replaceNote": "Saving a new key replaces the previous one.",
+    "deleteNote": "Deleting the key prevents outgoing streaming to this destination until a new one is added.",
+    "statusLabel": "Status",
+    "checking": "Checking...",
+    "unknown": "Status unknown",
+    "stored": "Stored",
+    "missing": "Missing",
+    "storeUnavailable": "Secure storage unavailable",
+    "storeUnavailableNote": "Secure credential storage is not available on this system right now. The rest of the application is unaffected, but a stream key cannot be saved until it becomes available.",
+    "inputLabel": "New stream key",
+    "inputPlaceholder": "Paste the stream key from your platform's dashboard",
+    "save": "Save key",
+    "saving": "Saving...",
+    "saved": "Stream key saved",
+    "delete": "Delete key",
+    "deleting": "Deleting...",
+    "deleted": "Stream key deleted",
+    "deleteDialog": {
+      "title": "Delete this stream key?",
+      "message": "The stored stream key for \"{{platform}}\" will be permanently removed from the operating system credential store. Outgoing streaming to this destination will not be possible until a new key is added. This cannot be undone.",
+      "confirm": "Delete key"
+    }
   }
 }

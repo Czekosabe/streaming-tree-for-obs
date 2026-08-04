@@ -10,6 +10,10 @@
   "codes": {
     "not_found": "This API endpoint does not exist.",
     "method_not_allowed": "This endpoint does not accept the HTTP method that was used.",
-    "internal_error": "The server encountered an unexpected error."
+    "internal_error": "The server encountered an unexpected error.",
+    "platform_not_found": "This destination no longer exists.",
+    "credential_not_found": "No credential is stored for this destination.",
+    "credential_store_unavailable": "The secure credential store is not available right now.",
+    "credential_store_failure": "The credential store could not complete the request."
   }
 }

@@ -2,7 +2,9 @@ import { Ban, Play, Settings2, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
+import { useCredentialStatusQuery } from '@/hooks/use-credentials';
 import { cn } from '@/lib/cn';
+import { presentCredentialStatus } from '@/models/credential-presentation';
 import { categoryFieldLabelKey, providerGlyphClass } from '@/models/provider-labels';
 
 import { Button, IconButton } from '../ui/Button';
@@ -43,6 +45,13 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
 
   const hasTitle = platform.metadata.title.trim() !== '';
   const hasCategory = platform.metadata.category.trim() !== '';
+
+  // Non-sensitive: configured/missing status only, never the key itself.
+  const credentialStatus = useCredentialStatusQuery(platform.id);
+  const credentialPresentation = presentCredentialStatus(
+    credentialStatus.data,
+    credentialStatus.isLoading,
+  );
 
   return (
     <article
@@ -125,6 +134,14 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
             </dt>
             <dd className="mt-0.5 truncate text-xs text-ink-muted">
               {t('platforms:card.offlineConfigured')}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              {t('platforms:card.streamKeyLabel')}
+            </dt>
+            <dd className="mt-0.5 truncate text-xs text-ink-muted">
+              {t(credentialPresentation.labelKey)}
             </dd>
           </div>
         </dl>

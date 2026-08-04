@@ -10,6 +10,10 @@
   "codes": {
     "not_found": "Ten endpoint API nie istnieje.",
     "method_not_allowed": "Ten endpoint nie akceptuje użytej metody HTTP.",
-    "internal_error": "Serwer napotkał nieoczekiwany błąd."
+    "internal_error": "Serwer napotkał nieoczekiwany błąd.",
+    "platform_not_found": "Ten cel transmisji już nie istnieje.",
+    "credential_not_found": "Dla tego celu nie zapisano żadnego poświadczenia.",
+    "credential_store_unavailable": "Bezpieczny magazyn poświadczeń jest teraz niedostępny.",
+    "credential_store_failure": "Magazyn poświadczeń nie mógł zrealizować żądania."
   }
 }

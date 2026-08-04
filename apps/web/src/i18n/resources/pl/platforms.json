@@ -22,7 +22,8 @@
     "streamingNotImplemented": "Silnik transmisji nie jest zaimplementowany",
     "editMetadata": "Edytuj metadane platformy {{platform}}",
     "openSettings": "Otwórz ustawienia platformy {{platform}}",
-    "unknownProvider": "Ten cel korzysta z platformy „{{providerId}}”, której ta wersja nie rozpoznaje. Zaktualizuj aplikację albo usuń ten cel."
+    "unknownProvider": "Ten cel korzysta z platformy „{{providerId}}”, której ta wersja nie rozpoznaje. Zaktualizuj aplikację albo usuń ten cel.",
+    "streamKeyLabel": "Klucz transmisji"
   },
   "fields": {
     "category": "Kategoria",
@@ -53,7 +54,7 @@
     "displayNamePlaceholder": "np. Główny kanał Twitch",
     "submit": "Dodaj platformę",
     "creating": "Dodawanie...",
-    "noCredentialsNote": "Klucz transmisji nie jest pobierany ani zapisywany. Poświadczenia trafią do magazynu systemu operacyjnego na późniejszym etapie."
+    "noCredentialsNote": "Klucz transmisji nie jest tu wymagany. Dodaj go w ustawieniach tego celu po jego utworzeniu, gdy znasz już jego nazwę wyświetlaną."
   },
   "settings": {
     "title": "Ustawienia platformy",
@@ -81,6 +82,37 @@
     "displayNameTooLong": "Nazwa wyświetlana może mieć najwyżej {{max}} znaków.",
     "providerRequired": "Wybierz platformę.",
     "providerUnsupported": "Ta platforma nie jest obsługiwana.",
-    "sortOrderInvalid": "Podaj kolejność z zakresu od 0 do 10000."
+    "sortOrderInvalid": "Podaj kolejność z zakresu od 0 do 10000.",
+    "streamKeyRequired": "Podaj klucz transmisji.",
+    "streamKeyTooLong": "Klucz transmisji przekracza maksymalny dopuszczalny rozmiar.",
+    "streamKeyInvalid": "Klucz transmisji zawiera niedozwolone znaki."
+  },
+  "credentials": {
+    "sectionTitle": "Klucz transmisji dla tego celu",
+    "explanation": "Zapisywany w magazynie poświadczeń systemu operacyjnego (Windows Credential Manager, macOS Keychain lub Linux Secret Service). Streaming Tree nigdy nie wyświetla go ponownie po zapisaniu.",
+    "notVerifiedNote": "Zapisany klucz nie został zweryfikowany względem platformy - wiadomo jedynie, że coś zostało zapisane.",
+    "localIngestDistinction": "To nie to samo, co lokalna ścieżka odbioru („live”), z którą łączy się OBS poniżej. Ta ścieżka to nazwa trasy, a nie sekret, i nie ma związku z tym kluczem.",
+    "replaceNote": "Zapisanie nowego klucza zastępuje poprzedni.",
+    "deleteNote": "Usunięcie klucza uniemożliwi transmisję do tego celu, dopóki nie zostanie dodany nowy.",
+    "statusLabel": "Stan",
+    "checking": "Sprawdzanie...",
+    "unknown": "Stan nieznany",
+    "stored": "Zapisany",
+    "missing": "Brak",
+    "storeUnavailable": "Bezpieczny magazyn niedostępny",
+    "storeUnavailableNote": "Bezpieczny magazyn poświadczeń jest teraz niedostępny w tym systemie. Reszta aplikacji działa bez zmian, ale nie można zapisać klucza transmisji, dopóki magazyn nie będzie dostępny.",
+    "inputLabel": "Nowy klucz transmisji",
+    "inputPlaceholder": "Wklej klucz transmisji z panelu swojej platformy",
+    "save": "Zapisz klucz",
+    "saving": "Zapisywanie...",
+    "saved": "Klucz transmisji zapisany",
+    "delete": "Usuń klucz",
+    "deleting": "Usuwanie...",
+    "deleted": "Klucz transmisji usunięty",
+    "deleteDialog": {
+      "title": "Usunąć ten klucz transmisji?",
+      "message": "Zapisany klucz transmisji dla „{{platform}}” zostanie trwale usunięty z magazynu poświadczeń systemu operacyjnego. Transmisja do tego celu nie będzie możliwa, dopóki nie zostanie dodany nowy klucz. Tej operacji nie można cofnąć.",
+      "confirm": "Usuń klucz"
+    }
   }
 }

@@ -13,6 +13,10 @@ const CODE_MESSAGE_KEYS = new Map<string, ParseKeys<'errors'>>([
   ['not_found', 'codes.not_found'],
   ['method_not_allowed', 'codes.method_not_allowed'],
   ['internal_error', 'codes.internal_error'],
+  ['platform_not_found', 'codes.platform_not_found'],
+  ['credential_not_found', 'codes.credential_not_found'],
+  ['credential_store_unavailable', 'codes.credential_store_unavailable'],
+  ['credential_store_failure', 'codes.credential_store_failure'],
 ]);
 
 /**

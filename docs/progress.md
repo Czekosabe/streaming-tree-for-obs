@@ -2346,3 +2346,210 @@ configured/missing/not-available status, a password-style input to set a new
 key, replace and delete actions with an application-styled delete
 confirmation, and English/Polish translations - followed by the documentation
 pass that closes out this stage.
+
+## 2026-08-04 10:29 — feat(web): manage destination stream keys
+
+### Status
+Completed
+
+### Scope
+Frontend controls for the credential-store foundation added in the previous
+entry: a stream-key section in the platform settings dialog, a non-sensitive
+status indicator on each platform card, and the Zod schemas, API transport,
+TanStack Query hooks and English/Polish translations behind them. No stream
+key is ever cached, logged, or placed anywhere the backend rules forbid.
+
+### Changes
+
+**`apps/web/src/api/credential-schemas.ts`** (new) - `credentialStatusSchema`:
+`{ streamKey: { configured }, store: { available } }`. There is no field for
+a value anywhere in this contract.
+
+**`apps/web/src/api/credentials.ts`** (new) - thin transport:
+`fetchCredentialStatus`, `setStreamKey`, `deleteStreamKey`, matching the
+`GET/PUT/DELETE /api/platforms/{id}/credentials...` routes. No function here
+can return a stored key's value - the backend never sends one.
+
+**`apps/web/src/hooks/use-credentials.ts`** (new) - `credentialKeys.status(id)`
+(scoped per platform, mirroring `platformKeys`), `useCredentialStatusQuery`,
+`useSetStreamKeyMutation`, `useDeleteStreamKeyMutation`. The set mutation is
+configured with `gcTime: 0` (see Technical decisions) and its `onSuccess`
+caches only the parsed API response, never `variables.streamKey`.
+`apps/web/src/hooks/credential-cache.ts` (new) holds the one pure cache
+transform (`markStreamKeyDeleted`), mirroring `platform-cache.ts`.
+
+**`apps/web/src/components/platforms/credential-validation.ts`** (new) -
+`validateStreamKeyDraft`: client-side mirror of the backend's trim/empty/
+control-character/newline/max-length rules, for immediate feedback only; the
+backend remains the authority and validates the same rules again. Mirrors
+`add-platform-validation.ts`.
+
+**`apps/web/src/models/credential-presentation.ts`** (new) -
+`presentCredentialStatus` maps status onto a label key and tone: "Checking",
+"Stored", "Missing", or a store-unavailable message - never "Valid",
+"Connected" or "Authenticated", since a stored key is never checked against
+the platform.
+
+**`apps/web/src/components/platforms/StreamKeySection.tsx`** (new) - the UI:
+current status badge, an explanation of where the key is stored and that it
+is never shown again, an explicit note that a stored key is not verified,
+an explicit note distinguishing this key from the local MediaMTX ingest path
+("live") shown elsewhere in the same dialog, a password-style input to set a
+new key, a delete action behind `ConfirmDialog` (never `window.confirm`), and
+a store-unavailable banner that disables the input rather than pretending the
+store is reachable. Embedded in `PlatformSettingsDialog.tsx` as `<StreamKeySection
+key={platform.id} platform={platform} />` - keyed by platform id so its input,
+status and delete-confirmation state can never leak from one platform to
+another, and so it is cleared whenever the dialog closes (the whole subtree,
+including this section, unmounts when the parent's `platform` prop becomes
+`null` - see the comment at the call site for why that already holds
+regardless of an unrelated pre-existing staleness question in the outer
+dialog's own local state, which this entry does not touch).
+
+**`apps/web/src/components/platforms/PlatformCard.tsx`**: a third status row,
+"Stream key: Stored / Missing / ...", backed by its own
+`useCredentialStatusQuery` call - non-sensitive by construction, since the
+query result never contains anything but the two booleans.
+
+**Translations** (`en`/`pl`, `platforms.json` and `errors.json`): a new
+`credentials` section (status wording, explanation text, delete-dialog copy),
+three new `validation.streamKey*` messages, a `card.streamKeyLabel` key, and
+four new backend error codes (`platform_not_found`, `credential_not_found`,
+`credential_store_unavailable`, `credential_store_failure`) mapped in
+`api-error-message.ts` the same way the existing codes are. The Add Platform
+dialog's `noCredentialsNote` was reworded: it used to promise credential
+storage "in a later stage" - this entry is that stage, so it now points at
+where the key is actually managed instead.
+
+**`apps/web/src/lib/field-error-rules.ts`**: three new `streamKey:<rule>`
+mappings, reusing the existing `field:rule → message key` pattern rather than
+adding a parallel one - this is the frontend half of the backend's decision
+(previous entry) to reuse `platform.ValidationError` for stream-key
+validation failures.
+
+**`apps/web/src/models/platform-constraints.ts`**: `STREAM_KEY_MAX_LENGTH =
+4096`, matching `MaxStreamKeyBytes` in the backend (a character count here
+versus a byte count there - see the comment on the constant).
+
+### Files changed
+- `apps/web/src/api/credential-schemas.ts` (new)
+- `apps/web/src/api/credential-schemas.test.ts` (new)
+- `apps/web/src/api/credentials.ts` (new)
+- `apps/web/src/hooks/use-credentials.ts` (new)
+- `apps/web/src/hooks/use-credentials.test.ts` (new)
+- `apps/web/src/hooks/credential-cache.ts` (new)
+- `apps/web/src/hooks/credential-cache.test.ts` (new)
+- `apps/web/src/components/platforms/credential-validation.ts` (new)
+- `apps/web/src/components/platforms/credential-validation.test.ts` (new)
+- `apps/web/src/models/credential-presentation.ts` (new)
+- `apps/web/src/models/credential-presentation.test.ts` (new)
+- `apps/web/src/components/platforms/StreamKeySection.tsx` (new)
+- `apps/web/src/components/platforms/PlatformSettingsDialog.tsx`
+- `apps/web/src/components/platforms/PlatformCard.tsx`
+- `apps/web/src/lib/field-error-rules.ts`
+- `apps/web/src/lib/field-error-rules.test.ts`
+- `apps/web/src/lib/api-error-message.ts`
+- `apps/web/src/lib/api-error-message.test.ts`
+- `apps/web/src/models/platform-constraints.ts`
+- `apps/web/src/i18n/resources/en/platforms.json`
+- `apps/web/src/i18n/resources/pl/platforms.json`
+- `apps/web/src/i18n/resources/en/errors.json`
+- `apps/web/src/i18n/resources/pl/errors.json`
+- `docs/progress.md`
+
+### Technical decisions
+
+1. **The set-stream-key mutation uses `gcTime: 0` and resets itself in
+   `onSettled`, regardless of success or failure.** TanStack Query keeps a
+   mutation's `variables` - here, the stream key the operator just typed -
+   in both the shared mutation cache (visible via React Query Devtools) and
+   the hook's own returned state, for the default `gcTime` of five minutes,
+   or until the observer resets or a new mutation runs. A secret must not
+   linger in either place. `gcTime: 0` makes the underlying cache entry
+   eligible for collection as soon as it is unobserved; calling `.reset()`
+   in `onSettled` additionally clears the hook's own `variables`/`data`
+   immediately, which `gcTime` alone does not guarantee while the component
+   stays mounted and the mutation stays "observed". The error message shown
+   to the operator is captured into a plain local string in `onError`
+   *before* this reset runs, so resetting the mutation cannot make an error
+   banner vanish out from under the user.
+2. **`StreamKeySection` is a `key`-ed child, not inline state in
+   `PlatformSettingsDialog`.** The parent dialog is rendered unconditionally
+   by `DashboardPage` with `platform` toggling between an object and `null`;
+   its own `useState` values do not reinitialize just because a *different*
+   platform is later selected on the same mounted instance, since
+   `useState`'s initializer only runs once. Rather than touch that
+   pre-existing behavior (out of scope here, and not something this entry's
+   automated checks cover), `StreamKeySection` is given `key={platform.id}`
+   so React remounts it fresh - clearing its input, status query and
+   delete-confirmation state - both when the dialog closes (the surrounding
+   `Modal` unmounts entirely, since `PlatformSettingsDialog` returns `null`
+   before rendering it whenever `platform` is `null`) and if a different
+   platform were ever opened directly.
+3. **Credential status is fetched per platform, including once per visible
+   card**, rather than batched into the platform-list response. This adds
+   one request per rendered card, judged acceptable for a local desktop
+   panel with a handful of destinations; `staleTime: 30_000` on the query
+   keeps the settings dialog and a card's own indicator from doubling the
+   request when both are showing the same platform. No `refetchInterval` is
+   set anywhere in this stage: a credential check must not repeatedly touch
+   the OS credential store just because a card or dialog is left open.
+4. **The Add Platform dialog's credential note was reworded, not removed.**
+   It previously promised storage "in a later stage"; leaving that sentence
+   unchanged after this entry would have made it quietly false. It now
+   points at where the key is actually managed instead.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed - 2 languages, 8 namespaces |
+| Frontend typecheck | `npm run typecheck` | Passed - 0 errors |
+| Frontend lint | `npm run lint` | Passed - 0 errors, 0 warnings |
+| Frontend tests | `npm run test -- --run` | Passed - 21 files, 279 tests |
+| Frontend build | `npm run build` | Passed |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 8 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+No manual testing was performed: this entry's UI was not opened in a browser,
+per this stage's instruction to skip manual browser/OBS/platform testing.
+Typecheck, lint and the test suite verify the code is correct and internally
+consistent; they do not confirm the dialog renders or behaves as intended
+when actually clicked through.
+
+### Known limitations
+
+- **This UI has not been exercised in a browser.** Automated checks cover
+  the pure logic (schemas, validation, cache transforms, presentation
+  mapping, error-code mapping) and typecheck/lint/build the component itself,
+  but nothing here proves the section renders correctly, that focus and
+  keyboard behavior work, or that the delete-confirmation flow feels right
+  in practice.
+- **No component-rendering test exists for `StreamKeySection` or any other
+  dialog in this codebase** - this project's frontend tests are exclusively
+  pure-logic (`vitest`, no `@testing-library/react`). Behaviors that are
+  genuinely about component interaction - the input clearing after a
+  successful save, the delete-confirmation dialog opening and closing, the
+  mutation's `.reset()` actually firing - are exercised indirectly (the
+  underlying pure functions and cache operations are tested directly) but
+  not through a rendered component. Introducing a component-testing
+  dependency was judged out of scope for this entry; it would be a
+  project-wide testing-strategy decision, not a credential-store one.
+- The platform-card credential indicator adds one request per card; see
+  Technical decisions #3 for why this was accepted rather than batched.
+- All product limitations from previous entries still stand, including that
+  FFmpeg destination streaming is still not implemented - a stored key
+  cannot yet be used to start an outgoing stream.
+
+### Next step
+
+Documentation: update `README.md`, `docs/project-overview.md`, `config/README.md`
+and `THIRD_PARTY_NOTICES.md` (already touched in the previous entry, but not
+yet updated to describe the frontend surface added here) to describe the
+credential-store feature end to end, and mark stage 5 as completed in the
+roadmap. That closes out this stage; stage 6 (FFmpeg destination branches) is
+next.

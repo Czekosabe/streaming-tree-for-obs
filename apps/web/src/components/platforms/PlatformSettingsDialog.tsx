@@ -14,6 +14,8 @@ import { useDeletePlatformMutation, useUpdatePlatformMutation } from '@/hooks/us
 import { resolveApiErrorMessage } from '@/lib/api-error-message';
 import { DISPLAY_NAME_MAX_LENGTH, SORT_ORDER_MAX } from '@/models/platform-constraints';
 
+import { StreamKeySection } from './StreamKeySection';
+
 type PlatformSettingsDialogProps = {
   platform: ConfiguredPlatform | null;
   onClose: () => void;
@@ -232,6 +234,12 @@ export function PlatformSettingsDialog({
             )}
           </p>
         </form>
+
+        {/* Keyed by platform id so its input, status and confirmation state
+            never leak across platforms - closing the dialog (platform becomes
+            null) unmounts it entirely, and opening a different platform
+            remounts it fresh even if this dialog's own instance persists. */}
+        <StreamKeySection key={platform.id} platform={platform} />
       </Modal>
 
       <ConfirmDialog

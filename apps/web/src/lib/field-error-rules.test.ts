@@ -48,6 +48,19 @@ describe('violation to message mapping', () => {
     );
   });
 
+  it('maps stream-key credential rules', () => {
+    expect(messageForViolation('streamKey', { rule: 'required', params: {} })?.key).toBe(
+      'platforms:validation.streamKeyRequired',
+    );
+    expect(messageForViolation('streamKey', { rule: 'too_long', params: { max: 4096 } })).toEqual({
+      key: 'platforms:validation.streamKeyTooLong',
+      params: { max: 4096 },
+    });
+    expect(messageForViolation('streamKey', { rule: 'invalid', params: {} })?.key).toBe(
+      'platforms:validation.streamKeyInvalid',
+    );
+  });
+
   it('returns null for a rule this build does not know', () => {
     expect(messageForViolation('title', { rule: 'invented_later', params: {} })).toBeNull();
   });
