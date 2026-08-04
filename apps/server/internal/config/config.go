@@ -48,6 +48,11 @@ type Config struct {
 
 	// FFmpeg groups the destination-branch runtime settings.
 	FFmpeg FFmpegConfig
+
+	// TwitchClientID is the environment override for the Twitch Client ID.
+	// Empty means no override - see internal/domain/account.SourceEnvironment
+	// and internal/domain/account.SourceDatabase.
+	TwitchClientID string
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -175,6 +180,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.FFmpeg = ffmpegCfg
+
+	if raw, ok := lookup("STREAMING_TREE_TWITCH_CLIENT_ID"); ok {
+		cfg.TwitchClientID = strings.TrimSpace(raw)
+	}
 
 	return cfg, nil
 }

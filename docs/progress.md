@@ -3866,3 +3866,122 @@ own commits, next.
 ### Next step
 Twitch device authorization: the OAuth/Helix client, the device-flow
 attempt manager, and the HTTP surface for integration config, device flow
+and connected accounts.
+
+## 2026-08-04 16:20 — feat(server): add Twitch device authorization and metadata publishing
+
+### Status
+Completed
+
+### Scope
+The Twitch provider adapter, the in-memory device-flow orchestration, and
+metadata publish preview/publish - the remaining backend half of Stage 7A.
+The task's suggested plan lists device authorization and metadata
+publishing as two separate commits; here they land as one, because both the
+HTTP handler file (`internal/httpapi/accounts.go`) and the Twitch-specific
+service file (`internal/provider/twitch/metadata.go`) hold both concerns
+together by design (see "Split from the suggested plan" in the previous
+entry for the same reasoning) - splitting them apart would mean either two
+half-working intermediate commits or an artificial partial-file split, both
+worse than one honestly-scoped commit. Recorded here rather than silently
+diverging from the suggested plan.
+
+### Changes
+
+**`internal/provider/twitch`** (new package) — a small HTTP client
+(`client.go`: bounded timeouts, a capped response reader, redirect limits,
+production endpoints as Go constants with `Options` overrides only reachable
+from Go test code, never from an HTTP request); `oauth_client.go`
+(device-flow start/poll matching Twitch's actual `{status,message}` error
+shape - not a generic OAuth `error` field - refresh with no client secret,
+validate, revoke); `api_client.go` (Get Users, Get/Modify Channel
+Information sending only the four verified fields, Search Categories
+tolerating a malformed single result rather than failing the whole search);
+`adapter.go` (implements `account.Provider`); `metadata.go`
+(`MetadataService`: category search, publish preview, and publish, all
+routed through `account.Service.WithFreshToken` so the single-flight-refresh
+-and-retry-once policy applies uniformly).
+
+**`internal/runtime/deviceflow`** (new package) — `Manager`: the attempt
+state machine (`requesting_code` → `waiting_for_user` → `polling` →
+terminal), exactly one active attempt per provider (a second `StartAttempt`
+is `ErrConflict`), bounded lifetime, honors the provider's polling interval
+and backs off further on `slow_down`, immediate cancellation, and a
+`Snapshot` type that structurally excludes the device code (no field for it
+exists at all - not "sanitized out," never present).
+
+**HTTP** (`internal/httpapi/accounts.go`, new) — the full route set from
+the task: `GET/PUT /api/integrations/twitch/config`,
+`POST /api/integrations/twitch/device-flow` +
+`GET/DELETE .../device-flow/{id}`, `GET /api/connected-accounts` +
+`GET/DELETE .../{id}`, `POST .../{id}/validate`, `POST .../{id}/reconnect`,
+`GET .../{id}/twitch/categories`,
+`GET/PUT/DELETE /api/platforms/{id}/connected-account`. Unknown-field
+rejection (already built into `decodeJSON`'s `DisallowUnknownFields`) is
+what makes "no client secret, no token, no device code accepted" true
+without any bespoke field-blocklist code - the response structs simply have
+no such field to decode into.
+
+**Config** — `STREAMING_TREE_TWITCH_CLIENT_ID`, resolved before database
+lookup, matching the task's precedence order.
+
+**Wiring** — both `cmd/server/main.go` and its `-tags integration` twin
+(`cmd/testserver/main.go`) now construct the account service, the device-flow
+manager and the Twitch metadata service identically; the test server's one
+difference (besides the fake credential store) is two env vars
+(`STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL` /
+`_API_BASE_URL`), read directly via `os.Getenv` inside the build-tag-gated
+file itself - never through `internal/config`, so there is no path by which
+a production build could recognize them.
+
+### A real bug found by testing, fixed here
+
+`deviceflow.Manager`'s retention-cleanup timer (keeping a finished attempt's
+snapshot readable for a few minutes) was accidentally tied to the same
+lifecycle-cancellation signal used to stop active polling. On `Shutdown`,
+every just-finished attempt was deleted from the map immediately instead of
+staying briefly readable, because the cleanup goroutine's `select` treated
+`Shutdown`'s cancellation as "stop waiting, delete now." Fixed by decoupling
+the retention timer from the manager's lifecycle entirely - it is a bare
+`time.Sleep`, not tracked by the shutdown `WaitGroup` either, so `Shutdown`
+still returns promptly and does not block on a multi-minute timer. Caught by
+`TestShutdownStopsAllActiveAttempts`.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed |
+| Backend static analysis | `go vet ./...` | Passed |
+| Backend build | `go build ./...` | Passed |
+| Integration binary builds under its tag | `go build -tags integration ./cmd/testserver` | Passed |
+| Backend tests | `go test ./...` | Passed (new: `internal/provider/twitch` - 21 tests against a real `httptest` fake, covering every documented device-flow status, no-client-secret-on-refresh, rate-limit header parsing; `internal/runtime/deviceflow` - 9 tests; `internal/httpapi` - device-flow/integration-config/account-link HTTP tests plus a dedicated access-log secret-leakage test) |
+
+### Known limitations
+- No real Twitch OAuth flow has been run (task explicitly forbids this in
+  automated work); real-provider verification is scoped to the optional,
+  explicitly opt-in smoke test the task describes, which was not run - see
+  the final report.
+
+Metadata publishing itself is included in this same commit:
+`GET /api/platforms/{id}/metadata/publish-preview` and
+`POST /api/platforms/{id}/metadata/publish` (both in
+`internal/httpapi/accounts.go`). Publish takes no request body - it always
+publishes whatever is currently saved in SQLite, never an unvalidated
+frontend draft, per the task's explicit requirement. A non-empty blocker
+list is rendered as a normal `200 {status:"blocked", blockers}` body -
+mirroring stage 6's branch-start precedent - not an HTTP error, since
+"not eligible to publish right now" is a structured, expected answer, not a
+failure.
+
+### Known limitations
+- No real Twitch OAuth flow has been run (task explicitly forbids this in
+  automated work); real-provider verification is scoped to the optional,
+  explicitly opt-in smoke test the task describes, which was not run - see
+  the final report. Publish has likewise not been exercised against a real
+  Twitch account outside the local integration script, still to come.
+
+### Next step
+The frontend: Connected Accounts settings, the device-flow modal, platform
+settings account linking, and the metadata editor's category picker and
+publish panel.

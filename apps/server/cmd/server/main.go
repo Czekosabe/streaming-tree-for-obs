@@ -1,6 +1,7 @@
 // Command server starts the Streaming Tree REST API: platform configuration,
-// MediaMTX supervision, the destination-credential store and destination
-// branch supervision are all wired here. OAuth-based connectors and the
+// MediaMTX supervision, the destination-credential store, destination
+// branch supervision, and the connected-account/Twitch integration are all
+// wired here. YouTube, Kick and TikTok account integrations and the
 // engagement platform are still separate, later stages.
 package main
 
@@ -16,11 +17,14 @@ import (
 
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/domain/account"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
+	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/runtime/branch"
+	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
 	"github.com/streaming-tree/server/internal/secrets"
@@ -87,9 +91,50 @@ func run() error {
 	// Opening the OS credential store is deferred to first use (see
 	// secrets.NewKeyringStore), so constructing it here never blocks startup
 	// or prompts, even on a system where no credential store is available.
-	credentialService := credential.NewService(secrets.NewKeyringStore())
+	// One shared store instance backs both destination stream keys and
+	// connected-account OAuth token bundles - different SecretType
+	// namespaces, same underlying OS credential store.
+	secretStore := secrets.NewKeyringStore()
+	credentialService := credential.NewService(secretStore)
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
+
+	// Only Twitch has a connected-account adapter in this stage; YouTube,
+	// Kick and TikTok remain configuration-only destinations.
+	requiredScopes := map[account.ProviderID][]string{
+		account.ProviderTwitch: {twitch.RequiredScope},
+	}
+	envClientIDs := map[account.ProviderID]string{}
+	if cfg.TwitchClientID != "" {
+		envClientIDs[account.ProviderTwitch] = cfg.TwitchClientID
+	}
+	twitchClient := twitch.New(twitch.Options{})
+	providers := map[account.ProviderID]account.Provider{
+		account.ProviderTwitch: twitch.NewAdapter(twitchClient),
+	}
+
+	accountService := account.NewService(account.Options{
+		Repository:     sqlite.NewAccountRepository(db.DB),
+		Secrets:        secretStore,
+		Providers:      providers,
+		EnvClientIDs:   envClientIDs,
+		RequiredScopes: requiredScopes,
+		Logger:         logger,
+	})
+	// Runs Twitch's required hourly re-validation in the background; a
+	// Twitch or credential-store outage here only affects account status,
+	// never HTTP server startup.
+	accountService.StartValidationWorker(ctx)
+
+	deviceFlowManager := deviceflow.NewManager(deviceflow.Options{
+		Accounts:       accountService,
+		Providers:      providers,
+		RequiredScopes: requiredScopes,
+		Logger:         logger,
+	})
+	deviceFlowManager.Start(ctx)
+
+	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
 
 	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
 	// failed MediaMTX must never stop the Go API: platform configuration stays
@@ -144,6 +189,9 @@ func run() error {
 		Outputs:        outputService,
 		FFmpegRuntime:  branchManager,
 		Branches:       branchManager,
+		Accounts:       accountService,
+		DeviceFlow:     deviceFlowManager,
+		TwitchMetadata: twitchMetadataService,
 	})
 
 	server := &http.Server{
@@ -177,6 +225,8 @@ func run() error {
 		// stopped before returning - branches first, see below.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		branchManager.Shutdown(shutdownCtx)
+		deviceFlowManager.Shutdown(shutdownCtx)
+		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
 		return err
@@ -199,8 +249,14 @@ func run() error {
 		// restart MediaMTX on the way out, and no branch is left trying to
 		// reconnect to an input that is itself in the middle of shutting
 		// down. This also reaps every child process, so the backend never
-		// leaves one behind.
+		// leaves one behind. The device-flow manager and the account
+		// validation worker are stopped alongside branches: both are
+		// background loops with no external process to reap, but stopping
+		// them before MediaMTX keeps the shutdown order easy to reason
+		// about as one group.
 		branchManager.Shutdown(shutdownCtx)
+		deviceFlowManager.Shutdown(shutdownCtx)
+		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 
 		if httpErr != nil {

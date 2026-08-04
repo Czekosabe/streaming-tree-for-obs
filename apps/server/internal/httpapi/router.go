@@ -36,6 +36,17 @@ type Options struct {
 	// Branches serves the destination-branch runtime API. When nil, none of
 	// the /api/runtime/branches routes are registered.
 	Branches BranchRuntimeService
+	// Accounts serves the connected-account API. When nil, none of the
+	// connected-account, device-flow, integration-config or account-link
+	// routes are registered.
+	Accounts AccountService
+	// DeviceFlow serves OAuth device-authorization attempts. Required
+	// alongside Accounts for those routes to register.
+	DeviceFlow DeviceFlowService
+	// TwitchMetadata serves Twitch category search and metadata
+	// publish/preview. Required alongside Accounts for those routes to
+	// register.
+	TwitchMetadata TwitchMetadataService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -69,6 +80,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Branches != nil {
 		registerBranchRoutes(mux, logger, opts.Branches)
+	}
+
+	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.TwitchMetadata != nil {
+		registerAccountRoutes(mux, logger, opts.Platforms, opts.Accounts, opts.DeviceFlow, opts.TwitchMetadata)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

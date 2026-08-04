@@ -29,11 +29,14 @@ import (
 
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/domain/account"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
+	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/runtime/branch"
+	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
@@ -84,11 +87,41 @@ func run() error {
 
 	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
 
-	// The one deliberate difference from cmd/server: an in-memory fake store,
-	// never the real OS keychain.
-	credentialService := credential.NewService(secretstest.New())
+	// The one deliberate difference from cmd/server: a single in-memory
+	// fake store backs both destination stream keys and connected-account
+	// OAuth token bundles, never the real OS keychain.
+	secretStore := secretstest.New()
+	credentialService := credential.NewService(secretStore)
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
+
+	// STREAMING_TREE_TEST_TWITCH_*_BASE_URL exist only in this build-tag-gated
+	// binary, read directly rather than through internal/config, so there is
+	// no risk of a production config path ever recognizing them. Unset
+	// means the real Twitch endpoints, exactly like cmd/server.
+	requiredScopes := map[account.ProviderID][]string{account.ProviderTwitch: {twitch.RequiredScope}}
+	envClientIDs := map[account.ProviderID]string{}
+	if cfg.TwitchClientID != "" {
+		envClientIDs[account.ProviderTwitch] = cfg.TwitchClientID
+	}
+	twitchClient := twitch.New(twitch.Options{
+		OAuthBaseURL: os.Getenv("STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL"),
+		APIBaseURL:   os.Getenv("STREAMING_TREE_TEST_TWITCH_API_BASE_URL"),
+	})
+	providers := map[account.ProviderID]account.Provider{account.ProviderTwitch: twitch.NewAdapter(twitchClient)}
+
+	accountService := account.NewService(account.Options{
+		Repository: sqlite.NewAccountRepository(db.DB), Secrets: secretStore, Providers: providers,
+		EnvClientIDs: envClientIDs, RequiredScopes: requiredScopes, Logger: logger,
+	})
+	accountService.StartValidationWorker(ctx)
+
+	deviceFlowManager := deviceflow.NewManager(deviceflow.Options{
+		Accounts: accountService, Providers: providers, RequiredScopes: requiredScopes, Logger: logger,
+	})
+	deviceFlowManager.Start(ctx)
+
+	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
 
 	supervisor := mediamtx.NewSupervisor(mediamtx.Options{
 		DataDir:        cfg.DataDir,
@@ -122,6 +155,9 @@ func run() error {
 		Outputs:        outputService,
 		FFmpegRuntime:  branchManager,
 		Branches:       branchManager,
+		Accounts:       accountService,
+		DeviceFlow:     deviceFlowManager,
+		TwitchMetadata: twitchMetadataService,
 	})
 
 	server := &http.Server{
@@ -150,6 +186,8 @@ func run() error {
 	case err := <-serverErrors:
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		branchManager.Shutdown(shutdownCtx)
+		deviceFlowManager.Shutdown(shutdownCtx)
+		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
 		return err
@@ -161,6 +199,8 @@ func run() error {
 
 		httpErr := server.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
+		deviceFlowManager.Shutdown(shutdownCtx)
+		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 
 		if httpErr != nil {
