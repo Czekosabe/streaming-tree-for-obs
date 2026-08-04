@@ -5,8 +5,9 @@ be added in later stages of the project.
 
 ## Current state
 
-**This directory does not contain any working configuration yet.** The current
-build does not run MediaMTX or FFmpeg, so there is nothing to configure.
+**This directory still does not contain any working configuration.** The
+backend does run both MediaMTX and FFmpeg now, but neither is configured
+from a file in this directory - see below.
 
 ## What does not belong here
 
@@ -30,21 +31,34 @@ Several things are deliberately **not** kept in this directory:
   the pinned MediaMTX version and with the addresses the backend validated, and
   MediaMTX refuses to start on an unknown configuration key. A stale template
   committed here would silently diverge from both.
-- **Binaries of any kind.** MediaMTX is downloaded on explicit user request into
-  the application data directory and is never committed. The `.gitignore` rules
-  for third-party binaries are anchored to the repository root so they cannot
-  accidentally match a source directory.
+- **The FFmpeg command line.** There is no config file for it either: each
+  destination branch's FFmpeg arguments are built entirely in Go
+  (`apps/server/internal/runtime/branch/command.go`) from the destination's
+  output settings (`internal/domain/output`, stored in SQLite - server URL
+  and an automatic-restart flag, never the stream key) and the retrieved
+  stream key, joined immediately before the process starts. This stage is
+  stream-copy only (`-c copy`, no transcoding options to configure), so
+  there is nothing a per-destination encoding profile would currently
+  change - see "Planned contents" below for when that changes.
+- **Binaries of any kind.** Neither MediaMTX nor FFmpeg is ever committed to
+  the repository. MediaMTX is downloaded, on explicit user request, into the
+  application data directory. FFmpeg is never downloaded by this application
+  at all - it is located on `PATH` or at an operator-provided path; see the
+  README's "Outgoing streaming with FFmpeg" section for why. The
+  `.gitignore` rules for third-party binaries are anchored to the repository
+  root so they cannot accidentally match a source directory.
 
-This directory remains reserved for configuration a user may legitimately edit.
-Once FFmpeg destination branches exist, per-platform encoding profiles are the
-natural first occupant.
+This directory remains reserved for configuration a user may legitimately
+edit. Per-destination encoding profiles (bitrate, resolution, transcoding)
+are the natural first occupant, once that feature exists - stream copy only,
+with no transcoding, is this stage's deliberate scope.
 
 ## Planned contents
 
 | File (planned)         | Purpose                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------- |
 | `mediamtx.yml`         | MediaMTX configuration: RTMP listener for OBS, paths, local authentication.       |
-| `ffmpeg-profiles.json` | Per-platform FFmpeg parameter profiles (bitrate, keyframe interval, output format). |
+| `ffmpeg-profiles.json` | Per-destination transcoding profiles (bitrate, resolution, keyframe interval) - only relevant once transcoding itself is implemented; stream copy needs no profile. |
 | `server.example.yml`   | Example backend configuration (port, paths, limits).                              |
 
 ## Rules

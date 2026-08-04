@@ -3590,3 +3590,140 @@ testing was performed.
 ### Next step
 The closing documentation pass (README, project-overview, config/README,
 THIRD_PARTY_NOTICES), then final regression and push.
+
+## 2026-08-04 14:02 — docs: document FFmpeg branch streaming
+
+### Status
+Completed
+
+### Scope
+The closing documentation pass for stage 6, written only now that the real
+integration verification actually passed. Marks stage 6 complete in the
+roadmap, replaces every "FFmpeg does not exist yet" / "planned" sentence
+written during stage 5 and the earlier part of this stage with an accurate
+description of what is now real, and adds a full "Outgoing streaming with
+FFmpeg" section to `README.md` covering resolution, compatibility policy,
+output configuration, branch lifecycle, restart policy, and the
+command-line secret-exposure limitation stated honestly.
+
+### Changes
+
+**`README.md`** - project-state banner rewritten (stage 6 real, not
+planned); roadmap table marks stage 6 completed; requirements table's
+FFmpeg row changed from "not yet" to real, with its capability-probing
+caveat; new "Outgoing streaming with FFmpeg" section (resolution order and
+why there is no managed download, capability-probing compatibility policy,
+output-settings configuration and the server-URL-vs-key distinction,
+start/stop/restart and bulk controls, stream-copy-only scope, branch
+lifecycle and restart policy, the honest command-line secret-exposure
+limitation, the new runtime endpoints, and the real verification script);
+REST API table gained the six new branch/output endpoints and a note that
+`/api/health` does not change meaning when FFmpeg is missing; "Connecting
+OBS" callout no longer claims a stored key is unread; "What is currently
+demo-only" no longer lists a disabled Start button (removed - see
+`internal/httpapi` and the frontend `BranchControls` component); "What is
+real" gained outgoing FFmpeg streaming and noted per-branch runtime state
+does *not* survive a restart, deliberately; "What will be added later" no
+longer lists FFmpeg; "Stream key security" section's stale "nothing reads
+it yet" sentence replaced with a pointer to the new section; directory
+structure updated with `internal/domain/output`, `internal/runtime/ffmpeg`,
+`internal/runtime/branch`, `cmd/testserver`, and the new integration
+script; Common problems gained an "FFmpeg and destination branches"
+subsection (missing/incompatible FFmpeg, unsupported codec, restart-limit
+reached, waiting for input, output-URL validation, the command-line
+exposure question).
+
+**`docs/project-overview.md`** - architecture diagram's FFmpeg arrow and
+box marked `[DONE]` instead of `[PLANNED]`; §7.3 backend responsibilities
+list updated from "will start/read/enforce" to "starts/reads/enforces"; new
+§7.3.1 wording clarifying runtime state now covers MediaMTX *and* every
+branch; §7.5 rewritten in full from "Status: not implemented" (one
+paragraph of design assumptions) to "Status: implemented" (resolution and
+compatibility, output configuration, the branch supervisor's state
+machine and eligibility order, secret handling at launch, and the design
+constraints deliberately kept - roughly 60 lines describing what actually
+exists, matching §7.4's level of detail for MediaMTX); §8's branch-model
+diagram replaced with the real state machine (`idle` / `blocked` /
+`waiting_for_ingest` / `starting` / `live` / `restarting` / `stopping` /
+`error`) in place of the old speculative `offline -> starting -> live`
+sketch; §8.1's "Runtime stream state" entry rewritten to describe what is
+actually tracked per branch (state, desired-running, blockers, timestamps,
+restart count, real progress fields, sanitized error) instead of "does not
+exist yet"; §10 point 4 updated - `RetrieveForProcessStart` now has a real
+caller, described precisely (only immediately before a launch, never for a
+status check); roadmap table marks stage 6 completed and gained a
+completion paragraph in the same style as stages 3-5's (naming the four
+commits, and explicitly crediting the real-timing integration script with
+catching the two bugs recorded in the previous entry); §14's automated-checks
+list gained the new integration script.
+
+**`docs/engagement-architecture.md`** - one factual correction only, per
+this stage's explicit instruction not to expand this document with FFmpeg
+detail unrelated to engagement: §17.3's "(later) FFmpeg branches" changed
+to reflect that FFmpeg branch supervision is no longer later, it is the
+established precedent. The roadmap-dependency references to "stage 6"
+elsewhere in the document were already accurate as historical/dependency
+statements and did not need correction.
+
+**`config/README.md`** - "the current build does not run MediaMTX or
+FFmpeg" corrected to say both now run, while clarifying *why* this
+directory still holds nothing: MediaMTX's config is generated, and
+FFmpeg's arguments are built entirely in Go from SQLite-stored output
+settings plus a freshly-retrieved key, with no config file at all in this
+stage (stream copy only, nothing to template). The planned
+`ffmpeg-profiles.json` entry's purpose note was corrected: it is for a
+future transcoding feature, not for today's (already-implemented)
+stream-copy-only outgoing streaming.
+
+**`THIRD_PARTY_NOTICES.md`** - new "FFmpeg" section, deliberately shaped
+differently from the MediaMTX section above it: no pinned version (a
+floor plus capability probing), "not obtained by this application at
+all" instead of a download/checksum procedure, and - the one point
+requiring real care - **no single licence claimed**, since the executable
+is entirely operator-provided. States the LGPL-2.1-or-later default,
+that `--enable-gpl` (common in ready-to-run builds) changes that, and how
+to check a given build's own `configuration:` line rather than asserting
+one licence for an arbitrary binary this project did not build.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `config/README.md`
+- `THIRD_PARTY_NOTICES.md`
+
+### Technical decisions
+1. **Historical journal entries above this one were not rewritten.** Per
+   this project's established rule (see the `fix(docs)` entry earlier in
+   this stage), a progress-journal entry is a record of what was true when
+   it was written; only the currently-read documentation (README,
+   project-overview, config/README, THIRD_PARTY_NOTICES) was corrected.
+2. **`docs/engagement-architecture.md` received exactly one line of
+   correction**, not a broader edit, per this stage's explicit instruction
+   to touch that document only for factual stage-numbering/dependency
+   corrections and not expand it with FFmpeg detail that belongs in
+   project-overview.md instead.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Translation consistency | `npm run i18n:check` | Passed (no translation resources touched by this entry) |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 11 packages |
+
+This entry only changes Markdown documentation; no code, schema, or
+translation resource was touched, so the full final regression (all
+frontend and backend checks, all three integration scripts) is run once
+more, in full, as its own step before pushing - see the next entry.
+
+### Known limitations
+- All limitations recorded in previous entries still stand, most notably:
+  the OS credential store backends are verified on Windows only; frontend
+  components are not exercised in a real browser; the FFmpeg-branch
+  integration script has been run on Windows only in this environment.
+
+### Next step
+One final full regression across every check (frontend, backend, all three
+integration scripts), confirm a clean working tree, push, and confirm
+`origin/main` matches local `main`.

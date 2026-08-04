@@ -108,8 +108,8 @@ streaming router has to exist and work before anything reads from it.
                        │ supervises              │ supervises (planned)
                        ▼                         ▼
         ┌──────────────────────┐    ┌──────────────────────────────────┐
-  OBS ─▶│  MediaMTX  [DONE]    │─ ─▶│  FFmpeg (one process per branch) │
-  RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch    [PLANNED]│
+  OBS ─▶│  MediaMTX  [DONE]    │──▶ │  FFmpeg (one process per branch) │
+  RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch      [DONE] │
         │  127.0.0.1:1935/live │    │  ffmpeg #2 ─▶ YouTube            │
         └──────────────────────┘    │  ffmpeg #3 ─▶ Kick               │
                  ▲                  │  ffmpeg #4 ─▶ TikTok             │
@@ -119,9 +119,11 @@ streaming router has to exist and work before anything reads from it.
             readiness + ingest status
 ```
 
-Solid arrows are implemented; the dashed arrow to FFmpeg is the next stage. The
-backend supervises MediaMTX and reads its Control API on loopback; the browser
-never contacts MediaMTX directly.
+Every arrow above is implemented. The backend supervises MediaMTX and reads
+its Control API on loopback; it also supervises one independent FFmpeg
+process per enabled, started destination, pulling the same local input.
+The browser never contacts MediaMTX or a branch's FFmpeg process directly -
+only the backend's REST API reports their state.
 
 The layers are separated on purpose: the panel never talks directly to MediaMTX
 or FFmpeg. All control flows through the Go backend, which is what will later
@@ -164,14 +166,15 @@ The backend is the only place where decisions are made:
 - it exposes the REST API for the panel,
 - it holds platform configuration and metadata in a local SQLite database,
 - it is the single source of truth for provider capabilities,
-- it starts and supervises MediaMTX (implemented, §7.4) and will start and
-  supervise the FFmpeg processes (planned, stage 6, §7.5),
-- it will read a stream key from the system credential store only at branch
-  start time (planned, stage 6) - the credential store itself is implemented
-  today (§10), but nothing calls into it yet,
-- it will enforce failure isolation and a restart policy for each FFmpeg
-  branch (planned, stage 6) - the same principle already governs MediaMTX
-  supervision today,
+- it starts and supervises MediaMTX (implemented, §7.4) and starts and
+  supervises one FFmpeg process per destination branch (implemented, §7.5),
+- it reads a stream key from the system credential store only immediately
+  before starting that branch's FFmpeg process (implemented, §7.5, §10) -
+  never for a status check, never cached, never logged,
+- it enforces failure isolation and an independent bounded-restart policy
+  for each FFmpeg branch (implemented, §7.5) - the same principle that
+  already governs MediaMTX supervision, applied per destination so one
+  branch failing cannot affect another,
 - in later stages it pushes live state over SSE or WebSocket.
 
 Go was chosen for three reasons: distribution as a single binary with no
@@ -197,9 +200,10 @@ What the database holds:
 What it deliberately does **not** hold:
 
 - **runtime state** — no offline/starting/live status, viewer count, connection
-  quality or process state. Runtime state belongs to a streaming engine that
-  does not exist yet, and persisting it would make configuration and reality
-  indistinguishable,
+  quality or process state, for MediaMTX or for any destination branch. That
+  now-implemented runtime engine (§7.4, §7.5) keeps its state in memory only,
+  deliberately, so configuration and "what is happening right now" can never
+  be confused with each other - see §8.1,
 - **credentials** — no stream key, OAuth token or password. No table has a
   column for one.
 
@@ -269,44 +273,146 @@ own configuration. The browser never contacts the Control API; only the Go
 backend does, and there is no proxy route. No runtime path, process environment
 or process id is exposed to the interface.
 
-### 7.5 Planned role of FFmpeg
+### 7.5 The role of FFmpeg (implemented)
 
-**Status: not implemented.**
+**Status: implemented.**
 
-For each active platform the backend will start a separate FFmpeg process that
-reads the stream from MediaMTX and pushes it to that platform's RTMP endpoint.
+For each destination the operator explicitly starts, the backend spawns a
+separate FFmpeg process that reads the shared local MediaMTX input and pushes
+it to that destination's configured RTMP/RTMPS server, entirely independent
+of every other destination's process.
 
-Design assumptions:
+#### Resolution and compatibility
 
-- stream copy by default (`-c copy`) - no re-encoding,
-- re-encoding only where a platform requires different parameters,
-- one process per branch means a separate lifecycle, separate logs and a
-  separate restart policy.
+FFmpeg has no single official binary distributor the way MediaMTX does, so
+unlike MediaMTX, **this application never downloads it**. It is resolved in
+order: an explicit `STREAMING_TREE_FFMPEG_PATH` override, a possible future
+bundled location beside the backend (documented, no binary committed today),
+then the system `PATH` - the `PATH` fallback is deliberately the opposite of
+MediaMTX's resolver, precisely because there is no approved managed source to
+prefer over it here.
+
+Compatibility is decided by **probing capabilities**, not matching an exact
+version: `ffmpeg -version` parses, RTMP input, RTMP output, RTMPS output, the
+FLV muxer, and `-progress` support. A documented minimum version (4.4) is a
+floor, not a ceiling - a newer FFmpeg that passes every probe is never
+rejected for being newer than this code, and an old or stripped-down build
+that fails a probe is incompatible regardless of its version string. The
+resolved executable path is never sent to the browser, matching MediaMTX's
+own `Path` field convention - only a semantic source identifier.
+
+#### Output configuration
+
+Each destination has its own output settings, stored in SQLite exactly like
+its display name or metadata: a server URL (`rtmp://` or `rtmps://`, host
+required, no embedded user-info, no fragment) and an automatic-restart
+preference. **Never** stored: the stream key, a destination URL containing
+it, or any runtime field. This is a deliberately separate concern from the
+credential store (§10): the server address is not a secret and is cached and
+displayed normally; the stream key is retrieved fresh from the OS credential
+store only at the moment a branch actually launches.
+
+#### Branch supervisor
+
+One `Manager` (`internal/runtime/branch`) supervises every destination
+through an explicit state machine - `idle`, `blocked`, `waiting_for_ingest`,
+`starting`, `live`, `restarting`, `stopping`, `error` - the same design
+principle as MediaMTX's own supervisor (§7.4): one value, not a set of
+booleans, so "starting and live" is unrepresentable.
+
+It tracks **desired-running** separately from actual process state, because
+those diverge for real reasons: an explicit Start means "keep this running";
+the local input can disappear temporarily without that desire changing;
+FFmpeg can crash independently of anything the operator did; an explicit
+Stop must both terminate the process and suppress any future automatic
+restart. Eligibility is recomputed on every request, in a fixed order
+(platform enabled → output server configured → stream key present →
+credential store reachable → compatible FFmpeg present → MediaMTX ready →
+ingest actually receiving), and reported as stable, frontend-localized
+blocker identifiers rather than one opaque "cannot start" flag.
+
+`live` means FFmpeg has produced **real, advancing `-progress` output** -
+never merely that a process was spawned. If the local input disappears, the
+affected branch(es) pause (`waiting_for_ingest`) rather than being treated as
+crashed, and resume automatically once input returns, but only for a branch
+that is still desired-running - an explicit Stop is never silently
+overridden. A genuine unexpected exit is retried with the same bounded
+exponential-backoff policy MediaMTX uses in spirit (1 s to 30 s, at most 5
+attempts in 5 minutes, a stable run resetting the count) - implemented as an
+independent policy per branch, not a shared import, so the two supervisors
+stay decoupled. **One branch's failure never affects another's process,
+state, or restart count.**
+
+A backend restart resets every branch to not-desired-running with a fresh
+restart counter - starting a broadcast is always required to be a deliberate,
+explicit action, never something a backend restart resumes on its own - while
+the output settings themselves persist in SQLite like any other configuration.
+
+#### Secret handling at launch
+
+The stream key is retrieved from the credential store (§10) only immediately
+before the process is spawned, via a retrieval method reachable only from
+this supervisor - never from a status check, never from the HTTP layer. It is
+never written to SQLite, logged, placed in a diagnostic buffer, or returned
+by any API response; FFmpeg's own captured stdout/stderr is redacted (the
+exact key, the full destination URL, and their URL-escaped variants replaced
+with `[REDACTED]`) before it is ever logged or stored anywhere. The one
+honestly-documented limitation: no safer FFmpeg CLI mechanism exists for
+passing a per-run RTMP destination, so the key is present as a process
+command-line argument while that branch runs - visible, on most operating
+systems, to another process on the same machine with permission to inspect
+process lists. This is accepted only for this local, single-user stage, with
+every other channel (logs, errors, API responses, diagnostics) actively
+closed.
+
+#### Design constraints kept
+
+- stream copy only in this stage (`-c copy`) - no re-encoding, no adaptive
+  bitrate, no transcoding presets; a source codec FLV/RTMP cannot carry fails
+  that one branch fast with a clear error instead of silently starting an
+  expensive re-encode,
+- one process per branch means a separate lifecycle, separate captured
+  output, and a separate restart policy - confirmed by real, independent
+  process isolation in `scripts/verify-ffmpeg-branches.mjs`, not merely by
+  the type system.
 
 ---
 
 ## 8. The independent branch model
 
-Every platform is an independent branch with its own lifecycle:
+**Status: implemented** (§7.5). Every configured destination is an independent
+branch with its own explicit lifecycle:
 
 ```
-offline ──▶ starting ──▶ live
-   ▲            │           │
-   │            ▼           ▼
-   └────────── error ◀──────┘
+        ┌── blocked ◀────────────────────────────┐
+        │      ▲                                 │
+ idle ──┼──────┘                                  │
+        │                                         │
+        └─▶ starting ──▶ live ──▶ stopping ──▶ idle
+                 │          │
+                 │          ▼
+                 │   waiting_for_ingest ──▶ starting (ingest returns)
+                 ▼
+             restarting ──▶ starting (retry) / error (limit reached)
 ```
 
-Rules:
+(`State` in `internal/runtime/branch` is one value, not a diagram of
+booleans - see §7.5 for the full state list and what each transition means.)
+
+Rules, all implemented and covered by both fast unit tests and the real,
+loopback FFmpeg/MediaMTX integration script:
 
 1. **Process isolation.** One branch means one FFmpeg process. A process failure
    does not touch the others.
-2. **Error isolation.** One platform rejecting a stream key moves only that
-   branch into the `error` state.
-3. **Independent control.** Branches can be started and stopped individually
-   without interrupting the stream on the remaining platforms.
-4. **Independent restart.** The retry policy is configured per branch.
-5. **Shared source.** All branches read the same stream from MediaMTX, so adding
-   a platform puts no extra load on OBS.
+2. **Error isolation.** One destination's output connection failing moves only
+   that branch into the `error` state after its own restart budget is spent.
+3. **Independent control.** Branches are started, stopped and restarted
+   individually, through their own HTTP endpoints, without interrupting any
+   other destination.
+4. **Independent restart.** The bounded-exponential-backoff retry policy is
+   tracked per branch, with its own backoff, restart count and time window.
+5. **Shared source.** All branches read the same local MediaMTX input, so
+   adding a destination puts no extra load on OBS.
 
 ## 8.1 Three concepts that must not be confused
 
@@ -336,24 +442,30 @@ only**.
 
 ### Runtime stream state
 
-Whether the ingest service is running, whether a publisher is connected, process
-restart counts, the last runtime error — and later, per-branch FFmpeg state.
+Whether the ingest service is running, whether a publisher is connected,
+process restart counts, the last runtime error — and, for every configured
+destination, its own independent FFmpeg branch state.
 
-**Runtime state exists now, and lives only in memory.** It is never written to
-the SQLite tables and resets when the backend restarts, because it describes
-what is happening right now rather than what the user configured. No migration
-in this stage added a runtime column, and none should.
+**Runtime state lives only in memory**, for MediaMTX and for every branch. It
+is never written to the SQLite tables and resets when the backend restarts,
+because it describes what is happening right now rather than what the user
+configured. No migration in this project adds a runtime column, and none
+should.
 
-What is tracked today: whether MediaMTX is installed, whether its version is
-compatible, its process state, readiness, restart count, the last error, whether
-a publisher is connected, when the input became available, the source type and
-the track identifiers MediaMTX reports.
+What is tracked for MediaMTX: whether it is installed, whether its version is
+compatible, its process state, readiness, restart count, the last error,
+whether a publisher is connected, when the input became available, the source
+type and the track identifiers it reports.
 
-What is deliberately **not** tracked: bitrate, resolution, frame rate, dropped
-frames and viewer counts. The MediaMTX Control API does not report them, so any
-number shown would be invented. Per-destination runtime state does not exist
-either, because no outgoing streaming engine exists yet — configured
-destinations are still presented as configuration only.
+What is tracked per destination branch (§7.5): its state, whether it is
+desired-running, its current blockers, started/live/stopped timestamps, its
+restart count, its real FFmpeg `-progress` fields (frame count, fps, output
+time, total size, speed), and a sanitized last error. Never tracked, for
+either: bitrate, resolution, frame rate, dropped frames or viewer counts that
+the underlying process did not itself report, and never a stream key, a full
+destination URL, an FFmpeg command line, a process id, or process
+environment - inventing or exposing any of those would defeat the point of
+reporting real state at all.
 
 ### 8.2 OBS ingest detection
 
@@ -478,9 +590,10 @@ Rules in force for this project:
 4. **Read at the last moment.** `credential.Service.RetrieveForProcessStart`
    exists for this purpose and is not reachable through the HTTP API - the
    interface `internal/httpapi` depends on has no method that returns a
-   secret value, so the web panel cannot obtain one even indirectly. It has
-   no caller yet: FFmpeg, the thing that will call it when starting a branch,
-   is not implemented.
+   secret value, so the web panel cannot obtain one even indirectly. Its one
+   caller is the branch manager (§7.5), which calls it only immediately
+   before spawning that destination's FFmpeg process - never for a status
+   check, never cached, never called again while the process keeps running.
 5. **Masked in diagnostics.** Logs and diagnostic exports must have sensitive
    values stripped.
 6. **No secrets in documentation**, including `docs/progress.md` and the
@@ -588,7 +701,7 @@ it is architected; this table only tracks status and dependencies.
 | 3 | Persistent configuration storage (SQLite), full CRUD API for platforms and metadata | **Completed** |
 | 4 | MediaMTX integration: managed dependency, process supervision, configuration generation, OBS ingest detection | **Completed** |
 | 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | **Completed** |
-| 6 | FFmpeg destination branches: startup, supervision, restarts, failure isolation | Planned |
+| 6 | FFmpeg destination branches: resolution/compatibility probing, output settings, per-branch supervision, restarts, failure isolation | **Completed** |
 | 7 | Connected accounts, OAuth, platform metadata publishing | Planned |
 | 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
 | 9 | Unified operator chat | Planned |
@@ -606,9 +719,10 @@ it is architected; this table only tracks status and dependencies.
 
 Key dependencies:
 
-- Stage 6 (FFmpeg) and stage 7 (OAuth) both need stage 5's credential store —
+- Stage 6 (FFmpeg) needed and used stage 5's credential store; stage 7 (OAuth)
+  will reuse the same storage abstraction for a different secret type -
   destination stream keys and OAuth tokens are different secret types behind
-  the same storage abstraction.
+  one abstraction.
 - Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward.
 - Stage 11 (outbound/bot) needs connector send-message capability, declared as
   part of a connector's capability set from stage 8 onward.
@@ -643,8 +757,24 @@ OS-backed store was built and tested on Windows only (the macOS and Linux
 backends were verified at the source level, not by running them), and the
 frontend controls were not exercised in a real browser, only typechecked,
 linted and covered by pure-logic tests — this project's frontend test suite
-has no component-rendering harness. FFmpeg itself, which is what will
-eventually use a stored key, remains stage 6 and does not exist yet.
+has no component-rendering harness.
+
+Stage 6 was marked completed only after all automated checks passed across
+every commit that implements it, **including a real, loopback-only
+integration script that exercises actual FFmpeg and actual MediaMTX
+binaries end to end** — a synthetic publisher, the real local ingest, real
+independent branch FFmpeg processes, and real MediaMTX instances standing in
+for two destination platforms, with no real platform account or credential
+and no traffic leaving loopback. See the four commits from
+`fix(docs): correct stage 5 project status` through
+`test: verify FFmpeg branches against real FFmpeg and MediaMTX` in
+[progress.md](progress.md). That real-timing run caught and fixed two
+genuine bugs the millisecond-scale unit tests could not have caught (an
+ingest-loss/restart race, and a restart-limit cap that could be defeated
+forever after one stable run) — recorded there as the clearest demonstration
+so far of why this stage's real-integration requirement exists. The frontend
+branch controls were, like stage 5's, typechecked, linted and covered by
+pure-logic tests but not exercised in a real browser.
 
 ## 14. The manual testing rule
 
@@ -674,6 +804,12 @@ be run continuously:
   real MediaMTX binary is installed, checksum-verified, supervised and reused
   across a backend restart, run against a temporary data directory on
   dynamically chosen ports.
+- `node scripts/verify-ffmpeg-branches.mjs` - scripted verification that
+  real, independent FFmpeg destination branches start, report real progress,
+  isolate failures, survive ingest loss, respect an explicit stop, restart
+  within their bounded policy, and that a backend restart resets their
+  runtime state while their output settings persist - against a real FFmpeg
+  executable and real MediaMTX instances, entirely on loopback.
 
 ## 15. Honesty about the state of the work
 

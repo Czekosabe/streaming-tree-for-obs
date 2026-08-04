@@ -684,8 +684,8 @@ configuration is expected to carry forward unchanged for engagement features:
   secret) is ever returned by an API response, stored in the browser, or
   logged,
 - connectors run under the same "one failure must not take down the whole
-  application" principle already applied to MediaMTX supervision and (later)
-  FFmpeg branches.
+  application" principle already applied to MediaMTX supervision and, since
+  stage 6, FFmpeg destination-branch supervision.
 
 ## 18. Proposed staged implementation order
 

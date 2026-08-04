@@ -17,24 +17,25 @@ of that exists yet — it is architecture and planning, detailed in
 shapes decisions made today, starting with the credential-store foundation
 this stage adds.
 
-> ## Project state: local ingest and secure key storage work, outgoing streaming does not
+> ## Project state: local ingest, secure key storage and outgoing FFmpeg streaming all work
 >
-> Streaming Tree can now **receive** a stream from OBS. It installs and
-> supervises MediaMTX, exposes the real RTMP address and stream key, and shows
-> live ingest status — so you can point OBS at it and see the connection
-> detected.
+> Streaming Tree can **receive** a stream from OBS (a supervised, managed
+> MediaMTX process), **store a destination's stream key securely** in the
+> operating system credential store, and now **send it onward**: one
+> independent FFmpeg process per enabled destination, pulling the local
+> ingest and pushing to that destination's configured RTMP/RTMPS server with
+> plain stream copy (no re-encoding). See
+> [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg) and
+> [Stream key security](#stream-key-security).
 >
-> A destination's stream key can also be **stored securely**, in the operating
-> system credential store (Windows Credential Manager, macOS Keychain, or
-> Linux Secret Service) — see [Stream key security](#stream-key-security).
+> Starting a real broadcast is always an **explicit action** — a destination
+> never starts on its own, and a backend restart never resumes one
+> automatically.
 >
-> **Nothing is sent onward to any platform yet.** Forwarding the received stream
-> to Twitch, YouTube, Kick or TikTok needs one FFmpeg process per destination,
-> which is the next stage. A stored stream key is not read by anything yet.
-> Configured destinations remain configuration only.
->
-> OAuth and platform API integrations are also still **planned**. Whatever
-> remains a placeholder is marked with a **Demo** badge — the full list is in
+> OAuth-based sign-in, platform metadata publishing, and the wider engagement
+> platform (unified chat, overlays, alerts, bot automation) are still
+> **planned**. Whatever remains a placeholder is marked with a **Demo**
+> badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -52,6 +53,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Data storage](#data-storage)
 - [Local ingest with MediaMTX](#local-ingest-with-mediamtx)
 - [Connecting OBS](#connecting-obs)
+- [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -68,8 +70,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | Stage | Scope | Status |
 | ----- | ----- | ------ |
 | 1–4 | Foundations, localization, SQLite configuration, MediaMTX ingest | **Completed** |
-| 5 | Secure credential-store foundation (this stage) | See [progress.md](docs/progress.md) |
-| 6 | FFmpeg destination branches | Planned |
+| 5 | Secure credential-store foundation | **Completed** |
+| 6 | FFmpeg destination branches (this stage) | **Completed** — see [progress.md](docs/progress.md) |
 | 7 | Connected accounts, OAuth, metadata publishing | Planned |
 | 8–19 | Engagement Event Bus, unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, additional platform connectors | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
@@ -91,7 +93,7 @@ that document's opening notice before treating any part of it as implemented.
 | **Go** | 1.25 or newer | building and running the backend (`go.mod` pins the floor) | yes |
 | OBS Studio | 30+ | the source of the stream | yes, to actually publish something — the backend runs without it |
 | MediaMTX | — | receiving the RTMP stream | yes — installed and supervised automatically, see [Local ingest with MediaMTX](#local-ingest-with-mediamtx) |
-| FFmpeg | — | distributing the stream branches | not yet |
+| FFmpeg | a recent build (4.4+ floor; actual compatibility is capability-probed, not version-matched) | sending each destination branch | yes, to actually start a destination — see [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg). The backend runs and the rest of the interface works without it. |
 
 Checking the installed versions:
 
@@ -229,6 +231,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_DATA_DIR` | per-user config directory | Application data directory: database, managed MediaMTX and generated configuration. See [Data storage](#data-storage). |
 | `STREAMING_TREE_DB_PATH` | — | Full path to the SQLite file. Takes precedence over `STREAMING_TREE_DATA_DIR` for the database only. |
 | `STREAMING_TREE_MEDIAMTX_PATH` | — | Full path to a MediaMTX executable you provide. Skips the managed installation. Must report the supported version. |
+| `STREAMING_TREE_FFMPEG_PATH` | — | Full path to an FFmpeg executable you provide. Skips the `PATH` search. Must pass every capability probe. See [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg). |
 | `STREAMING_TREE_MEDIAMTX_AUTOSTART` | `true` | Start MediaMTX when the backend starts. |
 | `STREAMING_TREE_MEDIAMTX_AUTO_RESTART` | `true` | Restart MediaMTX automatically after an unexpected exit. |
 | `STREAMING_TREE_MEDIAMTX_RTMP_ADDRESS` | `127.0.0.1:1935` | Address OBS publishes to. **Loopback only.** |
@@ -554,8 +557,8 @@ displayed values change with them.
 >
 > Real platform stream keys are an entirely separate concept. They are stored
 > securely in the operating system credential store — see
-> [Stream key security](#stream-key-security) — but nothing reads a stored key
-> yet: outgoing FFmpeg streaming does not exist in this build.
+> [Stream key security](#stream-key-security) — and are read only when you
+> explicitly start that destination's outgoing branch, described next.
 
 Once OBS starts streaming, the ingest status changes from **Waiting for OBS or
 another RTMP publisher** to **Receiving an RTMP stream**, and the detected
@@ -564,8 +567,181 @@ tracks appear.
 RTMP does not identify the publishing application, so Streaming Tree accepts any
 RTMP publisher and never claims with certainty that it is OBS.
 
-**This receives the stream only.** Nothing is forwarded to Twitch, YouTube, Kick
-or TikTok yet.
+**Receiving the stream and sending it onward are two separate steps.** OBS
+connecting here only makes the local ingest available; nothing goes out to
+any platform until you explicitly start that destination — see the next
+section.
+
+---
+
+## Outgoing streaming with FFmpeg
+
+Once OBS is publishing to the local ingest, Streaming Tree can send that
+stream onward to each configured destination independently, using
+[FFmpeg](https://ffmpeg.org/) — one process per destination ("branch"),
+pulling the shared local input and pushing to that destination's own
+RTMP/RTMPS server.
+
+### Why there is no managed FFmpeg download
+
+MediaMTX has one official, checksummed GitHub release this application can
+verify and install automatically (see
+[Local ingest with MediaMTX](#local-ingest-with-mediamtx)). **FFmpeg has no
+equivalent single official binary distributor** — official builds are source
+only; every ready-to-run Windows/macOS/Linux binary comes from a third-party
+packager with its own build configuration and licensing implications.
+Silently downloading and running one of those on your behalf would mean
+trusting a third party this project has not reviewed, so **Streaming Tree
+never downloads FFmpeg**. You provide it, from whatever source you already
+trust (your OS package manager, or a build you reviewed yourself), and this
+application only ever *locates and probes* it.
+
+### How the FFmpeg executable is found
+
+1. **`STREAMING_TREE_FFMPEG_PATH`** — an explicit path you set. Relative
+   paths are made absolute; the file must exist, be a regular file, and be
+   executable. Reported as source `override`.
+2. **A future bundled location** beside the backend executable — documented
+   as a convention for a later packaged build; **no binary is bundled or
+   committed today**, so this step currently finds nothing.
+3. **The system `PATH`.** Unlike MediaMTX, FFmpeg has no single
+   application-managed installation to prefer over it — searching `PATH` is
+   the correct fallback here, precisely because there is no approved managed
+   source to prefer instead. Reported as source `path`.
+4. **Missing** — nothing usable was found. The backend keeps running;
+   destinations simply report the `ffmpeg_missing` blocker until one is
+   available.
+
+**The resolved executable path is never sent to the browser** — only a
+semantic source identifier (`override` / `bundled` / `path` / `missing`),
+exactly like MediaMTX's own resolution.
+
+### Compatibility policy: capability probing, not exact version matching
+
+Streaming Tree does not pin one exact FFmpeg release the way it pins
+MediaMTX. Instead it documents a **minimum supported version as a floor**
+(currently 4.4) and probes the actual capabilities every branch needs:
+`ffmpeg -version` parses cleanly, RTMP input, RTMP output, RTMPS output, the
+FLV muxer, and `-progress` support. A binary that passes every probe is
+compatible **regardless of how new it is** — a newer release is never
+rejected merely for being newer than this code. A binary that fails any
+probe is incompatible even if its reported version looks recent. This
+matches how the real, local FFmpeg builds used while developing this stage
+report themselves, and avoids treating "this exact string" as a proxy for
+"has the features this application actually uses."
+
+### Configuring a destination's output server
+
+Each destination has its own **output settings**, separate from its stream
+key: an **RTMP/RTMPS server URL** (`rtmp://` or `rtmps://`, host and
+optional port required, no embedded credentials, no fragment) and an
+**automatic-restart** toggle. Configure it in the platform's settings
+dialog, or through the API (see [REST API](#rest-api)).
+
+> ### The server URL is not the stream key
+>
+> The server URL is the address of the destination's RTMP ingest — the
+> equivalent of OBS's "Server" field. The stream key is the separate secret
+> that authorizes publishing to *your* channel on it, stored exactly as
+> described in [Stream key security](#stream-key-security). Streaming Tree
+> never joins them into one field in the interface, and the stored server
+> URL alone is never enough to publish anywhere — it needs the key, which is
+> retrieved only at the moment a branch actually starts.
+
+Streaming Tree does not guess a provider's address format for you: a
+provider definition may ship a verified default server URL, but if one has
+not been confirmed against that platform's current documentation, the field
+is left empty rather than filled with a guess.
+
+### Starting and stopping a destination
+
+Each destination's outgoing branch is started and stopped **independently
+and explicitly** — there is no automatic start, on ingest arriving or
+otherwise, in this stage. A branch becomes eligible to start only once
+every one of these holds, in order, and the platform card / Streams page
+explain whichever is missing:
+
+1. the platform is enabled,
+2. an output server URL is configured,
+3. a stream key is stored,
+4. the OS credential store is reachable,
+5. a compatible FFmpeg was found,
+6. the local MediaMTX ingest is ready,
+7. OBS (or another publisher) is actually connected.
+
+Starting a destination is a real, deliberate action that begins real
+outgoing network transmission — the interface never disguises this as a
+quiet background toggle, and starting more than one destination at once
+(the **Start enabled destinations** bulk control) shows a confirmation
+listing exactly which destinations will start, which are skipped and why,
+and that outgoing bandwidth increases per active destination.
+
+**Stream copy only.** No destination is transcoded in this stage: FFmpeg is
+run with `-c copy`, so CPU cost stays low and quality is unchanged, but a
+source codec FLV/RTMP cannot carry without transcoding makes that one
+branch fail fast with a clear, sanitized error rather than silently starting
+an expensive re-encode.
+
+### Branch lifecycle and restart policy
+
+Each branch has its own explicit state — `idle`, `blocked`,
+`waiting_for_ingest`, `starting`, `live`, `restarting`, `stopping`, `error`
+— tracked only in memory, never in SQLite. **`live` means FFmpeg has
+reported real, advancing progress**, not merely that a process was spawned.
+
+If OBS disconnects while a branch is running, that branch pauses
+(`waiting_for_ingest`) rather than crash-looping against a missing input,
+and resumes automatically once the input returns — but **only** for a
+branch you explicitly started and have not explicitly stopped since. An
+explicit **Stop** always wins: it clears the desire to run and is never
+silently undone.
+
+If a branch's own process fails unexpectedly (its destination connection
+drops, for instance), it restarts with bounded exponential backoff (1 s up
+to 30 s, at most 5 attempts in 5 minutes); exceeding that stops retrying
+with a sanitized error instead of looping forever. **One destination
+failing never affects another** — each has its own process, its own
+backoff, and its own error state.
+
+A backend restart resets every branch to `idle`/not-desired-running and its
+restart counter to zero — **it never resumes a broadcast on its own** — while
+the output settings themselves (server URL, automatic-restart preference)
+persist in SQLite exactly like the rest of your configuration.
+
+### Stream-key exposure on the command line — an honest limitation
+
+The stream key is retrieved from the OS credential store only immediately
+before a branch's FFmpeg process is spawned, and is never written to
+SQLite, logged, placed in an error message, or returned by any API
+response. FFmpeg's CLI was checked for a safer way to pass a per-run RTMP
+destination (`ffmpeg -h protocol=rtmp`, `-h protocol=tcp`) and none exists
+for this use case — no environment-variable or file-based alternative that
+FFmpeg's RTMP output itself supports. **The destination URL, including the
+key, is therefore passed as an FFmpeg command-line argument**, which on most
+operating systems is visible to other processes owned by the same user (for
+example, in a process list). This is accepted for this local, single-user
+stage only with these mitigations: it is never logged by this application,
+FFmpeg's own captured output is redacted before any logging or storage,
+no API response ever contains a destination URL that includes the key, and
+this application makes no claim of complete process-level secrecy.
+
+### FFmpeg dependency and branch runtime endpoints
+
+```bash
+curl http://127.0.0.1:8080/api/runtime/ffmpeg
+curl http://127.0.0.1:8080/api/runtime/branches
+```
+
+See [REST API](#rest-api) for the full endpoint list and response shapes.
+
+### Verifying it for real
+
+`scripts/verify-ffmpeg-branches.mjs` exercises this whole feature end to
+end against a **real** FFmpeg executable and **real** MediaMTX instances —
+a synthetic publisher, the real local ingest, a real branch process, and a
+temporary destination MediaMTX standing in for the platform — entirely on
+loopback, with no real platform account or credential. See
+[Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks).
 
 ---
 
@@ -587,14 +763,25 @@ All endpoints live under `/api` and return `application/json`.
 | `GET` | `/api/platforms/{id}/credentials` | Stream-key status: `{configured}`, plus whether the OS credential store is reachable. Never the key itself. |
 | `PUT` | `/api/platforms/{id}/credentials/stream-key` | Validate and store a new stream key, replacing any previous one. Body capped at 8 KiB, well below the general 64 KiB limit. |
 | `DELETE` | `/api/platforms/{id}/credentials/stream-key` | Delete the stored stream key. Idempotent: deleting an absent key still responds 204. |
+| `GET` | `/api/platforms/{id}/output` | A destination's output settings: `{serverUrl, autoRestart}`. Never the stream key. |
+| `PUT` | `/api/platforms/{id}/output` | Replace a destination's output settings (full replacement). |
 | `GET` | `/api/runtime` | One versioned snapshot: MediaMTX state, ingest state and OBS connection values. |
 | `POST` | `/api/runtime/mediamtx/install` | Start a managed installation. Responds 202; 409 if one is already running. |
 | `POST` | `/api/runtime/mediamtx/start` | Start the ingest service. 202 accepted, 409 if already running, 422 if missing or incompatible. |
 | `POST` | `/api/runtime/mediamtx/stop` | Stop it. Suppresses automatic restart for this stop. |
 | `POST` | `/api/runtime/mediamtx/restart` | One controlled stop followed by a start. |
+| `GET` | `/api/runtime/ffmpeg` | The resolved FFmpeg dependency: state, source, detected version, minimum version, probed capabilities. Never the executable path. |
+| `GET` | `/api/runtime/branches` | Every destination branch's runtime snapshot: state, desired-running, blockers, timestamps, restart count, sanitized last error, real progress. Never a secret or a full destination URL. |
+| `POST` | `/api/runtime/branches/{id}/start` | Start one destination. `202` accepted, `200` with `{status:"blocked", blockers}` if ineligible, `409` if already starting/live/restarting. |
+| `POST` | `/api/runtime/branches/{id}/stop` | Stop one destination and suppress its automatic restart. `409` if it was not running. |
+| `POST` | `/api/runtime/branches/{id}/restart` | One controlled stop followed by a start. |
+| `POST` | `/api/runtime/branches/start-enabled` | Start every eligible enabled destination; one ineligible destination never blocks another. Returns a per-destination result. |
+| `POST` | `/api/runtime/branches/stop-all` | Stop every running destination. |
 
-The four `POST` runtime endpoints take **no request body**; sending one is a
-`400`. They are commands, not resources.
+The `POST` runtime and branch-command endpoints take **no request body**;
+sending one is a `400`. They are commands, not resources. `GET /api/health`
+does not change meaning here: the backend can be perfectly healthy while
+FFmpeg is missing or a branch is in `error`.
 
 Example — the runtime snapshot:
 
@@ -739,6 +926,7 @@ directory, so running them never touches your real one.
 ```bash
 node scripts/verify-persistence.mjs        # SQLite survives a backend restart
 node scripts/verify-mediamtx-runtime.mjs   # real MediaMTX install and supervision
+node scripts/verify-ffmpeg-branches.mjs    # real FFmpeg + MediaMTX destination branches
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -752,8 +940,24 @@ the ingest state, stops and starts the service, restarts the backend and
 confirms the binary is reused rather than downloaded again. It takes a few
 minutes on the first run and needs network access.
 
-**Neither script touches your real database or your managed MediaMTX
-installation**, and both remove their temporary directories afterwards.
+The FFmpeg-branches script needs a **real, compatible FFmpeg on `PATH`**
+(or pointed to by `STREAMING_TREE_FFMPEG_PATH`) — it never installs one
+itself, and stops with a clear message naming the missing prerequisite
+instead of claiming success if none is found. It builds a special
+`-tags integration` backend binary whose only difference from the real one
+is an in-memory fake credential store (see
+`apps/server/cmd/testserver/main.go`), so no fake key it uses can ever reach
+your real OS keychain, and that build tag makes the swap impossible to
+select by accident in a normal build. Everything else — a synthetic
+publisher, the real managed MediaMTX as the local ingest, real independent
+branch FFmpeg processes, and two more real MediaMTX instances standing in
+for destination platforms — runs entirely on loopback with dynamically
+chosen ports. It takes roughly a minute (the restart-limit scenario walks
+through real exponential backoff).
+
+**None of these scripts touch your real database, your managed MediaMTX
+installation, or your real OS credential store**, and all remove their
+temporary directories afterwards.
 
 ---
 
@@ -909,8 +1113,8 @@ rest of the repository.
 │   │   │   ├── components/
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
 │   │   │   │   ├── metadata/   # Metadata editor with platform tabs
-│   │   │   │   ├── platforms/  # Destination cards, add and settings dialogs
-│   │   │   │   ├── runtime/    # Ingest controls, install dialog, copy widget
+│   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls
+│   │   │   │   ├── runtime/    # Ingest controls, install dialog, copy widget, bulk-start confirmation
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
@@ -923,24 +1127,31 @@ rest of the repository.
 │   │
 │   └── server/                 # Backend (Go)
 │       ├── cmd/server/         # Entry point, graceful shutdown
+│       ├── cmd/testserver/     # `-tags integration` twin for the real-FFmpeg smoke test only
 │       └── internal/
 │           ├── buildinfo/      # Service name and version
 │           ├── config/         # Configuration and database path resolution
 │           ├── domain/platform/# Provider registry, models, validation, service
+│           ├── domain/credential/# Destination stream-key service (OS credential store)
+│           ├── domain/output/  # Destination output-settings model, validation, service
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
 │           ├── runtime/mediamtx/# Resolver, installer, config, supervisor, API client
+│           ├── runtime/ffmpeg/ # Executable resolver and capability probing
+│           ├── runtime/branch/ # Per-destination branch supervisor (state machine, restart policy)
 │           └── storage/sqlite/ # Connection, migrations, repository
 │               └── migrations/ # Embedded .sql schema and seed
 │
-├── config/                     # FFmpeg configuration (future stage)
+├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
+│   ├── engagement-architecture.md # Later-stage engagement platform architecture
 │   └── progress.md             # Work journal
 ├── scripts/
 │   ├── verify-persistence.mjs      # Scripted restart-persistence check
-│   └── verify-mediamtx-runtime.mjs # Real MediaMTX install and supervision check
+│   ├── verify-mediamtx-runtime.mjs # Real MediaMTX install and supervision check
+│   └── verify-ffmpeg-branches.mjs  # Real FFmpeg + MediaMTX destination-branch check
 ├── .gitignore
-├── THIRD_PARTY_NOTICES.md      # MediaMTX and other third-party licences
+├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
 ```
 
@@ -953,8 +1164,7 @@ directly next to the control.
 
 | Element | What actually happens |
 | ------- | --------------------- |
-| **Start** button on platform cards | Disabled. There is no outgoing streaming engine, so no destination can be started. (The **Streams** page has real Start/Stop controls — those are for the local ingest service, not for any platform.) |
-| Per-platform live status, viewer counts, connection quality | **Removed.** These were invented values and would be misleading next to genuinely saved configuration. Cards report configuration only: configured, and enabled or disabled. |
+| Per-destination viewer counts, connection quality, "Authenticated"/"Verified by platform" status | **Not shown anywhere.** Streaming Tree never contacts a platform to confirm a stream is live there; the interface only ever reports what FFmpeg itself reported (real progress fields) or a plain "Sending" / "Output active" wording. |
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | An approximate configuration, served by the backend. It has **not** been verified against the real Twitch, YouTube, Kick or TikTok APIs and needs re-checking when real integrations are implemented. |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
@@ -971,12 +1181,17 @@ directly next to the control.
 - **Editing and saving stream metadata**, including ordered Twitch tags.
 - **Storing, replacing, checking the status of and deleting a destination's
   stream key**, in the operating system credential store - see
-  [Stream key security](#stream-key-security). What is **not** yet real:
-  nothing reads a stored key to start an outgoing stream, because FFmpeg
-  itself does not exist yet.
+  [Stream key security](#stream-key-security).
+- **Sending a destination's stream onward with real FFmpeg** - one
+  independent process per enabled destination, pulling the local ingest and
+  pushing stream-copied RTMP/RTMPS to that destination's configured server,
+  with real Start/Stop/Restart, real per-branch state and real progress -
+  see [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg).
 - **Everything stored survives a browser refresh and a backend restart** -
   including a stream key, which survives in the OS credential store
-  independently of both.
+  independently of both. Per-branch *runtime* state (live/error/restart
+  count) deliberately does **not** survive a backend restart - see the
+  branch lifecycle section above for why.
 - **The language switcher**, in the top bar and under Settings.
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
@@ -984,8 +1199,6 @@ API does not report them, so showing a number would mean inventing it.
 
 ### What will be added later
 
-- **FFmpeg** — one process per destination, to forward the received stream,
-  reading the stream key the credential store already holds.
 - **SSE or WebSocket** — live status instead of polling.
 - **OAuth and platform APIs** — sign-in and metadata publishing, reusing the
   same credential-store abstraction with a different secret type.
@@ -999,10 +1212,10 @@ API does not report them, so showing a number would mean inventing it.
 ## Stream key security
 
 A stream key allows broadcasting on someone's channel, so we treat it like a
-password. This section describes the destination-credential foundation added
-in this stage - not FFmpeg, which does not exist yet (see
-[Common problems](#common-problems) and
-[What is currently demo-only](#what-is-currently-demo-only)).
+password. This section describes the destination-credential foundation; how
+that key is actually used to start an outgoing stream is described in
+[Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg), including
+its one honestly-documented limitation (command-line exposure).
 
 - **The repository contains no secrets** and must never contain any.
   `.gitignore` blocks `.env` files, database files and data directories - and
@@ -1041,11 +1254,15 @@ in this stage - not FFmpeg, which does not exist yet (see
   attempt, so it does not linger in React Query Devtools either. The only
   value this application stores in the browser at all is the interface
   language preference.
-- **The backend will read a key only when starting an outgoing stream
-  process** (FFmpeg, not yet implemented - see the roadmap), and will not log
-  it or include it in a formatted error. The retrieval method for that is not
-  reachable through the HTTP API at all: the interface the web panel talks to
-  simply has no method that returns a value.
+- **The backend reads a key only when explicitly starting that destination's
+  outgoing FFmpeg process**, never while merely checking status, and never
+  logs it or includes it in a formatted error. The retrieval method for that
+  is not reachable through the HTTP API at all: the interface the web panel
+  talks to simply has no method that returns a value. It **is** passed to
+  FFmpeg as part of a command-line argument, since no safer mechanism exists
+  in FFmpeg's own CLI for this - see
+  [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg) for the
+  honest explanation of that one limitation and its mitigations.
 - **This is unrelated to the local ingest path.** The `live` stream key OBS
   uses to publish to this machine (see [Connecting OBS](#connecting-obs)) is
   a route name on a loopback-only server, not a secret, and is never confused
@@ -1183,3 +1400,53 @@ service usually clears it.
 It should not: shutdown stops and reaps it. If it happens, note how the backend
 was terminated — a `SIGKILL` to the backend gives it no chance to clean up — and
 end the `mediamtx` process manually.
+
+### FFmpeg and destination branches
+
+**A destination shows the blocker "FFmpeg is not available."**
+No compatible FFmpeg was found. Install one from a source you trust and make
+sure it is on `PATH`, or set `STREAMING_TREE_FFMPEG_PATH` to it, then restart
+the backend (FFmpeg is only re-probed periodically or at startup). Streaming
+Tree never installs FFmpeg for you — see
+[Why there is no managed FFmpeg download](#outgoing-streaming-with-ffmpeg).
+
+**A destination shows the blocker "The available FFmpeg is missing a
+required capability."**
+The located FFmpeg failed at least one capability probe (RTMP input/output,
+RTMPS output, the FLV muxer, or `-progress` support) even though it parses
+`-version` fine. Most general-purpose FFmpeg builds pass all of these;
+check whether yours was built with RTMP support disabled.
+
+**A destination fails immediately with an "unsupported codec" error.**
+FLV/RTMP cannot carry every codec, and this stage never transcodes. Change
+the source (in OBS) to a codec FLV can carry — H.264 video, AAC audio are
+the safe, universally supported choice — rather than expecting Streaming
+Tree to silently re-encode.
+
+**A destination keeps restarting and then shows "FFmpeg failed repeatedly
+and will not be restarted automatically."**
+The same crash-loop guard as MediaMTX's, applied per destination: five
+failures within five minutes. Check the destination's `lastError` on the
+Streams page, fix the underlying cause (commonly: the destination server is
+unreachable, or the port/URL is wrong), then press **Start** again — the
+restart counter resets on a fresh explicit start.
+
+**A destination is stuck on "Waiting for input."**
+This is expected whenever OBS is not currently publishing to the local
+ingest — the branch is deliberately paused, not failing. It resumes on its
+own once OBS reconnects, as long as you have not pressed **Stop** since.
+
+**I configured an output server URL but saving it fails validation.**
+Only `rtmp://` and `rtmps://` are accepted, a host is required, the port (if
+present) must be valid, and the URL may not contain user-info (`user@host`),
+a `#fragment`, or control characters. A path (like `/app`) is fine — many
+providers use one. The stream key never belongs in this field at all; it has
+its own field.
+
+**Is my stream key visible anywhere I should worry about?**
+See [Stream-key exposure on the command line](#outgoing-streaming-with-ffmpeg)
+for the one honestly-documented limitation: it is briefly present as an
+FFmpeg process argument while that destination is running, which on most
+operating systems a process list on the *same machine* could observe. It is
+never logged, never in an API response, and never on disk outside the OS
+credential store.

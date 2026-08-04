@@ -36,6 +36,25 @@ of [`README.md`](README.md) for the resolved locations.
 
 ---
 
+## FFmpeg
+
+| | |
+| --- | --- |
+| **Project** | FFmpeg |
+| **Upstream** | <https://ffmpeg.org/> |
+| **Pinned version** | None - a minimum version is documented as a floor (4.4); actual compatibility is decided by probing capabilities (RTMP input/output, RTMPS output, the FLV muxer, `-progress` support), not by matching an exact version string. See the "Outgoing streaming with FFmpeg" section of [`README.md`](README.md). |
+| **How it is obtained** | **Not obtained by this application at all.** Unlike MediaMTX, FFmpeg has no single official binary distributor this project can verify and download automatically - official releases are source only, and every ready-to-run binary comes from a third-party packager. Streaming Tree only locates and probes an executable you already have: an explicit `STREAMING_TREE_FFMPEG_PATH`, a possible future bundled location beside the backend, or the system `PATH`. |
+| **Licence** | **Not one fixed licence.** Upstream FFmpeg defaults to LGPL-2.1-or-later, but a specific build commonly enables `--enable-gpl` (and sometimes non-free components), which changes its licence to GPL. Because the executable is entirely operator-provided, this project makes **no claim about the licence of whatever binary you point it at** - that determination belongs to whoever built or distributed that binary. |
+| **How to inspect your own build** | Run `ffmpeg -version` and read its `configuration:` line, or check the distributor's own notice. `--enable-gpl` present means GPL; absent means the LGPL default (still subject to whatever its bundled codec libraries require). |
+
+FFmpeg is a separate program. Streaming Tree runs it as one short-lived child
+process per active destination branch (`exec.CommandContext`, never a shell)
+and communicates with it only through its `-progress` stdout stream and
+captured stderr; it is not linked into the Streaming Tree binary, and **no
+FFmpeg binary is ever committed to this repository or downloaded by it.**
+
+---
+
 ## Go dependencies
 
 Declared in [`apps/server/go.mod`](apps/server/go.mod) and fetched by the Go
