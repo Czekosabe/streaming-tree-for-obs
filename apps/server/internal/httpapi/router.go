@@ -30,6 +30,12 @@ type Options struct {
 	// Outputs serves the destination output-settings API (RTMP/RTMPS server
 	// address, restart preference). When nil those routes are not registered.
 	Outputs OutputService
+	// FFmpegRuntime reports the resolved FFmpeg dependency. When nil,
+	// GET /api/runtime/ffmpeg is not registered.
+	FFmpegRuntime FFmpegRuntimeService
+	// Branches serves the destination-branch runtime API. When nil, none of
+	// the /api/runtime/branches routes are registered.
+	Branches BranchRuntimeService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -49,11 +55,20 @@ func NewRouter(opts Options) http.Handler {
 	mux.HandleFunc("/api/health", methodNotAllowed(logger, http.MethodGet))
 
 	if opts.Platforms != nil {
-		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials, opts.Outputs)
+		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials, opts.Outputs, opts.Branches)
 	}
 
 	if opts.Runtime != nil {
 		registerRuntimeRoutes(mux, logger, opts.Runtime)
+	}
+
+	if opts.FFmpegRuntime != nil {
+		mux.HandleFunc("GET /api/runtime/ffmpeg", handleGetFFmpegStatus(logger, opts.FFmpegRuntime))
+		mux.HandleFunc("/api/runtime/ffmpeg", methodNotAllowed(logger, http.MethodGet))
+	}
+
+	if opts.Branches != nil {
+		registerBranchRoutes(mux, logger, opts.Branches)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
@@ -85,7 +100,7 @@ func NewRouter(opts Options) http.Handler {
 // of falling through to the /api/ catch-all as a 404. Go's ServeMux prefers the
 // more specific method-aware pattern, so the bare pattern only ever matches
 // when no method pattern did.
-func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService, outputs OutputService) {
+func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService, outputs OutputService, branches BranchRuntimeService) {
 	mux.HandleFunc("GET /api/platform-definitions", handleListDefinitions(logger, service))
 	mux.HandleFunc("/api/platform-definitions", methodNotAllowed(logger, http.MethodGet))
 
@@ -98,7 +113,7 @@ func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service Pla
 	if credentials != nil {
 		// A platform's credentials are deleted before the platform row
 		// itself; see handleDeletePlatformWithCredentials.
-		mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatformWithCredentials(logger, service, credentials))
+		mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatformWithCredentials(logger, service, credentials, branches))
 	} else {
 		mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatform(logger, service))
 	}
@@ -148,6 +163,31 @@ func registerRuntimeRoutes(mux *http.ServeMux, logger *slog.Logger, service Runt
 		"/api/runtime/mediamtx/start":   handleStartMediaMTX(logger, service),
 		"/api/runtime/mediamtx/stop":    handleStopMediaMTX(logger, service),
 		"/api/runtime/mediamtx/restart": handleRestartMediaMTX(logger, service),
+	} {
+		mux.HandleFunc("POST "+path, handler)
+		mux.HandleFunc(path, methodNotAllowed(logger, http.MethodPost))
+	}
+}
+
+// registerBranchRoutes wires the destination-branch runtime API.
+//
+// start-enabled and stop-all are registered as their own literal paths,
+// distinct in segment count from /api/runtime/branches/{id}/start and
+// .../{id}/stop, so there is no pattern overlap for ServeMux to resolve.
+func registerBranchRoutes(mux *http.ServeMux, logger *slog.Logger, service BranchRuntimeService) {
+	mux.HandleFunc("GET /api/runtime/branches", handleGetBranches(logger, service))
+	mux.HandleFunc("/api/runtime/branches", methodNotAllowed(logger, http.MethodGet))
+
+	mux.HandleFunc("POST /api/runtime/branches/start-enabled", handleStartEnabledBranches(logger, service))
+	mux.HandleFunc("/api/runtime/branches/start-enabled", methodNotAllowed(logger, http.MethodPost))
+
+	mux.HandleFunc("POST /api/runtime/branches/stop-all", handleStopAllBranches(logger, service))
+	mux.HandleFunc("/api/runtime/branches/stop-all", methodNotAllowed(logger, http.MethodPost))
+
+	for path, handler := range map[string]http.HandlerFunc{
+		"/api/runtime/branches/{id}/start":   handleStartBranch(logger, service),
+		"/api/runtime/branches/{id}/stop":    handleStopBranch(logger, service),
+		"/api/runtime/branches/{id}/restart": handleRestartBranch(logger, service),
 	} {
 		mux.HandleFunc("POST "+path, handler)
 		mux.HandleFunc(path, methodNotAllowed(logger, http.MethodPost))

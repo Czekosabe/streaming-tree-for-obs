@@ -3015,3 +3015,237 @@ Branch process supervision: the FFmpeg command itself (stream copy, FLV over
 RTMP/RTMPS, `-progress` parsing), the per-branch state machine, eligibility
 and blockers, secret retrieval at process-start time only, restart policy and
 ingest-loss handling, and the branch runtime HTTP API.
+
+## 2026-08-04 12:19 — feat(server): supervise destination branches
+
+### Status
+Completed (backend only - real end-to-end loopback verification and the
+frontend are the remaining entries in this stage)
+
+### Scope
+The core of stage 6: `internal/runtime/branch`, a manager that supervises one
+independent FFmpeg process per configured, eligible destination, pulling the
+shared local MediaMTX input and pushing it to that destination's configured
+server. Plus the branch runtime HTTP API and its wiring into `main.go`. This
+is the first stage that can send a stream onward - though it has not yet been
+verified against a real destination end to end; that is the next entry.
+
+### State machine and desired vs. actual state
+
+States: `idle`, `blocked`, `waiting_for_ingest`, `starting`, `live`,
+`restarting`, `stopping`, `error` - one value, never a set of booleans.
+Every branch also tracks `desiredRunning` separately from its process state,
+because the two genuinely diverge: an explicit Start means "run", ingest can
+disappear and return without the operator doing anything, FFmpeg can crash,
+and an explicit Stop must clear the desire and suppress every future
+automatic resume until the operator asks again.
+
+### Eligibility and blockers
+
+Starting requires, in order: the platform is enabled, an output server is
+configured, a stream key is stored, the credential store is reachable, a
+compatible FFmpeg is resolved, MediaMTX is ready, and ingest is receiving.
+Every unmet requirement is returned as its own stable blocker identifier
+(`platform_disabled`, `output_server_missing`, `stream_key_missing`,
+`credential_store_unavailable`, `ffmpeg_missing`, `ffmpeg_incompatible`,
+`mediamtx_not_ready`, `ingest_not_receiving`), computed fresh on every Start
+attempt and every reconciliation pass - never cached, since MediaMTX
+readiness and ingest state can change between one check and the next.
+
+### FFmpeg command
+
+Conceptually (real values, secrets never appear in any log line - see
+below): `ffmpeg -hide_banner -nostdin -loglevel warning -i <local MediaMTX
+publish URL> -map 0:v? -map 0:a? -c copy -f flv -rw_timeout 15000000
+-progress pipe:1 <destination URL>`. Stream copy only, exactly as required;
+this stage never transcodes. `-rw_timeout` (a generic AVIO option, 15
+seconds) is the bounded-network-timeout mechanism, because the previous
+entry's research found no RTMP-specific reconnect or timeout flag in this
+FFmpeg's documented options - see that entry. `-re` was deliberately not
+added: the source is a live loopback input, not a file, so there is nothing
+to pace against.
+
+If FFmpeg's `-c copy` cannot carry the source codec into FLV, that is FFmpeg
+itself exiting quickly with a clear error - this stage treats that as a
+normal, immediate exit (surfaced as `branch_exited_unexpectedly` after the
+restart budget is exhausted, since it will keep failing the same way) rather
+than detecting the codec mismatch itself and silently starting a transcode.
+Silent transcoding was explicitly out of scope for this stage.
+
+### Real live-state detection
+
+A spawned process is never live by itself. `-progress pipe:1` output is
+parsed into key=value blocks (`frame`, `fps`, `out_time_ms`, `total_size`,
+`speed`, terminated by `progress=continue`/`end`); a branch moves to `live`
+only once a completed block shows `out_time_ms > 0`, `total_size > 0` or
+`frame count > 0` - a bare "progress=end" with everything still at zero (the
+very first tick) is deliberately not enough. Parsing tolerates unknown keys
+and ignores one malformed value without discarding the rest of the block.
+
+### Secret handling during launch
+
+`credential.Service.RetrieveForProcessStart` is called only inside `launch`,
+immediately before spawning the process - never for status polling, never
+cached in branch state. The destination URL (server address + key) is built
+in the same function and both are released (the local variables reassigned
+to empty) as soon as the process has started; **this is not a claim that Go
+reliably zeroes the underlying memory**, only that nothing in this package
+keeps a reference alive longer than starting the process required. No branch
+snapshot, error, or log line ever contains the key or the full destination
+URL - `Redactor` (redact.go) strips both, and their common URL-escaped
+variants, from every captured stderr line before it is logged or buffered,
+and `branch.Snapshot`/`RuntimeError` simply have no field that could carry
+either in the first place.
+
+**Command-line exposure, assessed honestly**: FFmpeg receives the
+destination URL, key included, as its final command-line argument, because
+no safer supported FFmpeg CLI mechanism was found for this (environment
+variables would still require the URL to reach FFmpeg's own argument parsing
+for the RTMP muxer; a config-file mechanism does not exist for arbitrary
+per-run output URLs in the CLI). On a shared or compromised machine, a
+process with sufficient local permissions could read this application's
+child process's argument list from the OS. This stage does not introduce a
+shell wrapper, a plaintext temporary file, or any other mitigation, because
+each of those either does not remove the exposure or introduces a worse one
+(a temp file is itself a plaintext secret at rest). This limitation is
+accepted for this local, single-user stage on the condition - upheld by
+everything above - that the application itself never logs the command line,
+redacts captured output before it is ever stored, and never returns a
+destination URL through the API.
+
+### Restart policy
+
+Bounded exponential backoff (1s initial, doubling, capped at 30s), a cap of 5
+restarts per 5-minute window, and a stable-run reset (60 seconds live clears
+the accumulated backoff) - the same shape as the MediaMTX supervisor's
+policy, reimplemented independently rather than shared; see Technical
+decisions. Hitting the cap moves the branch to `error` with code
+`branch_restart_limit_reached` and clears `desiredRunning`: the operator must
+explicitly start it again.
+
+### Ingest-loss and resume
+
+When ingest disappears while a branch is desired running, FFmpeg's own read
+of the (now-closed) local RTMP input normally ends the process on its own;
+`watchExit` checks the current ingest state and, if it is not `receiving`,
+treats the exit as expected - `waiting_for_ingest`, restart policy not
+applied, `desiredRunning` retained - rather than a failure. A background
+reconciliation loop (every 2 seconds) also proactively stops a branch whose
+process has not exited on its own once ingest is gone, and resumes any
+`waiting_for_ingest` branch once ingest returns and every other blocker has
+cleared. An explicit Stop while waiting clears `desiredRunning`, so ingest
+returning afterward does not resume it.
+
+### Shutdown order
+
+HTTP server, then branches, then MediaMTX - branches are stopped before
+MediaMTX specifically so no branch spends the shutdown window trying to
+reconnect to an input that is itself going away. `Manager.Shutdown` stops
+every tracked branch, cancels the reconciliation loop, and waits for every
+worker goroutine, mirroring the MediaMTX supervisor's own shutdown shape.
+
+### Branch runtime API
+
+`GET /api/runtime/ffmpeg` (dependency status: state/source/detected and
+minimum version/capabilities - never the executable path),
+`GET /api/runtime/branches` (one versioned snapshot per configured platform),
+`POST /api/runtime/branches/{id}/start|stop|restart`,
+`POST /api/runtime/branches/start-enabled` (per-platform results; one
+ineligible destination does not block another), `POST
+/api/runtime/branches/stop-all`. Start/Restart answer 202 when accepted, 422
+with a `blockers` array when not eligible, 409 on conflict; Stop answers 409
+`branch_not_running` for an idle/blocked branch. Command endpoints reject a
+request body exactly like the existing MediaMTX command endpoints.
+`DELETE /api/platforms/{id}` now also forgets (stops best-effort, removes
+tracked state for) a platform's branch before the credential-cleanup step
+already established in stage 5, so no branch entry survives its platform.
+
+### Files changed
+- `apps/server/internal/runtime/branch/*.go` (new package: state, errors,
+  redact, progress, command, process, process_unix, process_windows, manager
+  - and their `_test.go` files)
+- `apps/server/internal/httpapi/branch_runtime.go` (new)
+- `apps/server/internal/httpapi/branch_runtime_test.go` (new)
+- `apps/server/internal/httpapi/router.go`
+- `apps/server/internal/httpapi/credentials.go`
+- `apps/server/cmd/server/main.go`
+
+### Technical decisions
+
+1. **One mutex guards every branch's state, not one per branch.** This
+   supervises a handful of local destinations at most; a single lock, held
+   only for state bookkeeping and never across process spawn, credential
+   retrieval or a database read, is simpler to reason about correctly than
+   per-branch locking and cheap enough that the simplicity is worth it.
+2. **Restart-policy and reconciliation-interval constants are duplicated
+   from `internal/runtime/mediamtx`, not imported.** The two managers
+   supervise different kinds of process for different reasons; coupling them
+   for four shared constants was judged not worth the dependency it would
+   create between otherwise-unrelated packages. Both are exposed as instance
+   fields with the real constants as defaults, overridable - which is what
+   let the test suite run in well under a second instead of the tens of real
+   seconds the production restart policy would otherwise require per test.
+3. **Real process launching is behind an injectable `processLauncher`
+   interface.** Nearly every branch-manager test drives a fake in-process
+   handle instead of a real `exec.Cmd`, so the state machine, restart policy
+   and ingest-loss handling are covered by fast, deterministic unit tests.
+   Real FFmpeg process spawning is exercised only by `probeExecutable`'s own
+   test (previous entry) and by the dedicated end-to-end integration script
+   the next entry adds - not by this package's unit tests, matching the
+   task's instruction that a normal test run must not require a real FFmpeg
+   installation.
+4. **Command-line secret exposure is accepted, not hidden or worked around,
+   for this stage.** See the dedicated section above; the honest assessment
+   itself is the deliverable here, not a fix that does not actually exist
+   yet in FFmpeg's CLI.
+5. **A generic AVIO timeout (`-rw_timeout`), not an RTMP-specific one.**
+   Recorded as a research finding in the previous entry; used here because
+   nothing more specific exists in this FFmpeg's documented options.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 11 packages |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+Both integration scripts were re-run against the real backend binary with the
+branch manager and the real local FFmpeg wired in (not just unit tests), to
+confirm the backend still starts and stops cleanly with this stage's code
+active - no branch was started during either script, since neither configures
+an output server or a stream key.
+
+The race detector (`go test -race`) could not be run in this environment:
+`modernc.org/sqlite` (the pure-Go driver already in this project, chosen
+precisely to avoid CGO) is compatible, but `-race` itself requires
+`CGO_ENABLED=1`, and no C toolchain is set up here. The concurrency design
+(recorded above) was reasoned through manually instead; this is recorded
+honestly as a real gap, not silently skipped.
+
+### Known limitations
+- **Not yet verified against a real destination end to end.** This entry's
+  automated tests use an injected fake process launcher; the next entry adds
+  a dedicated integration script that spawns a real, locally probed FFmpeg
+  (8.1, confirmed compatible in the previous entry) against a real local
+  MediaMTX sink. Stage 6 is not complete until that passes.
+- **The FFmpeg dependency is resolved once at backend startup**, cached, and
+  refreshed on a 5-minute timer; there is no live "probing" state a client
+  can observe mid-resolution, since resolution takes a few seconds at most
+  and happens before the HTTP server starts accepting requests.
+- **Command-line secret exposure**, discussed above, is a real, accepted
+  limitation of this stage, not a solved problem.
+- **The race detector was not run**, per the explanation above.
+- All limitations recorded in previous entries still stand.
+
+### Next step
+
+A dedicated integration script (`scripts/verify-ffmpeg-branches.mjs`) that
+exercises this stage against real MediaMTX and real FFmpeg processes over
+loopback, with an injected fake credential store and no real platform
+account - the honest, real-process verification this entry's unit tests
+cannot provide on their own. Then the frontend: output-settings and branch
+controls, and the documentation that closes out the stage.

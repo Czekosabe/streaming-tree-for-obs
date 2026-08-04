@@ -141,19 +141,31 @@ func handleDeleteStreamKey(logger *slog.Logger, platforms PlatformService, crede
 
 // --- platform deletion cascade --------------------------------------------
 
-// handleDeletePlatformWithCredentials deletes a platform's credentials
-// before deleting the platform row itself, so a platform is never removed
-// while cleanup of its own credential is in a confirmed-failed state.
+// handleDeletePlatformWithCredentials deletes a platform's branch (if any is
+// tracked) and its credentials before deleting the platform row itself, so a
+// platform is never removed while cleanup of its own credential is in a
+// confirmed-failed state, and no branch entry lingers for an id that no
+// longer exists.
+//
+// branches may be nil (no branch manager wired, e.g. in tests that do not
+// need it); credentials may not, since this function is only ever registered
+// when it is non-nil - see router.go.
 //
 // See credential.Service.DeletePlatformCredentials for the ordering and
 // failure policy this depends on, including the one case (an unreachable
 // store) where cleanup is treated as best-effort and platform deletion
 // proceeds anyway.
-func handleDeletePlatformWithCredentials(logger *slog.Logger, platforms PlatformService, credentials CredentialService) http.HandlerFunc {
+func handleDeletePlatformWithCredentials(
+	logger *slog.Logger, platforms PlatformService, credentials CredentialService, branches BranchRuntimeService,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if !requirePlatform(w, logger, r, platforms, id) {
 			return
+		}
+
+		if branches != nil {
+			branches.Forget(r.Context(), id)
 		}
 
 		if err := credentials.DeletePlatformCredentials(r.Context(), id); err != nil {

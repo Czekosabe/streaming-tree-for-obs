@@ -1,7 +1,7 @@
 // Command server starts the Streaming Tree REST API: platform configuration,
-// MediaMTX supervision and the destination-credential store are wired here.
-// FFmpeg destination branches and OAuth-based connectors are still separate,
-// later stages.
+// MediaMTX supervision, the destination-credential store and destination
+// branch supervision are all wired here. OAuth-based connectors and the
+// engagement platform are still separate, later stages.
 package main
 
 import (
@@ -20,6 +20,8 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
+	"github.com/streaming-tree/server/internal/runtime/branch"
+	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
@@ -112,6 +114,26 @@ func run() error {
 		slog.String("rtmp", snapshot.Connection.ServerURL),
 	)
 
+	// Every branch begins with desiredRunning false: a backend restart never
+	// resumes a broadcast on its own, so nothing is started here.
+	branchManager := branch.NewManager(branch.Options{
+		Platforms:   platformService,
+		Outputs:     outputService,
+		Credentials: credentialService,
+		FFmpeg:      ffmpeg.NewResolver(cfg.FFmpeg.ExecutablePath),
+		Ingest:      supervisor,
+		Logger:      logger,
+	})
+	branchManager.Start(ctx)
+
+	ffmpegStatus := branchManager.FFmpegStatus()
+	logger.Info("ffmpeg dependency",
+		// Never the path: see ffmpeg.Resolution.Path's own doc comment.
+		slog.String("source", string(ffmpegStatus.Source)),
+		slog.String("detected_version", ffmpegStatus.Version),
+		slog.Bool("compatible", ffmpegStatus.Compatible),
+	)
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:         logger,
 		AllowedOrigins: cfg.AllowedOrigins,
@@ -120,6 +142,8 @@ func run() error {
 		Runtime:        supervisor,
 		Credentials:    credentialService,
 		Outputs:        outputService,
+		FFmpegRuntime:  branchManager,
+		Branches:       branchManager,
 	})
 
 	server := &http.Server{
@@ -149,8 +173,10 @@ func run() error {
 	select {
 	case err := <-serverErrors:
 		// The listener failed outright, most often because the port is taken.
-		// MediaMTX may already be running, so it is stopped before returning.
+		// MediaMTX and any branch may already be running, so both are
+		// stopped before returning - branches first, see below.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		branchManager.Shutdown(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
 		return err
@@ -168,9 +194,13 @@ func run() error {
 
 		httpErr := server.Shutdown(shutdownCtx)
 
-		// MediaMTX is stopped after the HTTP server, so an in-flight runtime
-		// request cannot restart it on the way out. This also reaps the child
-		// process, so the backend never leaves one behind.
+		// Branches are stopped before MediaMTX, and MediaMTX is stopped
+		// after the HTTP server: an in-flight runtime request cannot
+		// restart MediaMTX on the way out, and no branch is left trying to
+		// reconnect to an input that is itself in the middle of shutting
+		// down. This also reaps every child process, so the backend never
+		// leaves one behind.
+		branchManager.Shutdown(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 
 		if httpErr != nil {
