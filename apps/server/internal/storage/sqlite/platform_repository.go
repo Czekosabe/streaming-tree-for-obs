@@ -32,7 +32,7 @@ func storageErr(op string, err error) error {
 
 const platformColumns = `
     p.id, p.provider_id, p.display_name, p.enabled, p.sort_order, p.created_at, p.updated_at,
-    m.title, m.description, m.category, m.language, m.visibility,
+    m.title, m.description, m.category, m.category_id, m.language, m.visibility,
     m.mature_content, m.dvr, m.latency_mode, m.updated_at`
 
 // scanPlatform reads one joined platforms + platform_metadata row.
@@ -50,6 +50,7 @@ func scanPlatform(scanner interface{ Scan(...any) error }) (platform.Platform, e
 		title             sql.NullString
 		description       sql.NullString
 		category          sql.NullString
+		categoryID        sql.NullString
 		language          sql.NullString
 		visibility        sql.NullString
 		matureContent     sql.NullInt64
@@ -60,7 +61,7 @@ func scanPlatform(scanner interface{ Scan(...any) error }) (platform.Platform, e
 
 	if err := scanner.Scan(
 		&p.ID, &providerID, &p.DisplayName, &enabled, &p.SortOrder, &createdAt, &updatedAt,
-		&title, &description, &category, &language, &visibility,
+		&title, &description, &category, &categoryID, &language, &visibility,
 		&matureContent, &dvr, &latencyMode, &metadataUpdatedAt,
 	); err != nil {
 		return platform.Platform{}, err
@@ -81,6 +82,7 @@ func scanPlatform(scanner interface{ Scan(...any) error }) (platform.Platform, e
 		Title:         title.String,
 		Description:   description.String,
 		Category:      category.String,
+		CategoryID:    categoryID.String,
 		Language:      language.String,
 		Visibility:    visibility.String,
 		MatureContent: matureContent.Valid && matureContent.Int64 != 0,
@@ -384,13 +386,14 @@ func insertMetadataRow(
 
 	if _, err := ex.ExecContext(ctx, `
         INSERT INTO platform_metadata
-            (platform_id, title, description, category, language, visibility,
+            (platform_id, title, description, category, category_id, language, visibility,
              mature_content, dvr, latency_mode, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		platformID,
 		nullableText(caps.Title, m.Title),
 		nullableText(caps.Description, m.Description),
 		nullableText(caps.Category, m.Category),
+		nullableText(caps.Category, m.CategoryID),
 		nullableText(caps.Language, m.Language),
 		nullableText(caps.Visibility, m.Visibility),
 		nullableBool(caps.MatureContent, m.MatureContent),

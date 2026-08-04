@@ -390,8 +390,9 @@ func TestPutPlatformMetadataSavesTagsInOrder(t *testing.T) {
 
 	recorder := do(t, handler, http.MethodPut, "/api/platforms/pf_seed_twitch/metadata", map[string]any{
 		"title": "Live coding", "description": "", "category": "Software and Game Development",
-		"tags": []string{"zebra", "alpha"}, "language": "pl", "visibility": "",
-		"matureContent": false, "dvr": false, "latencyMode": "low",
+		"categoryId": "1469308723",
+		"tags":       []string{"zebra", "alpha"}, "language": "pl", "visibility": "",
+		"matureContent": false, "dvr": false, "latencyMode": "",
 	})
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", recorder.Code, recorder.Body.String())

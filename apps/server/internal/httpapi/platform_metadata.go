@@ -17,6 +17,7 @@ type saveMetadataRequest struct {
 	Title         string   `json:"title"`
 	Description   string   `json:"description"`
 	Category      string   `json:"category"`
+	CategoryID    string   `json:"categoryId"`
 	Tags          []string `json:"tags"`
 	Language      string   `json:"language"`
 	Visibility    string   `json:"visibility"`
@@ -53,6 +54,7 @@ func handleSaveMetadata(logger *slog.Logger, service PlatformService) http.Handl
 			Title:         body.Title,
 			Description:   body.Description,
 			Category:      body.Category,
+			CategoryID:    body.CategoryID,
 			Tags:          tags,
 			Language:      body.Language,
 			Visibility:    body.Visibility,

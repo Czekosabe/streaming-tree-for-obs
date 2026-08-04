@@ -171,12 +171,11 @@ func TestValidateMetadataAcceptsValidTwitchMetadata(t *testing.T) {
 	def := mustDefinition(t, ProviderTwitch)
 
 	out, err := ValidateMetadata(def, Metadata{
-		Title:         "  Building a multistream tool  ",
-		Category:      "Software and Game Development",
-		Tags:          []string{"programming", "go", "obs"},
-		Language:      "pl",
-		LatencyMode:   LatencyLow,
-		MatureContent: true,
+		Title:      "  Building a multistream tool  ",
+		Category:   "Software and Game Development",
+		CategoryID: "1469308723",
+		Tags:       []string{"programming", "go", "obs"},
+		Language:   "pl",
 	})
 	if err != nil {
 		t.Fatalf("ValidateMetadata() returned an error: %v", err)
@@ -188,8 +187,44 @@ func TestValidateMetadataAcceptsValidTwitchMetadata(t *testing.T) {
 	if len(out.Tags) != 3 {
 		t.Errorf("kept %d tags, want 3", len(out.Tags))
 	}
-	if !out.MatureContent {
-		t.Error("MatureContent was dropped")
+	if out.CategoryID != "1469308723" {
+		t.Errorf("CategoryID = %q, want it preserved", out.CategoryID)
+	}
+}
+
+// TestValidateMetadataRejectsLatencyAndMatureContentForTwitch locks in the
+// Stage 7A correction (docs/provider-integrations/twitch.md): Twitch's real
+// Modify Channel Information endpoint has no latency-mode field and no
+// single boolean equivalent to "mature content", so both are rejected as
+// unsupported rather than accepted the way the earlier, unverified
+// definition did.
+func TestValidateMetadataRejectsLatencyAndMatureContentForTwitch(t *testing.T) {
+	def := mustDefinition(t, ProviderTwitch)
+
+	_, err := ValidateMetadata(def, Metadata{Title: "Fine", LatencyMode: LatencyLow})
+	if rules := violationRules(t, err, "latencyMode"); len(rules) == 0 || rules[0] != RuleNotSupported {
+		t.Errorf("latencyMode reported %v, want [%s]", rules, RuleNotSupported)
+	}
+
+	_, err = ValidateMetadata(def, Metadata{Title: "Fine", MatureContent: true})
+	if rules := violationRules(t, err, "matureContent"); len(rules) == 0 || rules[0] != RuleNotSupported {
+		t.Errorf("matureContent reported %v, want [%s]", rules, RuleNotSupported)
+	}
+}
+
+// TestValidateMetadataRejectsStaleCategoryIDForProviderWithoutCategory
+// mirrors the existing category behaviour: a categoryId sent for a provider
+// with no category support at all is rejected, not silently dropped.
+func TestValidateMetadataRejectsStaleCategoryIDForProviderWithoutCategory(t *testing.T) {
+	def, ok := Definition(ProviderTikTok)
+	if !ok {
+		t.Fatal("TikTok definition not found")
+	}
+	def.Capabilities.Category = false // isolate this assertion from TikTok's own capability table
+
+	_, err := ValidateMetadata(def, Metadata{Title: "Fine", CategoryID: "123"})
+	if rules := violationRules(t, err, "categoryId"); len(rules) == 0 || rules[0] != RuleNotSupported {
+		t.Errorf("reported %v, want [%s]", rules, RuleNotSupported)
 	}
 }
 
@@ -296,10 +331,14 @@ func TestValidateMetadataRejectsUnsupportedVisibility(t *testing.T) {
 }
 
 func TestValidateMetadataRejectsUnsupportedLatency(t *testing.T) {
-	def := mustDefinition(t, ProviderTwitch)
+	// YouTube supports LatencyMode but only its own three documented
+	// options; Twitch has no LatencyMode capability at all as of Stage 7A
+	// (see TestValidateMetadataRejectsLatencyAndMatureContentForTwitch), so
+	// this "supported field, disallowed value" case now needs a provider
+	// that still has the capability.
+	def := mustDefinition(t, ProviderYouTube)
 
-	// "ultra-low" is a YouTube option; Twitch does not offer it.
-	_, err := ValidateMetadata(def, Metadata{Title: "Fine", LatencyMode: LatencyUltraLow})
+	_, err := ValidateMetadata(def, Metadata{Title: "Fine", LatencyMode: "turbo"})
 	if err == nil {
 		t.Fatal("ValidateMetadata() accepted a latency mode the provider does not offer")
 	}

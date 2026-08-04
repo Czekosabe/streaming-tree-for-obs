@@ -86,8 +86,15 @@ type ProviderDefinition struct {
 	ShortLabel string     `json:"shortLabel"`
 
 	CategoryFieldType CategoryFieldType `json:"categoryFieldType"`
-	Capabilities      Capabilities      `json:"capabilities"`
-	Limits            Limits            `json:"limits"`
+	// CategoryRequiresRemoteID means this provider's category field cannot
+	// be published from display text alone - a category selected through
+	// the provider's own search must supply CategoryID too, and free-typed
+	// or stale category text with no ID is a publish blocker rather than a
+	// best-effort guess. False for a provider that has no metadata-publish
+	// integration at all yet, or whose category concept is display-only.
+	CategoryRequiresRemoteID bool         `json:"categoryRequiresRemoteId"`
+	Capabilities             Capabilities `json:"capabilities"`
+	Limits                   Limits       `json:"limits"`
 
 	VisibilityOptions []string `json:"visibilityOptions"`
 	LatencyOptions    []string `json:"latencyOptions"`
@@ -103,9 +110,16 @@ type ProviderDefinition struct {
 // Every value here is authored by the user and is stored exactly as entered -
 // it is never translated, normalised beyond trimming, or interpreted.
 type Metadata struct {
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	Category      string    `json:"category"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	// CategoryID is the provider's own stable remote identifier for
+	// Category (a Twitch game/category ID, for instance) - distinct from
+	// Category, which is display text a user may type freely. Empty means
+	// no remote category has been selected, even when Category holds text:
+	// stale, ID-less text is a publish blocker, never guessed at, per
+	// docs/provider-integrations/twitch.md.
+	CategoryID    string    `json:"categoryId"`
 	Tags          []string  `json:"tags"`
 	Language      string    `json:"language"`
 	Visibility    string    `json:"visibility"`

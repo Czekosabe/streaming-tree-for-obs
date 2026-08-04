@@ -3781,3 +3781,88 @@ exactly as the task specified, confirmed safe by current documentation.
 ### Next step
 Add the connected-account persistence layer: migrations, the
 provider-independent `internal/domain/account` package, and the SQLite
+repository - see the next entry.
+
+## 2026-08-04 15:45 — feat(server): add connected account persistence
+
+### Status
+Completed
+
+### Scope
+The provider-independent connected-account foundation: schema, domain
+package, and the metadata model's `categoryId` addition. This is a larger
+single commit than the task's suggested 8-commit split; see "Split from the
+suggested plan" below for why.
+
+### Changes
+
+**Migrations** — `0004_provider_integration_settings.sql` (non-secret
+per-provider Client ID, environment override always wins and is never
+persisted here), `0005_connected_accounts.sql` (`connected_accounts`,
+`connected_account_scopes`, `platform_account_links` - unique
+`(provider_id, provider_user_id)`, cascading FKs, no token-like column at
+all, verified by a dedicated test reading `PRAGMA table_info`),
+`0006_platform_metadata_category_id.sql` (nullable `category_id` alongside
+the existing free-text `category`, defaulting to NULL for every existing
+row - no fake ID retrofitted onto seed data).
+
+**`internal/domain/account`** (new package) — `Account`, `Link`,
+`IntegrationSettings`/`IntegrationConfig`, the `Provider` adapter interface
+(`StartDeviceFlow`, `PollDeviceFlow`, `ValidateToken`, `RefreshToken`,
+`RevokeToken`, `GetIdentity` - the one contract a future YouTube or Kick
+adapter would implement identically), `TokenBundle` and its SecretStore
+integration (one atomically-replaced secret per account, JSON-encoded,
+unsupported `token_type` and unknown fields rejected at decode time, size-
+bounded), and `Service`: integration-config resolution (environment always
+wins, database-managed value locked while accounts exist unless the value
+is unchanged), `FinalizeConnection` (new-vs-reconnect-by-identity, the
+compensating secret delete on a database-insert failure), `ValidateNow`
+(validate → refresh-once → re-validate → `reconnect_required`),
+single-flight `RefreshToken` per account, `WithFreshToken` (the shared
+retry-once-on-401 helper every Twitch-calling path reuses), `Disconnect`
+(revoke → delete secret → delete row, preserving local state on any
+failure), and platform-account linking with a provider-mismatch check.
+
+**Metadata model** — `platform.Metadata` gained `CategoryID`; a new
+`ProviderDefinition.CategoryRequiresRemoteID` flag (true only for Twitch);
+`ValidateMetadata` validates `categoryId` the same way as `category`
+(supported only when the provider supports a category at all). Twitch's
+`MatureContent` and `LatencyMode` capabilities are corrected from `true` to
+`false` - see the previous entry's research findings. Existing tests
+encoding the old, unverified assumption were updated, not deleted, and a
+new test locks in the correction
+(`TestValidateMetadataRejectsLatencyAndMatureContentForTwitch`).
+
+**SQLite repository** — `AccountRepository`, mirroring `PlatformRepository`
+and `OutputRepository`'s existing patterns (`execer`, `isUniqueViolation`,
+timestamp helpers). Adds `isForeignKeyViolation` (new) so linking to a
+nonexistent platform or account is reported as a domain conflict, not a
+generic storage error.
+
+### Split from the suggested plan
+The task's preferred split names four separate server commits
+(persistence / device authorization / metadata publish, plus a docs
+commit). This entry bundles persistence with the metadata-model correction,
+because the correction depends on knowing the real Twitch capability
+research (previous entry) and both land in the same migration/domain layer
+review pass; splitting them would mean re-reviewing the same files twice
+for no benefit. Device authorization and metadata publishing remain their
+own commits, next.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed |
+| Backend static analysis | `go vet ./...` | Passed |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed (new: `internal/domain/account`, `internal/storage/sqlite` account/category tests) |
+
+### Known limitations
+- Only Twitch has a verified capability table; YouTube, Kick and TikTok
+  remain the pre-existing approximation, exactly as the task requires
+  (their correction is Stage 7B/7C).
+
+### Next step
+Twitch device authorization: the OAuth/Helix client, the device-flow
+attempt manager, and the HTTP surface for integration config, device flow

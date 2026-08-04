@@ -12,6 +12,12 @@ const (
 	// CategoryMaxLength bounds the category-like field for every provider.
 	CategoryMaxLength = 100
 
+	// CategoryIDMaxLength bounds the provider's own remote category
+	// identifier - generous enough for any provider's ID scheme seen so
+	// far (Twitch game IDs are short numeric strings) without hard-coding
+	// one provider's exact format.
+	CategoryIDMaxLength = 64
+
 	// TagMinLength is the shortest accepted tag, matching the editor's rule.
 	TagMinLength = 2
 
@@ -141,6 +147,24 @@ func ValidateMetadata(def ProviderDefinition, in Metadata) (Metadata, error) {
 		out.Category = category
 	} else if category != "" {
 		v.Add("category", RuleNotSupported, "This provider does not support a category.", nil)
+	}
+
+	// --- category id ---------------------------------------------------
+	//
+	// Validated the same way as category itself (supported only when
+	// Category is), but never cross-checked against Category's text here:
+	// a mismatch between typed text and a stale ID is exactly the
+	// publish-time blocker docs/provider-integrations/twitch.md describes,
+	// not something this generic domain layer silently repairs.
+	categoryID := strings.TrimSpace(in.CategoryID)
+	if caps.Category {
+		if utf8.RuneCountInString(categoryID) > CategoryIDMaxLength {
+			v.Addf("categoryId", RuleTooLong, map[string]any{"max": CategoryIDMaxLength},
+				"Category ID cannot exceed %d characters.", CategoryIDMaxLength)
+		}
+		out.CategoryID = categoryID
+	} else if categoryID != "" {
+		v.Add("categoryId", RuleNotSupported, "This provider does not support a category.", nil)
 	}
 
 	// --- tags --------------------------------------------------------------

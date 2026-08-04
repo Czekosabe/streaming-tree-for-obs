@@ -43,6 +43,7 @@ type metadataResponse struct {
 	Title         string   `json:"title"`
 	Description   string   `json:"description"`
 	Category      string   `json:"category"`
+	CategoryID    string   `json:"categoryId"`
 	Tags          []string `json:"tags"`
 	Language      string   `json:"language"`
 	Visibility    string   `json:"visibility"`
@@ -61,6 +62,7 @@ func toMetadataResponse(m platform.Metadata) metadataResponse {
 		Title:         m.Title,
 		Description:   m.Description,
 		Category:      m.Category,
+		CategoryID:    m.CategoryID,
 		Tags:          tags,
 		Language:      m.Language,
 		Visibility:    m.Visibility,

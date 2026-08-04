@@ -29,6 +29,11 @@ const (
 	// SecretTypeDestinationStreamKey is a configured destination platform's
 	// outgoing RTMP stream key.
 	SecretTypeDestinationStreamKey SecretType = "destination-stream-key"
+
+	// SecretTypeOAuthTokenBundle is a connected account's complete OAuth
+	// token set (access token, refresh token, token type, expiry), stored as
+	// one atomically-replaced value - see internal/domain/account.TokenBundle.
+	SecretTypeOAuthTokenBundle SecretType = "oauth-token-bundle"
 )
 
 // BuildKey returns the namespaced key for one secret.

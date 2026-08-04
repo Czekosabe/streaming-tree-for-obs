@@ -7,11 +7,13 @@ import "sort"
 // This table was moved here from the frontend so the backend is the single
 // source of truth for provider capabilities.
 //
-// IMPORTANT: these definitions are approximate and were NOT verified against
-// the real Twitch, YouTube, Kick or TikTok APIs. They preserve the behaviour
-// the dashboard had before persistence was introduced and exist to drive the
-// capability-based metadata editor. They must be re-checked when real API
-// integrations are implemented.
+// IMPORTANT: only the Twitch definition below has been verified against a
+// real provider API (Stage 7A; see docs/provider-integrations/twitch.md).
+// YouTube, Kick and TikTok remain approximate and were NOT verified against
+// their real APIs - they preserve the behaviour the dashboard had before
+// persistence was introduced and exist to drive the capability-based
+// metadata editor. They must be re-checked when their own real API
+// integrations are implemented (Stage 7B/7C).
 
 // supportedLanguages lists the stream language identifiers offered for
 // providers that expose a language field. They are BCP 47 primary subtags; the
@@ -24,16 +26,29 @@ var providerDefinitions = map[ProviderID]ProviderDefinition{
 		BrandName:         "Twitch",
 		ShortLabel:        "TW",
 		CategoryFieldType: CategoryFieldCategory,
+		// A category is published to Twitch by game_id (Get/Search
+		// Categories), never by display text alone - see
+		// docs/provider-integrations/twitch.md.
+		CategoryRequiresRemoteID: true,
 		Capabilities: Capabilities{
-			Title:         true,
-			Description:   false,
-			Category:      true,
-			Tags:          true,
-			Language:      true,
-			Visibility:    false,
-			MatureContent: true,
+			Title:       true,
+			Description: false,
+			Category:    true,
+			Tags:        true,
+			Language:    true,
+			Visibility:  false,
+			// Corrected after verifying the real Modify Channel Information
+			// endpoint (docs/provider-integrations/twitch.md): Twitch has no
+			// single boolean equivalent to a generic "mature content" flag
+			// (content_classification_labels is a set of specific labels,
+			// and is_branded_content is an unrelated sponsorship flag), and
+			// no field at all for a client-side "latency mode" - that
+			// setting is not part of this endpoint. Both were previously
+			// approximated as true before any real Twitch API was
+			// consulted.
+			MatureContent: false,
 			DVR:           false,
-			LatencyMode:   true,
+			LatencyMode:   false,
 		},
 		Limits: Limits{
 			TitleMaxLength:       140,
@@ -42,8 +57,12 @@ var providerDefinitions = map[ProviderID]ProviderDefinition{
 			TagMaxLength:         25,
 		},
 		VisibilityOptions: []string{},
-		LatencyOptions:    []string{LatencyLow, LatencyNormal},
-		LanguageOptions:   supportedLanguages,
+		// Empty, not LatencyLow/LatencyNormal: LatencyMode is now false
+		// above, so this list is unused, and a non-empty list here would
+		// misleadingly suggest Twitch has latency options this application
+		// can actually set.
+		LatencyOptions:  []string{},
+		LanguageOptions: supportedLanguages,
 	},
 	ProviderYouTube: {
 		ID:                ProviderYouTube,

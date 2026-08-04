@@ -30,3 +30,21 @@ func isUniqueViolation(err error) bool {
 
 	return strings.Contains(strings.ToUpper(err.Error()), "UNIQUE CONSTRAINT FAILED")
 }
+
+// isForeignKeyViolation reports whether the driver rejected a write because
+// it referenced a row that does not exist (a platform or account id that is
+// not really there).
+func isForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var sqliteErr *sqlite3.Error
+	if errors.As(err, &sqliteErr) {
+		if sqliteErr.Code() == sqlite3lib.SQLITE_CONSTRAINT_FOREIGNKEY {
+			return true
+		}
+	}
+
+	return strings.Contains(strings.ToUpper(err.Error()), "FOREIGN KEY CONSTRAINT FAILED")
+}
