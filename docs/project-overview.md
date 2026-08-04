@@ -414,10 +414,11 @@ loopback FFmpeg/MediaMTX integration script:
 5. **Shared source.** All branches read the same local MediaMTX input, so
    adding a destination puts no extra load on OBS.
 
-## 8.1 Three concepts that must not be confused
+## 8.1 Four concepts that must not be confused
 
-The domain deliberately separates three things that look similar and behave
-completely differently.
+The domain deliberately separates four things that look similar and behave
+completely differently. The fourth, a connected account, was added in stage
+7A.
 
 ### Provider definition
 
@@ -439,6 +440,28 @@ Several destinations may use the same provider, so the provider identifier is
 never the primary key. Every configured platform has a stable, random,
 backend-generated identifier. A configured platform stores **configuration
 only**.
+
+### Connected account
+
+A real provider identity Streaming Tree has authorized via OAuth - for
+example, a specific Twitch login. It lives in
+`internal/domain/account`, entirely independent of any configured platform:
+an account can exist unlinked, one account can be linked to more than one
+configured platform, and a configured platform has at most one linked
+account at a time. A connected account's non-secret record (login, display
+name, avatar, status, granted scopes) is a database row; its OAuth token
+bundle is a single SecretStore entry, atomically replaced on every
+rotation, and is never present in that database row, in an HTTP response,
+or in a log line.
+
+A connected account, a configured platform, a stream key, an output
+server, and a destination's runtime branch state are five separate facts
+that together describe one destination, never conflated into one: a
+platform can be fully configured with a stream key and an output server
+and have its FFmpeg branch live, entirely independent of whether a Twitch
+account happens to be connected and linked to it, and vice versa.
+Connecting or linking an account never starts, stops, or otherwise touches
+a branch, and linking never validates or replaces a stream key.
 
 ### Runtime stream state
 
@@ -509,6 +532,16 @@ This is complemented by **limits** (maximum title length, number of tags) and an
 **option vocabulary** (the type of the category field, the available visibility
 levels and latency modes).
 
+Stage 7A added one field the capability table alone could not express: a
+provider may declare `categoryRequiresRemoteId`, meaning its category is not
+free text but a selection from the provider's own catalog (Twitch: a
+game/category ID from its Search Categories endpoint). Stored metadata then
+carries both `category` (display text, shown even for a provider this
+build does not recognize) and an independent, nullable `categoryId` (the
+provider's stable identifier, never guessed from the text). A destination
+whose saved category text has no matching ID is a publish blocker, not a
+best-effort guess at which remote category the text meant.
+
 This table now lives in the Go backend and is served by
 `GET /api/platform-definitions`. The frontend receives booleans, numbers and
 option identifiers; it maintains no capability table of its own.
@@ -524,10 +557,17 @@ Consequences adopted in the code:
 - adding a new platform means describing it in the registry, not rebuilding the
   form.
 
-Only Twitch has tag support enabled. These definitions are **approximate and
-illustrative**: they have **not** been verified against the real Twitch,
-YouTube, Kick or TikTok APIs and will be re-checked when real integrations are
-implemented.
+Only Twitch has tag support enabled. **Twitch's definition was verified
+against the real Twitch API in stage 7A** - see
+[`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md)
+for the researched contract, and note in particular that Twitch turned out
+to have **no** field for description, visibility, a generic mature-content
+flag, DVR, or a client-side latency mode on the real Modify Channel
+Information endpoint, correcting an earlier approximation that had assumed
+otherwise. YouTube, Kick and TikTok's definitions remain **approximate and
+illustrative**: they have **not** been verified against their real APIs and
+will be re-checked when their own account integrations are implemented
+(stages 7B/7C).
 
 ### 9.1 The localization boundary
 
@@ -619,10 +659,19 @@ Rules in force for this project:
    on a transient outage. See `docs/progress.md` for the full reasoning and
    the accepted, documented risk this trade-off carries.
 
-The same `SecretStore` abstraction backing destination stream keys is designed
-to be reused, with a different secret type, for OAuth tokens once connected
-accounts exist (§16, engagement-architecture.md §17.1) - one credential-store
-foundation, not one bespoke mechanism per feature.
+The same `SecretStore` abstraction backing destination stream keys now also
+backs a connected account's OAuth token bundle (stage 7A), under its own
+secret type (`oauth-token-bundle:<connected-account-id>`) and its own key
+namespace, subject to every rule above: no plaintext fallback, never
+re-displayed through the API, never in a log line. Unlike a stream key, an
+OAuth token bundle is refreshed and rotated automatically by
+`internal/domain/account.Service`, and is stored as one atomically-replaced
+unit (access token, refresh token, token type, expiry together) rather than
+independently-replaceable pieces, since a partial rotation failure leaving a
+mismatched access/refresh pair would be worse than the old pair simply
+staying in place. One credential-store foundation, not one bespoke
+mechanism per feature — see §8.1's "Connected account" and
+[`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md).
 
 ## 11. Localization
 
@@ -702,7 +751,9 @@ it is architected; this table only tracks status and dependencies.
 | 4 | MediaMTX integration: managed dependency, process supervision, configuration generation, OBS ingest detection | **Completed** |
 | 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | **Completed** |
 | 6 | FFmpeg destination branches: resolution/compatibility probing, output settings, per-branch supervision, restarts, failure isolation | **Completed** |
-| 7 | Connected accounts, OAuth, platform metadata publishing | Planned |
+| 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle (validate/refresh/reconnect/disconnect), destination linking, and explicit channel-metadata publishing | **Completed** |
+| 7B | YouTube account integration, reusing the same connected-account foundation | Planned |
+| 7C | Kick and TikTok account integration | Planned |
 | 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
 | 9 | Unified operator chat | Planned |
 | 10 | OBS chat overlay | Planned |
@@ -719,11 +770,15 @@ it is architected; this table only tracks status and dependencies.
 
 Key dependencies:
 
-- Stage 6 (FFmpeg) needed and used stage 5's credential store; stage 7 (OAuth)
-  will reuse the same storage abstraction for a different secret type -
-  destination stream keys and OAuth tokens are different secret types behind
-  one abstraction.
-- Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward.
+- Stage 6 (FFmpeg) needed and used stage 5's credential store; stage 7A
+  (Twitch OAuth) reused the same storage abstraction for a different secret
+  type - a destination stream key and an account's OAuth token bundle are
+  different secret types behind one abstraction, and now both exist. Stages
+  7B and 7C will add a secret type each for their own providers, not a new
+  abstraction.
+- Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward, and
+  will reuse stage 7A's Twitch adapter (`internal/provider/twitch`) for its
+  own connector rather than building a second one - see §16.
 - Stage 11 (outbound/bot) needs connector send-message capability, declared as
   part of a connector's capability set from stage 8 onward.
 - Stage 12 (alerts) needs stage 8's normalized events.
@@ -776,6 +831,27 @@ so far of why this stage's real-integration requirement exists. The frontend
 branch controls were, like stage 5's, typechecked, linted and covered by
 pure-logic tests but not exercised in a real browser.
 
+Stage 7A was marked completed only after all automated checks passed across
+every commit that implements it — see `docs: define Twitch account
+integration scope` through `test: verify Twitch account integration
+locally` in [progress.md](progress.md) — **including a local integration
+script that exercises the real backend end to end against two small fake
+Twitch servers** reproducing only the OAuth and Helix response shapes this
+application actually parses (device-code authorization, account
+finalization, linking, category search, publish, a forced token expiry and
+its single-flight refresh, reconnect, and disconnect/revocation, with a
+final scan for token leakage). Unlike stages 5 and 6, this stage's frontend
+also gained this project's first rendered-component test harness
+(`@testing-library/react` + `user-event`), used for a representative subset
+of the OAuth-modal and confirmation-dialog interactions - see the
+`feat(web): manage and publish Twitch connected accounts` entry in
+[progress.md](progress.md) for exactly which interactions are covered and
+which are not. Two limitations are recorded honestly there: no real Twitch
+account or application was ever contacted (an explicit task requirement,
+not an oversight), and the rendered-component test coverage is a
+deliberately narrow subset of the interactions this stage's UI has, not
+exhaustive.
+
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application
@@ -810,6 +886,11 @@ be run continuously:
   within their bounded policy, and that a backend restart resets their
   runtime state while their output settings persist - against a real FFmpeg
   executable and real MediaMTX instances, entirely on loopback.
+- `node scripts/verify-twitch-account-integration.mjs` - scripted
+  verification of Twitch account connection, linking, category search,
+  metadata publishing, refresh-on-401 and disconnect/revocation, against
+  the real backend and two small local fake Twitch servers - no real
+  Twitch account or network request to Twitch is ever involved.
 
 ## 15. Honesty about the state of the work
 
@@ -852,18 +933,28 @@ made from stage 5 onward:
    prerequisite for this entire second era of the product.** FFmpeg
    destination stream keys, OAuth tokens for connected accounts, and any
    future outbound-bot credential all depend on the same `SecretStore`
-   abstraction, distinguished only by secret type. Only the destination
-   stream key exists today; OAuth tokens and any other secret type remain
+   abstraction, distinguished only by secret type. Both the destination
+   stream key and a connected account's OAuth token bundle exist today
+   (stages 5 and 7A); any further secret type this era needs remains
    planned.
-2. **A connected account (for reading chat/events) is a different concept
-   from a configured destination (for outgoing streaming), even for the same
-   provider**, because they depend on different credential types with
-   different lifecycles. See engagement-architecture.md §4.
-3. **Provider support is planned honestly**: Twitch first, YouTube and Kick
-   as separate adapters, and TikTok only if and when an official, stable
-   integration exists — never via scraping as a core feature. See
-   engagement-architecture.md §16.
+2. **A connected account (§8.1) is already a real, provider-independent
+   concept as of stage 7A - but only for account lifecycle and metadata
+   publishing, not for reading chat or events.** The engagement Event Bus
+   (stage 8) will need to read chat/events through a Twitch connection too,
+   and is expected to reuse this same connected-account concept and the
+   `internal/provider/twitch` adapter for its own authorization, rather than
+   introducing a second, competing notion of "a Twitch account." That reuse
+   is a stage-8 design intention recorded here, not something stage 7A
+   itself implements. See engagement-architecture.md §4.
+3. **Provider support is planned honestly**: Twitch first (stage 7A, account
+   and metadata only - no chat, no EventSub, no bot), then YouTube and Kick
+   as separate account-integration adapters (stages 7B/7C) before any
+   engagement-era connector work begins, and TikTok only if and when an
+   official, stable integration exists — never via scraping as a core
+   feature. See engagement-architecture.md §16.
 
 This section is updated, and marked accordingly, only as each roadmap stage
-from §13 is actually completed - not before. Stage 5 is the only one of the
-20 so far.
+from §13 is actually completed - not before. Stages 5 and 7A are the only
+ones of the 20 so far, and neither implements anything in this section
+itself (chat, overlays, alerts, bot automation, the Event Bus) - they only
+build foundations this era will reuse.

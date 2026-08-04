@@ -17,25 +17,29 @@ of that exists yet — it is architecture and planning, detailed in
 shapes decisions made today, starting with the credential-store foundation
 this stage adds.
 
-> ## Project state: local ingest, secure key storage and outgoing FFmpeg streaming all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, and a first Twitch account integration all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
-> operating system credential store, and now **send it onward**: one
-> independent FFmpeg process per enabled destination, pulling the local
-> ingest and pushing to that destination's configured RTMP/RTMPS server with
-> plain stream copy (no re-encoding). See
-> [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg) and
-> [Stream key security](#stream-key-security).
+> operating system credential store, **send it onward** (one independent
+> FFmpeg process per enabled destination, plain stream copy, no
+> re-encoding), and now **connect a real Twitch account** — device-code
+> sign-in, no client secret ever requested or stored — to **read and
+> explicitly publish that destination's title, category and other Twitch
+> channel metadata**. See
+> [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
+> [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
+> and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
 > never starts on its own, and a backend restart never resumes one
-> automatically.
+> automatically. The same is true of publishing metadata: saving locally and
+> publishing to Twitch are two separate, both-explicit actions.
 >
-> OAuth-based sign-in, platform metadata publishing, and the wider engagement
-> platform (unified chat, overlays, alerts, bot automation) are still
-> **planned**. Whatever remains a placeholder is marked with a **Demo**
-> badge — the full list is in
+> YouTube/Kick/TikTok account integration, Twitch chat, EventSub, and the
+> wider engagement platform (unified chat, overlays, alerts, bot automation)
+> are still **planned**. Whatever remains a placeholder is marked with a
+> **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -54,6 +58,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Local ingest with MediaMTX](#local-ingest-with-mediamtx)
 - [Connecting OBS](#connecting-obs)
 - [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg)
+- [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -71,8 +76,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | ----- | ----- | ------ |
 | 1–4 | Foundations, localization, SQLite configuration, MediaMTX ingest | **Completed** |
 | 5 | Secure credential-store foundation | **Completed** |
-| 6 | FFmpeg destination branches (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 7 | Connected accounts, OAuth, metadata publishing | Planned |
+| 6 | FFmpeg destination branches | **Completed** |
+| 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 7B | YouTube account integration | Planned |
+| 7C | Kick and TikTok account integration | Planned |
 | 8–19 | Engagement Event Bus, unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, additional platform connectors | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
@@ -237,6 +244,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_MEDIAMTX_RTMP_ADDRESS` | `127.0.0.1:1935` | Address OBS publishes to. **Loopback only.** |
 | `STREAMING_TREE_MEDIAMTX_API_ADDRESS` | `127.0.0.1:9997` | MediaMTX Control API address, read only by the backend. **Loopback only.** |
 | `STREAMING_TREE_INGEST_PATH` | `live` | The single path publishing is allowed on. Letters, digits, `-` and `_` only. |
+| `STREAMING_TREE_TWITCH_CLIENT_ID` | — | Twitch application Client ID. Always wins over a database-managed value if set. Never a client secret — see [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata). |
 
 Booleans accept `true`/`false`, `1`/`0` and `t`/`f`. A typo such as `yes` is a
 startup error rather than a silent `false`.
@@ -745,6 +753,172 @@ loopback, with no real platform account or credential. See
 
 ---
 
+## Connected accounts and Twitch metadata
+
+Streaming Tree can connect to a real **Twitch** account and use it to read
+and explicitly publish that destination's channel metadata (title,
+category, language, tags). This is the first of several planned provider
+integrations (stage 7A of the roadmap) — YouTube, Kick and TikTok account
+integration are still planned (stages 7B/7C).
+
+**A connected account is not the same thing as a destination's stream
+key.** They are separate facts about a destination, tracked and shown
+separately: whether the destination is configured, whether a stream key is
+stored, whether an output server is configured, whether a Twitch account is
+connected and linked to it, whether the local ingest is receiving, whether
+its FFmpeg branch is sending, and whether its metadata is in sync with
+Twitch. Connecting a Twitch account never starts, stops, or otherwise
+touches a destination's FFmpeg branch, and linking an account never
+validates or replaces a stream key.
+
+**What this stage does not implement.** Twitch chat, EventSub (follow/sub/
+raid notifications), bot messages, a unified chat, overlays, alerts,
+text-to-speech, donations, viewer counts, analytics, and automatic
+broadcast creation are all still unimplemented — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md). This
+stage is the account and metadata foundation those features will build on
+later, not an implementation of them.
+
+### Registering a Twitch application and configuring a Client ID
+
+1. Go to the [Twitch Developer Console](https://dev.twitch.tv/console/apps)
+   and register a new application. Set its OAuth Redirect URL to
+   `https://localhost` (unused by the flow this application performs, but
+   Twitch requires one) and its Client Type to **Public**.
+2. Copy the generated **Client ID**. Streaming Tree **never asks for,
+   accepts, or stores a Client Secret** — the Settings page's Connected
+   Accounts panel and every related API endpoint reject one outright (an
+   unrecognized `clientSecret` field is a `400`), and the OAuth flow used
+   (below) is a public-client flow that has no secret to send, including on
+   refresh.
+3. Provide the Client ID one of two ways:
+   - **Environment variable** `STREAMING_TREE_TWITCH_CLIENT_ID` — always
+     wins if set. The Settings page shows its source as "environment" and
+     will not let you edit it there.
+   - **Settings page**, when no environment variable is set — saved to
+     SQLite (not a secret; it is public per Twitch's own client-type
+     model), shown with source "database", and editable there.
+
+   Changing a database-managed Client ID while any Twitch account is
+   connected is rejected (`409`) — a different application can mean
+   different or revoked tokens for existing accounts. Disconnect every
+   Twitch account first, or set it to the exact same value (always
+   allowed).
+
+### Connecting an account — Device Code Flow
+
+Streaming Tree uses Twitch's **Device Code Grant Flow**, the flow Twitch
+documents for a public client with no way to keep a secret (as this
+desktop-style local application is). Clicking **Connect Twitch** in
+Settings:
+
+1. asks the backend to start an authorization attempt with Twitch;
+2. shows a short **user code** and a link to Twitch's activation page;
+3. you open that link on any device, sign in, and enter the code;
+4. the backend polls Twitch in the background (never faster than Twitch's
+   own requested interval) until you finish, the code expires, or you
+   cancel;
+5. once authorized, the backend validates the token, confirms it was
+   issued to the configured Client ID, confirms the required permission was
+   granted, and fetches your Twitch login and display name for the account
+   list.
+
+The **device code** itself never reaches the browser — only the user code
+(safe to display and copy) and the verification link do; there is no field
+for it anywhere in the frontend's data model, because the backend's own API
+response has no such field to send. Only one Twitch authorization attempt
+may be in progress at a time.
+
+The one permission requested is `channel:manage:broadcast` — the minimum
+Twitch scope that allows reading and updating channel information. Nothing
+broader (chat, subscriptions, Bits, moderation, email) is ever requested at
+this stage.
+
+### Account health, validation and reconnecting
+
+A connected account is periodically re-validated against Twitch (at the
+hourly interval Twitch's own documentation requires) and can be checked on
+demand with **Check now**. If Twitch reports the token invalid, Streaming
+Tree attempts one documented refresh (Twitch's refresh tokens rotate on
+every use — the previous refresh token stops working the moment a new one
+is issued, and Streaming Tree stores the new access and refresh token
+together, atomically, so a partial failure never leaves a mismatched pair)
+and re-validates the result. If that also fails, the account is marked
+**Reconnect required**: publishing and category search stop working for it
+until you click **Reconnect**, which repeats the device-flow authorization
+for that same account. The same single-refresh-then-retry rule applies
+transparently to every ordinary Twitch call this application makes (a
+category search or a publish that hits an expired token retries exactly
+once with a freshly refreshed token before giving up).
+
+**Disconnect** revokes the account's token with Twitch where possible, then
+removes it locally, then removes any destination link that pointed at it.
+Twitch reporting the token as already invalid counts as a successful
+revocation; a transient network failure leaves the account exactly as it
+was so you can safely retry.
+
+### Linking an account to a destination
+
+Open a Twitch destination's settings and choose a connected account in its
+own **Connected Twitch account** section — deliberately separate from the
+stream-key section above it, since they are different credentials for
+different purposes. One account can be linked to more than one destination
+(useful if you configure the same channel as more than one destination
+entry); a destination has at most one linked account, and linking a
+different one replaces the link explicitly.
+
+### Category selection, local Save, and publishing to Twitch
+
+For a Twitch destination, the metadata editor's category field becomes a
+search box backed by Twitch's real category/game search (needs a linked,
+healthy account). Selecting a result stores both the display name and
+Twitch's own stable category ID; typing over it without selecting a new
+result leaves a stale ID, which blocks publishing until you search and
+select again rather than guessing which category you meant.
+
+**Save and Publish are two separate, both-explicit actions.** Save stores
+metadata locally in Streaming Tree's own database, exactly as it always
+has. **Publish to Twitch** sends the metadata **currently saved** to your
+real Twitch channel — it is disabled, with an explanation, whenever the
+form has unsaved edits, so you never publish a draft you have not saved.
+Before publishing, a preview shows what would change: the current values on
+Twitch, your saved local values, which fields would actually change, and
+any reason publishing is currently blocked (no account linked, the account
+needs reconnecting, no category selected, Twitch unreachable, Twitch's rate
+limit reached). Publishing itself sits behind a confirmation dialog.
+
+Only fields with a verified, real Twitch API equivalent are ever sent:
+**title, category, language and tags** — via Twitch's real Modify Channel
+Information endpoint. Twitch's channel API has **no** field for stream
+description, a generic "mature content" flag, DVR, or a client-side latency
+mode; sending real values for those fields to Twitch would either be
+silently dropped by Twitch or misrepresent something Twitch does not
+actually let this application control, so this application never sends
+them and says so plainly in the publish preview instead. See
+[`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md)
+for the fully researched capability table, including exactly which fields
+were previously guessed and have now been corrected.
+
+Publishing **never** starts or stops a destination's FFmpeg branch, never
+changes a stream key, and is never triggered automatically by saving
+locally — it is always a separate, explicit click.
+
+### Verifying it for real
+
+`scripts/verify-twitch-account-integration.mjs` exercises this whole
+feature end to end against the real backend and two small local fake
+Twitch servers that reproduce only the response shapes this application
+actually parses — device-code authorization, account finalization,
+linking, category search, publishing, a forced token expiry and its
+single-flight refresh, reconnecting, and disconnect/revocation — entirely
+on loopback, with **no real Twitch account, application, or network
+request to Twitch involved**. An optional, separate real-Twitch smoke test
+is described in the task history but was not run as part of this stage —
+see [`docs/progress.md`](docs/progress.md) for exactly what was and was not
+verified against a real account.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -777,6 +951,22 @@ All endpoints live under `/api` and return `application/json`.
 | `POST` | `/api/runtime/branches/{id}/restart` | One controlled stop followed by a start. |
 | `POST` | `/api/runtime/branches/start-enabled` | Start every eligible enabled destination; one ineligible destination never blocks another. Returns a per-destination result. |
 | `POST` | `/api/runtime/branches/stop-all` | Stop every running destination. |
+| `GET` | `/api/integrations/twitch/config` | Twitch Client ID status: `{configured, source, clientId}` — `clientId` present only when `source` is `"database"`. |
+| `PUT` | `/api/integrations/twitch/config` | Save a database-managed Client ID. `409` if an environment override is active, or if changing it while accounts exist. |
+| `POST` | `/api/integrations/twitch/device-flow` | Start a Twitch device-authorization attempt. `202` with the attempt snapshot; `409` if one is already active. |
+| `GET` | `/api/integrations/twitch/device-flow/{id}` | Poll one attempt's current state. Never contains the device code. |
+| `DELETE` | `/api/integrations/twitch/device-flow/{id}` | Cancel an in-progress attempt. |
+| `GET` | `/api/connected-accounts` | Every connected account: identity, status, granted scopes, last-validated time. Never a token. |
+| `GET` | `/api/connected-accounts/{id}` | One connected account. |
+| `DELETE` | `/api/connected-accounts/{id}` | Disconnect: revoke with the provider where possible, then remove locally and cascade any destination link. Responds 204. |
+| `POST` | `/api/connected-accounts/{id}/validate` | Validate immediately (instead of waiting for the hourly background check), refreshing the token first if needed. |
+| `POST` | `/api/connected-accounts/{id}/reconnect` | Start a new device-flow attempt that must resolve to this same account. |
+| `GET` | `/api/connected-accounts/{id}/twitch/categories` | Search Twitch categories/games via `?query=`. Requires a healthy linked-or-standalone account. |
+| `GET` | `/api/platforms/{id}/connected-account` | The account linked to a destination, or `null`. |
+| `PUT` | `/api/platforms/{id}/connected-account` | Link (or replace the link to) an account. Body `{accountId}`. `422` on a provider mismatch. |
+| `DELETE` | `/api/platforms/{id}/connected-account` | Unlink, without deleting either side. Responds 204. |
+| `GET` | `/api/platforms/{id}/metadata/publish-preview` | What publishing would change right now: remote values, local values, changed/unchanged/skipped fields, blockers. |
+| `POST` | `/api/platforms/{id}/metadata/publish` | Publish the metadata currently saved in SQLite to Twitch. **No request body** — publishing a draft is not possible. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -848,7 +1038,10 @@ frontend localizes:
 
 Status codes: `400` malformed JSON or an unknown field, `404` missing record,
 `405` unsupported method (with `Allow`), `409` conflict, `413` body over 64 KiB,
-`415` wrong content type, `422` validation failure, `500` internal failure.
+`415` wrong content type, `422` validation failure, `429` a provider's rate
+limit was reached (Twitch endpoints only), `500` internal failure, `502` the
+provider could not be reached. No endpoint ever forwards a raw Twitch error
+body — every provider-facing failure is mapped to this same stable envelope.
 
 **Provider definitions return semantic identifiers, never translated text.** The
 backend sends `public`, `ultra-low`, `topic`; the frontend maps those to English
@@ -905,7 +1098,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest)
+npm run test        # unit tests (Vitest), plus a small set of rendered-component tests (React Testing Library) covering the Twitch device-flow modal and the disconnect/publish confirmations
 npm run build       # production build
 ```
 
@@ -924,9 +1117,10 @@ directory, so running them never touches your real one.
 **Integration checks** (from the repository root):
 
 ```bash
-node scripts/verify-persistence.mjs        # SQLite survives a backend restart
-node scripts/verify-mediamtx-runtime.mjs   # real MediaMTX install and supervision
-node scripts/verify-ffmpeg-branches.mjs    # real FFmpeg + MediaMTX destination branches
+node scripts/verify-persistence.mjs               # SQLite survives a backend restart
+node scripts/verify-mediamtx-runtime.mjs          # real MediaMTX install and supervision
+node scripts/verify-ffmpeg-branches.mjs           # real FFmpeg + MediaMTX destination branches
+node scripts/verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -955,9 +1149,22 @@ for destination platforms — runs entirely on loopback with dynamically
 chosen ports. It takes roughly a minute (the restart-limit scenario walks
 through real exponential backoff).
 
+The Twitch-account-integration script builds the same `-tags integration`
+binary and runs two small in-process fake HTTP servers that reproduce only
+the Twitch OAuth (`/device`, `/token`, `/validate`, `/revoke`) and Helix
+(`/users`, `/channels`, `/search/categories`) response shapes this
+application parses. **It never contacts real Twitch, and no real Twitch
+account is ever used or required to run it.** It covers Client ID
+configuration, a full device-code authorization, account finalization,
+linking, category search, metadata publish (asserting only the verified
+fields ever reach the fake server), a forced token expiry and its single
+transparent refresh-and-retry, reconnecting, and disconnect/revocation —
+finishing with a scan of every captured backend response and log line for
+every token the run issued.
+
 **None of these scripts touch your real database, your managed MediaMTX
-installation, or your real OS credential store**, and all remove their
-temporary directories afterwards.
+installation, your real OS credential store, or a real Twitch account**,
+and all remove their temporary directories afterwards.
 
 ---
 
@@ -1012,7 +1219,8 @@ apps/web/src/i18n/
     │   ├── metadata.json     # metadata editor, form labels, validation
     │   ├── pages.json        # page titles and planned-feature descriptions
     │   ├── errors.json       # backend error messages and code mappings
-    │   └── runtime.json      # MediaMTX/ingest state, dependency status
+    │   ├── runtime.json      # MediaMTX/ingest state, dependency status
+    │   └── accounts.json     # Twitch integration, device flow, account link, publish
     └── pl/                   # Polish translation, same structure
 ```
 
@@ -1112,9 +1320,10 @@ rest of the repository.
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
-│   │   │   │   ├── metadata/   # Metadata editor with platform tabs
-│   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls
+│   │   │   │   ├── metadata/   # Metadata editor with platform tabs, Twitch category picker, publish panel
+│   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls, account link
 │   │   │   │   ├── runtime/    # Ingest controls, install dialog, copy widget, bulk-start confirmation
+│   │   │   │   ├── settings/   # Connected Accounts panel, Twitch device-flow modal
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
@@ -1122,19 +1331,23 @@ rest of the repository.
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
 │   │   │   ├── models/         # UI types, validation, identifier mappings
-│   │   │   └── pages/          # Route views
+│   │   │   ├── pages/          # Route views
+│   │   │   └── test/           # Rendered-component test harness (Testing Library provider wrapper)
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
 │   └── server/                 # Backend (Go)
 │       ├── cmd/server/         # Entry point, graceful shutdown
-│       ├── cmd/testserver/     # `-tags integration` twin for the real-FFmpeg smoke test only
+│       ├── cmd/testserver/     # `-tags integration` twin for the real-FFmpeg and real-Twitch-fake smoke tests only
 │       └── internal/
 │           ├── buildinfo/      # Service name and version
 │           ├── config/         # Configuration and database path resolution
+│           ├── domain/account/ # Connected-account model, token bundle, service (provider-independent)
 │           ├── domain/platform/# Provider registry, models, validation, service
 │           ├── domain/credential/# Destination stream-key service (OS credential store)
 │           ├── domain/output/  # Destination output-settings model, validation, service
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
+│           ├── provider/twitch/# Twitch OAuth + Helix client, adapter, metadata publish service
+│           ├── runtime/deviceflow/# Device-authorization attempt state machine
 │           ├── runtime/mediamtx/# Resolver, installer, config, supervisor, API client
 │           ├── runtime/ffmpeg/ # Executable resolver and capability probing
 │           ├── runtime/branch/ # Per-destination branch supervisor (state machine, restart policy)
@@ -1145,11 +1358,14 @@ rest of the repository.
 ├── docs/
 │   ├── project-overview.md     # Full project description
 │   ├── engagement-architecture.md # Later-stage engagement platform architecture
+│   ├── provider-integrations/
+│   │   └── twitch.md           # Researched Twitch API contract: flow, scopes, capabilities, limits
 │   └── progress.md             # Work journal
 ├── scripts/
 │   ├── verify-persistence.mjs      # Scripted restart-persistence check
 │   ├── verify-mediamtx-runtime.mjs # Real MediaMTX install and supervision check
-│   └── verify-ffmpeg-branches.mjs  # Real FFmpeg + MediaMTX destination-branch check
+│   ├── verify-ffmpeg-branches.mjs  # Real FFmpeg + MediaMTX destination-branch check
+│   └── verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -1166,7 +1382,9 @@ directly next to the control.
 | ------- | --------------------- |
 | Per-destination viewer counts, connection quality, "Authenticated"/"Verified by platform" status | **Not shown anywhere.** Streaming Tree never contacts a platform to confirm a stream is live there; the interface only ever reports what FFmpeg itself reported (real progress fields) or a plain "Sending" / "Output active" wording. |
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
-| Platform capability tables | An approximate configuration, served by the backend. It has **not** been verified against the real Twitch, YouTube, Kick or TikTok APIs and needs re-checking when real integrations are implemented. |
+| Platform capability tables | Twitch's table is now verified against the real Twitch API — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md). YouTube, Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integrations are implemented (stages 7B/7C). |
+| YouTube, Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch has a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
+| Twitch chat, EventSub (follow/sub/raid), unified chat, overlays, alerts, bot automation | **Not implemented anywhere.** This stage adds the connected-account and metadata foundation those features will need later — see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -1192,6 +1410,13 @@ directly next to the control.
   independently of both. Per-branch *runtime* state (live/error/restart
   count) deliberately does **not** survive a backend restart - see the
   branch lifecycle section above for why.
+- **Connecting a real Twitch account** via device-code sign-in, with
+  no client secret ever requested or stored, account validation/refresh/
+  reconnect/disconnect, and linking an account to a destination - see
+  [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata).
+- **Searching real Twitch categories and publishing real channel metadata**
+  (title, category, language, tags) to Twitch, behind an explicit publish
+  action separate from the existing local Save.
 - **The language switcher**, in the top bar and under Settings.
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
@@ -1200,8 +1425,10 @@ API does not report them, so showing a number would mean inventing it.
 ### What will be added later
 
 - **SSE or WebSocket** — live status instead of polling.
-- **OAuth and platform APIs** — sign-in and metadata publishing, reusing the
-  same credential-store abstraction with a different secret type.
+- **YouTube, Kick and TikTok account integration** — sign-in and metadata
+  publishing for the remaining providers, reusing the same connected-account
+  foundation Twitch's integration now provides (stages 7B/7C).
+- **Twitch chat and EventSub** — this stage is accounts and metadata only.
 - **The engagement and overlay platform** — unified chat, OBS overlays,
   alerts, bot automation and more; architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
@@ -1450,3 +1677,77 @@ FFmpeg process argument while that destination is running, which on most
 operating systems a process list on the *same machine* could observe. It is
 never logged, never in an API response, and never on disk outside the OS
 credential store.
+
+### Twitch account integration
+
+**"Configure a Twitch Client ID above before connecting an account."**
+No Client ID is configured yet, or it failed validation. Register an
+application at the
+[Twitch Developer Console](https://dev.twitch.tv/console/apps) and either
+set `STREAMING_TREE_TWITCH_CLIENT_ID` or paste it into the Settings page —
+see [Registering a Twitch application](#connected-accounts-and-twitch-metadata).
+
+**The Client ID field in Settings is disabled and I can't change it.**
+It is set by the `STREAMING_TREE_TWITCH_CLIENT_ID` environment variable,
+which always wins over anything saved in the database. Unset it (and
+restart the backend) if you want to manage the Client ID from Settings
+instead.
+
+**Saving a new Client ID fails with a conflict.**
+A database-managed Client ID cannot be changed while any Twitch account is
+still connected, since a different application can mean invalidated
+tokens for existing accounts. Disconnect every Twitch account first.
+
+**"Authorization was denied on Twitch."**
+You (or whoever completed the device-code flow) chose not to authorize the
+application on Twitch's own page. Click **Connect Twitch** again to start a
+fresh attempt.
+
+**"This code expired before it was used."**
+The user code has a limited lifetime. Start a new attempt and complete it
+more quickly, or check that the device you used to open the verification
+link actually reached Twitch (network issues on that device look the same
+as simply not finishing in time).
+
+**"The authorization did not grant every required permission."**
+Twitch's own authorization page let you decline part of what was requested.
+Reconnect and make sure the full permission is granted; Streaming Tree only
+ever asks for one scope (`channel:manage:broadcast`), so there is nothing
+to selectively decline without breaking metadata publishing.
+
+**An account shows "Reconnect required."**
+Twitch could not confirm the account's access on the last check (the token
+could not be validated and the automatic refresh also failed — commonly
+because the refresh token expired from 30 days of disuse, or the account's
+authorization was revoked directly on Twitch). Click **Reconnect** to
+re-authorize the same account; nothing about the account's identity or any
+destination links needs to be re-entered.
+
+**"Secure storage is currently unavailable" on a Twitch action.**
+The same operating-system credential store used for stream keys also holds
+Twitch token bundles, and it could not be reached — see "Secure storage
+unavailable" above for common causes. Connected accounts and their links
+are unaffected in SQLite; only the token bundle-dependent actions
+(validate, category search, publish) are blocked until the store is
+reachable again.
+
+**"Twitch could not be reached" / a publish or category search fails
+intermittently.** A transient network issue talking to Twitch, or Twitch
+itself being unavailable. Nothing local was changed; try again.
+
+**"Twitch's rate limit was reached; try again shortly."**
+Twitch's own API rate limit (visible in its `Ratelimit-*` response headers)
+was hit. This is Twitch-side, not a Streaming Tree limit; wait a short
+while and retry.
+
+**The Publish button is disabled and says to select a category first.**
+The saved category text has no matching Twitch category ID — either it was
+typed by hand without picking a search result, or an older save predates
+the category picker. Open the metadata editor, use the category search box,
+and select a real result; that stores both the display name and the ID
+publishing actually needs.
+
+**Publishing is disabled with a note about unsaved changes.**
+Save your local edits first. Publish always sends exactly what is currently
+saved in Streaming Tree's database, never an in-progress, unsaved draft —
+this is deliberate, not a bug.

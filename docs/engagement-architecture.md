@@ -62,7 +62,7 @@ document says otherwise:
 | --- | --- |
 | **Provider** | A built-in integration type: Twitch, YouTube, Kick, TikTok, or a non-platform source such as an external donation service. Exists today as `platform.ProviderDefinition` for the streaming side; the engagement side extends the same idea. |
 | **Connector** | The adapter code that talks to one provider's real API/protocol and translates its events and actions into the normalized model. Not the same as a *configured destination* (§4): a connector is code, a configured destination is a user's row. |
-| **Connected account** | A user's authenticated identity with a provider for the *engagement* side (chat, events) — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. |
+| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing; this document's engagement uses of it (chat, events) remain planned, stage 8 onward. |
 | **Normalized engagement event** | One provider-independent representation of "something happened": a chat message, a follow, a donation, and so on. Defined in §5. |
 | **Engagement Event Bus** | The in-process component that receives normalized events from connectors and distributes them to every consumer (§6). |
 | **Operator chat** | The internal, full-detail chat view for the streamer/moderator (§7). |
@@ -93,6 +93,20 @@ This split exists because the two rely on entirely different credentials
 (§17): a destination needs a *stream key*; a connected account needs an
 *OAuth token* with chat/event scopes. Conflating them would force every viewer
 of this document to reason about two credential lifecycles as if they were one.
+
+> **Factual status update (stage 7A, completed):** the connected-account
+> concept described above is no longer purely planned. `internal/domain/
+> account` now implements a real, provider-independent connected-account
+> foundation - identity, OAuth token storage, linking to a destination,
+> validation and reconnect - and `internal/provider/twitch` is a real
+> Twitch adapter over it, currently used only for account lifecycle and
+> channel-metadata publishing (project-overview.md §8.1, §13). It does
+> **not** read chat or events, has no EventSub subscription, and the Event
+> Bus below still does not exist. Stage 8 is expected to reuse this same
+> account foundation and Twitch adapter for its own authorization rather
+> than building a second one - see §6.4's factual note and
+> [`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md)
+> for the researched Twitch contract this adapter implements.
 
 ## 5. Normalized engagement event model
 
@@ -292,11 +306,23 @@ that reads chat should not be assumed able to post to it.
 A connector that requires authentication does so through a **connected
 account**: a stored, provider-scoped authorization distinct from a configured
 destination's stream key. Connected accounts depend on OAuth token storage,
-which depends on the credential-store foundation this task implements (§17) —
+which depends on the credential-store foundation stage 5 implements (§17) —
 the same `SecretStore` abstraction, a different secret type. OAuth flows
 themselves (redirect handling, token refresh) are **not** designed in this
 document; they belong to the stage that actually adds the first OAuth
-connector (roadmap stage 7).
+connector.
+
+> **Factual status update (stage 7A, completed):** that first OAuth
+> connector now exists for Twitch - device-code sign-in, token storage,
+> refresh and reconnect, exactly as anticipated above - but scoped only to
+> account lifecycle and metadata publishing (project-overview.md §8.1,
+> §13; [`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md)).
+> It requests only `channel:manage:broadcast`; it has no chat or event
+> scope, does not read chat, and is not wired to any Event Bus, because
+> that bus (§5 below) still does not exist. A future Twitch engagement
+> connector (stage 8) is expected to request additional scopes on the same
+> underlying connected account rather than creating a second, competing
+> Twitch authorization.
 
 ### 6.5 In-memory buffer versus persisted history
 
@@ -643,19 +669,24 @@ verified** — this document names candidates, it does not commit to them.
 
 ### 17.1 What this document depends on from the current task
 
-The credential-store foundation implemented in this same work item (see the
+The credential-store foundation implemented in stage 5 (see the
 `feat(server): add system credential store` progress entry) is a **hard
 prerequisite** for:
 
-- FFmpeg destination stream keys (roadmap stage 6),
-- OAuth tokens for connected accounts (§6.4, roadmap stage 7),
+- FFmpeg destination stream keys (roadmap stage 6, completed),
+- OAuth tokens for connected accounts (§6.4, roadmap stage 7A, **completed**
+  for Twitch account-lifecycle and metadata-publish tokens; the engagement
+  Event Bus's own eventual use of the same tokens for chat/event scopes is
+  still stage 8, planned),
 - any future outbound bot-message credential (if a connector ever needs one
   beyond its OAuth token).
 
-The `SecretStore` interface is designed to be secret-type-agnostic (see
-progress.md for the exact shape) specifically so connected-account tokens can
-reuse it with a different secret type than a destination stream key, under
-the same OS-backed, no-plaintext-fallback guarantees.
+The `SecretStore` interface is secret-type-agnostic, exactly as anticipated:
+stage 7A's connected-account OAuth token bundle reuses it under its own
+secret type (`oauth-token-bundle:<connected-account-id>`), the same
+OS-backed, no-plaintext-fallback guarantees, and the same atomic-replacement
+requirement §17.1 always intended - see project-overview.md §10 for the
+implemented shape.
 
 ### 17.2 Data sensitivity of engagement data
 

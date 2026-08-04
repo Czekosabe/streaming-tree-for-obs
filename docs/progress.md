@@ -4260,3 +4260,92 @@ passed unmodified.
 Final documentation pass (README, project-overview, engagement-architecture,
 config/README, THIRD_PARTY_NOTICES), then final full regression, push, and
 the closing report.
+
+## 2026-08-04 21:05 — docs: document Twitch account integration
+
+### Status
+Stage 7A completed by this commit. Stage 7 overall remains in progress
+(7B/YouTube and 7C/Kick+TikTok are planned, not started). Stage 8 remains
+planned and unaffected.
+
+### Scope
+The closing documentation pass: `README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md` and `config/README.md`.
+`docs/provider-integrations/twitch.md` already exists from the first commit
+of this stage and needed no changes. `THIRD_PARTY_NOTICES.md` was checked
+and **not** changed - the three new frontend packages
+(`@testing-library/react`, `@testing-library/user-event`,
+`@testing-library/jest-dom`) are `devDependencies` only, never shipped in
+the production bundle, matching this project's existing precedent of only
+listing runtime dependencies in that file (ESLint, Vitest and the rest of
+the existing dev toolchain are not listed there either).
+
+### Changes
+
+**`README.md`** - a new "Connected accounts and Twitch metadata" section
+(application registration and Client ID configuration, the Device Code
+Flow walkthrough, account health/validation/reconnect, linking, category
+selection, local Save vs. Publish, and the local verification script);
+the roadmap table split into 7A (completed) / 7B / 7C; eighteen new REST
+API rows; a new "Twitch account integration" troubleshooting subsection
+(thirteen entries, one per documented blocker/error code); the project-state
+banner, "What is currently demo-only" / "What is real" / "What will be
+added later", the directory-structure tree, the environment-variable table,
+and the integration-checks section all updated to match.
+
+**`docs/project-overview.md`** - §8.1 gained a fourth concept, "Connected
+account", stating the account/platform/stream-key/output-server/branch-state
+five-way distinction explicitly; §9 documents `categoryId` and
+`categoryRequiresRemoteId`, and states plainly that Twitch's capability
+table is now verified while YouTube/Kick/TikTok's remain approximate; §10
+updates the token-storage paragraph from "designed to be reused" to what
+was actually built; §13's roadmap table and dependency notes split stage 7
+into 7A/7B/7C and add stage 7A's completion paragraph, in the same style as
+stages 5 and 6's; §14 lists the new integration script; §16 corrects all
+three of its stage-5-only claims to also account for stage 7A, without
+overstating that anything in that section (chat, overlays, alerts, the
+Event Bus) is implemented - it is not.
+
+**`docs/engagement-architecture.md`** - only factual status notes, kept
+deliberately short, each cross-referencing `docs/provider-integrations/
+twitch.md` rather than repeating OAuth detail this document never owned:
+the terminology entry for "Connected account" now states it is implemented
+for account lifecycle and metadata publishing; §4 and §6.4 each gained a
+blockquote noting the connected-account foundation and the Twitch adapter
+now exist and are intended to be reused by stage 8's own Twitch connector,
+explicitly still stating chat/events/the Event Bus do not exist; §17.1's
+credential-dependency list marks stage 7A's OAuth token storage completed
+while leaving the Event Bus's own future use of those tokens planned. The
+document's own top banner ("nothing here is implemented unless its stage is
+marked Completed") was left untouched, since stage 7A is not one of stages
+8-19 this document describes.
+
+**`config/README.md`** - rule 1 now states an OAuth token bundle lives in
+the same OS-backed store as a stream key; a new rule 5 documents that a
+Twitch Client ID is deliberately the one piece of Twitch configuration that
+is not a secret and is not read from a file in this directory (environment
+variable or SQLite only), that a Client Secret is never accepted anywhere
+in this application, and that the `STREAMING_TREE_TEST_TWITCH_*_BASE_URL`
+overrides exist only in the `-tags integration` test binary.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Markdown anchor/heading sanity | manual grep cross-check of every new `#anchor` link against its heading's GitHub slug | Passed |
+
+No code changed in this commit, so the full automated suite from the
+previous three commits (backend gofmt/vet/build/test, all four integration
+scripts, frontend lint/typecheck/test/build/i18n:check) still describes the
+current state; it is re-run once more as the final regression pass before
+pushing - see the closing report.
+
+### Known limitations
+- No real Twitch account, application, or network request to Twitch was
+  used anywhere in this stage - confirmed once more here as the final,
+  explicit statement the task requires before Stage 7A can be considered
+  complete.
+
+### Next step
+Final full regression (frontend + backend + all four integration scripts),
+confirm a clean, synced, pushed `main`, and the closing 52-point report.
