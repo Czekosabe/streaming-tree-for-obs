@@ -230,9 +230,14 @@ async function main() {
       tags,
       language: 'pl',
       visibility: '',
-      matureContent: true,
+      // Twitch has neither a mature-content flag nor a latency-mode field on
+      // its real Modify Channel Information endpoint (verified in stage
+      // 7A - see docs/provider-integrations/twitch.md); both capabilities
+      // were corrected from an earlier approximation, so a Twitch platform
+      // must send their default/unsupported values here.
+      matureContent: false,
       dvr: false,
-      latencyMode: 'low',
+      latencyMode: '',
     });
     expect(savedMetadata.status === 200, 'PUT metadata returns 200', savedMetadata.body);
     expect(
@@ -254,8 +259,8 @@ async function main() {
       'tag order survived the round trip',
       reread.body.tags,
     );
-    expect(reread.body.matureContent === true, 'the mature content flag persisted');
-    expect(reread.body.latencyMode === 'low', 'the latency mode persisted');
+    expect(reread.body.matureContent === false, 'the mature content flag persisted (unsupported by Twitch, so false)');
+    expect(reread.body.latencyMode === '', 'the latency mode persisted (unsupported by Twitch, so empty)');
 
     step('Stop the backend');
     await stopBackend(backend);

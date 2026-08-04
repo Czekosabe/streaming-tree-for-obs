@@ -4144,3 +4144,119 @@ test in this project, not just this stage's.
 The local Twitch integration script (`scripts/verify-twitch-account-
 integration.mjs`), then the existing three integration scripts for
 regression, then the documentation pass.
+
+## 2026-08-04 20:15 — test: verify Twitch account integration locally
+
+### Status
+Stage 7A in progress. This is the local, no-real-Twitch verification the
+task requires before Stage 7A can be considered locally validated.
+
+### Scope
+`scripts/verify-twitch-account-integration.mjs` - the fourth local
+verification script, alongside `verify-persistence.mjs`,
+`verify-mediamtx-runtime.mjs` and `verify-ffmpeg-branches.mjs`. It never
+contacts real Twitch: two small in-process Node HTTP servers reproduce only
+the OAuth (`/device`, `/token`, `/validate`, `/revoke`) and Helix
+(`/users`, `/channels`, `/search/categories`) response shapes this
+application's `internal/provider/twitch` client actually parses, and the
+real `-tags integration` `cmd/testserver` binary is pointed at them via the
+`STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL` / `_API_BASE_URL` env vars added
+in the second backend commit specifically for this purpose.
+
+### What it covers
+Twitch Client ID configuration (unconfigured start, a `clientSecret` field
+rejected, database-managed save, and a separate isolated backend instance
+proving an environment-sourced Client ID is reported as such, never echoed
+back, and rejected with 409 when an edit is attempted); a full device-flow
+attempt (user code present with no `deviceCode` field anywhere in the
+response shape, a duplicate concurrent attempt rejected with 409, pending
+and slow_down both honored before authorization, cancellation is exercised
+by the earlier Go test suite rather than this script); account finalization
+(no token/refresh-token/device-code field anywhere in the account
+representation); linking (a Twitch account rejected for a non-Twitch
+destination, successful linking, unlinking, re-linking); category search
+(normalized id/name/boxArtUrl); saving local metadata with a real
+`categoryId`; a publish preview that reflects the fake remote channel's
+actual current state and correctly reports unsupported fields as skipped;
+publish rejecting a request body; publish sending the fake Helix server
+*exactly* the four verified fields (`title`, `game_id`,
+`broadcaster_language`, `tags`) and nothing else; a forced 401 followed by
+exactly one single-flight refresh and one retry, verified by asserting the
+fake server's refresh-call counter and that the retry used the newly
+rotated token, not the stale one; explicit validation; reconnecting the same
+Twitch identity resolving to the same account (no duplicate row); explicit
+unlink preserving the account; disconnect revoking the token at the fake
+server, removing the account, and cascading the link removal automatically;
+and a final scan of every captured backend response and log line for every
+token this run ever issued.
+
+### Two real bugs found by running this script for real
+
+1. **Test-script bug, not an application bug**: the fake OAuth/Helix Node
+   servers left HTTP keep-alive on by default. Go's `http.Client` would
+   occasionally reuse a pooled connection at the exact moment Node's default
+   `keepAliveTimeout` had already torn it down server-side (most visibly
+   right after the `slow_down` backoff's several-second gap), producing an
+   intermittent connection-level failure that the device-flow manager
+   correctly reported as `device_flow_poll_failed` - correct behavior for a
+   badly-behaved network, but not what this script intended to simulate.
+   Fixed by sending `Connection: close` on every fake-server response, so
+   each request opens a fresh connection.
+2. **A real script-design bug, caught by the fake server never lying**: the
+   script originally restarted the backend, then immediately called the
+   category-search endpoint on the same connected account and asserted
+   success. It failed with `account_not_found`, traced (via temporary,
+   since-removed debug logging in `internal/domain/account/service.go` and
+   `internal/provider/twitch/metadata.go`) to `LoadTokenBundle` correctly
+   reporting the token bundle gone - because `cmd/testserver` deliberately
+   backs the credential store with `secretstest`'s in-memory fake, which
+   does not survive a process restart, unlike the real OS keychain
+   `cmd/server` uses in production. The account row and its platform link
+   *did* persist (SQLite), which is genuinely all this stage's persistence
+   guarantee ever covered. Fixed by moving the restart check to only assert
+   what is actually meant to survive it (the account row and the platform
+   link), added an explicit assertion that a Twitch call fails cleanly
+   rather than crashing once the in-memory bundle is gone, and moved on to
+   the already-planned Reconnect step immediately after, which restores a
+   working token bundle exactly as a real user would after a real restart
+   invalidated their session. No application code changed for this one -
+   it was purely a matter of the script asserting something even the real
+   in-memory-store trade-off never promised.
+
+### Existing-script regression: one real fix required
+
+`scripts/verify-persistence.mjs` failed after this stage's earlier capability
+correction (`docs/progress.md`, first backend commit): it still saved
+`matureContent: true` and `latencyMode: 'low'` against a Twitch platform,
+both of which the corrected `Capabilities` table now correctly rejects as
+unsupported. Fixed by updating that script's fixture and assertions to the
+provider's real (corrected) capabilities - `matureContent: false`,
+`latencyMode: ''` - with a comment explaining why, rather than reverting
+the correction or special-casing the test. This was the only regression
+found; `verify-mediamtx-runtime.mjs` and `verify-ffmpeg-branches.mjs`
+passed unmodified.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| New Twitch integration script | `node scripts/verify-twitch-account-integration.mjs` | Passed (run twice to confirm no flakiness) |
+| Persistence (updated) | `node scripts/verify-persistence.mjs` | Passed |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed |
+| FFmpeg destination branches | `node scripts/verify-ffmpeg-branches.mjs` | Passed |
+| Backend formatting/vet/build/test | `gofmt -l .` / `go vet ./...` / `go build ./...` / `go test ./...` | Passed (confirms the temporary debug instrumentation left no trace - `git diff` on the touched files was empty before this commit) |
+
+### Known limitations
+- No real Twitch account, application, or network request to Twitch was
+  ever used - by design and by the task's explicit instruction.
+- Concurrent 401s (as opposed to one forced 401) are covered by the backend
+  Go test suite's own single-flight-refresh tests, not by this script -
+  reproducing a true race from a Node script against a single account would
+  add significant complexity for coverage the Go tests already provide.
+- Cancellation of an in-progress device-flow attempt is likewise covered by
+  `internal/runtime/deviceflow`'s own Go tests, not exercised again here.
+
+### Next step
+Final documentation pass (README, project-overview, engagement-architecture,
+config/README, THIRD_PARTY_NOTICES), then final full regression, push, and
+the closing report.
