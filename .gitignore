@@ -18,12 +18,19 @@ apps/server/streaming-tree-server.exe
 
 # --- Secrets / local configuration ---
 # Stream keys, OAuth tokens and any credentials must NEVER be committed.
+# Anchored to the repository root on purpose: an unanchored "secrets/" also
+# matched the source package apps/server/internal/secrets/, exactly as an
+# unanchored "data/" once hid apps/web/src/data/ and unanchored "mediamtx"
+# once hid apps/server/internal/runtime/mediamtx/. Real credentials are never
+# file-based in this project (see internal/secrets) - these two rules are a
+# defensive backstop for a manually created local directory, not the actual
+# storage mechanism.
 .env
 .env.*
 !.env.example
 *.local
-secrets/
-credentials/
+/secrets/
+/credentials/
 
 # --- Runtime data (added in later stages) ---
 # Anchored to the repository root on purpose: unanchored "data/" and "logs/"

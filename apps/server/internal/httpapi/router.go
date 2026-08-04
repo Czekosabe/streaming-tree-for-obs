@@ -23,6 +23,10 @@ type Options struct {
 	// Runtime serves the MediaMTX runtime API. When nil those routes are not
 	// registered.
 	Runtime RuntimeService
+	// Credentials serves the destination-credential API. When nil those
+	// routes are not registered, and DELETE /api/platforms/{id} falls back
+	// to deleting the platform with no credential-cleanup step.
+	Credentials CredentialService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -42,7 +46,7 @@ func NewRouter(opts Options) http.Handler {
 	mux.HandleFunc("/api/health", methodNotAllowed(logger, http.MethodGet))
 
 	if opts.Platforms != nil {
-		registerPlatformRoutes(mux, logger, opts.Platforms)
+		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials)
 	}
 
 	if opts.Runtime != nil {
@@ -78,7 +82,7 @@ func NewRouter(opts Options) http.Handler {
 // of falling through to the /api/ catch-all as a 404. Go's ServeMux prefers the
 // more specific method-aware pattern, so the bare pattern only ever matches
 // when no method pattern did.
-func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService) {
+func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService) {
 	mux.HandleFunc("GET /api/platform-definitions", handleListDefinitions(logger, service))
 	mux.HandleFunc("/api/platform-definitions", methodNotAllowed(logger, http.MethodGet))
 
@@ -88,7 +92,13 @@ func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service Pla
 
 	mux.HandleFunc("GET /api/platforms/{id}", handleGetPlatform(logger, service))
 	mux.HandleFunc("PUT /api/platforms/{id}", handleUpdatePlatform(logger, service))
-	mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatform(logger, service))
+	if credentials != nil {
+		// A platform's credentials are deleted before the platform row
+		// itself; see handleDeletePlatformWithCredentials.
+		mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatformWithCredentials(logger, service, credentials))
+	} else {
+		mux.HandleFunc("DELETE /api/platforms/{id}", handleDeletePlatform(logger, service))
+	}
 	mux.HandleFunc("/api/platforms/{id}",
 		methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
 
@@ -96,6 +106,24 @@ func registerPlatformRoutes(mux *http.ServeMux, logger *slog.Logger, service Pla
 	mux.HandleFunc("PUT /api/platforms/{id}/metadata", handleSaveMetadata(logger, service))
 	mux.HandleFunc("/api/platforms/{id}/metadata",
 		methodNotAllowed(logger, http.MethodGet, http.MethodPut))
+
+	if credentials != nil {
+		registerCredentialRoutes(mux, logger, service, credentials)
+	}
+}
+
+// registerCredentialRoutes wires the destination-credential API: status,
+// setting and deleting a stream key. The secret value itself is never part
+// of any response - see CredentialService and credentialStatusResponse in
+// credentials.go.
+func registerCredentialRoutes(mux *http.ServeMux, logger *slog.Logger, service PlatformService, credentials CredentialService) {
+	mux.HandleFunc("GET /api/platforms/{id}/credentials", handleGetCredentials(logger, service, credentials))
+	mux.HandleFunc("/api/platforms/{id}/credentials", methodNotAllowed(logger, http.MethodGet))
+
+	mux.HandleFunc("PUT /api/platforms/{id}/credentials/stream-key", handleSetStreamKey(logger, service, credentials))
+	mux.HandleFunc("DELETE /api/platforms/{id}/credentials/stream-key", handleDeleteStreamKey(logger, service, credentials))
+	mux.HandleFunc("/api/platforms/{id}/credentials/stream-key",
+		methodNotAllowed(logger, http.MethodPut, http.MethodDelete))
 }
 
 // registerRuntimeRoutes wires the MediaMTX runtime API.

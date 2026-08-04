@@ -1,8 +1,7 @@
-// Command server starts the Streaming Tree REST API.
-//
-// The current build exposes a single endpoint (GET /api/health). Stream
-// routing, MediaMTX supervision, FFmpeg branches, persistence and credential
-// storage are separate, later stages - none of them are started here.
+// Command server starts the Streaming Tree REST API: platform configuration,
+// MediaMTX supervision and the destination-credential store are wired here.
+// FFmpeg destination branches and OAuth-based connectors are still separate,
+// later stages.
 package main
 
 import (
@@ -17,9 +16,11 @@ import (
 
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
 
@@ -62,7 +63,8 @@ func run() error {
 	}()
 
 	logger.Info("database ready",
-		// The path holds no credentials - the application stores none anywhere.
+		// The path holds no credentials: those live in the OS credential
+		// store, never in SQLite.
 		slog.String("path", db.Path()),
 		slog.String("journal_mode", db.JournalMode()),
 	)
@@ -78,6 +80,11 @@ func run() error {
 	}
 
 	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
+
+	// Opening the OS credential store is deferred to first use (see
+	// secrets.NewKeyringStore), so constructing it here never blocks startup
+	// or prompts, even on a system where no credential store is available.
+	credentialService := credential.NewService(secrets.NewKeyringStore())
 
 	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
 	// failed MediaMTX must never stop the Go API: platform configuration stays
@@ -108,6 +115,7 @@ func run() error {
 		StartedAt:      startedAt,
 		Platforms:      platformService,
 		Runtime:        supervisor,
+		Credentials:    credentialService,
 	})
 
 	server := &http.Server{

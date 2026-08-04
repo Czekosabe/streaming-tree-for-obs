@@ -39,12 +39,20 @@ func hasRequestBody(w http.ResponseWriter, r *http.Request) bool {
 	return read > 0
 }
 
-// decodeJSON reads a JSON request body strictly.
+// decodeJSON reads a JSON request body strictly, capped at the general
+// maxRequestBodyBytes limit.
 //
 // Unknown fields are rejected so a client typo ("displayname") fails loudly
 // instead of being silently dropped, and only one JSON value is accepted so
 // trailing garbage cannot be smuggled past validation.
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
+	return decodeJSONWithLimit(w, r, target, maxRequestBodyBytes)
+}
+
+// decodeJSONWithLimit is decodeJSON with an explicit body-size ceiling, for
+// endpoints (credentials) that must accept a much smaller body than general
+// configuration writes.
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) error {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" {
 		mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
@@ -57,13 +65,13 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 		}
 	}
 
-	limited := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	limited := http.MaxBytesReader(w, r.Body, limit)
 
 	decoder := json.NewDecoder(limited)
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(target); err != nil {
-		return translateDecodeError(err)
+		return translateDecodeError(err, limit)
 	}
 
 	// A second value in the same body means the client sent something we did
@@ -79,13 +87,13 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	return nil
 }
 
-func translateDecodeError(err error) error {
+func translateDecodeError(err error, limit int64) error {
 	var maxBytesErr *http.MaxBytesError
 	if errors.As(err, &maxBytesErr) {
 		return &decodeError{
 			status:  http.StatusRequestEntityTooLarge,
 			code:    "request_too_large",
-			message: fmt.Sprintf("Request body must not exceed %d bytes.", maxRequestBodyBytes),
+			message: fmt.Sprintf("Request body must not exceed %d bytes.", limit),
 		}
 	}
 

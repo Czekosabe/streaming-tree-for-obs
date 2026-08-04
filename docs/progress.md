@@ -2089,3 +2089,260 @@ validation, HTTP endpoints to set/check/delete a destination stream key without
 ever echoing it back, and platform-settings UI to manage it. FFmpeg itself is
 still not implemented; this stage only makes it possible to store the secret
 FFmpeg will eventually need.
+
+## 2026-08-04 08:30 — feat(server): add system credential store
+
+### Status
+Completed (backend only - the frontend controls to manage a stream key are
+the next entry in this stage)
+
+### Scope
+The secure credential-store foundation: a `SecretStore` port over the
+operating system's own credential store, a credential domain service built on
+it, and the HTTP API a future frontend uses to set, check and delete a
+destination platform's stream key. No stream key has ever been stored in
+SQLite, and nothing here starts FFmpeg or any outgoing stream - this stage
+only makes it possible to hold the secret a later stage will need.
+
+### Changes
+
+**`apps/server/internal/secrets`** (new package) - the storage-agnostic
+foundation:
+- `SecretStore` interface (`Set`/`Get`/`Delete`/`Exists`, all `context`-based)
+  and three sentinel errors: `ErrUnavailable`, `ErrNotFound`, `ErrFailure`. No
+  driver-specific error, and no secret value, is allowed to cross this
+  interface.
+- `KeyringStore`, the production implementation, wraps
+  `github.com/99designs/keyring` and restricts it to exactly three backends -
+  `WinCredBackend`, `KeychainBackend`, `SecretServiceBackend` - excluding the
+  library's `pass` backend (shells out to the external `pass` command) and
+  `file` backend (a password-encrypted file on disk). Opening the OS backend
+  is deferred to first use, so constructing the store at startup never
+  prompts and never fails a healthy backend just because no credential store
+  happens to be available yet.
+- `BuildKey(secretType, subjectID)` centralizes the key-namespace format:
+  `<secret-type>:<subject-id>`, for example `destination-stream-key:pf_abc123`.
+  The subject ID is always the platform's generated ID, never its display
+  name, so a rename can never orphan a secret, and two destinations for the
+  same provider always resolve to independent keys because the provider ID is
+  never part of the key at all.
+- `secretstest.Store` (in `internal/secrets/secretstest`), a concurrency-safe
+  in-memory fake with `Unavailable` and `FailNext` fields to simulate an
+  unreachable store and an unexpected failure on demand. No production code
+  imports it.
+
+**`apps/server/internal/domain/credential`** (new package) - the credential
+domain service:
+- `ValidateStreamKey` trims incidental surrounding whitespace, rejects an
+  empty value, rejects invalid UTF-8, rejects any control character
+  (including every line-break form), and rejects a value over 4096 bytes - a
+  conservative ceiling, not a claim about any real provider's format, since
+  none has been verified. No rejected value is ever included in the returned
+  error.
+- `Service.Status` reports a stream key's configured state and whether the
+  store could be reached to determine it. An unavailable store is not a Go
+  error: it is a legitimate, stable status the API must always be able to
+  report.
+- `Service.SetStreamKey` / `DeleteStreamKey` validate, store and remove a
+  key. `DeleteStreamKey` is explicitly idempotent: deleting an absent key
+  succeeds.
+- `Service.DeletePlatformCredentials` is the platform-deletion cleanup hook
+  (see Technical decisions for its ordering and failure policy).
+- `Service.RetrieveForProcessStart` is the one method that returns a secret
+  value, reserved for the future FFmpeg stage. It is not part of
+  `httpapi.CredentialService`, so the HTTP layer cannot reach it even though
+  the concrete service has it.
+
+**`apps/server/internal/httpapi`**:
+- `credentials.go` (new): `GET /api/platforms/{id}/credentials` (returns
+  `{streamKey:{configured}, store:{available}}`), `PUT
+  /api/platforms/{id}/credentials/stream-key` (body `{streamKey: "..."}`,
+  capped at 8 KiB versus the general 64 KiB limit, unknown fields and
+  malformed JSON rejected, never echoes the value back), `DELETE
+  .../stream-key` (idempotent, 204, no body). Platform existence is checked
+  first on every credential endpoint, answering the stable `platform_not_found`
+  code rather than the generic `not_found` platform CRUD uses. New stable
+  error codes: `platform_not_found`, `credential_not_found`,
+  `credential_store_unavailable` (503), `credential_store_failure` (500,
+  cause logged server-side only). Stream-key validation failures reuse the
+  existing `validation_failed` / `fields` / `details` envelope, so the
+  frontend's existing field-error machinery covers `streamKey` with no new
+  response shape.
+- `DELETE /api/platforms/{id}` now runs through
+  `handleDeletePlatformWithCredentials` when a `CredentialService` is wired:
+  it deletes the platform's credential first and only deletes the platform
+  row if that succeeds (see Technical decisions). Registered only when
+  `Options.Credentials` is non-nil; otherwise the route falls back to the
+  original `handleDeletePlatform`, so a router built without credentials
+  (existing tests, a future headless mode) behaves exactly as before.
+- `decode.go`: `decodeJSON` is now a thin wrapper over
+  `decodeJSONWithLimit(w, r, target, limit)`, so the credential endpoints can
+  use a smaller body-size ceiling without duplicating the strict-decode logic.
+
+**`apps/server/cmd/server/main.go`**: constructs `secrets.NewKeyringStore()`
+and `credential.NewService(...)`, wires it into `httpapi.Options.Credentials`.
+Two comments that were about to become false are corrected: the package doc
+no longer claims only a health endpoint is exposed and credential storage is
+unstarted, and the database-ready log line no longer claims the application
+stores no credentials anywhere - it now says where they actually live.
+
+**`apps/server/go.mod`**: adds `github.com/99designs/keyring v1.2.2` as a
+direct dependency, plus its transitive dependencies for the three backends
+in use (`99designs/go-keychain`, `danieljoos/wincred`, `godbus/dbus`,
+`gsterjov/go-libsecret`) and for its always-compiled file-backend code path
+that this application never selects at runtime (`dvsekhvalnov/jose2go`,
+`mtibben/percent`, `golang.org/x/term`).
+
+**`THIRD_PARTY_NOTICES.md`**: records `99designs/keyring` and its
+transitive dependencies, why it was chosen over `zalando/go-keyring` (which
+shells out to `security` on macOS - confirmed by reading its source, not
+just its documentation), why the `pass` and `file` backends are excluded,
+and the macOS CGO/Xcode build requirement this choice accepts.
+
+**`.gitignore`**: `secrets/` and `credentials/` were unanchored and silently
+matched the new `apps/server/internal/secrets/` source package - the same
+class of bug that previously hid `apps/web/src/data/` and
+`apps/server/internal/runtime/mediamtx/` (see the two earlier comments in
+this file). Anchored to `/secrets/` and `/credentials/`, with a comment
+explaining why, matching the existing pattern for `/data/` and `/mediamtx`.
+Caught before this commit by noticing `git status` did not list the new
+package as untracked.
+
+### Files changed
+- `apps/server/internal/secrets/store.go` (new)
+- `apps/server/internal/secrets/keyring_store.go` (new)
+- `apps/server/internal/secrets/keyring_store_smoketest_test.go` (new)
+- `apps/server/internal/secrets/store_test.go` (new)
+- `apps/server/internal/secrets/secretstest/fake.go` (new)
+- `apps/server/internal/secrets/secretstest/fake_test.go` (new)
+- `apps/server/internal/domain/credential/model.go` (new)
+- `apps/server/internal/domain/credential/errors.go` (new)
+- `apps/server/internal/domain/credential/validation.go` (new)
+- `apps/server/internal/domain/credential/validation_test.go` (new)
+- `apps/server/internal/domain/credential/service.go` (new)
+- `apps/server/internal/domain/credential/service_test.go` (new)
+- `apps/server/internal/httpapi/credentials.go` (new)
+- `apps/server/internal/httpapi/credentials_test.go` (new)
+- `apps/server/internal/httpapi/decode.go`
+- `apps/server/internal/httpapi/router.go`
+- `apps/server/cmd/server/main.go`
+- `apps/server/go.mod`
+- `apps/server/go.sum`
+- `THIRD_PARTY_NOTICES.md`
+- `.gitignore`
+- `docs/progress.md`
+
+### Technical decisions
+
+1. **Status is derived directly from the secret store; no new SQLite table.**
+   The credential rules explicitly allow either a small non-secret metadata
+   table or deriving status purely from the store. A table would need to stay
+   in sync with a store that can change out from under it (a credential
+   deleted by hand outside the app, a locked keychain), and the rules are
+   explicit that SQLite may never be authoritative for whether a credential
+   exists. Deriving status directly from `Exists` removes that synchronization
+   problem entirely rather than managing it, at the cost of no "last updated"
+   timestamp for now - an acceptable trade for a first stage with a single
+   secret type and no UI yet built around that timestamp.
+
+2. **Any error other than "not found" is treated as `ErrUnavailable`, not a
+   separate `ErrFailure`, in the production store.** The rules group "no
+   Secret Service session", "a locked keychain" and "a permission failure"
+   together as one "unavailable" condition the backend must survive and
+   report as a stable status - not as three different severities. Attempting
+   to distinguish a merely-locked keychain from a genuinely broken one by
+   parsing OS-specific denial strings would be fragile and unverifiable in
+   this environment (this stage was implemented and tested on Windows only).
+   `ErrFailure` stays in the shared vocabulary - the HTTP layer maps it to
+   `credential_store_failure` - and is exercised through `secretstest.Store`,
+   so that path is tested even though the real store cannot currently
+   trigger it. Documented as a known limitation below.
+
+3. **Platform deletion: delete the credential first, then the platform row -
+   except when the store is merely unavailable.** SQLite and the OS
+   credential store cannot share a transaction, so this is a strict two-step
+   sequence rather than a claim of atomicity. If credential cleanup fails
+   with an unexpected error (`ErrFailure`), platform deletion aborts entirely:
+   the platform and its credential are left exactly as they were, safe to
+   retry, rather than ever deleting a platform row while its credential's
+   fate is unknown. If the store is simply unreachable (`ErrUnavailable`),
+   platform deletion proceeds anyway: blocking all platform CRUD - a feature
+   that predates credential storage and must keep working regardless of
+   credential-store availability - on a transient outage would be a worse
+   regression than the accepted, documented risk of leaving an inert entry
+   behind under a platform ID this application will never generate or look
+   up again.
+   
+4. **`ValidateStreamKey` returns `*platform.ValidationError`, reusing the
+   platform domain's error type instead of inventing a parallel one.** With
+   exactly one validated field, duplicating the whole
+   violation/field/rule/params machinery (and the matching `writeValidationError`
+   rendering it already has) for one more field was worse than the
+   alternative: the credential package depending on platform's error
+   vocabulary for this one type. The trade-off is a small, deliberate
+   coupling between two domain packages that are otherwise independent; it
+   buys byte-for-byte response consistency with every other validation error
+   the API already returns, and the frontend's existing field/rule mapping
+   needs no new machinery to support `streamKey`.
+
+5. **The credential-cleanup cascade lives in `httpapi`, not in the platform
+   or credential domain packages.** Making the platform domain aware of
+   credentials, or the reverse, would couple two domains that have no other
+   reason to know about each other. `handleDeletePlatformWithCredentials`
+   orchestrates both services at the one layer that is already allowed to
+   depend on both. `registerPlatformRoutes` registers it only when
+   `Options.Credentials` is non-nil, so a router built without a credential
+   service (every existing test, and any future headless mode) keeps the
+   original single-service delete behavior unchanged.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend formatting | `gofmt -l .` | Passed - no files listed |
+| Backend static analysis | `go vet ./...` | Passed - 0 findings |
+| Backend build | `go build ./...` | Passed |
+| Backend tests | `go test ./...` | Passed - 8 packages, 262 tests |
+| SQLite persistence | `node scripts/verify-persistence.mjs` | Passed - 14 steps |
+| MediaMTX runtime | `node scripts/verify-mediamtx-runtime.mjs` | Passed - 17 steps |
+
+Frontend checks were not re-run for this entry: no frontend file changed.
+They are re-run and recorded in the next entry, which adds the frontend
+credential controls.
+
+The optional real-OS-credential-store smoke test
+(`TestKeyringStoreAgainstTheRealOSCredentialStore` in
+`internal/secrets/keyring_store_smoketest_test.go`) was **not run**. It is
+skipped by default and only runs when `STREAMING_TREE_CREDENTIAL_SMOKE_TEST=1`
+is already set in the environment; that flag was not set, as instructed. All
+other backend tests use `secretstest.Store`, never the real OS credential
+store.
+
+Verified on Windows only. The macOS Keychain backend (CGO, requires Xcode
+command line tools) and the Linux Secret Service backend (D-Bus) were
+reviewed at the source level (see `THIRD_PARTY_NOTICES.md`) but not
+build-verified or run on those platforms.
+
+### Known limitations
+
+- No "last updated" timestamp is reported for a configured credential; see
+  Technical decisions #1.
+- The production `KeyringStore` cannot currently distinguish a genuinely
+  broken credential store from one that is merely locked or lacking a
+  session; both are reported as `credential_store_unavailable`. See
+  Technical decisions #2.
+- Not build-verified on macOS or Linux in this stage.
+- The frontend has no controls to use this API yet - that is the next entry.
+- `Service.RetrieveForProcessStart` has no caller yet; it exists for the
+  future FFmpeg destination-branch stage and is exercised only by its own
+  unit test today.
+- All product limitations from previous entries still stand.
+
+### Next step
+
+Frontend controls for managing a destination stream key: a focused section in
+(or reachable from) the platform settings dialog, showing only
+configured/missing/not-available status, a password-style input to set a new
+key, replace and delete actions with an application-styled delete
+confirmation, and English/Polish translations - followed by the documentation
+pass that closes out this stage.
