@@ -4434,3 +4434,104 @@ documentation but the task requires a full regression pass:
 Official Google OAuth and YouTube Data/Live Streaming API research, written
 up in `docs/provider-integrations/youtube.md`, before any YouTube code is
 written.
+
+---
+
+## 2026-08-05 10:40 — docs: define YouTube account integration scope
+
+Researched current, official Google OAuth and YouTube Data/Live Streaming
+API documentation and recorded the result in
+`docs/provider-integrations/youtube.md` before writing any YouTube code,
+matching the discipline `twitch.md` established in Stage 7A.
+
+### OAuth flow decision
+
+Authorization Code Flow with PKCE (S256), Desktop-app client type, loopback
+(`127.0.0.1`, dynamic port) redirect, no client secret. This matches the
+task's expected design exactly; no conflict was found between that
+expectation and current Google documentation, so no stop-and-report was
+triggered. Google's installed-app guide explicitly documents this shape and
+explicitly states custom URI schemes are "no longer supported due to the
+risk of app impersonation," which independently rules out the alternative
+the task warned against. Google's own TV/limited-input Device Authorization
+Flow was deliberately not used - it exists for a different device class,
+and Streaming Tree already has a full browser and keyboard available.
+
+### Real research findings that changed the plan
+
+1. **`access_type=offline` + `prompt=consent` sent on every authorization**,
+   not just the first one - Google's own documentation states a refresh
+   token "is only returned on the first authorization" otherwise, and this
+   application needs one on every reconnect (including after a disconnect
+   that revoked the previous grant).
+2. **Persistent/default broadcasts are deprecated** (2020-09-01) -
+   `broadcastType=persistent` returns no results today. The task's own
+   suggested "active, upcoming, persistent" broadcast-status list is
+   corrected: broadcast discovery instead merges `broadcastStatus=active`
+   and `broadcastStatus=upcoming` results, and no "persistent" category is
+   offered in the UI at all, because it does not exist as a selectable
+   resource on a channel enabled after that date.
+3. **`videos.update` deletes any mutable property the request body omits**
+   (directly quoted from Google's own docs) - confirms the task's
+   safe-update requirement is not theoretical, and the publish service must
+   fetch-then-merge-then-write rather than sending a partial body built
+   from local fields alone.
+4. **`videos.snippet.categoryId` is required whenever the `snippet` part is
+   updated** - a publish that changes only, say, the title must still
+   resend the current category ID or the write will fail/misbehave.
+5. **Description's 5000-character limit is actually a 5000-*byte* limit**,
+   the one field in this application's metadata model that will be
+   validated by byte count instead of rune count, called out explicitly in
+   both the doc and (later) the validation code.
+6. **Testing-mode OAuth consent screens expire every issued token after 7
+   days**, confirmed via Google's own support documentation on the 100-test-
+   user cap - unrelated to this application's own refresh correctness, and
+   surfaced as a standing Settings-page notice rather than something this
+   application can detect.
+7. **`liveBroadcasts.update` is not needed by anything this stage
+   publishes** - DVR and latency mode (the only fields that would need it)
+   were both corrected to unsupported (see below), so this stage's publish
+   path is a single `videos.update` write, not the two-call sequence the
+   task anticipated as the general case. The publish service still
+   implements the general multi-call/partial-success machinery the task
+   requires, so a later stage that does add a broadcast-level write can
+   reuse it without a redesign.
+
+### YouTube capability corrections
+
+`platform.definitions.go`'s YouTube entry will be corrected (in the next
+commit, alongside the schema changes) from the previous approximate
+`MatureContent: true, DVR: true, LatencyMode: true` to `false` for all
+three: `selfDeclaredMadeForKids` is a COPPA child-directed disclosure, not a
+generic maturity flag; DVR and latency mode are broadcast-lifecycle
+properties this stage's video-only publish path does not write. This
+mirrors the Twitch capability correction from Stage 7A, made only to the
+YouTube entry - Kick and TikTok are untouched.
+
+### Architecture decision: two provider-shaped interfaces, not one
+
+`internal/domain/account.Provider` currently declares Twitch's device-flow
+methods (`StartDeviceFlow`/`PollDeviceFlow`) as part of the one interface
+every provider adapter must implement. Forcing YouTube's adapter to
+implement those two methods meaninglessly (there is no device code, no
+polling) is exactly the anti-pattern the task warned against. The next
+commit splits this into `account.Provider` (`ProviderID`, `ValidateToken`,
+`RefreshToken`, `RevokeToken`, `GetIdentity` - the four methods
+`account.Service` itself actually calls) and a new `account.
+DeviceFlowProvider` (`Provider` plus the two device-flow methods,
+implemented by Twitch and depended on only by
+`internal/runtime/deviceflow.Manager`, the one caller that ever calls
+them). YouTube's adapter implements the smaller `Provider` interface only;
+a dedicated `internal/runtime/youtubeauth` package (not `deviceflow`) will
+own the loopback/PKCE/callback attempt state machine.
+
+### Automated validation
+
+No code changed in this commit (documentation only); the same regression
+suite as the previous commit was re-run and remains green - see that
+commit's own results table.
+
+### Next step
+Database migrations for `platform_remote_targets` and the YouTube
+category-region setting, then the `internal/domain/account` interface
+split, then the `internal/provider/youtube` package.
