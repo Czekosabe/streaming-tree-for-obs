@@ -810,13 +810,21 @@ Twitch. Connecting a Twitch account never starts, stops, or otherwise
 touches a destination's FFmpeg branch, and linking an account never
 validates or replaces a stream key.
 
-**What this stage does not implement.** Twitch chat, EventSub (follow/sub/
-raid notifications), bot messages, a unified chat, overlays, alerts,
-text-to-speech, donations, viewer counts, analytics, and automatic
-broadcast creation are all still unimplemented — see
-[`docs/engagement-architecture.md`](docs/engagement-architecture.md). This
-stage is the account and metadata foundation those features will build on
-later, not an implementation of them.
+**What this stage (7A) does and does not implement.** This stage is the
+account and metadata foundation: sign-in, account lifecycle, linking, and
+explicit metadata publishing — not chat or events. Twitch's own chat and
+channel events (EventSub) are a **later, separate stage, and that stage is
+now real**: stage 8A added a genuine EventSub WebSocket connector reading
+chat messages, follows, subscriptions, gifts, cheers, raids, channel-point
+redemptions and remote stream status onto an in-memory Engagement Event
+Bus, and stage 9 (this repository's current stage) added a real, working
+**unified operator chat page** that consumes it — see
+[Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
+and [Unified operator chat](#unified-operator-chat). What remains planned,
+unaffected by any of that: outbound Twitch chat and bot messages, the OBS
+Browser Source chat overlay, the alert engine, text-to-speech, donations
+from external services, viewer counts, and analytics — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Registering a Twitch application and configuring a Client ID
 

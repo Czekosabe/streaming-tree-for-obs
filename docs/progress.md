@@ -6172,3 +6172,89 @@ None specific to this entry.
 Final full regression across every check, confirm a clean working tree,
 push to `origin/main`, confirm local and remote are synchronized, and
 produce the closing report.
+
+---
+
+## 2026-08-06 10:05 — fix(docs): correct post-Stage-8A status
+
+### Status
+Completed
+
+### Scope
+Stage 9 begins here. Before touching any code, correct documentation
+drift left over from Stage 8A, per the same precedent established
+before Stage 7B and Stage 8A themselves.
+
+### Changes
+
+**`README.md`** — the "Connected accounts and Twitch metadata" section's
+"What this stage does not implement" paragraph (written during stage
+7A, before EventSub existed) still flatly stated "Twitch chat, EventSub
+... are all still unimplemented." That became false the moment stage 8A
+shipped a real EventSub connector. Rewrote the paragraph to state
+plainly: stage 7A is account/metadata only; stage 8A's EventSub
+connector and Event Bus are real; and (once this stage's own commits
+land) stage 9's unified operator chat is real too — while outbound
+chat, the OBS overlay, alerts, TTS and donations remain exactly as
+planned as before. Cross-references the new sections this stage adds.
+
+### Audit results (no further change needed)
+
+Searched the whole repository for the specific stale phrases the task
+named:
+- "YouTube account integration is planned" — **not found**. The
+  Stage-7A section already correctly says YouTube "now has its own real
+  integration too" (fixed during stage 7B's own documentation pass);
+  nothing to correct.
+- "Twitch chat is not implemented" / "EventSub is not implemented" /
+  "the Engagement page is the only chat view" / "no real chat UI
+  exists" / "Stage 7C is the next stage" — **none of these literal
+  phrases appear anywhere** in README.md, docs/project-overview.md, or
+  docs/engagement-architecture.md. `docs/project-overview.md` has no
+  stale "Twitch chat, EventSub ... unimplemented" sentence mirroring
+  README's (its own stage-7A description was written more narrowly,
+  scoped to account/metadata only, and never made the broader claim
+  README's sentence did).
+- The roadmap tables in all three documents currently show stage 9 as
+  "Planned" — **correct as of this commit**, since stage 9 is not yet
+  implemented. These are updated to "Completed" only in this stage's
+  closing documentation commit, once every check actually passes - not
+  here.
+
+### Technical decisions
+
+**Why this is the only substantive correction.** Stage 8A's own closing
+documentation commit (`docs: document Twitch engagement foundation`)
+already did a thorough pass correcting most stage-8A-adjacent claims
+across README, project-overview.md and engagement-architecture.md. The
+one sentence it missed was inside stage 7A's own README section — far
+enough from stage 8A's own new content that the prior pass's search
+patterns did not surface it. This confirms the value of a dedicated
+audit step at the start of every stage rather than assuming the
+previous stage's own documentation commit caught everything adjacent
+to it.
+
+### Files changed
+- `README.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only; no code changed. Full suite run before this commit:
+- Frontend: `npm run i18n:check`, `npm run typecheck`, `npm run lint`,
+  `npm run test -- --run`, `npm run build` — all pass.
+- Backend: `gofmt -l .`, `go vet ./...`, `go build ./...`,
+  `go build -tags integration ./cmd/testserver/...`, `go test ./...` —
+  all pass.
+- Integration: all six existing scripts (`verify-persistence.mjs`,
+  `verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`,
+  `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs`,
+  `verify-twitch-engagement.mjs`) pass, unaffected by a
+  documentation-only change.
+
+### Known limitations
+None.
+
+### Next step
+Research current official Twitch chat-badge and emote documentation,
+then design the operator-chat projection architecture.
