@@ -62,7 +62,7 @@ document says otherwise:
 | --- | --- |
 | **Provider** | A built-in integration type: Twitch, YouTube, Kick, TikTok, or a non-platform source such as an external donation service. Exists today as `platform.ProviderDefinition` for the streaming side; the engagement side extends the same idea. |
 | **Connector** | The adapter code that talks to one provider's real API/protocol and translates its events and actions into the normalized model. Not the same as a *configured destination* (§4): a connector is code, a configured destination is a user's row. |
-| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing, **extended to YouTube as of stage 7B** (account lifecycle, broadcast selection and metadata publishing); this document's engagement uses of it (chat, events) remain planned, stage 8 (Twitch) and stage 15 (YouTube) onward. |
+| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing, **extended to YouTube as of stage 7B** (account lifecycle, broadcast selection and metadata publishing); this document's engagement uses of it (chat, events) remain planned, stage 8A (Twitch) and stage 15 (YouTube) onward. |
 | **Normalized engagement event** | One provider-independent representation of "something happened": a chat message, a follow, a donation, and so on. Defined in §5. |
 | **Engagement Event Bus** | The in-process component that receives normalized events from connectors and distributes them to every consumer (§6). |
 | **Operator chat** | The internal, full-detail chat view for the streamer/moderator (§7). |
@@ -757,26 +757,38 @@ that table.
 | --- | --- |
 | 5 | Secure credential-store foundation (this task's implementation part) |
 | 6 | FFmpeg destination branches (consumes the credential store for stream keys) |
-| 7 | Connected accounts, OAuth, platform metadata publishing (consumes the credential store for tokens) |
-| 8 | Engagement Event Bus + Twitch connector (first real implementation of §5–6) |
+| 7A/7B | Connected accounts, OAuth, platform metadata publishing for Twitch and YouTube (consumes the credential store for tokens) |
+| 7C | Kick and TikTok account integration — **deferred**, capability-gated, not a prerequisite for stage 8A (see the factual note after this table) |
+| 8A | Engagement Event Bus + Twitch inbound connector (first real implementation of §5–6) |
+| 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set |
 | 9 | Unified operator chat (§7.2) |
 | 10 | OBS chat overlay (§7.3) |
 | 11 | Outbound chat, scheduled bot messages and commands (§8) |
 | 12 | Alert engine and alert queue (§9–10) |
 | 13 | Visual overlay designers (§13.1) |
 | 14 | Built-in templates and template import/export (§13.3) |
-| 15 | YouTube and Kick engagement connectors (§16) |
+| 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
 | 16 | External donation-service connectors (§15) |
 | 17 | TTS and audio queue (§12) |
 | 18 | Goals, counters and event widgets (§14) |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |
 
+> **Roadmap decision (recorded when stage 8A began):** stage 8A starts
+> before stage 7C is implemented. 7C (Kick/TikTok accounts) is not a
+> dependency of the Event Bus — the bus and its first connector need only
+> the Twitch adapter stage 7A already built — while every stage from 9
+> onward genuinely cannot begin without the bus. Kick account integration
+> is expected to move to stage 15, alongside its own engagement adapter,
+> rather than staying a separate earlier stage; TikTok remains conditional
+> as already stated. See [progress.md](progress.md) for the entry recording
+> this decision and `project-overview.md` §13/§16 for the roadmap table.
+
 Dependencies that constrain this order:
 
-- Stage 6 (FFmpeg) and stage 7 (OAuth) both need stage 5's credential store —
-  they need different secret types through the same abstraction.
-- Stage 8 (event bus) is a prerequisite for every stage from 9 onward: nothing
+- Stage 6 (FFmpeg) and stage 7A/7B (OAuth) both need stage 5's credential
+  store — they need different secret types through the same abstraction.
+- Stage 8A (event bus) is a prerequisite for every stage from 9 onward: nothing
   downstream can exist before there is a normalized stream to consume.
 - Stage 9 (operator chat) and stage 10 (overlay) both read stage 8's bus; one
   is not a prerequisite for the other, but both need it.

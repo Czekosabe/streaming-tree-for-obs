@@ -5202,3 +5202,123 @@ push - see the final report.
 Final full regression across every check, confirm a clean working tree,
 push to `origin/main`, confirm local and remote are synchronized, and
 produce the closing report.
+
+---
+
+## 2026-08-05 21:10 — fix(docs): correct post-YouTube project status
+
+### Status
+Completed
+
+### Scope
+Stage 8A begins here. Before touching any code, correct documentation
+drift left over from the YouTube stage and record the roadmap decision to
+start the Event Bus now rather than waiting for stage 7C.
+
+### Changes
+
+**`README.md`**
+- Added the missing `STREAMING_TREE_YOUTUBE_CLIENT_ID` row to the main
+  environment-variable table (it was documented in prose in the YouTube
+  section and in `config/README.md`, but never made it into the table
+  itself).
+- Rewrote the "Long-term vision" paragraph's closing sentence. It read
+  "...shapes decisions made today, starting with the credential-store
+  foundation this stage adds" — literally false by this point, since the
+  credential store (stage 5), Twitch (7A) and YouTube (7B) integrations
+  were all already completed before this sentence was ever re-read. It now
+  states plainly what is already built (stages 5, 7A, 7B) and what this
+  stage adds (the Event Bus and Twitch inbound connector, stage 8A).
+- Updated the roadmap table: 7B marked **Completed** (already was); 7C
+  changed from a bare "Planned" to **Deferred** with an explanation that it
+  is capability-gated and not a prerequisite for stage 8; the old combined
+  "8–19" row split so stage 8A ("this stage") is visible on its own, with
+  a new conditional 8B row for the "additional Twitch event coverage"
+  reserve described in the stage 8A task itself.
+
+**`docs/project-overview.md`**
+- §13 roadmap table: same 7C-deferred wording as the README, 8A/8B split
+  row, and a new explanatory sentence directly in the 7C row explaining
+  Kick's account integration is now expected to move to stage 15 (paired
+  with its own engagement adapter) rather than staying a separate earlier
+  stage.
+- §13 "Key dependencies": reworded the stage-8 bullet to say 8A explicitly,
+  and added a new bullet stating outright *why* 8A starts before 7C: the
+  bus only needs the Twitch adapter that already exists, 7C is not on its
+  critical path, while every stage from 9 onward cannot start without the
+  bus — so deferring 7C costs nothing, deferring the bus further would
+  have blocked six-plus future stages for no reason.
+- §16's three-item factual list: item 2 now names stage 8A explicitly
+  instead of the ambiguous "stage 8"; item 3 rewritten to match the new
+  roadmap - Twitch's stage 7A account integration is described as being
+  extended (not replaced) by stage 8A's inbound connector on the *same*
+  account, and the Kick/TikTok sentence now matches the 7C-deferred,
+  Kick-moves-to-15 decision instead of describing 7C as a firm separate
+  stage that happens "before any engagement-era connector work begins" -
+  the opposite of what stage 8A is about to do.
+
+**`docs/engagement-architecture.md`**
+- §18's staged-implementation table: split the 7 row into 7A/7B (done) and
+  a 7C row explicitly marked deferred; split the 8 row into 8A/8B matching
+  the other two documents; updated the 15 row to mention Kick account
+  integration explicitly, not just its engagement adapter.
+- Added a short blockquote directly under that table recording *why* 8A
+  starts before 7C, cross-referencing this same progress.md entry and
+  project-overview.md §13/§16 rather than duplicating the reasoning a
+  third time.
+- The "Connected account" terminology-table row and the stage-8
+  dependency bullet in the paragraph below the table now say "stage 8A"
+  instead of the bare "stage 8" the rest of this correction uses
+  consistently.
+
+### Technical decisions
+
+**Why fix this before writing a line of Stage 8A code.** The task
+specification called this out explicitly as "documentation drift" left
+over from a prior stage, the same category of problem the
+`fix(docs): correct stage 7A documentation drift` entry above already
+established a precedent for fixing first, as its own commit, before new
+feature work. Nothing here is a design decision about the Event Bus
+itself - it is entirely about making the roadmap and the README's own
+claims match reality again before adding more to both.
+
+**Why 7C is "deferred" and not simply left as "Planned."** "Planned" does
+not distinguish "next in line" from "not on the critical path, revisit
+later." Stage 8A is a hard prerequisite for stages 9 through 18; stage 7C
+is a prerequisite for nothing downstream except stage 7C's own future
+engagement work (which itself is now folded into stage 15 for Kick).
+Leaving 7C's status ambiguous would make a future reader wonder why an
+account-integration stage was skipped rather than understanding it was a
+deliberate ordering choice.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Full existing suite run before creating this commit (docs-only change, no
+code touched):
+- Frontend: `npm run i18n:check`, `npm run typecheck`, `npm run lint`,
+  `npm run test -- --run`, `npm run build` — all pass, no changes expected
+  or observed outside documentation.
+- Backend: `gofmt -l .`, `go vet ./...`, `go test ./...`, `go build ./...`
+  — all pass.
+- Integration: `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+  `verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs` — all pass (unaffected by a
+  documentation-only change).
+
+### Known limitations
+Part 1's items 3 and 4 from the stage-8A task (removing "EventSub/chat
+does not exist" language, and adding an explicit implemented/planned
+breakdown for the engagement platform) are deliberately **not** done in
+this commit — those statements are still true right now, since no
+Stage 8A code exists yet. They are addressed in the closing documentation
+commit of this stage, once they actually become false.
+
+### Next step
+Research the current official Twitch EventSub WebSocket contract and
+write `docs/provider-integrations/twitch-engagement.md`, then begin the
+Stage 8A scope-profile and Event Bus implementation.

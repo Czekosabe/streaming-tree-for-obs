@@ -777,8 +777,9 @@ it is architected; this table only tracks status and dependencies.
 | 6 | FFmpeg destination branches: resolution/compatibility probing, output settings, per-branch supervision, restarts, failure isolation | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle (validate/refresh/reconnect/disconnect), destination linking, and explicit channel-metadata publishing | **Completed** |
 | 7B | YouTube account integration: Authorization Code Flow with PKCE via a loopback callback, multi-channel selection, a provider-independent remote-broadcast-target association, and explicit video-metadata publishing, reusing the same connected-account foundation | **Completed** |
-| 7C | Kick and TikTok account integration | Planned |
-| 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
+| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for stage 8. Kick account integration may land together with its own engagement adapter in stage 15, after researching Kick's current official APIs; TikTok remains conditional on a stable, official, permitted integration (§16, §19) |
+| 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
+| 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat | Planned |
 | 10 | OBS chat overlay | Planned |
 | 11 | Outbound chat, scheduled bot messages and commands | Planned |
@@ -811,10 +812,17 @@ Key dependencies:
   Stage 7C's own adapters will need the same judgment call: implement the
   base `Provider` interface, and only `DeviceFlowProvider` too if the
   provider's own OAuth flow is genuinely device-code-shaped.
-- Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward, and
-  will reuse stage 7A's Twitch adapter (`internal/provider/twitch`) and
-  stage 7B's YouTube adapter (`internal/provider/youtube`) for its own
-  connectors rather than building new ones - see §16.
+- Stage 8A (Event Bus) is a prerequisite for every stage from 9 onward, and
+  reuses stage 7A's Twitch adapter (`internal/provider/twitch`) for its own
+  inbound connector rather than building a new one - see §16. Stage 15 will
+  do the same for stage 7B's YouTube adapter (`internal/provider/youtube`).
+- Stage 8A is started before stage 7C is implemented, deliberately. Stage
+  7C (additional provider accounts) is not a dependency of the Event Bus -
+  the bus and its Twitch connector need only the Twitch adapter that
+  already exists - while every stage from 9 onward genuinely cannot begin
+  without the bus. Deferring 7C costs nothing on the critical path; deferring
+  8A further would have blocked the rest of the engagement platform for no
+  reason.
 - Stage 11 (outbound/bot) needs connector send-message capability, declared as
   part of a connector's capability set from stage 8 onward.
 - Stage 12 (alerts) needs stage 8's normalized events.
@@ -1004,23 +1012,26 @@ made from stage 5 onward:
 2. **A connected account (§8.1) is already a real, provider-independent
    concept as of stage 7A, extended to a second provider in stage 7B - but
    only for account lifecycle and metadata publishing, not for reading
-   chat or events.** The engagement Event Bus (stage 8) will need to read
-   chat/events through a Twitch connection, and later a YouTube one too
-   (stage 15), and is expected to reuse this same connected-account
-   concept and the `internal/provider/twitch` / `internal/provider/youtube`
-   adapters for its own authorization, rather than introducing a second,
-   competing notion of "a Twitch account" or "a YouTube channel." That
-   reuse is a stage-8/stage-15 design intention recorded here, not
-   something stages 7A/7B themselves implement. See
+   chat or events.** The engagement Event Bus (stage 8A) reads chat/events
+   through a Twitch connection, and later a YouTube one too (stage 15), and
+   reuses this same connected-account concept and the
+   `internal/provider/twitch` / `internal/provider/youtube` adapters for
+   its own authorization, rather than introducing a second, competing
+   notion of "a Twitch account" or "a YouTube channel." See
    engagement-architecture.md §4.
 3. **Provider support is planned honestly**: Twitch first (stage 7A,
-   account and metadata only - no chat, no EventSub, no bot), then YouTube
-   (stage 7B, account, broadcast selection and metadata only - no live
-   chat, no Super Chat, no membership events), then Kick (stage 7C) as a
-   separate account-integration adapter before any engagement-era
-   connector work begins, and TikTok only if and when an official, stable
-   integration exists — never via scraping as a core feature. See
-   engagement-architecture.md §16.
+   account and metadata only, extended in stage 8A with a real inbound
+   engagement connector requesting additional, separately-tracked scopes on
+   the same account - no outbound chat yet), then YouTube (stage 7B,
+   account, broadcast selection and metadata only - no live chat, no Super
+   Chat, no membership events). Kick and TikTok account integration (stage
+   7C) are deliberately **deferred** rather than blocking: they are not a
+   dependency of the Event Bus, which only needs the Twitch adapter that
+   already exists. Kick account integration is expected to land together
+   with its own engagement adapter in stage 15, once its current official
+   APIs are researched, rather than as a separate earlier stage; TikTok
+   remains conditional on an official, stable integration - never via
+   scraping as a core feature. See engagement-architecture.md §16.
 
 This section is updated, and marked accordingly, only as each roadmap stage
 from §13 is actually completed - not before. Stages 5 and 7A are the only

@@ -11,11 +11,15 @@ others.
 Tree is planned to grow into a local streaming engagement and overlay
 platform: normalized chat and events from multiple platforms, a unified
 operator chat, OBS Browser Source overlays, alerts, scheduled bot messages and
-chat commands, visual overlay designers, text-to-speech and goal widgets. None
-of that exists yet — it is architecture and planning, detailed in
+chat commands, visual overlay designers, text-to-speech and goal widgets.
+Most of that still does not exist — it is architecture and planning,
+detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) — but it
-shapes decisions made today, starting with the credential-store foundation
-this stage adds.
+shapes decisions made today. The foundation is built incrementally: the
+credential-store foundation (stage 5) and the Twitch and YouTube
+connected-account integrations (stages 7A/7B) are already completed, and
+this stage adds the first real piece of the engagement platform itself — a
+normalized event bus and a real Twitch inbound connector (stage 8A).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, and Twitch + YouTube account integrations all work
 >
@@ -84,9 +88,11 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 5 | Secure credential-store foundation | **Completed** |
 | 6 | FFmpeg destination branches | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
-| 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 7C | Kick and TikTok account integration | Planned |
-| 8–19 | Engagement Event Bus, unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, additional platform connectors | Planned |
+| 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
+| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick may land together with its engagement adapter in stage 15, TikTok remains conditional on a stable official integration |
+| 8A | Engagement Event Bus and a real Twitch inbound connector (this stage) | Planned |
+| 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
+| 9–19 | Unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -251,6 +257,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_MEDIAMTX_API_ADDRESS` | `127.0.0.1:9997` | MediaMTX Control API address, read only by the backend. **Loopback only.** |
 | `STREAMING_TREE_INGEST_PATH` | `live` | The single path publishing is allowed on. Letters, digits, `-` and `_` only. |
 | `STREAMING_TREE_TWITCH_CLIENT_ID` | — | Twitch application Client ID. Always wins over a database-managed value if set. Never a client secret — see [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata). |
+| `STREAMING_TREE_YOUTUBE_CLIENT_ID` | — | Google OAuth Desktop-app Client ID. Always wins over a database-managed value if set, independently of the Twitch variable above. Never a client secret — see [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata). |
 
 Booleans accept `true`/`false`, `1`/`0` and `t`/`f`. A typo such as `yes` is a
 startup error rather than a silent `false`.
