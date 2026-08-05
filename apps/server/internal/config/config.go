@@ -58,6 +58,12 @@ type Config struct {
 	// Desktop OAuth client) Client ID. Empty means no override - same
 	// precedence rule as TwitchClientID.
 	YouTubeClientID string
+
+	// EngagementBufferSize is the Engagement Event Bus's in-memory ring
+	// buffer capacity - see internal/engagement.Bus. Never persisted; reset
+	// to this configured value on every backend start, since the buffer
+	// itself always starts empty.
+	EngagementBufferSize int
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -119,6 +125,16 @@ const (
 	// DefaultIngestPath is the single MediaMTX path publishing is allowed on.
 	// It is a route identifier, not a secret.
 	DefaultIngestPath = "live"
+
+	// defaultEngagementBufferSize, minEngagementBufferSize and
+	// maxEngagementBufferSize mirror internal/engagement's
+	// DefaultCapacity/MinCapacity/MaxCapacity exactly - duplicated here
+	// (rather than importing that package from this low-level one, which
+	// every other package already depends on) and kept in sync by
+	// TestEngagementBufferSizeConstantsMatchBusPackage.
+	defaultEngagementBufferSize = 1000
+	minEngagementBufferSize     = 100
+	maxEngagementBufferSize     = 10000
 )
 
 // defaultAllowedOrigins covers the Vite dev server on both loopback spellings.
@@ -132,11 +148,12 @@ var defaultAllowedOrigins = []string{
 // so a typo fails loudly at startup instead of silently falling back.
 func Load() (Config, error) {
 	cfg := Config{
-		Host:              defaultHost,
-		Port:              defaultPort,
-		AllowedOrigins:    defaultAllowedOrigins,
-		ReadHeaderTimeout: defaultReadHeaderTimeout,
-		ShutdownTimeout:   defaultShutdownTimeout,
+		Host:                 defaultHost,
+		Port:                 defaultPort,
+		AllowedOrigins:       defaultAllowedOrigins,
+		ReadHeaderTimeout:    defaultReadHeaderTimeout,
+		ShutdownTimeout:      defaultShutdownTimeout,
+		EngagementBufferSize: defaultEngagementBufferSize,
 	}
 
 	if raw, ok := lookup("STREAMING_TREE_HOST"); ok {
@@ -192,6 +209,19 @@ func Load() (Config, error) {
 
 	if raw, ok := lookup("STREAMING_TREE_YOUTUBE_CLIENT_ID"); ok {
 		cfg.YouTubeClientID = strings.TrimSpace(raw)
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE"); ok {
+		size, err := strconv.Atoi(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE: %q is not a number", raw)
+		}
+		if size < minEngagementBufferSize || size > maxEngagementBufferSize {
+			return Config{}, fmt.Errorf(
+				"STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE: %d is outside the range %d-%d",
+				size, minEngagementBufferSize, maxEngagementBufferSize)
+		}
+		cfg.EngagementBufferSize = size
 	}
 
 	return cfg, nil

@@ -7,6 +7,7 @@ go 1.25.0
 
 require (
 	github.com/99designs/keyring v1.2.2
+	github.com/coder/websocket v1.8.15
 	modernc.org/sqlite v1.55.0
 )
 

@@ -19,9 +19,11 @@ import (
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
 	"github.com/streaming-tree/server/internal/domain/credential"
+	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -29,6 +31,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
@@ -140,6 +143,21 @@ func run() error {
 	// internal/domain/account itself.
 	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
+	// Stage 8A: the Engagement Event Bus and its Twitch connector manager.
+	// eventBus is constructed here (not inside twitchengagement.Manager)
+	// because it is also handed to the HTTP router directly - the SSE and
+	// snapshot endpoints read it without going through the connector
+	// manager at all.
+	eventBus := bus.New(bus.Options{Capacity: cfg.EngagementBufferSize})
+	engagementSettingsService := engagementsettings.NewService(sqlite.NewEngagementSettingsRepository(db.DB), nil)
+
+	// twitchEngagementManager is constructed below (it needs accountService
+	// and deviceFlowManager, both defined further down); onAccountRemoved
+	// closes over a pointer set once that manager exists, so Disconnect's
+	// hook is wired before accountService itself is constructed without
+	// requiring twitchengagement.Manager to exist yet.
+	var twitchEngagementManager *twitchengagement.Manager
+
 	accountService := account.NewService(account.Options{
 		Repository:     sqlite.NewAccountRepository(db.DB),
 		Secrets:        secretStore,
@@ -149,6 +167,11 @@ func run() error {
 		Logger:         logger,
 		OnAccountDisconnected: func(cbCtx context.Context, platformID string) error {
 			return remoteTargetService.DeleteTarget(cbCtx, platformID)
+		},
+		OnAccountRemoved: func(cbCtx context.Context, accountID string) {
+			if twitchEngagementManager != nil {
+				twitchEngagementManager.StopAndRemove(accountID)
+			}
 		},
 	})
 	// Runs Twitch's required hourly re-validation in the background; a
@@ -165,6 +188,25 @@ func run() error {
 	deviceFlowManager.Start(ctx)
 
 	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
+
+	// destinationLookup attaches DestinationID to a normalized event only
+	// when the account is linked to exactly one configured destination -
+	// never guessed when there is more than one (see
+	// account.Service.LinkedPlatforms's own doc comment).
+	destinationLookup := func(accountID string) (string, bool) {
+		links, err := accountService.LinkedPlatforms(ctx, accountID)
+		if err != nil || len(links) != 1 {
+			return "", false
+		}
+		return links[0].PlatformID, true
+	}
+	twitchEngagementManager = twitchengagement.NewManager(twitchengagement.Options{
+		Accounts: accountService, Settings: engagementSettingsService, Bus: eventBus, Client: twitchClient,
+		Logger: logger, DestinationLookup: destinationLookup,
+	})
+	if err := twitchEngagementManager.Start(ctx); err != nil {
+		logger.Warn("could not restore enabled Twitch engagement connectors at startup", slog.Any("error", err))
+	}
 
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
 		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
@@ -233,6 +275,10 @@ func run() error {
 		YouTubeAuth:     youtubeAuthManager,
 		YouTubeMetadata: youtubeMetadataService,
 		RemoteTargets:   remoteTargetService,
+
+		EngagementBus:        eventBus,
+		EngagementSettings:   engagementSettingsService,
+		EngagementConnectors: twitchEngagementManager,
 	})
 
 	server := &http.Server{
@@ -268,6 +314,8 @@ func run() error {
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
+		twitchEngagementManager.Shutdown(shutdownCtx)
+		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
@@ -299,6 +347,8 @@ func run() error {
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
+		twitchEngagementManager.Shutdown(shutdownCtx)
+		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 

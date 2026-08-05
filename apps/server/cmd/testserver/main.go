@@ -31,9 +31,11 @@ import (
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
 	"github.com/streaming-tree/server/internal/domain/credential"
+	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -41,6 +43,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
@@ -117,6 +120,7 @@ func run() error {
 	twitchClient := twitch.New(twitch.Options{
 		OAuthBaseURL: os.Getenv("STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL"),
 		APIBaseURL:   os.Getenv("STREAMING_TREE_TEST_TWITCH_API_BASE_URL"),
+		EventSubURL:  os.Getenv("STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL"),
 	})
 	twitchAdapter := twitch.NewAdapter(twitchClient)
 	youtubeClient := youtube.New(youtube.Options{
@@ -136,11 +140,27 @@ func run() error {
 	// comment.
 	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
+	// Stage 8A: same wiring as cmd/server/main.go - see its comments for the
+	// full rationale. STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL (above)
+	// and this manager's AllowedReconnectHosts default (production Twitch
+	// host) both need the fake WebSocket server's host allow-listed for the
+	// official-session_reconnect test scenario; the integration script sets
+	// its own loopback host via that same env var indirectly through
+	// twitchClient.EventSubURL().
+	eventBus := bus.New(bus.Options{Capacity: cfg.EngagementBufferSize})
+	engagementSettingsService := engagementsettings.NewService(sqlite.NewEngagementSettingsRepository(db.DB), nil)
+	var twitchEngagementManager *twitchengagement.Manager
+
 	accountService := account.NewService(account.Options{
 		Repository: sqlite.NewAccountRepository(db.DB), Secrets: secretStore, Providers: providers,
 		EnvClientIDs: envClientIDs, RequiredScopes: requiredScopes, Logger: logger,
 		OnAccountDisconnected: func(cbCtx context.Context, platformID string) error {
 			return remoteTargetService.DeleteTarget(cbCtx, platformID)
+		},
+		OnAccountRemoved: func(cbCtx context.Context, accountID string) {
+			if twitchEngagementManager != nil {
+				twitchEngagementManager.StopAndRemove(accountID)
+			}
 		},
 	})
 	accountService.StartValidationWorker(ctx)
@@ -151,6 +171,25 @@ func run() error {
 	deviceFlowManager.Start(ctx)
 
 	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
+
+	engagementReconnectHosts := []string{"eventsub.wss.twitch.tv"}
+	if testHost := os.Getenv("STREAMING_TREE_TEST_TWITCH_EVENTSUB_RECONNECT_HOST"); testHost != "" {
+		engagementReconnectHosts = append(engagementReconnectHosts, testHost)
+	}
+	destinationLookup := func(accountID string) (string, bool) {
+		links, err := accountService.LinkedPlatforms(ctx, accountID)
+		if err != nil || len(links) != 1 {
+			return "", false
+		}
+		return links[0].PlatformID, true
+	}
+	twitchEngagementManager = twitchengagement.NewManager(twitchengagement.Options{
+		Accounts: accountService, Settings: engagementSettingsService, Bus: eventBus, Client: twitchClient,
+		Logger: logger, AllowedReconnectHosts: engagementReconnectHosts, DestinationLookup: destinationLookup,
+	})
+	if err := twitchEngagementManager.Start(ctx); err != nil {
+		logger.Warn("could not restore enabled Twitch engagement connectors at startup", slog.Any("error", err))
+	}
 
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
 		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
@@ -198,6 +237,10 @@ func run() error {
 		YouTubeAuth:     youtubeAuthManager,
 		YouTubeMetadata: youtubeMetadataService,
 		RemoteTargets:   remoteTargetService,
+
+		EngagementBus:        eventBus,
+		EngagementSettings:   engagementSettingsService,
+		EngagementConnectors: twitchEngagementManager,
 	})
 
 	server := &http.Server{
@@ -228,6 +271,8 @@ func run() error {
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
+		twitchEngagementManager.Shutdown(shutdownCtx)
+		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
@@ -242,6 +287,8 @@ func run() error {
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
+		twitchEngagementManager.Shutdown(shutdownCtx)
+		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 

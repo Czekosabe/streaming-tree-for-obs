@@ -25,6 +25,7 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_FFMPEG_PATH",
 		"STREAMING_TREE_TWITCH_CLIENT_ID",
 		"STREAMING_TREE_YOUTUBE_CLIENT_ID",
+		"STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -419,5 +420,61 @@ func TestClientIDsDefaultToEmptyWhenUnset(t *testing.T) {
 	}
 	if cfg.TwitchClientID != "" || cfg.YouTubeClientID != "" {
 		t.Errorf("TwitchClientID/YouTubeClientID = %q/%q, want both empty when unset", cfg.TwitchClientID, cfg.YouTubeClientID)
+	}
+}
+
+func TestEngagementBufferSizeDefault(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.EngagementBufferSize != 1000 {
+		t.Errorf("EngagementBufferSize = %d, want default 1000", cfg.EngagementBufferSize)
+	}
+}
+
+func TestEngagementBufferSizeOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE", "2500")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.EngagementBufferSize != 2500 {
+		t.Errorf("EngagementBufferSize = %d, want 2500", cfg.EngagementBufferSize)
+	}
+}
+
+func TestEngagementBufferSizeRejectsOutOfRangeValues(t *testing.T) {
+	for _, raw := range []string{"0", "99", "10001", "not-a-number", "-5"} {
+		t.Run(raw, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE", raw)
+			if _, err := Load(); err == nil {
+				t.Errorf("expected Load() to reject STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE=%q", raw)
+			}
+		})
+	}
+}
+
+func TestEngagementBufferSizeConstantsMatchBusPackage(t *testing.T) {
+	// internal/engagement.DefaultCapacity/MinCapacity/MaxCapacity must stay
+	// numerically identical to this package's own duplicated constants (see
+	// their doc comment for why they are duplicated rather than imported).
+	// This package cannot import internal/engagement directly without
+	// creating a dependency a low-level config package should not have, so
+	// the two are pinned together with literal values here instead - if a
+	// future change updates one without the other, this test catches it.
+	if defaultEngagementBufferSize != 1000 {
+		t.Errorf("defaultEngagementBufferSize = %d, want 1000 (must match internal/engagement.DefaultCapacity)", defaultEngagementBufferSize)
+	}
+	if minEngagementBufferSize != 100 {
+		t.Errorf("minEngagementBufferSize = %d, want 100 (must match internal/engagement.MinCapacity)", minEngagementBufferSize)
+	}
+	if maxEngagementBufferSize != 10000 {
+		t.Errorf("maxEngagementBufferSize = %d, want 10000 (must match internal/engagement.MaxCapacity)", maxEngagementBufferSize)
 	}
 }

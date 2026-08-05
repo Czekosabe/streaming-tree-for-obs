@@ -31,6 +31,10 @@ type AccountService interface {
 // DeviceFlowService is the subset of deviceflow.Manager the HTTP layer needs.
 type DeviceFlowService interface {
 	StartAttempt(ctx context.Context, providerID account.ProviderID, reconnectAccountID string) (deviceflow.Snapshot, error)
+	// StartAttemptWithScopes is used only by the Stage 8A engagement
+	// permission-upgrade endpoint (see engagement.go) - every other caller
+	// uses StartAttempt's default per-provider scope set.
+	StartAttemptWithScopes(ctx context.Context, providerID account.ProviderID, reconnectAccountID string, scopes []string) (deviceflow.Snapshot, error)
 	GetAttempt(attemptID string) (deviceflow.Snapshot, error)
 	CancelAttempt(attemptID string) (deviceflow.Snapshot, error)
 }

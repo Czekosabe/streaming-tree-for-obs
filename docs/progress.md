@@ -5431,3 +5431,288 @@ list (stage 9/11/12 consumers, badge/emote image resolution,
 Add the `connected_account_engagement_settings` migration, the
 provider-independent normalized engagement-event domain model, and the
 in-process Event Bus.
+
+---
+
+## 2026-08-05 23:50 — feat(server): add engagement event bus and Twitch connector
+
+### Status
+Completed
+
+### Scope
+The complete Stage 8A backend: the normalized engagement-event domain
+model, the in-process Event Bus, per-account engagement-connector
+settings persistence, capability-specific Twitch scope profiles and an
+identity-bound permission-upgrade flow, a real Twitch EventSub WebSocket
+connector (one per enabled account), and the full HTTP API (status,
+bounded snapshot, SSE stream, per-account connector management,
+permission upgrade). All backend automated tests pass; no frontend or
+integration-script work is part of this commit.
+
+### Changes
+
+**Migration `0009_connected_account_engagement_settings.sql`** —
+`connected_account_engagement_settings(account_id PK → connected_accounts
+ON DELETE CASCADE, enabled, created_at, updated_at)`. No runtime state,
+no token, no session id, no subscription id - exactly the fields the
+task specified and nothing else.
+
+**`internal/domain/engagement`** (new package) — the versioned normalized
+event model: `Event` (schema version, bus-assigned sequence/ID/
+receivedAt, provider event ID, provider ID, connected-account ID,
+destination ID, normalized `Type`, provider event type, platform
+timestamp, synthetic flag, dedupe key, user, message, amount/currency/
+quantity, moderation reference/action, a small bounded `providerExtra`
+map), `User` (provider user ID, login, display name, optional avatar/
+color, badges, roles, anonymous flag - never inventing an avatar/color
+the provider did not report), `Message`/`Fragment` (ordered
+text/emote/cheermote/mention/unknown fragments, with `Text` deterministically
+derived from fragments via `BuildText`, tested), and `Validate()`
+(required-field and per-type checks, including a maxProviderExtraEntries/
+maxProviderExtraValueLength bound). 14 event types implemented for Stage
+8A, matching the task's list exactly. 21 tests.
+
+**`internal/domain/engagementsettings`** (new package) — the persisted
+enable/disable preference only, mirroring `internal/domain/remotetarget`'s
+established shape (`Repository`/`Service`/`Clock`, no cross-domain
+import). `internal/storage/sqlite/engagementsettings_repository.go`
+implements it (upsert via `ON CONFLICT`, FK-violation mapping, a
+`ListEnabled` query used once at backend startup). 7 repository tests
+including a cascade-on-account-deletion test mirroring the real bug
+stage 7B's integration script caught for `platform_remote_targets`.
+
+**`internal/engagement`** (new package, Go package name `bus`) — the
+concurrency-safe Event Bus: `Bus.Publish` (validates, deduplicates via a
+bounded TTL'd `dedupeSet`, assigns a monotonic sequence + bus-generated
+ID + receive timestamp, retains in a fixed-capacity ring buffer, fans out
+to every live subscriber via a non-blocking send that drops - never
+blocks - a subscriber whose channel is full), `Bus.Subscribe` (optional
+replay from a given sequence, with an honest `gap` signal when the
+requested sequence has already been evicted), `Bus.EventsAfter` (the
+bounded, non-subscribing snapshot read), `Bus.Snapshot` (capacity,
+retained count, oldest/newest sequence, active subscriber count - no
+message content). Dedup TTL 5 minutes / capacity 4000 entries; default
+ring capacity 1000 (`STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`, validated
+100-10000 in `internal/config`, duplicated-not-imported constants pinned
+together by a test). Per-subscriber channel capacity bounded at
+min(bufferCapacity, 2048) so one operator's larger buffer choice cannot
+make one slow subscriber's memory footprint unbounded. 15 tests,
+including a concurrent-publishers test and explicit gift-batch-vs-
+recipient-event-both-retained and slow-subscriber-never-blocks-Publish
+cases the task called out by name.
+
+**`internal/provider/twitch`** additions — `engagement_scopes.go`:
+`EngagementScopeProfile` (the 5-scope inbound profile), `AssessEngagementCapability`
+(required/granted/missing/available/permissionUpgradeRequired, entirely
+independent of `RequiredScope`'s metadata-only enforcement),
+`UnionScopes` (existing scopes first, then any missing engagement scope,
+deduplicated - the exact set an upgrade attempt requests). `eventsub_wire.go`:
+the EventSub envelope/session/subscription-ref wire types and
+`ParseWelcome`/`ParseReconnect`/`ParseNotification`/`ParseRevocation`.
+`eventsub_subscriptions.go`: the 13 `EventSubSubscriptionDef` entries
+(exact type/version/condition/scope from `twitch-engagement.md`) and
+`CreateEventSubSubscription` (Helix POST, `doHelix`-based, mapping 401/
+403/429/5xx to the existing sentinel errors). `eventsub_normalize.go`:
+one mapping function per subscription type to the normalized model,
+including the gifted-subscription-vs-gift-batch split (`channel.subscribe`
+with `is_gift`/`channel.subscription.gift`), anonymous-cheer/anonymous-gift
+identity suppression, and unknown-fragment-type tolerance. 20 new tests
+plus 8 scope-profile tests.
+
+**`internal/runtime/deviceflow`** — `Manager.StartAttempt` now delegates
+to a private `startAttempt` also reachable via new
+`StartAttemptWithScopes(ctx, providerID, reconnectAccountID, scopes)`,
+used only by the engagement permission-upgrade endpoint. No behavior
+change for any existing caller. 3 new tests.
+
+**`internal/domain/account`** — new `Options.OnAccountRemoved
+func(ctx, accountID)`, called exactly once per `Disconnect` (unlike the
+existing per-link `OnAccountDisconnected`), wired in both `main.go`s to
+`twitchengagement.Manager.StopAndRemove` so a disconnected account's live
+WebSocket session is torn down immediately rather than continuing to use
+a token about to be deleted. New `Service.LinkedPlatforms` (the reverse
+of `GetLink`), used to attach `DestinationID` to a normalized event only
+when an account is linked to exactly one destination. 1 new test.
+
+**`internal/runtime/twitchengagement`** (new package) — the Twitch
+EventSub connector itself. `State` (9-value explicit machine: disabled,
+blocked, connecting, waiting_for_welcome, subscribing, connected,
+reconnecting, stopping, error) and `Snapshot` (structurally excludes
+session id/reconnect URL/token/raw response, per the task's explicit
+list). `connector.go`: `dialAndWelcome` (bounded 10s wait),
+`createSubscriptions` (capability-aware partial operation - creates every
+subscription whose scope is granted, skips the rest, requires at least
+one active subscription to call the connector "active"; routed through
+`account.Service.WithFreshToken` for the standard refresh-once-and-retry
+behavior), `readLoop` (keepalive-timeout-bounded reads, notification
+dispatch, and the official `session_reconnect` handoff performed *inline*
+- dial the new connection, wait for its welcome, only then close the old
+one, continue the same read loop with no resubscription and no data-gap
+marker), `handleRevocation` (authorization_revoked/user_removed/
+version_removed → terminal error state, no auto-retry; other subscription
+loss stays connected). `manager.go`: `Start` (loads enabled settings,
+starts eligible connectors asynchronously, never blocking HTTP startup),
+`Enable`/`Disable`/`Restart`/`StopAndRemove`/`Snapshot`/`Snapshots`,
+bounded exponential backoff (1s-30s) for ordinary reconnection. Chose
+`github.com/coder/websocket` v1.8.15 (ISC licence, the maintained
+`nhooyr.io/websocket` successor) after checking: actively maintained,
+pure Go (no cgo, matching this project's existing `modernc.org/sqlite`
+choice), first-class `context.Context` support on every blocking call,
+built-in frame-size limits (`SetReadLimit`), transparent ping/pond
+handling during `Read`, and clean close-code semantics
+(`CloseStatus`/`CloseError`) - recorded in `THIRD_PARTY_NOTICES.md`
+(next commit). 10 tests against a real, in-process fake EventSub
+WebSocket server built on the same library's `Accept` - not a mocked
+connector - covering: reaching `connected` after welcome+subscribe,
+scope-based blocking, a notification reaching the bus as a normalized
+event, an ordinary disconnect (data gap set, subscriptions recreated),
+an official `session_reconnect` handoff (no gap, no resubscription - the
+two hardest-to-get-right behaviors in the whole task, both verified
+against a real WebSocket protocol exchange), `authorization_revoked`
+entering a terminal error state with no auto-retry, `Disable` stopping
+and forgetting a connector, `Start` restoring an enabled connector from
+persisted settings, and a bounded-time `Shutdown` (the same
+deadlock-shaped bug class stage 7B's `youtubeauth` work caught was
+specifically watched for here; none was found).
+
+**`internal/httpapi`** — `engagement.go` (new): `GET /api/engagement/status`,
+`GET /api/engagement/events` (bounded `after`/`limit`, capped at 500,
+honest `gap` flag), `GET /api/engagement/stream` (Server-Sent Events:
+`Last-Event-ID` replay, an explicit `engagement.gap` event for an evicted
+sequence or a dropped slow consumer, a periodic keepalive comment, a
+bounded concurrent-client count via `maxSSEClients`), `GET`/`PUT
+/api/connected-accounts/{id}/engagement` (capability-independent of
+metadata health - the response always includes the capability
+assessment alongside connector state), `POST .../engagement/authorize`
+(the identity-bound, union-scoped permission upgrade, reusing
+`StartAttemptWithScopes`), `POST .../engagement/restart`. `middleware.go`
+gained `statusRecorder.Flush()`, forwarding to the underlying
+`ResponseWriter` when it implements `http.Flusher` - required because an
+embedded `http.ResponseWriter` interface field only promotes that
+interface's own three methods, not `Flush`, so without this the SSE
+handler's `w.(http.Flusher)` type assertion would have silently failed
+and every event would have sat in a buffer instead of streaming (caught
+by `TestEngagementStreamServesSSEWithCorrectHeadersAndReplay`, which
+exercises the real HTTP response over a real `httptest.Server`, not a
+recorder, specifically so this class of bug could not hide behind an
+in-memory `ResponseRecorder` that does not care about `Flush` at all).
+19 new tests.
+
+**`cmd/server/main.go` / `cmd/testserver/main.go`** — construct
+`eventBus`, `engagementSettingsService`, and `twitchEngagementManager` (a
+forward-declared `var` so `account.Options.OnAccountRemoved`'s closure
+can reference it before it exists, mirroring `remoteTargetService`'s
+existing construction-order pattern from stage 7B), start the manager
+after `deviceFlowManager`, wire all three into `httpapi.Options`, add
+both to the shutdown sequence. `testserver` additionally reads
+`STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL` (the fake WebSocket
+server) and `STREAMING_TREE_TEST_TWITCH_EVENTSUB_RECONNECT_HOST` (added
+to the connector's reconnect-host allow-list, so the integration
+script's official-`session_reconnect` scenario can point at its own
+loopback fake server) directly via `os.Getenv`, exactly like every other
+test-only override in that file.
+
+### Technical decisions
+
+**Why one commit instead of the suggested two ("add engagement event
+bus" / "connect Twitch EventSub").** The Event Bus alone has no
+consumer and no test coverage worth commit-splitting from the connector
+that is its only Stage 8A producer; every test added for the bus already
+exists in the same working tree as the connector tests that exercise it
+end-to-end (`TestConnectorPublishesNormalizedEventFromNotification`).
+Splitting would have meant either a commit with an unused bus or a
+commit that half-implements the connector - both worse than one commit
+whose scope is genuinely "the backend, complete." This mirrors stage
+7A/7B's own precedent of combining commits when the suggested split
+would separate genuinely interdependent pieces, documented here rather
+than silently deviating.
+
+**Why `createSubscriptions` requires at least one active subscription
+rather than merely warning.** A connector with a token that has *no*
+engagement scope at all (only metadata) would otherwise reach
+`StateConnected` with zero real subscriptions - technically "not
+crashing," but actively misleading in the diagnostic view. Requiring
+`active > 0` routes that exact case to `StateBlocked` with
+`BlockerScopeUpgradeRequired` instead, which is what a user actually
+needs to see and act on.
+
+**Why the official `session_reconnect` handoff is handled inside the
+same `readLoop` rather than as a top-level retry.** Twitch's own
+contract requires the *old* connection to stay open until the *new*
+one's welcome arrives, then an atomic switch, with subscriptions carried
+over automatically. Modeling this as "return an error, let the outer
+retry loop reconnect from scratch" would have made a spec-compliant
+handoff indistinguishable from an ordinary loss - recreating
+subscriptions and marking a data gap that never occurred. Handling it
+in-place, inline, was the only design that let both paths (successful
+official reconnect vs. ordinary loss) stay honestly distinct in the
+connector's own state.
+
+**Why `AssessEngagementCapability` and `UnionScopes` never touch
+`account.Service.RequiredScopes`.** Documented already in the previous
+commit's scope-profile design decision; this commit is where that
+design was actually implemented, unchanged from the plan.
+
+### Files changed
+- `apps/server/internal/storage/sqlite/migrations/0009_connected_account_engagement_settings.sql` (new)
+- `apps/server/internal/domain/engagement/` (new: event.go, user.go, message.go, types.go, validation.go, errors.go + 3 test files)
+- `apps/server/internal/domain/engagementsettings/` (new: model.go, repository.go, service.go, errors.go)
+- `apps/server/internal/storage/sqlite/engagementsettings_repository.go` (new) + test
+- `apps/server/internal/engagement/` (new: bus.go, buffer.go, dedupe.go, subscription.go, snapshot.go + test)
+- `apps/server/internal/provider/twitch/engagement_scopes.go` (new) + test
+- `apps/server/internal/provider/twitch/eventsub_wire.go` (new)
+- `apps/server/internal/provider/twitch/eventsub_subscriptions.go` (new)
+- `apps/server/internal/provider/twitch/eventsub_normalize.go` (new) + test
+- `apps/server/internal/provider/twitch/client.go` (EventSubURL option)
+- `apps/server/internal/runtime/deviceflow/manager.go` + test (StartAttemptWithScopes)
+- `apps/server/internal/domain/account/service.go` + test (OnAccountRemoved, LinkedPlatforms)
+- `apps/server/internal/runtime/twitchengagement/` (new: state.go, errors.go, connector.go, manager.go + test)
+- `apps/server/internal/httpapi/engagement.go` (new) + test
+- `apps/server/internal/httpapi/middleware.go` (Flush forwarding)
+- `apps/server/internal/httpapi/router.go` + `accounts.go` (wiring, StartAttemptWithScopes interface method)
+- `apps/server/internal/config/config.go` + test (STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE)
+- `apps/server/cmd/server/main.go`, `apps/server/cmd/testserver/main.go`
+- `apps/server/go.mod`, `apps/server/go.sum` (github.com/coder/websocket v1.8.15)
+
+### Automated validation
+- `gofmt -l .` — clean.
+- `go vet ./...` and `go vet -tags integration ./...` — clean.
+- `go build ./...` and `go build -tags integration ./cmd/testserver/...` — clean.
+- `go test ./...` — every package passes, including the new
+  `internal/domain/engagement` (21), `internal/domain/engagementsettings`
+  (via `internal/storage/sqlite`, 7), `internal/engagement` (15),
+  `internal/provider/twitch` (28 new: 8 scope-profile + 20 normalization,
+  plus all pre-existing tests unaffected), `internal/runtime/deviceflow`
+  (3 new), `internal/domain/account` (1 new), `internal/runtime/
+  twitchengagement` (10), `internal/httpapi` (19 new engagement tests,
+  plus every pre-existing Twitch/YouTube/platform/runtime test
+  unaffected).
+- The race detector (`-race`) is unavailable in this environment
+  (`CGO_ENABLED=0`, no C toolchain - the same constraint that led this
+  project to `modernc.org/sqlite` in the first place); concurrency
+  correctness for the Event Bus and connector was instead verified via
+  explicit concurrent-publisher tests and by the connector tests
+  exercising real goroutine coordination (a real WebSocket read loop, a
+  real background retry loop, a real `Shutdown` wait) rather than
+  single-threaded mocks.
+
+### Known limitations
+- No dedicated test exercises `channel.raid`'s condition against a real
+  Helix subscription-creation request body beyond
+  `EventSubSubscriptionDefs`' own table (covered structurally, not via a
+  captured wire-format fixture) - normalization itself is fully tested.
+- The connector's `readLoop` does not yet expose a distinct "subscribing
+  partially failed but connector still started" signal beyond the
+  aggregate `ActiveSubscriptionCount`/`ExpectedSubscriptionCount` pair
+  and `MissingScopes` - sufficient for Stage 8A's diagnostic view, but a
+  future stage could want a per-subscription-type status list.
+- `internal/httpapi/engagement_test.go` uses a fake
+  `EngagementConnectorService` for HTTP-layer tests rather than the real
+  `twitchengagement.Manager` (which is exhaustively tested on its own,
+  including through the same HTTP-adjacent scope-assessment logic) - a
+  deliberate layering choice, not a coverage gap.
+- No frontend or `scripts/verify-twitch-engagement.mjs` work is part of
+  this commit - both follow next.
+
+### Next step
+Build the frontend engagement data layer and diagnostic Engagement page.

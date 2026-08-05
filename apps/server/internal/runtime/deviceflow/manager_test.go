@@ -18,16 +18,20 @@ import (
 type fakeProvider struct {
 	mu sync.Mutex
 
-	start     account.DeviceFlowStart
-	startErr  error
-	outcomes  []account.PollOutcome // consumed in order, one per PollDeviceFlow call
-	pollIndex int
-	identity  account.Identity
+	start      account.DeviceFlowStart
+	startErr   error
+	outcomes   []account.PollOutcome // consumed in order, one per PollDeviceFlow call
+	pollIndex  int
+	identity   account.Identity
+	lastScopes []string // records what StartDeviceFlow was actually called with
 }
 
 func (p *fakeProvider) ProviderID() account.ProviderID { return account.ProviderTwitch }
 
 func (p *fakeProvider) StartDeviceFlow(ctx context.Context, clientID string, scopes []string) (account.DeviceFlowStart, error) {
+	p.mu.Lock()
+	p.lastScopes = scopes
+	p.mu.Unlock()
 	return p.start, p.startErr
 }
 
@@ -131,6 +135,43 @@ func TestConcurrentStartAttemptIsAConflict(t *testing.T) {
 	}
 	if _, err := m.StartAttempt(context.Background(), account.ProviderTwitch, ""); !errors.Is(err, ErrConflict) {
 		t.Errorf("second StartAttempt() error = %v, want ErrConflict", err)
+	}
+}
+
+func TestStartAttemptRequestsTheManagersConfiguredScopes(t *testing.T) {
+	m, provider := newTestSetup(t)
+	if _, err := m.StartAttempt(context.Background(), account.ProviderTwitch, ""); err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	if len(provider.lastScopes) != 1 || provider.lastScopes[0] != "channel:manage:broadcast" {
+		t.Errorf("StartDeviceFlow scopes = %v, want the Manager's configured default", provider.lastScopes)
+	}
+}
+
+func TestStartAttemptWithScopesOverridesTheDefaultScopeSet(t *testing.T) {
+	m, provider := newTestSetup(t)
+	override := []string{"channel:manage:broadcast", "user:read:chat", "bits:read"}
+
+	if _, err := m.StartAttemptWithScopes(context.Background(), account.ProviderTwitch, "acct_existing", override); err != nil {
+		t.Fatalf("StartAttemptWithScopes() error = %v", err)
+	}
+	if len(provider.lastScopes) != len(override) {
+		t.Fatalf("StartDeviceFlow scopes = %v, want override %v", provider.lastScopes, override)
+	}
+	for i, s := range override {
+		if provider.lastScopes[i] != s {
+			t.Errorf("scope[%d] = %q, want %q", i, provider.lastScopes[i], s)
+		}
+	}
+}
+
+func TestStartAttemptWithScopesStillEnforcesOneActiveAttemptPerProvider(t *testing.T) {
+	m, _ := newTestSetup(t)
+	if _, err := m.StartAttempt(context.Background(), account.ProviderTwitch, ""); err != nil {
+		t.Fatalf("StartAttempt() error = %v", err)
+	}
+	if _, err := m.StartAttemptWithScopes(context.Background(), account.ProviderTwitch, "acct_existing", []string{"user:read:chat"}); !errors.Is(err, ErrConflict) {
+		t.Errorf("StartAttemptWithScopes() error = %v, want ErrConflict while another attempt is active", err)
 	}
 }
 

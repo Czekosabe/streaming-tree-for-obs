@@ -127,11 +127,31 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	}
 }
 
-// StartAttempt begins a new device-flow attempt for a provider.
+// StartAttempt begins a new device-flow attempt for a provider, requesting
+// the Manager's own configured scope set for that provider (RequiredScopes).
 //
 // reconnectAccountID, when non-empty, means this attempt must resolve to
 // exactly that existing account - see account.Service.FinalizeConnection.
 func (m *Manager) StartAttempt(ctx context.Context, providerID account.ProviderID, reconnectAccountID string) (Snapshot, error) {
+	return m.startAttempt(ctx, providerID, reconnectAccountID, m.requiredScopes[providerID])
+}
+
+// StartAttemptWithScopes begins a new device-flow attempt requesting an
+// explicit scope set instead of the Manager's configured default for that
+// provider.
+//
+// Used for a capability permission upgrade on an existing account (see
+// internal/runtime/twitchengagement), where scopes must be the union of the
+// account's currently granted scopes and a capability-specific profile -
+// never the Manager's one fixed metadata-only default, and never a smaller
+// set that could look like a downgrade. reconnectAccountID should always be
+// set for an upgrade (identity-bound), exactly like StartAttempt's own
+// reconnect case.
+func (m *Manager) StartAttemptWithScopes(ctx context.Context, providerID account.ProviderID, reconnectAccountID string, scopes []string) (Snapshot, error) {
+	return m.startAttempt(ctx, providerID, reconnectAccountID, scopes)
+}
+
+func (m *Manager) startAttempt(ctx context.Context, providerID account.ProviderID, reconnectAccountID string, scopes []string) (Snapshot, error) {
 	provider, ok := m.providers[providerID]
 	if !ok {
 		return Snapshot{}, fmt.Errorf("%w: no provider adapter for %q", ErrNotFound, providerID)
@@ -167,7 +187,7 @@ func (m *Manager) StartAttempt(ctx context.Context, providerID account.ProviderI
 	m.activeByProvider[providerID] = attemptID
 	m.mu.Unlock()
 
-	start, err := provider.StartDeviceFlow(ctx, clientID.ClientID, m.requiredScopes[providerID])
+	start, err := provider.StartDeviceFlow(ctx, clientID.ClientID, scopes)
 	if err != nil {
 		m.finishWithError(a, providerID, "device_flow_start_failed", "Could not start the authorization attempt.")
 		return a.snapshotCopy(), err

@@ -61,6 +61,18 @@ type Options struct {
 	// RemoteTargets serves a YouTube destination's selected live-broadcast
 	// target. Required alongside YouTubeAuth/YouTubeMetadata.
 	RemoteTargets RemoteTargetService
+	// EngagementBus serves the Event Bus snapshot/SSE API
+	// (GET /api/engagement/*). When nil, none of the engagement routes are
+	// registered.
+	EngagementBus EngagementBusService
+	// EngagementSettings serves a connected account's persisted
+	// engagement-connector enable/disable preference. Required alongside
+	// EngagementBus and EngagementConnectors.
+	EngagementSettings EngagementSettingsService
+	// EngagementConnectors serves the per-account Twitch EventSub connector
+	// management API. Required alongside EngagementBus and Accounts/
+	// DeviceFlow for the engagement routes to register.
+	EngagementConnectors EngagementConnectorService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -103,6 +115,11 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Accounts != nil && opts.YouTubeAuth != nil && opts.YouTubeMetadata != nil && opts.RemoteTargets != nil {
 		registerYouTubeRoutes(mux, logger, opts.Platforms, opts.Accounts, opts.YouTubeAuth, opts.YouTubeMetadata, opts.RemoteTargets)
+	}
+
+	if opts.EngagementBus != nil && opts.Accounts != nil && opts.DeviceFlow != nil &&
+		opts.EngagementSettings != nil && opts.EngagementConnectors != nil {
+		registerEngagementRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.EngagementBus, opts.EngagementSettings, opts.EngagementConnectors)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

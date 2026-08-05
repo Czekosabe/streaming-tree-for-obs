@@ -29,6 +29,18 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// Flush forwards to the underlying ResponseWriter's Flush, when it has one.
+// Required so the SSE handler (see engagement.go) can type-assert this
+// wrapper to http.Flusher - an embedded http.ResponseWriter interface field
+// only promotes ResponseWriter's own three methods, never Flush, so without
+// this explicit forwarding method streaming would silently buffer instead
+// of pushing each event as it is written.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // withRecovery turns a panic in a handler into a 500 response instead of
 // killing the whole process. One failing endpoint must never take the server
 // down - the same principle that keeps platform branches independent.

@@ -85,6 +85,7 @@ type Service struct {
 	workers   sync.WaitGroup
 
 	onAccountDisconnected func(ctx context.Context, platformID string) error
+	onAccountRemoved      func(ctx context.Context, accountID string)
 }
 
 // validationInterval is the default background-validation cadence: Twitch's
@@ -126,6 +127,16 @@ type Options struct {
 	// needed as a plain value" boundary. A failure here is logged, not
 	// fatal: it must never block the account/link removal it precedes.
 	OnAccountDisconnected func(ctx context.Context, platformID string) error
+	// OnAccountRemoved, when set, is called exactly once per account, right
+	// before Disconnect removes that account's row - unlike
+	// OnAccountDisconnected, this fires once per account rather than once
+	// per linked destination, for cleanup that is scoped to the account
+	// itself rather than to a destination link (Stage 8A's Twitch
+	// engagement connector: it must stop and forget the account's
+	// in-memory WebSocket session so nothing keeps using a token this
+	// method is about to delete). No error return: this is best-effort,
+	// in-memory cleanup, never a reason to fail the disconnect itself.
+	OnAccountRemoved func(ctx context.Context, accountID string)
 }
 
 // NewService builds a Service.
@@ -152,6 +163,7 @@ func NewService(opts Options) *Service {
 		now:                   now,
 		logger:                logger,
 		onAccountDisconnected: opts.OnAccountDisconnected,
+		onAccountRemoved:      opts.OnAccountRemoved,
 		refreshInFlight:       make(map[string]*refreshCall),
 		validationInterval:    defaultValidationInterval,
 		validationJitter: func() time.Duration {
@@ -644,6 +656,10 @@ func (s *Service) Disconnect(ctx context.Context, accountID string) error {
 		return err
 	}
 
+	if s.onAccountRemoved != nil {
+		s.onAccountRemoved(ctx, accountID)
+	}
+
 	if s.onAccountDisconnected != nil {
 		links, linkErr := s.repo.ListLinksByAccount(ctx, accountID)
 		if linkErr != nil {
@@ -674,6 +690,20 @@ func (s *Service) GetLink(ctx context.Context, platformID string) (Link, bool, e
 		return Link{}, false, mapRepoErr(err)
 	}
 	return link, found, nil
+}
+
+// LinkedPlatforms returns every configured destination currently linked to
+// an account - the reverse of GetLink. Used by Stage 8A's engagement
+// connector to attach a normalized event's DestinationID only when the
+// account is linked to exactly one destination (an "unambiguous" link, per
+// the event model's own field doc comment) - never guessed when there is
+// more than one.
+func (s *Service) LinkedPlatforms(ctx context.Context, accountID string) ([]Link, error) {
+	links, err := s.repo.ListLinksByAccount(ctx, accountID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return links, nil
 }
 
 // LinkPlatform links a configured destination to a connected account.

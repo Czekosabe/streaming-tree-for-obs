@@ -21,6 +21,13 @@ import (
 const (
 	DefaultOAuthBaseURL = "https://id.twitch.tv/oauth2"
 	DefaultAPIBaseURL   = "https://api.twitch.tv/helix"
+
+	// DefaultEventSubURL is Twitch's production EventSub WebSocket endpoint
+	// - see docs/provider-integrations/twitch-engagement.md. Only the
+	// -tags integration test binary overrides it (via
+	// STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL, read directly in
+	// cmd/testserver/main.go), exactly like OAuthBaseURL/APIBaseURL above.
+	DefaultEventSubURL = "wss://eventsub.wss.twitch.tv/ws"
 )
 
 // requestTimeout bounds every single HTTP call this client makes.
@@ -36,16 +43,26 @@ type Client struct {
 	httpClient   *http.Client
 	oauthBaseURL string
 	apiBaseURL   string
+	eventSubURL  string
 	clientID     string
 }
 
-// Options constructs a Client. OAuthBaseURL and APIBaseURL are test-only
-// overrides (an httptest server address); production code leaves both zero
-// so the real Twitch endpoints above are used.
+// Options constructs a Client. OAuthBaseURL, APIBaseURL and EventSubURL are
+// test-only overrides (an httptest/fake-WebSocket-server address);
+// production code leaves all three zero so the real Twitch endpoints above
+// are used.
 type Options struct {
 	HTTPClient   *http.Client
 	OAuthBaseURL string
 	APIBaseURL   string
+	EventSubURL  string
+}
+
+// EventSubURL is the WebSocket endpoint this client's connector should dial
+// - the real Twitch production endpoint unless a test override was
+// configured (see Options.EventSubURL's doc comment).
+func (c *Client) EventSubURL() string {
+	return c.eventSubURL
 }
 
 // New builds a Client.
@@ -72,7 +89,11 @@ func New(opts Options) *Client {
 	if apiBase == "" {
 		apiBase = DefaultAPIBaseURL
 	}
-	return &Client{httpClient: httpClient, oauthBaseURL: oauthBase, apiBaseURL: apiBase}
+	eventSubBase := opts.EventSubURL
+	if eventSubBase == "" {
+		eventSubBase = DefaultEventSubURL
+	}
+	return &Client{httpClient: httpClient, oauthBaseURL: oauthBase, apiBaseURL: apiBase, eventSubURL: eventSubBase}
 }
 
 // rateLimit is parsed from Twitch's Ratelimit-* response headers, tolerant

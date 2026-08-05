@@ -678,6 +678,46 @@ func TestDisconnectSucceedsEvenWhenRemoteTargetCleanupFails(t *testing.T) {
 	}
 }
 
+func TestDisconnectCallsOnAccountRemovedExactlyOnce(t *testing.T) {
+	// Stage 8A: the Twitch engagement connector (internal/runtime/
+	// twitchengagement) must stop its in-memory WebSocket session for an
+	// account the moment it is disconnected, so nothing keeps using a token
+	// this method is about to delete. Unlike OnAccountDisconnected (once per
+	// linked destination), this fires exactly once per account.
+	repo := newFakeRepository()
+	store := secretstest.New()
+	provider := &fakeProvider{}
+	repo.accounts["acct_1"] = Account{ID: "acct_1", ProviderID: ProviderTwitch, ProviderUserID: "u1", Status: StatusConnected}
+	if _, err := repo.SetLink(context.Background(), "pf_1", "acct_1", time.Now()); err != nil {
+		t.Fatalf("SetLink() error = %v", err)
+	}
+	if _, err := repo.SetLink(context.Background(), "pf_2", "acct_1", time.Now()); err != nil {
+		t.Fatalf("SetLink() error = %v", err)
+	}
+
+	var removed []string
+	svc := NewService(Options{
+		Repository: repo, Secrets: store,
+		Providers:      map[ProviderID]Provider{ProviderTwitch: provider},
+		EnvClientIDs:   map[ProviderID]string{},
+		RequiredScopes: map[ProviderID][]string{ProviderTwitch: {"channel:manage:broadcast"}},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:            func() time.Time { return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC) },
+		OnAccountRemoved: func(ctx context.Context, accountID string) {
+			removed = append(removed, accountID)
+		},
+	})
+	_ = StoreTokenBundle(context.Background(), svc.secrets, "acct_1", testBundle())
+
+	if err := svc.Disconnect(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Disconnect() error = %v", err)
+	}
+
+	if len(removed) != 1 || removed[0] != "acct_1" {
+		t.Errorf("removed = %v, want exactly one call with [acct_1]", removed)
+	}
+}
+
 // --- platform links --------------------------------------------------------
 
 func TestLinkPlatformRejectsAProviderMismatch(t *testing.T) {
