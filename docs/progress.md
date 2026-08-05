@@ -5322,3 +5322,112 @@ commit of this stage, once they actually become false.
 Research the current official Twitch EventSub WebSocket contract and
 write `docs/provider-integrations/twitch-engagement.md`, then begin the
 Stage 8A scope-profile and Event Bus implementation.
+
+---
+
+## 2026-08-05 21:45 — docs: define Twitch engagement integration scope
+
+### Status
+Completed
+
+### Scope
+Mandatory official-research pass for Stage 8A, recorded before any
+implementation code is written, exactly like the equivalent Twitch
+(stage 7A) and YouTube (stage 7B) research entries above.
+
+### Changes
+
+**New: `docs/provider-integrations/twitch-engagement.md`** — the full
+researched Twitch EventSub WebSocket contract: production WebSocket URL,
+welcome-message timeout, keepalive semantics, standard ping/pong, ordinary
+disconnection behavior (no replay, every subscription disabled), the
+official `session_reconnect` flow (connect to the exact URL given, keep
+the old connection open until the new one's welcome arrives, no
+subscription recreation, no data-gap marker), revocation message
+semantics, every documented close code, connection/subscription/cost
+limits per user token, the Helix subscription-creation contract
+(WebSocket transport requires a user access token, never an app token),
+the exact type/version/condition/scope table for all 13 selected
+subscription types, the `channel.chat.message` fragment shape, the
+scope-profile design decision (a second, additive engagement profile,
+never merged into the existing metadata `RequiredScopes` map), duplicate-
+delivery handling via `metadata.message_id`, the unavoidable data-gap
+behavior on ordinary reconnect, and areas explicitly reserved for stages
+9/11/12 plus a few deliberately-omitted subscription types
+(`channel.chat.notification`, any newer/beta event type).
+
+**`docs/provider-integrations/twitch.md`** — added a stage-8A factual
+status blockquote directly under the existing "Areas explicitly reserved
+for Stage 8" section (written in stage 7A, when stage 8 was still just a
+placeholder heading), confirming this is exactly what happened: the same
+connected-account record and token storage, a second additive scope
+profile rather than a scope replacement, and metadata/engagement health
+tracked independently. Links to the new document rather than duplicating
+its content.
+
+### Technical decisions
+
+**Why the engagement scope profile is additive, not a replacement of the
+metadata profile.** The stage task is explicit that "an account may be
+healthy for metadata while lacking engagement scopes," and that enabling
+engagement must not mark an account `reconnect_required` merely because an
+optional capability's scope is missing. `internal/domain/account`'s
+`RequiredScopes` map (one fixed list per provider, enforced on every
+validation pass) stays exactly `channel:manage:broadcast` for Twitch,
+unchanged since stage 7A. A capability-specific assessment, built and
+wired independently in the implementation commits below, compares an
+account's granted scopes against the engagement profile without touching
+that core health check at all.
+
+**Why the engagement scope upgrade reuses the Device Code Flow with a
+per-attempt scope override, rather than widening the Manager's one fixed
+scope list.** `internal/runtime/deviceflow.Manager` was built in stage 7A
+with a single `requiredScopes map[ProviderID][]string]` baked in at
+construction — correct for "the one thing this application ever asks for
+per provider," wrong for "sometimes ask for more, identity-bound, on an
+account that already exists." Widening that one map to include the
+engagement scopes globally would force every future connect/reconnect to
+request them unconditionally, coupling core account health to an optional
+capability exactly as the task explicitly forbids. The chosen alternative
+— extending `StartAttempt` to accept an explicit scope override for one
+specific attempt, still requiring identity match via the existing
+`reconnectAccountID` parameter, still requesting the union of the
+account's current scopes and the engagement profile rather than a smaller
+set that could look like a downgrade — is implemented in the
+`feat(server): add engagement event bus` / `feat(server): connect Twitch
+EventSub` commits that follow, not in this documentation-only commit.
+
+**Why `channel.chat.notification` is omitted rather than mapped.** Twitch
+overlays subscription/gift/raid/announcement notices onto this one event
+type. Every one of those actions already has its own dedicated
+subscription in the selected set (`channel.subscribe`,
+`channel.subscription.gift`, `channel.raid`, …), each with its own stable
+provider event ID. Mapping `channel.chat.notification` too would either
+produce duplicate normalized events for the same real action (with
+*different* provider event IDs, defeating the dedup key that assumes one
+action = one provider ID) or require a materially more careful
+non-duplicating design this stage's scope does not include. Omission,
+explicitly documented as a limitation rather than silently skipped, was
+the safer choice — matching the task's own explicit preference for
+omission over a same-stage duplicate-event risk.
+
+### Files changed
+- `docs/provider-integrations/twitch-engagement.md` (new)
+- `docs/provider-integrations/twitch.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only; no code changed. The full suite from the previous
+commit remains the authoritative result for the current state of the
+code; re-run in full again before the closing push.
+
+### Known limitations
+None specific to this entry — see `twitch-engagement.md`'s own "Areas
+reserved for later stages" section for the complete, already-itemized
+list (stage 9/11/12 consumers, badge/emote image resolution,
+`channel.chat.notification`, newer/beta event types).
+
+### Next step
+Add the `connected_account_engagement_settings` migration, the
+provider-independent normalized engagement-event domain model, and the
+in-process Event Bus.

@@ -208,6 +208,24 @@ designed to be reused as-is by Stage 8 — adding a capability there should
 mean requesting additional scope and prompting a reconnect, not redesigning
 how a Twitch account is stored.
 
+> **Factual status update (stage 8A, completed):** the above is exactly what
+> happened. Stage 8A's Twitch inbound connector (EventSub over WebSocket)
+> reuses this same connected-account record and token-bundle storage
+> unchanged, requesting a second, **additive** "inbound-engagement" scope
+> profile (`user:read:chat`, `moderator:read:followers`,
+> `channel:read:subscriptions`, `bits:read`, `channel:read:redemptions`)
+> alongside — never replacing — the `channel:manage:broadcast` metadata
+> scope documented above. This document's own `RequiredScope` constant and
+> the account-health/validation behavior it describes are **unchanged** by
+> stage 8A: metadata health and engagement-capability health are tracked
+> independently, so an account missing the newer scopes still validates and
+> publishes metadata normally. See
+> [`twitch-engagement.md`](twitch-engagement.md) for the full EventSub
+> contract (WebSocket lifecycle, exact subscription types/versions,
+> normalized event mapping) — deliberately kept as its own document rather
+> than merged into this one, since the two cover different Twitch
+> subsystems.
+
 ---
 
 This document records the contract this implementation was built against on
