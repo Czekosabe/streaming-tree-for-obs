@@ -71,8 +71,21 @@ type Capabilities struct {
 type Limits struct {
 	TitleMaxLength       int `json:"titleMaxLength"`
 	DescriptionMaxLength int `json:"descriptionMaxLength"`
-	MaxTags              int `json:"maxTags"`
-	TagMaxLength         int `json:"tagMaxLength"`
+	// DescriptionMaxLengthInBytes means DescriptionMaxLength counts UTF-8
+	// bytes rather than runes - true for YouTube, whose videos.snippet.
+	// description limit is documented as 5000 bytes, not 5000 characters
+	// (docs/provider-integrations/youtube.md). Every other length in this
+	// struct, for every provider, counts runes.
+	DescriptionMaxLengthInBytes bool `json:"descriptionMaxLengthInBytes"`
+	MaxTags                     int  `json:"maxTags"`
+	TagMaxLength                int  `json:"tagMaxLength"`
+	// TagsCombinedMaxLength, when non-zero, additionally bounds the total
+	// UTF-8 byte length of every tag combined (separators included) -
+	// YouTube's videos.snippet.tags limit (500 bytes total,
+	// docs/provider-integrations/youtube.md) is a budget across all tags
+	// together, not a per-tag or per-count limit the way Twitch's is. Zero
+	// means this combined check does not apply.
+	TagsCombinedMaxLength int `json:"tagsCombinedMaxLength"`
 }
 
 // ProviderDefinition is the built-in description of an integration type.

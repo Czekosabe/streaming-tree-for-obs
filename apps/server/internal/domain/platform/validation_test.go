@@ -59,11 +59,17 @@ func TestTwitchKeepsTagSupport(t *testing.T) {
 	}
 }
 
-func TestOnlyTwitchSupportsTags(t *testing.T) {
-	for _, id := range []ProviderID{ProviderYouTube, ProviderKick, ProviderTikTok} {
+func TestOnlyTwitchAndYouTubeSupportTags(t *testing.T) {
+	// YouTube's videos.snippet.tags is real and verified (Stage 7B,
+	// docs/provider-integrations/youtube.md), unlike Kick/TikTok's still-
+	// approximate definitions.
+	for _, id := range []ProviderID{ProviderKick, ProviderTikTok} {
 		if mustDefinition(t, id).Capabilities.Tags {
 			t.Errorf("provider %q unexpectedly supports tags", id)
 		}
+	}
+	if !mustDefinition(t, ProviderYouTube).Capabilities.Tags {
+		t.Error("provider \"youtube\" should support tags")
 	}
 }
 
@@ -243,7 +249,7 @@ func TestValidateMetadataRejectsOversizedTitle(t *testing.T) {
 }
 
 func TestValidateMetadataRejectsTagsForProviderWithoutTagSupport(t *testing.T) {
-	def := mustDefinition(t, ProviderYouTube)
+	def := mustDefinition(t, ProviderKick)
 
 	_, err := ValidateMetadata(def, Metadata{Title: "Fine", Tags: []string{"nope"}})
 	if err == nil {
@@ -331,12 +337,16 @@ func TestValidateMetadataRejectsUnsupportedVisibility(t *testing.T) {
 }
 
 func TestValidateMetadataRejectsUnsupportedLatency(t *testing.T) {
-	// YouTube supports LatencyMode but only its own three documented
-	// options; Twitch has no LatencyMode capability at all as of Stage 7A
-	// (see TestValidateMetadataRejectsLatencyAndMatureContentForTwitch), so
-	// this "supported field, disallowed value" case now needs a provider
-	// that still has the capability.
+	// No real provider definition has LatencyMode capability as of Stage
+	// 7B (Twitch since Stage 7A, YouTube since Stage 7B - both verified
+	// against their real APIs, see docs/provider-integrations/). This test
+	// still needs to exercise ValidateMetadata's "supported field,
+	// disallowed value" option-list check for latencyMode specifically, so
+	// it builds a synthetic definition rather than depending on which real
+	// provider happens to have the capability today.
 	def := mustDefinition(t, ProviderYouTube)
+	def.Capabilities.LatencyMode = true
+	def.LatencyOptions = []string{LatencyNormal, LatencyLow, LatencyUltraLow}
 
 	_, err := ValidateMetadata(def, Metadata{Title: "Fine", LatencyMode: "turbo"})
 	if err == nil {

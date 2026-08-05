@@ -128,9 +128,15 @@ func ValidateMetadata(def ProviderDefinition, in Metadata) (Metadata, error) {
 	// --- description -------------------------------------------------------
 	description := in.Description
 	if caps.Description {
-		if utf8.RuneCountInString(description) > limits.DescriptionMaxLength {
+		descriptionLength := utf8.RuneCountInString(description)
+		unit := "characters"
+		if limits.DescriptionMaxLengthInBytes {
+			descriptionLength = len(description)
+			unit = "bytes"
+		}
+		if descriptionLength > limits.DescriptionMaxLength {
 			v.Addf("description", RuleTooLong, map[string]any{"max": limits.DescriptionMaxLength},
-				"Description cannot exceed %d characters.", limits.DescriptionMaxLength)
+				"Description cannot exceed %d %s.", limits.DescriptionMaxLength, unit)
 		}
 		out.Description = description
 	} else if strings.TrimSpace(description) != "" {
@@ -208,6 +214,13 @@ func ValidateMetadata(def ProviderDefinition, in Metadata) (Metadata, error) {
 			v.Addf("tags", RuleTooMany, map[string]any{"max": limits.MaxTags},
 				"At most %d tags are allowed.", limits.MaxTags)
 		}
+
+		if limits.TagsCombinedMaxLength > 0 {
+			if combined := combinedTagsLength(out.Tags); combined > limits.TagsCombinedMaxLength {
+				v.Addf("tags", RuleTooLong, map[string]any{"max": limits.TagsCombinedMaxLength},
+					"Tags cannot exceed %d combined characters.", limits.TagsCombinedMaxLength)
+			}
+		}
 	} else if hasNonEmpty(in.Tags) {
 		v.Add("tags", RuleNotSupported, "This provider does not support tags.", nil)
 	}
@@ -263,6 +276,24 @@ func ValidateMetadata(def ProviderDefinition, in Metadata) (Metadata, error) {
 	}
 
 	return out, v.OrNil()
+}
+
+// combinedTagsLength mirrors YouTube's own documented counting rule: each
+// tag's byte length, plus a comma separator between entries and a pair of
+// quotation marks around any tag containing a space.
+func combinedTagsLength(tags []string) int {
+	total := 0
+	for i, tag := range tags {
+		length := len(tag)
+		if strings.Contains(tag, " ") {
+			length += 2 // surrounding quotation marks
+		}
+		if i > 0 {
+			length++ // comma separator
+		}
+		total += length
+	}
+	return total
 }
 
 func hasNonEmpty(values []string) bool {

@@ -53,6 +53,11 @@ type Config struct {
 	// Empty means no override - see internal/domain/account.SourceEnvironment
 	// and internal/domain/account.SourceDatabase.
 	TwitchClientID string
+
+	// YouTubeClientID is the environment override for the YouTube (Google
+	// Desktop OAuth client) Client ID. Empty means no override - same
+	// precedence rule as TwitchClientID.
+	YouTubeClientID string
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -183,6 +188,10 @@ func Load() (Config, error) {
 
 	if raw, ok := lookup("STREAMING_TREE_TWITCH_CLIENT_ID"); ok {
 		cfg.TwitchClientID = strings.TrimSpace(raw)
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_YOUTUBE_CLIENT_ID"); ok {
+		cfg.YouTubeClientID = strings.TrimSpace(raw)
 	}
 
 	return cfg, nil

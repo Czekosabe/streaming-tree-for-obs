@@ -31,9 +31,15 @@ import "time"
 type ProviderID string
 
 const (
-	// ProviderTwitch is the only provider with a connected-account adapter
-	// implemented in this stage.
+	// ProviderTwitch is Twitch's connected-account adapter, using Device
+	// Code Grant Flow - see internal/runtime/deviceflow.
 	ProviderTwitch ProviderID = "twitch"
+
+	// ProviderYouTube is YouTube's connected-account adapter, using
+	// Authorization Code Flow with PKCE and a loopback callback - see
+	// internal/runtime/youtubeauth. Deliberately not a DeviceFlowProvider:
+	// see Provider and DeviceFlowProvider's own doc comments.
+	ProviderYouTube ProviderID = "youtube"
 )
 
 // Status is the stable, machine-readable health of a connected account.

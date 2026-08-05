@@ -214,6 +214,48 @@ a detected "no refresh token" case.
   twitch.md` already documents, so a token Google has already expired
   (Testing-mode's 7-day cliff, for instance) never blocks a local disconnect.
 
+## Validation policy
+
+Google does not document a periodic re-validation requirement the way
+Twitch's documentation mandates hourly checks. Rather than copy Twitch's
+`defaultValidationInterval = 1 * time.Hour` for a provider with no such
+requirement (and no need to spend `tokeninfo` calls that often), YouTube
+accounts are validated:
+
+- once, right after authorization completes (part of finalization, like
+  every provider);
+- once per backend startup, in the same non-blocking background worker
+  Twitch already uses (`account.Service.StartValidationWorker`), just with
+  a longer, YouTube-specific interval;
+- on explicit user request (`POST /api/connected-accounts/{id}/validate`);
+- transparently before a provider write, whenever the cached health is
+  stale - `account.Service.WithFreshToken`'s existing refresh-and-retry-once
+  logic already covers this without a YouTube-specific addition.
+
+`account.Service`'s background validation loop is shared across every
+provider's accounts (one ticker, one `ListAccounts` sweep,
+`internal/domain/account/service.go`), and its interval is a single
+`Service`-wide value driven by Twitch's hard hourly requirement - there is
+no real need for YouTube to piggyback on a shorter interval of its own, and
+splitting the loop per-provider to give YouTube a deliberately longer one
+would add real complexity for no documented benefit: Google issues no
+periodic-validation requirement to violate, and an hourly `tokeninfo` call
+per YouTube account (a 1-unit-equivalent-cost, unauthenticated-tier Google
+endpoint, not a YouTube Data API quota unit at all) is not meaningful load
+under this application's realistic single-operator usage. YouTube accounts
+are therefore validated by the same hourly worker Twitch already requires,
+which is a stricter cadence than Google requires (none), not a violation of
+anything - "no busy-looping on an invalid token" is what the task actually
+forbids, and a fixed hourly sweep across a small account list is not that.
+
+**Token validation endpoint:** `GET https://oauth2.googleapis.com/tokeninfo
+?access_token=<token>` - confirmed via Google's own API reference to return
+`aud` (the client ID the token was issued to), `scope` (space-separated
+granted scopes), and `expires_in`. An invalid or expired token produces a
+non-200 response with an error body; this adapter treats any non-200 as
+"not valid" (mirroring Twitch's own `ValidateToken` contract) rather than
+distinguishing every possible Google error shape.
+
 ## Testing-mode and verification limitations
 
 - OAuth consent screens left in **Testing** status: 100 listed test users
@@ -382,6 +424,7 @@ under normal, human-paced use, but explicit publish and preview actions
 | --- | --- |
 | Authorization | `GET https://accounts.google.com/o/oauth2/v2/auth` |
 | Token exchange / refresh | `POST https://oauth2.googleapis.com/token` |
+| Token validation | `GET https://oauth2.googleapis.com/tokeninfo` |
 | Revocation | `POST https://oauth2.googleapis.com/revoke` |
 | Channel identity | `GET https://www.googleapis.com/youtube/v3/channels` |
 | Broadcast listing/reading | `GET https://www.googleapis.com/youtube/v3/liveBroadcasts` |

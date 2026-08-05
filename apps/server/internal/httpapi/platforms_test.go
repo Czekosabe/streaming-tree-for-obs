@@ -416,10 +416,13 @@ func TestPutPlatformMetadataSavesTagsInOrder(t *testing.T) {
 func TestPutPlatformMetadataRejectsTagsForUnsupportedProvider(t *testing.T) {
 	handler := newTestServer(t)
 
-	recorder := do(t, handler, http.MethodPut, "/api/platforms/pf_seed_youtube/metadata", map[string]any{
+	// Kick, not YouTube: YouTube's tag support is real and verified as of
+	// Stage 7B (docs/provider-integrations/youtube.md), so this "provider
+	// without tag support" case now needs a still-approximate provider.
+	recorder := do(t, handler, http.MethodPut, "/api/platforms/pf_seed_kick/metadata", map[string]any{
 		"title": "Fine", "description": "", "category": "Science & Technology",
-		"tags": []string{"nope"}, "language": "pl", "visibility": "public",
-		"matureContent": false, "dvr": false, "latencyMode": "low",
+		"tags": []string{"nope"}, "language": "pl", "visibility": "",
+		"matureContent": false, "dvr": false, "latencyMode": "",
 	})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", recorder.Code)

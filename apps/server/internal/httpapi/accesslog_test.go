@@ -60,6 +60,7 @@ func TestAccessLogNeverContainsOAuthSecrets(t *testing.T) {
 		identity: account.Identity{ProviderUserID: "u1", Login: "streamer", DisplayName: "Streamer"},
 	}
 	providers := map[account.ProviderID]account.Provider{account.ProviderTwitch: provider}
+	deviceFlowProviders := map[account.ProviderID]account.DeviceFlowProvider{account.ProviderTwitch: provider}
 	requiredScopes := map[account.ProviderID][]string{account.ProviderTwitch: {"channel:manage:broadcast"}}
 
 	platforms := platform.NewService(sqlite.NewPlatformRepository(db.DB))
@@ -70,7 +71,7 @@ func TestAccessLogNeverContainsOAuthSecrets(t *testing.T) {
 	if _, err := accounts.SetIntegrationClientID(context.Background(), account.ProviderTwitch, "test-client-id"); err != nil {
 		t.Fatalf("SetIntegrationClientID() error = %v", err)
 	}
-	deviceFlow := deviceflow.NewManager(deviceflow.Options{Accounts: accounts, Providers: providers, RequiredScopes: requiredScopes, Logger: logger})
+	deviceFlow := deviceflow.NewManager(deviceflow.Options{Accounts: accounts, Providers: deviceFlowProviders, RequiredScopes: requiredScopes, Logger: logger})
 	deviceFlow.Start(context.Background())
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)

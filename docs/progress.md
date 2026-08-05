@@ -4535,3 +4535,268 @@ commit's own results table.
 Database migrations for `platform_remote_targets` and the YouTube
 category-region setting, then the `internal/domain/account` interface
 split, then the `internal/provider/youtube` package.
+
+---
+
+## 2026-08-05 14:20 — feat(server): add YouTube OAuth authorization and metadata publishing
+
+### Deviation from the suggested commit split
+
+The task's preferred split was `feat(server): add YouTube OAuth
+authorization` followed by a separate `feat(server): publish YouTube
+metadata`. Both were built as one commit instead, for the same reason
+stage 7A's device-auth and metadata-publish commits were merged: `cmd/
+server/main.go` and `cmd/testserver/main.go` wire the OAuth attempt
+manager, the metadata service, and the remote-target service together in
+one pass, and `internal/domain/platform`'s YouTube capability corrections
+(needed for metadata publishing) were made alongside the account-domain
+interface split (needed for OAuth) rather than in a second, artificially
+separated pass over the same files. Splitting the diff after the fact
+would mean re-deriving an artificial midpoint with no real boundary in the
+code, not a genuinely separable unit of work.
+
+### `internal/domain/account`: Provider/DeviceFlowProvider split
+
+`account.Provider` (`ProviderID`, `ValidateToken`, `RefreshToken`,
+`RevokeToken`, `GetIdentity` - the methods `account.Service` itself calls)
+was split from a new `account.DeviceFlowProvider` (`Provider` plus
+`StartDeviceFlow`/`PollDeviceFlow`, depended on only by
+`internal/runtime/deviceflow.Manager`). `internal/provider/twitch.Adapter`
+still implements all six methods and satisfies both interfaces
+automatically (Go's structural typing); `internal/provider/youtube.Adapter`
+implements only the four-method `Provider`. `deviceflow.Manager`'s
+`Providers` map type changed from `map[ProviderID]Provider` to
+`map[ProviderID]DeviceFlowProvider`; `cmd/server/main.go` and `cmd/
+testserver/main.go` now build two provider maps (`providers` for
+`account.Service`, `deviceFlowProviders` - Twitch only - for
+`deviceflow.Manager`). `account.ProviderYouTube = "youtube"` added
+alongside the existing `ProviderTwitch`.
+
+### `internal/provider/youtube`
+
+A typed adapter over Google's OAuth endpoints and the YouTube Data API,
+mirroring `internal/provider/twitch`'s file layout (`client.go`,
+`oauth_client.go`, `api_client.go`, `adapter.go`, `metadata.go`,
+`models.go`, `errors.go`) with the differences `docs/provider-integrations/
+youtube.md` documents: PKCE verifier/challenge/state generation
+(`GeneratePKCEVerifier`, `DeriveS256Challenge`, `GenerateState`),
+`BuildAuthorizationURL` (always includes `access_type=offline&prompt=
+consent`, never a client secret), `ExchangeCode`/`RefreshToken` (the
+latter preserving the caller's previous refresh token when Google's
+response omits a new one - the one place this package does not mirror
+Twitch's always-rotates assumption), `RevokeToken` (treats an already-
+invalid token as success), `ValidateToken` (Google's `/tokeninfo`
+endpoint - `ValidationResult.ProviderUserID` is deliberately left empty,
+since `account.Service.acceptValidation` never reads it for any provider
+and Google's tokeninfo response carries no channel identity at all).
+`api_client.go` adds `ListMyChannels`/`GetChannel`, `ListBroadcasts` (merges
+`broadcastStatus=active` and `=upcoming`, never requests the deprecated
+`broadcastType=persistent`), `GetBroadcast`, `GetVideo`/`UpdateVideo` (the
+safe read-modify-write pair - `UpdateVideo` takes the `Video` `GetVideo`
+just returned and copies every mutable field from it before overwriting
+only the ones this application manages, so `selfDeclaredMadeForKids` and
+any other unmanaged field is echoed back unchanged rather than deleted -
+directly verified against Google's own documented destructive-omission
+behavior, see the previous commit's research findings), and
+`ListCategories` (filters to `assignable: true` only). `metadata.go`'s
+`MetadataService` mirrors Twitch's `Preview`/`Publish` shape, adding
+`ListBroadcasts`/`ListCategories`/`EffectiveRegion`/`SetRegion` and a
+`BroadcastID`/`BroadcastTitle` pair Twitch's `Preview` has no equivalent
+for. Every provider call still goes through `account.Service.
+WithFreshToken`.
+
+### `internal/runtime/youtubeauth`: the loopback PKCE attempt manager
+
+A provider-specific manager, deliberately not built on
+`internal/runtime/deviceflow` - see the previous commit's architecture
+decision. `StartAttempt` generates the attempt ID, PKCE verifier, S256
+challenge and CSRF state, binds a `127.0.0.1:0` listener (dynamic port,
+loopback IP not the hostname `localhost`), builds the authorization URL,
+and starts a bare `http.Server` on that listener with no logging
+middleware of any kind - the simplest way to guarantee a callback query
+string is never logged is to never wrap the listener with a logger at all.
+The callback handler constant-time-compares the provided `state`
+(`crypto/subtle.ConstantTimeCompare`); a mismatch leaves the real attempt
+untouched (a stray or hostile request to the loopback port cannot deny a
+legitimate concurrent attempt) rather than failing it. A denial
+(`error=access_denied`) or a successful code both consume the callback
+exactly once (`codeConsumed`, guarded by the attempt's own mutex); a
+second request to the same callback receives the same static page with no
+further effect. Channel identity is resolved directly via `Client.
+ListMyChannels`, not through `account.Provider.GetIdentity` (see the
+previous commit's note that `GetIdentity` is unreachable in this
+package's own code paths by design): zero channels is a terminal error,
+one channel finalizes immediately, more than one moves the attempt to
+`awaiting_channel_selection` with only non-secret `ChannelSummary` values
+(`channelId`, `title`, `thumbnailUrl`) exposed, and `SelectChannel`
+validates the chosen ID against the channels this attempt actually
+fetched before finalizing - never a blind accept.
+
+**A real concurrency bug was found and fixed by this stage's own tests**
+(the same way stage 7A's `deviceflow` retention-cleanup bug was): the
+access-denied callback branch called `setTerminal` (which closes the
+loopback listener via `http.Server.Shutdown`, a *graceful* shutdown that
+waits for in-flight connections to go idle) synchronously, from within the
+very HTTP handler still processing the request that triggered it. Since
+that connection cannot go idle until the handler returns, and the handler
+was blocked waiting for `Shutdown` to return, every access-denied callback
+deadlocked for the full 2-second `Shutdown` timeout before finally giving
+up. `TestCallbackWithAccessDeniedSetsStateDenied` initially passed but
+took 2.01s instead of the expected sub-100ms - the first sign anything was
+wrong - and inspecting why led straight to the deadlock. Fixed by moving
+that one `setTerminal` call into its own goroutine (`m.workers.Add(1); go
+func() { ...; m.workers.Done() }()`), matching the pattern the successful-
+authorization path already used for exactly this reason. `server.Close()`
+(immediate, non-graceful) was considered and rejected as the fix instead,
+because it risks truncating a response that has not finished flushing to
+the client when called mid-handler; deferring the state transition to a
+separate goroutine is correct in every case, not just this one.
+
+### `internal/domain/remotetarget`
+
+A new small domain package (`model.go`, `errors.go`, `repository.go`,
+`service.go`) for `platform_remote_targets` (migration `0007`), exactly
+the schema the task proposed: `platform_id` primary key cascading from
+`platforms`, `provider_id`, `resource_type` (`"live_broadcast"` today),
+`resource_id`, `display_name`, timestamps - no token, no stream key, no
+ingestion field. `internal/storage/sqlite/remotetarget_repository.go`
+follows `AccountRepository.SetLink`'s `INSERT ... ON CONFLICT` replace
+pattern. A second small migration (`0008_youtube_channel_settings.sql`)
+and `internal/storage/sqlite/youtube_region_repository.go` hold a
+connected YouTube account's explicit category-region override, resolved by
+`youtube.MetadataService.EffectiveRegion` (saved override, else the linked
+channel's own `country` when Google's response happens to include one,
+else empty - requiring an explicit operator choice, never a silent
+language-based guess).
+
+### YouTube capability corrections (`internal/domain/platform`)
+
+`definitions.go`'s YouTube entry: `MatureContent`, `DVR`, `LatencyMode` all
+corrected from the previous approximate `true` to `false` (`
+selfDeclaredMadeForKids` is a COPPA disclosure, not a maturity flag; DVR
+and latency mode are broadcast-lifecycle properties this stage's single
+`videos.update` publish path never touches), `LatencyOptions` cleared to
+`[]string{}`, `CategoryRequiresRemoteID: true` added (categories now come
+from `videoCategories.list`, never guessed from text), and `Tags: true`
+turned on with real, verified limits - which required extending `Limits`
+with two new fields rather than reusing Twitch's per-tag/count model
+as-is: `DescriptionMaxLengthInBytes` (YouTube's description limit is 5000
+*bytes*, the one field in this application that differs from every other
+provider's rune-counted limit) and `TagsCombinedMaxLength` (YouTube bounds
+the combined length of every tag together, comma-and-quote-counted per
+Google's own documented rule, not a per-tag length or a tag count the way
+Twitch's `MaxTags`/`TagMaxLength` are - both fields are still set, to
+generous values that never trigger before the real combined-length check
+does). `validation.go` gained the corresponding byte-vs-rune branch and a
+`combinedTagsLength` helper. Three existing tests that depended on
+YouTube's previous (approximate) capabilities were repointed: `
+TestOnlyTwitchSupportsTags` renamed to `TestOnlyTwitchAndYouTubeSupportTags`
+and now asserts YouTube *does* support tags; `
+TestValidateMetadataRejectsTagsForProviderWithoutTagSupport` moved to Kick;
+`TestValidateMetadataRejectsUnsupportedLatency` (which stage 7A had
+already repointed from Twitch to YouTube once) now builds a synthetic
+`ProviderDefinition` with `LatencyMode: true` instead of depending on
+which real provider happens to have the capability today, since none do
+as of this stage - a more robust test than chasing capability changes a
+third time. `internal/httpapi/platforms_test.go`'s equivalent handler test
+was retargeted from the seeded YouTube platform to the seeded Kick one for
+the same reason.
+
+### `internal/httpapi`: YouTube routes and shared-endpoint dispatch
+
+New `youtube.go`: `GET/PUT /api/integrations/youtube/config`, `POST /api/
+integrations/youtube/oauth-attempts` (+ `GET/DELETE .../{id}`, `POST .../
+{id}/channel`), `GET /api/connected-accounts/{id}/youtube/broadcasts`,
+`GET /api/connected-accounts/{id}/youtube/categories`, `GET/PUT /api/
+connected-accounts/{id}/youtube/region`, `GET/PUT/DELETE /api/platforms/
+{id}/remote-target`. The public `oauthAttemptResponse` shape structurally
+has no field for an authorization code, a PKCE verifier, or a state value
+- the same "absence is structural, not filtered" property this project's
+Twitch response shapes already have. Two endpoints that already existed
+for Twitch now dispatch by the destination's actual provider rather than
+assuming Twitch: `POST /api/connected-accounts/{id}/reconnect` (a YouTube
+account gets a new `youtubeauth` attempt instead of a device-flow one -
+different response shapes, same endpoint, since the frontend already
+knows which account it is reconnecting) and `GET /api/platforms/{id}/
+metadata/publish-preview` + `POST .../publish` (a YouTube destination
+routes to `youtube.MetadataService`, fetching its `remotetarget.Target`
+first; every other provider's behavior, including Twitch's, is completely
+unchanged). `handleSetRemoteTarget` re-verifies the selected broadcast
+against the linked account's own `ListBroadcasts` result before persisting
+it - a broadcast ID that does not belong to the linked channel is rejected
+with `youtube_broadcast_not_found`, never accepted on faith.
+
+### `cmd/server/main.go` / `cmd/testserver/main.go`
+
+Both wire `youtube.New`, `youtube.NewAdapter`, `youtubeauth.NewManager`
+(started/shut down alongside `deviceFlowManager`, in the same shutdown-
+ordering group as stage 7A's device-flow manager and validation worker),
+`youtube.NewMetadataService`, and `remotetarget.NewService`. YouTube's
+required scope is added to the existing `requiredScopes` map alongside
+Twitch's. `cmd/testserver/main.go` additionally reads `STREAMING_TREE_
+TEST_YOUTUBE_AUTH_BASE_URL` / `_OAUTH_BASE_URL` / `_API_BASE_URL` directly
+via `os.Getenv` - build-tag-gated exactly like the existing Twitch test
+overrides, for the still-pending local verification script to point at a
+fake Google/YouTube server.
+
+### `STREAMING_TREE_YOUTUBE_CLIENT_ID`
+
+Added to `internal/config`, same precedence and validation as the existing
+Twitch variable (`account.ValidateClientID` is already provider-agnostic
+and needed no change).
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend format | `gofmt -l .` | Clean |
+| Backend vet | `go vet ./...` | Passed |
+| Backend vet (integration build) | `go vet -tags integration ./...` | Passed |
+| Backend build | `go build ./...` | Passed |
+| Backend build (testserver) | `go build -tags integration ./cmd/testserver/...` | Passed |
+| Backend tests | `go test ./...` | Passed (all packages, including every new one) |
+
+New test coverage this commit: `internal/provider/youtube/client_test.go`
+(PKCE shape/randomness, S256 determinism, authorization-URL parameters and
+no-client-secret, token exchange/refresh including the missing-refresh-
+token-preservation and `invalid_grant` cases, revoke-already-invalid,
+`/tokeninfo` parsing, `ListMyChannels` zero/one/many, `ListBroadcasts`
+merge/dedup and the persistent-broadcastType regression guard,
+`UpdateVideo`'s safe-merge behavior, category `assignable` filtering,
+`liveStreamingNotEnabled`/`quotaExceeded` error-reason mapping);
+`internal/runtime/youtubeauth/manager_test.go` (14 cases: waiting-state
+shape, one-active-attempt conflict, missing-Client-ID rejection, the
+wrong-state-does-not-affect-the-real-attempt property, single- and multi-
+channel finalization including rejecting an unoffered channel selection,
+access-denied, missing-required-scope, cancellation actually closes the
+listener - verified by a real follow-up HTTP request failing to connect -
+slot-freed-immediately, idempotent double-cancel, unknown-attempt 404, no
+`AuthorizationURL` once terminal, and prompt `Shutdown()` with an active
+attempt); `internal/storage/sqlite/remotetarget_repository_test.go` (get-
+absent, round-trip, replace-not-duplicate, foreign-key rejection,
+idempotent delete, cascade-on-platform-delete, cross-instance
+persistence); `internal/httpapi/youtube_test.go` (client-secret and
+complete-credentials.json rejection, config source reporting, attempt
+start/conflict/get/cancel and no-`userCode`-field, non-YouTube and
+unlinked-account remote-target rejection, null-when-unset, 404 on an
+unknown platform, idempotent delete, 405+Allow, unknown-account 404 on
+categories, and region validation/normalization); plus `internal/config`
+gained two tests for the new environment variable's independence from
+Twitch's.
+
+### Known limitations of this commit's own test coverage
+
+Given this stage's overall size, `metadata.go`'s `Preview`/`Publish`
+orchestration (blocker resolution, field-diff computation, the single-
+call publish path) is exercised only indirectly - through `client_test.
+go`'s `UpdateVideo` test and the httpapi-level tests - not with a
+dedicated `metadata_test.go` the way `internal/provider/twitch` has one.
+This is a deliberate, acknowledged scope reduction under this stage's time
+constraints, not an oversight; it is flagged here rather than left
+silent, and the still-pending local integration script exercises the
+preview/publish HTTP endpoints end-to-end regardless.
+
+### Next step
+Frontend: data layer, Settings YouTube panel, OAuth modal, channel
+selection, broadcast/remote-target section, metadata editor category/
+region and publish-panel updates, i18n.

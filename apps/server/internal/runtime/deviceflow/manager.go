@@ -54,7 +54,7 @@ type attempt struct {
 // an in-flight request finish and then discarding its result.
 type Manager struct {
 	accounts       *account.Service
-	providers      map[account.ProviderID]account.Provider
+	providers      map[account.ProviderID]account.DeviceFlowProvider
 	requiredScopes map[account.ProviderID][]string
 	logger         *slog.Logger
 
@@ -73,7 +73,7 @@ type Manager struct {
 // Options constructs a Manager.
 type Options struct {
 	Accounts       *account.Service
-	Providers      map[account.ProviderID]account.Provider
+	Providers      map[account.ProviderID]account.DeviceFlowProvider
 	RequiredScopes map[account.ProviderID][]string
 	Logger         *slog.Logger
 }
@@ -246,7 +246,7 @@ func (m *Manager) clearActiveAndSchedule(providerID account.ProviderID, attemptI
 	}()
 }
 
-func (m *Manager) pollLoop(ctx context.Context, a *attempt, provider account.Provider, clientID, deviceCode, reconnectAccountID string) {
+func (m *Manager) pollLoop(ctx context.Context, a *attempt, provider account.DeviceFlowProvider, clientID, deviceCode, reconnectAccountID string) {
 	a.mu.Lock()
 	a.snapshot.State = StatePolling
 	providerID := a.snapshot.ProviderID
@@ -326,7 +326,7 @@ func (m *Manager) setTerminal(a *attempt, providerID account.ProviderID, state S
 }
 
 func (m *Manager) finalizeAuthorized(
-	ctx context.Context, a *attempt, providerID account.ProviderID, provider account.Provider,
+	ctx context.Context, a *attempt, providerID account.ProviderID, provider account.DeviceFlowProvider,
 	clientID string, outcome account.PollOutcome, reconnectAccountID string,
 ) {
 	identity, err := provider.GetIdentity(ctx, outcome.Bundle.AccessToken, clientID)

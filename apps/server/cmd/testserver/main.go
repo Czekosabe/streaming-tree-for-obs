@@ -33,12 +33,15 @@ import (
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/provider/twitch"
+	"github.com/streaming-tree/server/internal/provider/youtube"
 	"github.com/streaming-tree/server/internal/runtime/branch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
@@ -95,20 +98,37 @@ func run() error {
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
 
-	// STREAMING_TREE_TEST_TWITCH_*_BASE_URL exist only in this build-tag-gated
-	// binary, read directly rather than through internal/config, so there is
-	// no risk of a production config path ever recognizing them. Unset
-	// means the real Twitch endpoints, exactly like cmd/server.
-	requiredScopes := map[account.ProviderID][]string{account.ProviderTwitch: {twitch.RequiredScope}}
+	// STREAMING_TREE_TEST_TWITCH_*_BASE_URL and STREAMING_TREE_TEST_YOUTUBE_
+	// *_BASE_URL exist only in this build-tag-gated binary, read directly
+	// rather than through internal/config, so there is no risk of a
+	// production config path ever recognizing them. Unset means the real
+	// Twitch/Google/YouTube endpoints, exactly like cmd/server.
+	requiredScopes := map[account.ProviderID][]string{
+		account.ProviderTwitch:  {twitch.RequiredScope},
+		account.ProviderYouTube: {youtube.RequiredScope},
+	}
 	envClientIDs := map[account.ProviderID]string{}
 	if cfg.TwitchClientID != "" {
 		envClientIDs[account.ProviderTwitch] = cfg.TwitchClientID
+	}
+	if cfg.YouTubeClientID != "" {
+		envClientIDs[account.ProviderYouTube] = cfg.YouTubeClientID
 	}
 	twitchClient := twitch.New(twitch.Options{
 		OAuthBaseURL: os.Getenv("STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL"),
 		APIBaseURL:   os.Getenv("STREAMING_TREE_TEST_TWITCH_API_BASE_URL"),
 	})
-	providers := map[account.ProviderID]account.Provider{account.ProviderTwitch: twitch.NewAdapter(twitchClient)}
+	twitchAdapter := twitch.NewAdapter(twitchClient)
+	youtubeClient := youtube.New(youtube.Options{
+		AuthBaseURL:  os.Getenv("STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL"),
+		OAuthBaseURL: os.Getenv("STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL"),
+		APIBaseURL:   os.Getenv("STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL"),
+	})
+	youtubeAdapter := youtube.NewAdapter(youtubeClient)
+	providers := map[account.ProviderID]account.Provider{
+		account.ProviderTwitch: twitchAdapter, account.ProviderYouTube: youtubeAdapter,
+	}
+	deviceFlowProviders := map[account.ProviderID]account.DeviceFlowProvider{account.ProviderTwitch: twitchAdapter}
 
 	accountService := account.NewService(account.Options{
 		Repository: sqlite.NewAccountRepository(db.DB), Secrets: secretStore, Providers: providers,
@@ -117,11 +137,20 @@ func run() error {
 	accountService.StartValidationWorker(ctx)
 
 	deviceFlowManager := deviceflow.NewManager(deviceflow.Options{
-		Accounts: accountService, Providers: providers, RequiredScopes: requiredScopes, Logger: logger,
+		Accounts: accountService, Providers: deviceFlowProviders, RequiredScopes: requiredScopes, Logger: logger,
 	})
 	deviceFlowManager.Start(ctx)
 
 	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
+
+	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
+		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
+	})
+	youtubeAuthManager.Start(ctx)
+
+	youtubeRegionRepo := sqlite.NewYouTubeRegionRepository(db.DB)
+	youtubeMetadataService := youtube.NewMetadataService(accountService, youtubeRegionRepo, youtubeClient)
+	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
 	supervisor := mediamtx.NewSupervisor(mediamtx.Options{
 		DataDir:        cfg.DataDir,
@@ -146,18 +175,21 @@ func run() error {
 	branchManager.Start(ctx)
 
 	handler := httpapi.NewRouter(httpapi.Options{
-		Logger:         logger,
-		AllowedOrigins: cfg.AllowedOrigins,
-		StartedAt:      startedAt,
-		Platforms:      platformService,
-		Runtime:        supervisor,
-		Credentials:    credentialService,
-		Outputs:        outputService,
-		FFmpegRuntime:  branchManager,
-		Branches:       branchManager,
-		Accounts:       accountService,
-		DeviceFlow:     deviceFlowManager,
-		TwitchMetadata: twitchMetadataService,
+		Logger:          logger,
+		AllowedOrigins:  cfg.AllowedOrigins,
+		StartedAt:       startedAt,
+		Platforms:       platformService,
+		Runtime:         supervisor,
+		Credentials:     credentialService,
+		Outputs:         outputService,
+		FFmpegRuntime:   branchManager,
+		Branches:        branchManager,
+		Accounts:        accountService,
+		DeviceFlow:      deviceFlowManager,
+		TwitchMetadata:  twitchMetadataService,
+		YouTubeAuth:     youtubeAuthManager,
+		YouTubeMetadata: youtubeMetadataService,
+		RemoteTargets:   remoteTargetService,
 	})
 
 	server := &http.Server{
@@ -187,6 +219,7 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
+		youtubeAuthManager.Shutdown(shutdownCtx)
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
@@ -200,6 +233,7 @@ func run() error {
 		httpErr := server.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
+		youtubeAuthManager.Shutdown(shutdownCtx)
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 

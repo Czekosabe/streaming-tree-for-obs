@@ -7,13 +7,14 @@ import "sort"
 // This table was moved here from the frontend so the backend is the single
 // source of truth for provider capabilities.
 //
-// IMPORTANT: only the Twitch definition below has been verified against a
-// real provider API (Stage 7A; see docs/provider-integrations/twitch.md).
-// YouTube, Kick and TikTok remain approximate and were NOT verified against
-// their real APIs - they preserve the behaviour the dashboard had before
-// persistence was introduced and exist to drive the capability-based
-// metadata editor. They must be re-checked when their own real API
-// integrations are implemented (Stage 7B/7C).
+// IMPORTANT: Twitch (Stage 7A, docs/provider-integrations/twitch.md) and
+// YouTube (Stage 7B, docs/provider-integrations/youtube.md) below have both
+// been verified against their real provider APIs. Kick and TikTok remain
+// approximate and were NOT verified against their real APIs - they preserve
+// the behaviour the dashboard had before persistence was introduced and
+// exist to drive the capability-based metadata editor. They must be
+// re-checked when their own real API integrations are implemented
+// (Stage 7C).
 
 // supportedLanguages lists the stream language identifiers offered for
 // providers that expose a language field. They are BCP 47 primary subtags; the
@@ -69,26 +70,55 @@ var providerDefinitions = map[ProviderID]ProviderDefinition{
 		BrandName:         "YouTube Live",
 		ShortLabel:        "YT",
 		CategoryFieldType: CategoryFieldCategory,
+		// A category is published to YouTube by videos.snippet.categoryId
+		// (videoCategories.list, region-scoped), never by display text
+		// alone - see docs/provider-integrations/youtube.md.
+		CategoryRequiresRemoteID: true,
 		Capabilities: Capabilities{
-			Title:         true,
-			Description:   true,
-			Category:      true,
-			Tags:          false,
-			Language:      true,
-			Visibility:    true,
-			MatureContent: true,
-			DVR:           true,
-			LatencyMode:   true,
+			Title:       true,
+			Description: true,
+			Category:    true,
+			Tags:        true,
+			Language:    true,
+			Visibility:  true,
+			// Corrected after verifying the real Videos/LiveBroadcasts
+			// resources (docs/provider-integrations/youtube.md):
+			// selfDeclaredMadeForKids is a COPPA child-directed disclosure,
+			// not a generic "mature content" flag, so publishing to it as
+			// if it meant the same thing would misrepresent a
+			// compliance-relevant field. DVR (contentDetails.enableDvr) and
+			// latency mode (contentDetails.latencyPreference) are
+			// broadcast-lifecycle properties this stage's video-only
+			// publish path does not write. All three were previously
+			// approximated as true before any real YouTube API was
+			// consulted.
+			MatureContent: false,
+			DVR:           false,
+			LatencyMode:   false,
 		},
 		Limits: Limits{
-			TitleMaxLength:       100,
-			DescriptionMaxLength: 5000,
-			MaxTags:              0,
-			TagMaxLength:         0,
+			TitleMaxLength: 100,
+			// videos.snippet.description is documented as a 5000-*byte*
+			// limit, not a 5000-character one - the one field in this
+			// application where the two differ.
+			DescriptionMaxLength:        5000,
+			DescriptionMaxLengthInBytes: true,
+			// videos.snippet.tags has no documented per-tag length or
+			// per-count limit; MaxTags/TagMaxLength are set generously so
+			// they never trigger before the real constraint -
+			// TagsCombinedMaxLength, the documented 500-byte combined
+			// budget across every tag together.
+			MaxTags:               500,
+			TagMaxLength:          100,
+			TagsCombinedMaxLength: 500,
 		},
 		VisibilityOptions: []string{VisibilityPublic, VisibilityUnlisted, VisibilityPrivate},
-		LatencyOptions:    []string{LatencyNormal, LatencyLow, LatencyUltraLow},
-		LanguageOptions:   supportedLanguages,
+		// Empty, not LatencyLow/LatencyNormal/LatencyUltraLow: LatencyMode
+		// is now false above, so this list is unused, and a non-empty list
+		// here would misleadingly suggest YouTube has latency options this
+		// application can actually set this stage.
+		LatencyOptions:  []string{},
+		LanguageOptions: supportedLanguages,
 	},
 	ProviderKick: {
 		ID:                ProviderKick,

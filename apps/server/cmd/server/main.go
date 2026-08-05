@@ -1,7 +1,7 @@
 // Command server starts the Streaming Tree REST API: platform configuration,
 // MediaMTX supervision, the destination-credential store, destination
-// branch supervision, and the connected-account/Twitch integration are all
-// wired here. YouTube, Kick and TikTok account integrations and the
+// branch supervision, and the connected-account/Twitch/YouTube integrations
+// are all wired here. Kick and TikTok account integrations and the
 // engagement platform are still separate, later stages.
 package main
 
@@ -21,12 +21,15 @@ import (
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/httpapi"
 	"github.com/streaming-tree/server/internal/provider/twitch"
+	"github.com/streaming-tree/server/internal/provider/youtube"
 	"github.com/streaming-tree/server/internal/runtime/branch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
@@ -99,18 +102,34 @@ func run() error {
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
 
-	// Only Twitch has a connected-account adapter in this stage; YouTube,
-	// Kick and TikTok remain configuration-only destinations.
+	// Twitch and YouTube both have connected-account adapters in this
+	// stage; Kick and TikTok remain configuration-only destinations.
 	requiredScopes := map[account.ProviderID][]string{
-		account.ProviderTwitch: {twitch.RequiredScope},
+		account.ProviderTwitch:  {twitch.RequiredScope},
+		account.ProviderYouTube: {youtube.RequiredScope},
 	}
 	envClientIDs := map[account.ProviderID]string{}
 	if cfg.TwitchClientID != "" {
 		envClientIDs[account.ProviderTwitch] = cfg.TwitchClientID
 	}
+	if cfg.YouTubeClientID != "" {
+		envClientIDs[account.ProviderYouTube] = cfg.YouTubeClientID
+	}
 	twitchClient := twitch.New(twitch.Options{})
+	twitchAdapter := twitch.NewAdapter(twitchClient)
+	youtubeClient := youtube.New(youtube.Options{})
+	youtubeAdapter := youtube.NewAdapter(youtubeClient)
 	providers := map[account.ProviderID]account.Provider{
-		account.ProviderTwitch: twitch.NewAdapter(twitchClient),
+		account.ProviderTwitch:  twitchAdapter,
+		account.ProviderYouTube: youtubeAdapter,
+	}
+	// Only Twitch uses Device Code Grant Flow; deviceflow.Manager depends on
+	// the narrower DeviceFlowProvider interface, so it gets its own map -
+	// see account.DeviceFlowProvider's own doc comment for why YouTube's
+	// adapter is never a candidate for this one. YouTube's own OAuth
+	// attempts are orchestrated separately by youtubeauth.Manager below.
+	deviceFlowProviders := map[account.ProviderID]account.DeviceFlowProvider{
+		account.ProviderTwitch: twitchAdapter,
 	}
 
 	accountService := account.NewService(account.Options{
@@ -128,13 +147,22 @@ func run() error {
 
 	deviceFlowManager := deviceflow.NewManager(deviceflow.Options{
 		Accounts:       accountService,
-		Providers:      providers,
+		Providers:      deviceFlowProviders,
 		RequiredScopes: requiredScopes,
 		Logger:         logger,
 	})
 	deviceFlowManager.Start(ctx)
 
 	twitchMetadataService := twitch.NewMetadataService(accountService, twitchClient)
+
+	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
+		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
+	})
+	youtubeAuthManager.Start(ctx)
+
+	youtubeRegionRepo := sqlite.NewYouTubeRegionRepository(db.DB)
+	youtubeMetadataService := youtube.NewMetadataService(accountService, youtubeRegionRepo, youtubeClient)
+	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
 	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
 	// failed MediaMTX must never stop the Go API: platform configuration stays
@@ -180,18 +208,21 @@ func run() error {
 	)
 
 	handler := httpapi.NewRouter(httpapi.Options{
-		Logger:         logger,
-		AllowedOrigins: cfg.AllowedOrigins,
-		StartedAt:      startedAt,
-		Platforms:      platformService,
-		Runtime:        supervisor,
-		Credentials:    credentialService,
-		Outputs:        outputService,
-		FFmpegRuntime:  branchManager,
-		Branches:       branchManager,
-		Accounts:       accountService,
-		DeviceFlow:     deviceFlowManager,
-		TwitchMetadata: twitchMetadataService,
+		Logger:          logger,
+		AllowedOrigins:  cfg.AllowedOrigins,
+		StartedAt:       startedAt,
+		Platforms:       platformService,
+		Runtime:         supervisor,
+		Credentials:     credentialService,
+		Outputs:         outputService,
+		FFmpegRuntime:   branchManager,
+		Branches:        branchManager,
+		Accounts:        accountService,
+		DeviceFlow:      deviceFlowManager,
+		TwitchMetadata:  twitchMetadataService,
+		YouTubeAuth:     youtubeAuthManager,
+		YouTubeMetadata: youtubeMetadataService,
+		RemoteTargets:   remoteTargetService,
 	})
 
 	server := &http.Server{
@@ -226,6 +257,7 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
+		youtubeAuthManager.Shutdown(shutdownCtx)
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 		cancel()
@@ -256,6 +288,7 @@ func run() error {
 		// about as one group.
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
+		youtubeAuthManager.Shutdown(shutdownCtx)
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
 

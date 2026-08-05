@@ -56,10 +56,10 @@ type ValidationResult struct {
 	ExpiresIn      time.Duration
 }
 
-// Provider is the narrow, provider-specific contract account.Service and
-// internal/runtime/deviceflow depend on. Exactly one adapter implements it
-// today (internal/provider/twitch); a future YouTube or Kick adapter
-// implements the same shape without any change here.
+// Provider is the narrow, provider-specific contract account.Service itself
+// depends on: validating, refreshing and revoking a token, and resolving the
+// identity behind one. Every provider adapter implements this, regardless of
+// which OAuth flow it uses to obtain a token in the first place.
 //
 // Every method is given whatever credentials it needs explicitly (an access
 // token, a Client ID) rather than reaching into shared state, so this
@@ -68,14 +68,6 @@ type ValidationResult struct {
 type Provider interface {
 	ProviderID() ProviderID
 
-	// StartDeviceFlow begins a new device-authorization attempt.
-	StartDeviceFlow(ctx context.Context, clientID string, scopes []string) (DeviceFlowStart, error)
-
-	// PollDeviceFlow performs one token-exchange attempt. The caller is
-	// responsible for honoring the returned (or previously-returned)
-	// Interval and for stopping once a terminal PollStatus is reached.
-	PollDeviceFlow(ctx context.Context, clientID, deviceCode string) (PollOutcome, error)
-
 	// ValidateToken checks an access token against the provider's
 	// validation endpoint.
 	ValidateToken(ctx context.Context, accessToken string) (ValidationResult, error)
@@ -83,14 +75,47 @@ type Provider interface {
 	// RefreshToken exchanges a refresh token for a brand new bundle. The
 	// caller must persist the returned bundle before considering the
 	// refresh complete - see TokenBundle's own doc comment on rotation.
+	//
+	// A provider whose refresh response can omit a new refresh token (see
+	// internal/provider/youtube) must itself preserve the previous
+	// refreshToken argument in the returned TokenBundle rather than ever
+	// returning an empty one - account.Service always persists exactly what
+	// this method returns.
 	RefreshToken(ctx context.Context, clientID, refreshToken string) (TokenBundle, error)
 
-	// RevokeToken best-effort revokes an access token. A provider reporting
-	// the token as already invalid must be treated as success by the
-	// caller - see account.Service.Disconnect.
+	// RevokeToken best-effort revokes a token. A provider reporting the
+	// token as already invalid must be treated as success by the caller -
+	// see account.Service.Disconnect.
 	RevokeToken(ctx context.Context, clientID, accessToken string) error
 
 	// GetIdentity resolves the stable identity and display profile behind
-	// an access token.
+	// an access token. For a provider whose authorization can require an
+	// explicit disambiguation step among several owned identities (see
+	// internal/runtime/youtubeauth's channel selection), this method is
+	// meaningful only once that step is already resolved; it is not used
+	// during that step itself.
 	GetIdentity(ctx context.Context, accessToken, clientID string) (Identity, error)
+}
+
+// DeviceFlowProvider extends Provider with the two methods specific to
+// Twitch's Device Code Grant Flow (RFC 8628-shaped polling). Only
+// internal/runtime/deviceflow.Manager depends on this narrower interface;
+// account.Service depends on Provider alone.
+//
+// Deliberately not part of Provider itself: a provider using a different
+// OAuth flow (YouTube's Authorization Code + PKCE + loopback callback, via
+// internal/runtime/youtubeauth) has no device code and no poll loop, and
+// forcing it to implement these two methods meaninglessly would be exactly
+// the kind of framework-shaped-around-one-provider mistake the connected-
+// account foundation was designed to avoid.
+type DeviceFlowProvider interface {
+	Provider
+
+	// StartDeviceFlow begins a new device-authorization attempt.
+	StartDeviceFlow(ctx context.Context, clientID string, scopes []string) (DeviceFlowStart, error)
+
+	// PollDeviceFlow performs one token-exchange attempt. The caller is
+	// responsible for honoring the returned (or previously-returned)
+	// Interval and for stopping once a terminal PollStatus is reached.
+	PollDeviceFlow(ctx context.Context, clientID, deviceCode string) (PollOutcome, error)
 }

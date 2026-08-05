@@ -23,6 +23,8 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_MEDIAMTX_API_ADDRESS",
 		"STREAMING_TREE_INGEST_PATH",
 		"STREAMING_TREE_FFMPEG_PATH",
+		"STREAMING_TREE_TWITCH_CLIENT_ID",
+		"STREAMING_TREE_YOUTUBE_CLIENT_ID",
 	} {
 		t.Setenv(key, "")
 	}
@@ -388,5 +390,34 @@ func TestBlankEnvironmentValueFallsBackToDefault(t *testing.T) {
 	}
 	if cfg.Host != "127.0.0.1" {
 		t.Errorf("Host = %q, want the default 127.0.0.1", cfg.Host)
+	}
+}
+
+func TestTwitchAndYouTubeClientIDsAreIndependentEnvironmentOverrides(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_TWITCH_CLIENT_ID", "  twitch-cid  ")
+	t.Setenv("STREAMING_TREE_YOUTUBE_CLIENT_ID", "youtube-cid")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.TwitchClientID != "twitch-cid" {
+		t.Errorf("TwitchClientID = %q, want trimmed twitch-cid", cfg.TwitchClientID)
+	}
+	if cfg.YouTubeClientID != "youtube-cid" {
+		t.Errorf("YouTubeClientID = %q, want youtube-cid", cfg.YouTubeClientID)
+	}
+}
+
+func TestClientIDsDefaultToEmptyWhenUnset(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.TwitchClientID != "" || cfg.YouTubeClientID != "" {
+		t.Errorf("TwitchClientID/YouTubeClientID = %q/%q, want both empty when unset", cfg.TwitchClientID, cfg.YouTubeClientID)
 	}
 }

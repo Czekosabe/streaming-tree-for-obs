@@ -47,6 +47,20 @@ type Options struct {
 	// publish/preview. Required alongside Accounts for those routes to
 	// register.
 	TwitchMetadata TwitchMetadataService
+	// YouTubeAuth serves YouTube OAuth attempts (Authorization Code + PKCE
+	// + loopback callback). When nil, none of the YouTube integration or
+	// OAuth-attempt routes are registered, and reconnecting a YouTube
+	// account falls back to being unavailable.
+	YouTubeAuth YouTubeAuthService
+	// YouTubeMetadata serves YouTube broadcast listing, category listing,
+	// region resolution, and metadata publish/preview. Required alongside
+	// YouTubeAuth for the YouTube-specific routes to register; also used by
+	// the shared publish-preview/publish endpoints when a destination's
+	// provider is YouTube.
+	YouTubeMetadata YouTubeMetadataService
+	// RemoteTargets serves a YouTube destination's selected live-broadcast
+	// target. Required alongside YouTubeAuth/YouTubeMetadata.
+	RemoteTargets RemoteTargetService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -83,7 +97,12 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.TwitchMetadata != nil {
-		registerAccountRoutes(mux, logger, opts.Platforms, opts.Accounts, opts.DeviceFlow, opts.TwitchMetadata)
+		registerAccountRoutes(mux, logger, opts.Platforms, opts.Accounts, opts.DeviceFlow, opts.TwitchMetadata,
+			opts.YouTubeAuth, opts.YouTubeMetadata, opts.RemoteTargets)
+	}
+
+	if opts.Accounts != nil && opts.YouTubeAuth != nil && opts.YouTubeMetadata != nil && opts.RemoteTargets != nil {
+		registerYouTubeRoutes(mux, logger, opts.Platforms, opts.Accounts, opts.YouTubeAuth, opts.YouTubeMetadata, opts.RemoteTargets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

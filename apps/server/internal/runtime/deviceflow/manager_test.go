@@ -75,7 +75,7 @@ func newTestSetup(t *testing.T) (*Manager, *fakeProvider) {
 
 	m := NewManager(Options{
 		Accounts:       accounts,
-		Providers:      map[account.ProviderID]account.Provider{account.ProviderTwitch: provider},
+		Providers:      map[account.ProviderID]account.DeviceFlowProvider{account.ProviderTwitch: provider},
 		RequiredScopes: map[account.ProviderID][]string{account.ProviderTwitch: {"channel:manage:broadcast"}},
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

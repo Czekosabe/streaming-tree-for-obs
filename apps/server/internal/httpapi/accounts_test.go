@@ -66,6 +66,7 @@ func newAccountTestServer(t *testing.T) (http.Handler, *account.Service) {
 	platforms := platform.NewService(sqlite.NewPlatformRepository(db.DB))
 
 	providers := map[account.ProviderID]account.Provider{account.ProviderTwitch: fakeHTTPProvider{}}
+	deviceFlowProviders := map[account.ProviderID]account.DeviceFlowProvider{account.ProviderTwitch: fakeHTTPProvider{}}
 	accounts := account.NewService(account.Options{
 		Repository: sqlite.NewAccountRepository(db.DB), Secrets: secretstest.New(), Providers: providers,
 		RequiredScopes: map[account.ProviderID][]string{account.ProviderTwitch: {"channel:manage:broadcast"}}, Logger: logger,
@@ -75,7 +76,7 @@ func newAccountTestServer(t *testing.T) (http.Handler, *account.Service) {
 	}
 
 	deviceFlow := deviceflow.NewManager(deviceflow.Options{
-		Accounts: accounts, Providers: providers,
+		Accounts: accounts, Providers: deviceFlowProviders,
 		RequiredScopes: map[account.ProviderID][]string{account.ProviderTwitch: {"channel:manage:broadcast"}}, Logger: logger,
 	})
 	deviceFlow.Start(context.Background())

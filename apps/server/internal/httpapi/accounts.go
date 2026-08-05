@@ -49,6 +49,7 @@ type TwitchMetadataService interface {
 func registerAccountRoutes(
 	mux *http.ServeMux, logger *slog.Logger,
 	platforms PlatformService, accounts AccountService, deviceFlow DeviceFlowService, twitchMetadata TwitchMetadataService,
+	youtubeAuth YouTubeAuthService, youtubeMetadata YouTubeMetadataService, remoteTargets RemoteTargetService,
 ) {
 	mux.HandleFunc("GET /api/integrations/twitch/config", handleGetIntegrationConfig(logger, accounts))
 	mux.HandleFunc("PUT /api/integrations/twitch/config", handleSetIntegrationConfig(logger, accounts))
@@ -73,7 +74,7 @@ func registerAccountRoutes(
 	mux.HandleFunc("POST /api/connected-accounts/{id}/validate", handleValidateAccount(logger, accounts))
 	mux.HandleFunc("/api/connected-accounts/{id}/validate", methodNotAllowed(logger, http.MethodPost))
 
-	mux.HandleFunc("POST /api/connected-accounts/{id}/reconnect", handleReconnectAccount(logger, accounts, deviceFlow))
+	mux.HandleFunc("POST /api/connected-accounts/{id}/reconnect", handleReconnectAccount(logger, accounts, deviceFlow, youtubeAuth))
 	mux.HandleFunc("/api/connected-accounts/{id}/reconnect", methodNotAllowed(logger, http.MethodPost))
 
 	mux.HandleFunc("GET /api/connected-accounts/{id}/twitch/categories", handleSearchCategories(logger, accounts, twitchMetadata))
@@ -85,10 +86,10 @@ func registerAccountRoutes(
 	mux.HandleFunc("/api/platforms/{id}/connected-account",
 		methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
 
-	mux.HandleFunc("GET /api/platforms/{id}/metadata/publish-preview", handlePublishPreview(logger, platforms, accounts, twitchMetadata))
+	mux.HandleFunc("GET /api/platforms/{id}/metadata/publish-preview", handlePublishPreview(logger, platforms, accounts, twitchMetadata, youtubeMetadata, remoteTargets))
 	mux.HandleFunc("/api/platforms/{id}/metadata/publish-preview", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("POST /api/platforms/{id}/metadata/publish", handlePublishMetadata(logger, platforms, accounts, twitchMetadata))
+	mux.HandleFunc("POST /api/platforms/{id}/metadata/publish", handlePublishMetadata(logger, platforms, accounts, twitchMetadata, youtubeMetadata, remoteTargets))
 	mux.HandleFunc("/api/platforms/{id}/metadata/publish", methodNotAllowed(logger, http.MethodPost))
 }
 
@@ -286,7 +287,13 @@ func handleValidateAccount(logger *slog.Logger, accounts AccountService) http.Ha
 	}
 }
 
-func handleReconnectAccount(logger *slog.Logger, accounts AccountService, deviceFlow DeviceFlowService) http.HandlerFunc {
+// handleReconnectAccount dispatches to the provider's own OAuth attempt
+// manager: a Twitch account gets a new device-flow attempt, a YouTube
+// account gets a new Authorization Code + PKCE attempt - see
+// docs/provider-integrations/youtube.md's "Why Twitch's Device Code Flow is
+// not reused" section for why these are two different attempt shapes
+// rather than one forced into the other's model.
+func handleReconnectAccount(logger *slog.Logger, accounts AccountService, deviceFlow DeviceFlowService, youtubeAuth YouTubeAuthService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireEmptyBody(w, r, logger) {
 			return
@@ -297,6 +304,17 @@ func handleReconnectAccount(logger *slog.Logger, accounts AccountService, device
 			writeAccountError(w, logger, r, err)
 			return
 		}
+
+		if acc.ProviderID == account.ProviderYouTube && youtubeAuth != nil {
+			snapshot, err := youtubeAuth.StartAttempt(r.Context(), id)
+			if err != nil {
+				writeYouTubeAuthError(w, logger, r, err)
+				return
+			}
+			writeJSON(w, logger, http.StatusAccepted, toOAuthAttemptResponse(snapshot))
+			return
+		}
+
 		snapshot, err := deviceFlow.StartAttempt(r.Context(), acc.ProviderID, id)
 		if err != nil {
 			writeDeviceFlowError(w, logger, r, err)
@@ -450,13 +468,16 @@ type fieldDiffResponse struct {
 }
 
 type publishPreviewResponse struct {
-	ProviderID   string              `json:"providerId"`
-	AccountID    string              `json:"accountId,omitempty"`
-	AccountLogin string              `json:"accountLogin,omitempty"`
-	Fields       []fieldDiffResponse `json:"fields"`
-	Skipped      []string            `json:"skipped"`
-	Blockers     []string            `json:"blockers"`
-	Allowed      bool                `json:"allowed"`
+	ProviderID     string              `json:"providerId"`
+	AccountID      string              `json:"accountId,omitempty"`
+	AccountLogin   string              `json:"accountLogin,omitempty"`
+	BroadcastID    string              `json:"broadcastId,omitempty"`
+	BroadcastTitle string              `json:"broadcastTitle,omitempty"`
+	Fields         []fieldDiffResponse `json:"fields"`
+	Skipped        []string            `json:"skipped"`
+	Blockers       []string            `json:"blockers"`
+	Warnings       []string            `json:"warnings,omitempty"`
+	Allowed        bool                `json:"allowed"`
 }
 
 func loadLinkAndMetadataForPublish(r *http.Request, platforms PlatformService, accounts AccountService) (platform.Platform, account.Link, bool, error) {
@@ -472,11 +493,41 @@ func loadLinkAndMetadataForPublish(r *http.Request, platforms PlatformService, a
 	return p, link, found, nil
 }
 
-func handlePublishPreview(logger *slog.Logger, platforms PlatformService, accounts AccountService, twitchMetadata TwitchMetadataService) http.HandlerFunc {
+// handlePublishPreview dispatches to the platform's own provider metadata
+// service. A provider with no metadata adapter at all (Kick, TikTok) always
+// reports account_not_linked, matching the pre-existing Twitch-only
+// behavior for those providers.
+func handlePublishPreview(
+	logger *slog.Logger, platforms PlatformService, accounts AccountService,
+	twitchMetadata TwitchMetadataService, youtubeMetadata YouTubeMetadataService, remoteTargets RemoteTargetService,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, link, found, err := loadLinkAndMetadataForPublish(r, platforms, accounts)
 		if err != nil {
 			writeDomainError(w, logger, r, err)
+			return
+		}
+
+		if p.ProviderID == platform.ProviderYouTube && youtubeMetadata != nil && remoteTargets != nil {
+			target, hasTarget, err := remoteTargets.GetTarget(r.Context(), p.ID)
+			if err != nil {
+				writeDomainError(w, logger, r, err)
+				return
+			}
+			preview, err := youtubeMetadata.Preview(r.Context(), string(p.ProviderID), p.Metadata, link, found, target, hasTarget)
+			if err != nil {
+				writeYouTubeError(w, logger, r, err)
+				return
+			}
+			fields := make([]fieldDiffResponse, 0, len(preview.Fields))
+			for _, f := range preview.Fields {
+				fields = append(fields, fieldDiffResponse{Field: f.Field, Local: f.Local, Remote: f.Remote, Changed: f.Changed})
+			}
+			writeJSON(w, logger, http.StatusOK, publishPreviewResponse{
+				ProviderID: string(p.ProviderID), AccountID: preview.AccountID, AccountLogin: preview.AccountLogin,
+				BroadcastID: preview.BroadcastID, BroadcastTitle: preview.BroadcastTitle,
+				Fields: fields, Skipped: preview.Skipped, Blockers: preview.Blockers, Warnings: preview.Warnings, Allowed: preview.Allowed,
+			})
 			return
 		}
 
@@ -500,13 +551,19 @@ func handlePublishPreview(logger *slog.Logger, platforms PlatformService, accoun
 type publishResultResponse struct {
 	Status        string   `json:"status"`
 	AccountID     string   `json:"accountId,omitempty"`
+	BroadcastID   string   `json:"broadcastId,omitempty"`
 	PublishedAt   string   `json:"publishedAt,omitempty"`
 	FieldsChanged []string `json:"fieldsChanged,omitempty"`
 	FieldsSkipped []string `json:"fieldsSkipped,omitempty"`
+	FieldsFailed  []string `json:"fieldsFailed,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 	Blockers      []string `json:"blockers,omitempty"`
 }
 
-func handlePublishMetadata(logger *slog.Logger, platforms PlatformService, accounts AccountService, twitchMetadata TwitchMetadataService) http.HandlerFunc {
+func handlePublishMetadata(
+	logger *slog.Logger, platforms PlatformService, accounts AccountService,
+	twitchMetadata TwitchMetadataService, youtubeMetadata YouTubeMetadataService, remoteTargets RemoteTargetService,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireEmptyBody(w, r, logger) {
 			return
@@ -514,6 +571,29 @@ func handlePublishMetadata(logger *slog.Logger, platforms PlatformService, accou
 		p, link, found, err := loadLinkAndMetadataForPublish(r, platforms, accounts)
 		if err != nil {
 			writeDomainError(w, logger, r, err)
+			return
+		}
+
+		if p.ProviderID == platform.ProviderYouTube && youtubeMetadata != nil && remoteTargets != nil {
+			target, hasTarget, err := remoteTargets.GetTarget(r.Context(), p.ID)
+			if err != nil {
+				writeDomainError(w, logger, r, err)
+				return
+			}
+			result, blockers, err := youtubeMetadata.Publish(r.Context(), string(p.ProviderID), p.Metadata, link, found, target, hasTarget, time.Now().UTC())
+			if err != nil {
+				writeYouTubeError(w, logger, r, err)
+				return
+			}
+			if len(blockers) > 0 {
+				writeJSON(w, logger, http.StatusOK, publishResultResponse{Status: "blocked", Blockers: blockers})
+				return
+			}
+			writeJSON(w, logger, http.StatusOK, publishResultResponse{
+				Status: "published", AccountID: result.AccountID, BroadcastID: result.BroadcastID,
+				PublishedAt:   result.PublishedAt.UTC().Format(time.RFC3339Nano),
+				FieldsChanged: result.FieldsChanged, FieldsSkipped: result.FieldsSkipped, FieldsFailed: result.FieldsFailed, Warnings: result.Warnings,
+			})
 			return
 		}
 
