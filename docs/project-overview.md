@@ -477,6 +477,26 @@ table (any future provider needing the same "which remote resource"
 concept reuses it) rather than a YouTube-only column bolted onto
 `connected_accounts` or `platforms`.
 
+**Stage 8A added a seventh fact, this one about a connected account rather
+than a destination: its engagement-connector configuration**
+(`internal/domain/engagementsettings`,
+`connected_account_engagement_settings` - `account_id` primary key
+cascading from `connected_accounts`, one `enabled` boolean, timestamps;
+no token, no WebSocket session id, no subscription id). Whether a Twitch
+account's inbound EventSub connector is enabled is a persisted
+preference, deliberately as small as the fact it records; everything
+about the connector's *live* session (its state, subscription counts,
+reconnect count, last event/data-gap timestamps) is runtime state, kept
+only in memory, described below alongside MediaMTX's and a branch's own
+runtime state. A capability-specific scope assessment
+(`internal/provider/twitch.AssessEngagementCapability`) is computed on
+demand from the account's already-stored granted scopes, not persisted
+separately - metadata health (`channel:manage:broadcast`) and engagement-
+capability health are independent facts about the same account, never
+conflated, so an account can be perfectly healthy for metadata while
+still needing an explicit permission upgrade before engagement can
+enable at all.
+
 ### Runtime stream state
 
 Whether the ingest service is running, whether a publisher is connected,
@@ -503,6 +523,24 @@ the underlying process did not itself report, and never a stream key, a full
 destination URL, an FFmpeg command line, a process id, or process
 environment - inventing or exposing any of those would defeat the point of
 reporting real state at all.
+
+What is tracked per Twitch engagement connector (stage 8A,
+`internal/runtime/twitchengagement`): an explicit state (`disabled`,
+`blocked`, `connecting`, `waiting_for_welcome`, `subscribing`,
+`connected`, `reconnecting`, `stopping`, `error` - never independent
+booleans for mutually exclusive facts), blocker codes, connected/last-
+event/last-keepalive/last-data-gap timestamps, reconnect count, and
+active/expected subscription counts. Never tracked: a WebSocket session
+id, a reconnect URL, an access token, or a raw provider response -
+exposing any of those would defeat the same "no secret in a diagnostic
+view" rule stream-key and OAuth-token status already follow. The
+Engagement Event Bus itself (`internal/engagement`) is the same kind of
+fact at a different scope: a bounded, in-memory-only ring buffer of
+normalized events (default capacity 1000, `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`-
+configurable) that resets to empty on every backend restart, exactly
+like MediaMTX's and a branch's own runtime state above - see
+[docs/engagement-architecture.md](engagement-architecture.md) §5-6 for
+the normalized event model and bus design themselves.
 
 ### 8.2 OBS ingest detection
 
@@ -778,7 +816,7 @@ it is architected; this table only tracks status and dependencies.
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle (validate/refresh/reconnect/disconnect), destination linking, and explicit channel-metadata publishing | **Completed** |
 | 7B | YouTube account integration: Authorization Code Flow with PKCE via a loopback callback, multi-channel selection, a provider-independent remote-broadcast-target association, and explicit video-metadata publishing, reusing the same connected-account foundation | **Completed** |
 | 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for stage 8. Kick account integration may land together with its own engagement adapter in stage 15, after researching Kick's current official APIs; TikTok remains conditional on a stable, official, permitted integration (§16, §19) |
-| 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
+| 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat | Planned |
 | 10 | OBS chat overlay | Planned |
@@ -923,6 +961,38 @@ harness, used for a representative subset of the YouTube OAuth-modal
 not an exhaustive one. No real Google account, Google Cloud project, or
 network request to Google/YouTube was ever contacted at any point in this
 stage - an explicit task requirement, not an oversight.
+
+Stage 8A was marked completed only after all automated checks passed
+across every commit that implements it — see `fix(docs): correct
+post-YouTube project status` through `test: verify Twitch engagement
+locally` in [progress.md](progress.md) — **including a local
+integration script that exercises the real backend end to end against a
+hand-rolled fake Twitch EventSub WebSocket server** (Node has no
+built-in WebSocket server, and this project takes no new npm dependency
+to add one - see the script's own header comment) plus fake OAuth/Helix
+servers: the identity-bound permission-upgrade scope union, exact
+subscription creation, event normalization and deduplication across
+follow/chat/gift-batch/gifted-subscription/anonymous-cheer/stream-online-
+offline, and - the two hardest behaviors in the whole stage - the
+official `session_reconnect` handoff (verified to cause no
+resubscription and no data-gap marker) and an ordinary abrupt
+disconnect (verified to cause both). On the Go side,
+`internal/runtime/twitchengagement`'s own tests run the identical
+connector code against a real, in-process WebSocket protocol exchange
+(built on the same `coder/websocket` library the production connector
+uses, not a mocked transport) and caught a genuine deadlock during
+development: the access-denied callback path in an earlier YouTube-stage
+component had established the pattern of running a terminal-state
+transition inside its own goroutine specifically to avoid a graceful-
+shutdown handler blocking on itself; the Twitch connector's
+`session_reconnect` handoff needed - and received - the same treatment
+for the same reason. Frontend interaction coverage follows stages 7A/7B's
+own precedent: the same rendered-component test harness, covering a
+representative subset (connector enable/disable with confirmation,
+permission-upgrade action, restart, the SSE-backed recent-event feed
+including duplicate/out-of-order rejection and gap detection), not an
+exhaustive one. No real Twitch account, application, or network request
+to Twitch was ever contacted at any point in this stage.
 
 ## 14. The manual testing rule
 

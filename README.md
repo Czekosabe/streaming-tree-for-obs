@@ -16,12 +16,15 @@ Most of that still does not exist — it is architecture and planning,
 detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) — but it
 shapes decisions made today. The foundation is built incrementally: the
-credential-store foundation (stage 5) and the Twitch and YouTube
-connected-account integrations (stages 7A/7B) are already completed, and
-this stage adds the first real piece of the engagement platform itself — a
-normalized event bus and a real Twitch inbound connector (stage 8A).
+credential-store foundation (stage 5), the Twitch and YouTube
+connected-account integrations (stages 7A/7B), and the first real piece
+of the engagement platform itself — a normalized Engagement Event Bus and
+a real Twitch inbound connector reading chat and channel events (stage
+8A) — are all completed. Everything downstream of the bus (unified
+operator chat, the OBS overlay, outbound chat, alerts, TTS) is still
+planned.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, and Twitch + YouTube account integrations all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, and a real Twitch inbound Event Bus connector all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -33,22 +36,32 @@ normalized event bus and a real Twitch inbound connector (stage 8A).
 > neither ever requests or stores a client secret — to **read and
 > explicitly publish that destination's title, category and other
 > platform metadata**. A YouTube destination additionally needs an
-> explicitly selected live broadcast before it can publish. See
+> explicitly selected live broadcast before it can publish. A connected
+> Twitch account can also, after an explicit additional-permission step,
+> **enable a real EventSub WebSocket connector** that normalizes chat
+> messages, follows, subscriptions, gifts, cheers, raids, channel-point
+> redemptions and remote stream online/offline events onto an in-memory
+> **Engagement Event Bus**, viewable live on a new diagnostic
+> **Engagement** page. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
-> [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
+> [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
+> [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
 > never starts on its own, and a backend restart never resumes one
 > automatically. The same is true of publishing metadata: saving locally and
 > publishing to the platform are two separate, both-explicit actions, for
-> both Twitch and YouTube.
+> both Twitch and YouTube. Enabling the Twitch engagement connector is
+> equally explicit, and restoring it automatically on the next backend
+> start only ever applies to a connector you already enabled yourself.
 >
-> Kick/TikTok account integration, Twitch/YouTube chat, EventSub, YouTube
-> live-chat and Super Chat, and the wider engagement platform (unified chat,
-> overlays, alerts, bot automation) are still **planned**. Whatever remains
-> a placeholder is marked with a **Demo** badge — the full list is in
+> Kick/TikTok account integration, YouTube live-chat and Super Chat, and
+> everything built **on top of** the Event Bus — unified operator chat, the
+> OBS Browser Source overlay, outbound chat and bot messages, alerts, TTS —
+> are still **planned**. Whatever remains a placeholder is marked with a
+> **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -69,6 +82,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg)
 - [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
 - [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
+- [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -90,7 +104,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick may land together with its engagement adapter in stage 15, TikTok remains conditional on a stable official integration |
-| 8A | Engagement Event Bus and a real Twitch inbound connector (this stage) | Planned |
+| 8A | Engagement Event Bus and a real Twitch inbound connector (this stage) | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9–19 | Unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
@@ -258,6 +272,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_INGEST_PATH` | `live` | The single path publishing is allowed on. Letters, digits, `-` and `_` only. |
 | `STREAMING_TREE_TWITCH_CLIENT_ID` | — | Twitch application Client ID. Always wins over a database-managed value if set. Never a client secret — see [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata). |
 | `STREAMING_TREE_YOUTUBE_CLIENT_ID` | — | Google OAuth Desktop-app Client ID. Always wins over a database-managed value if set, independently of the Twitch variable above. Never a client secret — see [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata). |
+| `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE` | `1000` | The Engagement Event Bus's in-memory retained-event capacity. Must be between 100 and 10000; an out-of-range or non-numeric value is a startup error. See [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents). |
 
 Booleans accept `true`/`false`, `1`/`0` and `t`/`f`. A typo such as `yes` is a
 startup error rather than a silent `false`.
@@ -1152,6 +1167,152 @@ not verified.
 
 ---
 
+## Engagement Event Bus and Twitch chat/events
+
+Streaming Tree can normalize a connected Twitch account's chat messages
+and channel events (follows, subscriptions, gifts, cheers, raids,
+channel-point redemptions, and remote stream online/offline) onto an
+in-memory **Engagement Event Bus**, and stream them live to a new
+diagnostic **Engagement** page in the interface. This is stage 8A of the
+roadmap — the foundation later stages build the unified operator chat
+(stage 9), the OBS Browser Source overlay (stage 10), outbound chat and
+bot messages (stage 11), and the alert engine (stage 12) on top of. See
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md) for
+the full target design and
+[`docs/provider-integrations/twitch-engagement.md`](docs/provider-integrations/twitch-engagement.md)
+for the fully researched Twitch EventSub contract.
+
+**What this stage does not implement.** Sending Twitch chat messages,
+chat commands, scheduled bot messages, a unified multi-provider operator
+chat, an OBS overlay, alert rules or rendering, TTS, YouTube live chat,
+and Kick/TikTok engagement are all still unimplemented — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md). The
+diagnostic Engagement page added in this stage is explicitly **not** the
+finished operator chat or an overlay — it exists to make the Event Bus
+and the Twitch connector's state genuinely observable.
+
+### The Engagement Event Bus
+
+The Event Bus (`internal/engagement`) is a concurrency-safe, in-process
+component: a bounded ring buffer of recently published normalized events
+(default capacity 1000, configurable via
+`STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`), bounded deduplication against
+redelivered provider notifications, and live delivery to every connected
+subscriber — the same Server-Sent Events endpoint the frontend and any
+future OBS overlay both read from, never a direct connection to Twitch.
+**It is in-memory only.** No normalized event, and no chat message, is
+ever written to SQLite; the entire buffer resets to empty on every
+backend restart, exactly like MediaMTX's own runtime state.
+
+A slow subscriber can never block event publication or another
+subscriber: if a subscriber's own buffered channel is full when a new
+event arrives, that subscriber is dropped with an explicit signal rather
+than allowed to make the whole bus wait on it.
+
+### Enabling Twitch chat and events — an explicit permission upgrade
+
+A Twitch account connected under
+[Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
+above already exists with only the metadata scope
+(`channel:manage:broadcast`). Reading chat and events needs five
+additional, narrowly-scoped permissions: `user:read:chat`,
+`moderator:read:followers`, `channel:read:subscriptions`, `bits:read`
+and `channel:read:redemptions` — never `user:write:chat` (sending chat
+messages), which belongs to a later stage this one does not implement.
+
+Clicking **Authorize engagement access** on the Engagement page starts a
+new Device Code Flow attempt, reusing the exact same flow the initial
+Twitch connection used, requesting the **union** of the account's
+current scopes and the five above — it can only add permission, never
+remove any the account already has. The newly authorized identity must
+match the existing connected account exactly; a different Twitch login
+is rejected rather than silently creating a second, competing
+connection. The previous, working token stays in place until the
+upgrade completes successfully, then is atomically replaced.
+
+**Metadata health and engagement-permission health are tracked
+independently.** An account missing the engagement scopes remains fully
+healthy for metadata publishing — it is never marked "Reconnect
+required" merely because an optional capability was never authorized.
+
+### The Twitch EventSub connector
+
+Once the engagement scopes are granted, toggling **Enable Twitch chat
+and events** on the Engagement page opens one supervised WebSocket
+connection to Twitch's EventSub endpoint for that account and creates
+the selected subscriptions (chat messages, message deletion, chat
+clear, user-message clear, follows, subscriptions, subscription gifts
+and gift batches, resubscription messages, cheers, incoming raids,
+channel-point redemptions, and remote stream online/offline — thirteen
+subscription types in total). Enabling or disabling is always an
+explicit action, exactly like starting or stopping a destination branch;
+an enabled connector reconnects automatically after a backend restart,
+a disabled one does not.
+
+The connector's own state is shown plainly: connecting, waiting for
+Twitch's welcome message, subscribing, connected, reconnecting,
+stopping, blocked (missing permission or configuration), or error
+(for example, after Twitch revokes authorization) — never collapsed
+into a single "on/off" indicator. **This is a distinct fact from
+whether OBS is streaming, whether the local ingest is receiving, or
+whether a destination's FFmpeg branch is sending** — a connected,
+subscribed EventSub connector says nothing about whether this
+application's own outgoing stream to Twitch is live, and vice versa.
+
+Twitch does not replay events lost during an ordinary connection loss.
+When that happens, the connector reconnects with bounded backoff,
+recreates its subscriptions, and honestly marks a **possible data gap**
+rather than claiming seamless recovery. Twitch's own official
+`session_reconnect` handoff (a graceful migration to a new connection,
+distinct from an ordinary loss) is handled without recreating
+subscriptions and without a data-gap marker, exactly as Twitch's own
+documentation describes.
+
+### Normalized events and the diagnostic Engagement page
+
+Every event — from any provider, in future stages — is normalized to
+the same versioned shape before reaching the bus: a monotonically
+increasing sequence number, a stable internal ID, the provider and
+connected account it came from, a normalized type (`chat.message`,
+`chat.message_deleted`, `chat.cleared`, `moderation`, `follow`,
+`subscription`, `resubscription`, `gifted_subscription`,
+`subscription_gift_batch`, `bits`, `raid`, `channel_point_redemption`,
+`stream.online`, `stream.offline`), ordered chat message fragments
+(text, emote, cheermote, mention), a user identity block (never
+inventing an avatar or color the provider did not itself report, never
+fabricating an identity for an anonymous gift or cheer), and — where
+applicable — an amount, currency, or quantity. A gift-batch event
+("gifted 5 subs") and each individual gifted-subscription recipient
+event are kept as genuinely separate events, never collapsed into one.
+
+The Engagement page shows the bus's own status (retained event count,
+buffer capacity, oldest/newest sequence), a card per connected Twitch
+account's connector, and a bounded, plain-text recent-events feed fed
+live over Server-Sent Events — no message bubbles, no theming, no
+animation, explicitly not styled as the finished chat overlay a later
+stage will build.
+
+### Verifying it for real
+
+`scripts/verify-twitch-engagement.mjs` exercises this whole feature
+end to end against the real backend, fake Twitch OAuth and Helix
+servers, and a small hand-rolled fake Twitch EventSub WebSocket server
+(Node has no built-in WebSocket server, and this project added no new
+npm dependency to get one) — the permission-upgrade scope union,
+subscription creation, event normalization and deduplication across
+many event types, Twitch's official `session_reconnect` handoff (no
+resubscription, no data gap), an ordinary disconnect (a data gap
+recorded, subscriptions recreated), authorization revocation, restart,
+disable, and disconnect — entirely on loopback, with **no real Twitch
+account or network request to Twitch involved**. A representative
+subset of scenarios is covered by Go unit tests instead of this script
+(malformed/oversized-frame handling, keepalive-timeout-triggered
+reconnects, and others needing precise timing control a fake clock
+provides more reliably than a real WebSocket exchange) — see
+[`docs/progress.md`](docs/progress.md) for exactly which.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -1213,6 +1374,13 @@ All endpoints live under `/api` and return `application/json`.
 | `GET` | `/api/platforms/{id}/remote-target` | The selected live-broadcast target for a YouTube destination, or `null`. |
 | `PUT` | `/api/platforms/{id}/remote-target` | Select a broadcast. Body `{resourceId}`. `422` if it does not belong to the linked channel. |
 | `DELETE` | `/api/platforms/{id}/remote-target` | Clear the selection, without touching the account link. Responds 204. |
+| `GET` | `/api/engagement/status` | Event Bus status: schema version, buffer capacity, retained count, oldest/newest sequence, active subscribers, and a summary per Twitch connector. No message content. |
+| `GET` | `/api/engagement/events` | A bounded snapshot of retained normalized events. Query params `after`/`limit` (capped at 500); reports `gap: true` when `after` refers to an already-evicted sequence. |
+| `GET` | `/api/engagement/stream` | Server-Sent Events: live normalized events as they are published. Supports `Last-Event-ID` (or `?after=`) for replay, emits `engagement.gap` when replay is incomplete, and periodic keepalive comments. Bounded concurrent clients. |
+| `GET` | `/api/connected-accounts/{id}/engagement` | One Twitch account's connector status plus its capability assessment (required/granted scopes, whether a permission upgrade is required). `422` for a non-Twitch account. |
+| `PUT` | `/api/connected-accounts/{id}/engagement` | Enable or disable the connector. Body `{enabled}`. Persists; an enabled connector reconnects automatically after a backend restart. |
+| `POST` | `/api/connected-accounts/{id}/engagement/authorize` | Start an identity-bound Device Code Flow requesting the union of the account's existing scopes and the engagement profile. **No request body.** Reuses the Twitch device-flow attempt snapshot shape. |
+| `POST` | `/api/connected-accounts/{id}/engagement/restart` | Cancel and restart the connector without changing its persisted enabled setting. **No request body.** |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -1344,7 +1512,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest), plus a small set of rendered-component tests (React Testing Library) covering the Twitch device-flow modal and the disconnect/publish confirmations
+npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, and the Engagement page/connector card/event feed
 npm run build       # production build
 ```
 
@@ -1367,6 +1535,8 @@ node scripts/verify-persistence.mjs               # SQLite survives a backend re
 node scripts/verify-mediamtx-runtime.mjs          # real MediaMTX install and supervision
 node scripts/verify-ffmpeg-branches.mjs           # real FFmpeg + MediaMTX destination branches
 node scripts/verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
+node scripts/verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, broadcast/category, publish - fake Google only
+node scripts/verify-twitch-engagement.mjs         # Event Bus + EventSub connector - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -1408,9 +1578,26 @@ transparent refresh-and-retry, reconnecting, and disconnect/revocation —
 finishing with a scan of every captured backend response and log line for
 every token the run issued.
 
+The YouTube-account-integration script follows the identical shape
+against fake Google OAuth and YouTube Data API servers instead, including
+a wrong-CSRF-state callback and explicit multi-channel selection. See
+[Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
+for the full list of what it covers.
+
+The Twitch-engagement script adds a third fake: a small, hand-rolled
+Twitch EventSub WebSocket server (this project added no new dependency
+to get one — see the script's own header comment). It covers the
+identity-bound permission-upgrade scope union, exact subscription
+creation, event normalization and deduplication, Twitch's official
+`session_reconnect` handoff, an ordinary disconnect's data-gap handling,
+revocation, restart, disable and disconnect. See
+[Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
+for the full list of what it covers and what is instead covered by Go
+unit tests.
+
 **None of these scripts touch your real database, your managed MediaMTX
-installation, your real OS credential store, or a real Twitch account**,
-and all remove their temporary directories afterwards.
+installation, your real OS credential store, or a real Twitch/Google
+account**, and all remove their temporary directories afterwards.
 
 ---
 
@@ -1562,38 +1749,46 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── api/            # Zod contracts + transport for the platform API
+│   │   │   ├── api/            # Zod contracts + transport for the platform, account and engagement API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
+│   │   │   │   ├── engagement/ # Twitch connector card, bounded recent-events feed
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
-│   │   │   │   ├── metadata/   # Metadata editor with platform tabs, Twitch category picker, publish panel
-│   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls, account link
+│   │   │   │   ├── metadata/   # Metadata editor with platform tabs, Twitch/YouTube category pickers, publish panel
+│   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls, account link, broadcast selection
 │   │   │   │   ├── runtime/    # Ingest controls, install dialog, copy widget, bulk-start confirmation
-│   │   │   │   ├── settings/   # Connected Accounts panel, Twitch device-flow modal
+│   │   │   │   ├── settings/   # Connected Accounts panel, Twitch device-flow modal, YouTube accounts panel and OAuth modal
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
-│   │   │   ├── hooks/          # Queries, mutations, cache helpers
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the SSE client hook
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
-│   │   │   ├── models/         # UI types, validation, identifier mappings
-│   │   │   ├── pages/          # Route views
+│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings
+│   │   │   ├── pages/          # Route views, including EngagementPage
 │   │   │   └── test/           # Rendered-component test harness (Testing Library provider wrapper)
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
 │   └── server/                 # Backend (Go)
 │       ├── cmd/server/         # Entry point, graceful shutdown
-│       ├── cmd/testserver/     # `-tags integration` twin for the real-FFmpeg and real-Twitch-fake smoke tests only
+│       ├── cmd/testserver/     # `-tags integration` twin for the real-FFmpeg and fake-provider smoke tests only
 │       └── internal/
 │           ├── buildinfo/      # Service name and version
 │           ├── config/         # Configuration and database path resolution
 │           ├── domain/account/ # Connected-account model, token bundle, service (provider-independent)
+│           ├── domain/engagement/       # Normalized engagement-event model (Stage 8A)
+│           ├── domain/engagementsettings/ # Per-account engagement-connector enable/disable preference
 │           ├── domain/platform/# Provider registry, models, validation, service
 │           ├── domain/credential/# Destination stream-key service (OS credential store)
 │           ├── domain/output/  # Destination output-settings model, validation, service
+│           ├── domain/remotetarget/ # Remote broadcast/target association (YouTube)
+│           ├── engagement/     # The Engagement Event Bus (ring buffer, dedup, subscriptions)
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
-│           ├── provider/twitch/# Twitch OAuth + Helix client, adapter, metadata publish service
+│           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services
+│           ├── provider/youtube/# YouTube OAuth (PKCE) + Data API client, adapter, metadata service
 │           ├── runtime/deviceflow/# Device-authorization attempt state machine
+│           ├── runtime/youtubeauth/# YouTube Authorization Code + PKCE loopback-callback attempt manager
+│           ├── runtime/twitchengagement/ # Per-account Twitch EventSub WebSocket connector supervisor
 │           ├── runtime/mediamtx/# Resolver, installer, config, supervisor, API client
 │           ├── runtime/ffmpeg/ # Executable resolver and capability probing
 │           ├── runtime/branch/ # Per-destination branch supervisor (state machine, restart policy)
@@ -1603,15 +1798,19 @@ rest of the repository.
 ├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
-│   ├── engagement-architecture.md # Later-stage engagement platform architecture
+│   ├── engagement-architecture.md # Engagement platform architecture (partly implemented as of stage 8A)
 │   ├── provider-integrations/
-│   │   └── twitch.md           # Researched Twitch API contract: flow, scopes, capabilities, limits
+│   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
+│   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A)
+│   │   └── youtube.md          # Researched Google/YouTube API contract
 │   └── progress.md             # Work journal
 ├── scripts/
 │   ├── verify-persistence.mjs      # Scripted restart-persistence check
 │   ├── verify-mediamtx-runtime.mjs # Real MediaMTX install and supervision check
 │   ├── verify-ffmpeg-branches.mjs  # Real FFmpeg + MediaMTX destination-branch check
-│   └── verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
+│   ├── verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
+│   ├── verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, publish - fake Google only
+│   └── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -1630,7 +1829,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Twitch chat, EventSub (follow/sub/raid), YouTube live chat, Super Chat, membership events, unified chat, overlays, alerts, bot automation | **Not implemented anywhere.** These stages add the connected-account and metadata foundation those features will need later — see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Unified operator chat, OBS Browser Source overlay, outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** Twitch chat/events reading itself is real as of stage 8A (see [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)) — everything built on top of that event stream is still planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -1674,19 +1873,33 @@ directly next to the control.
   visibility) to a selected YouTube broadcast, behind an explicit publish
   action separate from the existing local Save.
 - **The language switcher**, in the top bar and under Settings.
+- **A real Twitch EventSub WebSocket connector** reading chat messages,
+  moderation, follows, subscriptions, gifts, cheers, incoming raids,
+  channel-point redemptions and remote stream online/offline, normalized
+  onto an in-memory Engagement Event Bus, with real enable/disable
+  (persisted, restored automatically after a backend restart), a real
+  identity-bound permission-upgrade flow, and Twitch's own official
+  `session_reconnect` handoff handled without a false data-gap marker -
+  see [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents).
+- **A real Server-Sent Events stream** (`GET /api/engagement/stream`) with
+  replay via `Last-Event-ID` and an explicit gap signal for evicted
+  history, and the diagnostic Engagement page that consumes it live.
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
 
 ### What will be added later
 
-- **SSE or WebSocket** — live status instead of polling.
-- **YouTube, Kick and TikTok account integration** — sign-in and metadata
+- **Kick and TikTok account integration** — sign-in and metadata
   publishing for the remaining providers, reusing the same connected-account
-  foundation Twitch's integration now provides (stages 7B/7C).
-- **Twitch chat and EventSub** — this stage is accounts and metadata only.
-- **The engagement and overlay platform** — unified chat, OBS overlays,
-  alerts, bot automation and more; architecture only so far, see
+  foundation Twitch's and YouTube's integrations now provide - deferred,
+  capability-gated (stage 7C; Kick may land together with its own
+  engagement adapter in stage 15).
+- **Unified operator chat and the OBS Browser Source overlay** (stages
+  9-10) — both read the Engagement Event Bus stage 8A now provides.
+- **Outbound chat, scheduled bot messages, the alert engine, TTS, goal
+  widgets** and the rest of the engagement and overlay platform -
+  architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
@@ -2087,3 +2300,57 @@ publishing, and neither is guessed automatically.
 **Publishing is disabled with a note about unsaved changes.**
 Save your local edits first, exactly like Twitch — Publish always sends
 what is currently saved, never an in-progress draft.
+
+### Twitch engagement
+
+**"Additional Twitch permission is required" on the Engagement page.**
+The connected Twitch account has only the metadata scope
+(`channel:manage:broadcast`); reading chat and events needs five more,
+narrowly-scoped permissions. Click **Authorize engagement access** to
+start the upgrade — your existing stream key and metadata publishing are
+completely unaffected while you do.
+
+**The upgrade shows a new code/consent step even though the account is
+already connected.** That is expected: the upgrade reuses the same
+Device Code Flow as the initial connection, requesting the union of the
+account's current scopes plus the engagement ones. Complete it the same
+way you completed the original connection.
+
+**"The authorized identity does not match" during the upgrade.** A
+different Twitch login completed the device-code activation than the one
+already connected. The upgrade must authorize the *same* account;
+disconnect and reconnect as a new account instead if you actually meant
+to switch identities.
+
+**The Enable toggle is disabled or shows "Blocked."** Either the
+permission upgrade above has not been completed yet, or the account
+itself needs reconnecting for an unrelated reason (see "An account shows
+'Reconnect required'" under Twitch account integration above) — the
+connector's own state and blocker code explain which.
+
+**A connector shows "Reconnecting" repeatedly, or a "possible data gap"
+timestamp appeared.** Twitch does not replay events lost during an
+ordinary connection loss; the connector reconnects automatically with
+bounded backoff and recreates its subscriptions, and is honest about the
+gap rather than pretending nothing was missed. This is expected
+behavior, not an error — check the connector's own reconnect count and
+last-event timestamp to see whether it has recovered.
+
+**A connector shows "Error" and does not reconnect on its own.** Most
+commonly, Twitch revoked the authorization directly (on Twitch's own
+site) or removed the subscription version this application uses. Use
+**Restart connector**, and if that also fails, disconnect and reconnect
+the underlying Twitch account.
+
+**The recent-events feed says "Disconnected" or never shows anything.**
+The Server-Sent Events connection to the backend dropped, or the
+connector itself is not `connected` yet — check the connector card's own
+state first; the feed only ever shows what the backend's Event Bus
+actually received.
+
+**Does disabling engagement affect my stream key or metadata publishing?**
+No. A connected account's engagement connector, its metadata-publishing
+capability, and a destination's stream key are three separate facts —
+see [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents).
+Enabling or disabling the connector never starts, stops, or otherwise
+touches a destination's FFmpeg branch.

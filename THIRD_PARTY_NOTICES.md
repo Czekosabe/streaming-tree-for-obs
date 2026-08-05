@@ -64,6 +64,19 @@ toolchain. The notable direct dependencies are:
 | --- | --- | --- |
 | [`modernc.org/sqlite`](https://gitlab.com/cznic/sqlite) | BSD-3-Clause | Pure-Go SQLite driver, so the backend builds without a C toolchain |
 | [`github.com/99designs/keyring`](https://github.com/99designs/keyring) v1.2.2 | MIT | Uniform interface over the operating system's credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) |
+| [`github.com/coder/websocket`](https://github.com/coder/websocket) v1.8.15 | ISC | WebSocket client used by the Stage 8A Twitch EventSub connector (`internal/runtime/twitchengagement`) |
+
+`coder/websocket` (the maintained continuation of the formerly-popular
+`nhooyr.io/websocket`) was chosen after checking: actively maintained, pure Go
+(no CGO, consistent with `modernc.org/sqlite`'s own reason for existing in this
+project), first-class `context.Context` support on every blocking call
+(`Dial`, `Read`), a built-in per-connection frame-size limit
+(`Conn.SetReadLimit`), transparent handling of the standard WebSocket
+ping/pong control frames, and clean, typed close-code/close-reason handling
+(`CloseStatus`, `CloseError`) - all directly used by the connector's welcome/
+keepalive/reconnect state machine. It connects outbound only, to Twitch's own
+EventSub endpoint (or, in the `-tags integration` test binary only, to a local
+loopback fake server) - Streaming Tree never runs a WebSocket *server* itself.
 
 `99designs/keyring` was chosen over the more commonly cited alternative
 (`zalando/go-keyring`) after reading its source directly: `zalando/go-keyring`

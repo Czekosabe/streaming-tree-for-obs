@@ -111,3 +111,22 @@ with no transcoding, is this stage's deliberate scope.
    authorization attempt) is **pure runtime state**, exactly like the
    generated MediaMTX configuration above - nothing about it is ever
    written to a file in this directory, or anywhere else on disk.
+7. Stage 8A's Twitch EventSub connector follows the exact same rules as
+   every provider integration above: `STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL`
+   and `STREAMING_TREE_TEST_TWITCH_EVENTSUB_RECONNECT_HOST` (a local fake
+   WebSocket server address, for `scripts/verify-twitch-engagement.mjs`
+   only) exist solely in the `-tags integration` test binary, read directly
+   via `os.Getenv`, never through the shared config loader or a file here.
+   A connector's live WebSocket session, subscription set, reconnect count
+   and last error are **runtime state, kept in memory only** - the same
+   category as MediaMTX's and a destination branch's own runtime state
+   above - never written to a file in this directory. The one thing that
+   *is* persisted is a plain enable/disable preference per connected
+   account (`connected_account_engagement_settings`, an ordinary SQLite
+   table alongside the rest of this application's configuration - not a
+   file in this directory, exactly like every other table this project
+   has). **Normalized engagement events themselves (chat messages, follows,
+   subscriptions, and so on) are never written to SQLite or to any file
+   here** - see `docs/engagement-architecture.md` §6.5: the Engagement
+   Event Bus is an in-memory-only ring buffer that resets on every backend
+   restart, by design.

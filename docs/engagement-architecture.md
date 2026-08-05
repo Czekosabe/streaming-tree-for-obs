@@ -119,6 +119,18 @@ of this document to reason about two credential lifecycles as if they were one.
 > [`docs/provider-integrations/youtube.md`](provider-integrations/youtube.md)
 > for the researched Google/YouTube contract this adapter implements.
 
+> **Factual status update (stage 8A, completed):** the Event Bus this
+> section referred to as not existing now does - see §5-6 below, both no
+> longer purely planned. `internal/provider/twitch` gained a real Twitch
+> EventSub WebSocket connector, reusing the same connected-account
+> foundation and requesting a second, additive scope profile on the same
+> account rather than a competing authorization (§6.4's own factual note
+> below has the detail). YouTube's own inbound connector, and the
+> unified operator chat/OBS overlay that read the bus this stage builds,
+> remain stage 15 and stages 9-10 respectively, still planned. See
+> [`docs/provider-integrations/twitch-engagement.md`](provider-integrations/twitch-engagement.md)
+> for the researched EventSub contract this connector implements.
+
 ## 5. Normalized engagement event model
 
 ### 5.1 Design goal
@@ -349,6 +361,21 @@ connector.
 > underlying connected account rather than creating a second, competing
 > YouTube authorization.
 
+> **Factual status update (stage 8A, completed):** that Twitch engagement
+> connector now exists exactly as anticipated above - it requests a
+> second, additive scope profile (`user:read:chat`,
+> `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
+> `channel:read:redemptions`) on the *same* connected-account row stage
+> 7A created, via an identity-bound upgrade of the existing Device Code
+> Flow, never a second Twitch authorization. Metadata health
+> (`channel:manage:broadcast`) and engagement-capability health are
+> tracked independently: an account missing the newer scopes still
+> validates and publishes metadata normally, and is shown as
+> "permission upgrade required" for engagement specifically, not marked
+> `reconnect_required` outright. `user:write:chat` (outbound chat) is
+> still not requested anywhere - that remains stage 11's scope. See
+> [`docs/provider-integrations/twitch-engagement.md`](provider-integrations/twitch-engagement.md).
+
 ### 6.5 In-memory buffer versus persisted history
 
 The default and only currently planned storage model is an **in-memory,
@@ -356,6 +383,19 @@ bounded ring buffer** of recent events per view (operator chat, overlay),
 mirroring the precedent already set by MediaMTX runtime state
 (project-overview.md §8.1): operational state that describes "what is
 happening" lives in memory and resets on restart.
+
+> **Factual status update (stage 8A, completed):** this ring buffer is no
+> longer only planned - `internal/engagement.Bus` implements it exactly
+> as described here: a fixed-capacity buffer (default 1000 events,
+> operator-configurable via `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`
+> within a validated 100-10000 range), bounded TTL'd deduplication, and a
+> complete reset to empty on every backend restart. It is read today only
+> by the diagnostic Engagement page and its Server-Sent Events stream
+> (`GET /api/engagement/stream`) - operator chat and the OBS overlay
+> themselves are still stages 9 and 10, planned. No persisted event
+> history exists; the paragraph below remains accurate unchanged.
+
+
 
 A **persisted event history** (searchable past chat, historical alert log) is
 an explicit **optional, later** extension, not assumed by the rest of this

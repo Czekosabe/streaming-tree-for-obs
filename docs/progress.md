@@ -6048,3 +6048,127 @@ All six integration scripts pass, run in this order:
 ### Next step
 Final documentation pass: README, project-overview.md,
 engagement-architecture.md, config/README.md, THIRD_PARTY_NOTICES.md.
+
+---
+
+## 2026-08-06 02:45 — docs: document Twitch engagement foundation
+
+### Status
+Completed
+
+### Scope
+Final documentation pass for Stage 8A: mark it completed everywhere it
+was previously described as planned, document the Event Bus and Twitch
+connector for an end user, and correct a few pieces of documentation
+drift left over from stage 7B that this pass's own accuracy standard
+made hard to leave alone.
+
+### Changes
+
+**`README.md`** — the "Long-term vision" paragraph and the project-state
+banner now state plainly that the Event Bus and Twitch inbound connector
+are completed, not planned, and that everything *built on* the bus
+(operator chat, overlay, outbound chat, alerts, TTS) remains the
+dividing line for what is still planned; the roadmap table marks 8A
+**Completed**; a full new "Engagement Event Bus and Twitch chat/events"
+section (the Event Bus itself, the permission-upgrade flow, the
+connector's state machine and reconnect/data-gap behavior, the
+normalized event model, the diagnostic Engagement page, and local
+verification) was added, mirroring the existing Twitch/YouTube sections;
+the REST API table gained all seven new engagement endpoints; the
+environment-variable table gained `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`;
+"What is currently demo-only"/"What is real"/"What will be added later"
+were updated so Twitch chat/events reading no longer appears as not
+implemented; a new "Twitch engagement" troubleshooting subsection
+mirrors the existing Twitch/YouTube ones. While auditing these tables
+for accuracy, two pieces of drift left over from stage 7B were also
+corrected, since leaving them would have contradicted this same pass's
+own "no absolute claim without checking it" standard: the "Integration
+checks" code block and directory-structure listing had never been
+updated to include `verify-youtube-account-integration.mjs` or several
+packages stage 7B itself added (`internal/provider/youtube`,
+`internal/domain/remotetarget`, `internal/runtime/youtubeauth`) - both
+are now complete and current through stage 8A.
+
+**`docs/project-overview.md`** — §13 roadmap table marks 8A
+**Completed**; a new "Stage 8A was marked completed only after all
+automated checks passed..." paragraph follows stages 3-7B's own
+established precedent, naming the specific bug class its integration
+script's real WebSocket exchange was written to catch (a goroutine
+deadlock in a terminal-state transition, the same failure pattern
+`youtubeauth`'s own access-denied callback path required a fix for in
+stage 7B); §8.1 gained a seventh destination-adjacent-but-account-scoped
+concept (engagement-connector settings, deliberately as small as the one
+fact it persists) and a new paragraph in the runtime-state discussion
+covering the Twitch connector's own state machine and the Event Bus's
+buffer, mirroring MediaMTX's and a branch's own runtime-state
+documentation exactly.
+
+**`docs/engagement-architecture.md`** — new stage-8A factual-status
+blockquotes after §4, §6.4 and §6.5 (the same three locations stage
+7A/7B's own blockquotes already live), stating plainly: the normalized
+event model and Event Bus are implemented, not planned; the Twitch
+connector requests a second, additive scope profile on the *same*
+connected account, never a competing authorization; metadata and
+engagement-permission health are tracked independently; the ring buffer
+is in memory only, exactly as originally designed, with no persisted
+history; and everything downstream of the bus (operator chat, overlay,
+outbound chat, alerts, TTS) remains exactly as planned as before - this
+stage changed nothing about *those* stages' own scope or timing.
+
+**`config/README.md`** — new rule 7: the EventSub test-only base-URL/
+reconnect-host overrides follow the identical `-tags integration`-only,
+`os.Getenv`-only pattern every other provider override already follows;
+a connector's live session is runtime state exactly like MediaMTX's; the
+one persisted fact is the enable/disable preference
+(`connected_account_engagement_settings`); normalized events themselves
+are never written to SQLite or to a file here, cross-referencing
+engagement-architecture.md §6.5's in-memory-only design.
+
+**`THIRD_PARTY_NOTICES.md`** — new entry for `github.com/coder/websocket`
+v1.8.15 (ISC licence), with the same "why this library" rationale
+recorded in this stage's earlier `feat(server)` progress entry, plus an
+explicit statement that Streaming Tree only ever connects outbound to
+Twitch's EventSub endpoint (or a local loopback fake, integration-build
+only) and never runs a WebSocket server of its own.
+
+**`docs/provider-integrations/twitch.md`** and
+**`docs/provider-integrations/twitch-engagement.md`** — already written
+and cross-linked in this stage's second and current commits
+respectively; not modified further here.
+
+### Technical decisions
+
+**Why the stage-7B directory-listing/integration-script-list drift was
+fixed here rather than left alone.** This task's own Part 1 established
+the standard "an absolute claim must be checked before being repeated" -
+that standard applies just as much to a stale code listing as to a
+stale prose sentence. Both omissions were small, mechanical, and
+directly adjacent to content this pass was already rewriting for
+accuracy; leaving them would have meant this very documentation pass
+introduced a new inconsistency (a README that documents 8A's new
+packages in prose while its own directory tree still omits 7B's) rather
+than removing one.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `config/README.md`
+- `THIRD_PARTY_NOTICES.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only in this commit; the full suite from the previous
+commits (backend, frontend, and all six integration scripts) already
+covers the current state of the code and remains the authoritative
+result. Re-run once more, in full, as the closing regression pass before
+push - see the final report.
+
+### Known limitations
+None specific to this entry.
+
+### Next step
+Final full regression across every check, confirm a clean working tree,
+push to `origin/main`, confirm local and remote are synchronized, and
+produce the closing report.
