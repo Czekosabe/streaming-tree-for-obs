@@ -17,29 +17,34 @@ of that exists yet — it is architecture and planning, detailed in
 shapes decisions made today, starting with the credential-store foundation
 this stage adds.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, and a first Twitch account integration all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, and Twitch + YouTube account integrations all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
 > operating system credential store, **send it onward** (one independent
 > FFmpeg process per enabled destination, plain stream copy, no
-> re-encoding), and now **connect a real Twitch account** — device-code
-> sign-in, no client secret ever requested or stored — to **read and
-> explicitly publish that destination's title, category and other Twitch
-> channel metadata**. See
+> re-encoding), and connect a real **Twitch** account (device-code
+> sign-in) or a real **YouTube** channel (Authorization Code + PKCE
+> sign-in, via a temporary loopback callback and a real system browser) —
+> neither ever requests or stores a client secret — to **read and
+> explicitly publish that destination's title, category and other
+> platform metadata**. A YouTube destination additionally needs an
+> explicitly selected live broadcast before it can publish. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
-> [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
+> [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
+> [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
 > never starts on its own, and a backend restart never resumes one
 > automatically. The same is true of publishing metadata: saving locally and
-> publishing to Twitch are two separate, both-explicit actions.
+> publishing to the platform are two separate, both-explicit actions, for
+> both Twitch and YouTube.
 >
-> YouTube/Kick/TikTok account integration, Twitch chat, EventSub, and the
-> wider engagement platform (unified chat, overlays, alerts, bot automation)
-> are still **planned**. Whatever remains a placeholder is marked with a
-> **Demo** badge — the full list is in
+> Kick/TikTok account integration, Twitch/YouTube chat, EventSub, YouTube
+> live-chat and Super Chat, and the wider engagement platform (unified chat,
+> overlays, alerts, bot automation) are still **planned**. Whatever remains
+> a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -59,6 +64,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Connecting OBS](#connecting-obs)
 - [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg)
 - [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
+- [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -77,8 +83,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 1–4 | Foundations, localization, SQLite configuration, MediaMTX ingest | **Completed** |
 | 5 | Secure credential-store foundation | **Completed** |
 | 6 | FFmpeg destination branches | **Completed** |
-| 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 7B | YouTube account integration | Planned |
+| 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
+| 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing (this stage) | **Completed** — see [progress.md](docs/progress.md) |
 | 7C | Kick and TikTok account integration | Planned |
 | 8–19 | Engagement Event Bus, unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, additional platform connectors | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
@@ -765,9 +771,12 @@ loopback, with no real platform account or credential. See
 
 Streaming Tree can connect to a real **Twitch** account and use it to read
 and explicitly publish that destination's channel metadata (title,
-category, language, tags). This is the first of several planned provider
-integrations (stage 7A of the roadmap) — YouTube, Kick and TikTok account
-integration are still planned (stages 7B/7C).
+category, language, tags). This was the first of several provider
+integrations (stage 7A of the roadmap); YouTube now has its own real
+integration too — see
+[Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
+below (stage 7B). Kick and TikTok account integration are still planned
+(stage 7C).
 
 **A connected account is not the same thing as a destination's stream
 key.** They are separate facts about a destination, tracked and shown
@@ -927,6 +936,215 @@ verified against a real account.
 
 ---
 
+## Connected accounts and YouTube metadata
+
+Streaming Tree can connect to a real **YouTube channel** and use it to read
+and explicitly publish a selected live broadcast's video metadata (title,
+description, category, tags, language, visibility). This is stage 7B of
+the roadmap, reusing the same connected-account foundation stage 7A built
+for Twitch, adapted for how Google's own OAuth and the YouTube APIs
+actually work — see
+[`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md)
+for the fully researched contract.
+
+**A connected account, a selected broadcast, and a destination's stream
+key are three separate facts**, tracked and shown separately: whether the
+destination is configured, whether a stream key is stored, whether an
+output server is configured, whether a YouTube channel is connected and
+linked to it, whether a live broadcast is selected for it, whether the
+local ingest is receiving, whether its FFmpeg branch is sending, and
+whether its metadata is in sync with YouTube. Connecting a YouTube channel
+or selecting a broadcast never starts, stops, or otherwise touches a
+destination's FFmpeg branch, never validates or replaces a stream key, and
+Streaming Tree never verifies that a selected broadcast is actually bound
+to the stream key configured below it — that binding lives entirely on
+YouTube's side.
+
+**What this stage does not implement.** YouTube live chat, Super Chat,
+membership events, a unified chat, overlays, alerts, text-to-speech,
+donations, automatic broadcast creation, automatic `liveStream` binding,
+and automatic stream-key retrieval from YouTube are all still
+unimplemented — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md). This
+stage is the account, broadcast-selection, and metadata foundation those
+features will build on later, not an implementation of them.
+
+### Registering a Google Cloud project and configuring a Client ID
+
+1. Create a project in the [Google Cloud console](https://console.cloud.google.com/),
+   then enable **YouTube Data API v3** for it (APIs & Services → Library).
+2. Under APIs & Services → Credentials, create an OAuth client of type
+   **Desktop app**. Google does not require (and this application never
+   sends) a client secret for this client type.
+3. Copy the generated **Client ID**. Streaming Tree **never asks for,
+   accepts, or stores a Client Secret**, and rejects a pasted complete
+   `credentials.json` file outright rather than silently extracting the
+   secret from it — the Settings page's YouTube panel and every related API
+   endpoint accept only a bare Client ID (an unrecognized field is a `400`).
+4. Provide the Client ID one of two ways:
+   - **Environment variable** `STREAMING_TREE_YOUTUBE_CLIENT_ID` — always
+     wins if set. The Settings page shows its source as "environment" and
+     will not let you edit it there.
+   - **Settings page**, when no environment variable is set — saved to
+     SQLite (not a secret), shown with source "database", and editable
+     there.
+
+   Changing a database-managed Client ID while any YouTube account is
+   connected is rejected (`409`) — the same policy as Twitch's Client ID,
+   and independent of it (changing one never affects the other).
+
+**Testing-mode limitation.** A newly created Google Cloud project's OAuth
+consent screen defaults to **Testing** publishing status, under which
+Google expires every authorization and refresh token it issues after
+**seven days**, regardless of what this application requests. This is a
+Google-side limitation Streaming Tree cannot detect or work around — only
+notice the symptom (a channel unexpectedly needing to be reconnected) and
+surface it as **Reconnect required**, the same as any other refresh
+failure. The Settings page shows a standing notice about this.
+
+### Connecting a channel — Authorization Code Flow with PKCE
+
+Streaming Tree uses Google's **Authorization Code Flow with PKCE**, the
+flow Google documents for a Desktop-app OAuth client — not Twitch's
+device-code flow, and not Google's own TV/limited-input device flow either
+(that exists for a different class of device; this is a desktop
+application with a full browser and keyboard already available). Clicking
+**Connect YouTube** in Settings:
+
+1. asks the backend to start an authorization attempt: it generates a
+   random attempt ID, a high-entropy PKCE verifier, its S256 challenge, a
+   random CSRF state value, and binds a temporary HTTP listener to
+   `127.0.0.1` on a port the operating system picks;
+2. shows an **Open Google authorization** button — clicking it opens
+   Google's real sign-in and consent page in your system browser; nothing
+   opens automatically;
+3. you sign in and approve access on Google's own page;
+4. Google redirects your browser back to the temporary loopback listener,
+   which the backend closes right after handling that one request; the
+   backend then exchanges the authorization code for a token directly with
+   Google — no client secret is sent, ever;
+5. if the Google account owns more than one YouTube channel, Streaming
+   Tree shows every channel it found and asks you to pick one explicitly —
+   it never silently picks the first one;
+6. once finalized, the backend validates the token, confirms the required
+   permission was granted, and records the channel's title and thumbnail
+   for the account list.
+
+The **authorization code**, the **PKCE verifier**, and the **CSRF state
+value** never reach the frontend at all — there is no field for any of
+them anywhere in the frontend's data model, because the backend's own API
+response has no such field to send. Only one YouTube authorization attempt
+may be in progress at a time.
+
+The one permission requested is
+`https://www.googleapis.com/auth/youtube.force-ssl` — the narrowest scope
+that covers reading channel/broadcast/video data and updating video
+metadata. Nothing broader (email, Google profile, Drive, Analytics,
+monetization, chat) is ever requested at this stage, and the connected-
+account identity is the YouTube channel ID — Streaming Tree never stores
+or displays the Google account's email address.
+
+### Account health, validation and reconnecting
+
+A connected YouTube account is validated against Google (`GET
+https://oauth2.googleapis.com/tokeninfo`) right after authorization, once
+per backend startup, and can be checked on demand with **Check now** — no
+official Google requirement mandates hourly re-validation the way Twitch's
+own documentation does, so this application does not poll Google that
+often for YouTube. If validation fails, Streaming Tree attempts one
+documented refresh; Google's refresh response typically **omits** a new
+refresh token, in which case the previously stored one is preserved rather
+than lost (Twitch, by contrast, always rotates its refresh token on every
+use — the two providers are handled according to their own actual
+behavior, not a shared assumption). If refresh also fails (Google reports
+`invalid_grant` — typically a revoked grant, or the Testing-mode seven-day
+expiry above), the account is marked **Reconnect required**: publishing,
+broadcast listing, and category listing stop working for it until you
+click **Reconnect**, which repeats the Authorization Code + PKCE flow for
+that same channel identity — authorizing a *different* channel during a
+reconnect is rejected rather than silently swapping which channel the
+account represents.
+
+**Disconnect** revokes the account's token with Google where possible,
+then removes it locally, then removes any destination link **and any
+selected-broadcast target** that pointed at it. Google reporting the token
+as already invalid counts as a successful revocation; a transient network
+failure leaves the account exactly as it was so you can safely retry.
+
+### Linking a channel and selecting a broadcast
+
+Open a YouTube destination's settings and choose a connected channel in
+its own **Connected YouTube channel** section, then choose a live
+broadcast in the separate **Selected broadcast** section below it — both
+deliberately separate from the stream-key section, since all three are
+different facts. The broadcast selector lists only your channel's
+**active** and **upcoming** broadcasts (never a "persistent" one — Google
+deprecated those in 2020) and never auto-selects one; if a previously
+selected broadcast can no longer be found, the section says so plainly
+rather than silently clearing it. Creating a broadcast happens in YouTube
+Studio — Streaming Tree does not create one for you.
+
+### Category selection, region, local Save, and publishing to YouTube
+
+For a YouTube destination, the metadata editor's category field becomes a
+dropdown backed by YouTube's real category list for an explicit **region**
+(YouTube categories are region-scoped, not a text search the way Twitch's
+are). The effective region defaults to the connected channel's own country
+when YouTube reports one; otherwise you choose a region explicitly — there
+is no silent fallback to the interface language, which is an unrelated
+setting. Selecting a category stores both its display name and YouTube's
+own stable category ID.
+
+**Save and Publish are two separate, both-explicit actions**, exactly like
+Twitch. Save stores metadata locally in Streaming Tree's own database.
+**Publish to YouTube** sends the metadata **currently saved** to your
+selected broadcast's underlying video — disabled, with an explanation,
+whenever the form has unsaved edits or no broadcast is selected. Before
+publishing, a preview shows the selected broadcast, the current values on
+YouTube, your saved local values, which fields would actually change, and
+any reason publishing is blocked (no channel linked, the channel needs
+reconnecting, no broadcast selected, live streaming not enabled for the
+channel, no category region set, no category selected, YouTube
+unreachable, YouTube's quota exceeded) — plus standing warnings such as the
+Testing-mode seven-day note and that the selected broadcast and the stored
+stream key are not verified as belonging together.
+
+Only fields with a verified, real YouTube Data API equivalent are ever
+sent: **title, description, category, tags, language, and visibility** —
+via a safe read-modify-write against the video's real `videos.update`
+endpoint (Google's own API deletes any mutable property a submitted part
+omits, so Streaming Tree always re-fetches the current resource
+immediately before writing and only overwrites the fields it actually
+manages). YouTube's real API has **no** generic "mature content" flag (its
+closest field, made-for-kids, is a COPPA child-directed disclosure, not a
+maturity rating), and this stage does not write DVR or latency-mode
+settings either (both are broadcast-lifecycle properties a future stage
+may add). See
+[`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md)
+for the fully researched capability table.
+
+Publishing **never** starts or stops a destination's FFmpeg branch, never
+changes a stream key, never creates a broadcast, and is never triggered
+automatically by saving locally.
+
+### Verifying it for real
+
+`scripts/verify-youtube-account-integration.mjs` exercises this whole
+feature end to end against the real backend and two small local fake
+Google servers that reproduce only the response shapes this application
+actually parses — Authorization Code + PKCE authorization (including a
+wrong-CSRF-state callback and explicit multi-channel selection), account
+finalization, linking, broadcast selection, category/region, publishing, a
+forced token expiry and its single-flight refresh (including Google's
+omitted-refresh-token response), restart persistence, reconnecting, and
+disconnect/revocation — entirely on loopback, with **no real Google
+account, Google Cloud project, or network request to Google/YouTube
+involved**. No real-Google smoke test exists or was run for this stage —
+see [`docs/progress.md`](docs/progress.md) for exactly what was and was
+not verified.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -968,13 +1186,26 @@ All endpoints live under `/api` and return `application/json`.
 | `GET` | `/api/connected-accounts/{id}` | One connected account. |
 | `DELETE` | `/api/connected-accounts/{id}` | Disconnect: revoke with the provider where possible, then remove locally and cascade any destination link. Responds 204. |
 | `POST` | `/api/connected-accounts/{id}/validate` | Validate immediately (instead of waiting for the hourly background check), refreshing the token first if needed. |
-| `POST` | `/api/connected-accounts/{id}/reconnect` | Start a new device-flow attempt that must resolve to this same account. |
+| `POST` | `/api/connected-accounts/{id}/reconnect` | Start a new attempt that must resolve to this same account — a device-flow attempt for a Twitch account, an Authorization Code + PKCE attempt for a YouTube one. |
 | `GET` | `/api/connected-accounts/{id}/twitch/categories` | Search Twitch categories/games via `?query=`. Requires a healthy linked-or-standalone account. |
 | `GET` | `/api/platforms/{id}/connected-account` | The account linked to a destination, or `null`. |
 | `PUT` | `/api/platforms/{id}/connected-account` | Link (or replace the link to) an account. Body `{accountId}`. `422` on a provider mismatch. |
 | `DELETE` | `/api/platforms/{id}/connected-account` | Unlink, without deleting either side. Responds 204. |
-| `GET` | `/api/platforms/{id}/metadata/publish-preview` | What publishing would change right now: remote values, local values, changed/unchanged/skipped fields, blockers. |
-| `POST` | `/api/platforms/{id}/metadata/publish` | Publish the metadata currently saved in SQLite to Twitch. **No request body** — publishing a draft is not possible. |
+| `GET` | `/api/platforms/{id}/metadata/publish-preview` | What publishing would change right now: remote values (and, for YouTube, the selected broadcast), local values, changed/unchanged/skipped fields, blockers, warnings. |
+| `POST` | `/api/platforms/{id}/metadata/publish` | Publish the metadata currently saved in SQLite to the destination's real provider. **No request body** — publishing a draft is not possible. |
+| `GET` | `/api/integrations/youtube/config` | YouTube Client ID status — same shape as the Twitch config endpoint above. |
+| `PUT` | `/api/integrations/youtube/config` | Save a database-managed YouTube Client ID. Same `409` rules as Twitch's, independent of it. |
+| `POST` | `/api/integrations/youtube/oauth-attempts` | Start a YouTube Authorization Code + PKCE attempt. `202` with the attempt snapshot (including the authorization URL to open); `409` if one is already active. |
+| `GET` | `/api/integrations/youtube/oauth-attempts/{id}` | Poll one attempt's current state. Never contains the authorization code, PKCE verifier, or CSRF state value. |
+| `DELETE` | `/api/integrations/youtube/oauth-attempts/{id}` | Cancel an in-progress attempt and close its temporary loopback listener. |
+| `POST` | `/api/integrations/youtube/oauth-attempts/{id}/channel` | Explicitly select one of several owned channels, when the attempt is `awaiting_channel_selection`. Body `{channelId}`. |
+| `GET` | `/api/connected-accounts/{id}/youtube/broadcasts` | List the linked channel's active and upcoming live broadcasts. Never ingestion data. |
+| `GET` | `/api/connected-accounts/{id}/youtube/categories` | List assignable video categories for the account's effective region. |
+| `GET` | `/api/connected-accounts/{id}/youtube/region` | The account's effective category region (saved override, else the channel's own country). |
+| `PUT` | `/api/connected-accounts/{id}/youtube/region` | Save an explicit two-letter region override. |
+| `GET` | `/api/platforms/{id}/remote-target` | The selected live-broadcast target for a YouTube destination, or `null`. |
+| `PUT` | `/api/platforms/{id}/remote-target` | Select a broadcast. Body `{resourceId}`. `422` if it does not belong to the linked channel. |
+| `DELETE` | `/api/platforms/{id}/remote-target` | Clear the selection, without touching the account link. Responds 204. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -1390,9 +1621,9 @@ directly next to the control.
 | ------- | --------------------- |
 | Per-destination viewer counts, connection quality, "Authenticated"/"Verified by platform" status | **Not shown anywhere.** Streaming Tree never contacts a platform to confirm a stream is live there; the interface only ever reports what FFmpeg itself reported (real progress fields) or a plain "Sending" / "Output active" wording. |
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
-| Platform capability tables | Twitch's table is now verified against the real Twitch API — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md). YouTube, Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integrations are implemented (stages 7B/7C). |
-| YouTube, Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch has a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Twitch chat, EventSub (follow/sub/raid), unified chat, overlays, alerts, bot automation | **Not implemented anywhere.** This stage adds the connected-account and metadata foundation those features will need later — see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
+| Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
+| Twitch chat, EventSub (follow/sub/raid), YouTube live chat, Super Chat, membership events, unified chat, overlays, alerts, bot automation | **Not implemented anywhere.** These stages add the connected-account and metadata foundation those features will need later — see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -1424,6 +1655,16 @@ directly next to the control.
   [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata).
 - **Searching real Twitch categories and publishing real channel metadata**
   (title, category, language, tags) to Twitch, behind an explicit publish
+  action separate from the existing local Save.
+- **Connecting a real YouTube channel** via Authorization Code + PKCE
+  sign-in through a real system browser and a temporary loopback callback,
+  with no client secret ever requested or stored, explicit multi-channel
+  selection, account validation/refresh/reconnect/disconnect, linking a
+  channel to a destination, and selecting a live broadcast for it - see
+  [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata).
+- **Listing real YouTube broadcasts and categories and publishing real
+  video metadata** (title, description, category, tags, language,
+  visibility) to a selected YouTube broadcast, behind an explicit publish
   action separate from the existing local Save.
 - **The language switcher**, in the top bar and under Settings.
 
@@ -1759,3 +2000,83 @@ publishing actually needs.
 Save your local edits first. Publish always sends exactly what is currently
 saved in Streaming Tree's database, never an in-progress, unsaved draft —
 this is deliberate, not a bug.
+
+### YouTube account integration
+
+**"Configure a YouTube Client ID above before connecting a channel."**
+No Client ID is configured yet. Create a Google Cloud project, enable
+YouTube Data API v3, create a Desktop-app OAuth client, and either set
+`STREAMING_TREE_YOUTUBE_CLIENT_ID` or paste the Client ID into the
+Settings page — see
+[Registering a Google Cloud project](#connected-accounts-and-youtube-metadata).
+
+**The Client ID field in Settings is disabled and I can't change it.**
+It is set by the `STREAMING_TREE_YOUTUBE_CLIENT_ID` environment variable,
+which always wins over anything saved in the database — independent of
+Twitch's own Client ID variable.
+
+**Saving a new Client ID fails with a conflict.**
+A database-managed YouTube Client ID cannot be changed while any YouTube
+account is still connected. Disconnect every YouTube account first.
+
+**"Authorization was denied on Google."**
+You chose not to approve access on Google's own consent page. Click
+**Connect YouTube** again to start a fresh attempt.
+
+**"This attempt expired before it was completed."**
+The authorization attempt has a bounded lifetime. Start a new attempt and
+complete the Google sign-in more promptly.
+
+**A channel-selection screen appears after signing in.**
+The Google account you authorized owns more than one YouTube channel.
+Streaming Tree never guesses which one you meant — pick the correct
+channel explicitly from the list shown.
+
+**"The authorized channel does not match the account being reconnected."**
+During a reconnect, a different YouTube channel was authorized than the
+one this connected account represents. Reconnect must authorize the exact
+same channel; if you meant to connect a different channel, disconnect this
+one first and connect the other as a new account.
+
+**An account shows "Reconnect required."**
+Google could not confirm the account's access on the last check. This is
+often expected if your Google Cloud project's OAuth consent screen is
+still in **Testing** publishing status — Google expires authorization
+after seven days in that state regardless of what Streaming Tree
+requests. Click **Reconnect** to re-authorize the same channel.
+
+**"Secure storage is currently unavailable" on a YouTube action.**
+The same operating-system credential store used for stream keys and
+Twitch tokens also holds YouTube token bundles, and it could not be
+reached — see "Secure storage unavailable" above. Connected accounts,
+links, and selected broadcasts are unaffected in SQLite; only token-
+dependent actions (validate, broadcast/category listing, publish) are
+blocked until the store is reachable again.
+
+**"YouTube could not be reached" / a publish or listing fails
+intermittently.** A transient network issue talking to Google/YouTube, or
+the API itself being unavailable. Nothing local was changed; try again.
+
+**"YouTube's API quota was exceeded; try again later."**
+Your Google Cloud project's daily YouTube Data API quota (10,000 units by
+default) was exhausted. This is Google-side, not a Streaming Tree limit;
+it resets daily.
+
+**"Live streaming is not enabled for this channel."**
+The connected YouTube channel has not enabled live streaming in YouTube
+Studio. Enable it there, then retry.
+
+**The broadcast selector is empty.**
+No active or upcoming broadcast was found for the linked channel. Create
+and schedule one in YouTube Studio — Streaming Tree does not create a
+broadcast for you.
+
+**The Publish button is disabled and says to select a broadcast or
+category first.** Select a live broadcast in the destination's own
+**Selected broadcast** section, and/or open the metadata editor's category
+field and pick a real region-scoped result — both are required before
+publishing, and neither is guessed automatically.
+
+**Publishing is disabled with a note about unsaved changes.**
+Save your local edits first, exactly like Twitch — Publish always sends
+what is currently saved, never an in-progress draft.

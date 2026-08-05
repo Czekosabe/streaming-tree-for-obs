@@ -5123,3 +5123,82 @@ a wrong-channel selection during reconnect end-to-end (covered by
 Final documentation pass: README.md, docs/project-overview.md,
 docs/engagement-architecture.md, config/README.md - marking Stage 7B
 completed, Stage 7 still in progress, Stage 7C still planned.
+
+---
+
+## 2026-08-05 20:40 — docs: document YouTube account integration
+
+**`README.md`** — the project-state banner now describes both Twitch and
+YouTube account integration; the roadmap table marks 7B **Completed**; a
+full new "Connected accounts and YouTube metadata" section (mirroring the
+existing Twitch one) covers registering a Google Cloud project, enabling
+YouTube Data API v3, creating a Desktop OAuth client, Client ID
+configuration, the no-secret guarantee, Authorization Code + PKCE via a
+loopback callback and a real browser, explicit multi-channel selection,
+the Testing-mode seven-day token limitation, account health/validation/
+reconnect/disconnect, linking a channel and selecting a broadcast,
+category/region selection, local Save versus explicit Publish, exactly
+which fields are verified-supported, and local verification; every new
+REST endpoint is documented in the API table; a full parallel
+"YouTube account integration" troubleshooting section was added,
+mirroring Twitch's; the "What is currently demo-only" table and "What is
+real" list were updated so YouTube no longer appears in the
+not-implemented column.
+
+**`docs/project-overview.md`** — §8.1 gained a sixth destination-level
+concept, the remote broadcast target (`platform_remote_targets`),
+explained as deliberately provider-independent; §9 states plainly that
+YouTube's capability table is now verified (not approximate) and explains
+the `TagsCombinedMaxLength` addition YouTube's real tag semantics needed;
+§13's roadmap table marks 7B **Completed**, documents the
+`Provider`/`DeviceFlowProvider` interface split as a stage-7B decision
+future stage-7C adapters should learn from, and gives 7B the same
+"marked completed only after all automated checks passed, including a
+real local integration script that caught a genuine bug" paragraph
+stages 4/5/6/7A each already have; §10 and §16 extend their stage-7A-only
+OAuth-token-storage and connected-account statements to cover 7B/YouTube
+without weakening anything they already said about Twitch.
+
+**`docs/engagement-architecture.md`** — only factual status notes, kept
+deliberately short, cross-referencing `docs/provider-integrations/
+youtube.md` rather than repeating OAuth detail this document never owned:
+the terminology entry, §4, and §6.4 each gained a stage-7B blockquote
+alongside their existing stage-7A one, explicitly stating YouTube account
+lifecycle/broadcast-selection/metadata publishing exist while YouTube
+live chat, Super Chat, membership events, and the Event Bus itself
+(stage 8) or its YouTube connector (stage 15) still do not; §17.1's
+credential-dependency list marks YouTube's OAuth token storage completed
+alongside Twitch's and documents the refresh-omits-a-token behavior
+generically rather than repeating YouTube-specific detail this document
+does not own.
+
+**`config/README.md`** — rule 5 now covers YouTube's Client ID alongside
+Twitch's (independent env vars, independent database rows, independent
+409-on-change policy), states that a pasted Google `credentials.json` is
+rejected the same way a bare `clientSecret` field is, and documents the
+new `STREAMING_TREE_TEST_YOUTUBE_*_BASE_URL` test-only overrides
+alongside the existing Twitch ones. A new rule 6 states the OAuth
+callback listener is pure runtime state, exactly like the generated
+MediaMTX configuration this same directory's own "What does not belong
+here" section already describes, never written to a file anywhere.
+
+**`THIRD_PARTY_NOTICES.md`** — left unchanged: this stage added no new
+Go module (only Go's own standard library `net/http`, `crypto/*`, etc.)
+and no new npm dependency (the three testing-library packages were
+already added and attributed in stage 7A).
+
+**`docs/provider-integrations/youtube.md`** — already written and
+committed in this stage's second commit; not modified further here.
+
+### Automated validation
+
+Documentation only in this commit; the full suite from the previous
+commit (`test: verify YouTube account integration locally`) already
+covers the current state of the code and remains the authoritative
+result. Re-run once more, in full, as the closing regression pass before
+push - see the final report.
+
+### Next step
+Final full regression across every check, confirm a clean working tree,
+push to `origin/main`, confirm local and remote are synchronized, and
+produce the closing report.

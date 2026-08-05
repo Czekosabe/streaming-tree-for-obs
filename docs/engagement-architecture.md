@@ -62,7 +62,7 @@ document says otherwise:
 | --- | --- |
 | **Provider** | A built-in integration type: Twitch, YouTube, Kick, TikTok, or a non-platform source such as an external donation service. Exists today as `platform.ProviderDefinition` for the streaming side; the engagement side extends the same idea. |
 | **Connector** | The adapter code that talks to one provider's real API/protocol and translates its events and actions into the normalized model. Not the same as a *configured destination* (§4): a connector is code, a configured destination is a user's row. |
-| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing; this document's engagement uses of it (chat, events) remain planned, stage 8 onward. |
+| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing, **extended to YouTube as of stage 7B** (account lifecycle, broadcast selection and metadata publishing); this document's engagement uses of it (chat, events) remain planned, stage 8 (Twitch) and stage 15 (YouTube) onward. |
 | **Normalized engagement event** | One provider-independent representation of "something happened": a chat message, a follow, a donation, and so on. Defined in §5. |
 | **Engagement Event Bus** | The in-process component that receives normalized events from connectors and distributes them to every consumer (§6). |
 | **Operator chat** | The internal, full-detail chat view for the streamer/moderator (§7). |
@@ -107,6 +107,17 @@ of this document to reason about two credential lifecycles as if they were one.
 > than building a second one - see §6.4's factual note and
 > [`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md)
 > for the researched Twitch contract this adapter implements.
+>
+> **Factual status update (stage 7B, completed):** the same
+> connected-account foundation now has a second real adapter,
+> `internal/provider/youtube`, for account lifecycle, broadcast selection
+> and video-metadata publishing - still **not** for reading YouTube live
+> chat, Super Chat, or membership events, all of which remain stage 15's
+> scope, and the Event Bus still does not exist. Stage 15 (not stage 8) is
+> expected to reuse this YouTube adapter for its own authorization -
+> see §16's own roadmap table - rather than building a second one, and
+> [`docs/provider-integrations/youtube.md`](provider-integrations/youtube.md)
+> for the researched Google/YouTube contract this adapter implements.
 
 ## 5. Normalized engagement event model
 
@@ -323,6 +334,20 @@ connector.
 > connector (stage 8) is expected to request additional scopes on the same
 > underlying connected account rather than creating a second, competing
 > Twitch authorization.
+
+> **Factual status update (stage 7B, completed):** a second OAuth
+> connector now exists for YouTube - Authorization Code Flow with PKCE via
+> a temporary loopback callback and a real system browser (not a device
+> code, deliberately - see
+> [`docs/provider-integrations/youtube.md`](provider-integrations/youtube.md)
+> for why), token storage, refresh and reconnect, scoped only to account
+> lifecycle, broadcast selection and metadata publishing. It requests only
+> `https://www.googleapis.com/auth/youtube.force-ssl`; it has no chat or
+> event scope, does not read YouTube live chat or Super Chat, and is not
+> wired to any Event Bus. A future YouTube engagement connector (stage 15,
+> not stage 8) is expected to request additional scopes on the same
+> underlying connected account rather than creating a second, competing
+> YouTube authorization.
 
 ### 6.5 In-memory buffer versus persisted history
 
@@ -674,18 +699,22 @@ The credential-store foundation implemented in stage 5 (see the
 prerequisite** for:
 
 - FFmpeg destination stream keys (roadmap stage 6, completed),
-- OAuth tokens for connected accounts (§6.4, roadmap stage 7A, **completed**
-  for Twitch account-lifecycle and metadata-publish tokens; the engagement
-  Event Bus's own eventual use of the same tokens for chat/event scopes is
-  still stage 8, planned),
+- OAuth tokens for connected accounts (§6.4, roadmap stages 7A/7B,
+  **completed** for Twitch and YouTube account-lifecycle and
+  metadata-publish tokens; the engagement Event Bus's own eventual use of
+  the same tokens for chat/event scopes is still stage 8 (Twitch) and
+  stage 15 (YouTube), planned),
 - any future outbound bot-message credential (if a connector ever needs one
   beyond its OAuth token).
 
 The `SecretStore` interface is secret-type-agnostic, exactly as anticipated:
-stage 7A's connected-account OAuth token bundle reuses it under its own
-secret type (`oauth-token-bundle:<connected-account-id>`), the same
-OS-backed, no-plaintext-fallback guarantees, and the same atomic-replacement
-requirement §17.1 always intended - see project-overview.md §10 for the
+stage 7A's and 7B's connected-account OAuth token bundles both reuse it
+under the same secret type (`oauth-token-bundle:<connected-account-id>`),
+the same OS-backed, no-plaintext-fallback guarantees, and the same
+atomic-replacement requirement §17.1 always intended - including YouTube's
+own refresh-response quirk (Google's refresh omits a new refresh token
+more often than not, so the bundle's previous one is preserved rather
+than replaced with an empty value) - see project-overview.md §10 for the
 implemented shape.
 
 ### 17.2 Data sensitivity of engagement data

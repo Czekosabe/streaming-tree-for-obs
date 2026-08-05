@@ -463,6 +463,20 @@ account happens to be connected and linked to it, and vice versa.
 Connecting or linking an account never starts, stops, or otherwise touches
 a branch, and linking never validates or replaces a stream key.
 
+**Stage 7B added a sixth, YouTube-specific fact for a destination: its
+remote broadcast target** (`internal/domain/remotetarget`,
+`platform_remote_targets` - `platform_id` primary key cascading from
+`platforms`, `provider_id`, `resource_type`, `resource_id`,
+`display_name`; no token, no stream key, no ingestion field). A connected
+YouTube account is not enough to know *which* live broadcast a
+destination's metadata should be read from and published to - that is
+this sixth fact, selected explicitly, never auto-selected, and never
+presented as verifying that the selected broadcast uses the stream key
+configured for the same destination. Deliberately a provider-independent
+table (any future provider needing the same "which remote resource"
+concept reuses it) rather than a YouTube-only column bolted onto
+`connected_accounts` or `platforms`.
+
 ### Runtime stream state
 
 Whether the ingest service is running, whether a publisher is connected,
@@ -557,17 +571,26 @@ Consequences adopted in the code:
 - adding a new platform means describing it in the registry, not rebuilding the
   form.
 
-Only Twitch has tag support enabled. **Twitch's definition was verified
-against the real Twitch API in stage 7A** - see
+**Twitch's and YouTube's definitions were both verified against their
+real APIs** - see
 [`docs/provider-integrations/twitch.md`](provider-integrations/twitch.md)
-for the researched contract, and note in particular that Twitch turned out
-to have **no** field for description, visibility, a generic mature-content
-flag, DVR, or a client-side latency mode on the real Modify Channel
-Information endpoint, correcting an earlier approximation that had assumed
-otherwise. YouTube, Kick and TikTok's definitions remain **approximate and
-illustrative**: they have **not** been verified against their real APIs and
-will be re-checked when their own account integrations are implemented
-(stages 7B/7C).
+and
+[`docs/provider-integrations/youtube.md`](provider-integrations/youtube.md)
+for the researched contracts. Twitch turned out to have **no** field for
+description, visibility, a generic mature-content flag, DVR, or a
+client-side latency mode on the real Modify Channel Information endpoint;
+YouTube turned out to have **no** generic mature-content flag either (its
+closest field, `selfDeclaredMadeForKids`, is a COPPA child-directed
+disclosure, not a maturity rating) and no DVR or latency-mode write path
+this stage's single-call, video-only publish reaches - both corrections
+replaced an earlier approximation that had assumed all three existed.
+YouTube does have real tag support, unlike Twitch's per-tag/count model:
+its limit is a combined byte budget across every tag together, which
+needed a second `Limits` field (`TagsCombinedMaxLength`) rather than
+reusing Twitch's `MaxTags`/`TagMaxLength` as-is. Kick and TikTok's
+definitions remain **approximate and illustrative**: they have **not**
+been verified against their real APIs and will be re-checked when their
+own account integration is implemented (stage 7C).
 
 ### 9.1 The localization boundary
 
@@ -660,11 +683,12 @@ Rules in force for this project:
    the accepted, documented risk this trade-off carries.
 
 The same `SecretStore` abstraction backing destination stream keys now also
-backs a connected account's OAuth token bundle (stage 7A), under its own
-secret type (`oauth-token-bundle:<connected-account-id>`) and its own key
-namespace, subject to every rule above: no plaintext fallback, never
-re-displayed through the API, never in a log line. Unlike a stream key, an
-OAuth token bundle is refreshed and rotated automatically by
+backs a connected account's OAuth token bundle - Twitch's since stage 7A,
+YouTube's since stage 7B, both under the same secret type
+(`oauth-token-bundle:<connected-account-id>`) and key namespace, subject
+to every rule above: no plaintext fallback, never re-displayed through
+the API, never in a log line. Unlike a stream key, an OAuth token bundle
+is refreshed and rotated automatically by
 `internal/domain/account.Service`, and is stored as one atomically-replaced
 unit (access token, refresh token, token type, expiry together) rather than
 independently-replaceable pieces, since a partial rotation failure leaving a
@@ -752,7 +776,7 @@ it is architected; this table only tracks status and dependencies.
 | 5 | Secure credential-store foundation: OS-backed secret storage for destination stream keys, required before real FFmpeg output and any OAuth connector | **Completed** |
 | 6 | FFmpeg destination branches: resolution/compatibility probing, output settings, per-branch supervision, restarts, failure isolation | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle (validate/refresh/reconnect/disconnect), destination linking, and explicit channel-metadata publishing | **Completed** |
-| 7B | YouTube account integration, reusing the same connected-account foundation | Planned |
+| 7B | YouTube account integration: Authorization Code Flow with PKCE via a loopback callback, multi-channel selection, a provider-independent remote-broadcast-target association, and explicit video-metadata publishing, reusing the same connected-account foundation | **Completed** |
 | 7C | Kick and TikTok account integration | Planned |
 | 8 | Engagement Event Bus and Twitch connector (see [engagement-architecture.md](engagement-architecture.md)) | Planned |
 | 9 | Unified operator chat | Planned |
@@ -772,13 +796,25 @@ Key dependencies:
 
 - Stage 6 (FFmpeg) needed and used stage 5's credential store; stage 7A
   (Twitch OAuth) reused the same storage abstraction for a different secret
-  type - a destination stream key and an account's OAuth token bundle are
-  different secret types behind one abstraction, and now both exist. Stages
-  7B and 7C will add a secret type each for their own providers, not a new
+  type, and stage 7B (YouTube OAuth) reused it again unchanged - a
+  destination stream key and each provider's OAuth token bundle are
+  different secret types behind one abstraction, and all three now exist.
+  Stage 7C will add one more secret type for its own providers, not a new
   abstraction.
+- Stage 7B split `internal/domain/account.Provider` into a base interface
+  (the four methods `account.Service` itself calls) and a
+  `DeviceFlowProvider` extension (Twitch's two device-flow-specific
+  methods), specifically so YouTube's Authorization-Code-Flow adapter was
+  never forced to implement methods that make no sense for it - see
+  §8.1's connected-account description and
+  [docs/provider-integrations/youtube.md](provider-integrations/youtube.md).
+  Stage 7C's own adapters will need the same judgment call: implement the
+  base `Provider` interface, and only `DeviceFlowProvider` too if the
+  provider's own OAuth flow is genuinely device-code-shaped.
 - Stage 8 (Event Bus) is a prerequisite for every stage from 9 onward, and
-  will reuse stage 7A's Twitch adapter (`internal/provider/twitch`) for its
-  own connector rather than building a second one - see §16.
+  will reuse stage 7A's Twitch adapter (`internal/provider/twitch`) and
+  stage 7B's YouTube adapter (`internal/provider/youtube`) for its own
+  connectors rather than building new ones - see §16.
 - Stage 11 (outbound/bot) needs connector send-message capability, declared as
   part of a connector's capability set from stage 8 onward.
 - Stage 12 (alerts) needs stage 8's normalized events.
@@ -851,6 +887,34 @@ account or application was ever contacted (an explicit task requirement,
 not an oversight), and the rendered-component test coverage is a
 deliberately narrow subset of the interactions this stage's UI has, not
 exhaustive.
+
+Stage 7B was marked completed only after all automated checks passed
+across every commit that implements it — see `fix(docs): correct stage
+7A documentation drift` through `test: verify YouTube account
+integration locally` in [progress.md](progress.md) — **including a local
+integration script that exercises the real backend end to end against
+two small fake Google servers** (an `oauth2.googleapis.com` equivalent
+and a `www.googleapis.com/youtube/v3` equivalent) reproducing only the
+response shapes this application actually parses: Authorization Code +
+PKCE authorization through the backend's own temporary loopback callback
+listener, a wrong-CSRF-state callback left harmless, explicit multi-
+channel selection, account finalization, linking, broadcast selection,
+category/region, publish, a forced token expiry and its single-flight
+refresh (including Google's own omitted-refresh-token response), restart
+persistence, reconnect, and disconnect/revocation/cascade, with a final
+scan for token and CSRF-state leakage. That script caught and fixed one
+genuine bug unit tests had not exercised: a YouTube destination's
+selected broadcast (`platform_remote_targets`, which has no foreign key
+to `connected_accounts` by the schema's own design) was never cleared
+when the account behind it was disconnected - see the `test: verify
+YouTube account integration locally` entry in
+[progress.md](progress.md) for the fix. Frontend interaction coverage
+follows stage 7A's own precedent - the same rendered-component test
+harness, used for a representative subset of the YouTube OAuth-modal
+(including multi-channel selection) and confirmation-dialog interactions,
+not an exhaustive one. No real Google account, Google Cloud project, or
+network request to Google/YouTube was ever contacted at any point in this
+stage - an explicit task requirement, not an oversight.
 
 ## 14. The manual testing rule
 
@@ -933,25 +997,30 @@ made from stage 5 onward:
    prerequisite for this entire second era of the product.** FFmpeg
    destination stream keys, OAuth tokens for connected accounts, and any
    future outbound-bot credential all depend on the same `SecretStore`
-   abstraction, distinguished only by secret type. Both the destination
-   stream key and a connected account's OAuth token bundle exist today
-   (stages 5 and 7A); any further secret type this era needs remains
-   planned.
+   abstraction, distinguished only by secret type. The destination stream
+   key and both Twitch's and YouTube's connected-account OAuth token
+   bundles exist today (stages 5, 7A and 7B); any further secret type this
+   era needs remains planned.
 2. **A connected account (§8.1) is already a real, provider-independent
-   concept as of stage 7A - but only for account lifecycle and metadata
-   publishing, not for reading chat or events.** The engagement Event Bus
-   (stage 8) will need to read chat/events through a Twitch connection too,
-   and is expected to reuse this same connected-account concept and the
-   `internal/provider/twitch` adapter for its own authorization, rather than
-   introducing a second, competing notion of "a Twitch account." That reuse
-   is a stage-8 design intention recorded here, not something stage 7A
-   itself implements. See engagement-architecture.md §4.
-3. **Provider support is planned honestly**: Twitch first (stage 7A, account
-   and metadata only - no chat, no EventSub, no bot), then YouTube and Kick
-   as separate account-integration adapters (stages 7B/7C) before any
-   engagement-era connector work begins, and TikTok only if and when an
-   official, stable integration exists — never via scraping as a core
-   feature. See engagement-architecture.md §16.
+   concept as of stage 7A, extended to a second provider in stage 7B - but
+   only for account lifecycle and metadata publishing, not for reading
+   chat or events.** The engagement Event Bus (stage 8) will need to read
+   chat/events through a Twitch connection, and later a YouTube one too
+   (stage 15), and is expected to reuse this same connected-account
+   concept and the `internal/provider/twitch` / `internal/provider/youtube`
+   adapters for its own authorization, rather than introducing a second,
+   competing notion of "a Twitch account" or "a YouTube channel." That
+   reuse is a stage-8/stage-15 design intention recorded here, not
+   something stages 7A/7B themselves implement. See
+   engagement-architecture.md §4.
+3. **Provider support is planned honestly**: Twitch first (stage 7A,
+   account and metadata only - no chat, no EventSub, no bot), then YouTube
+   (stage 7B, account, broadcast selection and metadata only - no live
+   chat, no Super Chat, no membership events), then Kick (stage 7C) as a
+   separate account-integration adapter before any engagement-era
+   connector work begins, and TikTok only if and when an official, stable
+   integration exists — never via scraping as a core feature. See
+   engagement-architecture.md §16.
 
 This section is updated, and marked accordingly, only as each roadmap stage
 from §13 is actually completed - not before. Stages 5 and 7A are the only

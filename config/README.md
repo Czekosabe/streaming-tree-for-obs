@@ -68,10 +68,11 @@ with no transcoding, is this stage's deliberate scope.
    keys live in the operating system credential store (Windows Credential
    Manager, macOS Keychain, or Linux Secret Service) via the `SecretStore`
    abstraction in `apps/server/internal/secrets` - never in a file, and never
-   in this directory. A connected account's OAuth token bundle (stage 7A,
-   Twitch) lives in that same store under its own secret type - see the
-   "Stream key security" section of `docs/project-overview.md` and
-   `docs/engagement-architecture.md` for the full model.
+   in this directory. A connected account's OAuth token bundle (stage 7A
+   for Twitch, stage 7B for YouTube) lives in that same store under its
+   own secret type - see the "Stream key security" section of
+   `docs/project-overview.md` and `docs/engagement-architecture.md` for
+   the full model.
 2. Configuration files kept in the repository are templates and defaults only.
    A user's local configuration (`*.local.yml`, `.env`) is ignored by
    `.gitignore`.
@@ -82,18 +83,31 @@ with no transcoding, is this stage's deliberate scope.
    import/export format (see `docs/engagement-architecture.md`) is scoped to
    declarative, non-secret content; a template that referenced a credential
    would leak it the moment the template was shared.
-5. A Twitch (or future provider) **Client ID is not a secret** and is the
-   one piece of Twitch configuration that does live outside the OS
-   credential store - but still not in this directory. It resolves from the
-   `STREAMING_TREE_TWITCH_CLIENT_ID` environment variable if set, otherwise
-   from a non-secret SQLite settings row managed through the Settings page
-   - never from a file here. **A Twitch Client Secret is never accepted by
-   any part of this application, anywhere** - the OAuth flow used (Device
-   Code Grant) is a public-client flow with no secret to store. The
-   `STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL` / `_API_BASE_URL` environment
-   variables that let a test point the Twitch client at a local fake server
-   exist only in the `-tags integration` test binary
-   (`apps/server/cmd/testserver`) and are read directly via `os.Getenv`,
-   never through the shared config loader - a production build cannot
-   recognize them even if they happened to be set. See
-   [Connected accounts and Twitch metadata](../README.md#connected-accounts-and-twitch-metadata).
+5. A Twitch, YouTube (or future provider) **Client ID is not a secret** and
+   is the one piece of provider configuration that does live outside the OS
+   credential store - but still not in this directory. Each resolves
+   independently from its own environment variable if set
+   (`STREAMING_TREE_TWITCH_CLIENT_ID`, `STREAMING_TREE_YOUTUBE_CLIENT_ID`),
+   otherwise from its own non-secret SQLite settings row managed through
+   the Settings page - never from a file here, and changing one provider's
+   Client ID never affects another's. **A Client Secret is never accepted
+   by any part of this application, anywhere, for any provider** - Twitch's
+   Device Code Grant Flow and YouTube's Desktop-app Authorization Code
+   Flow with PKCE are both public-client flows with no secret to store; a
+   pasted complete Google `credentials.json` file is rejected the same way
+   a pasted `clientSecret` field is, not silently stripped of its secret.
+   The `STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL` / `_API_BASE_URL` and
+   `STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL` / `_OAUTH_BASE_URL` /
+   `_API_BASE_URL` environment variables that let a test point a provider
+   client at a local fake server exist only in the `-tags integration` test
+   binary (`apps/server/cmd/testserver`) and are read directly via
+   `os.Getenv`, never through the shared config loader - a production build
+   cannot recognize them even if they happened to be set. See
+   [Connected accounts and Twitch metadata](../README.md#connected-accounts-and-twitch-metadata)
+   and
+   [Connected accounts and YouTube metadata](../README.md#connected-accounts-and-youtube-metadata).
+6. YouTube's OAuth callback listener (a temporary `127.0.0.1` HTTP server
+   bound to a dynamically-assigned port, open only for the lifetime of one
+   authorization attempt) is **pure runtime state**, exactly like the
+   generated MediaMTX configuration above - nothing about it is ever
+   written to a file in this directory, or anywhere else on disk.
