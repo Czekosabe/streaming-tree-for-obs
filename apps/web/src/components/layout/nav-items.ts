@@ -1,5 +1,6 @@
 import type { ParseKeys } from 'i18next';
 import {
+  Activity,
   FileText,
   LayoutDashboard,
   Radio,
@@ -23,6 +24,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/platforms', labelKey: 'items.platforms', icon: Tv, planned: true },
   { to: '/streams', labelKey: 'items.streams', icon: Radio, planned: true },
   { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: true },
+  { to: '/engagement', labelKey: 'items.engagement', icon: Activity, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];

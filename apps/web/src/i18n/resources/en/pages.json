@@ -48,6 +48,10 @@
       "note": "Only the language preference is stored locally. Stream keys, tokens and metadata are never kept in the browser."
     }
   },
+  "engagement": {
+    "title": "Engagement",
+    "description": "Event Bus status and Twitch inbound connectors - a diagnostic and operational view, not the finished operator chat or OBS overlay."
+  },
   "logs": {
     "title": "Logs",
     "description": "Diagnostics from the router and from every branch.",

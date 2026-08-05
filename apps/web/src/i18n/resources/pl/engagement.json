@@ -1,0 +1,79 @@
+{
+  "status": {
+    "title": "Magistrala zdarzeń",
+    "description": "Wyłącznie w pamięci - resetuje się przy każdym restarcie backendu.",
+    "loading": "Wczytywanie stanu magistrali zdarzeń…",
+    "retained": "Zachowane zdarzenia",
+    "oldestSequence": "Najstarszy numer sekwencji",
+    "newestSequence": "Najnowszy numer sekwencji",
+    "activeSubscribers": "Aktywni subskrybenci"
+  },
+  "connector": {
+    "loading": "Wczytywanie stanu łącznika…",
+    "subtitle": "Twitch · {{login}}",
+    "enableLabel": "Włącz czat i zdarzenia Twitch",
+    "enableDescription": "Po włączeniu otwiera jedno połączenie WebSocket EventSub dla tego konta.",
+    "noAccounts": "Brak podłączonego konta Twitch. Podłącz je w Ustawieniach, aby włączyć zaangażowanie.",
+    "subscriptions": "Subskrypcje",
+    "reconnectCount": "Ponowne połączenia",
+    "lastEventAt": "Ostatnie zdarzenie",
+    "lastDataGapAt": "Możliwa luka w danych",
+    "lastError": "Ostatni błąd",
+    "permissionUpgradeRequired": "Wymagane dodatkowe uprawnienie Twitch.",
+    "permissionUpgradeExplanation": "Odczyt czatu i zdarzeń wymaga dodatkowych uprawnień Twitch, których to konto jeszcze nie przyznało. Twój istniejący klucz transmisji i publikowanie metadanych nie są tym dotknięte.",
+    "authorizeAction": "Autoryzuj dostęp do zaangażowania",
+    "authorizeStarted": "Na Twitchu rozpoczęto nową autoryzację. Wprowadź kod {{userCode}} na stronie aktywacji Twitcha, aby kontynuować.",
+    "restartAction": "Uruchom łącznik ponownie",
+    "disableConfirmTitle": "Wyłączyć zaangażowanie Twitch?",
+    "disableConfirmMessage": "To zamyka aktywne połączenie i zatrzymuje odczyt czatu oraz zdarzeń Twitch dla tego konta. Nie odłącza konta ani nie wpływa na publikowanie metadanych.",
+    "disableConfirmAction": "Wyłącz",
+    "state": {
+      "disabled": "Wyłączony",
+      "blocked": "Zablokowany",
+      "connecting": "Łączenie",
+      "waiting_for_welcome": "Łączenie",
+      "subscribing": "Subskrybowanie",
+      "connected": "Połączony",
+      "reconnecting": "Ponowne łączenie",
+      "stopping": "Zatrzymywanie",
+      "error": "Błąd"
+    },
+    "blockers": {
+      "scopeUpgradeRequired": "Wymagane dodatkowe uprawnienie",
+      "notConfigured": "Integracja Twitch nie jest skonfigurowana",
+      "accountUnhealthy": "To konto wymaga ponownego połączenia",
+      "credentialStoreUnavailable": "Bezpieczny magazyn jest obecnie niedostępny"
+    }
+  },
+  "feed": {
+    "title": "Ostatnie zdarzenia",
+    "description": "Ograniczony podgląd diagnostyczny - nie czat operatora ani nakładka.",
+    "empty": "Nie odebrano jeszcze żadnych zdarzeń.",
+    "gapNotice": "Niektóre zdarzenia mogły zostać pominięte (strumień połączył się ponownie lub nie nadążał).",
+    "anonymous": "anonimowo",
+    "moderated": "moderowane",
+    "synthetic": "testowe",
+    "streamStatus": {
+      "connecting": "Łączenie…",
+      "open": "Na żywo",
+      "error": "Rozłączono",
+      "closed": "Zamknięto"
+    }
+  },
+  "eventType": {
+    "chat_message": "Wiadomość czatu",
+    "chat_message_deleted": "Wiadomość usunięta",
+    "chat_cleared": "Czat wyczyszczony",
+    "moderation": "Moderacja",
+    "follow": "Obserwacja",
+    "subscription": "Subskrypcja",
+    "resubscription": "Przedłużenie subskrypcji",
+    "gifted_subscription": "Podarowana subskrypcja",
+    "subscription_gift_batch": "Pakiet subskrypcji w prezencie",
+    "bits": "Bity",
+    "raid": "Najazd",
+    "channel_point_redemption": "Punkty kanału",
+    "stream_online": "Transmisja rozpoczęta",
+    "stream_offline": "Transmisja zakończona"
+  }
+}

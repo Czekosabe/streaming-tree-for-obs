@@ -5716,3 +5716,198 @@ design was actually implemented, unchanged from the plan.
 
 ### Next step
 Build the frontend engagement data layer and diagnostic Engagement page.
+
+---
+
+## 2026-08-06 01:20 — feat(web): manage and view Twitch engagement
+
+### Status
+Completed
+
+### Scope
+The complete Stage 8A frontend: the engagement data layer (Zod schemas,
+TanStack Query hooks, a focused Server-Sent Events client), the new
+Engagement diagnostic page with per-account Twitch connector cards and a
+bounded recent-events feed, navigation/routing, and full EN/PL
+localization. Combines the suggested "manage" and "publish" frontend
+commits into one, since Stage 8A has no publish concept at all (that
+belongs to metadata publishing, already shipped in stages 7A/7B and
+untouched here) - see "Technical decisions" below.
+
+### Changes
+
+**`src/api/engagement-schemas.ts`** (new) — Zod contracts mirroring
+`internal/httpapi/engagement.go`'s response DTOs exactly:
+`connectorStateSchema` (9-value enum), `connectorSchema`,
+`accountEngagementSchema` (extends `connectorSchema` with the capability
+assessment - required/granted scopes, `permissionUpgradeRequired`),
+`engagementStatusSchema`, `eventTypeSchema` (14 values), `fragmentSchema`
+(text/emote/cheermote/mention/unknown), `eventMessageSchema`,
+`eventUserSchema` (`anonymous` always required, everything else
+optional - never assumes a field the provider might not have reported),
+`engagementEventSchema`, `engagementEventsResponseSchema`. No field for
+a token, WebSocket session id, or reconnect URL anywhere - structurally
+absent, not filtered, exactly like `account-schemas.ts`'s own contract.
+9 test cases plus exhaustive per-enum-value coverage.
+
+**`src/api/engagement.ts`** (new) — transport functions:
+`fetchEngagementStatus`, `fetchEngagementEvents` (bounded `after`/
+`limit` query params), `fetchAccountEngagement`, `setAccountEngagement`,
+`authorizeEngagement` (reuses `deviceFlowSnapshotSchema` from
+`account-schemas.ts` - the backend's upgrade-attempt response is
+byte-for-byte the same shape as an ordinary device-flow attempt),
+`restartEngagementConnector`.
+
+**`src/hooks/use-engagement.ts`** (new) — `engagementKeys` query-key
+builder (account id only, no secret, matching the project's existing
+rule), `useEngagementStatusQuery`/`useAccountEngagementQuery` (5s
+polling while mounted - fast enough to feel live without hammering the
+backend, no WebSocket-to-browser relay needed for this diagnostic view),
+`useSetEngagementMutation`, `useAuthorizeEngagementMutation`,
+`useRestartEngagementMutation`, all with correct cache invalidation.
+
+**`src/hooks/use-engagement-stream.ts`** (new) — the focused SSE client
+the stage task asked for: opens exactly one `EventSource` for the hook's
+lifetime, validates every payload with `engagementEventSchema` before
+trusting it, tracks the last accepted sequence and silently ignores
+anything not strictly greater (duplicate or out-of-order delivery),
+detects an `engagement.gap` event and surfaces `gapDetected` rather than
+understating what might have been missed, keeps a bounded list
+(`MAX_RETAINED_EVENTS = 200`) in React state, and closes the connection
+on unmount. The browser's own `EventSource` implementation resends
+`Last-Event-ID` automatically on reconnect, so no manual header handling
+was needed. 9 tests against a hand-written `FakeEventSource` (jsdom, this
+project's test environment, does not implement the real one) covering:
+initial `connecting` state, `open` transition, accepting a well-formed
+event, duplicate-sequence rejection, out-of-order rejection, in-order
+acceptance, gap detection, malformed-payload tolerance, and
+close-on-unmount.
+
+**`src/models/engagement-presentation.ts`** (new) — `connectorStateKey`/
+`connectorStateTone` and `eventTypeKey` (exhaustive `Record<..., Key>`
+maps, mirroring `account-presentation.ts`'s own device-flow/OAuth-state
+pattern so a new state cannot be silently forgotten - a missing case is
+a TypeScript error, not a runtime surprise), `connectorBlockerKey`
+(returns `null` for an unrecognised code rather than guessing, exactly
+like `publishBlockerKey`'s own precedent), `eventSummary` (a short,
+plain-text-only summary per event type - chat/resubscription/redemption
+show their message text, follow/subscription show only the actor,
+gift/bits/raid show the quantity, `stream.online`/`stream.offline` show
+neither - never HTML, never a fabricated actor for an anonymous event).
+16 tests.
+
+**`src/components/engagement/TwitchConnectorCard.tsx`** (new) — one
+connected Twitch account's connector: state badge (reusing the existing
+`StatusBadge`/`PlatformStatus` tone system), an enable/disable
+`ToggleSwitch` (disabling an already-connected connector requires the
+application's own `ConfirmDialog` - never `window.confirm` - enabling
+does not, since it has no ongoing session to interrupt), the permission-
+upgrade panel (shown only when `permissionUpgradeRequired`, explains that
+existing stream key/metadata publishing are unaffected, an "Authorize
+engagement access" button starting the upgrade device-flow attempt and
+showing its user code), subscription/reconnect/last-event/data-gap/error
+diagnostics, and a restart action shown only in the `error` state. 6
+rendered tests including an explicit "never renders a session id,
+reconnect URL, or token-shaped value" scan of the rendered DOM text.
+
+**`src/components/engagement/RecentEventsFeed.tsx`** (new) — the bounded
+diagnostic feed: SSE connection-status chip, a gap notice, and a plain
+list of recent events (timestamp, type badge, actor, summary, an
+"anonymous" marker, a "moderated" marker when `moderationRef` is set, a
+"test" marker for a synthetic event) - explicitly no message bubbles,
+theming, or animation, per the stage task's own instruction that this
+must not read as the finished chat overlay. 4 rendered tests.
+
+**`src/pages/EngagementPage.tsx`** (new) — composes an Event Bus status
+panel (retained/capacity, oldest/newest sequence, active subscribers),
+one `TwitchConnectorCard` per connected Twitch account (a YouTube
+account, if any, is filtered out - Stage 8A is Twitch-only), an explicit
+empty state when no Twitch account is connected yet, and
+`RecentEventsFeed`. 3 rendered tests, including one confirming a YouTube
+account never gets a connector card.
+
+**Routing/navigation** — `App.tsx` gained `/engagement` →
+`EngagementPage`; `nav-items.ts` gained an `Activity`-icon entry
+(`planned: false` - this is a real, working page, not a placeholder).
+
+**i18n** — new `engagement` namespace (`resources/{en,pl}/engagement.json`):
+connector states, blocker codes, event-type labels, feed/stream-status
+strings, all confirmation/action copy. `pages.json` gained an
+`engagement.title`/`.description` entry in both languages.
+`navigation.json` gained the sidebar label. `npm run i18n:check` passes
+(10 namespaces, no differences against English).
+
+### Technical decisions
+
+**Why one frontend commit instead of the suggested "manage" / "publish"
+split.** That split's origin is stages 7A/7B, where "manage" (connect/
+disconnect/link) and "publish" (metadata publish preview/execute) are
+genuinely separate concerns with separate UI surfaces. Stage 8A has no
+publish concept at all - there is nothing here analogous to publishing
+metadata to a platform. The whole frontend surface (data layer,
+connector cards, event feed, page) is one coherent "view and control the
+engagement connector" concern, so splitting it would have been
+arbitrary rather than meaningful. Documented here per the task's own
+"different split is allowed when technically clearer" instruction.
+
+**Why `useEngagementStatusQuery`/`useAccountEngagementQuery` poll at 5s
+instead of using the SSE stream for connector status too.** The SSE
+stream (`useEngagementStream`) carries normalized *events*, not
+connector *state* - a connector transitioning from `connecting` to
+`connected` is not itself a bus event, it is backend-internal state the
+task's own API design exposes only through the snapshot/status
+endpoints. Polling those at a short, fixed interval is simpler and
+sufficient for a diagnostic view; adding a second SSE channel (or
+multiplexing connector-state changes onto the event bus itself) was
+judged unnecessary complexity for what this stage needs.
+
+**Why permission-upgrade reuses `deviceFlowSnapshotSchema` rather than a
+new schema.** `POST .../engagement/authorize`'s response is generated by
+`toDeviceFlowResponse` on the backend - the exact same function and
+exact same shape the existing Twitch device-flow endpoints already use.
+Defining a second, structurally identical schema would only be able to
+drift from the first; reusing it means a backend contract change is
+caught by the existing type in one place.
+
+### Files changed
+- `apps/web/src/api/engagement-schemas.ts` (new) + test
+- `apps/web/src/api/engagement.ts` (new)
+- `apps/web/src/hooks/use-engagement.ts` (new)
+- `apps/web/src/hooks/use-engagement-stream.ts` (new) + test
+- `apps/web/src/models/engagement-presentation.ts` (new) + test
+- `apps/web/src/components/engagement/TwitchConnectorCard.tsx` (new) + test
+- `apps/web/src/components/engagement/RecentEventsFeed.tsx` (new) + test
+- `apps/web/src/pages/EngagementPage.tsx` (new) + test
+- `apps/web/src/App.tsx`, `apps/web/src/components/layout/nav-items.ts`
+- `apps/web/src/i18n/config.ts`, `apps/web/src/i18n/resources.ts`
+- `apps/web/src/i18n/resources/{en,pl}/engagement.json` (new)
+- `apps/web/src/i18n/resources/{en,pl}/{navigation,pages}.json`
+
+### Automated validation
+- `npm run i18n:check` — passed, 10 namespaces, no differences.
+- `npm run typecheck` — clean (including one real
+  `exactOptionalPropertyTypes` fix in `eventSummary`'s parameter type,
+  caught immediately by the compiler rather than at runtime).
+- `npm run lint` — clean.
+- `npm run test -- --run` — 41 files, 534 tests passed (72 new: 9 schema
+  + 16 presentation + 9 SSE-stream-hook + 6 connector-card + 4 events-
+  feed + 3 page, plus all 462 pre-existing tests unaffected).
+- `npm run build` — succeeded.
+
+### Known limitations
+- No test exercises the SSE endpoint's `Last-Event-ID` replay behavior
+  from the browser side specifically (covered on the backend in the
+  previous commit's `TestEngagementStreamServesSSEWithCorrectHeadersAndReplay`,
+  and `useEngagementStream`'s own duplicate/out-of-order tests cover the
+  client-side half of the same contract) - a genuine, small coverage
+  gap, not a silent one.
+- `TwitchConnectorCard` does not yet render a distinct "reconnecting"
+  visual treatment beyond the shared `starting` tone it shares with
+  `connecting`/`subscribing` - sufficient for Stage 8A, a future stage
+  could differentiate further.
+- No browser automation; all coverage is Testing Library + jsdom, per
+  the task's own instruction.
+
+### Next step
+Write `scripts/verify-twitch-engagement.mjs` and run the full
+integration-script regression suite.

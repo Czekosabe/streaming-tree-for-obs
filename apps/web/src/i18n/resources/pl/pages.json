@@ -48,6 +48,10 @@
       "note": "Lokalnie zapisywana jest wyłącznie preferencja języka. Klucze transmisji, tokeny i metadane nigdy nie są przechowywane w przeglądarce."
     }
   },
+  "engagement": {
+    "title": "Zaangażowanie",
+    "description": "Stan magistrali zdarzeń i łączników przychodzących Twitch - widok diagnostyczny i operacyjny, nie gotowy czat operatora ani nakładka OBS."
+  },
   "logs": {
     "title": "Logi",
     "description": "Diagnostyka routera transmisji i każdej gałęzi.",

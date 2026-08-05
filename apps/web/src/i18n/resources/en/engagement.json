@@ -1,0 +1,79 @@
+{
+  "status": {
+    "title": "Event Bus",
+    "description": "In-memory only - resets on every backend restart.",
+    "loading": "Loading Event Bus status…",
+    "retained": "Retained events",
+    "oldestSequence": "Oldest sequence",
+    "newestSequence": "Newest sequence",
+    "activeSubscribers": "Active subscribers"
+  },
+  "connector": {
+    "loading": "Loading connector status…",
+    "subtitle": "Twitch · {{login}}",
+    "enableLabel": "Enable Twitch chat and events",
+    "enableDescription": "Opens one EventSub WebSocket connection for this account when enabled.",
+    "noAccounts": "No connected Twitch account yet. Connect one from Settings to enable engagement.",
+    "subscriptions": "Subscriptions",
+    "reconnectCount": "Reconnects",
+    "lastEventAt": "Last event",
+    "lastDataGapAt": "Possible data gap",
+    "lastError": "Last error",
+    "permissionUpgradeRequired": "Additional Twitch permission is required.",
+    "permissionUpgradeExplanation": "Chat and event reading needs extra Twitch permissions this account has not granted yet. Your existing stream key and metadata publishing are not affected.",
+    "authorizeAction": "Authorize engagement access",
+    "authorizeStarted": "A new authorization was started on Twitch. Enter the code {{userCode}} on Twitch's activation page to continue.",
+    "restartAction": "Restart connector",
+    "disableConfirmTitle": "Disable Twitch engagement?",
+    "disableConfirmMessage": "This closes the active connection and stops reading Twitch chat and events for this account. It does not disconnect the account or affect metadata publishing.",
+    "disableConfirmAction": "Disable",
+    "state": {
+      "disabled": "Disabled",
+      "blocked": "Blocked",
+      "connecting": "Connecting",
+      "waiting_for_welcome": "Connecting",
+      "subscribing": "Subscribing",
+      "connected": "Connected",
+      "reconnecting": "Reconnecting",
+      "stopping": "Stopping",
+      "error": "Error"
+    },
+    "blockers": {
+      "scopeUpgradeRequired": "Additional permission required",
+      "notConfigured": "Twitch integration is not configured",
+      "accountUnhealthy": "This account needs to be reconnected",
+      "credentialStoreUnavailable": "Secure storage is currently unavailable"
+    }
+  },
+  "feed": {
+    "title": "Recent events",
+    "description": "A bounded diagnostic feed - not the operator chat or an overlay.",
+    "empty": "No events received yet.",
+    "gapNotice": "Some events may have been missed (the stream reconnected or fell behind).",
+    "anonymous": "anonymous",
+    "moderated": "moderated",
+    "synthetic": "test",
+    "streamStatus": {
+      "connecting": "Connecting…",
+      "open": "Live",
+      "error": "Disconnected",
+      "closed": "Closed"
+    }
+  },
+  "eventType": {
+    "chat_message": "Chat message",
+    "chat_message_deleted": "Message deleted",
+    "chat_cleared": "Chat cleared",
+    "moderation": "Moderation",
+    "follow": "Follow",
+    "subscription": "Subscription",
+    "resubscription": "Resubscription",
+    "gifted_subscription": "Gifted subscription",
+    "subscription_gift_batch": "Gift batch",
+    "bits": "Bits",
+    "raid": "Raid",
+    "channel_point_redemption": "Channel points",
+    "stream_online": "Stream online",
+    "stream_offline": "Stream offline"
+  }
+}
