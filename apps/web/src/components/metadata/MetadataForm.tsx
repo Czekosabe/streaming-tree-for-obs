@@ -240,6 +240,7 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
               provider.categoryRequiresRemoteId ? (
                 <CategoryPicker
                   platformId={platform.id}
+                  providerId={platform.providerId}
                   value={draft.category}
                   categoryId={draft.categoryId}
                   disabled={busy}

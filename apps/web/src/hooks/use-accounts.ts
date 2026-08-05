@@ -8,30 +8,47 @@ import {
 
 import {
   cancelDeviceFlow,
-  disconnectAccount,
+  cancelYouTubeOAuthAttempt,
   deletePlatformAccountLink,
+  deleteRemoteTarget,
+  disconnectAccount,
   fetchAccount,
   fetchAccounts,
   fetchDeviceFlow,
   fetchIntegrationConfig,
   fetchPlatformAccountLink,
   fetchPublishPreview,
+  fetchRemoteTarget,
+  fetchYouTubeBroadcasts,
+  fetchYouTubeCategories,
+  fetchYouTubeIntegrationConfig,
+  fetchYouTubeOAuthAttempt,
+  fetchYouTubeRegion,
   publishMetadata,
   reconnectAccount,
+  reconnectYouTubeAccount,
   searchTwitchCategories,
+  selectYouTubeChannel,
   setIntegrationConfig,
   setPlatformAccountLink,
+  setRemoteTarget,
+  setYouTubeIntegrationConfig,
+  setYouTubeRegion,
   startDeviceFlow,
+  startYouTubeOAuthAttempt,
   validateAccount,
 } from '@/api/accounts';
 import type {
+  BroadcastItem,
   CategoryItem,
   ConnectedAccount,
   DeviceFlowSnapshot,
   IntegrationConfig,
+  OAuthAttemptSnapshot,
   PlatformAccountLink,
   PublishPreview,
   PublishResult,
+  RemoteTarget,
   SetIntegrationConfigInput,
 } from '@/api/account-schemas';
 
@@ -52,9 +69,23 @@ export const accountKeys = {
     ['twitch-categories', accountId, query] as const,
   platformLink: (platformId: string) => ['platform-account-link', platformId] as const,
   publishPreview: (platformId: string) => ['metadata-publish-preview', platformId] as const,
+  youtubeIntegrationConfig: ['youtube-integration-config'] as const,
+  youtubeAttempt: (attemptId: string) => ['youtube-oauth-attempt', attemptId] as const,
+  youtubeBroadcasts: (accountId: string) => ['youtube-broadcasts', accountId] as const,
+  youtubeCategories: (accountId: string) => ['youtube-categories', accountId] as const,
+  youtubeRegion: (accountId: string) => ['youtube-region', accountId] as const,
+  remoteTarget: (platformId: string) => ['remote-target', platformId] as const,
 };
 
 const TERMINAL_DEVICE_FLOW_STATES: readonly DeviceFlowSnapshot['state'][] = [
+  'authorized',
+  'denied',
+  'expired',
+  'cancelled',
+  'error',
+];
+
+const TERMINAL_OAUTH_ATTEMPT_STATES: readonly OAuthAttemptSnapshot['state'][] = [
   'authorized',
   'denied',
   'expired',
@@ -253,6 +284,177 @@ export function usePublishMetadataMutation(): UseMutationResult<PublishResult, E
   return useMutation({
     mutationFn: publishMetadata,
     onSuccess: (_data, platformId) => {
+      void queryClient.invalidateQueries({ queryKey: accountKeys.publishPreview(platformId) });
+    },
+  });
+}
+
+// --- YouTube: integration config, OAuth attempts, broadcasts, categories,
+// region and remote target -------------------------------------------------
+
+export function useYouTubeIntegrationConfigQuery(): UseQueryResult<IntegrationConfig, Error> {
+  return useQuery({
+    queryKey: accountKeys.youtubeIntegrationConfig,
+    queryFn: ({ signal }) => fetchYouTubeIntegrationConfig(signal),
+  });
+}
+
+export function useSetYouTubeIntegrationConfigMutation(): UseMutationResult<
+  IntegrationConfig,
+  Error,
+  SetIntegrationConfigInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setYouTubeIntegrationConfig,
+    onSuccess: (data) => {
+      queryClient.setQueryData(accountKeys.youtubeIntegrationConfig, data);
+    },
+  });
+}
+
+export function useStartYouTubeAttemptMutation(): UseMutationResult<OAuthAttemptSnapshot, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: startYouTubeOAuthAttempt,
+    onSuccess: (data) => {
+      queryClient.setQueryData(accountKeys.youtubeAttempt(data.attemptId), data);
+    },
+  });
+}
+
+export function useReconnectYouTubeAccountMutation(): UseMutationResult<
+  OAuthAttemptSnapshot,
+  Error,
+  string
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: reconnectYouTubeAccount,
+    onSuccess: (data) => {
+      queryClient.setQueryData(accountKeys.youtubeAttempt(data.attemptId), data);
+    },
+  });
+}
+
+/**
+ * Polls one YouTube OAuth attempt at a fixed, fast interval while it is
+ * active - the same reasoning as useDeviceFlowQuery: this is the backend's
+ * own attempt, polled independently of anything Google-facing.
+ */
+export function useYouTubeAttemptQuery(
+  attemptId: string | null,
+): UseQueryResult<OAuthAttemptSnapshot, Error> {
+  return useQuery({
+    queryKey: accountKeys.youtubeAttempt(attemptId ?? ''),
+    queryFn: ({ signal }) => fetchYouTubeOAuthAttempt(attemptId ?? '', signal),
+    enabled: attemptId !== null,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      if (state !== undefined && TERMINAL_OAUTH_ATTEMPT_STATES.includes(state)) return false;
+      return 1_000;
+    },
+    refetchIntervalInBackground: false,
+    staleTime: 0,
+  });
+}
+
+export function useCancelYouTubeAttemptMutation(): UseMutationResult<
+  OAuthAttemptSnapshot,
+  Error,
+  string
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelYouTubeOAuthAttempt,
+    onSuccess: (data) => {
+      queryClient.setQueryData(accountKeys.youtubeAttempt(data.attemptId), data);
+    },
+  });
+}
+
+export function useSelectYouTubeChannelMutation(): UseMutationResult<
+  OAuthAttemptSnapshot,
+  Error,
+  { attemptId: string; channelId: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ attemptId, channelId }) => selectYouTubeChannel(attemptId, channelId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(accountKeys.youtubeAttempt(data.attemptId), data);
+    },
+  });
+}
+
+export function useYouTubeBroadcastsQuery(accountId: string | null): UseQueryResult<BroadcastItem[], Error> {
+  return useQuery({
+    queryKey: accountKeys.youtubeBroadcasts(accountId ?? ''),
+    queryFn: ({ signal }) => fetchYouTubeBroadcasts(accountId ?? '', signal),
+    enabled: accountId !== null,
+  });
+}
+
+export function useYouTubeCategoriesQuery(accountId: string | null): UseQueryResult<CategoryItem[], Error> {
+  return useQuery({
+    queryKey: accountKeys.youtubeCategories(accountId ?? ''),
+    queryFn: ({ signal }) => fetchYouTubeCategories(accountId ?? '', signal),
+    enabled: accountId !== null,
+    staleTime: 30_000,
+  });
+}
+
+export function useYouTubeRegionQuery(accountId: string | null): UseQueryResult<string, Error> {
+  return useQuery({
+    queryKey: accountKeys.youtubeRegion(accountId ?? ''),
+    queryFn: ({ signal }) => fetchYouTubeRegion(accountId ?? '', signal),
+    enabled: accountId !== null,
+  });
+}
+
+export function useSetYouTubeRegionMutation(): UseMutationResult<
+  string,
+  Error,
+  { accountId: string; region: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, region }) => setYouTubeRegion(accountId, region),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: accountKeys.youtubeRegion(variables.accountId) });
+      void queryClient.invalidateQueries({ queryKey: accountKeys.youtubeCategories(variables.accountId) });
+    },
+  });
+}
+
+export function useRemoteTargetQuery(platformId: string): UseQueryResult<RemoteTarget | null, Error> {
+  return useQuery({
+    queryKey: accountKeys.remoteTarget(platformId),
+    queryFn: ({ signal }) => fetchRemoteTarget(platformId, signal),
+  });
+}
+
+export function useSetRemoteTargetMutation(): UseMutationResult<
+  RemoteTarget,
+  Error,
+  { platformId: string; resourceId: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ platformId, resourceId }) => setRemoteTarget(platformId, resourceId),
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(accountKeys.remoteTarget(variables.platformId), data);
+      void queryClient.invalidateQueries({ queryKey: accountKeys.publishPreview(variables.platformId) });
+    },
+  });
+}
+
+export function useDeleteRemoteTargetMutation(): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteRemoteTarget,
+    onSuccess: (_data, platformId) => {
+      queryClient.setQueryData(accountKeys.remoteTarget(platformId), null);
       void queryClient.invalidateQueries({ queryKey: accountKeys.publishPreview(platformId) });
     },
   });

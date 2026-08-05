@@ -1,22 +1,30 @@
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 
 import {
+  broadcastListResponseSchema,
   categorySearchResponseSchema,
   connectedAccountSchema,
   connectedAccountsResponseSchema,
   deviceFlowSnapshotSchema,
   integrationConfigSchema,
+  oauthAttemptSnapshotSchema,
   platformAccountLinkResponseSchema,
   platformAccountLinkSchema,
   publishPreviewSchema,
   publishResultSchema,
+  regionResponseSchema,
+  remoteTargetResponseSchema,
+  remoteTargetSchema,
+  type BroadcastItem,
   type CategoryItem,
   type ConnectedAccount,
   type DeviceFlowSnapshot,
   type IntegrationConfig,
+  type OAuthAttemptSnapshot,
   type PlatformAccountLink,
   type PublishPreview,
   type PublishResult,
+  type RemoteTarget,
   type SetIntegrationConfigInput,
 } from './account-schemas';
 
@@ -155,4 +163,126 @@ export async function publishMetadata(platformId: string): Promise<PublishResult
     NO_BODY,
     publishResultSchema,
   );
+}
+
+/**
+ * Transport for the YouTube integration-config, OAuth-attempt, broadcast,
+ * category, region and remote-target APIs. Reconnecting a YouTube account
+ * reuses the shared `/reconnect` endpoint but parses an OAuthAttemptSnapshot
+ * rather than a DeviceFlowSnapshot - the caller already knows the account's
+ * provider before choosing which of these two functions to call.
+ */
+
+export async function fetchYouTubeIntegrationConfig(signal?: AbortSignal): Promise<IntegrationConfig> {
+  return apiGet('/api/integrations/youtube/config', integrationConfigSchema, { signal });
+}
+
+export async function setYouTubeIntegrationConfig(
+  input: SetIntegrationConfigInput,
+): Promise<IntegrationConfig> {
+  return apiPut('/api/integrations/youtube/config', input, integrationConfigSchema);
+}
+
+export async function startYouTubeOAuthAttempt(): Promise<OAuthAttemptSnapshot> {
+  return apiPost('/api/integrations/youtube/oauth-attempts', NO_BODY, oauthAttemptSnapshotSchema);
+}
+
+export async function reconnectYouTubeAccount(accountId: string): Promise<OAuthAttemptSnapshot> {
+  return apiPost(
+    `/api/connected-accounts/${encodeURIComponent(accountId)}/reconnect`,
+    NO_BODY,
+    oauthAttemptSnapshotSchema,
+  );
+}
+
+export async function fetchYouTubeOAuthAttempt(
+  attemptId: string,
+  signal?: AbortSignal,
+): Promise<OAuthAttemptSnapshot> {
+  return apiGet(
+    `/api/integrations/youtube/oauth-attempts/${encodeURIComponent(attemptId)}`,
+    oauthAttemptSnapshotSchema,
+    { signal },
+  );
+}
+
+export async function cancelYouTubeOAuthAttempt(attemptId: string): Promise<OAuthAttemptSnapshot> {
+  await apiDelete(`/api/integrations/youtube/oauth-attempts/${encodeURIComponent(attemptId)}`);
+  return fetchYouTubeOAuthAttempt(attemptId);
+}
+
+export async function selectYouTubeChannel(
+  attemptId: string,
+  channelId: string,
+): Promise<OAuthAttemptSnapshot> {
+  return apiPost(
+    `/api/integrations/youtube/oauth-attempts/${encodeURIComponent(attemptId)}/channel`,
+    { channelId },
+    oauthAttemptSnapshotSchema,
+  );
+}
+
+export async function fetchYouTubeBroadcasts(
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<BroadcastItem[]> {
+  const response = await apiGet(
+    `/api/connected-accounts/${encodeURIComponent(accountId)}/youtube/broadcasts`,
+    broadcastListResponseSchema,
+    { signal },
+  );
+  return response.items;
+}
+
+export async function fetchYouTubeCategories(
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<CategoryItem[]> {
+  const response = await apiGet(
+    `/api/connected-accounts/${encodeURIComponent(accountId)}/youtube/categories`,
+    categorySearchResponseSchema,
+    { signal },
+  );
+  return response.items;
+}
+
+export async function fetchYouTubeRegion(accountId: string, signal?: AbortSignal): Promise<string> {
+  const response = await apiGet(
+    `/api/connected-accounts/${encodeURIComponent(accountId)}/youtube/region`,
+    regionResponseSchema,
+    { signal },
+  );
+  return response.region;
+}
+
+export async function setYouTubeRegion(accountId: string, region: string): Promise<string> {
+  const response = await apiPut(
+    `/api/connected-accounts/${encodeURIComponent(accountId)}/youtube/region`,
+    { region },
+    regionResponseSchema,
+  );
+  return response.region;
+}
+
+export async function fetchRemoteTarget(
+  platformId: string,
+  signal?: AbortSignal,
+): Promise<RemoteTarget | null> {
+  return apiGet(
+    `/api/platforms/${encodeURIComponent(platformId)}/remote-target`,
+    remoteTargetResponseSchema,
+    { signal },
+  );
+}
+
+export async function setRemoteTarget(platformId: string, resourceId: string): Promise<RemoteTarget> {
+  return apiPut(
+    `/api/platforms/${encodeURIComponent(platformId)}/remote-target`,
+    { resourceId },
+    remoteTargetSchema,
+  );
+}
+
+export async function deleteRemoteTarget(platformId: string): Promise<void> {
+  await apiDelete(`/api/platforms/${encodeURIComponent(platformId)}/remote-target`);
 }

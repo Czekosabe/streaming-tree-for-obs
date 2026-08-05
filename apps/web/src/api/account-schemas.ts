@@ -104,9 +104,14 @@ export const publishPreviewSchema = z.object({
   providerId: z.string(),
   accountId: z.string().optional(),
   accountLogin: z.string().optional(),
+  // YouTube only: the selected live broadcast this preview compares
+  // against - absent for every other provider.
+  broadcastId: z.string().optional(),
+  broadcastTitle: z.string().optional(),
   fields: z.array(fieldDiffSchema),
   skipped: z.array(z.string()),
   blockers: z.array(z.string()),
+  warnings: z.array(z.string()).optional(),
   allowed: z.boolean(),
 });
 export type PublishPreview = z.infer<typeof publishPreviewSchema>;
@@ -114,9 +119,92 @@ export type PublishPreview = z.infer<typeof publishPreviewSchema>;
 export const publishResultSchema = z.object({
   status: z.enum(['published', 'blocked']),
   accountId: z.string().optional(),
+  broadcastId: z.string().optional(),
   publishedAt: z.string().optional(),
   fieldsChanged: z.array(z.string()).optional(),
   fieldsSkipped: z.array(z.string()).optional(),
+  // YouTube only: fields a multi-call publish attempted but failed to
+  // change - always empty this stage (a single-call publish path), kept so
+  // a future multi-call publish can report a genuine partial result
+  // without a schema change - see docs/provider-integrations/youtube.md.
+  fieldsFailed: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
   blockers: z.array(z.string()).optional(),
 });
 export type PublishResult = z.infer<typeof publishResultSchema>;
+
+/**
+ * YouTube's own OAuth attempt state machine: Authorization Code Flow with
+ * PKCE and a loopback callback, distinct from Twitch's device-flow states -
+ * see docs/provider-integrations/youtube.md for why these are not unified
+ * into one shape.
+ */
+export const oauthAttemptStateSchema = z.enum([
+  'creating',
+  'waiting_for_browser',
+  'processing_callback',
+  'awaiting_channel_selection',
+  'authorized',
+  'denied',
+  'expired',
+  'cancelled',
+  'error',
+]);
+export type OAuthAttemptState = z.infer<typeof oauthAttemptStateSchema>;
+
+export const channelSummarySchema = z.object({
+  channelId: z.string().min(1),
+  title: z.string(),
+  thumbnailUrl: z.string().optional(),
+});
+export type ChannelSummary = z.infer<typeof channelSummarySchema>;
+
+export const oauthAttemptSnapshotSchema = z.object({
+  attemptId: z.string().min(1),
+  providerId: z.string().min(1),
+  state: oauthAttemptStateSchema,
+  // Ephemeral, security-sensitive: present only while waiting for the
+  // browser. Never an authorization code, a PKCE verifier, or a state
+  // value - those fields do not exist anywhere in this shape (see
+  // internal/httpapi/youtube.go's oauthAttemptResponse).
+  authorizationUrl: z.string().optional(),
+  createdAt: z.string(),
+  expiresAt: z.string().optional(),
+  connectedAccountId: z.string().optional(),
+  channels: z.array(channelSummarySchema).optional(),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+export type OAuthAttemptSnapshot = z.infer<typeof oauthAttemptSnapshotSchema>;
+
+export const broadcastItemSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  lifeCycleStatus: z.string(),
+  privacyStatus: z.string(),
+  scheduledStartTime: z.string().optional(),
+  actualStartTime: z.string().optional(),
+});
+export type BroadcastItem = z.infer<typeof broadcastItemSchema>;
+
+export const broadcastListResponseSchema = z.object({
+  items: z.array(broadcastItemSchema),
+});
+
+export const remoteTargetSchema = z.object({
+  platformId: z.string().min(1),
+  providerId: z.string().min(1),
+  resourceType: z.string().min(1),
+  resourceId: z.string().min(1),
+  displayName: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type RemoteTarget = z.infer<typeof remoteTargetSchema>;
+
+/** `GET /api/platforms/{id}/remote-target` answers `null` when unset. */
+export const remoteTargetResponseSchema = remoteTargetSchema.nullable();
+
+export const regionResponseSchema = z.object({
+  region: z.string(),
+});

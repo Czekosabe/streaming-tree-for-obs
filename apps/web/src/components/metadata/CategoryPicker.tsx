@@ -1,13 +1,21 @@
-import { Search, X } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
-import { useCategorySearchQuery, usePlatformAccountLinkQuery } from '@/hooks/use-accounts';
+import {
+  useCategorySearchQuery,
+  usePlatformAccountLinkQuery,
+  useYouTubeCategoriesQuery,
+  useYouTubeRegionQuery,
+  useSetYouTubeRegionMutation,
+} from '@/hooks/use-accounts';
 import { cn } from '@/lib/cn';
 
 type CategoryPickerProps = {
   platformId: string;
+  providerId: string;
   value: string;
   categoryId: string;
   disabled: boolean;
@@ -17,20 +25,19 @@ type CategoryPickerProps = {
 
 /**
  * Category field for a provider that requires a remote category ID to
- * publish (Twitch) - a search box backed by the linked account's category
- * search, instead of free text. Selecting a result stores both the display
- * name and the provider's own stable ID; typing without selecting leaves a
- * stale ID that the publish preview reports as a blocker rather than
- * guessing which remote category the text meant.
+ * publish - a Twitch text search, or a YouTube region-scoped list, instead
+ * of free text. Selecting a result stores both the display name and the
+ * provider's own stable ID; typing (Twitch) or leaving a value unselected
+ * after a region change (YouTube) without selecting leaves a stale ID that
+ * the publish preview reports as a blocker rather than guessing which
+ * remote category the text meant.
  */
-export function CategoryPicker({
-  platformId,
-  value,
-  categoryId,
-  disabled,
-  invalid,
-  onChange,
-}: CategoryPickerProps) {
+export function CategoryPicker(props: CategoryPickerProps) {
+  if (props.providerId === 'youtube') return <YouTubeCategoryPicker {...props} />;
+  return <TwitchCategorySearch {...props} />;
+}
+
+function TwitchCategorySearch({ platformId, value, categoryId, disabled, invalid, onChange }: CategoryPickerProps) {
   const { t } = useTranslation('accounts');
   const linkQuery = usePlatformAccountLinkQuery(platformId);
   const [query, setQuery] = useState('');
@@ -115,6 +122,113 @@ export function CategoryPicker({
             </button>
           ))}
         </div>
+      )}
+
+      {value !== '' && categoryId === '' && (
+        <p className="text-[11px] text-status-warning">{t('category.staleNote')}</p>
+      )}
+    </div>
+  );
+}
+
+function YouTubeCategoryPicker({ platformId, value, categoryId, disabled, invalid, onChange }: CategoryPickerProps) {
+  const { t } = useTranslation('accounts');
+  const linkQuery = usePlatformAccountLinkQuery(platformId);
+  const accountId = linkQuery.data?.accountId ?? null;
+
+  const regionQuery = useYouTubeRegionQuery(accountId);
+  const categoriesQuery = useYouTubeCategoriesQuery(accountId);
+  const setRegion = useSetYouTubeRegionMutation();
+
+  const [editingRegion, setEditingRegion] = useState(false);
+  const [regionInput, setRegionInput] = useState('');
+
+  if (accountId === null) {
+    return (
+      <div className="space-y-1.5">
+        <TextInput value={value} disabled className="opacity-70" />
+        <p className="text-[11px] text-ink-faint">{t('category.linkAccountNoteYouTube')}</p>
+      </div>
+    );
+  }
+
+  const region = regionQuery.data ?? '';
+  const categories = categoriesQuery.data ?? [];
+
+  const handleSaveRegion = () => {
+    const trimmed = regionInput.trim();
+    if (trimmed.length !== 2) return;
+    setRegion.mutate({ accountId, region: trimmed }, { onSuccess: () => setEditingRegion(false) });
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        {editingRegion ? (
+          <>
+            <TextInput
+              value={regionInput}
+              maxLength={2}
+              className="w-16 uppercase"
+              placeholder="US"
+              onChange={(event) => setRegionInput(event.target.value)}
+            />
+            <button
+              type="button"
+              className="text-[11px] font-medium text-accent hover:underline"
+              onClick={handleSaveRegion}
+            >
+              {t('integration.save')}
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-[11px] text-ink-faint">
+              {region === ''
+                ? t('category.regionRequiredNote')
+                : t('category.regionLabel') + ': ' + region}
+            </span>
+            <button
+              type="button"
+              className="text-[11px] font-medium text-accent hover:underline"
+              onClick={() => {
+                setRegionInput(region);
+                setEditingRegion(true);
+              }}
+            >
+              {t('category.regionChangeButton')}
+            </button>
+          </>
+        )}
+      </div>
+
+      {region !== '' && (
+        <>
+          {categoriesQuery.isLoading ? (
+            <p className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+              {t('category.loadingList')}
+            </p>
+          ) : (
+            <SelectInput
+              value={categoryId}
+              disabled={disabled}
+              aria-invalid={invalid}
+              onChange={(event) => {
+                const chosen = categories.find((c) => c.id === event.target.value);
+                if (chosen === undefined) {
+                  onChange('', '');
+                } else {
+                  onChange(chosen.name, chosen.id);
+                }
+              }}
+              options={[
+                { value: '', label: t('category.listPlaceholder') },
+                ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
+          )}
+        </>
       )}
 
       {value !== '' && categoryId === '' && (

@@ -87,26 +87,33 @@
     "current": "Current: {{name}}",
     "clear": "Clear",
     "linkAccountNote": "Link a Twitch account to search for a category.",
-    "staleNote": "This category has no matching Twitch ID and cannot be published until you select it again."
+    "linkAccountNoteYouTube": "Link a YouTube channel to choose a category.",
+    "staleNote": "This category has no matching Twitch ID and cannot be published until you select it again.",
+    "regionLabel": "Category region",
+    "regionChangeButton": "Change region",
+    "regionRequiredNote": "Choose a region to load YouTube categories.",
+    "listPlaceholder": "Choose a category…",
+    "loadingList": "Loading categories…"
   },
   "publish": {
-    "heading": "Publish to Twitch",
-    "description": "Sends your saved metadata to Twitch. This is separate from saving locally.",
-    "unsavedNote": "Save your local changes before publishing to Twitch.",
-    "loadingPreview": "Checking current Twitch metadata…",
+    "heading": "Publish to {{provider}}",
+    "description": "Sends your saved metadata to {{provider}}. This is separate from saving locally.",
+    "unsavedNote": "Save your local changes before publishing to {{provider}}.",
+    "loadingPreview": "Checking current {{provider}} metadata…",
     "fieldChanged": "will change",
     "fieldUnchanged": "unchanged",
     "localValue": "Local",
-    "remoteValue": "Currently on Twitch",
-    "skippedFields": "Not published to Twitch (no equivalent field): {{fields}}",
-    "publishButton": "Publish to Twitch",
+    "remoteValue": "Currently on {{provider}}",
+    "skippedFields": "Not published to {{provider}} (no equivalent field): {{fields}}",
+    "publishButton": "Publish to {{provider}}",
     "publishing": "Publishing…",
     "confirmDialog": {
-      "title": "Publish to Twitch?",
-      "message": "This sends the changed fields shown below to Twitch right now.",
+      "title": "Publish to {{provider}}?",
+      "message": "This sends the changed fields shown below to {{provider}} right now.",
       "confirm": "Publish"
     },
-    "success": "Published to Twitch.",
+    "success": "Published to {{provider}}.",
+    "broadcastLabel": "Selected broadcast: {{title}}",
     "blockers": {
       "accountNotLinked": "Link a Twitch account to this destination first.",
       "accountReconnectRequired": "The linked Twitch account needs to be reconnected.",
@@ -114,7 +121,103 @@
       "missingRequiredScope": "The linked account is missing a required permission.",
       "categoryNotSelected": "Select a category from the search results before publishing.",
       "providerUnavailable": "Twitch could not be reached.",
-      "rateLimited": "Twitch's rate limit was reached; try again shortly."
+      "rateLimited": "Twitch's rate limit was reached; try again shortly.",
+      "youtubeBroadcastNotSelected": "Select a live broadcast for this destination before publishing.",
+      "youtubeBroadcastNotFound": "The selected broadcast could not be found on YouTube. Choose it again.",
+      "youtubeLiveStreamingNotEnabled": "Live streaming is not enabled for this YouTube channel.",
+      "youtubeRegionRequired": "Choose a category region before publishing.",
+      "youtubeCategoryRequired": "Select a category from the list before publishing.",
+      "youtubeQuotaExceeded": "YouTube's API quota was reached; try again later.",
+      "youtubeUnavailable": "YouTube could not be reached."
+    },
+    "warnings": {
+      "testingModeSevenDayToken": "This Google project is likely in Testing mode: authorization may need to be repeated every 7 days.",
+      "notVerifiedStreamKeyBinding": "Streaming Tree cannot verify that this broadcast uses the stream key configured below - they are managed separately."
+    }
+  },
+  "oauthAttempt": {
+    "title": "Connect your YouTube channel",
+    "description": "Streaming Tree opens Google's own sign-in page in your browser. Nothing is shared with Streaming Tree until you approve it there.",
+    "openGoogle": "Open Google authorization",
+    "waitingNote": "Waiting for you to finish signing in with Google…",
+    "expiresIn_one": "This attempt expires in {{count}} minute",
+    "expiresIn_other": "This attempt expires in {{count}} minutes",
+    "state": {
+      "creating": "Preparing the authorization request…",
+      "waiting_for_browser": "Waiting for you to finish signing in with Google…",
+      "processing_callback": "Finishing authorization…",
+      "awaiting_channel_selection": "Choose which channel to connect.",
+      "authorized": "Connected!",
+      "denied": "Authorization was denied on Google.",
+      "expired": "This attempt expired before it was completed.",
+      "cancelled": "Cancelled.",
+      "error": "The authorization attempt could not be completed."
+    },
+    "cancel": "Cancel",
+    "close": "Close",
+    "successNote": "Your YouTube channel is now connected.",
+    "chooseChannel": "Choose a channel",
+    "channelSelectButton": "Connect this channel",
+    "channelSelecting": "Connecting…"
+  },
+  "youtube": {
+    "integration": {
+      "heading": "YouTube integration",
+      "description": "Connect a YouTube channel so Streaming Tree can read and update its live broadcast metadata. No client secret is ever requested or stored.",
+      "clientIdLabel": "YouTube (Google) OAuth Client ID",
+      "clientIdPlaceholder": "e.g. 1234567890-abc.apps.googleusercontent.com",
+      "clientIdHint": "In the Google Cloud console: create a project, enable \"YouTube Data API v3\", create an OAuth client of type \"Desktop app\", and paste its Client ID here.",
+      "clientIdSourceEnvironment": "Set by the STREAMING_TREE_YOUTUBE_CLIENT_ID environment variable and cannot be changed here.",
+      "clientIdSourceDatabase": "Saved in application settings.",
+      "clientIdSourceMissing": "Not configured yet.",
+      "noSecretNote": "Streaming Tree never accepts or stores a Google client secret, or a downloaded credentials.json file - only the public Client ID.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "lockedNote": "The Client ID cannot be changed while a YouTube account is connected. Disconnect every YouTube account first.",
+      "testingModeNote": "If your Google Cloud project is left in \"Testing\" publishing status, Google expires authorization after 7 days regardless of what Streaming Tree requests - this is a Google limitation Streaming Tree cannot detect or work around, only reconnect after."
+    },
+    "connect": {
+      "button": "Connect YouTube",
+      "notConfiguredNote": "Configure a YouTube Client ID above before connecting a channel."
+    },
+    "account": {
+      "heading": "Connected YouTube channels",
+      "empty": "No YouTube channel connected yet.",
+      "handleLabel": "Handle",
+      "reconnectRequiredNote": "YouTube could not confirm this channel's access. Reconnect to keep using it.",
+      "disconnectDialog": {
+        "title": "Disconnect {{login}}?",
+        "message": "Streaming Tree will revoke this channel's access on Google where possible and remove it locally. Any destination linked to it will need to be relinked.",
+        "confirm": "Disconnect"
+      }
+    },
+    "link": {
+      "heading": "Connected YouTube channel",
+      "description": "Linking a YouTube channel lets you read and publish this destination's metadata. It is separate from the destination's stream key.",
+      "notLinked": "No YouTube channel linked to this destination.",
+      "linkedTo": "Linked to {{login}}",
+      "chooseAccount": "Choose a connected channel",
+      "linkButton": "Link",
+      "unlinkButton": "Unlink",
+      "replaceNote": "Linking a different channel replaces the current link.",
+      "noAccountsAvailable": "No YouTube channels are connected yet. Connect one in Settings first."
+    },
+    "broadcast": {
+      "heading": "Selected broadcast",
+      "description": "Choose which YouTube live broadcast this destination's metadata applies to. This does not verify or bind the stream key below.",
+      "notLinked": "Link a YouTube channel to select a broadcast.",
+      "notSelected": "No broadcast selected yet.",
+      "selectedLabel": "Selected: {{title}}",
+      "chooseBroadcast": "Choose a broadcast",
+      "selectButton": "Select",
+      "clearButton": "Clear selection",
+      "empty": "No active or upcoming broadcasts were found for this channel.",
+      "creationNote": "Create and schedule a live broadcast in YouTube Studio first - Streaming Tree does not create one for you.",
+      "staleNote": "The previously selected broadcast could not be found. Choose one again.",
+      "statusActive": "Live",
+      "statusUpcoming": "Upcoming",
+      "statusOther": "{{status}}"
     }
   }
 }

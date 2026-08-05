@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { ConnectedAccountsPanel } from '@/components/settings/ConnectedAccountsPanel';
+import { YouTubeAccountsPanel } from '@/components/settings/YouTubeAccountsPanel';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 
@@ -35,6 +36,7 @@ export function SettingsPage() {
         </Panel>
 
         <ConnectedAccountsPanel />
+        <YouTubeAccountsPanel />
       </div>
     </AppShell>
   );

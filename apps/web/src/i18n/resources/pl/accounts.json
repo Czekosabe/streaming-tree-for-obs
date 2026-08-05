@@ -89,26 +89,33 @@
     "current": "Obecnie: {{name}}",
     "clear": "Wyczyść",
     "linkAccountNote": "Połącz konto Twitch, aby wyszukać kategorię.",
-    "staleNote": "Ta kategoria nie ma pasującego identyfikatora Twitch i nie można jej opublikować, dopóki nie zostanie wybrana ponownie."
+    "linkAccountNoteYouTube": "Połącz kanał YouTube, aby wybrać kategorię.",
+    "staleNote": "Ta kategoria nie ma pasującego identyfikatora Twitch i nie można jej opublikować, dopóki nie zostanie wybrana ponownie.",
+    "regionLabel": "Region kategorii",
+    "regionChangeButton": "Zmień region",
+    "regionRequiredNote": "Wybierz region, aby wczytać kategorie YouTube.",
+    "listPlaceholder": "Wybierz kategorię…",
+    "loadingList": "Wczytywanie kategorii…"
   },
   "publish": {
-    "heading": "Publikuj na Twitch",
-    "description": "Wysyła zapisane metadane na Twitch. To osobna czynność od zapisu lokalnego.",
-    "unsavedNote": "Zapisz lokalne zmiany przed publikacją na Twitch.",
-    "loadingPreview": "Sprawdzanie bieżących metadanych na Twitch…",
+    "heading": "Publikuj na {{provider}}",
+    "description": "Wysyła zapisane metadane na {{provider}}. To osobna czynność od zapisu lokalnego.",
+    "unsavedNote": "Zapisz lokalne zmiany przed publikacją na {{provider}}.",
+    "loadingPreview": "Sprawdzanie bieżących metadanych na {{provider}}…",
     "fieldChanged": "zostanie zmienione",
     "fieldUnchanged": "bez zmian",
     "localValue": "Lokalnie",
-    "remoteValue": "Obecnie na Twitch",
-    "skippedFields": "Nie publikowane na Twitch (brak odpowiednika): {{fields}}",
-    "publishButton": "Publikuj na Twitch",
+    "remoteValue": "Obecnie na {{provider}}",
+    "skippedFields": "Nie publikowane na {{provider}} (brak odpowiednika): {{fields}}",
+    "publishButton": "Publikuj na {{provider}}",
     "publishing": "Publikowanie…",
     "confirmDialog": {
-      "title": "Opublikować na Twitch?",
-      "message": "To wyśle na Twitch zmienione pola pokazane poniżej, natychmiast.",
+      "title": "Opublikować na {{provider}}?",
+      "message": "To wyśle na {{provider}} zmienione pola pokazane poniżej, natychmiast.",
       "confirm": "Publikuj"
     },
-    "success": "Opublikowano na Twitch.",
+    "success": "Opublikowano na {{provider}}.",
+    "broadcastLabel": "Wybrana transmisja: {{title}}",
     "blockers": {
       "accountNotLinked": "Najpierw połącz konto Twitch z tym celem.",
       "accountReconnectRequired": "Połączone konto Twitch wymaga ponownego połączenia.",
@@ -116,7 +123,105 @@
       "missingRequiredScope": "Połączonemu kontu brakuje wymaganego uprawnienia.",
       "categoryNotSelected": "Wybierz kategorię z wyników wyszukiwania przed publikacją.",
       "providerUnavailable": "Nie udało się połączyć z Twitch.",
-      "rateLimited": "Osiągnięto limit zapytań Twitch; spróbuj ponownie za chwilę."
+      "rateLimited": "Osiągnięto limit zapytań Twitch; spróbuj ponownie za chwilę.",
+      "youtubeBroadcastNotSelected": "Wybierz transmisję na żywo dla tego celu przed publikacją.",
+      "youtubeBroadcastNotFound": "Nie znaleziono wybranej transmisji na YouTube. Wybierz ją ponownie.",
+      "youtubeLiveStreamingNotEnabled": "Transmisje na żywo nie są włączone dla tego kanału YouTube.",
+      "youtubeRegionRequired": "Wybierz region kategorii przed publikacją.",
+      "youtubeCategoryRequired": "Wybierz kategorię z listy przed publikacją.",
+      "youtubeQuotaExceeded": "Osiągnięto limit zapytań API YouTube; spróbuj ponownie później.",
+      "youtubeUnavailable": "Nie udało się połączyć z YouTube."
+    },
+    "warnings": {
+      "testingModeSevenDayToken": "Ten projekt Google jest prawdopodobnie w trybie \"Testowanie\": autoryzację może być konieczne powtarzać co 7 dni.",
+      "notVerifiedStreamKeyBinding": "Streaming Tree nie może zweryfikować, czy ta transmisja używa klucza strumienia skonfigurowanego poniżej - są zarządzane oddzielnie."
+    }
+  },
+  "oauthAttempt": {
+    "title": "Połącz swój kanał YouTube",
+    "description": "Streaming Tree otwiera w przeglądarce stronę logowania Google. Nic nie jest udostępniane Streaming Tree, dopóki nie zatwierdzisz tego tam.",
+    "openGoogle": "Otwórz autoryzację Google",
+    "waitingNote": "Oczekiwanie na zakończenie logowania Google…",
+    "expiresIn_one": "Ta próba wygasa za {{count}} minutę",
+    "expiresIn_few": "Ta próba wygasa za {{count}} minuty",
+    "expiresIn_many": "Ta próba wygasa za {{count}} minut",
+    "expiresIn_other": "Ta próba wygasa za {{count}} minuty",
+    "state": {
+      "creating": "Przygotowywanie żądania autoryzacji…",
+      "waiting_for_browser": "Oczekiwanie na zakończenie logowania Google…",
+      "processing_callback": "Kończenie autoryzacji…",
+      "awaiting_channel_selection": "Wybierz, który kanał połączyć.",
+      "authorized": "Połączono!",
+      "denied": "Autoryzacja została odrzucona na Google.",
+      "expired": "Ta próba wygasła przed ukończeniem.",
+      "cancelled": "Anulowano.",
+      "error": "Nie udało się zakończyć autoryzacji."
+    },
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "successNote": "Twój kanał YouTube jest teraz połączony.",
+    "chooseChannel": "Wybierz kanał",
+    "channelSelectButton": "Połącz ten kanał",
+    "channelSelecting": "Łączenie…"
+  },
+  "youtube": {
+    "integration": {
+      "heading": "Integracja z YouTube",
+      "description": "Połącz kanał YouTube, aby Streaming Tree mógł odczytywać i aktualizować metadane jego transmisji na żywo. Nigdy nie prosimy o klucz tajny klienta ani go nie przechowujemy.",
+      "clientIdLabel": "Client ID OAuth YouTube (Google)",
+      "clientIdPlaceholder": "np. 1234567890-abc.apps.googleusercontent.com",
+      "clientIdHint": "W konsoli Google Cloud: utwórz projekt, włącz \"YouTube Data API v3\", utwórz klienta OAuth typu \"Aplikacja klasyczna (Desktop app)\" i wklej tutaj jego Client ID.",
+      "clientIdSourceEnvironment": "Ustawione przez zmienną środowiskową STREAMING_TREE_YOUTUBE_CLIENT_ID i nie można tego zmienić tutaj.",
+      "clientIdSourceDatabase": "Zapisane w ustawieniach aplikacji.",
+      "clientIdSourceMissing": "Jeszcze nie skonfigurowane.",
+      "noSecretNote": "Streaming Tree nigdy nie przyjmuje ani nie przechowuje klucza tajnego klienta Google ani pobranego pliku credentials.json - tylko publiczne Client ID.",
+      "save": "Zapisz",
+      "saving": "Zapisywanie…",
+      "saved": "Zapisano",
+      "lockedNote": "Nie można zmienić Client ID, dopóki połączony jest kanał YouTube. Najpierw odłącz każdy kanał YouTube.",
+      "testingModeNote": "Jeśli Twój projekt Google Cloud pozostaje w statusie publikacji \"Testowanie\", Google unieważnia autoryzację po 7 dniach niezależnie od tego, o co prosi Streaming Tree - to ograniczenie Google, którego Streaming Tree nie może wykryć ani obejść, jedynie połączyć ponownie."
+    },
+    "connect": {
+      "button": "Połącz z YouTube",
+      "notConfiguredNote": "Najpierw skonfiguruj Client ID YouTube powyżej, aby połączyć kanał."
+    },
+    "account": {
+      "heading": "Połączone kanały YouTube",
+      "empty": "Żaden kanał YouTube nie jest jeszcze połączony.",
+      "handleLabel": "Nazwa",
+      "reconnectRequiredNote": "YouTube nie mógł potwierdzić dostępu tego kanału. Połącz ponownie, aby dalej z niego korzystać.",
+      "disconnectDialog": {
+        "title": "Odłączyć {{login}}?",
+        "message": "Streaming Tree cofnie dostęp tego kanału na Google, jeśli to możliwe, i usunie go lokalnie. Każdy cel powiązany z tym kanałem będzie wymagał ponownego połączenia.",
+        "confirm": "Odłącz"
+      }
+    },
+    "link": {
+      "heading": "Połączony kanał YouTube",
+      "description": "Połączenie kanału YouTube pozwala odczytywać i publikować metadane tego celu. To odrębna funkcja od klucza strumienia celu.",
+      "notLinked": "Żaden kanał YouTube nie jest połączony z tym celem.",
+      "linkedTo": "Połączono z {{login}}",
+      "chooseAccount": "Wybierz połączony kanał",
+      "linkButton": "Połącz",
+      "unlinkButton": "Rozłącz",
+      "replaceNote": "Połączenie innego kanału zastąpi obecne połączenie.",
+      "noAccountsAvailable": "Żaden kanał YouTube nie jest jeszcze połączony. Najpierw połącz go w Ustawieniach."
+    },
+    "broadcast": {
+      "heading": "Wybrana transmisja",
+      "description": "Wybierz, której transmisji na żywo YouTube dotyczą metadane tego celu. Nie weryfikuje ani nie wiąże to klucza strumienia poniżej.",
+      "notLinked": "Połącz kanał YouTube, aby wybrać transmisję.",
+      "notSelected": "Nie wybrano jeszcze transmisji.",
+      "selectedLabel": "Wybrano: {{title}}",
+      "chooseBroadcast": "Wybierz transmisję",
+      "selectButton": "Wybierz",
+      "clearButton": "Wyczyść wybór",
+      "empty": "Nie znaleziono aktywnych ani nadchodzących transmisji dla tego kanału.",
+      "creationNote": "Najpierw utwórz i zaplanuj transmisję na żywo w YouTube Studio - Streaming Tree jej nie tworzy.",
+      "staleNote": "Wcześniej wybrana transmisja nie została znaleziona. Wybierz ją ponownie.",
+      "statusActive": "Na żywo",
+      "statusUpcoming": "Nadchodząca",
+      "statusOther": "{{status}}"
     }
   }
 }

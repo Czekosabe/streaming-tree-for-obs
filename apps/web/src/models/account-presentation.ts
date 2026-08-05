@@ -1,6 +1,6 @@
 import type { ParseKeys } from 'i18next';
 
-import type { AccountStatus, DeviceFlowState } from '@/api/account-schemas';
+import type { AccountStatus, DeviceFlowState, OAuthAttemptState } from '@/api/account-schemas';
 import type { PlatformStatus } from './platform';
 
 /**
@@ -53,6 +53,50 @@ export function deviceFlowIsTerminal(state: DeviceFlowState): boolean {
   );
 }
 
+export function oauthAttemptStateKey(state: OAuthAttemptState): AccountKey {
+  const keys: Record<OAuthAttemptState, AccountKey> = {
+    creating: 'oauthAttempt.state.creating',
+    waiting_for_browser: 'oauthAttempt.state.waiting_for_browser',
+    processing_callback: 'oauthAttempt.state.processing_callback',
+    awaiting_channel_selection: 'oauthAttempt.state.awaiting_channel_selection',
+    authorized: 'oauthAttempt.state.authorized',
+    denied: 'oauthAttempt.state.denied',
+    expired: 'oauthAttempt.state.expired',
+    cancelled: 'oauthAttempt.state.cancelled',
+    error: 'oauthAttempt.state.error',
+  };
+  return keys[state];
+}
+
+export function oauthAttemptTone(state: OAuthAttemptState): PlatformStatus {
+  switch (state) {
+    case 'authorized':
+      return 'live';
+    case 'creating':
+    case 'waiting_for_browser':
+    case 'processing_callback':
+    case 'awaiting_channel_selection':
+      return 'starting';
+    case 'denied':
+    case 'expired':
+    case 'error':
+      return 'error';
+    case 'cancelled':
+      return 'offline';
+  }
+}
+
+/** True once a YouTube OAuth attempt can no longer change. */
+export function oauthAttemptIsTerminal(state: OAuthAttemptState): boolean {
+  return (
+    state === 'authorized' ||
+    state === 'denied' ||
+    state === 'expired' ||
+    state === 'cancelled' ||
+    state === 'error'
+  );
+}
+
 export function accountStatusKey(status: AccountStatus): AccountKey {
   const keys: Record<AccountStatus, AccountKey> = {
     connected: 'account.status.connected',
@@ -77,6 +121,23 @@ export function publishBlockerKey(blocker: string): AccountKey | null {
     category_not_selected: 'publish.blockers.categoryNotSelected',
     provider_unavailable: 'publish.blockers.providerUnavailable',
     rate_limited: 'publish.blockers.rateLimited',
+    youtube_broadcast_not_selected: 'publish.blockers.youtubeBroadcastNotSelected',
+    youtube_broadcast_not_found: 'publish.blockers.youtubeBroadcastNotFound',
+    youtube_live_streaming_not_enabled: 'publish.blockers.youtubeLiveStreamingNotEnabled',
+    youtube_region_required: 'publish.blockers.youtubeRegionRequired',
+    youtube_category_required: 'publish.blockers.youtubeCategoryRequired',
+    youtube_quota_exceeded: 'publish.blockers.youtubeQuotaExceeded',
+    youtube_unavailable: 'publish.blockers.youtubeUnavailable',
   };
   return Object.prototype.hasOwnProperty.call(keys, blocker) ? (keys[blocker] ?? null) : null;
+}
+
+/** Translation key for one publish warning identifier, or null for one this
+ * build does not recognise. */
+export function publishWarningKey(warning: string): AccountKey | null {
+  const keys: Record<string, AccountKey> = {
+    testing_mode_seven_day_token: 'publish.warnings.testingModeSevenDayToken',
+    not_verified_stream_key_binding: 'publish.warnings.notVerifiedStreamKeyBinding',
+  };
+  return Object.prototype.hasOwnProperty.call(keys, warning) ? (keys[warning] ?? null) : null;
 }

@@ -4800,3 +4800,179 @@ preview/publish HTTP endpoints end-to-end regardless.
 Frontend: data layer, Settings YouTube panel, OAuth modal, channel
 selection, broadcast/remote-target section, metadata editor category/
 region and publish-panel updates, i18n.
+
+---
+
+## 2026-08-05 17:40 — feat(web): manage and publish YouTube connected accounts
+
+### Deviation from the suggested commit split
+
+The task's preferred split was a `feat(web): manage YouTube connected
+accounts` commit followed by a separate `feat(web): publish YouTube
+metadata` one. Built as one commit instead, for the same reason as the
+backend: the data layer (`api/account-schemas.ts`, `api/accounts.ts`,
+`hooks/use-accounts.ts`) and the single `accounts.json` i18n file are
+touched by both "manage" and "publish" concerns in the same pass, and
+`MetadataForm.tsx`/`CategoryPicker.tsx`/`PublishPanel.tsx` needed the
+account-linking data layer to exist before they could be written at all.
+
+### Frontend data layer (`api/account-schemas.ts`, `api/accounts.ts`, `hooks/use-accounts.ts`)
+
+New Zod schemas: `oauthAttemptStateSchema`/`oauthAttemptSnapshotSchema`
+(YouTube's own OAuth-attempt shape - structurally has no field for an
+authorization code, a PKCE verifier, or the OAuth CSRF state value, the
+same "absence is structural" property every existing account schema in
+this file already has), `channelSummarySchema`, `broadcastItemSchema`/
+`broadcastListResponseSchema` (no ingestion field - a
+`broadcastListResponseSchema.shape.items.element.shape` test asserts this
+directly, not just by convention), `remoteTargetSchema`/
+`remoteTargetResponseSchema` (nullable, matching `platformAccountLinkResponseSchema`'s
+own precedent), `regionResponseSchema`. `publishPreviewSchema`/
+`publishResultSchema` both gained optional `broadcastId`/`broadcastTitle`/
+`warnings`/`fieldsFailed` fields - present only for YouTube, absent (and
+therefore rendered as nothing) for Twitch.
+
+New transport functions in `api/accounts.ts` for every new YouTube
+endpoint, plus `reconnectYouTubeAccount` - a second function against the
+same shared `/api/connected-accounts/{id}/reconnect` endpoint
+`reconnectAccount` already calls, parsing an `OAuthAttemptSnapshot`
+instead of a `DeviceFlowSnapshot`. The caller (the account list) already
+knows an account's `providerId` before choosing which of the two to call,
+so this is not a runtime content-sniff.
+
+New hooks mirror the existing Twitch ones' shape 1:1: `useYouTubeAttemptQuery`
+polls at the same fixed 1-second interval `useDeviceFlowQuery` uses while
+non-terminal (`TERMINAL_OAUTH_ATTEMPT_STATES`, a direct parallel to
+`TERMINAL_DEVICE_FLOW_STATES`), `useSetRemoteTargetMutation`/
+`useDeleteRemoteTargetMutation` invalidate the publish-preview cache the
+same way `useSetPlatformAccountLinkMutation` already does, and
+`useSetYouTubeRegionMutation` additionally invalidates the category-list
+cache, since a changed region genuinely changes what that list should
+return.
+
+### `models/account-presentation.ts`
+
+`oauthAttemptStateKey`/`oauthAttemptTone`/`oauthAttemptIsTerminal` mirror
+`deviceFlowStateKey`/`deviceFlowTone`/`deviceFlowIsTerminal` exhaustively
+(a `Record<OAuthAttemptState, AccountKey>` switch/map, so a new state
+value is a compile error here, not a silently-blank label).
+`publishBlockerKey` gained the seven new YouTube blocker identifiers; a
+new `publishWarningKey` (same shape) covers the two warning identifiers
+`youtube.MetadataService.Preview` returns.
+
+### Settings page: `YouTubeOAuthModal.tsx`, `YouTubeAccountsPanel.tsx`
+
+A provider-specific modal, not a YouTube-flavored copy of
+`TwitchDeviceFlowModal` forced to fit - mirrors its structure (start-once-
+per-open via a ref guard, cancel-on-close-if-non-terminal, `onAuthorized`
+callback, adaptive polling) but replaces the user-code display with an
+explicit "Open Google authorization" link (`target="_blank" rel="noreferrer
+noopener"`, never auto-opened, never rendering the raw URL as visible
+text) and adds a channel-selection step (`awaiting_channel_selection`
+renders every offered `ChannelSummary` as its own button; clicking one
+calls `useSelectYouTubeChannelMutation` with that exact `channelId`, never
+a blind first-result pick). `YouTubeAccountsPanel.tsx` mirrors
+`ConnectedAccountsPanel.tsx`'s `IntegrationConfigForm`/`AccountRow`
+structure as a genuinely separate panel (per the task's "show separate
+provider panels" requirement) - Twitch's own panel, its component file,
+and its i18n keys are completely untouched. Both panels render side by
+side in `pages/SettingsPage.tsx`.
+
+### `components/platforms/AccountLinkSection.tsx` and new `BroadcastSelectSection.tsx`
+
+`AccountLinkSection` now accepts `youtube` alongside `twitch` (every other
+provider still gets the honest "not implemented" state) and resolves its
+i18n key prefix (`accounts:link.*` vs `accounts:youtube.link.*`) from the
+platform's own provider ID - Twitch's own keys and their exact English/
+Polish wording are unchanged. A new `BroadcastSelectSection.tsx`, wired
+into `PlatformSettingsDialog.tsx` alongside it, is YouTube's own broadcast-
+target selector: requires a linked, healthy account (checked via the same
+`usePlatformAccountLinkQuery` hook, not a duplicated fetch), lists only
+active/upcoming broadcasts (mirroring the backend's own merge), never
+auto-selects the first result, flags a previously-selected broadcast that
+no longer appears in the current list as stale, and explains broadcast
+creation happens in YouTube Studio, not here.
+
+### Metadata editor: `CategoryPicker.tsx`, `PublishPanel.tsx`, `MetadataForm.tsx`
+
+`CategoryPicker` is now two components behind one exported name: the
+existing Twitch text-search behavior, completely unchanged, and a new
+YouTube variant showing the effective category region (with an explicit
+override control) and a region-scoped category dropdown instead of a
+search box - matching `docs/provider-integrations/youtube.md`'s
+"YouTube video categories are not Twitch's search catalog" distinction.
+`MetadataForm.tsx` now passes `providerId` through so the picker knows
+which behavior to render.
+
+`PublishPanel` is shared between Twitch and YouTube (both publish through
+the same non-secret preview/result shape, dispatched server-side by the
+destination's own provider - see the previous backend commit), rather
+than forked into two near-identical components: its `publish.*` i18n
+strings were generalized from hardcoded "...to Twitch" wording to
+`{{provider}}`-interpolated text (`platform.provider?.brandName`, the
+same field `PlatformSettingsDialog.tsx` already reads for its own
+provider label), and it now shows the selected broadcast's title, any
+`warnings` the preview returned, and any `fieldsFailed` a publish result
+carries - all empty/absent for Twitch today, so nothing changes visually
+for a Twitch destination. The one existing rendered test that asserted
+literal "Published to Twitch." text (`PublishPanel.test.tsx`, written
+during the previous stage) needed its platform fixture updated to include
+a realistic `provider.brandName: "Twitch"` object, since the interpolated
+text now reads that field instead of a hardcoded string - the test's
+assertion itself did not change.
+
+### i18n
+
+`accounts.json` (en/pl) gained a top-level `youtube` section (integration,
+connect, account, link, broadcast) mirroring the existing top-level
+Twitch-specific sections, a shared `oauthAttempt` section (YouTube's own
+9-state machine, distinct from `deviceFlow`'s 8-state one), new
+`category.region*`/`.listPlaceholder`/`.loadingList` keys, seven new
+`publish.blockers.youtube*` keys and two new `publish.warnings.*` keys,
+and the `publish.*` generalization described above. `npm run i18n:check`
+passed throughout - both languages stayed in lockstep at every step, not
+only at the end.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Frontend i18n | `npm run i18n:check` | Passed |
+| Frontend typecheck | `npm run typecheck` | Passed |
+| Frontend lint | `npm run lint` | Passed |
+| Frontend tests | `npm run test -- --run` | Passed (35 files, 462 tests) |
+| Frontend build | `npm run build` | Passed |
+
+New test coverage this commit: `api/account-schemas.test.ts` gained cases
+for every new schema, including the two structural-absence tests above;
+`components/settings/YouTubeOAuthModal.test.tsx` (9 cases: start-shows-
+open-Google-link-never-raw-URL-or-state-text, explicit-click-required via
+`target="_blank"`, waiting state, cancellation, expired-shows-Close-not-
+Cancel, multi-channel selection picks the clicked channel not the first
+one, `onAuthorized` fires once, no duplicate start while open, denial
+renders distinctly from expiration); `components/settings/
+YouTubeAccountsPanel.test.tsx` (4 cases: no `window.confirm` on disconnect,
+cancelling the confirmation disconnects nothing, no Twitch text leaks into
+the YouTube panel, Connect disabled until configured).
+
+### Known limitations of this commit's own test coverage
+
+Given this stage's overall size, `BroadcastSelectSection.tsx` and the
+YouTube branch of `CategoryPicker.tsx` have no dedicated rendered tests of
+their own this commit - only type-checked and manually reasoned about
+against the same hook contracts the tested components already exercise.
+This is a deliberate, acknowledged scope reduction, flagged here rather
+than left silent; the still-pending local integration script exercises
+the underlying broadcast-selection and category/region HTTP endpoints
+end-to-end regardless, and both components reuse hooks (`useRemoteTargetQuery`,
+`useYouTubeBroadcastsQuery`, `useYouTubeCategoriesQuery`,
+`useYouTubeRegionQuery`) that are themselves thin wrappers with no
+YouTube-specific logic of their own to hide a bug in.
+
+### Next step
+`scripts/verify-youtube-account-integration.mjs` - a local fake Google
+OAuth/YouTube API server and the integration-tagged backend, verifying the
+OAuth attempt lifecycle, account persistence, linking, broadcast
+selection, category/region, publish preview/publish, refresh-on-401, and
+disconnect/revocation, with no real Google or YouTube endpoint ever
+contacted.

@@ -45,8 +45,10 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
 
   const [selected, setSelected] = useState('');
 
-  // Only Twitch has a connected-account integration in this stage.
-  if (platform.providerId !== 'twitch') {
+  // Twitch and YouTube both have a connected-account integration; every
+  // other provider shows an honest "not implemented" state instead of a
+  // fake selector.
+  if (platform.providerId !== 'twitch' && platform.providerId !== 'youtube') {
     return (
       <div className="space-y-2 rounded-lg border border-line bg-surface-sunken p-3">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
@@ -56,6 +58,12 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
       </div>
     );
   }
+
+  // Twitch and YouTube each have their own English/Polish wording (see
+  // i18n/resources/*/accounts.json's top-level "link" vs "youtube.link"),
+  // since "Twitch account" and "YouTube channel" are not interchangeable
+  // nouns - Twitch's own keys are untouched by this generalization.
+  const prefix = platform.providerId === 'youtube' ? 'accounts:youtube.link' : 'accounts:link';
 
   const busy = setLink.isPending || deleteLink.isPending;
   const accounts = (accountsQuery.data ?? []).filter((a) => a.providerId === platform.providerId);
@@ -75,16 +83,16 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
     <div className="space-y-3 rounded-lg border border-line bg-surface-sunken p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-          {t('accounts:link.heading')}
+          {t(`${prefix}.heading`)}
         </p>
       </div>
-      <p className="text-[11px] text-ink-faint">{t('accounts:link.description')}</p>
+      <p className="text-[11px] text-ink-faint">{t(`${prefix}.description`)}</p>
 
       {link !== null && (
         <div className="flex items-center justify-between gap-2 rounded-md border border-line bg-surface px-2.5 py-2">
           <div className="min-w-0">
             <p className="truncate text-xs font-medium text-ink">
-              {t('accounts:link.linkedTo', { login: linkedAccount?.login ?? link.accountId })}
+              {t(`${prefix}.linkedTo`, { login: linkedAccount?.login ?? link.accountId })}
             </p>
             {linkedAccount !== undefined && linkedAccount !== null && (
               <span
@@ -105,7 +113,7 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
             icon={<Unlink className="size-3.5" />}
             onClick={handleUnlink}
           >
-            {t('accounts:link.unlinkButton')}
+            {t(`${prefix}.unlinkButton`)}
           </Button>
         </div>
       )}
@@ -115,17 +123,17 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
       )}
 
       {accounts.length === 0 ? (
-        <p className="text-[11px] text-ink-faint">{t('accounts:link.noAccountsAvailable')}</p>
+        <p className="text-[11px] text-ink-faint">{t(`${prefix}.noAccountsAvailable`)}</p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <SelectInput
-            aria-label={t('accounts:link.chooseAccount')}
+            aria-label={t(`${prefix}.chooseAccount`)}
             className="max-w-[220px]"
             disabled={busy}
             value={selected}
             onChange={(event) => setSelected(event.target.value)}
             options={[
-              { value: '', label: t('accounts:link.chooseAccount') },
+              { value: '', label: t(`${prefix}.chooseAccount`) },
               ...accounts
                 .filter((a) => a.id !== link?.accountId)
                 .map((a) => ({ value: a.id, label: a.login })),
@@ -139,11 +147,11 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
             icon={<Link2 className="size-3.5" />}
             onClick={handleLink}
           >
-            {t('accounts:link.linkButton')}
+            {t(`${prefix}.linkButton`)}
           </Button>
         </div>
       )}
-      {link !== null && <p className="text-[11px] text-ink-faint">{t('accounts:link.replaceNote')}</p>}
+      {link !== null && <p className="text-[11px] text-ink-faint">{t(`${prefix}.replaceNote`)}</p>}
     </div>
   );
 }
