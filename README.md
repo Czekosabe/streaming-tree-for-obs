@@ -313,7 +313,12 @@ The resolved path is printed at startup:
 level=INFO msg="database ready" path=... journal_mode=wal
 ```
 
-That line contains no credentials, because the application stores none.
+That line contains no credentials. A destination stream key and a connected
+account's OAuth token bundle are both stored (in the operating system
+credential store, via `SecretStore` - never in SQLite, never in a log line),
+but neither the database file nor this startup log ever contains one - see
+[Stream key security](#stream-key-security) and
+[Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata).
 
 ### Migrations
 
@@ -331,7 +336,10 @@ metadata. Because the seed is an ordinary recorded migration, it runs exactly
 once: **if you delete a seeded destination, restarting the application will not
 bring it back.**
 
-No stream key, token or credential is seeded, stored or accepted anywhere.
+No stream key, token or credential is part of the seed itself - the seeded
+rows are disabled placeholders with example metadata only. Destination keys
+and connected-account OAuth tokens are accepted and stored later, when you
+configure them, and always in the OS credential store rather than in SQLite.
 
 ### Using a development database
 

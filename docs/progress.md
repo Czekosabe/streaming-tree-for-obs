@@ -4349,3 +4349,88 @@ pushing - see the closing report.
 ### Next step
 Final full regression (frontend + backend + all four integration scripts),
 confirm a clean, synced, pushed `main`, and the closing 52-point report.
+
+---
+
+## 2026-08-05 09:05 — fix(docs): correct stage 7A documentation drift
+
+Stage 7B (YouTube account integration) begins with a documentation preflight
+audit, as required before any new code. Three confirmed factual errors from
+stage 7A's own documentation pass were found and corrected; no other
+absolute claim audited turned out to be false.
+
+### What was wrong
+
+1. **`README.md`, "Data storage" section.** The database-ready startup log
+   line was described as containing no credentials "because the application
+   stores none." That was already false the moment stage 5 (credential
+   store) shipped: a destination stream key has been stored in the OS
+   credential store since stage 5, and a Twitch OAuth token bundle has been
+   stored there since stage 7A. The corrected wording says the log line
+   itself carries no credential, names both things that *are* stored
+   (stream key, OAuth token bundle), states plainly they live in
+   `SecretStore` and never in SQLite, and cross-links the two sections that
+   actually document them.
+2. **`README.md`, "Seeded configurations" section.** "No stream key, token
+   or credential is seeded, stored or accepted anywhere" conflated a true,
+   narrow fact (the four seeded placeholder destinations carry no
+   credential) with a false, absolute one (nothing is ever stored or
+   accepted). Corrected to scope the claim to the seed itself and restate
+   that credentials accepted later always go to the OS credential store,
+   never SQLite.
+3. **`docs/project-overview.md` §7 architecture diagram.** The FFmpeg
+   supervision arrow was still labeled "supervises (planned)", and the
+   YouTube/Kick/TikTok FFmpeg branches carried no `[DONE]` marker, even
+   though stage 6 completed FFmpeg branch supervision for all four
+   platforms generically (`internal/runtime/branch`, not Twitch-specific)
+   and the paragraph immediately below the diagram already said "every
+   arrow above is implemented." Corrected the arrow label and added
+   `[DONE]` to all four `ffmpeg #n` lines, matching the text that was
+   already accurate.
+
+### What was checked and found accurate (no change)
+
+- `README.md` "Stream key security" section's "the SQLite database stores
+  no credentials, and never will" - true as written: it is scoped to
+  SQLite specifically, not to storage anywhere in the application.
+- `docs/engagement-architecture.md`'s "Connected account" terminology
+  entry already states plainly that it is "Implemented as of stage 7A" -
+  no drift.
+- `config/README.md` - no absolute credential/OAuth claim found that
+  contradicts current behavior.
+- The README roadmap table's "Planned" status for 7B/7C and 8-19 remains
+  correct as of the start of this stage; it will be updated to mark 7B
+  "Completed" in this stage's own closing documentation commit, not here -
+  this commit only fixes statements that were already wrong before any
+  stage 7B code exists.
+- The "What is currently demo-only" table's row stating YouTube/Kick/TikTok
+  account connection and metadata publishing is "Not implemented" is
+  currently true (stage 7B has not started implementing anything yet at
+  the point of this commit) and is deliberately left for the stage's own
+  closing documentation pass rather than touched here.
+
+### Automated validation
+
+Full existing suite run before committing, since this commit touches only
+documentation but the task requires a full regression pass:
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend format | `gofmt -l .` | Clean |
+| Backend vet | `go vet ./...` | Passed |
+| Backend tests | `go test ./...` | Passed |
+| Backend build | `go build ./...` | Passed |
+| Frontend i18n | `npm run i18n:check` | Passed |
+| Frontend typecheck | `npm run typecheck` | Passed |
+| Frontend lint | `npm run lint` | Passed |
+| Frontend tests | `npm run test -- --run` | Passed |
+| Frontend build | `npm run build` | Passed |
+| Integration | `node scripts/verify-persistence.mjs` | Passed |
+| Integration | `node scripts/verify-mediamtx-runtime.mjs` | Passed |
+| Integration | `node scripts/verify-ffmpeg-branches.mjs` | Passed |
+| Integration | `node scripts/verify-twitch-account-integration.mjs` | Passed |
+
+### Next step
+Official Google OAuth and YouTube Data/Live Streaming API research, written
+up in `docs/provider-integrations/youtube.md`, before any YouTube code is
+written.

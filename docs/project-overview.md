@@ -105,14 +105,14 @@ streaming router has to exist and work before anything reads from it.
                 │  Backend (Go)                                 │
                 │  API, branch state, metadata, process control │
                 └──────┬─────────────────────────┬──────────────┘
-                       │ supervises              │ supervises (planned)
+                       │ supervises              │ supervises
                        ▼                         ▼
         ┌──────────────────────┐    ┌──────────────────────────────────┐
   OBS ─▶│  MediaMTX  [DONE]    │──▶ │  FFmpeg (one process per branch) │
   RTMP  │  local RTMP ingest   │    │  ffmpeg #1 ─▶ Twitch      [DONE] │
-        │  127.0.0.1:1935/live │    │  ffmpeg #2 ─▶ YouTube            │
-        └──────────────────────┘    │  ffmpeg #3 ─▶ Kick               │
-                 ▲                  │  ffmpeg #4 ─▶ TikTok             │
+        │  127.0.0.1:1935/live │    │  ffmpeg #2 ─▶ YouTube     [DONE] │
+        └──────────────────────┘    │  ffmpeg #3 ─▶ Kick        [DONE] │
+                 ▲                  │  ffmpeg #4 ─▶ TikTok      [DONE] │
                  │ Control API      └──────────────────────────────────┘
                  │ 127.0.0.1:9997
                  │ (backend only, never the browser)
