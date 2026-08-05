@@ -130,9 +130,18 @@ func run() error {
 	}
 	deviceFlowProviders := map[account.ProviderID]account.DeviceFlowProvider{account.ProviderTwitch: twitchAdapter}
 
+	// Constructed before accountService so Disconnect can clear a YouTube
+	// destination's remote-target association - see cmd/server/main.go's
+	// identical wiring and account.Options.OnAccountDisconnected's own doc
+	// comment.
+	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
+
 	accountService := account.NewService(account.Options{
 		Repository: sqlite.NewAccountRepository(db.DB), Secrets: secretStore, Providers: providers,
 		EnvClientIDs: envClientIDs, RequiredScopes: requiredScopes, Logger: logger,
+		OnAccountDisconnected: func(cbCtx context.Context, platformID string) error {
+			return remoteTargetService.DeleteTarget(cbCtx, platformID)
+		},
 	})
 	accountService.StartValidationWorker(ctx)
 
@@ -150,7 +159,6 @@ func run() error {
 
 	youtubeRegionRepo := sqlite.NewYouTubeRegionRepository(db.DB)
 	youtubeMetadataService := youtube.NewMetadataService(accountService, youtubeRegionRepo, youtubeClient)
-	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
 	supervisor := mediamtx.NewSupervisor(mediamtx.Options{
 		DataDir:        cfg.DataDir,

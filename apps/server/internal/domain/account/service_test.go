@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -118,6 +119,18 @@ func (r *fakeRepository) GetLink(ctx context.Context, platformID string) (Link, 
 	defer r.mu.Unlock()
 	l, ok := r.links[platformID]
 	return l, ok, nil
+}
+
+func (r *fakeRepository) ListLinksByAccount(ctx context.Context, accountID string) ([]Link, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	links := []Link{}
+	for _, l := range r.links {
+		if l.AccountID == accountID {
+			links = append(links, l)
+		}
+	}
+	return links, nil
 }
 
 func (r *fakeRepository) SetLink(ctx context.Context, platformID, accountID string, now time.Time) (Link, error) {
@@ -581,6 +594,87 @@ func TestDisconnectProceedsWhenTwitchReportsTheTokenAlreadyInvalid(t *testing.T)
 	}
 	if store.Has(tokenBundleKey("acct_1")) {
 		t.Error("the token bundle still exists")
+	}
+}
+
+func TestDisconnectClearsRemoteTargetsForEveryLinkedPlatform(t *testing.T) {
+	// A real bug caught while writing the stage 7B YouTube integration
+	// script: platform_remote_targets has no foreign key to
+	// connected_accounts (only to platforms), so nothing previously cleared
+	// a destination's selected broadcast when the account behind it was
+	// disconnected - it would have survived, dangling, pointing at a
+	// channel this application no longer has access to.
+	repo := newFakeRepository()
+	store := secretstest.New()
+	provider := &fakeProvider{}
+	svc := NewService(Options{
+		Repository: repo, Secrets: store,
+		Providers:      map[ProviderID]Provider{ProviderTwitch: provider},
+		EnvClientIDs:   map[ProviderID]string{},
+		RequiredScopes: map[ProviderID][]string{ProviderTwitch: {"channel:manage:broadcast"}},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:            func() time.Time { return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC) },
+	})
+	repo.accounts["acct_1"] = Account{ID: "acct_1", ProviderID: ProviderTwitch, ProviderUserID: "u1", Status: StatusConnected}
+	_ = StoreTokenBundle(context.Background(), svc.secrets, "acct_1", testBundle())
+	if _, err := repo.SetLink(context.Background(), "pf_1", "acct_1", time.Now()); err != nil {
+		t.Fatalf("SetLink() error = %v", err)
+	}
+	if _, err := repo.SetLink(context.Background(), "pf_2", "acct_1", time.Now()); err != nil {
+		t.Fatalf("SetLink() error = %v", err)
+	}
+
+	var cleaned []string
+	svc2 := NewService(Options{
+		Repository: repo, Secrets: store,
+		Providers:      map[ProviderID]Provider{ProviderTwitch: provider},
+		EnvClientIDs:   map[ProviderID]string{},
+		RequiredScopes: map[ProviderID][]string{ProviderTwitch: {"channel:manage:broadcast"}},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:            func() time.Time { return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC) },
+		OnAccountDisconnected: func(ctx context.Context, platformID string) error {
+			cleaned = append(cleaned, platformID)
+			return nil
+		},
+	})
+
+	if err := svc2.Disconnect(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Disconnect() error = %v", err)
+	}
+
+	sort.Strings(cleaned)
+	if len(cleaned) != 2 || cleaned[0] != "pf_1" || cleaned[1] != "pf_2" {
+		t.Errorf("cleaned platforms = %v, want exactly [pf_1 pf_2]", cleaned)
+	}
+}
+
+func TestDisconnectSucceedsEvenWhenRemoteTargetCleanupFails(t *testing.T) {
+	repo := newFakeRepository()
+	store := secretstest.New()
+	provider := &fakeProvider{}
+	repo.accounts["acct_1"] = Account{ID: "acct_1", ProviderID: ProviderTwitch, ProviderUserID: "u1", Status: StatusConnected}
+	if _, err := repo.SetLink(context.Background(), "pf_1", "acct_1", time.Now()); err != nil {
+		t.Fatalf("SetLink() error = %v", err)
+	}
+
+	svc := NewService(Options{
+		Repository: repo, Secrets: store,
+		Providers:      map[ProviderID]Provider{ProviderTwitch: provider},
+		EnvClientIDs:   map[ProviderID]string{},
+		RequiredScopes: map[ProviderID][]string{ProviderTwitch: {"channel:manage:broadcast"}},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:            func() time.Time { return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC) },
+		OnAccountDisconnected: func(ctx context.Context, platformID string) error {
+			return errors.New("remote target cleanup failed")
+		},
+	})
+	_ = StoreTokenBundle(context.Background(), svc.secrets, "acct_1", testBundle())
+
+	if err := svc.Disconnect(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Disconnect() error = %v, want disconnect to still succeed despite a cleanup failure", err)
+	}
+	if _, err := repo.GetAccount(context.Background(), "acct_1"); !errors.Is(err, ErrNotFound) {
+		t.Error("the account row was not deleted even though only the cleanup hook failed")
 	}
 }
 

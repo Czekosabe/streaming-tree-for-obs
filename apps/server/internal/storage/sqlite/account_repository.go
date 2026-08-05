@@ -286,6 +286,43 @@ func (r *AccountRepository) CountAccounts(ctx context.Context, providerID accoun
 }
 
 // GetLink returns the account linked to a platform, if any.
+// ListLinksByAccount returns every platform currently linked to one
+// account - the reverse of GetLink.
+func (r *AccountRepository) ListLinksByAccount(ctx context.Context, accountID string) ([]account.Link, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT platform_id, account_id, created_at, updated_at FROM platform_account_links WHERE account_id = ?`,
+		accountID,
+	)
+	if err != nil {
+		return nil, accountStorageErr("list links by account", err)
+	}
+	defer rows.Close()
+
+	links := []account.Link{}
+	for rows.Next() {
+		var (
+			link      account.Link
+			createdAt string
+			updatedAt string
+		)
+		if err := rows.Scan(&link.PlatformID, &link.AccountID, &createdAt, &updatedAt); err != nil {
+			return nil, accountStorageErr("scan link", err)
+		}
+		var parseErr error
+		if link.CreatedAt, parseErr = platform.ParseTimestamp(createdAt); parseErr != nil {
+			return nil, fmt.Errorf("parse created_at %q: %w", createdAt, parseErr)
+		}
+		if link.UpdatedAt, parseErr = platform.ParseTimestamp(updatedAt); parseErr != nil {
+			return nil, fmt.Errorf("parse updated_at %q: %w", updatedAt, parseErr)
+		}
+		links = append(links, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, accountStorageErr("iterate links", err)
+	}
+	return links, nil
+}
+
 func (r *AccountRepository) GetLink(ctx context.Context, platformID string) (account.Link, bool, error) {
 	var (
 		link      account.Link

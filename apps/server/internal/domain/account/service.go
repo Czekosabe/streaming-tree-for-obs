@@ -83,6 +83,8 @@ type Service struct {
 	lifecycle context.Context
 	cancel    context.CancelFunc
 	workers   sync.WaitGroup
+
+	onAccountDisconnected func(ctx context.Context, platformID string) error
 }
 
 // validationInterval is the default background-validation cadence: Twitch's
@@ -112,6 +114,18 @@ type Options struct {
 	// implementations when nil.
 	NewID IDGenerator
 	Now   Clock
+	// OnAccountDisconnected, when set, is called once per platform still
+	// linked to an account right before Disconnect removes that account
+	// (and, via platform_account_links' own cascade, its links). It exists
+	// so a provider-specific remote-target association (a YouTube
+	// destination's selected live broadcast, addressed by platform ID, not
+	// account ID) can be cleared instead of surviving as a dangling
+	// reference to a channel this application no longer has access to -
+	// this package deliberately does not import internal/domain/
+	// remotetarget itself, mirroring LinkPlatform's own "pass in what's
+	// needed as a plain value" boundary. A failure here is logged, not
+	// fatal: it must never block the account/link removal it precedes.
+	OnAccountDisconnected func(ctx context.Context, platformID string) error
 }
 
 // NewService builds a Service.
@@ -129,16 +143,17 @@ func NewService(opts Options) *Service {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Service{
-		repo:               opts.Repository,
-		secrets:            opts.Secrets,
-		providers:          opts.Providers,
-		envClientIDs:       opts.EnvClientIDs,
-		requiredScopes:     opts.RequiredScopes,
-		newID:              newID,
-		now:                now,
-		logger:             logger,
-		refreshInFlight:    make(map[string]*refreshCall),
-		validationInterval: defaultValidationInterval,
+		repo:                  opts.Repository,
+		secrets:               opts.Secrets,
+		providers:             opts.Providers,
+		envClientIDs:          opts.EnvClientIDs,
+		requiredScopes:        opts.RequiredScopes,
+		newID:                 newID,
+		now:                   now,
+		logger:                logger,
+		onAccountDisconnected: opts.OnAccountDisconnected,
+		refreshInFlight:       make(map[string]*refreshCall),
+		validationInterval:    defaultValidationInterval,
 		validationJitter: func() time.Duration {
 			buf := make([]byte, 1)
 			_, _ = rand.Read(buf)
@@ -627,6 +642,21 @@ func (s *Service) Disconnect(ctx context.Context, accountID string) error {
 
 	if err := DeleteTokenBundle(ctx, s.secrets, accountID); err != nil {
 		return err
+	}
+
+	if s.onAccountDisconnected != nil {
+		links, linkErr := s.repo.ListLinksByAccount(ctx, accountID)
+		if linkErr != nil {
+			s.logger.Warn("could not list links before disconnect; a remote-target association may be left stale",
+				slog.String("account_id", accountID), slog.Any("error", linkErr))
+		} else {
+			for _, link := range links {
+				if cleanupErr := s.onAccountDisconnected(ctx, link.PlatformID); cleanupErr != nil {
+					s.logger.Warn("remote-target cleanup failed during disconnect; continuing",
+						slog.String("account_id", accountID), slog.String("platform_id", link.PlatformID), slog.Any("error", cleanupErr))
+				}
+			}
+		}
 	}
 
 	if err := s.repo.DeleteAccount(ctx, accountID); err != nil {

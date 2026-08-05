@@ -315,6 +315,9 @@ func (r *fakeAccountRepo) CountAccounts(ctx context.Context, providerID account.
 func (r *fakeAccountRepo) GetLink(ctx context.Context, platformID string) (account.Link, bool, error) {
 	return account.Link{}, false, nil
 }
+func (r *fakeAccountRepo) ListLinksByAccount(ctx context.Context, accountID string) ([]account.Link, error) {
+	return nil, nil
+}
 func (r *fakeAccountRepo) SetLink(ctx context.Context, platformID, accountID string, now time.Time) (account.Link, error) {
 	return account.Link{}, nil
 }

@@ -132,6 +132,14 @@ func run() error {
 		account.ProviderTwitch: twitchAdapter,
 	}
 
+	// Constructed before accountService so Disconnect can clear a YouTube
+	// destination's remote-target association (its selected broadcast)
+	// when the account backing it is removed - see account.Options.
+	// OnAccountDisconnected's own doc comment for why this is a plain
+	// callback rather than an import of internal/domain/remotetarget from
+	// internal/domain/account itself.
+	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
+
 	accountService := account.NewService(account.Options{
 		Repository:     sqlite.NewAccountRepository(db.DB),
 		Secrets:        secretStore,
@@ -139,6 +147,9 @@ func run() error {
 		EnvClientIDs:   envClientIDs,
 		RequiredScopes: requiredScopes,
 		Logger:         logger,
+		OnAccountDisconnected: func(cbCtx context.Context, platformID string) error {
+			return remoteTargetService.DeleteTarget(cbCtx, platformID)
+		},
 	})
 	// Runs Twitch's required hourly re-validation in the background; a
 	// Twitch or credential-store outage here only affects account status,
@@ -162,7 +173,6 @@ func run() error {
 
 	youtubeRegionRepo := sqlite.NewYouTubeRegionRepository(db.DB)
 	youtubeMetadataService := youtube.NewMetadataService(accountService, youtubeRegionRepo, youtubeClient)
-	remoteTargetService := remotetarget.NewService(sqlite.NewRemoteTargetRepository(db.DB), nil)
 
 	// The MediaMTX supervisor holds runtime state only, in memory. A missing or
 	// failed MediaMTX must never stop the Go API: platform configuration stays

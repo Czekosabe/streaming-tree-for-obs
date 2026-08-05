@@ -44,6 +44,13 @@ type Repository interface {
 	// GetLink returns the account linked to a platform, if any.
 	GetLink(ctx context.Context, platformID string) (Link, bool, error)
 
+	// ListLinksByAccount returns every platform currently linked to one
+	// account - the reverse of GetLink. Used by Service.Disconnect to find
+	// which destinations need their own provider-specific remote-target
+	// state (a YouTube broadcast selection, for instance) cleared before
+	// the account itself, and platform_account_links, are removed.
+	ListLinksByAccount(ctx context.Context, accountID string) ([]Link, error)
+
 	// SetLink creates or replaces a platform's link.
 	SetLink(ctx context.Context, platformID, accountID string, now time.Time) (Link, error)
 

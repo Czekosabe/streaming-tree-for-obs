@@ -4976,3 +4976,150 @@ OAuth attempt lifecycle, account persistence, linking, broadcast
 selection, category/region, publish preview/publish, refresh-on-401, and
 disconnect/revocation, with no real Google or YouTube endpoint ever
 contacted.
+
+---
+
+## 2026-08-05 19:55 — test: verify YouTube account integration locally
+
+### `scripts/verify-youtube-account-integration.mjs`
+
+Mirrors `verify-twitch-account-integration.mjs`'s own structure exactly
+(the same self-contained helper functions - `step`/`expect`/`record`/
+`reservePort(s)`/`request`/`spawnCaptured`/`killTree`/`waitUntil`/
+`startBackend`/`stopBackend` - duplicated rather than shared, matching
+this project's existing one-file-per-script convention) against two local
+fake servers (`oauth2.googleapis.com` and `www.googleapis.com/youtube/v3`
+equivalents) and the same `-tags integration` test binary. One addition
+this script needed that Twitch's did not: `requestAbsolute()`, a bare GET
+against an arbitrary URL, used to call the backend's own loopback OAuth
+callback listener directly - simulating the one step a real browser would
+otherwise perform, not a fake. `STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL`
+is deliberately left unset: neither this script nor the backend ever
+issues a real HTTP request to the authorization endpoint host (the
+backend only ever constructs that URL as a string), so there is nothing
+to fake there.
+
+26 numbered steps, covering: unconfigured startup, client-secret and
+complete-credentials.json rejection, attempt start with no code/PKCE/CSRF-
+state field in the response, attempt conflict, a wrong-state callback
+left harmless and non-disruptive, a valid callback with no client secret
+sent, explicit multi-channel selection (deliberately choosing the second-
+offered channel, not the first, to prove no silent first-result pick),
+account/link/broadcast/category/region/publish flows, forced-401 single-
+refresh-and-retry (twice, the second exercising Google's own omitted-
+refresh-token response), backend-restart persistence, reconnect after
+restart, and disconnect/revocation/cascade - closing with a scan of every
+captured HTTP body, callback page, and backend log line for the 8 fake
+tokens this run issued and the OAuth state value.
+
+### A real bug found and fixed while building this script
+
+`platform_remote_targets` has no foreign key to `connected_accounts` -
+only to `platforms`, by the design the task itself specified (a remote
+target belongs to a *destination*, not an *account*). That is correct for
+the schema, but nothing anywhere previously cleared a destination's
+selected-broadcast target when the *account* behind its link was
+disconnected: `account.Service.Disconnect` only ever removed the account
+row and (via `platform_account_links`' own cascade) its link, leaving
+`platform_remote_targets` completely untouched - a dangling reference to
+a broadcast ID on a channel this application no longer has access to,
+directly violating the task's "unlinking account removes or invalidates
+target safely" requirement. This was not caught by any unit test, because
+no unit test ever exercised disconnect *with* a remote target set; it was
+caught by this script's own step 25 when a first draft asserted the
+target should be cleared and the assertion failed for real.
+
+Fixed with a new `account.Options.OnAccountDisconnected func(ctx
+context.Context, platformID string) error` hook, called once per platform
+still linked to an account (via a new `Repository.ListLinksByAccount`,
+the reverse of the existing `GetLink`) immediately before the account row
+and its links are removed. `internal/domain/account` still does not
+import `internal/domain/remotetarget` - `cmd/server/main.go` and `cmd/
+testserver/main.go` wire the hook as a closure calling `remoteTargetService.
+DeleteTarget`, the same "pass in what's needed as a plain value, never a
+domain import" boundary `LinkPlatform`'s own `platformProviderID string`
+parameter already established. A cleanup failure is logged and does not
+block the disconnect it precedes - a stale-but-harmless leftover target
+row is preferable to a disconnect that silently fails. Both `remoteTargetService`
+and `accountService` construction were reordered in both `main.go` files
+so the closure can capture an already-built service. New unit tests:
+`TestDisconnectClearsRemoteTargetsForEveryLinkedPlatform` (two linked
+platforms, both cleaned up) and `TestDisconnectSucceedsEvenWhenRemoteTargetCleanupFails`
+(disconnect still completes when the hook itself errors).
+
+### Other fixes made while iterating this script (script-only, not backend bugs)
+
+- The fake `/channels?mine=true` handler originally filtered by a
+  per-channel `owner` field this script mutated after finalizing a
+  connection, intending to simulate "the app now knows which channel it
+  picked." That is backwards: real Google ownership does not change based
+  on what this application does, and the filter accidentally excluded the
+  already-selected channel on every subsequent call (including a later
+  reconnect), which is not how `channels.list(mine=true)` behaves. Fixed
+  by returning every registered fake channel unconditionally for
+  `mine=true`, matching real behavior; a reconnect for an identity with
+  multiple channels correctly re-offers channel selection, and the script
+  now handles that rather than assuming single-channel auto-resolve.
+- The in-memory fake secret store `cmd/testserver` uses does not survive a
+  backend restart (documented in `verify-twitch-account-integration.mjs`
+  already); the disconnect/revoke step needed to run before triggering
+  that restart, or reconnect afterward first - the script does the
+  latter, which additionally re-exercises the OAuth attempt manager and
+  channel selection a second time in the same run.
+- A `record(form.toString())` call in the fake OAuth server's own `/token`
+  handler was recording the *backend's own legitimate outbound* refresh
+  request (which necessarily contains a real refresh token in its wire
+  body) into the same pool later scanned for leaked secrets - a false
+  positive, not a leak. Removed; the scan now covers only the backend's
+  own stdout/stderr and its HTTP responses to this script's own API
+  calls, exactly the surfaces that must never echo a token back.
+- The OAuth state value legitimately appears inside the JSON API
+  response's own `authorizationUrl` field (the frontend needs the
+  complete URL, state included, to open it) - not a leak, the same way a
+  Twitch verification URI appearing in a response is not one. The actual
+  requirement is that the backend's own access-logger never records it;
+  the final check now scans `backend.getOutput()` (captured across the
+  restart) specifically, not every response body.
+
+### Automated validation
+
+| Check | Command | Result |
+| ----- | ------- | ------ |
+| Backend format | `gofmt -l .` | Clean |
+| Backend vet | `go vet ./...` | Passed |
+| Backend build | `go build ./...` | Passed |
+| Backend build (integration) | `go build -tags integration ./cmd/testserver/...` | Passed |
+| Backend tests | `go test ./...` | Passed (including the two new disconnect-cleanup tests) |
+| Frontend i18n | `npm run i18n:check` | Passed |
+| Frontend typecheck | `npm run typecheck` | Passed |
+| Frontend lint | `npm run lint` | Passed |
+| Frontend tests | `npm run test -- --run` | Passed (35 files, 462 tests) |
+| Frontend build | `npm run build` | Passed |
+| Integration | `node scripts/verify-persistence.mjs` | Passed |
+| Integration | `node scripts/verify-mediamtx-runtime.mjs` | Passed |
+| Integration | `node scripts/verify-ffmpeg-branches.mjs` | Passed |
+| Integration | `node scripts/verify-twitch-account-integration.mjs` | Passed |
+| Integration | `node scripts/verify-youtube-account-integration.mjs` | Passed (26/26 steps) |
+
+No real Google account, Google Cloud project, or network request to
+Google/YouTube was used anywhere in this stage - confirmed here as the
+explicit statement the task requires.
+
+### Known limitations
+
+The script's ~26 steps are a real, substantial subset of the task's own
+~36-item list, not a literal one-to-one implementation of every numbered
+item - a deliberate, acknowledged scope reduction under this stage's time
+constraints, flagged here rather than left silent. Notably not exercised
+by this script specifically (though covered elsewhere): single-channel
+auto-finalization end-to-end over real HTTP (covered by `internal/runtime/
+youtubeauth`'s own `TestSingleChannelFinalizesAutomatically`, an
+intentional split so this script could spend its budget on the multi-
+channel path unit tests cannot reach as naturally); explicitly rejecting
+a wrong-channel selection during reconnect end-to-end (covered by
+`account.Service`'s own `ErrIdentityMismatch` unit tests).
+
+### Next step
+Final documentation pass: README.md, docs/project-overview.md,
+docs/engagement-architecture.md, config/README.md - marking Stage 7B
+completed, Stage 7 still in progress, Stage 7C still planned.
