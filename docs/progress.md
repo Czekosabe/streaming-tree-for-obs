@@ -6433,3 +6433,115 @@ Add persisted operator-chat preferences (migration + domain package +
 SQLite repository), then the Twitch chat asset resolver, then the
 HTTP API that ties the projection, preferences, and assets together
 for the frontend.
+
+## 2026-08-06 12:20 — feat(server): add operator chat preferences persistence
+
+### Status
+Completed
+
+### Scope
+The one part of Stage 9 that survives a restart: presentation
+preferences, per-account chat visibility, and the operator-maintained
+hidden-user/bot-user lists. Deliberately its own commit, split from
+the originally-sketched "preferences and API" pairing (noted in the
+Stage 9 task as an acceptable split when explained here) — the HTTP
+API needs the projection's asset-resolution presentation layer too, so
+building persistence on its own first keeps this commit's diff
+reviewable and independently testable.
+
+### Technical decisions
+
+**Migration `0010_operator_chat_preferences.sql`** adds four tables:
+`operator_chat_preferences` (a singleton row, `id` fixed at 1 via
+`CHECK (id = 1)` — this stage has one operator, not per-profile
+settings), `operator_chat_account_visibility` (`account_id` PK,
+`ON DELETE CASCADE` to `connected_accounts`), and
+`operator_chat_hidden_users` / `operator_chat_bot_users` (identical
+shape: an internal id, provider id, connected account id, the
+*provider's own* stable user id — never a display name or login, both
+of which a user can change — an optional label, and a unique index on
+the provider/account/provider-user-id tuple). Every boolean column
+uses the existing `INTEGER NOT NULL DEFAULT x CHECK (col IN (0,1))`
+convention already established in migrations 0001–0009. No message
+content, no token, no EventSub session data, no raw provider event —
+that boundary is enforced by there being no column that could hold any
+of it, not by application-level discipline alone.
+
+**`internal/domain/operatorchatprefs`** mirrors
+`internal/domain/engagementsettings`'s own shape and reasoning exactly
+(absent-row-means-default, a `Clock` for deterministic tests, sentinel
+errors instead of raw driver errors leaking through). `Default()`
+returns the documented out-of-the-box preferences: platform icon
+shown, textual platform name off (one provider today, so the icon
+alone identifies it), account label shown (there may be more than one
+connected account), badges/timestamps/activity events/deleted messages
+shown, commands shown, compact mode off.
+
+**Idempotent hidden-user/bot-user adds, not an error on retry.**
+`AddHiddenUser`/`AddBotUser` upsert with
+`ON CONFLICT (provider_id, connected_account_id, provider_user_id)
+DO NOTHING` and then re-select the current row — a caller that adds
+the same user twice gets the same entry back both times, never a
+duplicate row and never an error. This directly satisfies the task's
+"idempotency defined" requirement for these endpoints without needing
+a separate "already listed" error path the HTTP layer would otherwise
+have to special-case.
+
+**`mapRepoErr` passes known sentinels through unchanged.** Unlike a
+naive "wrap everything as `ErrStorage`" helper, `operatorchatprefs`'s
+version explicitly re-checks `errors.Is` against
+`ErrAccountNotFound`/`ErrUserNotFound` before wrapping — otherwise the
+HTTP layer (built in a later commit) could never distinguish "the
+referenced account doesn't exist" (a 404-shaped outcome) from "the
+database is unavailable" (a 500-shaped one), both of which
+`engagementsettings`'s simpler version does not need to distinguish
+today since it has only one sentinel.
+
+**Account-visibility rows are a real upsert, not a
+delete-on-default.** Setting an account back to visible=true still
+writes an explicit row (matching `connected_account_engagement_
+settings`'s own precedent of never deleting to represent "back to
+default") rather than deleting the row to imply the default — simpler,
+and avoids a second code path.
+
+### Files changed
+- `apps/server/internal/storage/sqlite/migrations/0010_operator_chat_preferences.sql`
+  (new).
+- `apps/server/internal/domain/operatorchatprefs/model.go`,
+  `errors.go`, `repository.go`, `service.go` (new).
+- `apps/server/internal/storage/sqlite/operatorchatprefs_repository.go`,
+  `operatorchatprefs_repository_test.go` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l internal/domain/operatorchatprefs/ internal/storage/sqlite/`
+  — clean.
+- `go vet ./internal/domain/operatorchatprefs/... ./internal/storage/sqlite/...`
+  — clean.
+- `go test ./internal/storage/sqlite/... -run OperatorChat -v` — 12/12
+  pass, covering: preferences absent-then-set-then-get round trip; the
+  singleton row is replaced in place (never a second row); setting
+  visibility for an unknown account returns `ErrAccountNotFound`;
+  account visibility round-trips and lists only explicitly-set rows;
+  account visibility cascades away when its connected account is
+  deleted; adding the same hidden user twice is idempotent (same id
+  both times, exactly one row); removing a hidden user works and
+  removing an absent one returns `ErrUserNotFound`; hidden users
+  cascade away with their account; bot users round-trip independently
+  through their own table; hiding a user never also marks them a bot
+  (the two lists are genuinely independent).
+- `go build ./...`, `go vet ./...`, `gofmt -l .` (whole module) —
+  clean.
+- `go test ./...` (whole module) — all packages pass, including the
+  operator-chat projection from the previous commit; no regression.
+
+### Known limitations
+No HTTP API surfaces any of this yet, and nothing has been wired into
+`cmd/server`/`cmd/testserver` — the migration exists but the
+preferences service is not yet constructed anywhere at startup. Both
+land in later commits.
+
+### Next step
+Build the Twitch chat asset resolver (badges + emotes), then the
+operator-chat HTTP API tying the projection, preferences, and asset
+resolver together.
