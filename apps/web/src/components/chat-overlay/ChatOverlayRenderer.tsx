@@ -41,10 +41,14 @@ const ALIGNMENT_ITEMS: Record<PublicChatOverlayConfig['horizontalAlignment'], st
  * The Browser Source renderer: a transparent, responsive column of chat
  * messages and activity events, styled entirely from a validated public
  * config. Used both by the real overlay route (pages/OverlayChatPage.tsx,
- * fed by the live SSE stream) and the management preview (fed by local,
- * clearly-synthetic fixtures - see pages/OverlaysPage's own preview
- * panel). Renders nothing but what `items` already contains - no
- * additional filtering, no operator-only data, no dangerouslySetInnerHTML.
+ * which sizes its own full-viewport wrapper) and the management preview
+ * (components/overlays/OverlayPreviewPanel.tsx, fed by local,
+ * clearly-synthetic fixtures, inside a bounded box) - this component
+ * itself always fills 100% of whatever its parent gives it, never a
+ * fixed viewport size of its own, so both call sites get correct
+ * behavior for free. Renders nothing but what `items` already contains -
+ * no additional filtering, no operator-only data, no
+ * dangerouslySetInnerHTML.
  */
 export function ChatOverlayRenderer({
   config,
@@ -61,7 +65,7 @@ export function ChatOverlayRenderer({
   return (
     <div
       className={cn(
-        'flex h-screen w-screen flex-col overflow-hidden p-3',
+        'flex h-full w-full flex-col overflow-hidden p-3',
         config.stackDirection === 'top_down' ? 'justify-start' : 'justify-end',
         ALIGNMENT_ITEMS[config.horizontalAlignment],
         config.layoutMode === 'vertical' ? 'max-w-full' : 'mx-auto max-w-[720px]',

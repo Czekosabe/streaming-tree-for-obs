@@ -4,6 +4,7 @@ import {
   FileText,
   LayoutDashboard,
   MessageSquare,
+  MonitorPlay,
   Radio,
   Settings,
   SlidersHorizontal,
@@ -27,6 +28,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: true },
   { to: '/engagement', labelKey: 'items.engagement', icon: Activity, planned: false },
   { to: '/chat', labelKey: 'items.chat', icon: MessageSquare, planned: false },
+  { to: '/overlays', labelKey: 'items.overlays', icon: MonitorPlay, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];

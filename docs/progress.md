@@ -8056,3 +8056,132 @@ Build the Overlays management page: list/create/rename/enable-disable/
 delete/rotate-URL/copy-URL, account/hidden-user/blocked-term/activity-
 type management, the visual-settings form, and a local-fixture preview
 using this commit's own `ChatOverlayRenderer`.
+
+---
+
+## 2026-08-06 23:55 — feat(web): manage chat overlays
+
+### Status
+Completed for this commit's own scope: the `/overlays` management page
+(list/create/delete/select), the per-overlay editor (identity, URL,
+visual settings, accounts, activity types, hidden users, blocked terms,
+setup instructions, live preview), navigation entry, and the `overlays`
+i18n namespace's management-page strings (added in the previous commit,
+used here for the first time).
+
+### Scope
+`apps/web/src/pages/OverlaysPage.tsx`,
+`apps/web/src/components/overlays/*`,
+`apps/web/src/models/chat-overlay-config.ts`,
+`apps/web/src/models/overlay-preview-fixtures.ts`, the new nav item, and
+`ChatOverlayRenderer`'s own sizing fix.
+
+### Technical decisions
+**Two different save models for two different kinds of setting**,
+deliberately not one uniform draft-everything scheme: the identity/
+visual-settings form (name, enabled, and every `OverlaySettingsForm`
+field) goes through an explicit draft-then-Save flow with an unsaved-
+changes indicator and a discard confirmation (Part 19's own literal
+requirement); accounts, hidden users, blocked terms, and activity types
+each save immediately per action, exactly mirroring how the operator
+Chat page's own account-visibility/hidden-user/bot-user lists already
+work (`useOperatorChatAccountVisibilityQuery`'s sibling hooks) - these
+are naturally atomic list operations with their own REST sub-resource
+and their own runtime rebuild trigger already on the backend, so
+batching them behind the same "Save" button would only add a
+disconnect between what the button does and what the backend contract
+actually is.
+
+**The preview panel renders from the in-progress draft, not the saved
+profile** (`toPreviewConfig` in `models/chat-overlay-config.ts`, the
+exact same field subset `internal/httpapi`'s own
+`toPublicChatOverlayConfigResponse` keeps) - moving a slider updates the
+preview on the next render, with no debounce and no network request,
+while the real public overlay is untouched until Save succeeds and
+triggers the backend's own rebuild.
+
+**Thirteen preview fixtures**, one file
+(`models/overlay-preview-fixtures.ts`), covering every case Part 19
+names by name: an ordinary message, badges, an emote, a mention, a long
+username, a long message, an anonymous activity, a follow, a
+subscription, a gift batch, bits, a deleted placeholder, and a message
+with no avatar. Every fixture carries `synthetic: true`, mirroring the
+server's own `Item.Synthetic` field, and none of it ever reaches
+`createChatOverlay`/`replaceChatOverlay` or any other mutation - it is
+local, in-memory data passed straight to `ChatOverlayRenderer`.
+
+**`ChatOverlayRenderer` now fills 100% of its parent instead of hard-
+coding the viewport** (`h-full w-full`, not `h-screen w-screen`) -
+found while building the preview panel: the real overlay route
+(`OverlayChatPage`) already wants a full-viewport box, but the
+management preview needs the identical renderer inside a bounded
+420px-tall box. Fixed by moving the viewport sizing to each call site
+(`OverlayChatPage` wraps it in its own `h-screen w-screen` div;
+`OverlayPreviewPanel` wraps it in a bounded, checkerboard-background box
+so a fully transparent overlay is still visible against it) and letting
+the renderer itself stay agnostic of which one it's in.
+
+**Account/hidden-user/blocked-term identity fields use plain HTML
+checkboxes/selects rather than a bespoke multi-select component** - the
+project doesn't have one, and the account/activity-type lists here are
+small (a handful of connected accounts, eight known activity types),
+so a plain labelled checkbox list is both simpler and at least as
+accessible as introducing a new interactive widget for this stage.
+
+### Files changed
+- `apps/web/src/pages/OverlaysPage.tsx`, `OverlaysPage.test.tsx` (new).
+- `apps/web/src/pages/OverlayChatPage.tsx` (viewport wrapper),
+  `OverlayChatPage.test.tsx` (new).
+- `apps/web/src/components/overlays/OverlayListPanel.tsx`,
+  `OverlayEditor.tsx`, `OverlayUrlPanel.tsx`, `OverlaySettingsForm.tsx`,
+  `OverlayAccountsPanel.tsx`, `OverlayHiddenUsersPanel.tsx`,
+  `OverlayBlockedTermsPanel.tsx`, `OverlayActivityTypesPanel.tsx`,
+  `OverlaySetupPanel.tsx`, `OverlayPreviewPanel.tsx` (new).
+- `apps/web/src/components/chat-overlay/ChatOverlayRenderer.tsx`
+  (sizing fix: fills its parent instead of the viewport).
+- `apps/web/src/models/chat-overlay-config.ts`,
+  `overlay-preview-fixtures.ts` (new).
+- `apps/web/src/components/layout/nav-items.ts` (new `/overlays` entry).
+- `apps/web/src/i18n/resources/en/navigation.json`,
+  `resources/pl/navigation.json` (`items.overlays`).
+- `apps/web/src/App.tsx` (new `/overlays` route).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `npm run i18n:check` — 2 languages, 12 namespaces, no differences
+  against English.
+- `npm run typecheck` — clean (one real `exactOptionalPropertyTypes`
+  error caught and fixed: `AddChatOverlayHiddenUserInput.label` must be
+  omitted, not set to `undefined`, when empty).
+- `npm run lint` — clean.
+- `npm run test -- --run` — 672/672 pass (whole suite; 9 new: the
+  Overlays page's empty state, create-then-select flow, selecting an
+  overlay showing its URL and settings, editing a setting enabling Save
+  and showing the unsaved-changes indicator without calling the API
+  until Save is clicked, delete-requires-confirmation, and a blocked
+  term rendering only from its own overlay's mocked response; the
+  overlay route's no-visible-loading-state, no-application-shell/no-
+  navigation-landmark, and live-message-via-stream cases) — no
+  regression elsewhere.
+- `npm run build` — clean.
+
+### Known limitations
+No frontend enforcement yet of the backend's own numeric bounds (a
+value outside 1–100 `maxVisibleItems`, for example, is only caught on
+Save, by the backend's existing `422 validation_failed` response,
+surfaced as a generic field-less error rather than inline per-field
+text) - acceptable for this stage since the backend remains the
+authority and no invalid state can actually be persisted, but a later
+stage could wire the existing `ErrorBody.fields`/`details` envelope
+into `FormField`'s own `error` prop for a nicer message. No contrast
+warning is computed yet (Part 23's own "advisory, based on a tested
+calculation" is not implemented this stage).
+
+### Next step
+Write `scripts/verify-chat-overlay.mjs`, the 8th local integration
+script: create a profile, verify safe defaults, verify the public URL
+persists and works, verify filtering end-to-end (accounts, hidden
+users, bots, commands, blocked terms, activity types), verify capacity/
+expiry eviction, verify deletion/clear scoping, verify slug rotation,
+verify restart behavior, verify no secrets/blocked-term text/hidden-
+user data ever appear in a public response or a log line.

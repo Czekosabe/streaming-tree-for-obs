@@ -9,6 +9,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { OverlayChatPage } from '@/pages/OverlayChatPage';
+import { OverlaysPage } from '@/pages/OverlaysPage';
 import { LogsPage, MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StreamsPage } from '@/pages/StreamsPage';
@@ -25,6 +26,7 @@ export function App() {
             <Route path="/metadata" element={<MetadataPage />} />
             <Route path="/engagement" element={<EngagementPage />} />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/overlays" element={<OverlaysPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             {/* No AppShell: a standalone Browser Source page, never the

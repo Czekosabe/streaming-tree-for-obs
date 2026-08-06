@@ -32,5 +32,9 @@ export function OverlayChatPage() {
     return <div className="h-screen w-screen" data-testid="chat-overlay-empty" />;
   }
 
-  return <ChatOverlayRenderer config={configQuery.data} items={stream.items} />;
+  return (
+    <div className="h-screen w-screen">
+      <ChatOverlayRenderer config={configQuery.data} items={stream.items} />
+    </div>
+  );
 }
