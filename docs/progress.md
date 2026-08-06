@@ -7579,3 +7579,181 @@ Build the public-overlay runtime projection
 (`internal/chatoverlay`): filtering, lifecycle, expiry, bounded
 buffer/subscription, consuming `internal/operatorchat`'s own revision
 stream without duplicating its lifecycle logic.
+
+---
+
+## 2026-08-06 19:40 — feat(server): project public chat overlays
+
+### Status
+Completed for this commit's own scope. Backend-internal only — no HTTP
+endpoint yet, no `main.go` wiring yet.
+
+### Scope
+`internal/chatoverlay`, the Stage 10 in-memory, per-overlay public
+projection: consumes `internal/operatorchat`'s own revision stream and
+produces a smaller, filtered, versioned public item stream ready to be
+served over the future public overlay API.
+
+### Technical decisions
+**Two views per overlay, not one stream reused for both**, deliberately
+diverging from `internal/operatorchat`'s own single-stream design: a
+`latestByID` map (current visible state only, backing the snapshot
+endpoint and `CurrentItems()`) plus a separate bounded `ring` of
+`Revision` operations with their own monotonic sequence (backing SSE
+replay). Part 9 explicitly requires "snapshots contain current state,
+not every historical revision" — a genuinely different contract from
+Stage 9's own complete-upsert-stream design, which conflates the two.
+
+**Moderation and system items are excluded from the public overlay
+unconditionally, not configurably** (`passesStaticFilters` in
+`filtering.go`) — Stage 9's moderation/system rows ("chat cleared",
+"message deleted, not retained") are operator-only diagnostic content
+that never belongs on a public viewer-facing overlay, in any
+configuration.
+
+**Bot filtering reuses Stage 9's shared, explicit `operatorchatprefs`
+bot-user list; hidden-user filtering uses each overlay's own separate
+`chat_overlay_hidden_users` list.** Per Part 4/Part 7: a user may be
+visible to the operator while hidden from one public overlay, and a
+classified bot is never inferred from a username on either list.
+
+**Role highlighting reads Twitch's own already-normalized badge
+set-id strings** (`broadcaster`/`moderator`/`subscriber`/`vip`,
+recorded in Stage 9's own research addendum) directly off
+`operatorchat.Badge.SetID` — this package still never imports
+`internal/provider/twitch`; it is interpreting data operatorchat has
+already normalized, exactly like it does with `evt.Type` strings
+elsewhere.
+
+**Asset resolution stays out of this package**, mirroring Stage 9's own
+boundary: `Badge`/`Fragment` carry only raw provider-stable identifiers.
+Resolving them to image URLs is deferred to `internal/httpapi` at
+serialization time, reusing the exact `chatassets` resolver Stage 9
+already built.
+
+**Cheermote and unknown fragments fold to plain text** (`buildMessage`
+in `lifecycle.go`) — the cheermote image catalog is not resolved this
+stage, matching Stage 9's own documented decision.
+
+**A deleted item's original text is structurally unreachable, not just
+policy-unreachable**: `buildDeletedPlaceholder` builds the normal item
+first, then explicitly sets `Message = nil` — there is no code path
+where a deleted public item's `Message` field is ever populated.
+
+**Blocked-term matching** (`matchesAnyBlockedTerm`) reuses
+`chatoverlaydomain.NormalizeTerm` on both text and term (the same
+function Stage 10's storage layer uses for uniqueness), branching on
+`contains` (plain substring) vs `whole_word` (a documented, simple
+Unicode word-boundary approximation via `unicode.IsLetter`/`IsDigit`/
+underscore — not full Unicode text segmentation).
+
+**Bounded expiry via one `container/heap` min-heap plus one
+`time.Timer` per overlay, never one timer or goroutine per message**
+(`expiry.go`'s `expiryQueue`, owned and driven by `projection.go`'s own
+single expiry goroutine) — satisfies Part 10's hard requirement
+directly.
+
+**A settings change (`Projection.Configure`) rebuilds the entire
+visible set by replaying whatever the upstream operator-chat projection
+currently retains** (`OperatorChatSource.ItemsAfter(0, 0)`), re-running
+every retained item through the same filtering/lifecycle logic used for
+live processing, then emitting exactly one `OpReset` with the
+recomputed set. Correctness of a rebuild is therefore bounded by
+operator-chat's own retention — the same kind of honest "old messages
+may already be gone" boundary this project uses everywhere else, not a
+new one invented for this package.
+
+**Capacity eviction emits its own explicit `remove` revision per
+evicted item** — found and fixed during testing: the first
+implementation of `upsertVisibleLocked` silently dropped the oldest
+item from internal state when `MaxVisibleItems` was exceeded, without
+telling any subscriber. A live or replaying client would have shown a
+permanently stale item. `upsertVisibleLocked` now returns the evicted
+ids, and `applyUpstreamItem` emits one `OpRemove` per eviction
+alongside the triggering `OpUpsert`, each with its own sequence number.
+
+**Every locked section uses `defer p.mu.Unlock()` via an inline
+closure, not a manual `Lock()`/`Unlock()` pair** — found and fixed
+during testing: a panic while holding `p.mu` (a genuine internal bug in
+one overlay's own logic) would otherwise leave that overlay's mutex
+permanently locked, so `Manager`'s per-overlay panic recovery
+(`dispatchOne`) would contain the crash but the overlay would then
+deadlock on its very next operation (an expiry tick, a `Configure`, a
+`Shutdown`). Confirmed fixed by a test that deliberately corrupts one
+`Projection`'s internal state to force a real panic inside
+`HandleUpstreamItem` and asserts a sibling overlay, and the broken
+overlay's own later `Shutdown`, both still complete cleanly.
+
+**`Manager` owns exactly one shared subscription to the upstream
+operator-chat projection** and fans each item out to every registered
+overlay's `Projection.HandleUpstreamItem`, recovering per-overlay
+panics (`dispatchOne`) so one overlay's internal bug can never affect
+another overlay or the shared dispatch loop. The upstream subscription
+type is consumed through a small `upstreamSubscription` interface
+(`Items()`/`Cancel()`) rather than `*operatorchat.Subscription`
+directly, so the whole fan-out path is testable without wiring a real
+`internal/engagement.Bus`.
+
+**`DefaultSettingsResolver` is the only production implementation of
+`SettingsResolver`** and lives inside this package (not
+`internal/httpapi` or `main.go`) because `resolvedSettings` is
+unexported — it reads through `internal/domain/chatoverlay`'s own
+`Service` for everything overlay-specific and through
+`internal/domain/operatorchatprefs`'s `Service` for the one thing
+deliberately shared across overlays (the bot list).
+
+### Files changed
+- `apps/server/internal/chatoverlay/public_model.go`, `errors.go`,
+  `buffer.go`, `subscription.go`, `filtering.go`, `lifecycle.go`,
+  `expiry.go`, `projection.go`, `manager.go`, `settings_resolver.go`
+  (new).
+- `apps/server/internal/chatoverlay/testhelpers_test.go`,
+  `filtering_test.go`, `lifecycle_test.go`, `expiry_test.go`,
+  `projection_test.go`, `manager_test.go` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` (whole module) — clean.
+- `go test ./internal/chatoverlay/... -v` — 60/60 pass: static
+  filtering (account selection, activity-type selection, hidden-user
+  including cross-overlay independence, bot classification including
+  never-inferred-from-username, command filtering, blocked-term
+  contains/whole-word/Unicode-fold/similar-non-matching-text-retained,
+  moderation/system kinds always excluded); lifecycle (deleted-message
+  hide-vs-placeholder, placeholder never carries text, avatar/badge/
+  account-label toggles, anonymous-user identity omission, role flags
+  from badges only, cheermote/unknown fragment folding); the pure
+  `expiryQueue` (ordering, cancel, reschedule, `popDue` ordering,
+  empty-queue behavior) with a fake clock; `Projection` (upsert→remove
+  on deletion, deleted text never leaks into a later snapshot,
+  monotonic sequence, harmless duplicate upstream items, capacity
+  eviction emitting its own remove, real-timer expiry ordered
+  earliest-first, `Configure` producing a reset and re-filtering
+  previously-visible items, subscribe replay-then-live, gap detection
+  on an evicted sequence, snapshot status, snapshot-not-log semantics,
+  clean shutdown, two independent overlays never sharing state);
+  `Manager` (fan-out to multiple overlays applying independent filters
+  to the same upstream item, panic-in-one-overlay isolation via a
+  deliberately corrupted `Projection`, `EnsureOverlay` reuse without
+  re-resolving, `Rebuild`/`RebuildAll` re-resolving and producing a
+  reset, `Remove` closing a subscriber with `ReasonOverlayDeleted`,
+  `Shutdown` cancelling the upstream subscription and every overlay).
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  — clean.
+- `go test ./...` (whole module) — every package passes; no regression
+  in Stage 1–9 or this stage's own persistence commit.
+
+### Known limitations
+Nothing constructs a `Manager` at startup yet — no HTTP endpoint, no
+`main.go`/`cmd/testserver` wiring. `DefaultRevisionCapacity` (400) and
+`maxSubscriberChannelCapacity` (512) are fixed constants, not
+per-overlay configurable. A settings-change rebuild's correctness is
+bounded by whatever the upstream operator-chat projection still
+retains, exactly like every other retention boundary in this project.
+
+### Next step
+Expose the management and public HTTP APIs (Parts 14–15), wire
+`chatoverlaydomain.Service` and `chatoverlay.Manager` into
+`cmd/server/main.go` and `cmd/testserver/main.go`, and add the
+`/api/chat-overlays/...` and `/api/public/chat-overlays/...` routes to
+`internal/httpapi`.
