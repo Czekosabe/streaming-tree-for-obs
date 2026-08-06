@@ -27,10 +27,11 @@ func evaluate(item operatorchat.Item, cfg resolvedSettings) (visible bool, out I
 
 func buildItem(item operatorchat.Item, cfg resolvedSettings) Item {
 	out := Item{
-		ID:         item.ID,
-		ProviderID: item.ProviderID,
-		OccurredAt: item.OccurredAt,
-		Synthetic:  item.Synthetic,
+		ID:              item.ID,
+		ProviderID:      item.ProviderID,
+		SourceAccountID: item.ConnectedAccountID,
+		OccurredAt:      item.OccurredAt,
+		Synthetic:       item.Synthetic,
 	}
 
 	if cfg.profile.ShowAccountLabel && cfg.accountLabel != nil {

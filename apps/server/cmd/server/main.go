@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/buildinfo"
+	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
+	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
@@ -224,6 +226,27 @@ func run() error {
 	operatorChatPrefsService := operatorchatprefs.NewService(sqlite.NewOperatorChatPrefsRepository(db.DB), nil, nil)
 	operatorChatAssets := chatassets.NewResolver(twitchClient, accountService, nil)
 
+	// Stage 10: the chat-overlay profile store and its live public
+	// projection. The projection's own bounded revision buffer is
+	// independent from both the Event Bus's and operator-chat's own -
+	// see internal/chatoverlay.DefaultRevisionCapacity's own doc
+	// comment.
+	chatOverlayProfileService := chatoverlaydomain.NewService(sqlite.NewChatOverlayRepository(db.DB), nil)
+	chatOverlayAccountLabel := func(connectedAccountID string) (string, bool) {
+		acct, err := accountService.GetAccount(ctx, connectedAccountID)
+		if err != nil || acct.DisplayName == "" {
+			return "", false
+		}
+		return acct.DisplayName, true
+	}
+	chatOverlayResolver := &co.DefaultSettingsResolver{
+		Profiles: chatOverlayProfileService, OperatorPrefs: operatorChatPrefsService, AccountLabel: chatOverlayAccountLabel,
+	}
+	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, logger)
+	if err := chatOverlayManager.Start(ctx); err != nil {
+		return err
+	}
+
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
 		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
 	})
@@ -299,6 +322,9 @@ func run() error {
 		OperatorChatProjection: operatorChatProjection,
 		OperatorChatPrefs:      operatorChatPrefsService,
 		OperatorChatAssets:     operatorChatAssets,
+
+		ChatOverlayProfiles: chatOverlayProfileService,
+		ChatOverlayRuntime:  chatOverlayManager,
 	})
 
 	server := &http.Server{
@@ -336,6 +362,7 @@ func run() error {
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
+		chatOverlayManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -370,6 +397,7 @@ func run() error {
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
+		chatOverlayManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

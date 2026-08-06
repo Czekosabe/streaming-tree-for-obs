@@ -149,10 +149,41 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	}
 }
 
+// getOrCreateProjection returns overlayID's Projection, starting (but
+// deliberately never configuring) a new one if this is the first time
+// it's been referenced since the server started or since it was last
+// removed - configuring is always the caller's own job (EnsureOverlay
+// and Rebuild each do it exactly once, with their own freshly resolved
+// settings), so this helper alone is never responsible for a public
+// reset.
+func (m *Manager) getOrCreateProjection(ctx context.Context, overlayID string) *Projection {
+	m.mu.Lock()
+	if p, ok := m.projections[overlayID]; ok {
+		m.mu.Unlock()
+		return p
+	}
+	m.mu.Unlock()
+
+	p := NewProjection(overlayID, m.upstream, nil, m.logger)
+	p.Start(ctx)
+
+	m.mu.Lock()
+	if existing, ok := m.projections[overlayID]; ok {
+		m.mu.Unlock()
+		p.Shutdown(ctx)
+		return existing
+	}
+	m.projections[overlayID] = p
+	m.mu.Unlock()
+	return p
+}
+
 // EnsureOverlay returns the running Projection for overlayID, creating
 // and configuring one from durable storage if this is the first time
 // it's been requested since the server started (or since it was last
-// removed).
+// removed). Already-running overlays are returned as-is, without a
+// redundant re-resolve/re-configure - use Rebuild to apply a settings
+// change to one that already exists.
 func (m *Manager) EnsureOverlay(ctx context.Context, overlayID string) (*Projection, error) {
 	m.mu.Lock()
 	if p, ok := m.projections[overlayID]; ok {
@@ -165,19 +196,7 @@ func (m *Manager) EnsureOverlay(ctx context.Context, overlayID string) (*Project
 	if err != nil {
 		return nil, err
 	}
-
-	p := NewProjection(overlayID, m.upstream, nil, m.logger)
-	p.Start(ctx)
-
-	m.mu.Lock()
-	if existing, ok := m.projections[overlayID]; ok {
-		m.mu.Unlock()
-		p.Shutdown(ctx)
-		return existing, nil
-	}
-	m.projections[overlayID] = p
-	m.mu.Unlock()
-
+	p := m.getOrCreateProjection(ctx, overlayID)
 	p.Configure(settings)
 	return p, nil
 }
@@ -194,20 +213,17 @@ func (m *Manager) Get(overlayID string) (*Projection, bool) {
 }
 
 // Rebuild re-resolves overlayID's settings from durable storage and
-// applies them to its running Projection, producing a public reset -
-// called whenever a profile's settings, account selection, hidden
-// users, blocked terms, or activity types change, and whenever Stage 9's
-// own shared bot-user list changes. If overlayID has no running
-// Projection yet, this is equivalent to EnsureOverlay.
+// applies them to its running Projection (creating one first if none is
+// running yet), producing exactly one public reset - called whenever a
+// profile's settings, account selection, hidden users, blocked terms, or
+// activity types change, and whenever Stage 9's own shared bot-user list
+// changes.
 func (m *Manager) Rebuild(ctx context.Context, overlayID string) error {
-	p, err := m.EnsureOverlay(ctx, overlayID)
-	if err != nil {
-		return err
-	}
 	settings, err := m.resolver.Resolve(ctx, overlayID)
 	if err != nil {
 		return err
 	}
+	p := m.getOrCreateProjection(ctx, overlayID)
 	p.Configure(settings)
 	return nil
 }

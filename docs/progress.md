@@ -7757,3 +7757,160 @@ Expose the management and public HTTP APIs (Parts 14–15), wire
 `cmd/server/main.go` and `cmd/testserver/main.go`, and add the
 `/api/chat-overlays/...` and `/api/public/chat-overlays/...` routes to
 `internal/httpapi`.
+
+---
+
+## 2026-08-06 21:15 — feat(server): expose chat overlay APIs
+
+### Status
+Completed for this commit's own scope: the management API
+(`/api/chat-overlays/...`), the public API
+(`/api/public/chat-overlays/...`), and full `main.go`/`cmd/testserver`
+wiring. No frontend yet.
+
+### Scope
+`apps/server/internal/httpapi/chatoverlay.go`, router/`Options` wiring,
+and both binaries' construction of `chatoverlaydomain.Service` and
+`chatoverlay.Manager`.
+
+### Technical decisions
+**A thin adapter closes an interface-satisfaction gap between the two
+packages.** `internal/chatoverlay.Manager` needs a single subscription
+to the real `internal/operatorchat.Projection`, but Go requires exact
+method signatures for interface satisfaction: `operatorchat.Projection.
+Subscribe` returns its own concrete `*operatorchat.Subscription`, not
+`internal/chatoverlay`'s own unexported `upstreamSubscription`
+interface, so `*operatorchat.Projection` cannot implement
+`chatoverlay.UpstreamSource` directly even though `*operatorchat.
+Subscription` already has the two methods that interface needs. Added
+`chatoverlay.WrapOperatorChatSource` (`internal/chatoverlay/adapter.go`)
+as the thin wiring-time adapter, discovered and fixed while wiring
+`main.go` (the compiler caught it immediately - documented here since
+the fix is a small, reusable exported function rather than an inline
+one-off).
+
+**`internal/chatoverlay.Item` gained a `SourceAccountID` field**, kept
+only for `internal/httpapi`'s own badge-image resolution at
+serialization time (Twitch badge image sets are channel-specific, so
+`chatassets.Resolver.ResolveBadge` needs the source account regardless
+of whether `AccountLabel` itself is visible). Like every field on that
+type, it is never serialized directly - JSON shaping is
+`internal/httpapi`'s job, and its own public item response DTO
+deliberately has no field for this one. Found while building the public
+item response: the public `Item` type correctly has no raw account id
+for privacy, but badge-image resolution still legitimately needs one
+internally.
+
+**Found and fixed a real bug in `chatoverlay.Manager.Rebuild` while
+writing this commit's own HTTP tests**: `Rebuild` called `EnsureOverlay`
+(which itself resolves settings and calls `Configure` when creating a
+brand-new projection) and then unconditionally resolved settings and
+called `Configure` again - so every single settings change to a
+brand-new overlay produced two resets and two resolver round trips
+instead of one, and burned two sequence numbers for the same profile
+state. A test that opened the overlay's own SSE stream immediately
+after creation caught this directly (the very first retained revision
+had sequence 2, not 1). Fixed by extracting `getOrCreateProjection`
+(starts, but never configures, a projection) so both `EnsureOverlay` and
+`Rebuild` each resolve settings and call `Configure` exactly once,
+regardless of whether the projection already existed.
+
+**Every profile-mutating management handler triggers a live rebuild**
+(`rebuildChatOverlayRuntime`, called after create/replace/set-accounts/
+hide-user/unhide-user/add-blocked-term/remove-blocked-term/set-activity-
+types) so the running `Manager` - and any connected Browser Source -
+reflects a saved change immediately, per Part 19's "successful Save
+triggers a public reset/rebuild." A rebuild failure is logged, not
+surfaced to the client: the underlying settings write already
+succeeded, and the next rebuild (or a server restart) catches up.
+
+**Hidden-user removal uses query parameters, not a path id**, because
+`chatoverlaydomain.HiddenUser` deliberately has no synthetic id of its
+own (only the composite provider/account/provider-user-id key the
+Service's own `UnhideUser` already takes) - `DELETE /api/chat-overlays/
+{id}/hidden-users?providerId=&connectedAccountId=&providerUserId=`.
+Blocked terms do have a real `ID`, so their removal is the ordinary
+`DELETE .../blocked-terms/{termId}`.
+
+**The public config endpoint deliberately omits several fields the
+private profile response has**: `showAccountLabel`, `showAvatar`, and
+`showBadges` decide what the *server* includes on each item
+(`AccountLabel`/`User.AvatarURL`/`User.Badges` are already absent when
+off - see the previous commit's `buildItem`/`buildUser`), so the
+renderer never needs its own copy of those flags to decide whether to
+render them; `showActivityEvents`/`showDeletedPlaceholder`/
+`hideCommands`/`hideBots` are pure filtering decisions already applied
+before an item ever reaches the client. Only genuinely presentational
+toggles (`showPlatformIcon`, `showPlatformName`, `showTimestamp`, and
+every visual/animation/highlight setting) are exposed.
+
+**The public item response has no field for a raw provider user id,
+connected-account id, or original deleted text** - mirrors
+`internal/chatoverlay.Item`'s own guarantees one layer up, at the JSON
+boundary.
+
+**The public stream never answers an unknown or disabled slug with a
+hard HTTP error.** `handlePublicChatOverlayStream` always opens a normal
+200 SSE connection; for an unavailable overlay it sends one empty
+`chat-overlay.reset` and then idles on keepalives only, matching Part
+15's "renders transparent/empty by default, not a large backend error
+on the live broadcast." The management-facing `config`/`items` GET
+endpoints, by contrast, answer a real `chat_overlay_not_found` (404) or
+`chat_overlay_disabled` (409) so the Overlays management page can
+surface the problem clearly.
+
+**A per-overlay SSE client cap** (`chatOverlayStreamLimiter`, 8 per
+overlay) is enforced at the HTTP layer with its own mutex-guarded
+per-overlay counter, independent of `internal/chatoverlay`'s own
+subscriber bookkeeping - reaching the cap on one overlay can never
+affect another overlay's stream or the management API.
+
+### Files changed
+- `apps/server/internal/chatoverlay/adapter.go` (new).
+- `apps/server/internal/chatoverlay/public_model.go`, `lifecycle.go`
+  (added `Item.SourceAccountID`).
+- `apps/server/internal/chatoverlay/manager.go` (the `Rebuild`
+  double-Configure fix).
+- `apps/server/internal/httpapi/chatoverlay.go` (new).
+- `apps/server/internal/httpapi/chatoverlay_test.go` (new).
+- `apps/server/internal/httpapi/router.go` (new `Options` fields,
+  route registration).
+- `apps/server/cmd/server/main.go`, `apps/server/cmd/testserver/main.go`
+  (chat-overlay service/runtime construction, router wiring, shutdown
+  sequence).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` (whole module) — clean.
+- `go test ./internal/httpapi/... -run ChatOverlay -v` — 25/25 pass:
+  create/list/get/put/delete/rotate-slug; empty-name/out-of-range/
+  unknown-field/malformed-JSON rejection; wrong-method 405 with an
+  Allow header; account selection round trip and unknown-account
+  rejection; hidden-user add/list/remove and missing-field rejection;
+  blocked-term add/list/remove and unknown-match-mode rejection;
+  activity-type round trip; public config exposes no management id and
+  the correct schema version; unknown slug and disabled overlay give
+  the documented stable errors; a live-published message reaches the
+  public items endpoint already filtered/presented; the public items
+  response never contains a configured blocked term's own text; the
+  public SSE stream delivers a real `chat-overlay.upsert` for a live
+  message and renders an empty `chat-overlay.reset` (never a hard
+  error) for an unknown slug.
+- `go test ./internal/chatoverlay/... -v` — 60/60 pass (re-verified
+  after the `Rebuild` fix).
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  — clean.
+- `go test ./...` (whole module) — every package passes; no regression
+  in Stage 1–9 or this stage's own earlier commits.
+
+### Known limitations
+No frontend yet - every route above is currently reachable only via a
+direct HTTP client. `maxChatOverlaySSEClientsPerOverlay` (8) is a fixed
+constant. The public config/items/stream endpoints trust the loopback-
+only default; see `docs/obs-browser-source.md` and the Part 16 security
+audit still to be written up in this stage's documentation commit.
+
+### Next step
+Build the frontend: Zod-validated data layer and hooks, the overlay
+renderer component tree, the public `/overlay/chat/{publicSlug}` route
+with no application shell.

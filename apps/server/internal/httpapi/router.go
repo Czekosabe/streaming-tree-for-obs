@@ -85,6 +85,15 @@ type Options struct {
 	// resolved badge images (see OperatorChatAssetResolver's own doc
 	// comment).
 	OperatorChatAssets OperatorChatAssetResolver
+	// ChatOverlayProfiles serves the Stage 10 chat-overlay profile
+	// management API (/api/chat-overlays/...). Required alongside
+	// ChatOverlayRuntime and Accounts for the chat-overlay routes
+	// (management and public) to register.
+	ChatOverlayProfiles ChatOverlayProfileService
+	// ChatOverlayRuntime serves the live per-overlay public projection
+	// the management API rebuilds on every settings change and the
+	// public API (/api/public/chat-overlays/...) reads from.
+	ChatOverlayRuntime ChatOverlayRuntime
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -136,6 +145,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.OperatorChatProjection != nil && opts.OperatorChatPrefs != nil && opts.Accounts != nil {
 		registerOperatorChatRoutes(mux, logger, opts.Accounts, opts.OperatorChatProjection, opts.OperatorChatPrefs, opts.OperatorChatAssets)
+	}
+
+	if opts.ChatOverlayProfiles != nil && opts.ChatOverlayRuntime != nil && opts.Accounts != nil {
+		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

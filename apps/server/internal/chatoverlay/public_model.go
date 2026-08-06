@@ -150,6 +150,16 @@ type Item struct {
 	// resolvable - never a raw connected-account id, and never present
 	// merely because more than one account exists if the setting is off.
 	AccountLabel string
+	// SourceAccountID is the raw connected-account id, kept only for
+	// internal/httpapi's own presentation-time badge-image resolution
+	// (Twitch badge image sets are channel-specific, so resolving one
+	// needs the source account regardless of AccountLabel's own
+	// visibility setting). Like every field on this type, it is never
+	// serialized directly - see this package's own doc comment: JSON
+	// shaping is internal/httpapi's job, building its own response DTO
+	// that deliberately has no field for this one. Not a substitute for
+	// AccountLabel and never rendered.
+	SourceAccountID string
 
 	OccurredAt time.Time
 
