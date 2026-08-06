@@ -779,6 +779,16 @@ type publicChatOverlayActivityResponse struct {
 	Quantity     *int64   `json:"quantity,omitempty"`
 }
 
+// publicChatOverlayRemoveResponse is the wire shape of a
+// "chat-overlay.remove" SSE event's data payload - only a stable id and
+// a stable, closed-enum reason (see co.RemoveReason's own doc comment).
+// Never the removed item, its message text, or any other content -
+// there is no field here a bug could accidentally populate with it.
+type publicChatOverlayRemoveResponse struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
 // publicChatOverlayItemResponse is the wire shape of one public overlay
 // item - deliberately smaller than operatorChatItemResponse. Never
 // carries a raw connected-account id, a provider user id, or (for a
@@ -1035,7 +1045,11 @@ func writeChatOverlayRevisionEvent(ctx context.Context, w http.ResponseWriter, r
 		}
 		return writeSSEEvent(w, "chat-overlay.upsert", rev.Sequence, toPublicChatOverlayItemResponse(ctx, *rev.Item, assets))
 	case co.OpRemove:
-		return writeSSEEvent(w, "chat-overlay.remove", rev.Sequence, map[string]string{"id": rev.RemovedID})
+		reason := rev.Reason
+		if reason == "" {
+			reason = co.RemoveReasonUnknown
+		}
+		return writeSSEEvent(w, "chat-overlay.remove", rev.Sequence, publicChatOverlayRemoveResponse{ID: rev.RemovedID, Reason: string(reason)})
 	case co.OpReset:
 		resp := make([]publicChatOverlayItemResponse, 0, len(rev.ResetItems))
 		for _, item := range rev.ResetItems {

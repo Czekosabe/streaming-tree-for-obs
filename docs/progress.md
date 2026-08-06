@@ -8662,3 +8662,142 @@ above.
 Implement the missing bounded exit-animation behavior (backend
 remove-reason classification, then the frontend state machine and
 renderer), per this same corrective task.
+
+---
+
+## 2026-08-06 13:05 — fix(server): classify public overlay removals
+
+### Status
+Completed. `internal/chatoverlay`'s `remove` operation now carries a
+stable, closed-enum reason; backend tests pass; no frontend change yet
+(next entry).
+
+### Scope
+`apps/server/internal/chatoverlay/public_model.go`, `lifecycle.go`,
+`projection.go`, `apps/server/internal/httpapi/chatoverlay.go`, and new
+tests in both packages.
+
+### Investigation before writing any code
+
+Checked whether `exit_animation` already exists at every layer the
+corrective task named, to avoid a duplicate field: it does, everywhere
+- the `exit_animation` SQLite column (migration `0011`), the Go model
+field, the validation enum, the management request/response DTOs, the
+**public config DTO** (`internal/httpapi/chatoverlay.go`'s own
+`publicChatOverlayConfigResponse`), the frontend Zod schema (both the
+management and public config schemas), the editor's own
+`OverlaySettingsForm.tsx` select control, and the English/Polish
+`settings.exitAnimation` labels were all already wired in the original
+Stage 10 work. What was genuinely missing was the **behavior**: nothing
+anywhere used the field to actually animate a removal, and
+`overlay-style.ts`'s own doc comment explicitly said so ("exit
+animation has no visible effect for this stage's renderer since a
+removed item is simply not rendered on the next frame"). This entry
+and the next one implement that missing behavior; neither adds a new
+settings field.
+
+### Design: why `remove` reasons are a small, closed set
+
+`internal/chatoverlay.RemoveReason` (`public_model.go`) is
+`expired` | `capacity_evicted` | `message_deleted` | `chat_cleared` |
+`user_messages_cleared` | `unknown` - six values, smaller than the
+corrective task's own example list of sixteen. The corrective task's
+own instructions explicitly allow this ("Names may differ if a
+smaller, clearer set is sufficient") given a real architectural reason,
+which this has: **a settings/privacy change never produces an
+individual `OpRemove` in this design at all.** Hiding a user, blocking
+a term, narrowing the account selection, toggling a filter, or
+disabling/deleting the overlay all go through `Projection.Configure`'s
+existing full-rebuild path, which has always produced exactly one
+`OpReset` carrying the complete new visible set - never a per-item
+remove. A reset is unconditionally immediate on the frontend (see the
+next entry's reducer) with no exit-animation semantics applying to it
+at all, which already satisfies the corrective task's own "a
+configuration reset should replace state immediately rather than
+animating every old item out." Redesigning `Configure` to diff old
+against new state and emit individual, reason-tagged removes instead
+was considered and rejected: it would be a substantial rearchitecture
+of an already-tested, working rebuild path for a case that is already
+correctly immediate today, for the sole benefit of a reason string nothing
+would ever read (a reset removal, being unconditionally immediate,
+never needs a cosmetic/immediate distinction in the first place).
+`RemoveReason` therefore only needs to cover the reasons an actual
+`OpRemove` can carry: natural expiry, capacity eviction (both cosmetic,
+`IsCosmetic() == true`), and the three individual operator-chat
+lifecycle-deletion reasons a single already-visible item can receive
+live (all immediate). `unknown` is the safe fallback for a lifecycle
+deletion reason this package does not recognize - immediate, never
+cosmetic, so an unrecognized case can never accidentally retain hidden
+content on screen for an animation.
+
+### Reason derivation is exact, not guessed
+
+The one branch that needed a reason derived from context -
+`Projection.applyUpstreamItem`'s "was visible, now isn't" case - maps
+`operatorchat.Item.Lifecycle.DeletionReason` directly
+(`deletionRemoveReason` in `lifecycle.go`). This is provably the only
+thing that branch can ever mean: `operatorchat.Item`'s own doc comment
+already establishes that every field but `Lifecycle` is fixed at an
+item's creation, so a live update to an already-visible item's id can
+only ever be a lifecycle change (deletion), never a text/badge/kind
+change that could make it newly match or stop matching a filter - that
+class of change is impossible without a `Configure` rebuild, which
+goes through the reset path above instead. No guessing was required.
+
+### Wire format
+
+`chat-overlay.remove`'s SSE payload gained one field: `{"id": "...",
+"reason": "..."}` - extended, not replaced, keeping the existing `id`
+key so nothing else about the already-shipped contract changes.
+`internal/httpapi`'s new `publicChatOverlayRemoveResponse` DTO has
+exactly those two fields - there is no field a bug could accidentally
+populate with the removed item's own content, mirroring how
+`co.Item`'s own "no field for a deleted message's original text"
+guarantee already works one level up.
+
+### Files changed
+- `apps/server/internal/chatoverlay/public_model.go` (`RemoveReason`
+  type, consts, `IsCosmetic`, `Revision.Reason`).
+- `apps/server/internal/chatoverlay/lifecycle.go`
+  (`deletionRemoveReason`).
+- `apps/server/internal/chatoverlay/projection.go` (reason set on
+  every `OpRemove` this package produces).
+- `apps/server/internal/chatoverlay/remove_reason_test.go`,
+  `testhelpers_test.go` (new/updated).
+- `apps/server/internal/httpapi/chatoverlay.go`
+  (`publicChatOverlayRemoveResponse`, reason serialization).
+- `apps/server/internal/httpapi/chatoverlay_test.go` (new remove-event
+  test).
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` (whole module) — clean.
+- `go test ./internal/chatoverlay/... -v` — every existing test still
+  passes; 13 new tests: the deletion-reason mapping for every known and
+  an unrecognized `operatorchat.DeletionReason`, `IsCosmetic` for every
+  reason, expiry/capacity-eviction/message-deletion/chat-clear/
+  user-messages-clear each carrying its correct reason, a settings
+  change (hiding a user) producing an `OpReset` and never an
+  individual `OpRemove`, replay preserving the reason on a
+  late-connecting subscriber, and two independent subscribers replaying
+  the identical `{id, reason}` for the same removal.
+- `go test ./internal/httpapi/... -run ChatOverlay -v` — every existing
+  test still passes; 1 new test confirming the live SSE `chat-overlay.remove`
+  event contains `"reason":"message_deleted"` and never the deleted
+  message's own text.
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  — clean.
+- `go test ./...` (whole module) — every package passes; no regression.
+
+### Known limitations
+The frontend does not yet read or act on `reason` - that is the next
+entry's own scope. `RemoveReason` values are not yet localized in any
+user-facing string (the reason is a protocol/logging detail, never
+rendered to a viewer).
+
+### Next step
+Implement the frontend exit-animation state machine: extend the public
+remove-payload schema and reducer to track a bounded "leaving" set for
+cosmetic reasons only, add the exit-animation CSS classes, wire the
+renderer's fallback timeout and `prefers-reduced-motion` handling, and
+confirm the editor/preview already exposing `exitAnimation` now has a
+visible effect.

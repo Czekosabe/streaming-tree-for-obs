@@ -172,7 +172,7 @@ func (p *Projection) processExpiry() {
 			}
 			p.removeVisibleLocked(id)
 			p.seq++
-			revisions = append(revisions, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: id})
+			revisions = append(revisions, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: id, Reason: RemoveReasonExpired})
 		}
 		for _, rev := range revisions {
 			p.ring.push(rev)
@@ -302,14 +302,14 @@ func (p *Projection) applyUpstreamItem(item operatorchat.Item, emit bool) {
 				revs = append(revs, Revision{Sequence: p.seq, Operation: OpUpsert, Item: &publicItem})
 				for _, id := range evicted {
 					p.seq++
-					revs = append(revs, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: id})
+					revs = append(revs, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: id, Reason: RemoveReasonCapacityEvicted})
 				}
 			}
 		case wasVisible:
 			p.removeVisibleLocked(item.ID)
 			if emit {
 				p.seq++
-				revs = append(revs, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: item.ID})
+				revs = append(revs, Revision{Sequence: p.seq, Operation: OpRemove, RemovedID: item.ID, Reason: deletionRemoveReason(item)})
 			}
 		}
 

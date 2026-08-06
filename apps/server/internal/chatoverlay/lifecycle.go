@@ -75,6 +75,31 @@ func buildDeletedPlaceholder(item operatorchat.Item, cfg resolvedSettings) Item 
 	return out
 }
 
+// deletionRemoveReason maps operator-chat's own lifecycle deletion
+// reason onto this package's public RemoveReason - used only when a
+// previously-visible item stops passing evaluate() because its
+// Lifecycle.Deleted flag just became true (see Projection.
+// applyUpstreamItem's "wasVisible" branch). Every other field on an
+// operator-chat Item is fixed at creation (see operatorchat.Item's own
+// doc comment), so a live update to an already-visible item's
+// visibility can only ever be this - never a filter/settings change,
+// which always goes through Configure's full rebuild instead. Falls
+// back to RemoveReasonUnknown (immediate, never cosmetic) for a
+// deletion reason this package does not recognize, rather than
+// guessing.
+func deletionRemoveReason(item operatorchat.Item) RemoveReason {
+	switch item.Lifecycle.DeletionReason {
+	case operatorchat.DeletionReasonModeratorDeleted:
+		return RemoveReasonMessageDeleted
+	case operatorchat.DeletionReasonChatCleared:
+		return RemoveReasonChatCleared
+	case operatorchat.DeletionReasonUserMessagesCleared:
+		return RemoveReasonUserMessagesCleared
+	default:
+		return RemoveReasonUnknown
+	}
+}
+
 func buildUser(u *operatorchat.User, cfg resolvedSettings) *User {
 	out := &User{Anonymous: u.Anonymous}
 	if u.Anonymous {

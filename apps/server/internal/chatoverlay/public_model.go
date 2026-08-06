@@ -35,10 +35,20 @@ const (
 	// or an update to one already visible (its color, badges, or deleted
 	// state changed).
 	OpUpsert Operation = "upsert"
-	// OpRemove carries only the id of an item that is no longer visible -
-	// because Twitch deleted it, a clear affected it, capacity/lifetime
-	// expiry evicted it, or a settings change hid it. Never carries the
-	// item's own former content.
+	// OpRemove carries only the id of an item that is no longer visible,
+	// plus a stable RemoveReason - never the item's own former content.
+	// A settings/privacy change that hides a previously-visible item
+	// (a newly blocked term, a newly hidden user, a filter toggle, a
+	// narrowed account selection) never produces an OpRemove in this
+	// design at all - it always produces a full OpReset instead (see
+	// Projection.Configure), which the frontend already applies
+	// immediately and in full. OpRemove is therefore reserved for the
+	// two genuinely cosmetic reasons (RemoveReasonExpired,
+	// RemoveReasonCapacityEvicted, safe to animate) and the individual
+	// moderation-lifecycle reasons operator-chat's own revision stream
+	// reports for a single already-visible item (RemoveReasonMessageDeleted,
+	// RemoveReasonChatCleared, RemoveReasonUserMessagesCleared, all
+	// immediate, never animated) - see RemoveReason's own doc comment.
 	OpRemove Operation = "remove"
 	// OpReset carries a complete replacement of the entire visible set -
 	// sent after a settings/account change that could affect many items
@@ -46,6 +56,53 @@ const (
 	// replay.
 	OpReset Operation = "reset"
 )
+
+// RemoveReason is the stable, closed reason an OpRemove revision
+// carries - never a raw operator-chat deletion detail, never which
+// blocked term or hidden user was involved, and never enough
+// information to reconstruct the removed item's own content. Exactly
+// two reasons are "cosmetic" (see IsCosmetic) and safe for the
+// frontend to animate; every other reason is an immediate removal a
+// client must apply without delay and without retaining the item's
+// content for a "leaving" transition - see this package's own doc
+// comment and docs/project-overview.md's Stage 10 corrective-pass
+// entry for the full safety rationale.
+type RemoveReason string
+
+const (
+	// RemoveReasonExpired: the item's own configured message lifetime
+	// elapsed. Cosmetic - safe to animate.
+	RemoveReasonExpired RemoveReason = "expired"
+	// RemoveReasonCapacityEvicted: the oldest visible item was evicted
+	// because a newer one exceeded the profile's own MaxVisibleItems.
+	// Cosmetic - safe to animate.
+	RemoveReasonCapacityEvicted RemoveReason = "capacity_evicted"
+	// RemoveReasonMessageDeleted: a moderator deleted this one message
+	// on Twitch (operatorchat.DeletionReasonModeratorDeleted). Immediate.
+	RemoveReasonMessageDeleted RemoveReason = "message_deleted"
+	// RemoveReasonChatCleared: a whole-chat clear affected this item
+	// (operatorchat.DeletionReasonChatCleared). Immediate.
+	RemoveReasonChatCleared RemoveReason = "chat_cleared"
+	// RemoveReasonUserMessagesCleared: a clear-this-user's-messages
+	// action affected this item (operatorchat.DeletionReasonUserMessagesCleared).
+	// Immediate.
+	RemoveReasonUserMessagesCleared RemoveReason = "user_messages_cleared"
+	// RemoveReasonUnknown is the safe fallback for a lifecycle deletion
+	// this package does not recognize a specific reason for - treated
+	// as immediate, never cosmetic, so an unrecognized case can never
+	// accidentally retain hidden content on screen for an animation.
+	RemoveReasonUnknown RemoveReason = "unknown"
+)
+
+// IsCosmetic reports whether r is safe for the frontend to animate as a
+// "leaving" transition rather than removing immediately. Only natural
+// expiry and capacity eviction qualify - every moderation, clear, or
+// settings-driven removal must be immediate (see this type's own doc
+// comment for why settings/privacy changes never even reach this
+// function: they travel as a full OpReset, not an OpRemove).
+func (r RemoveReason) IsCosmetic() bool {
+	return r == RemoveReasonExpired || r == RemoveReasonCapacityEvicted
+}
 
 // Kind is the item's category. The public overlay only ever shows two of
 // operatorchat's four kinds - see this package's own filtering.go doc
@@ -185,6 +242,9 @@ type Revision struct {
 	Item *Item
 	// RemovedID is set only for OpRemove.
 	RemovedID string
+	// Reason is set only for OpRemove - see RemoveReason's own doc
+	// comment.
+	Reason RemoveReason
 	// ResetItems is set only for OpReset - the complete new visible set,
 	// so a client never needs a second round trip to recover from one.
 	ResetItems []Item

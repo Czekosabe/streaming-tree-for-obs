@@ -63,8 +63,12 @@ func systemItem(id, accountID string) operatorchat.Item {
 }
 
 func deletedMessageItem(id, accountID, providerUserID, login, text string) operatorchat.Item {
+	return deletedMessageItemWithReason(id, accountID, providerUserID, login, text, operatorchat.DeletionReasonModeratorDeleted)
+}
+
+func deletedMessageItemWithReason(id, accountID, providerUserID, login, text string, reason operatorchat.DeletionReason) operatorchat.Item {
 	item := messageItem(id, accountID, providerUserID, login, text)
-	item.Lifecycle = operatorchat.Lifecycle{Deleted: true, DeletionReason: operatorchat.DeletionReasonModeratorDeleted}
+	item.Lifecycle = operatorchat.Lifecycle{Deleted: true, DeletionReason: reason}
 	return item
 }
 

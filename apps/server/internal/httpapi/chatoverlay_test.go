@@ -141,6 +141,19 @@ func (ts *chatOverlayTestServer) publishMessage(t *testing.T, accountID, provide
 	}
 }
 
+func (ts *chatOverlayTestServer) deleteMessage(t *testing.T, accountID, deletedProviderEventID string) {
+	t.Helper()
+	evt := engagement.Event{
+		SchemaVersion: engagement.CurrentSchemaVersion, ProviderID: engagement.ProviderTwitch,
+		ConnectedAccountID: accountID, Type: engagement.TypeChatMessageDeleted, ProviderEventType: "channel.chat.message_delete",
+		ProviderEventID: "del_" + deletedProviderEventID, PlatformTimestamp: time.Now().UTC(), DedupeKey: "dedupe_del_" + deletedProviderEventID,
+		ModerationRef: deletedProviderEventID,
+	}
+	if _, _, err := ts.bus.Publish(evt); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+}
+
 func waitForPublicItems(t *testing.T, ts *chatOverlayTestServer, slug string, want int) []publicChatOverlayItemResponse {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -594,6 +607,60 @@ func TestPublicChatOverlayStreamSendsUpsertForALiveMessage(t *testing.T) {
 	}
 	if !strings.Contains(chunk, "streamed hello") {
 		t.Errorf("stream chunk missing the live message text: %q", chunk)
+	}
+}
+
+// TestPublicChatOverlayStreamRemoveEventCarriesReasonAndNoContent covers
+// the corrective-pass requirement that a remove payload is exactly
+// {id, reason} - never the removed message's own text, and the reason
+// for a moderator deletion is the immediate, never-cosmetic
+// "message_deleted".
+func TestPublicChatOverlayStreamRemoveEventCarriesReasonAndNoContent(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Streamed")
+	accountID := ts.createAccount(t, "acct_1")
+
+	srv := httptest.NewServer(ts.handler)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/public/chat-overlays/"+overlay.PublicSlug+"/stream", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET .../stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, 4096)
+	if _, err := resp.Body.Read(buf); err != nil { // initial reset
+		t.Fatalf("reading the initial reset failed: %v", err)
+	}
+
+	const secretText = "this message text must never appear in the remove event"
+	ts.publishMessage(t, accountID, "msg_del_1", secretText)
+	if _, err := resp.Body.Read(buf); err != nil { // the upsert
+		t.Fatalf("reading the upsert failed: %v", err)
+	}
+
+	ts.deleteMessage(t, accountID, "msg_del_1")
+	n, err := resp.Body.Read(buf)
+	if err != nil && n == 0 {
+		t.Fatalf("reading the remove event failed: %v", err)
+	}
+	chunk := string(buf[:n])
+
+	if !strings.Contains(chunk, "event: chat-overlay.remove") {
+		t.Fatalf("expected a chat-overlay.remove event, got: %q", chunk)
+	}
+	if !strings.Contains(chunk, `"reason":"message_deleted"`) {
+		t.Errorf("expected reason \"message_deleted\", got: %q", chunk)
+	}
+	if strings.Contains(chunk, secretText) {
+		t.Errorf("the remove event must never carry the deleted message's own text: %q", chunk)
 	}
 }
 
