@@ -54,6 +54,7 @@ export const NAMESPACES = [
   'accounts',
   'engagement',
   'chat',
+  'overlays',
 ] as const;
 
 /** Namespace assumed when a component calls `t()` without naming one. */

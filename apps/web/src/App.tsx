@@ -8,6 +8,7 @@ import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { OverlayChatPage } from '@/pages/OverlayChatPage';
 import { LogsPage, MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StreamsPage } from '@/pages/StreamsPage';
@@ -26,6 +27,10 @@ export function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
+            {/* No AppShell: a standalone Browser Source page, never the
+                operator dashboard's chrome - see OverlayChatPage's own
+                doc comment. */}
+            <Route path="/overlay/chat/:publicSlug" element={<OverlayChatPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>

@@ -7914,3 +7914,145 @@ audit still to be written up in this stage's documentation commit.
 Build the frontend: Zod-validated data layer and hooks, the overlay
 renderer component tree, the public `/overlay/chat/{publicSlug}` route
 with no application shell.
+
+---
+
+## 2026-08-06 22:40 — feat(web): add chat overlay renderer
+
+### Status
+Completed for this commit's own scope: the public data layer (Zod
+schemas, transport, SSE hook), the renderer component tree, and the
+`/overlay/chat/:publicSlug` route with no application shell. The
+management CRUD hooks are also included (needed by the next commit's
+Overlays page) but there is no page wired to them yet.
+
+### Scope
+`apps/web/src/api/chat-overlay-schemas.ts`, `chat-overlay.ts`,
+`apps/web/src/models/chat-overlay-reducer.ts`,
+`apps/web/src/hooks/use-chat-overlay.ts`, `use-chat-overlay-stream.ts`,
+`apps/web/src/components/chat-overlay/*`,
+`apps/web/src/pages/OverlayChatPage.tsx`, the `overlays` i18n namespace,
+and `App.tsx`'s new route.
+
+### Technical decisions
+**A three-operation reducer, not a reuse of `operator-chat-reducer.ts`.**
+The public overlay's own revision protocol has `upsert`/`remove`/`reset`
+(internal/chatoverlay's own `Revision` type), unlike operator-chat's
+single complete-upsert stream that never removes an id. A new
+`chat-overlay-reducer.ts` keeps the same first-seen-order/keyed-by-id/
+duplicate-and-out-of-order-safe shape, but `remove` genuinely deletes an
+id from state - capacity eviction, expiry, moderation, and a settings
+change hiding an item all need the item gone from the screen, not
+merely flagged.
+
+**The SSE hook does not fetch a separate snapshot before connecting.**
+`internal/httpapi`'s public stream endpoint already sends a complete
+`chat-overlay.reset` as its first event (replay-then-live, mirroring
+`operatorchat`'s own `Subscribe`), so `useChatOverlayStream` relies on
+that alone - consistent with how `useOperatorChatStream` already works
+for the private Chat page, and one fewer request/race to reason about
+on first paint.
+
+**CSS variables and inline styles are built from validated data only**
+(`overlay-style.ts`): every color is checked against the
+`#RRGGBB`/`#RRGGBBAA` pattern with a safe fallback, every number is
+clamped to a sane range, and the font-family/animation enums map through
+a fixed lookup table - never a raw backend string reaching `style`
+directly. This is defense in depth on top of the backend's own
+validation (`internal/domain/chatoverlay/validation.go`), not a
+replacement for it.
+
+**Entry animations are real CSS keyframes added to `index.css`**
+(`chat-overlay-fade-in`/`-slide-up-in`/`-slide-left-in`/`-scale-in`,
+Tailwind v4 `@utility` classes), with their duration read from a
+`--chat-overlay-animation-duration` custom property the container style
+sets - so the backend-configured `animationDurationMs` actually takes
+effect without generating CSS at runtime. There is no exit animation:
+a removed item is simply not rendered on the next frame, so a
+moderation removal is never delayed by a fade-out, satisfying Part 11's
+"animation never unreasonably delays removal" without needing any
+animation-completion bookkeeping.
+
+**`prefers-reduced-motion` disables entry animation entirely** via a
+small hook that degrades to "not reduced" if `window.matchMedia` itself
+is unavailable (found while writing this commit's own renderer test:
+jsdom's default environment here has no `matchMedia`), rather than
+throwing - a defensive guard, not a feature.
+
+**Role highlighting renders a text tag, never color alone** (Part 12),
+built from a fixed `Record<RoleTag, ParseKeys<'overlays'>>` lookup
+rather than a dynamic template-literal translation key - found via a
+real `tsc` error (a dynamic `` `renderer.role.${tag}` `` key does not
+type-check against i18next's own generated key union), fixed the same
+way `operator-chat-presentation.ts`'s own `activityTypeKey` already
+solves it for a different dynamic key.
+
+**Every image (avatar, badge, emote) reuses
+`operator-chat-presentation.ts`'s existing `isSafeTwitchAssetUrl`** -
+https-only, no userinfo, an allow-listed CDN host - falling back to
+plain text (emote) or nothing at all (avatar/badge) on an unrecognized
+host or a load failure, exactly like the operator Chat page's own
+`ChatEmoteImage`/badge rendering.
+
+**`OverlayChatPage` renders nothing (a bare transparent div) while the
+public config hasn't loaded, never a spinner or error message** - a
+Browser Source with a transparent background must never show visible
+loading/error chrome on a live broadcast; an unknown or disabled
+overlay's config request simply never resolves into a renderable state,
+which is the intended behavior (the *management* UI is where that
+error belongs - see the previous commit's `chat_overlay_not_found`/
+`chat_overlay_disabled` responses).
+
+**The public route is registered directly in `App.tsx`'s `<Routes>`,
+outside every other route** - confirmed by inspecting how every existing
+page wraps itself in `<AppShell>` individually (there is no shared
+layout route to opt out of): `OverlayChatPage` simply never renders
+`<AppShell>`, so no sidebar/top bar/operator chrome exists in its own
+render tree at all, not merely hidden by CSS.
+
+### Files changed
+- `apps/web/src/api/chat-overlay-schemas.ts`, `chat-overlay.ts` (new).
+- `apps/web/src/models/chat-overlay-reducer.ts`,
+  `chat-overlay-reducer.test.ts` (new).
+- `apps/web/src/hooks/use-chat-overlay.ts`, `use-chat-overlay-stream.ts`,
+  `use-chat-overlay-stream.test.ts` (new).
+- `apps/web/src/components/chat-overlay/ChatOverlayRenderer.tsx`,
+  `OverlayMessage.tsx`, `OverlayActivity.tsx`, `OverlayFragment.tsx`,
+  `OverlaySourceMarker.tsx`, `overlay-style.ts`,
+  `ChatOverlayRenderer.test.tsx`, `overlay-style.test.ts` (new).
+- `apps/web/src/pages/OverlayChatPage.tsx` (new).
+- `apps/web/src/App.tsx` (new route).
+- `apps/web/src/index.css` (chat-overlay entry-animation keyframes/
+  utilities).
+- `apps/web/src/i18n/config.ts`, `resources.ts` (new `overlays`
+  namespace).
+- `apps/web/src/i18n/resources/en/overlays.json`,
+  `resources/pl/overlays.json` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `npm run i18n:check` — 2 languages, 12 namespaces, no differences
+  against English.
+- `npm run typecheck` — clean.
+- `npm run lint` — clean.
+- `npm run test -- --run` — 663/663 pass (whole suite; 40 new: reducer
+  duplicate/out-of-order/remove/reset/idempotent-replay behavior; the
+  SSE hook's connect/open/upsert/remove/reset/gap/malformed-payload/
+  unmount-close/slug-change-reconnect behavior; `overlay-style.ts`'s
+  color/number validation and clamping and the animation-class lookup;
+  the renderer's stack-direction ordering, deleted placeholder,
+  anonymous user, role tag, unsafe-emote-host fallback, raw-HTML-never-
+  rendered, and activity-item cases) — no regression elsewhere.
+- `npm run build` — clean.
+
+### Known limitations
+No management page yet - an overlay can only be created/configured via
+a direct HTTP client; `/overlays` is not yet in the navigation. The
+management CRUD hooks added this commit are otherwise unused until the
+next one.
+
+### Next step
+Build the Overlays management page: list/create/rename/enable-disable/
+delete/rotate-URL/copy-URL, account/hidden-user/blocked-term/activity-
+type management, the visual-settings form, and a local-fixture preview
+using this commit's own `ChatOverlayRenderer`.

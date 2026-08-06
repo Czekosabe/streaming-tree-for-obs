@@ -165,3 +165,69 @@
 @utility animate-fade-rise {
   animation: fade-rise 260ms ease-out both;
 }
+
+/*
+ * Stage 10 chat-overlay entry animations - a fixed, bounded enum
+ * (internal/domain/chatoverlay.Animation), never an arbitrary keyframe or
+ * easing string from the backend. Duration comes from the
+ * --chat-overlay-animation-duration custom property set on the overlay's
+ * root container (see components/chat-overlay/overlay-style.ts), itself
+ * clamped there before it ever reaches CSS.
+ */
+@keyframes chat-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes chat-overlay-slide-up-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chat-overlay-slide-left-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes chat-overlay-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-chat-overlay-fade-in {
+  animation: chat-overlay-fade-in var(--chat-overlay-animation-duration, 250ms) ease-out both;
+}
+
+@utility animate-chat-overlay-slide-up-in {
+  animation: chat-overlay-slide-up-in var(--chat-overlay-animation-duration, 250ms) ease-out both;
+}
+
+@utility animate-chat-overlay-slide-left-in {
+  animation: chat-overlay-slide-left-in var(--chat-overlay-animation-duration, 250ms) ease-out both;
+}
+
+@utility animate-chat-overlay-scale-in {
+  animation: chat-overlay-scale-in var(--chat-overlay-animation-duration, 250ms) ease-out both;
+}

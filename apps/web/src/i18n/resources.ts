@@ -6,6 +6,7 @@ import enEngagement from './resources/en/engagement.json';
 import enErrors from './resources/en/errors.json';
 import enMetadata from './resources/en/metadata.json';
 import enNavigation from './resources/en/navigation.json';
+import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
@@ -17,6 +18,7 @@ import plEngagement from './resources/pl/engagement.json';
 import plErrors from './resources/pl/errors.json';
 import plMetadata from './resources/pl/metadata.json';
 import plNavigation from './resources/pl/navigation.json';
+import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
 import plRuntime from './resources/pl/runtime.json';
@@ -43,6 +45,7 @@ export const enResources = {
   accounts: enAccounts,
   engagement: enEngagement,
   chat: enChat,
+  overlays: enOverlays,
 } as const;
 
 const plResources = {
@@ -57,6 +60,7 @@ const plResources = {
   accounts: plAccounts,
   engagement: plEngagement,
   chat: plChat,
+  overlays: plOverlays,
 } as const;
 
 export const resources = {
