@@ -7434,3 +7434,148 @@ time this feature is actually used in real OBS.
 ### Next step
 Design and implement the persisted chat-overlay-profile schema
 (migration 0011), then the domain/repository layer.
+
+## 2026-08-06 18:05 — feat(server): persist chat overlay profiles
+
+### Status
+Completed
+
+### Scope
+The persistence layer for Stage 10's overlay profiles: migration 0011,
+`internal/domain/chatoverlay` (model, validation, id/slug generation,
+repository interface, service), and its SQLite implementation. No
+runtime projection, no HTTP API, and no frontend yet - those are the
+next commits.
+
+### Persistence schema
+
+Five tables, explicit columns throughout (not a settings JSON blob),
+per the task's own stated preference: `chat_overlays` (the singleton-
+per-profile settings row - layout, visibility toggles, filters'
+numeric bounds, typography, colors, animation, role highlighting, and
+a documented per-profile UI language for generic strings only),
+`chat_overlay_accounts` (many-to-many with `connected_accounts`, empty
+= all currently available accounts), `chat_overlay_hidden_users`
+(deliberately separate from Stage 9's `operator_chat_hidden_users` -
+see below), `chat_overlay_blocked_terms` (literal matching only, a
+`normalized_value` column backing a per-overlay uniqueness index so
+"SPAM" and "spam" cannot both be stored), and
+`chat_overlay_activity_types` (empty = every activity type shown).
+
+### Technical decisions
+
+**Two independent hidden-user lists, not one shared list.** Stage 9's
+`operator_chat_hidden_users` (internal, operator-facing) and this
+stage's new `chat_overlay_hidden_users` (public-facing, per overlay)
+are genuinely separate tables with no foreign relationship between
+them - the task's own explicit requirement: "a user may remain visible
+to the operator while being hidden from the public overlay." A future
+UI convenience ("also hide from all overlays") can read both without
+either table needing to know the other exists.
+
+**Explicit columns, not a JSON settings blob**, per the task's own
+stated preference for the initial stable schema - every setting is
+individually typed, `CHECK`-constrained at the SQL layer for booleans
+and enums, and re-validated in Go (`ValidateProfile`) before ever
+reaching the repository. This means a malformed settings value can
+never reach storage from two independent layers, not just one.
+
+**Public slug is a separate, higher-entropy value from the management
+id** (`NewPublicSlug`: 160 bits of randomness via `crypto/rand`, vs.
+`NewID`'s 128 bits prefixed `ov_...`) - documented explicitly, in the
+function's own doc comment, as an unguessable local locator, **not** a
+credential: never stored in `internal/secrets`, and the doc comment
+states plainly that this is not sufficient authentication for a future
+remotely-exposed server (that remains stage 20's job). Rotating it
+(`RotatePublicSlug`) only ever changes that one column - every other
+setting, and the management id, are untouched.
+
+**Blocked-term idempotency and uniqueness both key on the same
+`NormalizeTerm` function** (`internal/domain/chatoverlay/model.go`) -
+Unicode-aware case folding via Go's own `strings.ToLower` (itself
+rune-level via `unicode.ToLower`) plus whitespace trimming, deliberately
+documented as a good-enough choice needing no new dependency rather
+than a full Unicode case-folding table. The exact same function will
+be reused by the runtime filtering package's own term-matching logic
+in the next commit, so "what is stored as a duplicate" and "what
+matches at filter time" can never silently disagree.
+
+**Idempotent hidden-user and blocked-term adds**, mirroring Stage 9's
+`operatorchatprefs` repository exactly: `ON CONFLICT ... DO NOTHING`
+then a re-select, so calling the same add twice returns the same
+entry rather than a duplicate row or an error.
+
+**A bounded per-overlay blocked-term count (100) is enforced in the
+service layer, not the database** - `AddBlockedTerm` lists existing
+terms first (already needed to give a useful idempotency check) and
+rejects a genuinely new term once the bound is reached, while still
+allowing an idempotent re-add of an already-present term past the
+bound (so re-saving a form never spuriously fails).
+
+**`UpdateProfile` never touches `public_slug`, `id`, or `created_at`**
+even if a caller's `Profile` struct happens to carry a different
+value for one of them (the SQL `UPDATE` statement's own column list
+simply does not include them) - confirmed by a dedicated test that
+deliberately sets a bogus `PublicSlug` before calling `UpdateProfile`
+and asserts it was ignored.
+
+**Account/activity-type replacement (`SetAccounts`/`SetActivityTypes`)
+runs inside one transaction** (delete-then-reinsert), so a reader
+observing the two child tables mid-write is not possible.
+
+### Files changed
+- `apps/server/internal/storage/sqlite/migrations/0011_chat_overlay_profiles.sql`
+  (new).
+- `apps/server/internal/domain/chatoverlay/model.go`, `errors.go`,
+  `validation.go`, `ids.go`, `repository.go`, `service.go` (new).
+- `apps/server/internal/domain/chatoverlay/validation_test.go`,
+  `service_test.go` (new).
+- `apps/server/internal/storage/sqlite/chatoverlay_repository.go`,
+  `chatoverlay_repository_test.go` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l internal/domain/chatoverlay/ internal/storage/sqlite/` —
+  clean.
+- `go vet ./internal/domain/chatoverlay/... ./internal/storage/sqlite/...`
+  — clean.
+- `go test ./internal/domain/chatoverlay/... -v` — 25/25 pass: the
+  documented defaults validate cleanly; every enum/numeric-bound/color
+  rejection case named in Part 11 (unsupported layout mode,
+  out-of-range `maxVisibleItems`/`messageLifetimeSeconds`/
+  `animationDurationMs`, `NaN`/`Inf` line height, invalid and valid hex
+  colors including `#RRGGBBAA`); blocked-term validation (empty,
+  oversized, exact-boundary-length, unknown match mode);
+  `NormalizeTerm` case-folding including a Polish-alphabet character;
+  service-level id/slug generation, not-found mapping, slug rotation,
+  and the per-overlay blocked-term limit enforced exactly at its
+  boundary via a fake in-memory repository (no SQLite needed for that
+  one, since the limit itself is a service-layer, not storage-layer,
+  concern).
+- `go test ./internal/storage/sqlite/... -run ChatOverlay -v` — 21/21
+  pass: create/read/list/update/delete round trips; public-slug
+  uniqueness rejected; update never touches identity fields; rotation
+  invalidates the old slug immediately and the new one resolves;
+  account selection round-trips, replaces, rejects an unknown account,
+  and cascades away on profile deletion; hidden-user idempotent add,
+  cross-overlay independence, remove, remove-absent; blocked-term
+  idempotent add by normalized value, independence across overlays
+  (the same literal term is allowed on two different overlays),
+  remove, remove-absent; activity-type round-trip and replace; a
+  schema-introspection test confirming no message/token/session-shaped
+  column exists on `chat_overlays`.
+- `go build ./...`, `go vet ./...`, `gofmt -l .` (whole module) —
+  clean.
+- `go test ./...` (whole module) — every package passes; no regression
+  in Stage 1–9.
+
+### Known limitations
+Nothing constructs this service or repository at startup yet, and no
+HTTP endpoint or runtime projection exists - both land in the next two
+commits.
+
+### Next step
+Build the public-overlay runtime projection
+(`internal/chatoverlay`): filtering, lifecycle, expiry, bounded
+buffer/subscription, consuming `internal/operatorchat`'s own revision
+stream without duplicating its lifecycle logic.
