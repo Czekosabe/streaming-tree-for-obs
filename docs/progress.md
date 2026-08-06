@@ -6258,3 +6258,178 @@ None.
 ### Next step
 Research current official Twitch chat-badge and emote documentation,
 then design the operator-chat projection architecture.
+
+## 2026-08-06 11:40 — feat(server): add operator chat projection
+
+### Status
+Completed
+
+### Scope
+Stage 9's core architectural piece: a provider-independent projection
+that subscribes to the Stage 8A Engagement Event Bus and converts
+normalized events into a chat-shaped, lifecycle-aware public item
+model. This is the foundation everything else this stage builds on
+(preferences, HTTP API, frontend); it lands first and on its own so
+its design can be locked in and tested before anything depends on it.
+
+### Technical decisions
+
+**Package boundary: `internal/operatorchat` never imports
+`internal/provider/twitch`.** Every field on the public `Item` model
+is either copied verbatim from `internal/domain/engagement.Event` or
+computed generically (a deterministic id, a projection-assigned
+sequence). Badge/emote image resolution is deliberately left to the
+HTTP layer in a later commit, which has access to both this projection
+and a Twitch-specific asset resolver — this is the boundary Stage 10's
+future overlay projection needs to be able to reuse without this
+package ever knowing Twitch exists.
+
+**Deterministic message item ids, not a separate lookup index.**
+`messageItemID(providerID, connectedAccountID, providerEventID)`
+produces the same id both when a `chat.message` event first creates an
+item and when a later `chat.message_deleted` event
+(`ModerationRef` = the same original message id, per Stage 8A's own
+normalization) needs to update it. The existing `latestByID` map
+(needed anyway to answer "what messages currently exist" for the
+whole-chat and per-user clear handlers) doubles as the deletion lookup
+for free — no second data structure.
+
+**Revision stream, not separate item/update event types.** Every
+projection change — a brand-new item or a lifecycle update to an
+existing one — is a complete "upsert" carrying a fresh, monotonically
+increasing, projection-owned `Sequence` (its own sequence space,
+distinct from the Event Bus's). `Subscribe(after)` (live + replay) and
+`ItemsAfter(after, limit)` (bounded snapshot) both replay this same
+append-only stream; any consumer folds it into current state by
+upserting on item id. This was the task's own stated preference
+("Approach A" — complete upserts, easier replay, less partial-state
+risk) and keeps the snapshot-GET and live-SSE endpoints (built in a
+later commit) presenting one consistent mental model.
+
+**Snapshot/subscribe race avoided by reusing the Event Bus's own
+atomic primitive, not a new one.** `engagement.Bus.Subscribe(after)`
+already computes "replay slice, gap check, and subscriber
+registration" inside one lock/unlock critical section — there is no
+separate combined method and no possible race between "read what's
+retained" and "start receiving new ones." `operatorchat.Projection`'s
+own `Subscribe` is built identically (see `Subscribe` in
+`projection.go`), so the same race-freedom argument applies to this
+projection's own downstream subscribers (the HTTP/SSE layer, in a
+later commit) without inventing new synchronization. `Start` calls
+`p.source.Subscribe(0)` exactly once at startup for the same reason —
+the projection begins empty but nothing published between "now" and
+"whenever Start runs" is ever lost.
+
+**Self-healing bus consumption.** If the projection's own subscription
+to the bus is ever dropped as a slow consumer (not expected in normal
+operation, since the projection does no I/O per event), `run()`
+resubscribes via `p.source.Subscribe(0)` again rather than permanently
+stopping, merging any resulting gap into a one-way sticky `busGap`
+flag (`Status.BusGap`) — a past gap is a past gap regardless of
+current bus health, so it is never cleared once set.
+
+**Two independent gap concepts, not one.** (a) The projection's own
+output sequence gap, reported per-subscriber from `Subscribe`/
+`ItemsAfter` exactly like the Event Bus reports it. (b) The
+projection's input gap relative to the Event Bus it consumes
+(`Status.BusGap`). These answer different questions ("did you miss any
+of *my* output" vs. "did the projection itself ever miss anything
+from the bus") and are kept as two separate fields rather than
+conflated into one.
+
+**Item kinds have distinct, validated shapes, not one optional-field
+blob.** `KindMessage` carries `Message` + mutable `Lifecycle`;
+`KindActivity` carries `Activity` (`ActivityType` copied verbatim from
+the normalized `engagement.Type` — Bits stay "bits", never
+"donation"; a gift batch stays "subscription_gift_batch", distinct
+from an individual "gifted_subscription" recipient event);
+`KindModeration`/`KindSystem` carry `ModerationInfo`. A deletion
+referencing a message no longer retained produces a small
+`KindModeration` item with `Action: "message_deleted_not_retained"`
+and no fabricated message content, rather than silently doing nothing
+or inventing text.
+
+**`clear_user_messages` still requires no `ModerationRef`.** The
+per-user clear handler (`applyModeration`) matches only on
+`evt.User.ProviderUserID` plus provider/account context, preserving
+the Stage 8A validation fix that made this event type valid without a
+`ModerationRef` (it targets a user, not one specific prior message).
+
+**Bounded capacity, independent of the Event Bus's own.** `Options`
+takes its own `Capacity` (`DefaultCapacity=500`, to be wired to a new
+`STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE` env var in a later commit,
+`MinCapacity=100`/`MaxCapacity=5000`), backed by a ring buffer
+structurally identical to the Event Bus's own but over `Item` instead
+of `engagement.Event`. Per-subscriber channel capacity is separately
+bounded at `maxSubscriberChannelCapacity=2048`, mirroring the Event
+Bus's own reasoning that one subscriber's memory use cannot grow
+unbounded with the projection's own configured capacity.
+
+### Files changed
+- `apps/server/internal/operatorchat/model.go` (new) — public item
+  model: `Item`, `Kind`, `User`, `Message`, `Fragment`, `Activity`,
+  `ModerationInfo`, `Lifecycle`, `DeletionReason`, `Badge`.
+- `apps/server/internal/operatorchat/errors.go` (new) — `ErrClosed`.
+- `apps/server/internal/operatorchat/buffer.go` (new) — the ring
+  buffer.
+- `apps/server/internal/operatorchat/subscription.go` (new) — the
+  per-subscriber channel + close-reason type.
+- `apps/server/internal/operatorchat/message.go` (new) — deterministic
+  item id, `chat.message` → `Item` conversion.
+- `apps/server/internal/operatorchat/lifecycle.go` (new) — deletion,
+  chat-clear, and per-user-clear handlers.
+- `apps/server/internal/operatorchat/activity.go` (new) — non-chat
+  event → activity item conversion.
+- `apps/server/internal/operatorchat/projection.go` (new) — `New`,
+  `Start`, `Shutdown`, the bus-consuming loop, `Subscribe`,
+  `ItemsAfter`, `Snapshot`/`Status`.
+- `apps/server/internal/operatorchat/projection_test.go`,
+  `buffer_test.go`, `subscription_test.go` (new) — see Automated
+  validation below.
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l internal/operatorchat/` — clean.
+- `go vet ./internal/operatorchat/...` — clean.
+- `go test ./internal/operatorchat/... -v` — 23/23 pass, covering: a
+  single chat message projecting to a message item; distinct stable
+  ids and monotonically increasing sequence across messages; multiple
+  connected accounts merging in receive order; an exact deletion
+  updating the original item id in place with content preserved;
+  deletion of a message no longer retained producing a moderation item
+  without fabricated content; a whole-chat clear scoped to one
+  provider/account, leaving other accounts untouched; a per-user clear
+  scoped to that user (validated without `moderationRef`), leaving
+  other users' messages untouched; all nine activity event types
+  mapped without relabeling; a subscription gift batch and an
+  individual recipient gift staying distinct items; an unknown
+  normalized type ignored safely without stalling the projection; the
+  synthetic marker preserved; an anonymous actor carrying no fabricated
+  identity; long usernames/messages preserved verbatim; missing
+  optional fields (color, badges) never invented; the ring buffer's
+  eviction and ascending-order replay; multiple subscribers each
+  receiving every item; a slow subscriber dropped with
+  `ReasonSlowConsumer` without blocking a fast one; a snapshot-then-
+  live handoff staying contiguous; `Subscribe` correctly reporting a
+  gap only when a claimed-seen sequence is genuinely no longer
+  retrievable (and not when it is exactly contiguous with the retained
+  window); `ItemsAfter`'s limit; `Shutdown` closing live subscriptions;
+  `Subscribe` after `Shutdown` returning `ErrClosed`; `Snapshot`
+  reporting retained/subscriber counts.
+- `go build ./...`, `go vet ./...`, `gofmt -l .` (whole module) —
+  clean.
+- `go test ./...` (whole module) — all packages still pass; no
+  regression in any Stage 1–8A package.
+- The race detector (`-race`) remains unavailable in this environment
+  (no cgo compiler) — a pre-existing, documented limitation, not new
+  to this commit.
+
+### Known limitations
+Nothing consumes this projection yet — no persisted preferences, no
+HTTP API, no frontend. Those are the next commits.
+
+### Next step
+Add persisted operator-chat preferences (migration + domain package +
+SQLite repository), then the Twitch chat asset resolver, then the
+HTTP API that ties the projection, preferences, and assets together
+for the frontend.
