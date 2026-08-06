@@ -1550,7 +1550,14 @@ other content in its own payload. `prefers-reduced-motion` disables
 exit animation the same way it already disables entry animation.
 Exit animation is one of a fixed, safe enum (`none`/`fade`/`slide_up`/
 `slide_left`/`scale`) validated server-side — never arbitrary CSS, a
-keyframe string, or an easing function from the backend.
+keyframe string, or an easing function from the backend. The Overlays
+management page's own preview panel runs this same reducer and
+renderer against local synthetic fixtures (never published to Twitch,
+operator chat, or a public stream) and has two buttons demonstrating
+the split honestly: "Simulate expiry" plays the draft's own configured
+exit animation, and "Simulate moderation removal" always applies on
+the same tick with no animation, exactly like a real moderation
+deletion — it is a fixed demonstration, not a general visual designer.
 
 ### Verifying it for real
 

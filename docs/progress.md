@@ -9074,3 +9074,132 @@ including the reset-content wording noted above; audit `config/README.md`
 and `THIRD_PARTY_NOTICES.md` for whether anything actually changed;
 append a final summary entry (test results, known limitations, real-
 OBS-test status).
+
+## 2026-08-06 14:00 — docs: complete Stage 10 corrective pass
+
+Closes out the Stage 10 corrective pass: re-reviews every doc this
+pass touched against the now-complete implementation, resolves the
+"reset content" wording the previous entry flagged as worth
+re-checking, audits the two files that only get edited when
+configuration behavior actually changes, adds one small user-facing
+addition for the new preview-panel buttons, and records the full final
+regression this pass ran before considering itself done.
+
+### Reset-content wording - re-reviewed, found already accurate
+
+The previous entry's "Known limitations" flagged that "the stream's
+own first event is always a complete `chat-overlay.reset`" (added by
+this pass's first entry, in README.md, `docs/obs-browser-source.md`
+and `docs/project-overview.md`) might read as implying that reset is
+*empty* for a newly-observed overlay. Re-reading all three passages
+closely: none of them ever claim emptiness - each one explicitly
+qualifies the reset as carrying "every item currently visible" / "the
+current visible set". That phrasing already matches the real behavior
+discovered while building the previous entry's SSE test (a fresh
+overlay's first reset can legitimately be non-empty, carrying whatever
+is genuinely still visible). No wording change was needed here; this
+entry records that the concern was checked and did not correspond to
+an actual inaccuracy, rather than silently dropping it.
+
+### One addition: the preview panel's simulate buttons
+
+README.md's "Hydration, live updates and exit animation" section
+(added by this pass's first entry) described the cosmetic/immediate
+removal split but not the Overlays management page's own interactive
+demonstration of it, added by the third entry. Added one paragraph
+naming the "Simulate expiry" and "Simulate moderation removal" buttons
+and what each proves, so the user-facing description matches what the
+UI now actually does.
+
+### config/README.md and THIRD_PARTY_NOTICES.md - audited, no change
+
+Neither file needed an edit. This pass added no new dependency, no new
+environment variable, and no new persisted-file format -
+`config/README.md`'s existing generic description of per-profile
+overlay settings ("layout, visibility toggles, filters, typography,
+colors, animation, role highlighting...") already covers both entry
+and exit animation without singling either out, and
+`THIRD_PARTY_NOTICES.md` has no overlay-related entries to begin with.
+Checked via `git diff` across every commit in this pass for
+`apps/web/package.json`, `apps/server/go.mod` and `apps/server/go.sum`
+- none changed.
+
+### `docs/engagement-architecture.md` §7.3 - re-verified, already accurate
+
+Re-read against the now-complete implementation: correctly states
+"Status: implemented", correctly describes entry **and** exit
+animation from the same fixed enum, correctly limits the cosmetic use
+case to expiry/capacity-eviction, correctly keeps only the visual
+designer and exportable template as deliberately deferred. No change
+needed - the first entry's edit to this section already anticipated
+the completed state.
+
+### Files changed
+- `README.md` (one paragraph on the preview panel's simulate buttons).
+- `docs/progress.md` (this entry).
+
+### Final regression (run after every prior entry's own checks, as a
+last whole-repository pass before considering the corrective task done)
+
+**Backend** (`apps/server`):
+- `gofmt -l .` — no output, clean.
+- `go vet ./...` — clean.
+- `go build ./...` — clean.
+- `go build -tags integration ./cmd/testserver/...` — clean.
+- `go test ./...` — every package passes (`internal/chatoverlay`,
+  `internal/httpapi`, and every other package); no regression.
+
+**Frontend** (`apps/web`):
+- `npm run i18n:check` — 2 languages (en, pl), 12 namespaces, no
+  differences.
+- `npm run typecheck` — clean.
+- `npm run lint` — clean.
+- `npm run test -- --run` — 57 test files, 729 tests, all passing.
+- `npm run build` — clean production build.
+
+**Integration scripts** (all 8, each run against the real backend
+binary with local fakes only - no real Twitch, YouTube, MediaMTX or
+OBS ever contacted):
+- `verify-persistence.mjs` — PASSED.
+- `verify-mediamtx-runtime.mjs` — PASSED.
+- `verify-ffmpeg-branches.mjs` — PASSED.
+- `verify-twitch-account-integration.mjs` — PASSED.
+- `verify-youtube-account-integration.mjs` — PASSED.
+- `verify-twitch-engagement.mjs` — PASSED.
+- `verify-operator-chat.mjs` — PASSED.
+- `verify-chat-overlay.mjs` — PASSED (run twice by the previous entry
+  specifically to rule out flakiness in its new SSE phase; run again
+  once more here as part of this final pass - three consecutive clean
+  runs total).
+
+### Known limitations (final statement for this corrective pass)
+
+- No real OBS Studio Browser Source and no real Twitch account were
+  used anywhere in this corrective pass - every verification above
+  runs against local fakes or unit-level Go/TypeScript tests. Manual
+  verification in a real OBS Browser Source, with the exit-animation
+  settings actually visible on screen, has not been performed and
+  remains outstanding for whoever next has access to a real OBS
+  installation and a real Twitch broadcaster account.
+- The management/preview UI has no visual timeline or keyframe
+  designer, and there is still no exportable/importable overlay
+  template format - both remain deliberately deferred, unchanged from
+  the original Stage 10 report.
+- `OverlayPreviewPanel`'s two simulation buttons target fixed fixture
+  ids, not an arbitrary "remove any item" control - a fixed,
+  documented demonstration, not a general preview tool.
+- The three journal headings this pass's first entry identified as
+  carrying incorrect original timestamps (`2026-08-07` dates for work
+  whose Git evidence places it on `2026-08-06`) remain uncorrected in
+  place, exactly as that entry stated they would - this pass never
+  rewrites Git history and never edits an old journal entry's own
+  text, only appends corrections.
+
+### Stage 11 status
+
+Not started. No outbound chat, scheduled bot message, command,
+alert, TTS, or any other Stage 11+ feature was added, modified, or
+scaffolded at any point during this corrective pass - every commit
+above is scoped to Stage 10 documentation accuracy, the exit-animation
+gap, and the journal chronology, exactly as this corrective task
+required.
