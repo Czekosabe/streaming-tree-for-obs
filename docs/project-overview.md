@@ -511,6 +511,25 @@ content - the merged timeline itself - is transient, in-memory-only
 projection state, described below alongside the Event Bus's own
 runtime state, and is gone on every backend restart exactly like it.
 
+**Stage 10 added a ninth fact, this one about a persisted, public-facing
+presentation profile rather than the operator's own preferences: chat-
+overlay profiles** (`internal/domain/chatoverlay`, five tables -
+`chat_overlays` itself holding layout/visibility/filter/typography/color/
+animation/role-highlighting settings as explicit columns, never a JSON
+settings blob; `chat_overlay_accounts`, `chat_overlay_hidden_users`,
+`chat_overlay_blocked_terms` and `chat_overlay_activity_types` as its
+child tables). An overlay's own hidden-user list is a genuinely separate
+table from stage 9's `operator_chat_hidden_users` above - a user may
+stay visible to the operator while being hidden from one specific public
+overlay. Each overlay's public slug (a separate, higher-entropy value
+from its management id) is documented explicitly as an unguessable
+locator, not a credential - it is never stored in `internal/secrets`,
+and rotating it only ever changes that one column. Like every other
+table in this section: no message text, no raw provider event, and
+nothing that constitutes actual chat content is ever stored here either
+- only the operator's own presentation and filtering choices for that
+overlay.
+
 ### Runtime stream state
 
 Whether the ingest service is running, whether a publisher is connected,
@@ -571,6 +590,20 @@ persisted, provider-independent fact - here, an operator's display
 preferences) and *what is happening right now* (transient, in-memory,
 provider-derived - here, the actual chat timeline) are never the same
 storage.
+
+**Stage 10's public chat-overlay projection (`internal/chatoverlay`) is a
+second, independent consumer of this same rule, one layer further out
+again**: for every overlay profile it holds its own filtered, bounded,
+in-memory-only current-item view plus a separate revision ring (a fixed
+capacity, not environment-configurable, unlike the Event Bus's and
+operator-chat's own buffer sizes above) for live Server-Sent Events
+replay. It deliberately does **not** subscribe to the Engagement Event
+Bus directly - it consumes `internal/operatorchat`'s own already-
+lifecycle-correct revision stream instead, so none of stage 9's
+deduplication, deletion or moderation-filtering logic is duplicated a
+second time. Like every runtime projection in this section, it begins
+empty on every backend start and tracks only its own sequence/capacity/
+subscriber counts, never a raw provider payload.
 
 ### 8.2 OBS ingest detection
 
@@ -849,7 +882,7 @@ it is architected; this table only tracks status and dependencies.
 | 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat page consuming the Engagement Event Bus, provider-independent projection, persisted preferences, Twitch badge/emote resolution (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
-| 10 | OBS chat overlay | Planned |
+| 10 | OBS chat overlay: persisted overlay profiles, a public per-overlay projection over the operator-chat projection, a public HTTP/SSE API and a management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 11 | Outbound chat, scheduled bot messages and commands | Planned |
 | 12 | Alert engine and alert queue | Planned |
 | 13 | Visual overlay designers | Planned |
@@ -1081,11 +1114,12 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: two pieces of this section are real as of stage 9 - the
-normalized Event Bus (stage 8A) and a unified operator chat consuming
-it (stage 9). Everything else described below (overlays, outbound
-chat/bot messages, alerts, visual designers, TTS, goal/counter
-widgets) remains planned.**
+**Status: three pieces of this section are real as of stage 10 - the
+normalized Event Bus (stage 8A), a unified operator chat consuming it
+(stage 9), and a public OBS Browser Source chat overlay consuming that
+same operator-chat projection (stage 10). Everything else described
+below (outbound chat/bot messages, alerts, visual designers, TTS,
+goal/counter widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1148,7 +1182,17 @@ that bus: a provider-independent projection
 preferences, Twitch chat-badge/emote resolution, and a working Chat
 page in the frontend - see [engagement-architecture.md](engagement-architecture.md)
 and the README's own [Unified operator chat](../README.md#unified-operator-chat)
+section for the full design and user-facing behavior. Stage 10 implemented
+a real, public OBS Browser Source chat overlay built on top of that same
+projection: persisted overlay profiles
+(`apps/server/internal/domain/chatoverlay`), a public per-overlay
+projection (`apps/server/internal/chatoverlay`) that consumes operator
+chat's own revision stream rather than the Event Bus directly, a public
+unauthenticated HTTP + SSE API, a frontend renderer shared between the
+public route and the management preview, and the Overlays management
+page - see the README's own
+[OBS Browser Source chat overlay](../README.md#obs-browser-source-chat-overlay)
 section for the full design and user-facing behavior. Everything else
-this section describes (the OBS overlay, outbound chat, alerts, TTS,
-goal widgets, further providers) remains planned, unaffected by stage
-9's own completion.
+this section describes (outbound chat, alerts, TTS, goal widgets,
+further providers, a visual overlay designer, overlay templates) remains
+planned, unaffected by stage 9's or stage 10's own completion.

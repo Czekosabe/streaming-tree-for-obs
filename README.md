@@ -20,11 +20,12 @@ credential-store foundation (stage 5), the Twitch and YouTube
 connected-account integrations (stages 7A/7B), the first real piece
 of the engagement platform itself — a normalized Engagement Event Bus and
 a real Twitch inbound connector reading chat and channel events (stage
-8A) — and a real, unified operator chat consuming that bus (stage 9) —
-are all completed. Everything still on top of that (the OBS overlay,
-outbound chat, alerts, TTS) remains planned.
+8A) — a real, unified operator chat consuming that bus (stage 9) — and a
+real, public OBS Browser Source chat overlay consuming that same
+operator-chat projection (stage 10) — are all completed. Everything still
+on top of that (outbound chat, alerts, TTS) remains planned.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, and a real unified operator chat all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat and a real OBS Browser Source chat overlay all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -44,12 +45,18 @@ outbound chat, alerts, TTS) remains planned.
 > **Engagement Event Bus**, viewable live on a diagnostic **Engagement**
 > page and now also presented as a real, merged, working **Chat** page —
 > badges, emotes, message deletion/clearing, activity events, filters and
-> autoscroll all real. See
+> autoscroll all real. That same chat, filtered and re-shaped for a public
+> audience, can now be pointed at as a real **OBS Browser Source** — the
+> **Overlays** page manages any number of persisted overlay profiles, each
+> with its own unguessable public URL, visual settings and filters, served
+> over a public HTTP + Server-Sent Events API with no application chrome.
+> See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
 > [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
-> [Unified operator chat](#unified-operator-chat)
+> [Unified operator chat](#unified-operator-chat),
+> [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
@@ -61,11 +68,10 @@ outbound chat, alerts, TTS) remains planned.
 > start only ever applies to a connector you already enabled yourself.
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything built **on top of** the operator chat — the OBS Browser
-> Source overlay, outbound chat and bot messages, alerts, TTS — are still
-> **planned**. Whatever remains a placeholder is marked with a
-> **Demo** badge — the full list is in
-> [What is currently demo-only](#what-is-currently-demo-only).
+> everything else still built **on top of** the operator chat — outbound
+> chat and bot messages, alerts, TTS — are still **planned**. Whatever
+> remains a placeholder is marked with a **Demo** badge — the full list is
+> in [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
 Work journal: [`docs/progress.md`](docs/progress.md)
@@ -87,6 +93,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
 - [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
 - [Unified operator chat](#unified-operator-chat)
+- [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -110,8 +117,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick may land together with its engagement adapter in stage 15, TikTok remains conditional on a stable official integration |
 | 8A | Engagement Event Bus and a real Twitch inbound connector | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
-| 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 10–19 | OBS overlay, outbound chat, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
+| 10 | OBS Browser Source chat overlay: persisted overlay profiles, a public per-overlay projection, a public HTTP/SSE API, a frontend renderer and the Overlays management page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 11–19 | Outbound chat, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -823,13 +831,15 @@ channel events (EventSub) are a **later, separate stage, and that stage is
 now real**: stage 8A added a genuine EventSub WebSocket connector reading
 chat messages, follows, subscriptions, gifts, cheers, raids, channel-point
 redemptions and remote stream status onto an in-memory Engagement Event
-Bus, and stage 9 (this repository's current stage) added a real, working
-**unified operator chat page** that consumes it — see
-[Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
-and [Unified operator chat](#unified-operator-chat). What remains planned,
-unaffected by any of that: outbound Twitch chat and bot messages, the OBS
-Browser Source chat overlay, the alert engine, text-to-speech, donations
-from external services, viewer counts, and analytics — see
+Bus, stage 9 added a real, working **unified operator chat page** that
+consumes it, and stage 10 added a real, public **OBS Browser Source chat
+overlay** that in turn consumes that same operator-chat projection — see
+[Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
+[Unified operator chat](#unified-operator-chat) and
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay). What
+remains planned, unaffected by any of that: outbound Twitch chat and bot
+messages, the alert engine, text-to-speech, donations from external
+services, viewer counts, and analytics — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Registering a Twitch application and configuring a Client ID
@@ -1001,12 +1011,15 @@ Super Chat/membership events are not implemented - Twitch is currently
 the only live provider source feeding chat and events anywhere in this
 application. The provider-independent operator **Chat** page itself
 *is* implemented (stage 9) - see
-[Unified operator chat](#unified-operator-chat). The OBS public chat
-overlay (stage 10) is this repository's current stage; once its own
-commits land it will be documented in its own section below the same
-way. Outbound chat, alerts, text-to-speech, donations, automatic
-broadcast creation, automatic `liveStream` binding, and automatic
-stream-key retrieval from YouTube remain unimplemented - see
+[Unified operator chat](#unified-operator-chat). The public **OBS
+Browser Source chat overlay** built on top of that same chat is also now
+implemented (stage 10) - see
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) below
+and [`docs/obs-browser-source.md`](docs/obs-browser-source.md) for the
+OBS-specific research it is built on. Outbound chat, alerts,
+text-to-speech, donations, automatic broadcast creation, automatic
+`liveStream` binding, and automatic stream-key retrieval from YouTube
+remain unimplemented - see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 This stage is the account, broadcast-selection, and metadata
 foundation those still-planned features will build on later, not an
@@ -1204,16 +1217,19 @@ the full target design and
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** Sending Twitch chat messages,
-chat commands, scheduled bot messages, an OBS overlay, alert rules or
-rendering, TTS, YouTube live chat, and Kick/TikTok engagement are all
-still unimplemented — see
+chat commands, scheduled bot messages, alert rules or rendering, TTS,
+YouTube live chat, and Kick/TikTok engagement are all still
+unimplemented — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
 real, unified operator chat consuming this Event Bus is implemented —
-see [Unified operator chat](#unified-operator-chat) below. The
+see [Unified operator chat](#unified-operator-chat) below — and a real,
+public OBS Browser Source overlay consuming that chat's own projection
+in turn is also implemented — see
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay). The
 diagnostic Engagement page added in this stage is explicitly **not**
 the operator chat or an overlay — it exists to make the Event Bus and
 the Twitch connector's state genuinely observable, and stays a
-separate page from Chat.
+separate page from both Chat and Overlays.
 
 ### The Engagement Event Bus
 
@@ -1222,8 +1238,12 @@ component: a bounded ring buffer of recently published normalized events
 (default capacity 1000, configurable via
 `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`), bounded deduplication against
 redelivered provider notifications, and live delivery to every connected
-subscriber — the same Server-Sent Events endpoint the frontend and any
-future OBS overlay both read from, never a direct connection to Twitch.
+subscriber — the same Server-Sent Events endpoint the diagnostic
+Engagement page reads from, never a direct connection to Twitch. Neither
+the operator Chat page nor the OBS chat overlay reads this endpoint
+directly; both read through the operator-chat projection instead (see
+[Unified operator chat](#unified-operator-chat) and
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)).
 **It is in-memory only.** No normalized event, and no chat message, is
 ever written to SQLite; the entire buffer resets to empty on every
 backend restart, exactly like MediaMTX's own runtime state.
@@ -1346,12 +1366,14 @@ Chat = the daily working view; Engagement = "is the connector actually
 healthy." Neither replaces the other.
 
 **What this stage does not implement.** Sending chat, chat commands,
-scheduled bot messages, the OBS overlay, alerts, TTS, remote moderation
-actions (bans/timeouts/message deletion sent *to* Twitch), and
-YouTube/Kick/TikTok chat all remain exactly as planned before this
-stage — a message appearing in operator chat is never proof this
-application's own outgoing FFmpeg branch works; that is an unrelated,
-separately verified fact.
+scheduled bot messages, alerts, TTS, remote moderation actions
+(bans/timeouts/message deletion sent *to* Twitch), and YouTube/Kick/TikTok
+chat all remain exactly as planned before this stage — a message
+appearing in operator chat is never proof this application's own
+outgoing FFmpeg branch works; that is an unrelated, separately verified
+fact. The public OBS Browser Source overlay built on top of this same
+projection **is** implemented (stage 10) — see
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay).
 
 ### The operator-chat projection
 
@@ -1437,6 +1459,86 @@ covered by Go unit tests instead — see
 
 ---
 
+## OBS Browser Source chat overlay
+
+Stage 10 adds a real, public **OBS Browser Source chat overlay**: any
+number of persisted overlay profiles, each rendering a filtered,
+presentation-shaped view of the same merged Twitch chat the operator
+**Chat** page shows, served over its own unauthenticated public HTTP +
+Server-Sent Events API for OBS's Browser Source (or a plain browser tab)
+to consume directly — no application chrome, no sidebar, no operator
+login. Manage overlays on the **Overlays** page (`/overlays`); each
+overlay's own public URL points at `/overlay/chat/{publicSlug}`. See
+[`docs/obs-browser-source.md`](docs/obs-browser-source.md) for the
+underlying OBS Browser Source research (setup, recommended dimensions,
+the shutdown/refresh checkbox trade-off) this feature is built on.
+
+**What this stage does not implement.** A visual overlay designer,
+exportable/importable overlay templates, alerts, TTS, and YouTube/Kick/
+TikTok overlay support are all still unimplemented — only Twitch chat
+reaches any overlay, exactly like the operator Chat page above. See
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+
+### Persisted overlay profiles
+
+Each overlay profile (`internal/domain/chatoverlay`, five SQLite tables
+added by migration `0011`) stores its own layout, visibility toggles,
+filters, typography, colors, animation and role-highlighting settings as
+explicit, individually validated columns — never a settings JSON blob.
+An overlay has its own management id and a separate, higher-entropy
+**public slug** (160 bits via `crypto/rand`) that can be rotated
+independently at any time, immediately invalidating the old public URL.
+An overlay's own hidden-user list is deliberately separate from the
+operator Chat page's hidden-user list — a user can stay visible to the
+operator while being hidden from one specific public overlay.
+
+### The public overlay projection
+
+`internal/chatoverlay` is a second, independent consumer of the
+operator-chat projection's own revision stream (stage 9's
+`internal/operatorchat`) — it never subscribes to the Engagement Event
+Bus directly, so none of stage 9's lifecycle, deduplication or badge/
+emote-resolution logic is duplicated. For every overlay it keeps its own
+filtered, bounded, in-memory current-item view plus a separate revision
+ring (fixed capacity, not configurable) for live Server-Sent Events
+replay. Moderation and system items never reach any public overlay,
+regardless of settings; a deleted message is either removed outright or
+replaced with a placeholder that never carries the original text,
+depending on the overlay's own setting. A settings change triggers an
+immediate rebuild and a public reset — visible on a connected Browser
+Source within moments of clicking Save.
+
+### The public and management APIs
+
+`GET /api/public/chat-overlays/{publicSlug}/config`, `/items` and
+`/stream` require no authentication (the public slug itself is the only
+thing standing between the URL and its content, exactly like every other
+public overlay tool) and never answer an unknown or disabled slug with a
+hard error — a Browser Source instead gets an empty, transparent overlay,
+matching how a live broadcast should degrade. The management API
+(`/api/chat-overlays/...`) creates, edits, deletes and rotates overlays,
+and manages each overlay's own accounts, hidden users, blocked terms and
+activity-type selection. The frontend renderer
+(`apps/web/src/components/chat-overlay/`) is shared, unchanged, between
+the real public route (`/overlay/chat/:publicSlug`, with no `<AppShell>`
+anywhere in its render tree) and the Overlays management page's own live
+preview panel.
+
+### Verifying it for real
+
+`scripts/verify-chat-overlay.mjs` exercises the whole stack end to end
+against the real backend and the same kind of fake Twitch OAuth/Helix/
+EventSub servers the other engagement scripts use — safe defaults, a
+live message reaching a filtered public overlay, every filter (accounts,
+hidden users, bots, commands, blocked terms, activity types), capacity/
+expiry eviction, deletion/clear scoping, slug rotation, restart behavior,
+and a final scan confirming no chat text, blocked-term value, hidden-user
+data or public slug ever appears in a log line — entirely on loopback,
+with **no real Twitch account or OBS installation involved**. See
+[`docs/progress.md`](docs/progress.md) for exactly what it covers.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -1518,6 +1620,25 @@ All endpoints live under `/api` and return `application/json`.
 | `GET` | `/api/operator-chat/bot-users` | Every operator-marked bot user — a separate list from hidden users. |
 | `POST` | `/api/operator-chat/bot-users` | Mark a user as a bot, idempotently. Same body shape as hidden-users. |
 | `DELETE` | `/api/operator-chat/bot-users/{id}` | Unmark, by the entry's own id. Responds 204; `404` if it no longer exists. |
+| `GET` | `/api/chat-overlays` | Every overlay profile. |
+| `POST` | `/api/chat-overlays` | Create an overlay profile with safe defaults and a fresh, unguessable public slug. Responds 201 with a `Location` header. |
+| `GET` | `/api/chat-overlays/{id}` | One overlay profile, including its current public slug. |
+| `PUT` | `/api/chat-overlays/{id}` | Full replacement of an overlay's settings. Never accepts or changes `id`, `publicSlug` or `createdAt`. Triggers a live rebuild of the running overlay. |
+| `DELETE` | `/api/chat-overlays/{id}` | Delete an overlay profile; its public URL stops serving immediately. Responds 204. |
+| `POST` | `/api/chat-overlays/{id}/rotate-public-slug` | Rotate the public slug. The previous URL stops resolving immediately; every other setting is untouched. |
+| `GET` | `/api/chat-overlays/{id}/accounts` | The connected accounts selected for this overlay. Empty means every currently available account. |
+| `PUT` | `/api/chat-overlays/{id}/accounts` | Replace the account selection. `422` on an unknown account id. |
+| `GET` | `/api/chat-overlays/{id}/hidden-users` | This overlay's own hidden-user list — independent of the operator Chat page's own list. |
+| `POST` | `/api/chat-overlays/{id}/hidden-users` | Hide a user on this overlay, idempotently. |
+| `DELETE` | `/api/chat-overlays/{id}/hidden-users` | Un-hide, identified by `providerId`/`connectedAccountId`/`providerUserId` query parameters (this list has no synthetic per-entry id). |
+| `GET` | `/api/chat-overlays/{id}/blocked-terms` | This overlay's own blocked terms. |
+| `POST` | `/api/chat-overlays/{id}/blocked-terms` | Add a blocked term (`contains` or `whole_word` match mode), idempotently by normalized value. Bounded to 100 per overlay. |
+| `DELETE` | `/api/chat-overlays/{id}/blocked-terms/{termId}` | Remove a blocked term by its own id. Responds 204; `404` if it no longer exists. |
+| `GET` | `/api/chat-overlays/{id}/activity-types` | The activity types selected for this overlay. Empty means every type shown. |
+| `PUT` | `/api/chat-overlays/{id}/activity-types` | Replace the activity-type selection. |
+| `GET` | `/api/public/chat-overlays/{publicSlug}/config` | **Unauthenticated.** Public, presentation-only overlay configuration — no management id, no filter values, no blocked-term text. |
+| `GET` | `/api/public/chat-overlays/{publicSlug}/items` | **Unauthenticated.** A bounded snapshot of the overlay's currently visible items, already filtered and presentation-shaped. |
+| `GET` | `/api/public/chat-overlays/{publicSlug}/stream` | **Unauthenticated.** Server-Sent Events: `chat-overlay.reset`/`.upsert`/`.remove` as the overlay's visible content changes. An unknown or disabled slug still opens a normal connection and renders an empty overlay, never a hard HTTP error. Bounded concurrent clients per overlay. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -1649,7 +1770,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, and the Chat page/message/activity/moderation rows
+npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, the Chat page/message/activity/moderation rows, and the chat-overlay renderer/Overlays management page
 npm run build       # production build
 ```
 
@@ -1675,6 +1796,7 @@ node scripts/verify-twitch-account-integration.mjs # Twitch device flow, linking
 node scripts/verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, broadcast/category, publish - fake Google only
 node scripts/verify-twitch-engagement.mjs         # Event Bus + EventSub connector - fake Twitch only
 node scripts/verify-operator-chat.mjs             # unified operator chat: projection, preferences, badges/emotes - fake Twitch only
+node scripts/verify-chat-overlay.mjs              # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -1744,6 +1866,19 @@ surviving a real backend restart while chat content itself resets, and
 the SSE stream. See
 [Unified operator chat](#unified-operator-chat) for the full list of
 what it covers and what is instead covered by Go unit tests.
+
+The chat-overlay script reuses the same fake OAuth/Helix/EventSub
+servers again and drives chat through the exact same path operator chat
+itself uses, layering public-overlay-specific assertions on top: safe
+defaults, a live message reaching a filtered public overlay, every
+filter (accounts, hidden users, bots, commands, blocked terms, activity
+types), `maxVisibleItems` eviction, deletion/clear scoping, two
+independent overlays never sharing state, slug rotation, restart
+behavior, and a final scan for leaked chat text, blocked-term values,
+hidden-user data, the public slug, or access tokens. See
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) for
+the full list of what it covers and what is instead covered by Go unit
+tests.
 
 **None of these scripts touch your real database, your managed MediaMTX
 installation, your real OS credential store, or a real Twitch/Google
@@ -1901,24 +2036,26 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement and operator-chat API
+│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement, operator-chat and chat-overlay API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
 │   │   │   │   ├── chat/       # Message/activity/moderation rows, filter bar, settings panel, badge/emote images
+│   │   │   │   ├── chat-overlay/ # The public overlay renderer tree (Stage 10) - shared by the public route and the Overlays preview panel
 │   │   │   │   ├── engagement/ # Twitch connector card, bounded recent-events feed
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
 │   │   │   │   ├── metadata/   # Metadata editor with platform tabs, Twitch/YouTube category pickers, publish panel
+│   │   │   │   ├── overlays/   # Overlays management page panels: list, editor, URL, settings, accounts, hidden users, blocked terms, activity types, setup, preview (Stage 10)
 │   │   │   │   ├── platforms/  # Destination cards, add/settings dialogs, output settings, branch controls, account link, broadcast selection
 │   │   │   │   ├── runtime/    # Ingest controls, install dialog, copy widget, bulk-start confirmation
 │   │   │   │   ├── settings/   # Connected Accounts panel, Twitch device-flow modal, YouTube accounts panel and OAuth modal
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
-│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement and operator-chat SSE client hooks
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement, operator-chat and chat-overlay SSE client hooks
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
-│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat reducer and autoscroll state machine
-│   │   │   ├── pages/          # Route views, including EngagementPage and ChatPage
+│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat and chat-overlay reducers, autoscroll state machine, overlay preview fixtures
+│   │   │   ├── pages/          # Route views, including EngagementPage, ChatPage, OverlaysPage and the public OverlayChatPage (no application shell)
 │   │   │   └── test/           # Rendered-component test harness (Testing Library provider wrapper)
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
@@ -1932,12 +2069,14 @@ rest of the repository.
 │           ├── domain/engagement/       # Normalized engagement-event model (Stage 8A)
 │           ├── domain/engagementsettings/ # Per-account engagement-connector enable/disable preference
 │           ├── domain/operatorchatprefs/ # Persisted operator-chat preferences, account visibility, hidden/bot-user lists (Stage 9)
+│           ├── domain/chatoverlay/ # Persisted chat-overlay profiles: settings, accounts, hidden users, blocked terms, activity types (Stage 10)
 │           ├── domain/platform/# Provider registry, models, validation, service
 │           ├── domain/credential/# Destination stream-key service (OS credential store)
 │           ├── domain/output/  # Destination output-settings model, validation, service
 │           ├── domain/remotetarget/ # Remote broadcast/target association (YouTube)
 │           ├── engagement/     # The Engagement Event Bus (ring buffer, dedup, subscriptions)
 │           ├── operatorchat/   # The unified operator-chat projection (Stage 9) - provider-independent, in-memory only
+│           ├── chatoverlay/    # The public per-overlay chat projection (Stage 10) - consumes operatorchat's own revision stream, not the Event Bus directly
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
 │           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services
 │           │   └── chatassets/ # Twitch chat badge (cached) and emote (pure URL) resolution (Stage 9)
@@ -1954,7 +2093,8 @@ rest of the repository.
 ├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
-│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9)
+│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10)
+│   ├── obs-browser-source.md   # Researched OBS Browser Source contract and Stage 10 recommendations
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
@@ -1967,7 +2107,8 @@ rest of the repository.
 │   ├── verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
 │   ├── verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, publish - fake Google only
 │   ├── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
-│   └── verify-operator-chat.mjs    # Unified operator chat: projection, preferences, badges/emotes - fake Twitch only
+│   ├── verify-operator-chat.mjs    # Unified operator chat: projection, preferences, badges/emotes - fake Twitch only
+│   └── verify-chat-overlay.mjs     # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -1986,7 +2127,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| OBS Browser Source overlay, outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9 (see [Unified operator chat](#unified-operator-chat)) — everything still built on top of it (the overlay, outbound chat, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9 and a real, public OBS Browser Source chat overlay built on top of it as of stage 10 (see [Unified operator chat](#unified-operator-chat) and [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)) — everything still built on top of *those* (outbound chat, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -2048,6 +2189,14 @@ directly next to the control.
   inline, account/kind/bot/hidden-user filtering, persisted display
   preferences, and autoscroll with a jump-to-latest control - see
   [Unified operator chat](#unified-operator-chat).
+- **A real, public OBS Browser Source chat overlay** (`/overlays` to
+  manage, `/overlay/chat/{publicSlug}` to view/embed) — persisted overlay
+  profiles with their own filters, visual settings and an unguessable,
+  rotatable public URL; a public per-overlay projection consuming the
+  operator-chat projection above; a public unauthenticated HTTP + SSE
+  API; and a live preview panel on the management page reusing the exact
+  same renderer - see
+  [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -2059,11 +2208,9 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **The OBS Browser Source overlay** (stage 10) — reads the same
-  operator-chat projection stage 9 now provides.
 - **Outbound chat, scheduled bot messages, the alert engine, TTS, goal
-  widgets** and the rest of the engagement and overlay platform -
-  architecture only so far, see
+  widgets, a visual overlay designer and overlay templates** and the rest
+  of the engagement and overlay platform - architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 

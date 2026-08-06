@@ -141,6 +141,24 @@ with no transcoding, is this stage's deliberate scope.
    buffer, independently bounded from the Event Bus and reset on every
    backend restart, exactly like it. The Twitch chat-badge image cache
    (`internal/provider/twitch/chatassets`) is likewise in-memory only,
-   with a 1-hour TTL - never a file, never a database row. There is no
-   overlay or template configuration yet (that remains stage 10+, still
-   planned) for this directory to hold.
+   with a 1-hour TTL - never a file, never a database row. There is
+   still no overlay *template* configuration for this directory to hold
+   (that remains a later, separate stage) - see rule 9 below for what
+   stage 10 itself actually added.
+9. Stage 10's chat-overlay profiles follow the same rule again: every
+   persisted overlay setting (layout, visibility toggles, filters,
+   typography, colors, animation, role highlighting, selected accounts,
+   hidden users, blocked terms, activity types, and the public slug)
+   is a small set of ordinary SQLite tables
+   (`internal/domain/chatoverlay`, migration
+   `0011_chat_overlay_profiles.sql`) alongside the rest of this
+   application's configuration - not a file in this directory. The
+   runtime public projection's own retained-revision capacity
+   (`internal/chatoverlay.DefaultRevisionCapacity`, 400) is a fixed Go
+   constant, unlike the Event Bus's and operator-chat's own
+   environment-configurable buffer sizes above - stage 10 added no new
+   environment variable and no new file anywhere in this directory.
+   There is still no overlay template/design-file format (that remains
+   a later, separate stage, `docs/engagement-architecture.md` §13) - the
+   visual settings above are plain per-profile SQLite columns, not an
+   exported, shareable package.

@@ -140,6 +140,18 @@ of this document to reason about two credential lifecycles as if they were one.
 > The OBS overlay (§7.3) and everything from stage 10 onward remain
 > exactly as planned before this stage.
 
+> **Factual status update (stage 10, completed):** the OBS chat overlay
+> this section referred to as still planned now exists too - see §7.3.
+> `internal/chatoverlay` is a second, independent consumer of stage 9's
+> own `internal/operatorchat` revision stream, deliberately **not** a
+> second subscriber of the Event Bus itself - this avoids duplicating
+> stage 9's own lifecycle/deduplication/moderation-filtering logic a
+> second time. Persisted overlay profiles live in
+> `internal/domain/chatoverlay`; the public API is unauthenticated,
+> relying on each overlay's own unguessable, rotatable public slug.
+> Everything from stage 11 onward remains exactly as planned before this
+> stage.
+
 ## 5. Normalized engagement event model
 
 ### 5.1 Design goal
@@ -286,7 +298,8 @@ Platform connectors
 Normalized Engagement Event Bus
         |
         +--> Operator chat
-        +--> OBS chat overlays
+        |       |
+        |       +--> OBS chat overlays (public, filtered - stage 10)
         +--> Alert engine
         +--> Alert queue
         +--> TTS queue
@@ -294,6 +307,13 @@ Normalized Engagement Event Bus
         +--> Event history (bounded, see §6.5)
         +--> Automation rules
 ```
+
+> **Factual status update (stage 10, completed):** unlike this diagram's
+> original planned shape, the implemented OBS chat overlay does not
+> subscribe to the Event Bus directly - it is a second consumer of
+> operator chat's own revision stream instead (`internal/chatoverlay.
+> Manager`), avoiding a second copy of stage 9's lifecycle logic. See
+> §7.3.
 
 ### 6.2 Connector capability model
 
@@ -400,9 +420,10 @@ happening" lives in memory and resets on restart.
 > within a validated 100-10000 range), bounded TTL'd deduplication, and a
 > complete reset to empty on every backend restart. It is read today only
 > by the diagnostic Engagement page and its Server-Sent Events stream
-> (`GET /api/engagement/stream`) - operator chat and the OBS overlay
-> themselves are still stages 9 and 10, planned. No persisted event
-> history exists; the paragraph below remains accurate unchanged.
+> (`GET /api/engagement/stream`) - operator chat (stage 9) and the OBS
+> overlay (stage 10) instead each read through operator chat's own
+> revision stream, described in §7. No persisted event history exists;
+> the paragraph below remains accurate unchanged.
 
 
 
@@ -448,31 +469,48 @@ moderator, at `internal/operatorchat` (backend projection) and the
 - account, kind, explicitly-hidden-user and bot-marked-user filtering,
   plus persisted display preferences.
 
-**Not yet real, deliberately deferred:** a public-vs-operator
-distinction (there is no overlay yet to be "more permissive than" -
-§7.3 remains unimplemented), word-level hiding, and any second
-provider's messages. See the README's own
+**Not yet real, deliberately deferred:** operator-chat's own word-level
+hiding (blocked terms exist only per public overlay, §7.3, not here) and
+any second provider's messages. The public-vs-operator distinction this
+paragraph originally deferred is now real - see §7.3: the OBS chat
+overlay is genuinely more permissive-to-hide than operator chat, with
+its own separate hidden-user and blocked-term lists. See the README's
+own
 [Unified operator chat](../README.md#unified-operator-chat) section for
 the full user-facing description and
 [progress.md](progress.md) for the design decisions.
 
-### 7.3 OBS chat overlay
+### 7.3 OBS chat overlay — implemented (stage 10)
 
-A filtered **public** Browser Source. Planned settings:
+**Status: implemented.** A filtered **public** Browser Source, any number
+of persisted profiles managed on the `/overlays` page and served at
+`/overlay/chat/{publicSlug}` with no application chrome. What is real
+today, of the settings originally planned here:
 
-- included platforms,
+- account selection (empty = every currently available account),
 - show/hide: platform icon, textual platform name, avatars, badges,
-- hide bots, hide commands (§8.2), hide selected users, hide selected words,
-  hide selected event types,
+- hide bots, hide commands (§8.2), hide selected users, hide selected
+  words/phrases (literal `contains`/`whole_word` matching), hide
+  selected activity-event types,
 - message lifetime and maximum visible message count,
-- entry and exit animation,
-- typography: font, text size, outline, shadow,
-- message bubble background, spacing, alignment,
-- a vertical-stream layout variant,
-- highlight rules for moderators, subscribers and supporters.
+- entry animation (no exit animation - a removed item simply stops
+  rendering, so a moderation removal is never delayed by a fade-out),
+- typography, colors, a vertical-stream layout variant, and highlight
+  tags for moderators/subscribers/VIPs (from Twitch's own badge set-ids,
+  never inferred).
 
-The overlay is a **rendering and filtering layer** over the same stream
-operator chat reads; it holds no separate connection to any provider.
+**Not yet real, deliberately deferred:** exit animation, a visual
+designer for any of the above (settings are a plain form, not a canvas),
+and an exportable/importable overlay template (§13) - this stage's
+settings are per-profile SQLite columns, not a shareable package.
+
+The overlay is a **rendering and filtering layer** over operator chat's
+own revision stream (§7.2), not the Event Bus directly - it holds no
+separate connection to any provider, and duplicates none of operator
+chat's own lifecycle/deduplication logic. See the README's own
+[OBS Browser Source chat overlay](../README.md#obs-browser-source-chat-overlay)
+section for the full user-facing description and
+[progress.md](progress.md) for the design decisions.
 
 ## 8. Outbound chat and bot automation
 
@@ -830,7 +868,7 @@ that table.
 | 8A | Engagement Event Bus + Twitch inbound connector (first real implementation of §5–6) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set |
 | 9 | Unified operator chat (§7.2) — **Completed** |
-| 10 | OBS chat overlay (§7.3) |
+| 10 | OBS chat overlay (§7.3) — **Completed** |
 | 11 | Outbound chat, scheduled bot messages and commands (§8) |
 | 12 | Alert engine and alert queue (§9–10) |
 | 13 | Visual overlay designers (§13.1) |
@@ -858,8 +896,10 @@ Dependencies that constrain this order:
   store — they need different secret types through the same abstraction.
 - Stage 8A (event bus) is a prerequisite for every stage from 9 onward: nothing
   downstream can exist before there is a normalized stream to consume.
-- Stage 9 (operator chat) and stage 10 (overlay) both read stage 8's bus; one
-  is not a prerequisite for the other, but both need it.
+- Stage 9 (operator chat) reads stage 8's bus directly. Stage 10 (overlay)
+  reads stage 9's own revision stream instead, not the bus directly - so
+  stage 9 is a genuine prerequisite of stage 10, not merely a sibling
+  consumer of stage 8 the way the diagram in §6.1 originally proposed.
 - Stage 11 (outbound/bot) needs connector send-message capability (§6.3),
   which is part of the stage 8 Twitch connector's capability declaration.
 - Stage 12 (alerts) needs stage 8's normalized events; the alert queue (§10)

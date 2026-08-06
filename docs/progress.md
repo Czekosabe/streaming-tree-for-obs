@@ -8329,3 +8329,130 @@ suite, then the final documentation pass (README, project overview,
 engagement architecture, `docs/obs-browser-source.md` cross-check,
 `config/README.md`, `THIRD_PARTY_NOTICES.md` if warranted) and the
 closing `docs: document OBS chat overlays` commit.
+
+---
+
+## 2026-08-07 11:15 — docs: document OBS chat overlays
+
+### Status
+Completed. Stage 10 is now fully documented; this closes the stage out.
+
+### Scope
+The closing documentation pass named at the end of the previous entry:
+bring `README.md`, `docs/project-overview.md` and
+`docs/engagement-architecture.md` up to date with the now-completed OBS
+Browser Source chat overlay feature, and correct the placeholder
+language `fix(docs): correct post-Stage-9 project status` deliberately
+left in `README.md` for this exact commit to finish. `config/README.md`
+and `THIRD_PARTY_NOTICES.md` were audited but needed only one small fix
+between them - see below.
+
+### Changes
+
+**`README.md`.** The "Connected accounts and YouTube metadata" section's
+"What this stage does not implement" paragraph — which since the
+`fix(docs)` correction has read "the OBS public chat overlay (stage 10)
+is this repository's current stage; once its own commits land it will be
+documented in its own section below" — now states plainly that the
+overlay is implemented and points at the new section and at
+`docs/obs-browser-source.md`. Added a full **OBS Browser Source chat
+overlay** section (persisted profiles, the public projection consuming
+operator chat's own revision stream rather than the Event Bus directly,
+the public and management APIs, and a "Verifying it for real"
+subsection), at the same depth as the existing Unified operator chat
+section and no longer. Updated the table of contents, the roadmap table
+(stage 10 split out of the old "10–19" row and marked Completed), the
+long-term-vision paragraph, the "Project state" banner and its own
+section header, the Twitch-metadata section's cross-stage summary
+paragraph, the Engagement Event Bus and Unified operator chat sections'
+own "what this stage does not implement" lists (both previously named
+the OBS overlay as still unimplemented), a stale claim that the OBS
+overlay would read the Engagement Event Bus's own SSE endpoint directly
+(it does not — it reads through operator chat's projection instead,
+exactly like operator chat itself), the REST API table (every
+`/api/chat-overlays/...` and `/api/public/chat-overlays/...` route), the
+lint/test section (the new `verify-chat-overlay.mjs` script, its own
+paragraph, and the rendered-component test list), the directory
+structure tree (`chat-overlay/`, `overlays/` frontend directories,
+`internal/domain/chatoverlay`, `internal/chatoverlay`,
+`docs/obs-browser-source.md`, the new verify script), and the "What is
+currently demo-only" table plus its "What is real"/"What will be added
+later" bullet lists (the overlay moved from the latter to the former).
+
+**`docs/project-overview.md`.** §8.1 gained a "ninth fact" paragraph for
+chat-overlay profiles (mirroring the existing "eighth fact" paragraph
+for stage 9's operator-chat preferences) and a runtime-state paragraph
+for `internal/chatoverlay`'s own public projection (mirroring the
+existing operator-chat-projection paragraph), both explicit about the
+two independent hidden-user lists and the fixed, non-configurable
+revision-buffer capacity. §13's roadmap table row for stage 10 is now
+marked **Completed** instead of Planned. §16's own status line and
+closing paragraph now name stage 10 as the third completed piece of the
+engagement platform, alongside stage 8A's bus and stage 9's operator
+chat.
+
+**`docs/engagement-architecture.md`.** Added a "Factual status update
+(stage 10, completed)" callout immediately after the existing stage-9
+one, following the document's own established pattern for recording
+when a previously-planned section becomes real. §7.3 ("OBS chat
+overlay") gained a "Status: implemented" marker and a real-vs-deferred
+split, mirroring §7.2's own structure, rather than staying entirely
+future-tense. §6.1's conceptual diagram — which showed "OBS chat
+overlays" as a sibling of "Operator chat" branching directly off the
+Event Bus — was corrected to nest the overlay under operator chat
+instead, with a short factual-status note explaining why: the
+implemented `internal/chatoverlay.Manager` consumes operator chat's own
+revision stream, deliberately never subscribing to the Bus directly, so
+that Stage 9's lifecycle/deduplication/moderation-filtering logic is
+never duplicated. §6.5's and §7.2's own stage-8A/9-era "not yet real"
+notes about the overlay were corrected the same way. §18's stage-10 table
+row and its own dependency-ordering bullet (which had described stage 9
+and stage 10 as two independent siblings both reading stage 8's bus) are
+now accurate: stage 9 is a genuine prerequisite of stage 10, not a
+sibling.
+
+**`config/README.md`.** One stale sentence found and fixed: rule 8's
+closing line said overlay configuration "remains stage 10+, still
+planned." Replaced with a pointer to a new rule 9, describing what stage
+10 actually added (or rather, mostly did not add) to this directory:
+every persisted overlay setting is an ordinary SQLite table, exactly
+like every other stage's configuration, and the runtime projection's own
+revision capacity (`internal/chatoverlay.DefaultRevisionCapacity`, 400)
+is a fixed Go constant — no new environment variable and no new file
+anywhere in this directory, unlike the Event Bus's and operator-chat's
+own configurable buffer sizes.
+
+**`THIRD_PARTY_NOTICES.md`.** Audited, not changed. Confirmed directly
+against the diff of every Stage 10 commit
+(`apps/server/go.mod`/`go.sum` and `apps/web/package.json` are untouched
+across all eight) that this stage added no new Go module, no new npm
+package, and no new brand/logo asset — the platform marker reuses the
+existing project-owned `PlatformGlyph` text-badge component. Nothing in
+this file referenced Stage 10 in the first place, so there was no stale
+claim to correct either.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `config/README.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only; no application code changed. `cd apps/web && npm run
+i18n:check` — 2 languages, 12 namespaces, no differences against
+English (confirms this pass touched no i18n resource). The full
+frontend/backend suite and all 8 integration scripts were already run
+together at the end of the previous entry's own work; a documentation-
+only change to `README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md` and `config/README.md` cannot regress
+any of them, matching the precedent already set by every prior stage's
+own closing documentation commit.
+
+### Known limitations
+None specific to this entry.
+
+### Next step
+**Stage 10 is now fully complete**, backend, frontend and documentation
+alike. Stage 11 (outbound chat, scheduled bot messages and commands)
+remains planned; it has not been started.
