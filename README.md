@@ -1524,6 +1524,34 @@ the real public route (`/overlay/chat/:publicSlug`, with no `<AppShell>`
 anywhere in its render tree) and the Overlays management page's own live
 preview panel.
 
+### Hydration, live updates and exit animation
+
+The overlay route fetches `/config` once, then opens the public SSE
+stream — its own **first event is always a complete reset** of every
+item currently visible, so the route never merges a separate
+`/items` snapshot fetch with the stream: doing so would race two
+independently-fetched views of the same mutable state against each
+other. `/items` still exists and stays fully supported for a script,
+a diagnostic tool, or any other direct API consumer that only needs a
+one-shot read — the React route simply has no reason to call it. See
+[`docs/obs-browser-source.md`](docs/obs-browser-source.md) for the full
+reasoning and the reconnect/`Last-Event-ID`/gap behavior.
+
+Removing an item from the overlay carries one of two safety classes,
+never left to guesswork on the frontend: a **cosmetic** removal
+(natural message-lifetime expiry, or the oldest item evicted once
+`maxVisibleItems` is exceeded) may use the profile's own configured,
+bounded exit animation; every other removal — a moderator deleting a
+message, a chat or per-user clear, or any settings change that hides an
+item (a newly blocked term, a newly hidden user, a filter toggle, an
+account deselected, the overlay disabled or deleted) — is **immediate**,
+never animated, and never carries the removed item's own text or any
+other content in its own payload. `prefers-reduced-motion` disables
+exit animation the same way it already disables entry animation.
+Exit animation is one of a fixed, safe enum (`none`/`fade`/`slide_up`/
+`slide_left`/`scale`) validated server-side — never arbitrary CSS, a
+keyframe string, or an easing function from the backend.
+
 ### Verifying it for real
 
 `scripts/verify-chat-overlay.mjs` exercises the whole stack end to end

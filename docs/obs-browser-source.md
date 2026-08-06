@@ -78,10 +78,13 @@ recommendation, with the trade-off stated honestly:
   - *Trade-off*: turning this **on** saves CPU/GPU while a scene using
     the overlay is off-screen - valuable for a streamer with several
     scenes and the overlay in only one. The cost is a brief, visible
-    "re-populate" moment on every scene switch back to it: the
-    reloaded page fetches a fresh public snapshot and reconnects SSE,
-    so it starts from whatever the backend currently retains rather
-    than continuing seamlessly.
+    "re-populate" moment on every scene switch back to it: the reloaded
+    page reconnects its SSE stream, whose own first event is a complete
+    reset of everything currently visible - so it starts from whatever
+    the backend currently retains rather than continuing seamlessly
+    (see "How the retained projection is restored after a reload"
+    below for exactly what that first event contains and why no
+    separate snapshot fetch is involved).
   - Leaving it **off** (the default) keeps the overlay's state warm
     and its SSE connection open continuously, at the cost of
     background resource use even while off-screen.
@@ -119,15 +122,66 @@ and this stage's own overlay hook).
 
 ## How the retained projection is restored after a reload
 
-On reload the overlay page performs the same three steps as its first
-load: fetch the public config, fetch the current public snapshot
-(`GET /api/public/chat-overlays/{slug}/items`), then open a fresh SSE
-connection. The snapshot reflects whatever the public overlay
-projection currently has visible for that profile - bounded by its own
+**Corrected 2026-08-06** (an earlier draft of this section wrongly
+described a separate snapshot fetch the shipped frontend never
+performs - see `docs/progress.md`'s Stage 10 corrective-pass entry for
+the full investigation).
+
+On reload the overlay page performs exactly two steps, not three:
+fetch the public config (`GET /api/public/chat-overlays/{slug}/config`,
+a one-time read of the profile's renderer settings), then open a fresh
+SSE connection (`GET /api/public/chat-overlays/{slug}/stream`). There
+is no separate call to `GET /api/public/chat-overlays/{slug}/items`
+from the overlay page itself - the stream's own **first event is
+always a complete `chat-overlay.reset`**, carrying every item currently
+visible for that profile in one payload
+(`internal/chatoverlay.Projection.Subscribe` replays its retained
+revisions before the connection is considered live - see
+`internal/chatoverlay/projection.go`). That one event is a strict
+superset of what a separate `/items` snapshot request would have
+returned, so fetching both would only add a second network round trip
+and a real race: the snapshot response and the stream's own first
+event are not part of one atomic read, so a message could arrive,
+appear in the snapshot fetched first, then be evicted or deleted before
+the stream's own replay catches up (or the reverse), leaving the
+frontend to reconcile two independently-fetched views of the same
+mutable state instead of trusting one. Relying on the stream's own
+initial reset avoids that class of bug entirely, at the cost of the
+overlay staying blank for the handful of milliseconds between opening
+the connection and that first event arriving - an acceptable trade for
+a Browser Source, which has no loading-spinner UI to show in that gap
+anyway.
+
+The reset itself reflects whatever the public overlay projection
+currently has visible for that profile - bounded by its own
 `max_visible_items` and `message_lifetime_seconds` settings - not a
 replay of everything that was ever shown. This is the intended
 behavior, not a limitation to work around: an overlay is a live
 viewer-facing rendering, not a chat archive.
+
+`GET /api/public/chat-overlays/{slug}/items` still exists and is fully
+supported - it answers the same current-visible-set data the stream's
+own reset carries, useful for a diagnostic tool, a script (this
+project's own `scripts/verify-chat-overlay.mjs` uses it, since a
+one-shot Node script has no reason to hold an open SSE connection just
+to check current state), or any future direct API consumer that only
+needs a point-in-time read rather than live updates. The React overlay
+route simply has no reason to call it, given the stream already
+provides a complete, race-free initial state on its own.
+
+### Reconnect and `Last-Event-ID`
+
+A reconnect (after a network blip, a scene switch with "shutdown when
+not visible" on, or `EventSource`'s own automatic retry) sends the last
+sequence number the client actually applied via the `Last-Event-ID`
+header, exactly like the operator-chat stream already does. If the
+backend's retained revision ring still covers that sequence, the
+client receives only the upsert/remove operations it missed, not a
+full reset - a normal, low-cost catch-up. If the gap is too large (the
+ring evicted revisions the client would need), the backend sends an
+explicit `chat-overlay.gap` event followed by a fresh
+`chat-overlay.reset` instead of silently under-reporting history - see
+"What can be lost after a projection-buffer gap" below.
 
 ## What can be lost after a projection-buffer gap
 

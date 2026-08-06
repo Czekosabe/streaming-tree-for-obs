@@ -605,6 +605,42 @@ second time. Like every runtime projection in this section, it begins
 empty on every backend start and tracks only its own sequence/capacity/
 subscriber counts, never a raw provider payload.
 
+**Hydration protocol.** The frontend overlay route fetches the public
+config once, then opens the public SSE stream and relies entirely on
+that stream's own first event - always a complete `reset` of the
+current visible set - for its initial state. It never merges a
+separate `GET /api/public/chat-overlays/{slug}/items` request with the
+stream: that endpoint's response and the stream's own reset are two
+independently-timed reads of the same mutable projection, so combining
+them would introduce a real race (an item could change visibility
+between the two reads) for no benefit, since the reset already carries
+a strict superset of what the snapshot endpoint would answer. `/items`
+remains a fully supported, separate read for a script or diagnostic
+tool that only needs a point-in-time value - see
+[`docs/obs-browser-source.md`](obs-browser-source.md) for the complete
+reasoning and the reconnect/`Last-Event-ID`/gap behavior.
+
+**Removal reason and the cosmetic/immediate safety split.** Every
+`remove` revision carries a stable, closed-enum reason
+(`expired`/`capacity_evicted`/`message_deleted`/`chat_cleared`/
+`user_messages_cleared`/`unknown`) - never the removed item's own
+message text, and never any detail about which blocked term or hidden
+user caused it. Only two of those reasons are safe to animate on the
+frontend: `expired` (natural message-lifetime expiry) and
+`capacity_evicted` (the oldest item evicted once `maxVisibleItems` is
+exceeded) - genuinely cosmetic removals with nothing to hide. Every
+other reason is treated as an immediate removal: no exit animation, no
+retained "leaving" copy of the item, applied on the same render pass
+the revision arrives on. A settings/privacy change that hides
+previously-visible items (a newly blocked term, a newly hidden user, a
+filter toggle, a narrowed account selection, the overlay being disabled
+or deleted) never travels as an individual `remove` at all in this
+design - it travels as the same full projection `reset` a `Configure`
+rebuild already produces, which the frontend always applies
+immediately and in full, exactly like the initial hydration reset
+above; a reset never triggers a mass exit-animation moment for every
+item that happened to still be visible before it.
+
 ### 8.2 OBS ingest detection
 
 While MediaMTX is ready, the backend polls its Control API `/v3/paths/list` and

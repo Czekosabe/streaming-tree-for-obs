@@ -8495,3 +8495,170 @@ None.
 ### Next step
 Run the final full regression (backend + frontend checks, all 8
 integration scripts) and push.
+
+---
+
+## 2026-08-06 12:35 — fix(docs): reconcile overlay hydration and journal chronology
+
+### Status
+Completed. This begins a Stage 10 **corrective pass** (not Stage 11):
+three concrete issues found during a fresh review of the completed
+stage - a documentation/implementation contradiction about how the
+overlay hydrates, a required-but-omitted exit-animation behavior, and
+three journal headings with an incorrect date. This entry covers the
+first issue and the journal-date investigation; the exit-animation
+work is its own, later entry.
+
+### Issue: hydration documentation contradicted the shipped code
+
+`docs/obs-browser-source.md`'s "How the retained projection is restored
+after a reload" section said the overlay page "performs the same three
+steps as its first load: fetch the public config, fetch the current
+public snapshot (`GET /api/public/chat-overlays/{slug}/items`), then
+open a fresh SSE connection." This was never true of the shipped
+frontend. Re-reading the actual code confirms:
+
+- `apps/web/src/pages/OverlayChatPage.tsx` calls exactly two hooks:
+  `usePublicChatOverlayConfigQuery` (one `GET /config`) and
+  `useChatOverlayStream` (one `EventSource` to `/stream`). There is no
+  third call anywhere in the component tree, and no `fetchPublicChatOverlayItems`
+  call outside of `apps/web/src/api/chat-overlay.ts`'s own export (which
+  exists but is never imported by the overlay route or its hooks -
+  confirmed by search).
+- `apps/web/src/hooks/use-chat-overlay-stream.ts`'s own doc comment
+  already correctly describes replay-then-live SSE hydration and was
+  never wrong - only the standalone research document had drifted from
+  it.
+- The backend confirms why this is safe: `internal/chatoverlay.
+  Projection.Subscribe(after)` (`apps/server/internal/chatoverlay/projection.go`)
+  replays every currently-retained revision into the new subscriber's
+  channel *before* returning, so the very first event a connecting
+  client receives is a complete `chat-overlay.reset` of the entire
+  currently-visible set - not a partial or eventually-consistent view.
+
+**Decision: keep the single-source replay-then-live SSE design; do not
+add a frontend snapshot query.** A snapshot fetch and a stream
+connection are two independently-timed reads of the same mutable
+projection - merging them would introduce a genuine race (an item could
+be evicted, deleted, or newly filtered between the two reads) that the
+single-stream design structurally cannot have, since the reset the
+stream itself sends is already a strict superset of what `/items` would
+have returned at any nearby instant. `GET /api/public/chat-overlays/{slug}/items`
+remains fully implemented and correct - it is used by `scripts/verify-chat-overlay.mjs`
+today for exactly the case it is for: a one-shot consumer that has no
+reason to hold an open SSE connection just to read current state -
+and remains available for any future diagnostic tool or direct API
+consumer. It was never removed and nothing about this correction
+changes its behavior.
+
+### Documentation corrected
+
+- `docs/obs-browser-source.md`: rewrote "How the retained projection is
+  restored after a reload" to describe the real two-step hydration
+  (config, then SSE-with-initial-reset), added a "Reconnect and
+  Last-Event-ID" subsection describing the real reconnect/replay/gap
+  behavior, and added an explicit paragraph on why one initial SSE
+  reset avoids a snapshot/stream race. Also softened the imprecise
+  "reloaded page fetches a fresh public snapshot" phrase in the
+  shutdown-checkbox trade-off section to point at the corrected section
+  instead of repeating the wrong claim.
+- `README.md`: added a new "Hydration, live updates and exit animation"
+  subsection under "OBS Browser Source chat overlay" stating the real
+  two-step hydration, `/items`'s role as a separate direct-consumer
+  endpoint, and (in anticipation of the next entry in this pass) the
+  cosmetic-vs-immediate removal split.
+- `docs/project-overview.md`: added a "Hydration protocol" paragraph and
+  a "Removal reason and the cosmetic/immediate safety split" paragraph
+  to the stage 10 runtime-projection section (§8.1-adjacent), matching
+  the same facts as the README and the research document.
+- `docs/engagement-architecture.md`: not touched by the hydration
+  correction itself (it does not describe the fetch sequence at that
+  level of detail); its own exit-animation-deferred claim is corrected
+  in the next entry instead, since that is a different issue.
+- No frontend code, test, or code comment needed correcting - the
+  implementation and its own inline comments were already accurate;
+  only the standalone research document and the higher-level docs it
+  fed into had drifted.
+
+### Issue: three journal headings carry an incorrect date
+
+**Investigation, run at the start of this corrective task:**
+
+- Local system clock at investigation time: **2026-08-06, 12:30 CEDT
+  (UTC+2)**. UTC: **2026-08-06 10:30**.
+- `git log --format=fuller` for every Stage 10 commit
+  (`bb3a747` through `cedb375`) shows every single `AuthorDate` and
+  `CommitDate` on **2026-08-06**, ranging from `08:15:25` to
+  `11:42:54`, all `+0200`. None of the ten Stage 10 commits carries a
+  2026-08-07 date anywhere.
+- Secondary, non-authoritative evidence: `docs/progress.md`'s own
+  filesystem `Modify`/`Change`/`Birth` timestamps (`git log -1
+  --format=%cI -- docs/progress.md` and a direct filesystem `stat`)
+  both read `2026-08-06 11:42:4x +0200`, matching the `cedb375` commit
+  that last touched the file almost exactly.
+- Three journal headings nonetheless read `## 2026-08-07 09:30 — test:
+  verify chat overlays locally`, `## 2026-08-07 11:15 — docs: document
+  OBS chat overlays`, and `## 2026-08-07 11:50 — docs: fix a stale
+  response-status claim for POST /api/chat-overlays`. Their matching
+  commits are `5b435a1` (`11:24:43 +0200`, 2026-08-06), `64ce553`
+  (`11:40:53 +0200`, 2026-08-06), and `cedb375` (`11:42:54 +0200`,
+  2026-08-06) respectively - the same day, and within roughly the same
+  hour, as their own heading times, just on the wrong calendar date.
+
+**Conclusion: this is a journal-heading labeling defect, not a Git
+history problem.** The execution environment's clock was not observed
+to be ahead at any point checked; every commit's own author and
+committer date is correct and internally consistent with the other
+evidence gathered. Only the three heading lines themselves rolled past
+midnight into the next calendar date while the actual session (and the
+real system clock) never left 2026-08-06 - most likely an accumulated
+counting error across a very long single-day session, not a sign the
+work genuinely spanned two days or that any commit needs re-dating.
+
+**What is and is not being done about it:**
+
+- The three heading lines are **not** being edited in place - this
+  entry is an append, per this journal's own rule 4 ("the history of
+  earlier entries must not be rewritten or deleted without a reason...
+  a correction to a wrong entry is added as a new entry, not by
+  overwriting the old one").
+- No Git history is being rewritten. A future-dated (or, here, actually
+  correctly-dated-but-mislabeled) commit stays exactly as committed
+  unless the user explicitly authorizes rewriting it, which has not
+  happened.
+- The **commit messages remain the canonical identifier** for each of
+  those three entries, exactly as this journal's own "Entry
+  identification" section already establishes - `git log --oneline` for
+  `5b435a1`, `64ce553`, and `cedb375` is the authoritative record of
+  what happened and in what order, independent of any heading text.
+- The exact real wall-clock time each entry was *written* (as opposed
+  to committed) cannot be recovered exactly - the heading time is an
+  approximation chosen shortly before its matching commit, not
+  something Git independently records - so this entry states the
+  evidence available (the commit's own AuthorDate/CommitDate) rather
+  than inventing a replacement heading time.
+- No feature fact in any of the three mis-dated entries is being
+  changed by this correction - their technical content (what was built,
+  why, what tests passed) is unaffected; only their calendar date was
+  ever wrong.
+
+### Files changed
+- `docs/obs-browser-source.md`, `README.md`, `docs/project-overview.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+None required for this entry - documentation-only, and the actual
+frontend/backend behavior that the corrected prose now describes was
+already covered by the existing, passing Stage 10 test suite (no code
+changed). `npm run i18n:check` re-run as a matter of course; unaffected
+since no translation resource was touched.
+
+### Known limitations
+The exact real wall-clock time the three mis-dated entries were
+originally written cannot be proven beyond the commit evidence cited
+above.
+
+### Next step
+Implement the missing bounded exit-animation behavior (backend
+remove-reason classification, then the frontend state machine and
+renderer), per this same corrective task.

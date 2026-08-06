@@ -493,16 +493,22 @@ today, of the settings originally planned here:
   words/phrases (literal `contains`/`whole_word` matching), hide
   selected activity-event types,
 - message lifetime and maximum visible message count,
-- entry animation (no exit animation - a removed item simply stops
-  rendering, so a moderation removal is never delayed by a fade-out),
+- entry **and** exit animation, from the same fixed, bounded enum
+  (`none`/`fade`/`slide_up`/`slide_left`/`scale`) - exit animation is
+  used only for a safe, cosmetic removal (natural expiry or capacity
+  eviction); a moderation deletion, a chat/user clear, or any removal
+  caused by a settings/privacy change is always immediate and never
+  animated, so it is never delayed and never carries the removed
+  content in its own payload - see the Stage 10 corrective-pass entry
+  in [progress.md](progress.md) for the full removal-reason design,
 - typography, colors, a vertical-stream layout variant, and highlight
   tags for moderators/subscribers/VIPs (from Twitch's own badge set-ids,
   never inferred).
 
-**Not yet real, deliberately deferred:** exit animation, a visual
-designer for any of the above (settings are a plain form, not a canvas),
-and an exportable/importable overlay template (§13) - this stage's
-settings are per-profile SQLite columns, not a shareable package.
+**Not yet real, deliberately deferred:** a visual designer for any of
+the above (settings are a plain form, not a canvas), and an
+exportable/importable overlay template (§13) - this stage's settings
+are per-profile SQLite columns, not a shareable package.
 
 The overlay is a **rendering and filtering layer** over operator chat's
 own revision stream (§7.2), not the Event Bus directly - it holds no
