@@ -7345,3 +7345,92 @@ None specific to this entry.
 Write `docs/obs-browser-source.md` research findings up as their own
 commit (already drafted alongside this one), then design the overlay
 profile persistence schema.
+
+## 2026-08-06 17:25 — docs: define OBS Browser Source overlay contract
+
+### Status
+Completed
+
+### Scope
+Mandatory research (Part 2) before designing anything overlay-shaped:
+inspected only official OBS sources, recorded findings and Stage 10
+recommendations in the new `docs/obs-browser-source.md`.
+
+### Sources inspected
+- <https://obsproject.com/kb/browser-source> — the Browser Source
+  properties reference (URL vs. local file, default transparent CSS,
+  default 800×600 viewport, custom FPS off by default, the shutdown/
+  refresh checkboxes, the manual cache-refresh button, page-permission
+  tiers, CEF basis, Windows/macOS/Linux availability).
+- <https://obsproject.com/kb/faq-stream-chat> — confirms OBS itself has
+  no native chat display; its own documented answer is "load a third-
+  party overlay as a Browser Source," which is exactly this stage's
+  own approach.
+- <https://obsproject.com/kb/stream-tutorial-2-alerts> — the general
+  "paste a widget URL into a Browser Source, then set width/height"
+  workflow OBS documents for any overlay provider, with no specific
+  dimensions asserted for chat specifically (this stage's own
+  1920×1080 / 1080×1920 recommendations are this project's choice, not
+  an official OBS number).
+- <https://github.com/obsproject/obs-browser> — the plugin's own
+  README: CEF-based, bundled with OBS Studio itself (not a separate
+  install), and the `window.obsstudio` JS API surface (scene/
+  visibility events, permission tiers) this project's overlay
+  deliberately never calls.
+
+### Technical decisions
+
+**The overlay never uses `window.obsstudio`.** Every OBS-specific
+permission tier (READ_OBS/READ_USER/BASIC/ADVANCED/ALL) the Browser
+Source properties dialog can grant is therefore irrelevant - the
+management UI never needs to ask an operator to grant anything. This
+was decided specifically so the exact same renderer component works
+identically for the in-app preview (Part 19), a plain browser tab, and
+inside a real OBS Browser Source, with no code path that only
+functions inside CEF - directly serving Part 17's "must work in the
+current supported development setup" requirement and Part 27's ban on
+browser automation for testing (a component with no CEF-only
+dependency is testable with ordinary Testing Library).
+
+**No universal "correct" answer for the shutdown/refresh checkboxes -
+documented as a genuine trade-off**, per the task's own explicit
+instruction not to pretend one choice is universal. "Shutdown source
+when not visible" trades background resource use for a visible
+repopulation moment on every scene switch back to the overlay (every
+open SSE connection and in-memory item list is destroyed and rebuilt
+from a fresh snapshot on reload, exactly like closing and reopening a
+browser tab). Recommended default: leave both off for the common case
+(one always-visible chat-overlay scene); turn "shutdown when not
+visible" on only for a rarely-active scene where the resource savings
+are worth the reload cost.
+
+**Recommended dimensions are this project's own choice, not an OBS
+mandate**: 1920×1080 normal, 1080×1920 vertical, matching common
+canvas sizes - the renderer itself stays responsive to whatever
+viewport OBS (or a plain browser tab) actually provides, never
+hard-coding either value into rendering logic.
+
+**"What can be lost after a gap" is answered by the same honest-gap
+philosophy already established twice** (Stage 8A's Event Bus, Stage
+9's operator-chat projection), applied one layer further out: a
+reconnecting overlay client that cannot be satisfied by replay gets an
+explicit gap/reset operation, never a silently incomplete history.
+
+### Files changed
+- `docs/obs-browser-source.md` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only. No application code changed; no check re-run
+beyond the full suite already run immediately before the previous
+commit.
+
+### Known limitations
+No real OBS installation was used - every finding is paraphrased from
+the official pages above, not observed directly. The document says so
+explicitly and asks a human to re-verify the recommendations the first
+time this feature is actually used in real OBS.
+
+### Next step
+Design and implement the persisted chat-overlay-profile schema
+(migration 0011), then the domain/repository layer.
