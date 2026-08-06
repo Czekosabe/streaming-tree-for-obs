@@ -151,7 +151,12 @@
   "preview": {
     "title": "Preview",
     "description": "A local preview using sample messages - never published to Twitch, the operator chat, or the live overlay.",
-    "syntheticBadge": "Preview only"
+    "syntheticBadge": "Preview only",
+    "simulateCosmeticRemoval": "Simulate expiry",
+    "simulateCosmeticRemovalHint": "Plays the configured exit animation, just like a message reaching its natural lifetime or being evicted for space.",
+    "simulateImmediateRemoval": "Simulate moderation removal",
+    "simulateImmediateRemovalHint": "Removes instantly with no exit animation, just like a real moderation deletion or chat clear.",
+    "resetPreview": "Reset preview"
   },
   "validation": {
     "nameRequired": "Name is required.",

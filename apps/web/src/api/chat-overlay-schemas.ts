@@ -257,6 +257,35 @@ export const publicChatOverlayResetPayloadSchema = z.object({
   items: z.array(publicChatOverlayItemSchema),
 });
 
+/**
+ * The reason a public overlay item was removed - mirrors
+ * `internal/chatoverlay.RemoveReason` exactly (six values, not the
+ * corrective task's own larger example list - see that Go type's own
+ * doc comment for why a settings/privacy change never reaches this
+ * schema at all: it always travels as a full `reset`, not an
+ * individual `remove`). Only `expired` and `capacity_evicted` are safe
+ * to animate - see `isCosmeticRemoveReason` below.
+ *
+ * `.catch('unknown')` makes an unrecognized reason value fail safely
+ * closed to the immediate-removal case rather than dropping the whole
+ * event - a malformed/unknown reason must never cause an item to be
+ * retained on screen for an animation it was never meant to get.
+ */
+export const chatOverlayRemoveReasonSchema = z
+  .enum(['expired', 'capacity_evicted', 'message_deleted', 'chat_cleared', 'user_messages_cleared', 'unknown'])
+  .catch('unknown');
+export type ChatOverlayRemoveReason = z.infer<typeof chatOverlayRemoveReasonSchema>;
+
+const COSMETIC_REMOVE_REASONS: ReadonlySet<ChatOverlayRemoveReason> = new Set(['expired', 'capacity_evicted']);
+
+/** Whether `reason` is safe for the frontend to animate as a "leaving"
+ * transition rather than removing immediately - mirrors
+ * `internal/chatoverlay.RemoveReason.IsCosmetic` exactly. */
+export function isCosmeticRemoveReason(reason: ChatOverlayRemoveReason): boolean {
+  return COSMETIC_REMOVE_REASONS.has(reason);
+}
+
 export const publicChatOverlayRemovePayloadSchema = z.object({
   id: z.string().min(1),
+  reason: chatOverlayRemoveReasonSchema,
 });

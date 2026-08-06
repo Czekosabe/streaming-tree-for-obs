@@ -1,10 +1,23 @@
 import { screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PublicChatOverlayConfig, PublicChatOverlayItem } from '@/api/chat-overlay-schemas';
+import type { ChatOverlayRemoveReason, PublicChatOverlayConfig, PublicChatOverlayItem } from '@/api/chat-overlay-schemas';
 import { renderWithProviders } from '@/test/render';
+import type { ChatOverlayLeavingItem } from '@/models/chat-overlay-reducer';
 
 import { ChatOverlayRenderer } from './ChatOverlayRenderer';
+
+function stubMatchMedia(reducedMotion: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches: reducedMotion,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
 
 function baseConfig(overrides: Partial<PublicChatOverlayConfig> = {}): PublicChatOverlayConfig {
   return {
@@ -177,5 +190,131 @@ describe('ChatOverlayRenderer', () => {
     renderWithProviders(<ChatOverlayRenderer config={baseConfig()} items={[]} />);
     expect(screen.queryAllByTestId('chat-overlay-item')).toHaveLength(0);
     expect(screen.getByTestId('chat-overlay-root')).toBeInTheDocument();
+  });
+});
+
+function leavingEntry(id: string, reason: ChatOverlayRemoveReason): ChatOverlayLeavingItem {
+  return { item: messageItem(id, 1, { message: { plainText: `leaving ${id}`, fragments: [{ type: 'text', text: `leaving ${id}` }] } }), reason };
+}
+
+describe('ChatOverlayRenderer - exit animation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a leaving item with the configured fade exit class for an expiry removal', () => {
+    stubMatchMedia(false);
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'fade' })}
+        items={[]}
+        leaving={[leavingEntry('a', 'expired')]}
+        onLeavingComplete={vi.fn()}
+      />,
+    );
+    const leavingNode = screen.getByTestId('chat-overlay-leaving-item');
+    expect(leavingNode.className).toContain('animate-chat-overlay-fade-out');
+    expect(leavingNode).toHaveTextContent('leaving a');
+    expect(leavingNode.dataset.removeReason).toBe('expired');
+  });
+
+  it('renders a leaving item with the configured slide exit class for a capacity-eviction removal', () => {
+    stubMatchMedia(false);
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'slide_up' })}
+        items={[]}
+        leaving={[leavingEntry('a', 'capacity_evicted')]}
+        onLeavingComplete={vi.fn()}
+      />,
+    );
+    const leavingNode = screen.getByTestId('chat-overlay-leaving-item');
+    expect(leavingNode.className).toContain('animate-chat-overlay-slide-up-out');
+  });
+
+  it('completes immediately (no rendered leaving node) when exitAnimation is "none"', () => {
+    stubMatchMedia(false);
+    const onLeavingComplete = vi.fn();
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'none' })}
+        items={[]}
+        leaving={[leavingEntry('a', 'expired')]}
+        onLeavingComplete={onLeavingComplete}
+      />,
+    );
+    expect(screen.queryByTestId('chat-overlay-leaving-item')).not.toBeInTheDocument();
+    expect(onLeavingComplete).toHaveBeenCalledWith('a');
+  });
+
+  it('completes immediately under prefers-reduced-motion, regardless of the configured exit animation', () => {
+    stubMatchMedia(true);
+    const onLeavingComplete = vi.fn();
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'scale' })}
+        items={[]}
+        leaving={[leavingEntry('a', 'expired')]}
+        onLeavingComplete={onLeavingComplete}
+      />,
+    );
+    expect(screen.queryByTestId('chat-overlay-leaving-item')).not.toBeInTheDocument();
+    expect(onLeavingComplete).toHaveBeenCalledWith('a');
+  });
+
+  it('falls back to a hard timeout when animationend never fires', () => {
+    stubMatchMedia(false);
+    const onLeavingComplete = vi.fn();
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'fade', animationDurationMs: 250 })}
+        items={[]}
+        leaving={[leavingEntry('a', 'expired')]}
+        onLeavingComplete={onLeavingComplete}
+      />,
+    );
+    expect(onLeavingComplete).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(399);
+    expect(onLeavingComplete).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onLeavingComplete).toHaveBeenCalledWith('a');
+  });
+
+  it('completes via animationend before the fallback timeout, without a duplicate call racing it', () => {
+    stubMatchMedia(false);
+    const onLeavingComplete = vi.fn();
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ exitAnimation: 'fade', animationDurationMs: 250 })}
+        items={[]}
+        leaving={[leavingEntry('a', 'expired')]}
+        onLeavingComplete={onLeavingComplete}
+      />,
+    );
+    const leavingNode = screen.getByTestId('chat-overlay-leaving-item');
+    leavingNode.dispatchEvent(new Event('animationend', { bubbles: true }));
+    expect(onLeavingComplete).toHaveBeenCalledTimes(1);
+    expect(onLeavingComplete).toHaveBeenCalledWith('a');
+  });
+
+  it('positions a leaving item as the oldest entry for stackDirection "bottom_up"', () => {
+    stubMatchMedia(false);
+    renderWithProviders(
+      <ChatOverlayRenderer
+        config={baseConfig({ stackDirection: 'bottom_up', exitAnimation: 'fade' })}
+        items={[messageItem('active-1', 2)]}
+        leaving={[leavingEntry('leaving-1', 'expired')]}
+        onLeavingComplete={vi.fn()}
+      />,
+    );
+    const children = screen.getByTestId('chat-overlay-root').children;
+    expect(children[0]).toHaveAttribute('data-testid', 'chat-overlay-leaving-item');
+    expect(children[1]).toHaveAttribute('data-testid', 'chat-overlay-item');
   });
 });

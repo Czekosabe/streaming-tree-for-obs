@@ -8801,3 +8801,164 @@ cosmetic reasons only, add the exit-animation CSS classes, wire the
 renderer's fallback timeout and `prefers-reduced-motion` handling, and
 confirm the editor/preview already exposing `exitAnimation` now has a
 visible effect.
+
+## 2026-08-06 13:15 — fix(web): implement bounded overlay exit animations
+
+Implements the frontend half of the previous entry's `RemoveReason`
+protocol: a bounded, application-owned exit-animation state machine
+that plays the profile's configured animation for a cosmetic removal
+(natural expiry, capacity eviction) and applies every other removal
+(moderation deletion, chat/user clear, or an unrecognized reason)
+immediately, on the same tick, exactly as Part 11's safety policy
+requires.
+
+### Schema and reducer
+
+`chat-overlay-schemas.ts` gained `chatOverlayRemoveReasonSchema` - a
+fixed six-value `z.enum(...).catch('unknown')` - and
+`isCosmeticRemoveReason()`. The `.catch('unknown')` is deliberate: a
+completely missing or unrecognized `reason` key must never fail the
+whole event's parse and silently drop the removal (which would leave a
+stale item on screen forever); it falls back to the always-immediate
+`'unknown'` case instead. `publicChatOverlayRemovePayloadSchema` is now
+`{id, reason}` - still no field that could ever carry message text, a
+blocked term, or hidden-user data.
+
+`chat-overlay-reducer.ts` splits state into authoritative
+`itemsById`/`order` (exactly as before) and a new bounded
+`leaving`/`leavingOrder` (`MAX_LEAVING_ITEMS = 100`, oldest-evicted-
+first) holding items mid cosmetic-exit-animation. A `remove` action
+branches on `isCosmeticRemoveReason(reason)`: cosmetic moves the item
+into `leaving`; everything else deletes it from both `itemsById` and
+`leaving` in the same action. A newer `upsert` for an id already
+leaving cancels the pending exit - the item is visible again, so any
+leaving copy is stale. `reset` always clears every pending leaving
+item immediately, never animating out items that merely aren't in the
+new set (Part 11: "a configuration reset should replace state
+immediately"). A new `completeLeaving` action - dispatched only by the
+renderer, never the server - removes an id from `leaving` once its
+exit animation has genuinely finished; it is a no-op if the id is no
+longer there (already completed, or superseded by an immediate
+removal). A duplicate cosmetic remove for an id already leaving is a
+no-op, not a forced immediate removal - caught by a test failure
+during development and fixed (see Known issues fixed below).
+
+### CSS and renderer
+
+`index.css` gained four `@keyframes`/`@utility` pairs
+(`chat-overlay-{fade,slide-up,slide-left,scale}-out`), mirroring the
+existing entry-animation set, using the same
+`--chat-overlay-animation-duration` custom property. `overlay-style.ts`
+gained `exitAnimationClassName(animation, prefersReducedMotion)` -
+returns one of the four fixed class names or `''`, never an arbitrary
+string, and always `''` under reduced motion or `animation: 'none'` -
+and `exitAnimationFallbackMs(durationMs)`, which clamps the configured
+duration to the same [0, 5000] range as the entry animation and adds a
+150ms buffer.
+
+`OverlayLeavingItem.tsx` (new) renders one leaving item and owns its
+own completion: it completes via whichever fires first, the CSS
+`animationend` DOM event or the hard `setTimeout` fallback - "never
+rely exclusively on `animationend`" - and completes on the same tick
+with no animation at all when the animation is `none` or
+`prefers-reduced-motion` is set. `ChatOverlayRenderer.tsx` accepts new
+optional `leaving`/`onLeavingComplete` props; since a leaving item is
+always older than every active item (expiry and capacity eviction both
+always remove oldest-first), it prepends leaving entries before active
+entries in one combined array and applies the existing
+`stackDirection === 'top_down' ? reverse() : identity` logic uniformly
+to the whole array, correctly positioning leaving items at the oldest
+visual edge in both stack directions with no direction-specific
+leaving logic.
+
+`use-chat-overlay-stream.ts` now exposes `leaving` and `completeLeaving`
+from the hook, dispatches `remove` with the parsed `reason`, and clears
+`leaving` along with the rest of state on unmount/slug-change/reset -
+"clear pending removals on reset/unmount/slug-change" - via the same
+effect cleanup that already handled active state.
+
+### Editor and preview
+
+`OverlaySettingsForm.tsx` already exposed an `exitAnimation` select
+control (built in the prior Stage 10 session, wired to the same fixed
+`animationOptions` list as entry animation) - it needed no code change,
+only re-confirmation it now has a real effect. `OverlayPreviewPanel.tsx`
+now runs the same pure reducer as the real overlay, seeded from the
+existing 13 synthetic preview fixtures, with two buttons: "Simulate
+expiry" (dispatches a cosmetic `remove` for one fixture item, so the
+draft's own configured exit animation plays) and "Simulate moderation
+removal" (dispatches an immediate `remove` for a different fixture
+item, applying on the same tick with no animation, regardless of the
+configured exit animation) - demonstrating the safety split honestly
+without adding a full visual designer. A third "Reset preview" button
+restores the original fixture set. New EN/PL strings
+(`preview.simulateCosmeticRemoval`, `preview.simulateImmediateRemoval`,
+`preview.resetPreview`, and hint text for each) were added to both
+locales and pass `i18n:check`.
+
+### Known issues fixed during development
+- `removeCosmetically`'s original logic forced an *immediate* removal
+  when a duplicate cosmetic remove arrived for an id already in
+  `leaving`, breaking idempotency (a replayed cosmetic remove must
+  produce the same final state even mid-animation). Caught by a new
+  reducer test; fixed to unconditionally no-op whenever the id isn't
+  in `itemsById`, regardless of `leaving` status.
+- Two `ChatOverlayRenderer.test.tsx` cases used
+  `await waitFor(...)` under `vi.useFakeTimers()`; Testing Library's
+  `waitFor` polls via real timers internally, so it hung at the real
+  5000ms limit instead of observing the faked clock. Fixed by asserting
+  synchronously immediately after render, since the leaving item's
+  same-tick `useEffect` body already runs inside the render call.
+- The fallback-timeout test's first assertion was off by one frame
+  (asserted the callback had already fired 1ms before the real 400ms
+  threshold). Fixed to assert `not.toHaveBeenCalled()` at 399ms, then
+  `toHaveBeenCalledWith('a')` after one more millisecond.
+
+### Files changed
+- `apps/web/src/api/chat-overlay-schemas.ts`,
+  `chat-overlay-schemas.test.ts` (new).
+- `apps/web/src/models/chat-overlay-reducer.ts`,
+  `chat-overlay-reducer.test.ts`.
+- `apps/web/src/index.css` (exit keyframes/utilities).
+- `apps/web/src/components/chat-overlay/overlay-style.ts`,
+  `overlay-style.test.ts`.
+- `apps/web/src/components/chat-overlay/OverlayLeavingItem.tsx` (new).
+- `apps/web/src/components/chat-overlay/ChatOverlayRenderer.tsx`,
+  `ChatOverlayRenderer.test.tsx`.
+- `apps/web/src/hooks/use-chat-overlay-stream.ts`,
+  `use-chat-overlay-stream.test.ts`.
+- `apps/web/src/pages/OverlayChatPage.tsx`, `OverlayChatPage.test.tsx`
+  (new integration-level tests: moderation deletion, chat clear,
+  user-messages clear, and reset all remove immediately with no
+  leaving node ever rendered and no leftover message text; a cosmetic
+  expiry does show a leaving node when the overlay is configured with
+  an exit animation).
+- `apps/web/src/components/overlays/OverlayPreviewPanel.tsx`,
+  `OverlayPreviewPanel.test.tsx` (new).
+- `apps/web/src/i18n/resources/{en,pl}/overlays.json` (new preview
+  strings).
+
+### Automated validation
+- `npm run i18n:check` — 2 languages, 12 namespaces, no differences.
+- `npm run typecheck` — clean.
+- `npm run lint` — clean.
+- `npm run test -- --run` — 57 test files, 729 tests, all passing (no
+  regressions; includes every new test named above).
+- `npm run build` — clean production build.
+
+### Known limitations
+The management/preview UI has no visual timeline or keyframe designer
+- deliberately deferred, as it was in the original Stage 10 report.
+`OverlayPreviewPanel`'s two simulation buttons target fixed fixture
+ids (`preview_ordinary` for the cosmetic case, `preview_badges` for
+the immediate case); this is a fixed, documented demonstration, not a
+general "remove any item" preview control. No real OBS or browser
+manual testing has been performed - see the final report for that
+confirmation.
+
+### Next step
+Extend `scripts/verify-chat-overlay.mjs` to exercise the full removal
+protocol end-to-end against the real backend (no real Twitch/OBS): the
+SSE-initial-reset hydration, every remove reason's immediate-vs-
+cosmetic classification, and the absence of message text or blocked
+terms in any remove payload.

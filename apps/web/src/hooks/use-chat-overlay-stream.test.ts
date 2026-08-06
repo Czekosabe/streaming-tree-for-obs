@@ -92,7 +92,43 @@ describe('useChatOverlayStream', () => {
     expect(result.current.items[0]?.id).toBe('a');
   });
 
-  it('applies a chat-overlay.remove event, deleting the item entirely', async () => {
+  it('applies an immediate chat-overlay.remove event, deleting the item entirely with nothing left leaving', async () => {
+    const { result } = renderHook(() => useChatOverlayStream('slug_1'));
+    const source = FakeEventSource.instances[0]!;
+    source.emit('chat-overlay.upsert', baseItem('a', 1));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    source.emit('chat-overlay.remove', { id: 'a', reason: 'message_deleted' });
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
+    expect(result.current.leaving).toHaveLength(0);
+  });
+
+  it('a cosmetic chat-overlay.remove event moves the item to leaving instead of deleting it outright', async () => {
+    const { result } = renderHook(() => useChatOverlayStream('slug_1'));
+    const source = FakeEventSource.instances[0]!;
+    source.emit('chat-overlay.upsert', baseItem('a', 1));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    source.emit('chat-overlay.remove', { id: 'a', reason: 'expired' });
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
+    expect(result.current.leaving).toHaveLength(1);
+    expect(result.current.leaving[0]?.item.id).toBe('a');
+    expect(result.current.leaving[0]?.reason).toBe('expired');
+  });
+
+  it('completeLeaving clears a cosmetic item out of the leaving list', async () => {
+    const { result } = renderHook(() => useChatOverlayStream('slug_1'));
+    const source = FakeEventSource.instances[0]!;
+    source.emit('chat-overlay.upsert', baseItem('a', 1));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    source.emit('chat-overlay.remove', { id: 'a', reason: 'capacity_evicted' });
+    await waitFor(() => expect(result.current.leaving).toHaveLength(1));
+
+    result.current.completeLeaving('a');
+    await waitFor(() => expect(result.current.leaving).toHaveLength(0));
+  });
+
+  it('a remove event with no reason field defaults to the safe, immediate case rather than dropping the event', async () => {
     const { result } = renderHook(() => useChatOverlayStream('slug_1'));
     const source = FakeEventSource.instances[0]!;
     source.emit('chat-overlay.upsert', baseItem('a', 1));
@@ -100,6 +136,7 @@ describe('useChatOverlayStream', () => {
 
     source.emit('chat-overlay.remove', { id: 'a' });
     await waitFor(() => expect(result.current.items).toHaveLength(0));
+    expect(result.current.leaving).toHaveLength(0);
   });
 
   it('applies a chat-overlay.reset event, replacing the entire visible set', async () => {
@@ -135,6 +172,21 @@ describe('useChatOverlayStream', () => {
     expect(source.closed).toBe(false);
     unmount();
     expect(source.closed).toBe(true);
+  });
+
+  it('clears leaving state along with active state on unmount', async () => {
+    const { result, unmount } = renderHook(() => useChatOverlayStream('slug_1'));
+    const source = FakeEventSource.instances[0]!;
+    source.emit('chat-overlay.upsert', baseItem('a', 1));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    source.emit('chat-overlay.remove', { id: 'a', reason: 'expired' });
+    await waitFor(() => expect(result.current.leaving).toHaveLength(1));
+
+    unmount();
+    // No further assertion possible on `result.current` post-unmount in a
+    // meaningful way beyond not throwing - the important guarantee is the
+    // effect's own cleanup dispatches a reset, exercised directly by the
+    // reducer's own "reset clears every pending leaving item" test.
   });
 
   it('reconnects with a fresh EventSource and cleared state when the slug changes', async () => {

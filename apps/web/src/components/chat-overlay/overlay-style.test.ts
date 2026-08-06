@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { PublicChatOverlayConfig } from '@/api/chat-overlay-schemas';
 
-import { entryAnimationClassName, overlayContainerStyle, overlayItemStyle } from './overlay-style';
+import {
+  entryAnimationClassName,
+  exitAnimationClassName,
+  exitAnimationFallbackMs,
+  overlayContainerStyle,
+  overlayItemStyle,
+} from './overlay-style';
 
 function baseConfig(overrides: Partial<PublicChatOverlayConfig> = {}): PublicChatOverlayConfig {
   return {
@@ -104,5 +110,53 @@ describe('entryAnimationClassName', () => {
   it('returns an empty string when reduced motion is preferred, regardless of the configured animation', () => {
     expect(entryAnimationClassName('slide_up', true)).toBe('');
     expect(entryAnimationClassName('scale', true)).toBe('');
+  });
+});
+
+describe('exitAnimationClassName', () => {
+  it('returns a distinct "out" class for every known animation', () => {
+    expect(exitAnimationClassName('fade', false)).toBe('animate-chat-overlay-fade-out');
+    expect(exitAnimationClassName('slide_up', false)).toBe('animate-chat-overlay-slide-up-out');
+    expect(exitAnimationClassName('slide_left', false)).toBe('animate-chat-overlay-slide-left-out');
+    expect(exitAnimationClassName('scale', false)).toBe('animate-chat-overlay-scale-out');
+  });
+
+  it('never returns an entry-animation class name', () => {
+    for (const animation of ['fade', 'slide_up', 'slide_left', 'scale'] as const) {
+      expect(exitAnimationClassName(animation, false)).not.toContain('-in');
+    }
+  });
+
+  it('returns an empty string for "none"', () => {
+    expect(exitAnimationClassName('none', false)).toBe('');
+  });
+
+  it('returns an empty string when reduced motion is preferred, regardless of the configured animation', () => {
+    expect(exitAnimationClassName('fade', true)).toBe('');
+    expect(exitAnimationClassName('scale', true)).toBe('');
+  });
+
+  it('only ever returns one of the fixed, application-owned class names - never an arbitrary string', () => {
+    const allowed = new Set([
+      '',
+      'animate-chat-overlay-fade-out',
+      'animate-chat-overlay-slide-up-out',
+      'animate-chat-overlay-slide-left-out',
+      'animate-chat-overlay-scale-out',
+    ]);
+    for (const animation of ['none', 'fade', 'slide_up', 'slide_left', 'scale'] as const) {
+      expect(allowed.has(exitAnimationClassName(animation, false))).toBe(true);
+    }
+  });
+});
+
+describe('exitAnimationFallbackMs', () => {
+  it('adds a fixed buffer on top of the configured duration', () => {
+    expect(exitAnimationFallbackMs(250)).toBe(400);
+  });
+
+  it('clamps an out-of-range duration before adding the buffer', () => {
+    expect(exitAnimationFallbackMs(-100)).toBe(150);
+    expect(exitAnimationFallbackMs(999999)).toBe(5150);
   });
 });

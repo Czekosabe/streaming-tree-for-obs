@@ -231,3 +231,72 @@
 @utility animate-chat-overlay-scale-in {
   animation: chat-overlay-scale-in var(--chat-overlay-animation-duration, 250ms) ease-out both;
 }
+
+/*
+ * Stage 10 corrective pass - exit animations, used only for a cosmetic
+ * removal (natural expiry or capacity eviction; see
+ * internal/chatoverlay.RemoveReason.IsCosmetic and
+ * models/chat-overlay-reducer.ts's own "leaving" state). Every
+ * moderation/clear/settings-driven removal skips these entirely and is
+ * applied immediately - see components/chat-overlay/ChatOverlayRenderer.tsx.
+ * Same fixed enum and the same --chat-overlay-animation-duration custom
+ * property as the entry animations above - never an arbitrary keyframe,
+ * easing, or class name from the backend.
+ */
+@keyframes chat-overlay-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes chat-overlay-slide-up-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes chat-overlay-slide-left-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes chat-overlay-scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+@utility animate-chat-overlay-fade-out {
+  animation: chat-overlay-fade-out var(--chat-overlay-animation-duration, 250ms) ease-in both;
+}
+
+@utility animate-chat-overlay-slide-up-out {
+  animation: chat-overlay-slide-up-out var(--chat-overlay-animation-duration, 250ms) ease-in both;
+}
+
+@utility animate-chat-overlay-slide-left-out {
+  animation: chat-overlay-slide-left-out var(--chat-overlay-animation-duration, 250ms) ease-in both;
+}
+
+@utility animate-chat-overlay-scale-out {
+  animation: chat-overlay-scale-out var(--chat-overlay-animation-duration, 250ms) ease-in both;
+}

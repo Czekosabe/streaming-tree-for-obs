@@ -87,16 +87,45 @@ const ENTRY_ANIMATION_CLASSES: Record<ChatOverlayAnimation, string> = {
   scale: 'animate-chat-overlay-scale-in',
 };
 
-/** Entry-animation class only - exit animation has no visible effect for
- * this stage's renderer since a removed item is simply not rendered on
- * the next frame (no exit transition state is tracked). `none` and
- * `prefers-reduced-motion` both resolve to no class, so a moderation
- * removal is never delayed by an animation - see this module's own doc
- * comment and the Stage 10 task's Part 11. */
+/** `none` and `prefers-reduced-motion` both resolve to no class, so an
+ * item never waits on an animation that was never going to play. */
 export function entryAnimationClassName(
   animation: ChatOverlayAnimation,
   prefersReducedMotion: boolean,
 ): string {
   if (prefersReducedMotion) return '';
   return ENTRY_ANIMATION_CLASSES[animation] ?? '';
+}
+
+const EXIT_ANIMATION_CLASSES: Record<ChatOverlayAnimation, string> = {
+  none: '',
+  fade: 'animate-chat-overlay-fade-out',
+  slide_up: 'animate-chat-overlay-slide-up-out',
+  slide_left: 'animate-chat-overlay-slide-left-out',
+  scale: 'animate-chat-overlay-scale-out',
+};
+
+/** Exit-animation class - used only by a cosmetic "leaving" item (see
+ * models/chat-overlay-reducer.ts), never by an immediate removal, which
+ * skips this entirely. `none` and `prefers-reduced-motion` both resolve
+ * to no class, in which case the caller must remove the item
+ * immediately rather than waiting on an animation that will never
+ * fire - see OverlayLeavingItem.tsx's own fallback-timeout handling. */
+export function exitAnimationClassName(
+  animation: ChatOverlayAnimation,
+  prefersReducedMotion: boolean,
+): string {
+  if (prefersReducedMotion) return '';
+  return EXIT_ANIMATION_CLASSES[animation] ?? '';
+}
+
+/** How long to wait, at most, for a leaving item's exit animation
+ * before removing it regardless - the configured duration plus a fixed
+ * buffer, since `animationend` must never be the only removal path
+ * (a CSS bug, a hidden tab throttling rAF, or `animation: none`
+ * resolving to an instant no-op animation could all otherwise leave a
+ * "leaving" item stuck forever). Mirrors the same clamped 0-5000ms
+ * range `overlayContainerStyle` already enforces. */
+export function exitAnimationFallbackMs(animationDurationMs: number): number {
+  return clamp(animationDurationMs, 0, 5000) + 150;
 }

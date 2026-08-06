@@ -151,7 +151,12 @@
   "preview": {
     "title": "Podgląd",
     "description": "Lokalny podgląd na przykładowych wiadomościach - nigdy niepublikowany na Twitchu, w czacie operatora ani na publicznej nakładce.",
-    "syntheticBadge": "Tylko podgląd"
+    "syntheticBadge": "Tylko podgląd",
+    "simulateCosmeticRemoval": "Symuluj wygaśnięcie",
+    "simulateCosmeticRemovalHint": "Odtwarza skonfigurowaną animację wyjścia, tak jak przy naturalnym wygaśnięciu wiadomości lub usunięciu z powodu limitu miejsca.",
+    "simulateImmediateRemoval": "Symuluj usunięcie moderacyjne",
+    "simulateImmediateRemovalHint": "Usuwa natychmiast, bez animacji wyjścia, tak jak przy prawdziwym usunięciu moderacyjnym lub wyczyszczeniu czatu.",
+    "resetPreview": "Zresetuj podgląd"
   },
   "validation": {
     "nameRequired": "Nazwa jest wymagana.",

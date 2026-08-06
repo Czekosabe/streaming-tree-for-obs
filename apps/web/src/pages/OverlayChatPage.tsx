@@ -34,7 +34,12 @@ export function OverlayChatPage() {
 
   return (
     <div className="h-screen w-screen">
-      <ChatOverlayRenderer config={configQuery.data} items={stream.items} />
+      <ChatOverlayRenderer
+        config={configQuery.data}
+        items={stream.items}
+        leaving={stream.leaving}
+        onLeavingComplete={stream.completeLeaving}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 
 import {
   publicChatOverlayItemSchema,
@@ -7,6 +7,7 @@ import {
 } from '@/api/chat-overlay-schemas';
 import {
   chatOverlayItemsInOrder,
+  chatOverlayLeavingItemsInOrder,
   chatOverlayReducer,
   createChatOverlayState,
 } from '@/models/chat-overlay-reducer';
@@ -23,12 +24,28 @@ import {
  *  - close the connection and drop all state on unmount or slug change -
  *    the public overlay never keeps chat content around longer than it
  *    needs to.
+ *
+ * The stream's own first event is always a complete `chat-overlay.reset`
+ * of the current visible set (see internal/chatoverlay.Projection.
+ * Subscribe's own replay-before-live guarantee) - this hook therefore
+ * never issues a separate snapshot fetch to hydrate initial state; doing
+ * so would race two independently-timed reads of the same mutable
+ * projection against each other for no benefit, since the reset is
+ * already a strict superset of what a snapshot read would return. See
+ * docs/obs-browser-source.md's own "How the retained projection is
+ * restored after a reload" section for the full reasoning.
  */
 
 export type ChatOverlayStreamStatus = 'connecting' | 'open' | 'error' | 'closed';
 
 export type UseChatOverlayStreamResult = {
   items: ReturnType<typeof chatOverlayItemsInOrder>;
+  /** Items the server has already removed for a cosmetic reason
+   * (expiry/capacity eviction) but that are still mid exit-animation on
+   * screen - see the reducer's own doc comment. Call `completeLeaving`
+   * once an item's animation has actually finished. */
+  leaving: ReturnType<typeof chatOverlayLeavingItemsInOrder>;
+  completeLeaving: (id: string) => void;
   status: ChatOverlayStreamStatus;
   /** Set once when the server signals a gap - never cleared, since a past
    * gap stays a past gap regardless of current stream health. */
@@ -82,7 +99,7 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
       }
       const parsed = publicChatOverlayRemovePayloadSchema.safeParse(payload);
       if (!parsed.success) return;
-      dispatch({ type: 'remove', id: parsed.data.id });
+      dispatch({ type: 'remove', id: parsed.data.id, reason: parsed.data.reason });
     });
 
     source.addEventListener('chat-overlay.reset', (rawEvent: MessageEvent<string>) => {
@@ -108,5 +125,15 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
     };
   }, [publicSlug]);
 
-  return { items: chatOverlayItemsInOrder(state), status, gapDetected };
+  const completeLeaving = useCallback((id: string) => {
+    dispatch({ type: 'completeLeaving', id });
+  }, []);
+
+  return {
+    items: chatOverlayItemsInOrder(state),
+    leaving: chatOverlayLeavingItemsInOrder(state),
+    completeLeaving,
+    status,
+    gapDetected,
+  };
 }

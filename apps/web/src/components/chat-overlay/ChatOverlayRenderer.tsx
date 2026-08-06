@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 
 import type { PublicChatOverlayConfig, PublicChatOverlayItem } from '@/api/chat-overlay-schemas';
 import { cn } from '@/lib/cn';
+import type { ChatOverlayLeavingItem as LeavingItemEntry } from '@/models/chat-overlay-reducer';
 
 import { OverlayActivity } from './OverlayActivity';
+import { OverlayLeavingItem } from './OverlayLeavingItem';
 import { OverlayMessage } from './OverlayMessage';
 import { entryAnimationClassName, overlayContainerStyle, overlayItemStyle } from './overlay-style';
 
@@ -12,11 +14,11 @@ function supportsMatchMedia(): boolean {
 }
 
 /** Tracks the `prefers-reduced-motion` media query - non-essential entry
- * animation is disabled when set, per Part 11; a moderation removal
- * still completes immediately regardless (the renderer never animates an
- * item out, see overlay-style.ts's own doc comment). Degrades to "not
- * reduced" when `matchMedia` itself is unavailable (a test environment
- * without it), rather than throwing. */
+ * *and* exit animation are both disabled when set (Part 11); a
+ * moderation/clear/settings removal is always immediate regardless,
+ * animated or not - see models/chat-overlay-reducer.ts's own doc
+ * comment. Degrades to "not reduced" when `matchMedia` itself is
+ * unavailable (a test environment without it), rather than throwing. */
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
     () => supportsMatchMedia() && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -37,6 +39,10 @@ const ALIGNMENT_ITEMS: Record<PublicChatOverlayConfig['horizontalAlignment'], st
   right: 'items-end text-right',
 };
 
+type RenderEntry =
+  | { kind: 'active'; id: string; item: PublicChatOverlayItem }
+  | { kind: 'leaving'; id: string; entry: LeavingItemEntry };
+
 /**
  * The Browser Source renderer: a transparent, responsive column of chat
  * messages and activity events, styled entirely from a validated public
@@ -46,21 +52,38 @@ const ALIGNMENT_ITEMS: Record<PublicChatOverlayConfig['horizontalAlignment'], st
  * clearly-synthetic fixtures, inside a bounded box) - this component
  * itself always fills 100% of whatever its parent gives it, never a
  * fixed viewport size of its own, so both call sites get correct
- * behavior for free. Renders nothing but what `items` already contains -
- * no additional filtering, no operator-only data, no
+ * behavior for free. Renders nothing but what `items`/`leaving` already
+ * contain - no additional filtering, no operator-only data, no
  * dangerouslySetInnerHTML.
+ *
+ * `leaving` items (see hooks/use-chat-overlay-stream.ts and
+ * models/chat-overlay-reducer.ts) are always cosmetic - a moderation
+ * deletion, a chat/user clear, or any settings-driven removal is
+ * already gone from `items` by the time this component ever sees it,
+ * applied immediately with no "leaving" transition. A leaving item is
+ * rendered at the same relative position an active item that old would
+ * have (see the ordering below), since it is by construction older
+ * than every currently active item.
  */
 export function ChatOverlayRenderer({
   config,
   items,
+  leaving = [],
+  onLeavingComplete,
 }: {
   config: PublicChatOverlayConfig;
   items: PublicChatOverlayItem[];
+  leaving?: LeavingItemEntry[];
+  onLeavingComplete?: (id: string) => void;
 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const entryClass = entryAnimationClassName(config.entryAnimation, prefersReducedMotion);
 
-  const ordered = config.stackDirection === 'top_down' ? [...items].reverse() : items;
+  const combined: RenderEntry[] = [
+    ...leaving.map((entry): RenderEntry => ({ kind: 'leaving', id: entry.item.id, entry })),
+    ...items.map((item): RenderEntry => ({ kind: 'active', id: item.id, item })),
+  ];
+  const ordered = config.stackDirection === 'top_down' ? [...combined].reverse() : combined;
 
   return (
     <div
@@ -73,20 +96,33 @@ export function ChatOverlayRenderer({
       style={overlayContainerStyle(config)}
       data-testid="chat-overlay-root"
     >
-      {ordered.map((item) => (
-        <div
-          key={item.id}
-          className={cn('w-full max-w-full', entryClass)}
-          style={overlayItemStyle(config)}
-          data-testid="chat-overlay-item"
-        >
-          {item.kind === 'message' ? (
-            <OverlayMessage item={item} config={config} />
-          ) : (
-            <OverlayActivity item={item} config={config} />
-          )}
-        </div>
-      ))}
+      {ordered.map((entry) => {
+        if (entry.kind === 'leaving') {
+          return (
+            <OverlayLeavingItem
+              key={entry.id}
+              entry={entry.entry}
+              config={config}
+              prefersReducedMotion={prefersReducedMotion}
+              onComplete={onLeavingComplete ?? (() => {})}
+            />
+          );
+        }
+        return (
+          <div
+            key={entry.id}
+            className={cn('w-full max-w-full', entryClass)}
+            style={overlayItemStyle(config)}
+            data-testid="chat-overlay-item"
+          >
+            {entry.item.kind === 'message' ? (
+              <OverlayMessage item={entry.item} config={config} />
+            ) : (
+              <OverlayActivity item={entry.item} config={config} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
