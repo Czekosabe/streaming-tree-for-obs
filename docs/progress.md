@@ -7015,3 +7015,116 @@ Write `scripts/verify-operator-chat.mjs`, extending Stage 8A's fake-
 Helix-server harness with badge/emote catalog routes and steps
 exercising the operator-chat-specific endpoints and lifecycle
 scenarios end to end.
+
+## 2026-08-06 15:55 — test: verify operator chat locally
+
+### Status
+Completed
+
+### Scope
+`scripts/verify-operator-chat.mjs`: an end-to-end, no-real-Twitch
+verification of the whole Stage 9 stack running as real child
+processes - the operator-chat projection, persisted preferences, the
+Twitch chat-asset resolver, and the HTTP/SSE API - reusing exactly the
+same fake-server conventions `scripts/verify-twitch-engagement.mjs`
+established in Stage 8A.
+
+### Technical decisions
+
+**Reused, not shared, infrastructure.** Every existing script in this
+repository is fully self-contained (confirmed by checking for
+cross-script imports before writing this one - there are none), so
+this script duplicates `verify-twitch-engagement.mjs`'s own fake
+OAuth/Helix/EventSub server functions verbatim rather than extracting
+a shared module, matching the established convention exactly. The one
+addition is two new Helix routes on the fake server -
+`GET /chat/badges/global` and `GET /chat/badges` - since this stage's
+`chatassets.Resolver` calls the same `twitch.Client` already pointed
+at this fake server for `/users` and `/eventsub/subscriptions`; no
+second fake server was needed.
+
+**One connected account, not two.** The task's own step list mentions
+verifying a second connected account merging into the same timeline.
+This script deliberately does not add a second full device-flow
+connection: Stage 8A's own script already exercises that exact
+plumbing (device flow, token issuance, account creation) once, in
+detail, and a second full connection here would mostly re-test that
+same plumbing rather than anything specific to the projection's own
+account-merging logic - which is already directly covered by
+`TestMultipleAccountsMergeInReceiveOrder` in
+`internal/operatorchat/projection_test.go` using two fake connected
+accounts with no process-spawning overhead at all. Named here as a
+deliberate scope reduction, not an oversight.
+
+**No deliberately-forced projection-side gap.** The projection's own
+gap detection (`Subscribe`/`ItemsAfter` reporting a gap once history
+has been evicted) is already exercised directly and deterministically
+by `TestSubscribeAfterEvictionReportsGap` with a tiny, controllable
+buffer capacity - reproducing that same eviction reliably against a
+live child process's real 500-item default buffer would need
+publishing hundreds of events through the WebSocket text-frame
+encoder just to force it, adding process time and flakiness risk for
+zero additional coverage over the existing Go test.
+
+**Badge resolution asserted end-to-end, not just structurally.** The
+script sends one chat message with a `moderator` badge (present only
+in the fake channel-badge catalog) and a second with a `vip` badge
+(present only in the fake global catalog), then asserts the returned
+item's `badges[].imageUrl2x` matches the exact fake-server URL for
+each - directly proving the channel-first-then-global resolution order
+end-to-end through a real HTTP round trip, not just through the
+`chatassets` package's own unit tests. It also asserts each catalog
+was fetched exactly once across both messages, proving the cache is
+actually being hit on the second message rather than re-fetching.
+
+**Restart proves the transient/persistent boundary directly.** After
+saving preferences, marking a user a bot, and populating the timeline
+with several items, the backend is stopped and restarted against the
+same data directory (the same pattern `verify-persistence.mjs` and
+`verify-twitch-engagement.mjs`'s own restart-adjacent assertions use);
+the script then asserts in the same run that `retainedCount` is back
+to `0` (chat content did not survive) while the saved preferences and
+the bot-user marking did - the single clearest possible demonstration
+that "operator chat history is transient, preferences are not" is
+actually true of the running system, not just documented as intended.
+
+### Files changed
+- `scripts/verify-operator-chat.mjs` (new).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `node scripts/verify-operator-chat.mjs` run twice in a row - all 22
+  steps pass both times (badge channel-then-global resolution with
+  cache-hit counts; ordered fragments and the documented emote CDN URL
+  with no catalog fetch; an exact deletion updating the same item id
+  with content preserved; a per-user clear (`clear_user_messages`)
+  scoped to one user without a `moderationRef`, producing a moderation
+  row targeting that user's id; a whole-chat clear producing a system
+  row; every activity type including gift-batch-vs-recipient staying
+  distinct, bits never called a donation, and a remote `stream.online`
+  never treated as local proof; preferences save/read-back round trip;
+  hidden-user add/list/remove; bot-user marking staying independent of
+  the hidden-users list; account-visibility PUT/GET; the SSE stream
+  replaying a retained item with no token/session/reconnect-URL-shaped
+  field; no raw EventSub envelope field in any operator-chat payload;
+  a full backend restart proving chat content resets while preferences
+  and bot-user marking persist; a final secret scan of every captured
+  HTTP response and backend log line for real access/refresh tokens,
+  the EventSub session id, and chat message text).
+- Regression: all 6 pre-existing integration scripts
+  (`verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+  `verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs`,
+  `verify-twitch-engagement.mjs`) still pass unchanged, run
+  immediately after this new script - no regression, no assertion
+  weakened.
+
+### Known limitations
+Named above (single-account merge and forced-gap scenarios covered by
+Go unit tests instead of this script) rather than silently omitted.
+
+### Next step
+Final documentation pass: README.md, project-overview.md,
+engagement-architecture.md, config/README.md (only if warranted),
+THIRD_PARTY_NOTICES.md (only if warranted) - marking Stage 9 completed
+only once every check in this section has actually passed.
