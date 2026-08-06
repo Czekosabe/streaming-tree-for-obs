@@ -8456,3 +8456,42 @@ None specific to this entry.
 **Stage 10 is now fully complete**, backend, frontend and documentation
 alike. Stage 11 (outbound chat, scheduled bot messages and commands)
 remains planned; it has not been started.
+
+---
+
+## 2026-08-07 11:50 — docs: fix a stale response-status claim for POST /api/chat-overlays
+
+### Status
+Completed - a one-line factual correction to the previous documentation
+entry's own REST API table.
+
+### Scope
+`README.md`'s REST API table only.
+
+### Changes
+The previous commit's REST API table entry for `POST /api/chat-overlays`
+claimed it "Responds 201 with a `Location` header", copied from the
+adjacent `POST /api/platforms` row's own documented behavior without
+checking it against `handleCreateChatOverlay`
+(`apps/server/internal/httpapi/chatoverlay.go`), which actually responds
+`200 OK` with the created profile in the body and sets no `Location`
+header at all - confirmed by re-reading the handler and by
+`chatoverlay_test.go`'s own `TestChatOverlayCreateReturnsDefaultsAndAWorkingPublicSlug`,
+which asserts exactly that status code. Corrected the table row to match
+the real behavior.
+
+### Files changed
+- `README.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+None needed beyond re-reading the handler source and the existing
+passing test that already exercises this exact response - a
+documentation-only, one-line factual correction.
+
+### Known limitations
+None.
+
+### Next step
+Run the final full regression (backend + frontend checks, all 8
+integration scripts) and push.

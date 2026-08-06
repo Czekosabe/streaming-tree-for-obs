@@ -1621,7 +1621,7 @@ All endpoints live under `/api` and return `application/json`.
 | `POST` | `/api/operator-chat/bot-users` | Mark a user as a bot, idempotently. Same body shape as hidden-users. |
 | `DELETE` | `/api/operator-chat/bot-users/{id}` | Unmark, by the entry's own id. Responds 204; `404` if it no longer exists. |
 | `GET` | `/api/chat-overlays` | Every overlay profile. |
-| `POST` | `/api/chat-overlays` | Create an overlay profile with safe defaults and a fresh, unguessable public slug. Responds 201 with a `Location` header. |
+| `POST` | `/api/chat-overlays` | Create an overlay profile with safe defaults and a fresh, unguessable public slug. Responds 200 with the created profile. |
 | `GET` | `/api/chat-overlays/{id}` | One overlay profile, including its current public slug. |
 | `PUT` | `/api/chat-overlays/{id}` | Full replacement of an overlay's settings. Never accepts or changes `id`, `publicSlug` or `createdAt`. Triggers a live rebuild of the running overlay. |
 | `DELETE` | `/api/chat-overlays/{id}` | Delete an overlay profile; its public URL stops serving immediately. Responds 204. |
