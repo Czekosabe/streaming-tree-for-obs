@@ -26,18 +26,35 @@
  * message-lifetime expiry under real wall-clock timing (already covered
  * deterministically by internal/chatoverlay's own fake-clock Go tests -
  * reproducing it here against a live child process would only add
- * flakiness for no additional coverage), and a brand-new chat message
- * flowing through a reconnected Twitch engagement connector specifically
- * after a backend restart (cmd/testserver's own credential store,
- * internal/secrets/secretstest, is an in-memory fake cleared by a
- * process restart - the one deliberate difference from cmd/server that
- * binary's own doc comment already documents - so the connected
- * account's OAuth token is genuinely gone after this script's own
- * restart step and cannot reauthenticate, unlike a real deployment's OS
- * keychain; the live-message-reaches-the-public-overlay path itself is
+ * flakiness for no additional coverage; the *reason value* a real expiry
+ * carries - "expired", the other cosmetic case alongside capacity
+ * eviction, which this script does exercise live below - is proven by
+ * TestProjectionExpiryRemovalCarriesExpiredReason instead), and a
+ * brand-new chat message flowing through a reconnected Twitch engagement
+ * connector specifically after a backend restart (cmd/testserver's own
+ * credential store, internal/secrets/secretstest, is an in-memory fake
+ * cleared by a process restart - the one deliberate difference from
+ * cmd/server that binary's own doc comment already documents - so the
+ * connected account's OAuth token is genuinely gone after this script's
+ * own restart step and cannot reauthenticate, unlike a real deployment's
+ * OS keychain; the live-message-reaches-the-public-overlay path itself is
  * already proven correct earlier in this same script, well before the
  * restart, and restarting the process does not change that pipeline's
  * logic - see the restart step's own comment for the full reasoning).
+ *
+ * A dedicated phase (after the whole-chat-clear step, once the item set
+ * is empty and filter/settings state is known) opens one long-lived SSE
+ * connection and drives it through every remove-reason classification
+ * live: a moderation deletion, a capacity eviction, a per-user clear and
+ * a whole-chat clear each produce an immediate/cosmetic
+ * chat-overlay.remove event carrying the correct reason and never the
+ * removed item's own text; a blocked-term change and a hidden-user change
+ * each produce a full chat-overlay.reset instead of any individual
+ * remove, matching internal/chatoverlay's own
+ * TestProjectionSettingsChangeNeverProducesAnOpRemove proof, and never
+ * reveal the blocked term's own value; and a final reconnect using
+ * Last-Event-ID confirms no gap is reported and the replayed state agrees
+ * with the authoritative /items snapshot.
  *
  * Every token, device code, user code and client ID used here is an
  * obviously-fake string generated for this run only. No real Twitch
@@ -543,6 +560,75 @@ async function readOneSSEEvent(url, headers, timeoutMs = 10_000) {
   }
 }
 
+function parseSSEChunk(chunk) {
+  let event = 'message';
+  let data = '';
+  let id;
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice('event:'.length).trim();
+    else if (line.startsWith('data:')) data += line.slice('data:'.length).trim();
+    else if (line.startsWith('id:')) id = line.slice('id:'.length).trim();
+  }
+  let parsed = null;
+  if (data !== '') {
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      parsed = data;
+    }
+  }
+  return { event, id, data: parsed, raw: chunk };
+}
+
+/** A long-lived SSE reader as an async generator, so a single connection
+ * can be driven through several live server actions in sequence (unlike
+ * readOneSSEEvent, which is one-shot). Every raw chunk is fed through
+ * record() as it arrives, so the final secret/content scan step covers
+ * every event this yields. Call `.return()` to close the connection
+ * early (cancels the underlying reader; does not error). */
+async function* sseEvents(url, headers) {
+  const response = await fetch(url, { headers });
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      // eslint-disable-next-line no-await-in-loop
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        record(raw);
+        yield parseSSEChunk(raw);
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
+async function nextEvent(iterator, timeoutMs, label) {
+  const result = await Promise.race([
+    iterator.next(),
+    new Promise((_resolveRace, reject) => setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), timeoutMs)),
+  ]);
+  if (result.done) throw new Error(`the SSE stream ended while waiting for ${label}`);
+  return result.value;
+}
+
+async function nextEventMatching(iterator, predicate, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    const event = await nextEvent(iterator, Math.max(deadline - Date.now(), 1), label);
+    if (predicate(event)) return event;
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
 async function main() {
   console.log('OBS Browser Source chat overlay (Stage 10) verification (local fakes only, no real Twitch/OBS)');
   console.log(`Run id: ${RUN_ID}`);
@@ -788,6 +874,119 @@ async function main() {
     sendWS(socket1, notificationEnvelope('channel.chat.clear', { broadcaster_user_id: fakeUserId }, 'msg_chat_clear_1'));
     const clearedAll = await confirmPublicItemNeverAppears(baseUrl, slug, (i) => i.id === untouchedItem.id);
     expect(clearedAll, 'a whole-chat clear removes every remaining message from the public overlay', undefined);
+
+    step('Create a dedicated overlay for live SSE removal-classification testing, so its own revision ring starts empty, uncontaminated by the scenarios already exercised above');
+    const sseOverlay = await request(baseUrl, 'POST', '/api/chat-overlays', { name: 'SSE Removal Semantics Overlay' });
+    const sseOverlayId = sseOverlay.body.id;
+    const sseSlug = sseOverlay.body.publicSlug;
+    const sseStreamUrl = `${baseUrl}/api/public/chat-overlays/${sseSlug}/stream`;
+    const liveEvents = sseEvents(sseStreamUrl, { Accept: 'text/event-stream' });
+    const initialReset = await nextEvent(liveEvents, 10_000, 'the initial chat-overlay.reset event on a freshly created overlay\'s own connection');
+    // Not necessarily empty: a brand-new overlay's Configure() rebuilds from
+    // whatever operator-chat history is still retained, so a still-visible
+    // activity (e.g. the earlier follow/bits events, which a whole-chat
+    // clear never removes - that only clears "message"-kind items) is
+    // legitimately adopted immediately under this new overlay's own
+    // (default, permissive) filters. The only claim under test here is
+    // that the very first event is one complete reset, not a partial one.
+    expect(initialReset.event === 'chat-overlay.reset' && Array.isArray(initialReset.data?.items),
+      'a fresh overlay\'s first SSE connection opens with one complete reset already reflecting current state - no separate snapshot fetch is required to hydrate correctly', initialReset.data);
+
+    step('A moderation deletion emits an immediate chat-overlay.remove event carrying reason "message_deleted" and never the message text');
+    const sseDeleteText = `sse deletion target ${RUN_ID}`;
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_delete', 'sse_delete_user', 'SseDeleteUser', 'chatmsg_sse_del', sseDeleteText));
+    const upsertDelete = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the deletion-test message');
+    expect(upsertDelete.data?.message?.plainText === sseDeleteText, 'the live upsert event carries the expected message text', upsertDelete.data);
+    sendWS(socket1, notificationEnvelope('channel.chat.message_delete', { broadcaster_user_id: fakeUserId, target_user_id: 'u_sse_delete', message_id: 'chatmsg_sse_del' }, 'msg_sse_del'));
+    const removeDelete = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.remove', 10_000, 'the remove event for the moderation deletion');
+    expect(removeDelete.data?.id === upsertDelete.data.id && removeDelete.data?.reason === 'message_deleted',
+      'the remove event carries reason "message_deleted" for the same item id', removeDelete.data);
+    expect(!removeDelete.raw.includes(sseDeleteText), 'the remove event never carries the deleted message\'s own text', removeDelete.raw);
+
+    step('A capacity eviction emits a cosmetic chat-overlay.remove event carrying reason "capacity_evicted"');
+    const capOverlayBefore = await request(baseUrl, 'GET', `/api/chat-overlays/${sseOverlayId}`);
+    await request(baseUrl, 'PUT', `/api/chat-overlays/${sseOverlayId}`, { ...stripIdentity(capOverlayBefore.body), maxVisibleItems: 1 });
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_cap', 'sse_cap_user', 'SseCapUser', 'chatmsg_sse_cap_1', 'sse capacity message one'));
+    const capUpsert1 = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the first capacity-test message');
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_cap', 'sse_cap_user', 'SseCapUser', 'chatmsg_sse_cap_2', 'sse capacity message two'));
+    await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the second capacity-test message');
+    const capRemove = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.remove', 10_000, 'the remove event for the capacity-evicted item');
+    expect(capRemove.data?.id === capUpsert1.data.id && capRemove.data?.reason === 'capacity_evicted',
+      'the evicted item\'s own remove event carries reason "capacity_evicted"', capRemove.data);
+    // Clean up via the already-proven moderation-deletion path so the next
+    // phase starts from an empty item set again. An evicted item is not a
+    // deleted one - cap_1 still exists, un-deleted, in the underlying
+    // operator-chat store, so it must be explicitly deleted too, or else
+    // restoring maxVisibleItems below (which triggers a full Configure()
+    // rebuild from that same underlying store) would silently resurrect it
+    // into visibility now that capacity allows it again.
+    sendWS(socket1, notificationEnvelope('channel.chat.message_delete', { broadcaster_user_id: fakeUserId, target_user_id: 'u_sse_cap', message_id: 'chatmsg_sse_cap_2' }, 'msg_sse_cap_del'));
+    await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.remove', 10_000, 'the cleanup remove event for the remaining capacity-test item');
+    sendWS(socket1, notificationEnvelope('channel.chat.message_delete', { broadcaster_user_id: fakeUserId, target_user_id: 'u_sse_cap', message_id: 'chatmsg_sse_cap_1' }, 'msg_sse_cap_del_evicted'));
+    await new Promise((r) => setTimeout(r, 300));
+    const capOverlayAfter = await request(baseUrl, 'GET', `/api/chat-overlays/${sseOverlayId}`);
+    await request(baseUrl, 'PUT', `/api/chat-overlays/${sseOverlayId}`, { ...stripIdentity(capOverlayAfter.body), maxVisibleItems: 30 });
+    const restoreReset = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.reset', 10_000, 'the reset event from restoring maxVisibleItems');
+    expect(!restoreReset.data?.items?.some((i) => i.id === capUpsert1.data.id || i.id === capRemove.data.id || i.message?.plainText?.startsWith('sse capacity message')),
+      'both capacity-test messages are genuinely gone (one deleted directly, the other deleted while evicted) - restoring capacity does not resurrect either one', restoreReset.data);
+
+    step('Clearing one user\'s messages emits an immediate chat-overlay.remove event carrying reason "user_messages_cleared"');
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_userclear', 'sse_userclear_user', 'SseUserClearUser', 'chatmsg_sse_userclear', 'sse per-user clear target'));
+    const userClearUpsert = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the per-user-clear-test message');
+    sendWS(socket1, notificationEnvelope('channel.chat.clear_user_messages', { broadcaster_user_id: fakeUserId, target_user_id: 'u_sse_userclear' }, 'msg_sse_userclear'));
+    const userClearRemove = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.remove', 10_000, 'the remove event for the per-user clear');
+    expect(userClearRemove.data?.id === userClearUpsert.data.id && userClearRemove.data?.reason === 'user_messages_cleared',
+      'the remove event carries reason "user_messages_cleared"', userClearRemove.data);
+
+    step('Clearing the whole chat emits an immediate chat-overlay.remove event carrying reason "chat_cleared"');
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_chatclear', 'sse_chatclear_user', 'SseChatClearUser', 'chatmsg_sse_chatclear', 'sse whole-chat clear target'));
+    const chatClearUpsert = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the whole-chat-clear-test message');
+    sendWS(socket1, notificationEnvelope('channel.chat.clear', { broadcaster_user_id: fakeUserId }, 'msg_sse_chatclear'));
+    const chatClearRemove = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.remove', 10_000, 'the remove event for the whole-chat clear');
+    expect(chatClearRemove.data?.id === chatClearUpsert.data.id && chatClearRemove.data?.reason === 'chat_cleared',
+      'the remove event carries reason "chat_cleared"', chatClearRemove.data);
+
+    step('A blocked-term configuration change emits a full chat-overlay.reset event - never an individual remove - and never reveals the term\'s own value');
+    const sseBlockTerm = `sseblock-${RUN_ID}`;
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_blockcfg', 'sse_blockcfg_user', 'SseBlockCfgUser', 'chatmsg_sse_blockcfg', `this message contains ${sseBlockTerm} inside it`));
+    const blockCfgUpsert = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the blocked-term-config-test message');
+    await request(baseUrl, 'POST', `/api/chat-overlays/${sseOverlayId}/blocked-terms`, { value: sseBlockTerm, matchMode: 'contains' });
+    const blockCfgReset = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.reset', 10_000, 'the reset event after the blocked-term configuration change');
+    expect(!blockCfgReset.data.items.some((i) => i.id === blockCfgUpsert.data.id),
+      'the newly blocked message is absent from the post-configuration-change reset', blockCfgReset.data);
+    expect(!blockCfgReset.raw.includes(sseBlockTerm), 'the reset event never reveals the blocked term\'s own value', blockCfgReset.raw);
+
+    step('A hidden-user configuration change emits a full chat-overlay.reset event, never an individual remove');
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_hidecfg', 'sse_hidecfg_user', 'SseHideCfgUser', 'chatmsg_sse_hidecfg', 'sse hidden-user config target'));
+    const hideCfgUpsert = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.upsert', 10_000, 'the upsert event for the hidden-user-config-test message');
+    await request(baseUrl, 'POST', `/api/chat-overlays/${sseOverlayId}/hidden-users`, { providerId: 'twitch', connectedAccountId: accountId, providerUserId: 'u_sse_hidecfg', label: 'sse test' });
+    const hideCfgReset = await nextEventMatching(liveEvents, (e) => e.event === 'chat-overlay.reset', 10_000, 'the reset event after the hidden-user configuration change');
+    expect(!hideCfgReset.data.items.some((i) => i.id === hideCfgUpsert.data.id),
+      'the newly hidden user\'s message is absent from the post-configuration-change reset', hideCfgReset.data);
+
+    step('Reconnecting with Last-Event-ID replays only the missed revisions (no gap, no fresh reset) and reaches the correct final state');
+    const lastSeenId = hideCfgReset.id;
+    expect(typeof lastSeenId === 'string' && lastSeenId.length > 0, 'the reset event carried a usable Last-Event-ID', hideCfgReset);
+    await liveEvents.return();
+
+    sendWS(socket1, chatMessageEvent(fakeUserId, 'u_sse_reconnect', 'sse_reconnect_user', 'SseReconnectUser', 'chatmsg_sse_reconnect', 'sse reconnect replay target'));
+    const reconnectItem = await findPublicItemMatching(baseUrl, sseSlug, (i) => i.message?.plainText === 'sse reconnect replay target');
+
+    const replayEvents = sseEvents(sseStreamUrl, { Accept: 'text/event-stream', 'Last-Event-ID': lastSeenId });
+    const replayed = await nextEvent(replayEvents, 10_000, 'the first replayed event after reconnecting with Last-Event-ID');
+    expect(replayed.event !== 'chat-overlay.gap', 'no gap was reported on reconnect - the ring still retained the missed range', replayed);
+    expect(replayed.event === 'chat-overlay.upsert' && replayed.data?.id === reconnectItem.id,
+      'reconnecting replays exactly the missed upsert, never a fresh full reset, since nothing was actually lost', replayed.data);
+    await replayEvents.return();
+
+    const finalSnapshot = await request(baseUrl, 'GET', `/api/public/chat-overlays/${sseSlug}/items`);
+    expect(finalSnapshot.body.items.some((i) => i.id === reconnectItem.id),
+      'the item delivered via Last-Event-ID replay is present in the authoritative current-state snapshot too - replay and snapshot agree', finalSnapshot.body.items);
+
+    step('Delete the dedicated SSE-testing overlay; its own scenarios are complete and it must not affect the remaining-profile count after restart');
+    await request(baseUrl, 'DELETE', `/api/chat-overlays/${sseOverlayId}`);
+    const sseOverlayGoneResp = await request(baseUrl, 'GET', `/api/public/chat-overlays/${sseSlug}/config`);
+    expect(sseOverlayGoneResp.status === 404, 'the deleted SSE-testing overlay\'s public config no longer resolves', sseOverlayGoneResp.body);
 
     step('Create a second overlay with an independent blocked-term list; confirm the two overlays are independent');
     const secondOverlay = await request(baseUrl, 'POST', '/api/chat-overlays', { name: 'Secondary Overlay' });

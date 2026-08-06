@@ -8962,3 +8962,115 @@ protocol end-to-end against the real backend (no real Twitch/OBS): the
 SSE-initial-reset hydration, every remove reason's immediate-vs-
 cosmetic classification, and the absence of message text or blocked
 terms in any remove payload.
+
+## 2026-08-06 13:35 — test: verify overlay removal semantics
+
+Extends `scripts/verify-chat-overlay.mjs` with a dedicated live-SSE
+phase proving the previous two entries' server and frontend work
+actually agree over the wire, against the real backend (still no real
+Twitch/OBS). Two genuine, non-obvious backend behaviors were
+discovered while building this - both are pre-existing, correct
+design, not something this pass changed - and are recorded here since
+they affect anyone writing further tests against this stream.
+
+### What the new phase covers
+
+A dedicated overlay (created, exercised, then deleted, so the earlier
+steps' item counts and the later restart-persistence assertion are
+unaffected) opens one long-lived SSE connection and drives it through:
+a moderation deletion (`message_deleted`, immediate), a capacity
+eviction (`capacity_evicted`, cosmetic), a per-user clear
+(`user_messages_cleared`, immediate), a whole-chat clear
+(`chat_cleared`, immediate), a blocked-term configuration change (a
+full `chat-overlay.reset`, never an individual remove), a hidden-user
+configuration change (same), and a reconnect using `Last-Event-ID`
+that receives only the missed revisions with no gap and ends up
+agreeing with the `/items` snapshot. Every remove/reset event's raw
+SSE text is asserted to never contain the removed message's own text
+or the configured blocked term's own value.
+
+Real-time message-lifetime expiry is still deliberately not exercised
+here, for the same reason the top-of-file comment already gave for
+skipping it (wall-clock timing would only add flakiness); the
+`expired` reason itself is proven by
+`TestProjectionExpiryRemovalCarriesExpiredReason` at the Go level
+instead - only `capacity_evicted`, the other cosmetic reason, needed a
+live end-to-end proof here, and now has one.
+
+### Two behaviors discovered while building this (both correct, both worth recording)
+
+**A fresh `after=0` SSE subscription is not always a single reset with
+empty content - it is one reset reflecting whatever is genuinely
+*already visible*.** The first version of this phase asserted the new
+dedicated overlay's very first reset carried zero items and failed:
+it actually carried the still-live follow and bits events from an
+earlier step. This is correct behavior, not a bug: `Configure()`
+rebuilds a projection from whatever the underlying operator-chat store
+still retains, and a whole-chat clear only clears `message`-kind
+items (see `internal/operatorchat`'s own clear-scope), never
+activities - so a follow/cheer from ten steps earlier is still
+genuinely "currently visible" and a brand-new overlay's default
+(permissive) activity-type filter legitimately adopts it immediately.
+The fix was to stop asserting emptiness and assert only what this
+phase actually needed to prove: that the first event is one complete
+reset, not a partial one. This also sharpens the "always a complete
+reset" phrasing this same corrective pass added to
+`docs/obs-browser-source.md`, README.md and `docs/project-overview.md`
+in the first entry above - it is accurate for what a client can rely
+on for correctness (the reset always reflects true current state), but
+those docs did not anticipate a reader assuming "current state" means
+"empty for a new overlay". Revisiting that wording is this entry's own
+follow-up, tracked below for the final documentation pass.
+
+**A capacity-evicted item is not a deleted one - it can be silently
+resurrected by an unrelated later `Configure()` rebuild.** The second
+version of this phase's capacity-eviction cleanup deleted only the
+still-visible item and then restored `maxVisibleItems`, expecting an
+empty result; instead the *evicted* item reappeared, because eviction
+only removes an item from `visibleOrder`/`latestByID` - the underlying
+operator-chat item is untouched, still live, un-deleted. Restoring
+capacity triggers a full `Configure()` rebuild from that same
+underlying store, which legitimately re-admits anything still live and
+filter-matching, including the item this test had assumed was gone
+for good. This is exactly the same mechanism, working correctly, that
+lets a *settings* change (raising `maxVisibleItems`, un-hiding a user,
+un-blocking a term) restore previously-evicted-or-filtered content -
+eviction and filtering are always reversible by reconfiguration;
+deletion is not. The fix was to explicitly moderation-delete the
+evicted item too before restoring capacity, and to assert its absence
+by id rather than by array length (since the persistent follow/bits
+activities from the paragraph above are legitimately still there).
+
+### Files changed
+- `scripts/verify-chat-overlay.mjs` (`parseSSEChunk`, the `sseEvents`
+  async generator, `nextEvent`/`nextEventMatching` helpers, and the new
+  phase; top-of-file doc comment updated to describe the new coverage
+  and the still-intentional real-time-expiry omission).
+
+### Automated validation
+- `node scripts/verify-chat-overlay.mjs` - run twice in a row (per this
+  project's own convention for a new integration script) to rule out
+  flakiness; both runs passed all 35 steps, including every step this
+  entry adds.
+- No Go or frontend source changed in this commit, so the backend/
+  frontend unit-test suites are unaffected; they were last confirmed
+  clean by the two preceding entries.
+
+### Known limitations
+The `docs/obs-browser-source.md` / README.md / `docs/project-overview.md`
+wording added by this corrective pass's first entry ("the stream's own
+first event is always a complete `chat-overlay.reset`") is true but,
+per the discovery above, could be read as implying that reset is empty
+for a newly-observed overlay - it is not; it reflects genuine current
+state, which may be non-empty. The next entry (the final documentation
+pass) tightens this wording.
+
+### Next step
+Complete the final documentation pass: re-verify README.md,
+`docs/obs-browser-source.md`, `docs/project-overview.md` and
+`docs/engagement-architecture.md` against the now-complete
+implementation (not just the partial picture the first entry had),
+including the reset-content wording noted above; audit `config/README.md`
+and `THIRD_PARTY_NOTICES.md` for whether anything actually changed;
+append a final summary entry (test results, known limitations, real-
+OBS-test status).
