@@ -8185,3 +8185,147 @@ users, bots, commands, blocked terms, activity types), verify capacity/
 expiry eviction, verify deletion/clear scoping, verify slug rotation,
 verify restart behavior, verify no secrets/blocked-term text/hidden-
 user data ever appear in a public response or a log line.
+
+---
+
+## 2026-08-07 09:30 — test: verify chat overlays locally
+
+### Status
+Completed. `scripts/verify-chat-overlay.mjs` (26 steps) passes
+reliably against a real build of the integration test server, no real
+Twitch or OBS involved. Two genuine backend bugs were found and fixed
+while debugging it (see below) - this is exactly the kind of thing this
+script exists to catch.
+
+### Scope
+`scripts/verify-chat-overlay.mjs` (new), plus two small backend fixes
+the script's own run surfaced:
+`apps/server/internal/httpapi/operatorchat.go`/`router.go` (bot-user-
+change → chat-overlay rebuild wiring) and
+`apps/server/internal/httpapi/middleware.go` (access-log slug
+redaction), both `cmd/server/main.go` and `cmd/testserver/main.go`.
+
+### Technical decisions
+**Reuses `verify-operator-chat.mjs`'s entire fake-server scaffolding
+verbatim** (fake OAuth/Helix/EventSub-WebSocket servers, the
+`request`/`waitUntil`/`expect`/`spawnCaptured` helpers) and drives chat
+through the exact same path operator chat itself uses - `internal/
+chatoverlay`'s own `Manager` consumes operator-chat's already-
+lifecycle-correct revision stream, so this script needed no separate
+chat-delivery mechanism of its own, only public-overlay-specific
+assertions layered on top.
+
+**A representative subset of the task's own ~37-step list, with every
+omission named in this script's own top-of-file comment**: a second
+connected account merging into one overlay (would re-test connection
+plumbing `verify-operator-chat.mjs` already covers), message-lifetime
+expiry under real wall-clock timing (already covered deterministically
+by `internal/chatoverlay`'s own fake-clock Go tests), and - discovered
+only while writing the restart step - a brand-new chat message flowing
+through a *reconnected* Twitch engagement connector specifically after
+a backend process restart.
+
+**Found while debugging: `cmd/testserver`'s own credential store
+(`internal/secrets/secretstest`, an in-memory fake, the one deliberate
+difference from `cmd/server` that binary's own doc comment already
+names) is wiped by a process restart**, so a connected account's OAuth
+token is genuinely gone afterward and the engagement connector cannot
+reauthenticate - unlike a real deployment's OS keychain, which would
+not lose it. The script's first attempt at this step tried to have the
+connector auto-reconnect post-restart and timed out waiting for
+`state === "connected"`; the fix was recognizing this as a real,
+documented property of the test harness itself (not a product bug) and
+scoping the restart step down to what a fresh device-flow connection
+isn't needed to prove: the profile and its (rotated) public slug
+survive, and the public overlay's visible content correctly resets to
+empty - the live-message-delivery pipeline itself is already proven
+correct earlier in the same script, well before the restart.
+
+**Found and fixed a real bug: marking/unmarking a bot user never
+rebuilt any running chat overlay.** `internal/chatoverlay.Manager.
+RebuildAll` existed specifically for "the shared Stage 9 bot-user list
+changing" (its own doc comment says so) but was never actually called
+by anything - `internal/httpapi`'s bot-user add/remove handlers had no
+way to reach the chat-overlay runtime at all. The script's own step 12
+(mark a user as a bot, expect their message hidden) caught this
+directly. Fixed by adding `afterUserRefAdd`/`afterUserRefRemove`
+wrappers in `operatorchat.go` that call an optional `onBotUsersChanged
+func(ctx context.Context)` callback after a successful bot-user change
+- wired only onto the two bot-user routes, never the hidden-user ones
+(operator chat's own hidden-user list is not shared with any
+overlay) - and a new `Options.OnOperatorChatBotUsersChanged` field in
+`router.go`, set to `chatOverlayManager.RebuildAll` in both `main.go`
+files.
+
+**Found and fixed a second real bug: the ordinary per-request access
+log leaked every public overlay's own slug.** `withLogging` logs
+`r.URL.Path` for every request, and a public overlay's own path
+(`/api/public/chat-overlays/{slug}/...`) contains the slug itself - the
+unguessable part of its Browser Source URL, which Part 25 explicitly
+says must never be logged, and which a live Browser Source requests
+continuously (health/keepalive-adjacent constant SSE traffic). The
+script's own final secret-scan step caught this directly. Fixed with a
+`redactLoggedPath` helper that replaces the slug segment with a fixed
+`{slug}` placeholder before the line is logged, leaving every other
+path (including the *management* `/api/chat-overlays/{id}/...` routes,
+whose `id` is not the sensitive part - see Part 25's own explicit
+"opaque overlay ID" allowance) untouched.
+
+**A test-only bug in the script itself, also worth recording**: an
+earlier draft left `showDeletedPlaceholder: true` set from the
+placeholder step and then asserted a *later*, unrelated message would
+simply disappear on deletion (the *default*, placeholder-off,
+behavior) - it doesn't, once placeholder mode is on for that overlay.
+Fixed by resetting the setting back to its default before the next
+step that assumes it.
+
+### Files changed
+- `scripts/verify-chat-overlay.mjs` (new).
+- `apps/server/internal/httpapi/operatorchat.go` (`afterUserRefAdd`/
+  `afterUserRefRemove`, `onBotUsersChanged` parameter).
+- `apps/server/internal/httpapi/router.go` (`OnOperatorChatBotUsersChanged`
+  option, `context` import).
+- `apps/server/internal/httpapi/middleware.go` (`redactLoggedPath`).
+- `apps/server/internal/httpapi/middleware_test.go` (new).
+- `apps/server/cmd/server/main.go`, `apps/server/cmd/testserver/main.go`
+  (wire `OnOperatorChatBotUsersChanged: chatOverlayManager.RebuildAll`).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` (whole module) — clean.
+- `go test ./internal/httpapi/... -run RedactLoggedPath -v` — 6/6 pass
+  (every public-overlay route redacted, management routes and
+  unrelated paths untouched).
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  — clean.
+- `go test ./...` (whole module) — every package passes; no regression.
+- `node scripts/verify-chat-overlay.mjs` — 26/26 steps pass, run twice
+  to confirm it isn't flaky: empty start; safe defaults; public config
+  exposes no management id/blocked terms/hidden users/account id;
+  account connect and live-message delivery to the public overlay;
+  hidden-user filtering (own message and a brand-new one, unaffected
+  by an unrelated user); explicit bot-user classification filtering;
+  command-message filtering with a non-command retained; blocked-term
+  filtering (contains) with a similar-but-non-matching message
+  retained, and the term's own value absent from every public
+  response; activity-type selection; `maxVisibleItems` eviction of the
+  oldest item; default message-deletion (removed); placeholder mode
+  (no original text, ever, in a later snapshot); per-user clear scoped
+  correctly; whole-chat clear; two independent overlays; slug rotation
+  (old URL 404s, new URL works); profile deletion (stops serving);
+  restart (profile and rotated slug survive, visible content resets,
+  config still resolves); a final scan of every captured HTTP response
+  and the backend's own stdout/stderr for chat text, the blocked
+  term's value, the public slug, and access tokens.
+
+### Known limitations
+Named explicitly in the script's own top-of-file comment (see above):
+no second-connected-account merge scenario, no real-wall-clock expiry
+timing, no post-restart connector-reconnect-then-new-message check.
+
+### Next step
+Run all 8 local integration scripts together as the full regression
+suite, then the final documentation pass (README, project overview,
+engagement architecture, `docs/obs-browser-source.md` cross-check,
+`config/README.md`, `THIRD_PARTY_NOTICES.md` if warranted) and the
+closing `docs: document OBS chat overlays` commit.

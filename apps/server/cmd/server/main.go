@@ -319,9 +319,10 @@ func run() error {
 		EngagementSettings:   engagementSettingsService,
 		EngagementConnectors: twitchEngagementManager,
 
-		OperatorChatProjection: operatorChatProjection,
-		OperatorChatPrefs:      operatorChatPrefsService,
-		OperatorChatAssets:     operatorChatAssets,
+		OperatorChatProjection:        operatorChatProjection,
+		OperatorChatPrefs:             operatorChatPrefsService,
+		OperatorChatAssets:            operatorChatAssets,
+		OnOperatorChatBotUsersChanged: chatOverlayManager.RebuildAll,
 
 		ChatOverlayProfiles: chatOverlayProfileService,
 		ChatOverlayRuntime:  chatOverlayManager,

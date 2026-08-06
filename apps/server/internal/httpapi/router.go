@@ -5,6 +5,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -85,6 +86,10 @@ type Options struct {
 	// resolved badge images (see OperatorChatAssetResolver's own doc
 	// comment).
 	OperatorChatAssets OperatorChatAssetResolver
+	// OnOperatorChatBotUsersChanged is called after a bot-user is marked
+	// or unmarked, so the chat-overlay runtime (which shares this exact
+	// list) can rebuild every running overlay. May be nil.
+	OnOperatorChatBotUsersChanged func(ctx context.Context)
 	// ChatOverlayProfiles serves the Stage 10 chat-overlay profile
 	// management API (/api/chat-overlays/...). Required alongside
 	// ChatOverlayRuntime and Accounts for the chat-overlay routes
@@ -144,7 +149,7 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.OperatorChatProjection != nil && opts.OperatorChatPrefs != nil && opts.Accounts != nil {
-		registerOperatorChatRoutes(mux, logger, opts.Accounts, opts.OperatorChatProjection, opts.OperatorChatPrefs, opts.OperatorChatAssets)
+		registerOperatorChatRoutes(mux, logger, opts.Accounts, opts.OperatorChatProjection, opts.OperatorChatPrefs, opts.OperatorChatAssets, opts.OnOperatorChatBotUsersChanged)
 	}
 
 	if opts.ChatOverlayProfiles != nil && opts.ChatOverlayRuntime != nil && opts.Accounts != nil {

@@ -59,9 +59,17 @@ const (
 // registerOperatorChatRoutes wires the Stage 9 unified-operator-chat API:
 // the projection's status/snapshot/SSE endpoints, persisted preferences,
 // and the hidden-user/bot-user lists.
+//
+// onBotUsersChanged is called after a successful bot-user add/remove -
+// Stage 10's chat overlay filtering shares this exact list (see
+// internal/chatoverlay/filtering.go's own doc comment on why it, and
+// only it, is shared rather than duplicated per overlay), so every
+// running overlay's projection needs a rebuild whenever it changes. May
+// be nil when no chat-overlay runtime is configured.
 func registerOperatorChatRoutes(
 	mux *http.ServeMux, logger *slog.Logger,
 	accounts AccountService, projection OperatorChatProjectionService, prefs OperatorChatPrefsService, assets OperatorChatAssetResolver,
+	onBotUsersChanged func(ctx context.Context),
 ) {
 	mux.HandleFunc("GET /api/operator-chat/status", handleGetOperatorChatStatus(logger, projection))
 	mux.HandleFunc("/api/operator-chat/status", methodNotAllowed(logger, http.MethodGet))
@@ -90,10 +98,36 @@ func registerOperatorChatRoutes(
 	mux.HandleFunc("/api/operator-chat/hidden-users/{id}", methodNotAllowed(logger, http.MethodDelete))
 
 	mux.HandleFunc("GET /api/operator-chat/bot-users", handleListOperatorChatUserRefs(logger, prefs.BotUsers))
-	mux.HandleFunc("POST /api/operator-chat/bot-users", handleAddOperatorChatUserRef(logger, accounts, prefs.MarkBotUser))
+	mux.HandleFunc("POST /api/operator-chat/bot-users", handleAddOperatorChatUserRef(logger, accounts, afterUserRefAdd(prefs.MarkBotUser, onBotUsersChanged)))
 	mux.HandleFunc("/api/operator-chat/bot-users", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
-	mux.HandleFunc("DELETE /api/operator-chat/bot-users/{id}", handleRemoveOperatorChatUserRef(logger, prefs.UnmarkBotUser))
+	mux.HandleFunc("DELETE /api/operator-chat/bot-users/{id}", handleRemoveOperatorChatUserRef(logger, afterUserRefRemove(prefs.UnmarkBotUser, onBotUsersChanged)))
 	mux.HandleFunc("/api/operator-chat/bot-users/{id}", methodNotAllowed(logger, http.MethodDelete))
+}
+
+// afterUserRefAdd/afterUserRefRemove call onChanged only after the
+// wrapped operation actually succeeds - a failed add/remove never
+// triggers a chat-overlay rebuild. onChanged may be nil.
+func afterUserRefAdd(
+	add func(ctx context.Context, providerID operatorchatprefs.ProviderID, connectedAccountID, providerUserID, label string) (operatorchatprefs.UserRef, error),
+	onChanged func(ctx context.Context),
+) func(ctx context.Context, providerID operatorchatprefs.ProviderID, connectedAccountID, providerUserID, label string) (operatorchatprefs.UserRef, error) {
+	return func(ctx context.Context, providerID operatorchatprefs.ProviderID, connectedAccountID, providerUserID, label string) (operatorchatprefs.UserRef, error) {
+		ref, err := add(ctx, providerID, connectedAccountID, providerUserID, label)
+		if err == nil && onChanged != nil {
+			onChanged(ctx)
+		}
+		return ref, err
+	}
+}
+
+func afterUserRefRemove(remove func(ctx context.Context, id string) error, onChanged func(ctx context.Context)) func(ctx context.Context, id string) error {
+	return func(ctx context.Context, id string) error {
+		err := remove(ctx, id)
+		if err == nil && onChanged != nil {
+			onChanged(ctx)
+		}
+		return err
+	}
 }
 
 // --- response DTOs -----------------------------------------------------
