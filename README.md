@@ -996,14 +996,21 @@ Streaming Tree never verifies that a selected broadcast is actually bound
 to the stream key configured below it — that binding lives entirely on
 YouTube's side.
 
-**What this stage does not implement.** YouTube live chat, Super Chat,
-membership events, a unified chat, overlays, alerts, text-to-speech,
-donations, automatic broadcast creation, automatic `liveStream` binding,
-and automatic stream-key retrieval from YouTube are all still
-unimplemented — see
-[`docs/engagement-architecture.md`](docs/engagement-architecture.md). This
-stage is the account, broadcast-selection, and metadata foundation those
-features will build on later, not an implementation of them.
+**What this stage does not implement.** YouTube live-chat ingestion and
+Super Chat/membership events are not implemented - Twitch is currently
+the only live provider source feeding chat and events anywhere in this
+application. The provider-independent operator **Chat** page itself
+*is* implemented (stage 9) - see
+[Unified operator chat](#unified-operator-chat). The OBS public chat
+overlay (stage 10) is this repository's current stage; once its own
+commits land it will be documented in its own section below the same
+way. Outbound chat, alerts, text-to-speech, donations, automatic
+broadcast creation, automatic `liveStream` binding, and automatic
+stream-key retrieval from YouTube remain unimplemented - see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+This stage is the account, broadcast-selection, and metadata
+foundation those still-planned features will build on later, not an
+implementation of them.
 
 ### Registering a Google Cloud project and configuring a Client ID
 

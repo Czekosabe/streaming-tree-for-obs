@@ -7254,3 +7254,94 @@ unaffected by any of this.
 Confirm a clean working tree, push to `origin/main`, confirm local and
 remote are at the same commit with zero ahead/behind, and produce the
 closing report.
+
+## 2026-08-06 17:10 — fix(docs): correct post-Stage-9 project status
+
+### Status
+Completed
+
+### Scope
+Stage 10 begins here. Before touching any code, correct documentation
+drift left over from Stage 9, per the same precedent established
+before every prior stage's own implementation commits.
+
+### Changes
+
+**`README.md`** — the "Connected accounts and YouTube metadata"
+section's "What this stage does not implement" paragraph (written
+during stage 7B, before the unified operator chat existed) still said
+flatly that "a unified chat" was unimplemented. That became false the
+moment stage 9 shipped the real operator Chat page. Rewrote the
+paragraph to distinguish: YouTube live-chat ingestion and Super Chat/
+membership events are still not implemented (Twitch remains the only
+live provider source anywhere in the app); the provider-independent
+operator Chat page itself is real (stage 9); the OBS public chat
+overlay is this repository's current stage, to be documented in its
+own section once its own commits land (not yet, at the time of this
+commit) — mirroring the exact "once this stage's own commits land"
+phrasing stage 9's own equivalent correction used, so this document
+never claims completion ahead of the actual commits that prove it.
+
+### Audit results (no further change needed)
+
+Searched the whole repository for the specific stale claims the task
+named:
+- "unified operator chat is planned" — **not found** as a literal
+  claim anywhere; stage 9's own closing documentation pass already
+  corrected every instance across README.md, project-overview.md and
+  engagement-architecture.md.
+- "no real chat UI exists" — **not found**.
+- "the overlay is implemented" / "Stage 10 is completed" — **not
+  found** anywhere; the one place the overlay is discussed
+  (README.md's "What is currently demo-only" table) correctly still
+  reads "Not implemented anywhere" for it, which remains true until
+  this stage's own commits land.
+- "the operator Chat page is suitable to expose directly in OBS" —
+  **not found**; no document has ever suggested pointing a Browser
+  Source at `/chat`.
+- "operator preferences and public-overlay preferences are the same
+  thing" — **not found**; this concept does not exist yet, since
+  public-overlay preferences are this stage's own new, separate
+  schema (Part 4), not introduced until a later commit in this same
+  stage.
+
+### Technical decisions
+
+**Why this is the only substantive correction.** Stage 9's own closing
+documentation commit (`docs: document unified operator chat`) already
+did a thorough pass correcting every stage-9-adjacent claim across all
+three main documents. The one sentence it did not touch was inside
+stage 7B's own README section — written before stage 8A or 9 existed,
+and never revisited by either of those stages' own audits since
+neither searched specifically for the word "chat" inside the YouTube
+section. This is the same shape of gap Stage 9's own Part 1 commit
+found in stage 7A's section, for the same reason: a documentation
+audit only reliably catches drift adjacent to what it is specifically
+searching for.
+
+### Files changed
+- `README.md`
+- `docs/progress.md` (this entry)
+
+### Automated validation
+Documentation only; no application code changed in this commit. Full
+suite run before this commit:
+- Frontend: `npm run i18n:check`, `npm run typecheck`, `npm run lint`,
+  `npm run test -- --run` (623/623) — all pass.
+- Backend: `gofmt -l .`, `go vet ./...`, `go build ./...`,
+  `go build -tags integration ./cmd/testserver/...`, `go test ./...`
+  — all pass.
+- The 8 integration scripts (7 existing + this stage's own new one)
+  are exercised together at the end of this stage, once the overlay
+  they would otherwise have nothing to verify actually exists — a
+  documentation-only change to unrelated sections of README.md cannot
+  regress any of them, matching stage 9's own Part 1 precedent for
+  when to defer that full run.
+
+### Known limitations
+None specific to this entry.
+
+### Next step
+Write `docs/obs-browser-source.md` research findings up as their own
+commit (already drafted alongside this one), then design the overlay
+profile persistence schema.
