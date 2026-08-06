@@ -6832,3 +6832,186 @@ Build the frontend: Zod contracts and TanStack Query hooks for the new
 endpoints, an SSE client hook mirroring `use-engagement-stream.ts`'s
 conventions, the Chat page itself with its filter/settings panels and
 autoscroll behavior, navigation, and the EN/PL `chat` i18n namespace.
+
+## 2026-08-06 15:10 — feat(web): add unified operator chat
+
+### Status
+Completed
+
+### Scope
+The frontend half of Stage 9: a real, working Chat page consuming the
+operator-chat projection API from the previous four commits - merged
+live Twitch chat, account/kind filtering, persisted display
+preferences, autoscroll with a jump-to-latest control, and per-user
+hide/mark-as-bot actions. Distinct from the Engagement page, which
+stays exactly as it was (diagnostics, not touched this commit).
+
+### Technical decisions
+
+**The SSE stream is the sole source of chat items - no separate
+snapshot fetch merged in.** `GET /api/operator-chat/stream` already
+replays every currently-retained revision before going live (the same
+guarantee `GET /api/engagement/stream` gives the Engagement page's own
+`RecentEventsFeed`), so `useOperatorChatStream` mirrors
+`useEngagementStream`'s own "one hook, one EventSource, replay-then-
+live" shape exactly, rather than adding a second `useQuery` for
+`GET /api/operator-chat/items` that would need reconciling with the
+stream. That REST endpoint is still implemented and tested on the
+backend for external tooling; the page itself just doesn't need it.
+
+**A dedicated reducer (`operator-chat-reducer.ts`), not a plain
+array.** Every revision from the stream is a complete upsert (see the
+projection's own design) - `operatorChatReducer` folds each one in by
+item id: a duplicate or out-of-order revision for an id already seen
+at an equal-or-higher sequence is ignored, and a lifecycle update to
+an existing id (e.g. a message becoming deleted) updates it in place
+rather than moving it to the end of the timeline or appending a
+second row. Render order is first-seen order, tracked separately from
+each item's own latest revision sequence - this is the one invariant
+the whole page depends on and it is exercised directly by 8 pure
+reducer tests before any component touches it.
+
+**Autoscroll is a pure state machine (`models/autoscroll.ts`), wired
+to the DOM only inside `ChatPage`.** `isNearBottom` and
+`autoscrollReducer` have no DOM dependency and are fully unit-tested;
+the page's own `onScroll` handler and two small effects (scroll-to-
+bottom when following, count-delta detection for the unseen badge) are
+the only DOM-touching code, kept intentionally thin so the actual
+transition logic (pause on scroll-up, resume + clear-unseen on
+scroll-to-bottom or Jump-to-latest, accumulate unseen only while
+paused) is provable without rendering anything.
+
+**Filtering is client-side, over the already-bounded stream state**,
+combining account visibility (persisted per-account, `PUT
+/api/operator-chat/account-visibility/{id}`, applied immediately -
+each toggle is already one complete, atomic operator decision),
+explicitly-hidden users and bot-marked users (fetched lists, always
+excluded/optionally excluded respectively - never a heuristic on a
+username containing "bot", per the task's own explicit warning),
+`showActivityEvents`/`showDeletedMessages`/`hideCommandMessages` from
+persisted preferences. This never mutates the reducer's own retained
+state - the full bounded history stays available if a filter is later
+relaxed.
+
+**Preferences: draft-then-Save, not autosave-per-toggle.**
+`ChatSettingsPanel` keeps its own draft state, calling `onPreview` on
+every toggle (so the timeline re-filters/re-styles instantly) and only
+calling the actual `PUT /api/operator-chat/preferences` mutation on an
+explicit Save click - matching the task's own "persistent prefs save
+deliberately" requirement as a real UX distinction from the account-
+visibility toggles' immediate-apply behavior, not just a inconsistent
+implementation detail.
+
+**Command detection is a fixed prefix, never a heuristic.**
+`isCommandMessage` checks only whether the trimmed text starts with
+`!` (the task's own documented default, future-configurable but fixed
+this stage) - never a substring search, matching Part 12's explicit
+requirement.
+
+**Asset rendering never trusts an arbitrary URL.**
+`isSafeTwitchAssetUrl` requires `https:`, no userinfo component, and a
+hostname on an explicit allowlist (`static-cdn.jtvnw.net` today) -
+`ChatEmoteImage`/`ChatBadgeImage` check it before ever setting `src`,
+and both fall back safely (to the fragment's own text for an emote,
+to nothing for a badge - decoration, not content) on an unsafe URL or
+a real `onError`. No `dangerouslySetInnerHTML` anywhere in the new
+code; every fragment type is rendered from typed, Zod-validated data
+through JSX, including a fragment whose text looks like a raw HTML tag
+(covered by a rendered test asserting no `<script>` element is ever
+created).
+
+**Platform branding reuses `PlatformGlyph` + `providerGlyphClass`
+verbatim** (`ChatSourceLabel`) - no new icon component, no logo asset;
+this was the established pattern from `PlatformCard` and satisfies
+Part 9's "application-owned, version-controlled asset, never a hot-
+linked brand logo" requirement without any new code needed for it.
+
+**Account label shown only when there is more than one connected
+Twitch account** (`accountLabelFor` returns `null` below that
+threshold), matching Part 8's "never guess, and don't clutter a
+single-account view with a label nobody needs to disambiguate."
+
+**No automatic linkification.** Mention fragments render as plain
+colored text, never an anchor; a URL appearing in ordinary chat text
+is never turned into a clickable link - matching the task's own
+explicit preference not to add this without a strict safe-URL parser
+and a real product requirement, neither of which exists yet.
+
+### Files changed
+- `apps/web/src/api/operator-chat-schemas.ts`,
+  `operator-chat.ts` (new) - Zod contracts and fetch functions.
+- `apps/web/src/hooks/use-operator-chat.ts` (new) - status/
+  preferences/account-visibility/hidden-users/bot-users TanStack Query
+  hooks.
+- `apps/web/src/hooks/use-operator-chat-stream.ts`,
+  `use-operator-chat-stream.test.ts` (new) - the SSE client.
+- `apps/web/src/models/operator-chat-reducer.ts`,
+  `operator-chat-reducer.test.ts` (new) - bounded, keyed-by-id state.
+- `apps/web/src/models/operator-chat-presentation.ts`,
+  `operator-chat-presentation.test.ts` (new) - label mappings, command
+  detection, asset-URL safety.
+- `apps/web/src/models/autoscroll.ts`, `autoscroll.test.ts` (new) -
+  the pure autoscroll state machine.
+- `apps/web/src/components/chat/` (new) - `ChatEmoteImage.tsx`,
+  `ChatBadgeImage.tsx`, `ChatSourceLabel.tsx`, `MessageRow.tsx`
+  (+ test), `ActivityRow.tsx` (+ test), `ModerationRow.tsx` (+ test),
+  `ChatFilterBar.tsx`, `ChatSettingsPanel.tsx`.
+- `apps/web/src/pages/ChatPage.tsx`, `ChatPage.test.tsx` (new).
+- `apps/web/src/App.tsx`, `components/layout/nav-items.ts` - the
+  `/chat` route and sidebar entry.
+- `apps/web/src/i18n/resources/{en,pl}/chat.json` (new namespace),
+  `resources/{en,pl}/navigation.json`, `resources/{en,pl}/pages.json`
+  - new keys.
+- `apps/web/src/i18n/config.ts`, `resources.ts` - `chat` namespace
+  registration.
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `npm run i18n:check` - passes: 2 languages, 11 namespaces (10 + the
+  new `chat`), no differences against English.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 623/623 tests pass across 49 files (36 new
+  tests across 8 new test files, every pre-existing test still
+  passing, including `EngagementPage.test.tsx` unaffected). New
+  coverage: reducer upsert/order/eviction/reset semantics; presentation
+  label mappings exhaustive over every kind/activity type/moderation
+  action, command detection, asset-URL safety (accepts a real Twitch
+  CDN URL, rejects http/data:/javascript:/untrusted-host/userinfo);
+  autoscroll near-bottom calculation and every state transition; the
+  SSE hook's connect/open/upsert-in-place/malformed-payload/gap/
+  unmount/disabled/capacity-bound behavior; `MessageRow` rendering
+  (display name, anonymous state, ordered fragments including an
+  unresolvable emote falling back to text, a deleted message with
+  content preserved, command tag, synthetic marker, long username/
+  message preserved verbatim, no raw HTML execution, hide-user/
+  mark-bot actions); `ActivityRow` for all nine activity types
+  including an explicit "bits is never called a donation" assertion
+  and "stream.online never claims local proof"; `ModerationRow` for
+  every action plus an unrecognized one falling back safely;
+  `ChatPage` rendering (empty state, a live message arriving, a gap
+  warning, opening settings/filters, no token/session-id-shaped string
+  anywhere in the rendered DOM, an activity row visually distinct from
+  a message row via a different `data-testid`).
+- `npm run build` - production build succeeds (pre-existing bundle-
+  size advisory only, not a new regression).
+- No manual browser testing was performed - the task's own completion
+  criteria explicitly exclude it for this stage.
+
+### Known limitations
+No management UI for the hidden-user/bot-user lists beyond the
+per-message "Hide this user"/"Mark as bot" actions (no way to view or
+un-hide/un-mark from the Chat page itself yet - the backend API fully
+supports removal via `DELETE`, exercised by its own backend tests, but
+no frontend surface calls it this stage). The "hide bot messages"
+toggle is session-only, not persisted. Reply-context rendering,
+animated-emote negotiation, and cheermote tier images remain
+unimplemented, matching the backend's own documented scope reductions.
+These are representative-subset omissions, named here per the task's
+own allowance, not silent gaps.
+
+### Next step
+Write `scripts/verify-operator-chat.mjs`, extending Stage 8A's fake-
+Helix-server harness with badge/emote catalog routes and steps
+exercising the operator-chat-specific endpoints and lifecycle
+scenarios end to end.

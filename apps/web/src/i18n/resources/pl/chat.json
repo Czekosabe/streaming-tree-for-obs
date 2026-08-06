@@ -1,0 +1,98 @@
+{
+  "page": {
+    "title": "Czat",
+    "description": "Ujednolicony czat operatora - połączony, aktualny czat Twitch ze wszystkich podłączonych kont. Diagnostykę łącznika znajdziesz w Zaangażowaniu."
+  },
+  "kind": {
+    "message": "Wiadomość",
+    "activity": "Aktywność",
+    "moderation": "Moderacja",
+    "system": "System"
+  },
+  "activityType": {
+    "follow": "Obserwacja",
+    "subscription": "Subskrypcja",
+    "resubscription": "Ponowna subskrypcja",
+    "gifted_subscription": "Podarowana subskrypcja",
+    "subscription_gift_batch": "Paczka subskrypcji",
+    "bits": "Bity",
+    "raid": "Najazd",
+    "channel_point_redemption": "Punkty kanału",
+    "stream_online": "Transmisja rozpoczęta (zdalnie)",
+    "stream_offline": "Transmisja zakończona (zdalnie)"
+  },
+  "moderationAction": {
+    "messageDeletedNotRetained": "Usunięto wiadomość (już niezachowana)",
+    "chatCleared": "Czat został wyczyszczony",
+    "userMessagesCleared": "Wyczyszczono wiadomości użytkownika"
+  },
+  "deletionReason": {
+    "moderatorDeleted": "Usunięte przez moderatora",
+    "chatCleared": "Usunięte przy czyszczeniu czatu",
+    "userMessagesCleared": "Usunięte przy czyszczeniu wiadomości tego użytkownika"
+  },
+  "status": {
+    "connecting": "Łączenie…",
+    "open": "Na żywo",
+    "error": "Rozłączono",
+    "closed": "Zamknięte",
+    "gapWarning": "Niektóre wiadomości mogły zostać pominięte (strumień ponownie się połączył lub nie nadążał). Poniższe dane są aktualne, ale nie gwarantują kompletności.",
+    "busGapWarning": "Niektóre zdarzenia zostały pominięte, zanim ta projekcja zaczęła nasłuchiwać. Historia sprzed tego momentu może być niepełna.",
+    "retainedCount": "Zachowano: {{count}}",
+    "accountsConnected_one": "{{count}} konto uczestniczy",
+    "accountsConnected_few": "{{count}} konta uczestniczą",
+    "accountsConnected_many": "{{count}} kont uczestniczy",
+    "accountsConnected_other": "{{count}} konta uczestniczy"
+  },
+  "empty": "Brak wiadomości.",
+  "deletedMessagePlaceholder": "Wiadomość usunięta",
+  "anonymous": "anonimowo",
+  "synthetic": "test",
+  "command": "komenda",
+  "bot": "bot",
+  "reply": "Odpowiedź do {{name}}",
+  "filters": {
+    "title": "Filtry",
+    "accounts": "Konta",
+    "allAccounts": "Wszystkie konta",
+    "kinds": "Pokaż",
+    "kindMessages": "Wiadomości",
+    "kindActivity": "Aktywność",
+    "kindModeration": "Moderacja i system",
+    "showDeleted": "Pokaż usunięte wiadomości",
+    "hideCommands": "Ukryj wiadomości-komendy",
+    "hideBots": "Ukryj wiadomości botów",
+    "resetAction": "Pokaż wszystko",
+    "hideUserAction": "Ukryj tego użytkownika",
+    "markBotAction": "Oznacz jako bota"
+  },
+  "settings": {
+    "title": "Ustawienia wyświetlania",
+    "showPlatformIcon": "Ikona platformy",
+    "showPlatformName": "Nazwa platformy",
+    "showAccountLabel": "Etykieta konta",
+    "showBadges": "Odznaki",
+    "showTimestamps": "Znaczniki czasu",
+    "showActivityEvents": "Zdarzenia aktywności",
+    "showDeletedMessages": "Usunięte wiadomości",
+    "hideCommandMessages": "Ukryj wiadomości-komendy",
+    "compactMode": "Tryb kompaktowy",
+    "saveAction": "Zapisz",
+    "saved": "Zapisano preferencje."
+  },
+  "autoscroll": {
+    "jumpToLatest": "Przejdź do najnowszych",
+    "unread_one": "{{count}} nowa wiadomość",
+    "unread_few": "{{count}} nowe wiadomości",
+    "unread_many": "{{count}} nowych wiadomości",
+    "unread_other": "{{count}} nowej wiadomości"
+  },
+  "a11y": {
+    "timeline": "Oś czasu czatu",
+    "newMessagesRegion": "Nowa aktywność na czacie"
+  },
+  "assetFallback": {
+    "emoteAlt": "emotikona: {{text}}",
+    "badgeAlt": "odznaka"
+  }
+}

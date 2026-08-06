@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
+import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -22,6 +23,7 @@ export function App() {
             <Route path="/streams" element={<StreamsPage />} />
             <Route path="/metadata" element={<MetadataPage />} />
             <Route path="/engagement" element={<EngagementPage />} />
+            <Route path="/chat" element={<ChatPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="*" element={<NotFoundPage />} />

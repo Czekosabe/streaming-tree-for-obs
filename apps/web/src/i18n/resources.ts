@@ -1,4 +1,5 @@
 import enAccounts from './resources/en/accounts.json';
+import enChat from './resources/en/chat.json';
 import enCommon from './resources/en/common.json';
 import enDashboard from './resources/en/dashboard.json';
 import enEngagement from './resources/en/engagement.json';
@@ -9,6 +10,7 @@ import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
 import plAccounts from './resources/pl/accounts.json';
+import plChat from './resources/pl/chat.json';
 import plCommon from './resources/pl/common.json';
 import plDashboard from './resources/pl/dashboard.json';
 import plEngagement from './resources/pl/engagement.json';
@@ -40,6 +42,7 @@ export const enResources = {
   runtime: enRuntime,
   accounts: enAccounts,
   engagement: enEngagement,
+  chat: enChat,
 } as const;
 
 const plResources = {
@@ -53,6 +56,7 @@ const plResources = {
   runtime: plRuntime,
   accounts: plAccounts,
   engagement: plEngagement,
+  chat: plChat,
 } as const;
 
 export const resources = {

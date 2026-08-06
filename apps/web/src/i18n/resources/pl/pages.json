@@ -52,6 +52,10 @@
     "title": "Zaangażowanie",
     "description": "Stan magistrali zdarzeń i łączników przychodzących Twitch - widok diagnostyczny i operacyjny, nie gotowy czat operatora ani nakładka OBS."
   },
+  "chat": {
+    "title": "Czat",
+    "description": "Ujednolicony, połączony czat Twitch ze wszystkich podłączonych kont - działający widok operatora. Diagnostykę łącznika znajdziesz w Zaangażowaniu."
+  },
   "logs": {
     "title": "Logi",
     "description": "Diagnostyka routera transmisji i każdej gałęzi.",

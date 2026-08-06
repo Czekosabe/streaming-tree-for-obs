@@ -1,0 +1,94 @@
+{
+  "page": {
+    "title": "Chat",
+    "description": "The unified operator chat - merged, live Twitch chat across your connected accounts. For connector diagnostics, see Engagement."
+  },
+  "kind": {
+    "message": "Message",
+    "activity": "Activity",
+    "moderation": "Moderation",
+    "system": "System"
+  },
+  "activityType": {
+    "follow": "Follow",
+    "subscription": "Subscription",
+    "resubscription": "Resubscription",
+    "gifted_subscription": "Gifted subscription",
+    "subscription_gift_batch": "Gift batch",
+    "bits": "Bits",
+    "raid": "Raid",
+    "channel_point_redemption": "Channel points",
+    "stream_online": "Stream online (remote)",
+    "stream_offline": "Stream offline (remote)"
+  },
+  "moderationAction": {
+    "messageDeletedNotRetained": "A message was deleted (no longer retained)",
+    "chatCleared": "Chat was cleared",
+    "userMessagesCleared": "A user's messages were cleared"
+  },
+  "deletionReason": {
+    "moderatorDeleted": "Deleted by a moderator",
+    "chatCleared": "Removed when chat was cleared",
+    "userMessagesCleared": "Removed when this user's messages were cleared"
+  },
+  "status": {
+    "connecting": "Connecting…",
+    "open": "Live",
+    "error": "Disconnected",
+    "closed": "Closed",
+    "gapWarning": "Some messages may have been missed (the stream reconnected or fell behind). What follows is current, but not guaranteed complete.",
+    "busGapWarning": "Some events were missed before this projection started listening. History before this point may be incomplete.",
+    "retainedCount": "{{count}} retained",
+    "accountsConnected_one": "{{count}} account contributing",
+    "accountsConnected_other": "{{count}} accounts contributing"
+  },
+  "empty": "No messages yet.",
+  "deletedMessagePlaceholder": "Message deleted",
+  "anonymous": "anonymous",
+  "synthetic": "test",
+  "command": "command",
+  "bot": "bot",
+  "reply": "Reply to {{name}}",
+  "filters": {
+    "title": "Filters",
+    "accounts": "Accounts",
+    "allAccounts": "All accounts",
+    "kinds": "Show",
+    "kindMessages": "Messages",
+    "kindActivity": "Activity",
+    "kindModeration": "Moderation & system",
+    "showDeleted": "Show deleted messages",
+    "hideCommands": "Hide command messages",
+    "hideBots": "Hide bot messages",
+    "resetAction": "Show all",
+    "hideUserAction": "Hide this user",
+    "markBotAction": "Mark as bot"
+  },
+  "settings": {
+    "title": "Display settings",
+    "showPlatformIcon": "Platform icon",
+    "showPlatformName": "Platform name",
+    "showAccountLabel": "Account label",
+    "showBadges": "Badges",
+    "showTimestamps": "Timestamps",
+    "showActivityEvents": "Activity events",
+    "showDeletedMessages": "Deleted messages",
+    "hideCommandMessages": "Hide command messages",
+    "compactMode": "Compact mode",
+    "saveAction": "Save",
+    "saved": "Preferences saved."
+  },
+  "autoscroll": {
+    "jumpToLatest": "Jump to latest",
+    "unread_one": "{{count}} new message",
+    "unread_other": "{{count}} new messages"
+  },
+  "a11y": {
+    "timeline": "Chat timeline",
+    "newMessagesRegion": "New chat activity"
+  },
+  "assetFallback": {
+    "emoteAlt": "emote: {{text}}",
+    "badgeAlt": "badge"
+  }
+}
