@@ -262,3 +262,115 @@ per-token connection/subscription/cost limits invalidates part of this
 document and must be re-verified against the official pages listed above
 before being relied on again — exactly the same standing rule
 `twitch.md` and `youtube.md` already state for their own contracts.
+
+---
+
+## Stage 9 addendum — chat badge and emote presentation
+
+**Research date:** 2026-08-06.
+
+Stage 9 (unified operator chat) needs to render badges and emotes safely,
+without a provider request per message. This addendum records what was
+researched for that, kept separate from the EventSub contract above since
+it is a different Helix subsystem (Chat, not EventSub).
+
+### Sources inspected
+
+- <https://dev.twitch.tv/docs/api/reference/#get-global-chat-badges>
+- <https://dev.twitch.tv/docs/api/reference/#get-channel-chat-badges>
+- <https://dev.twitch.tv/docs/api/reference/#get-channel-emotes>
+- <https://dev.twitch.tv/docs/irc/emotes/>
+
+### Badge-resolution strategy
+
+`GET /helix/chat/badges/global` and `GET /helix/chat/badges?broadcaster_id=`
+share one response shape: a list of `{set_id, versions: [{id,
+image_url_1x/2x/4x, title, description, click_action, click_url}]}`
+entries. Both accept an app or a user access token; the documentation pages
+inspected state no scope requirement for either. A chat badge referenced by
+an event (`set_id` + `version` from the normalized `Badge`) is resolved by
+checking the **channel-specific catalog first, then falling back to the
+global catalog** for the same `set_id`/version pair - two parallel-shaped
+catalogs with identical keys are otherwise pointless to fetch separately.
+**This exact override order is this implementation's own defensible
+inference from the API shape, not a sentence quoted from an official page**
+- the pages inspected describe the two endpoints independently without
+spelling out a merge/override rule in the sections this research could
+access, so it is flagged here explicitly for re-verification rather than
+presented as confirmed. `subscriber`-set badges are channel-scoped in
+practice (every channel has its own subscriber-tier badge images), so the
+channel-first order is also the only one that can ever resolve them at all.
+
+### Emote-resolution strategy — no catalog fetch at all
+
+This is the more significant finding: Twitch's own IRC/EventSub emote guide
+documents a **fixed CDN URL template** returned alongside the Get Channel/
+Global/Set Emotes responses:
+
+```
+https://static-cdn.jtvnw.net/emoticons/v2/{{id}}/{{format}}/{{theme_mode}}/{{scale}}
+```
+
+`{{id}}` is exactly the emote ID every EventSub chat fragment already
+carries (`internal/domain/engagement.Fragment.EmoteID`, already normalized
+in stage 8A). Building this URL therefore needs **no Get Channel/Global
+Emotes catalog request at all** - not even a cached one - because every
+input the template needs is already present on the fragment itself.
+`{{format}}` is fixed to `static` (Twitch's own documentation states the
+non-template image in an emote payload "is always a static image," meaning
+`static` is guaranteed available for every emote, animated or not - a safe,
+universal default this application does not need per-emote metadata to
+choose). `{{theme_mode}}` is fixed to `dark` (matching this application's
+own dark UI, and a value Twitch always accepts regardless of the viewer's
+own theme). `{{scale}}` is fixed to `2.0` (a bounded, reasonable rendering
+size - see "Presentation details" below).
+
+This means the emote half of Part 11's asset resolver is, deliberately, not
+a cache at all: it is a pure, request-free URL-construction function over an
+already-validated emote ID, with no network call, no TTL, and nothing that
+can go stale.
+
+### Cache behavior (badges only)
+
+Bounded in-memory cache keyed by `"global"` or a broadcaster's provider
+user ID, each entry the parsed badge catalog for that scope. TTL: **1
+hour** (badge catalogs change rarely - a new subscriber-tier badge or a
+Twitch-wide addition is not time-sensitive the way a chat message is), a
+generous but bounded max-entry count, single-flight refresh per cache key
+(mirroring `internal/domain/account.Service`'s own hand-rolled
+per-key-mutex-plus-in-flight-map pattern - see the main Stage 9 progress
+entry), strict response-size and timeout limits identical to every other
+Helix call this application makes.
+
+### Fallback behavior
+
+A badge that cannot be resolved (cache miss during a cold single-flight
+fetch, a fetch failure, an unknown `set_id`/version) is simply omitted from
+that user's rendered badge list - the chat message itself is never
+discarded or blocked on it. An emote fragment always has a URL (the
+template needs nothing but the ID), but the frontend still treats a broken
+image load as a safe, expected case and falls back to the fragment's own
+plain text rather than hiding it.
+
+### Deliberately unsupported presentation details
+
+- **Animated-vs-static negotiation**: not implemented. Every emote image
+  requested uses `format=static`, regardless of whether the emote also has
+  an animated version, regardless of the viewer's `prefers-reduced-motion`
+  setting (which is moot here, since nothing animated is ever requested).
+  This is a real, documented behavior choice, not an oversight: negotiating
+  `format=animated` would need the Get Channel/Global Emotes catalog this
+  design deliberately avoids fetching, purely to decide a presentation
+  detail.
+- **Light-mode emote variants**: not implemented; `theme_mode=dark` is
+  fixed, matching the application's own single dark theme.
+- **Cheermote tier-specific images**: not implemented this stage. A
+  cheermote fragment's `CheermotePrefix`/`CheermoteBits` (already
+  normalized in stage 8A) are rendered as plain text, not resolved to
+  Twitch's own Bits-tier image set - that catalog (`GET
+  /helix/bits/cheermotes`) was not researched for this stage and is left
+  for a future one if a real product need emerges.
+- **Badge click actions/URLs**: `click_action`/`click_url` fields Twitch
+  returns per badge version are read but never rendered as a clickable
+  element - operator chat is a read-only diagnostic/working view, not an
+  interactive Twitch chat client.

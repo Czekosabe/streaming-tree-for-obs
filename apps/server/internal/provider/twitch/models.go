@@ -95,3 +95,19 @@ type helixCategory struct {
 type helixCategoriesResponse struct {
 	Data []helixCategory `json:"data"`
 }
+
+type helixBadgeVersion struct {
+	ID         string `json:"id"`
+	ImageURL1x string `json:"image_url_1x"`
+	ImageURL2x string `json:"image_url_2x"`
+	ImageURL4x string `json:"image_url_4x"`
+}
+
+type helixBadgeSet struct {
+	SetID    string              `json:"set_id"`
+	Versions []helixBadgeVersion `json:"versions"`
+}
+
+type helixBadgesResponse struct {
+	Data []helixBadgeSet `json:"data"`
+}

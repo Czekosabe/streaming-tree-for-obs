@@ -155,6 +155,79 @@ func (c *Client) SearchCategories(ctx context.Context, query, accessToken, clien
 	return results, nil
 }
 
+// ChatBadgeVersion is one version of a chat badge set, normalized from
+// Twitch's Get Global/Channel Chat Badges response. See
+// docs/provider-integrations/twitch-engagement.md's Stage 9 addendum for
+// the endpoints this was researched against.
+type ChatBadgeVersion struct {
+	ID         string
+	ImageURL1x string
+	ImageURL2x string
+	ImageURL4x string
+}
+
+// ChatBadgeSet is one badge set (e.g. "moderator", "subscriber") with every
+// version Twitch returned for it.
+type ChatBadgeSet struct {
+	SetID    string
+	Versions []ChatBadgeVersion
+}
+
+func normalizeBadgeSets(sets []helixBadgeSet) []ChatBadgeSet {
+	out := make([]ChatBadgeSet, 0, len(sets))
+	for _, s := range sets {
+		if s.SetID == "" {
+			continue // tolerate a malformed single entry rather than failing the whole catalog
+		}
+		versions := make([]ChatBadgeVersion, 0, len(s.Versions))
+		for _, v := range s.Versions {
+			if v.ID == "" {
+				continue
+			}
+			versions = append(versions, ChatBadgeVersion{
+				ID: v.ID, ImageURL1x: v.ImageURL1x, ImageURL2x: v.ImageURL2x, ImageURL4x: v.ImageURL4x,
+			})
+		}
+		out = append(out, ChatBadgeSet{SetID: s.SetID, Versions: versions})
+	}
+	return out
+}
+
+// GetGlobalChatBadges reads Twitch's global chat badge catalog: GET
+// /helix/chat/badges/global.
+func (c *Client) GetGlobalChatBadges(ctx context.Context, accessToken, clientID string) ([]ChatBadgeSet, error) {
+	status, body, _, err := c.doHelix(ctx, http.MethodGet, "/chat/badges/global", nil, nil, accessToken, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, classifyHelixError(status, body, "/helix/chat/badges/global")
+	}
+	var parsed helixBadgesResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("%w: /helix/chat/badges/global: %s", ErrInvalidResponse, err)
+	}
+	return normalizeBadgeSets(parsed.Data), nil
+}
+
+// GetChannelChatBadges reads one broadcaster's channel-specific chat badge
+// catalog: GET /helix/chat/badges.
+func (c *Client) GetChannelChatBadges(ctx context.Context, broadcasterID, accessToken, clientID string) ([]ChatBadgeSet, error) {
+	query := url.Values{"broadcaster_id": {broadcasterID}}
+	status, body, _, err := c.doHelix(ctx, http.MethodGet, "/chat/badges", query, nil, accessToken, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, classifyHelixError(status, body, "/helix/chat/badges")
+	}
+	var parsed helixBadgesResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("%w: /helix/chat/badges: %s", ErrInvalidResponse, err)
+	}
+	return normalizeBadgeSets(parsed.Data), nil
+}
+
 func classifyHelixError(status int, body []byte, endpoint string) error {
 	switch status {
 	case http.StatusUnauthorized:

@@ -6545,3 +6545,131 @@ land in later commits.
 Build the Twitch chat asset resolver (badges + emotes), then the
 operator-chat HTTP API tying the projection, preferences, and asset
 resolver together.
+
+## 2026-08-06 13:05 — feat(server): resolve Twitch chat assets
+
+### Status
+Completed
+
+### Scope
+The Twitch-specific presentation layer Stage 9's operator chat needs
+for badges and emotes, backed by the research recorded in this
+commit's own documentation update
+(`docs/provider-integrations/twitch-engagement.md`'s Stage 9
+addendum, written earlier this stage). Lives in
+`internal/provider/twitch/chatassets`, a sibling of the projection —
+`internal/operatorchat` itself still never imports this package or
+`internal/provider/twitch`, matching the boundary decided when the
+projection was built.
+
+### Technical decisions
+
+**Badges: a bounded, TTL'd, single-flight cache; emotes: no cache at
+all.** These turned out to need genuinely different designs once the
+research was done, so they are two files (`badge.go`, `emote.go`), not
+one generic "asset resolver." Badges need a real Helix catalog fetch
+(`GET /helix/chat/badges/global`, `GET /helix/chat/badges?
+broadcaster_id=`) because set/version → image URL is not derivable
+from anything already on a normalized event. Emotes need nothing: the
+CDN URL template Twitch documents
+(`https://static-cdn.jtvnw.net/emoticons/v2/{id}/{format}/
+{theme_mode}/{scale}`) takes exactly the emote id every chat fragment
+already carries, with `format=static`/`theme_mode=dark`/`scale=2.0`
+fixed to safe, universal, always-available values — see the addendum
+for the full reasoning on why those three are safe to hard-code.
+`EmoteImageURL` is consequently a pure, request-free function.
+
+**Badge cache keyed by `"global"` or a broadcaster's provider user
+id**, `cacheTTL = 1 hour` (badge catalogs change rarely), single-
+flight refresh per key (`inFlightCall`, mirroring
+`internal/domain/account.Service`'s own hand-rolled
+per-key-mutex-plus-in-flight-map pattern — there is no generic
+singleflight package anywhere in this module, confirmed before writing
+this). `ResolveBadge` checks the channel-specific catalog first, then
+falls back to global, per the addendum's own documented (and
+explicitly flagged as inferred, not officially confirmed) override
+order. A cache-miss or fetch failure returns `ok=false` — the caller
+omits that badge from the rendered list; the chat message itself is
+never discarded or blocked on it.
+
+**`GetGlobalChatBadges`/`GetChannelChatBadges` added to
+`internal/provider/twitch`'s existing `Client`**, not to `chatassets`
+directly — consistent with how `GetChannel`/`SearchCategories`/
+`GetCurrentUser` already live in `api_client.go` as thin, normalized
+wire-to-Go conversions, with business logic (caching, single-flight,
+TTL) layered on top in a separate concern. `normalizeBadgeSets`
+tolerates a malformed single entry (missing `set_id` or version `id`)
+by dropping just that entry, matching `SearchCategories`' own existing
+tolerance policy for a single bad entry in an otherwise-good response.
+
+**Token acquisition goes through `account.Service.WithFreshToken` +
+`EffectiveClientID`**, exactly like `MetadataService.Preview`/
+`Publish` already do — a single-flight token refresh and one retry on
+401 is applied uniformly to this new call path with no new auth
+plumbing.
+
+**Bounded, unordered eviction once the cache exceeds
+`maxCacheEntries=64`.** Not strict LRU — an acceptable tradeoff
+explicitly documented as such (`evictIfNeededLocked`'s own comment),
+since this cache is small, rarely written, and a wrong eviction choice
+only costs one extra fetch on the next resolve for that channel, never
+a correctness problem.
+
+### Files changed
+- `apps/server/internal/provider/twitch/models.go` — added
+  `helixBadgeVersion`/`helixBadgeSet`/`helixBadgesResponse` wire
+  types.
+- `apps/server/internal/provider/twitch/api_client.go` — added
+  `ChatBadgeVersion`/`ChatBadgeSet`, `normalizeBadgeSets`,
+  `GetGlobalChatBadges`, `GetChannelChatBadges`.
+- `apps/server/internal/provider/twitch/api_client_test.go` (new).
+- `apps/server/internal/provider/twitch/chatassets/badge.go`,
+  `emote.go` (new) — the resolver and the pure URL builder.
+- `apps/server/internal/provider/twitch/chatassets/badge_test.go`,
+  `emote_test.go` (new).
+- `docs/provider-integrations/twitch-engagement.md` — the Stage 9
+  addendum (research recorded earlier this stage, committed here
+  alongside the code it documents).
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l internal/provider/twitch/` — clean.
+- `go vet ./internal/provider/twitch/...` — clean.
+- `go test ./internal/provider/twitch/... -v` — full package suite
+  passes, including 4 new badge-parsing tests
+  (`TestGetGlobalChatBadgesParsesTheRealResponseShape`,
+  `TestGetChannelChatBadgesSendsBroadcasterID`,
+  `TestBadgeParsingToleratesAMalformedEntry`,
+  `TestGetGlobalChatBadgesRejectsAnErrorStatus`) and every pre-existing
+  test in the package (device flow, token refresh, metadata, EventSub
+  normalization, engagement scopes) unaffected.
+- `go test ./internal/provider/twitch/chatassets/... -v` — 10/10 pass:
+  channel-specific badge resolved first; fallback to global catalog;
+  unknown set/version returns `ok=false` without error; repeated
+  resolves within the TTL window fetch each catalog exactly once;
+  resolves after the TTL window fetch again; 20 concurrent resolvers
+  for the same channel produce exactly one fetch (single-flight
+  verified under real goroutine concurrency, not a single-threaded
+  mock); an unknown account returns `ok=false`; both `EmoteImageURL`
+  cases (normal id, an id needing URL-escaping) plus the empty-id
+  fallback case.
+- `go build ./...`, `go vet ./...`, `gofmt -l .` (whole module) —
+  clean.
+- `go test ./...` (whole module) — all packages pass; no regression.
+- The race detector remains unavailable in this environment (no cgo
+  compiler) — pre-existing, documented, not new to this commit. The
+  single-flight test above exercises real concurrent goroutines
+  without `-race` to at least confirm the *count* invariant, which
+  does not require the race detector to observe.
+
+### Known limitations
+Nothing in the HTTP layer calls this resolver yet - it is wired into
+API responses in the next commit. Cheermote tier images, badge
+click-actions, and animated-emote negotiation remain deliberately
+unimplemented, as documented in the addendum.
+
+### Next step
+Build the operator-chat HTTP API: status/items/stream(SSE)/
+preferences/hidden-users/bot-users, tying the projection, the
+preferences service, and this asset resolver together for the
+frontend.
