@@ -7128,3 +7128,129 @@ Final documentation pass: README.md, project-overview.md,
 engagement-architecture.md, config/README.md (only if warranted),
 THIRD_PARTY_NOTICES.md (only if warranted) - marking Stage 9 completed
 only once every check in this section has actually passed.
+
+## 2026-08-06 16:30 — docs: document unified operator chat
+
+### Status
+Completed
+
+### Scope
+The closing documentation pass for Stage 9, marking it completed only
+after every check below actually passed - README.md,
+docs/project-overview.md, docs/engagement-architecture.md, and
+config/README.md. `THIRD_PARTY_NOTICES.md` was checked and needs no
+change: `git diff` against the commit before this stage began shows no
+change to `apps/server/go.mod`/`go.sum` or `apps/web/package.json`/
+`package-lock.json` - this stage added no new dependency and no new
+bundled asset (the Chat page reuses `PlatformGlyph`, an existing
+application-owned component, for platform branding rather than adding
+an icon library).
+
+### Technical decisions
+
+**README.md**: added a full "Unified operator chat" section (mirroring
+the Engagement section's own structure: what it is, the projection,
+merged accounts/badges/emotes, filters/settings/privacy, verifying it
+for real) between the Engagement section and the REST API reference;
+added 14 new REST API table rows for every `/api/operator-chat/*`
+endpoint; added `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE` to the
+environment-variable table; updated the roadmap table (stage 9 now
+Completed, stages 10-19 renumbered in the "still planned" description
+rather than "9-19"); updated the top project-state callout, the
+"What is currently demo-only" table and "What is real"/"What will be
+added later" lists to move the operator chat from planned to real;
+added the new integration script and its own explanatory paragraph;
+extended the directory-structure tree with `internal/operatorchat`,
+`internal/domain/operatorchatprefs`,
+`internal/provider/twitch/chatassets`, `components/chat/`, and
+`chat.json`; while there, also added `engagement.json` and the new
+`chat.json` to the translation-directory-structure listing, which had
+been missing `engagement.json` since stage 8A - a pre-existing gap,
+fixed opportunistically while already editing that exact block rather
+than left for a future pass.
+
+**docs/project-overview.md**: updated the roadmap table (stage 9
+Completed); rewrote §16's own status line - it previously read
+"Status: planned. Nothing in this section is implemented," which
+was already stale as of stage 8A (the Event Bus is part of what that
+section describes) and became more obviously so with stage 9's own
+operator chat - to state plainly which two pieces are real (the Event
+Bus, the operator chat) and which remain planned; added an eighth
+tracked-fact entry to §8.1 for operator-chat preferences (mirroring
+stage 8A's own seventh-fact entry for engagement-connector settings
+exactly) and a matching runtime-state paragraph in the "Runtime stream
+state" subsection for the operator-chat projection's own in-memory-
+only bounded buffer - explicitly restating the persisted-preference-
+vs-transient-projection-state distinction as "the clearest illustration
+in the project so far" of that rule, since stage 9 is the first place
+a *preference about* something and *the something itself* are this
+cleanly split into two completely different storage mechanisms in the
+same feature.
+
+**docs/engagement-architecture.md**: rewrote §7.2 ("Operator chat")
+from a planned bullet list into an accurate "implemented (stage 9)"
+description distinguishing exactly what shipped (merged Twitch-only
+messages today, resolved badges, deleted/cleared state, activity
+events, filtering) from what remains deliberately unimplemented (the
+public-vs-operator distinction has no meaning without an overlay yet;
+word-level hiding; any second provider) - never claiming more than
+what stage 9 actually built. Added a new "Factual status update (stage
+9, completed)" callout after stage 8A's own existing one in §4, rather
+than editing that older callout - preserving the historical record of
+what was true when each stage began, exactly the pattern the document
+already established for stages 7A/7B/8A. Marked stage 9 "Completed" in
+the §18 staged-implementation table. Fixed one further pre-existing
+stale line in §17.1 (still describing Twitch's own chat/event token
+reuse as "stage 8, planned" after stage 8A had already completed it) -
+found while reading that section for stage-9-relevant edits, corrected
+since it was directly adjacent and trivially wrong, not left for a
+future pass.
+
+**config/README.md**: added rule 8, mirroring rule 7's stage-8A
+structure exactly: operator-chat preferences are ordinary SQLite
+tables (not a file here); chat content itself is never written to
+SQLite or any file, exactly like the Event Bus's own in-memory-only
+rule; the Twitch chat-badge cache is in-memory only with its
+documented 1-hour TTL; there is no overlay/template configuration yet
+for this directory to eventually hold.
+
+### Files changed
+- `README.md`, `docs/project-overview.md`,
+  `docs/engagement-architecture.md`, `config/README.md`.
+- `docs/progress.md` (this entry)
+
+### Automated validation — full final battery, all green
+- Frontend (`apps/web`): `npm run i18n:check` (2 languages, 11
+  namespaces, no differences), `npm run typecheck`, `npm run lint`,
+  `npm run test -- --run` (623/623 across 49 files), `npm run build`
+  (production build succeeds) - all clean.
+- Backend (`apps/server`): `gofmt -l .` (no output), `go vet ./...`,
+  `go test ./...` (every package passes), `go build ./...`,
+  `go build -tags integration ./cmd/testserver/...` - all clean.
+- Integration (repository root), all 7 scripts run to completion with
+  exit code 0: `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+  `verify-ffmpeg-branches.mjs`,
+  `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs`,
+  `verify-twitch-engagement.mjs`, `verify-operator-chat.mjs` - no
+  assertion weakened in any pre-existing script.
+- No manual browser/OBS/real-provider testing was performed, per this
+  stage's own explicit completion criteria.
+
+### Known limitations
+Named throughout this stage's own commits (see each commit's own
+"Known limitations" section above) rather than repeated here in full:
+no management UI for hidden/bot-user lists beyond the per-message
+row actions; the "hide bot messages" filter is session-only, not
+persisted; a second connected account merging into the timeline and a
+deliberately forced projection-side gap are covered by Go unit tests
+rather than the local verification script; cheermote tier images,
+animated-emote negotiation, and badge click-actions remain
+unimplemented, matching the researched Twitch contract's own
+documented scope. Stage 10 (the OBS overlay) remains planned,
+unaffected by any of this.
+
+### Next step
+Confirm a clean working tree, push to `origin/main`, confirm local and
+remote are at the same commit with zero ahead/behind, and produce the
+closing report.

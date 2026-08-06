@@ -131,6 +131,15 @@ of this document to reason about two credential lifecycles as if they were one.
 > [`docs/provider-integrations/twitch-engagement.md`](provider-integrations/twitch-engagement.md)
 > for the researched EventSub contract this connector implements.
 
+> **Factual status update (stage 9, completed):** the unified operator
+> chat this section referred to as still planned now exists - see §7.2.
+> `internal/operatorchat` is a provider-independent projection over the
+> same Event Bus, never importing `internal/provider/twitch` itself;
+> Twitch badge/emote resolution is a presentation-layer concern in
+> `internal/provider/twitch/chatassets` and `internal/httpapi` instead.
+> The OBS overlay (§7.3) and everything from stage 10 onward remain
+> exactly as planned before this stage.
+
 ## 5. Normalized engagement event model
 
 ### 5.1 Design goal
@@ -413,20 +422,39 @@ underlying normalized event stream** (§5), not two separate chat systems that
 happen to look similar. A message that never reaches the Event Bus cannot
 appear in either.
 
-### 7.2 Operator chat
+### 7.2 Operator chat — implemented (stage 9)
 
-The full, internal view for the streamer or moderator. Planned to show:
+**Status: implemented.** The full, internal view for the streamer or
+moderator, at `internal/operatorchat` (backend projection) and the
+`/chat` page (frontend). What is real today:
 
-- every connected platform's messages, merged,
-- platform icon and platform name per message,
-- badges and role/moderator information,
-- deleted-message status (§5.8) — shown, not hidden,
-- system messages (connector connected/disconnected, and similar),
-- event messages (follows, subs, etc.) inline with chat, when useful for
-  moderation context,
-- messages that are hidden from the public overlay by filter rules, still
-  visible here — the operator view is deliberately more permissive than the
-  public one.
+- every connected Twitch account's messages, merged in receive order —
+  "every connected platform's" is still Twitch-only until a second
+  provider's engagement connector exists (§16),
+- platform icon and, optionally, textual platform name per message
+  (§9 platform-presentation rules apply here first),
+- resolved badges (channel-then-global Twitch catalog, see
+  [provider-integrations/twitch-engagement.md](provider-integrations/twitch-engagement.md)'s
+  Stage 9 addendum) — role/moderator information only to the extent
+  Twitch's own badge catalog reports it; no separate role model exists,
+- deleted-message status (§5.8) — shown, not hidden, with the original
+  content preserved,
+- system/moderation messages (chat cleared, a user's messages cleared,
+  a deletion referencing a message no longer retained) — not yet a
+  connector connected/disconnected notice; that remains diagnostic-page
+  (Engagement) territory, not operator-chat content,
+- activity events (follows, subs, gifts, cheers, raids, redemptions,
+  remote stream online/offline) inline with chat,
+- account, kind, explicitly-hidden-user and bot-marked-user filtering,
+  plus persisted display preferences.
+
+**Not yet real, deliberately deferred:** a public-vs-operator
+distinction (there is no overlay yet to be "more permissive than" -
+§7.3 remains unimplemented), word-level hiding, and any second
+provider's messages. See the README's own
+[Unified operator chat](../README.md#unified-operator-chat) section for
+the full user-facing description and
+[progress.md](progress.md) for the design decisions.
 
 ### 7.3 OBS chat overlay
 
@@ -741,9 +769,9 @@ prerequisite** for:
 - FFmpeg destination stream keys (roadmap stage 6, completed),
 - OAuth tokens for connected accounts (§6.4, roadmap stages 7A/7B,
   **completed** for Twitch and YouTube account-lifecycle and
-  metadata-publish tokens; the engagement Event Bus's own eventual use of
-  the same tokens for chat/event scopes is still stage 8 (Twitch) and
-  stage 15 (YouTube), planned),
+  metadata-publish tokens; the engagement Event Bus's own use of the
+  same tokens for chat/event scopes is **completed** for Twitch (stage
+  8A) and still stage 15 (YouTube), planned),
 - any future outbound bot-message credential (if a connector ever needs one
   beyond its OAuth token).
 
@@ -801,7 +829,7 @@ that table.
 | 7C | Kick and TikTok account integration — **deferred**, capability-gated, not a prerequisite for stage 8A (see the factual note after this table) |
 | 8A | Engagement Event Bus + Twitch inbound connector (first real implementation of §5–6) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set |
-| 9 | Unified operator chat (§7.2) |
+| 9 | Unified operator chat (§7.2) — **Completed** |
 | 10 | OBS chat overlay (§7.3) |
 | 11 | Outbound chat, scheduled bot messages and commands (§8) |
 | 12 | Alert engine and alert queue (§9–10) |

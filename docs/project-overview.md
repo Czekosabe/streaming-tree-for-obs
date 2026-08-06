@@ -497,6 +497,20 @@ conflated, so an account can be perfectly healthy for metadata while
 still needing an explicit permission upgrade before engagement can
 enable at all.
 
+**Stage 9 added an eighth fact, this one not about any single account
+but about the operator's own presentation preferences: unified-
+operator-chat settings** (`internal/domain/operatorchatprefs`,
+`operator_chat_preferences` - a singleton row of presentation toggles;
+`operator_chat_account_visibility` - per-account visibility overrides;
+`operator_chat_hidden_users`/`operator_chat_bot_users` - operator-
+maintained lists identified by the provider's own stable user id,
+never a display name). Deliberately as small as engagement settings
+above: no message text, no username treated as authoritative identity,
+no token, no raw provider event. Everything about actual chat
+content - the merged timeline itself - is transient, in-memory-only
+projection state, described below alongside the Event Bus's own
+runtime state, and is gone on every backend restart exactly like it.
+
 ### Runtime stream state
 
 Whether the ingest service is running, whether a publisher is connected,
@@ -541,6 +555,22 @@ configurable) that resets to empty on every backend restart, exactly
 like MediaMTX's and a branch's own runtime state above - see
 [docs/engagement-architecture.md](engagement-architecture.md) §5-6 for
 the normalized event model and bus design themselves.
+
+**The unified-operator-chat projection (stage 9,
+`internal/operatorchat`) is the same kind of fact one layer up**: a
+second, independently bounded, in-memory-only ring buffer (default
+capacity 500, `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE`-configurable),
+holding chat-shaped items derived from the Event Bus's own normalized
+events rather than a second copy of provider state. It begins empty on
+every backend start - no pre-restart chat history is ever claimed -
+and tracks only its own sequence/capacity/subscriber counts and a
+one-way "was a gap from the bus ever detected" flag, never a raw
+provider payload. This is the clearest illustration in the project so
+far of the rule this whole subsection follows: *what happened* (a
+persisted, provider-independent fact - here, an operator's display
+preferences) and *what is happening right now* (transient, in-memory,
+provider-derived - here, the actual chat timeline) are never the same
+storage.
 
 ### 8.2 OBS ingest detection
 
@@ -818,7 +848,7 @@ it is architected; this table only tracks status and dependencies.
 | 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for stage 8. Kick account integration may land together with its own engagement adapter in stage 15, after researching Kick's current official APIs; TikTok remains conditional on a stable, official, permitted integration (§16, §19) |
 | 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
-| 9 | Unified operator chat | Planned |
+| 9 | Unified operator chat: a real, merged Twitch chat page consuming the Engagement Event Bus, provider-independent projection, persisted preferences, Twitch badge/emote resolution (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 10 | OBS chat overlay | Planned |
 | 11 | Outbound chat, scheduled bot messages and commands | Planned |
 | 12 | Alert engine and alert queue | Planned |
@@ -1049,9 +1079,13 @@ In practice this means:
 - an entry in `docs/progress.md` does not mark a feature as completed if it is
   only an interface placeholder.
 
-## 16. Engagement and overlay platform (planned)
+## 16. Engagement and overlay platform (partly implemented)
 
-**Status: planned. Nothing in this section is implemented.**
+**Status: two pieces of this section are real as of stage 9 - the
+normalized Event Bus (stage 8A) and a unified operator chat consuming
+it (stage 9). Everything else described below (overlays, outbound
+chat/bot messages, alerts, visual designers, TTS, goal/counter
+widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1104,7 +1138,17 @@ made from stage 5 onward:
    scraping as a core feature. See engagement-architecture.md §16.
 
 This section is updated, and marked accordingly, only as each roadmap stage
-from §13 is actually completed - not before. Stages 5 and 7A are the only
-ones of the 20 so far, and neither implements anything in this section
-itself (chat, overlays, alerts, bot automation, the Event Bus) - they only
-build foundations this era will reuse.
+from §13 is actually completed - not before. Stages 5, 7A and 7B built
+foundations this era reuses without implementing anything in this
+section themselves. Stage 8A implemented the normalized Event Bus and
+a real Twitch inbound connector - the first genuine piece of this
+section. Stage 9 implemented a real, unified operator chat consuming
+that bus: a provider-independent projection
+(`apps/server/internal/operatorchat`), persisted non-content
+preferences, Twitch chat-badge/emote resolution, and a working Chat
+page in the frontend - see [engagement-architecture.md](engagement-architecture.md)
+and the README's own [Unified operator chat](../README.md#unified-operator-chat)
+section for the full design and user-facing behavior. Everything else
+this section describes (the OBS overlay, outbound chat, alerts, TTS,
+goal widgets, further providers) remains planned, unaffected by stage
+9's own completion.

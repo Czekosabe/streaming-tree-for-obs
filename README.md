@@ -17,14 +17,14 @@ detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) — but it
 shapes decisions made today. The foundation is built incrementally: the
 credential-store foundation (stage 5), the Twitch and YouTube
-connected-account integrations (stages 7A/7B), and the first real piece
+connected-account integrations (stages 7A/7B), the first real piece
 of the engagement platform itself — a normalized Engagement Event Bus and
 a real Twitch inbound connector reading chat and channel events (stage
-8A) — are all completed. Everything downstream of the bus (unified
-operator chat, the OBS overlay, outbound chat, alerts, TTS) is still
-planned.
+8A) — and a real, unified operator chat consuming that bus (stage 9) —
+are all completed. Everything still on top of that (the OBS overlay,
+outbound chat, alerts, TTS) remains planned.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, and a real Twitch inbound Event Bus connector all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, and a real unified operator chat all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -41,12 +41,15 @@ planned.
 > **enable a real EventSub WebSocket connector** that normalizes chat
 > messages, follows, subscriptions, gifts, cheers, raids, channel-point
 > redemptions and remote stream online/offline events onto an in-memory
-> **Engagement Event Bus**, viewable live on a new diagnostic
-> **Engagement** page. See
+> **Engagement Event Bus**, viewable live on a diagnostic **Engagement**
+> page and now also presented as a real, merged, working **Chat** page —
+> badges, emotes, message deletion/clearing, activity events, filters and
+> autoscroll all real. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
-> [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
+> [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
+> [Unified operator chat](#unified-operator-chat)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
@@ -58,9 +61,9 @@ planned.
 > start only ever applies to a connector you already enabled yourself.
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything built **on top of** the Event Bus — unified operator chat, the
-> OBS Browser Source overlay, outbound chat and bot messages, alerts, TTS —
-> are still **planned**. Whatever remains a placeholder is marked with a
+> everything built **on top of** the operator chat — the OBS Browser
+> Source overlay, outbound chat and bot messages, alerts, TTS — are still
+> **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -83,6 +86,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata)
 - [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
 - [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
+- [Unified operator chat](#unified-operator-chat)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -104,9 +108,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick may land together with its engagement adapter in stage 15, TikTok remains conditional on a stable official integration |
-| 8A | Engagement Event Bus and a real Twitch inbound connector (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 8A | Engagement Event Bus and a real Twitch inbound connector | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
-| 9–19 | Unified chat, overlays, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 10–19 | OBS overlay, outbound chat, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -273,6 +278,7 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 | `STREAMING_TREE_TWITCH_CLIENT_ID` | — | Twitch application Client ID. Always wins over a database-managed value if set. Never a client secret — see [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata). |
 | `STREAMING_TREE_YOUTUBE_CLIENT_ID` | — | Google OAuth Desktop-app Client ID. Always wins over a database-managed value if set, independently of the Twitch variable above. Never a client secret — see [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata). |
 | `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE` | `1000` | The Engagement Event Bus's in-memory retained-event capacity. Must be between 100 and 10000; an out-of-range or non-numeric value is a startup error. See [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents). |
+| `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE` | `500` | The unified operator-chat projection's in-memory retained-item capacity — independent of the Event Bus's own. Must be between 100 and 5000; an out-of-range or non-numeric value is a startup error. See [Unified operator chat](#unified-operator-chat). |
 
 Booleans accept `true`/`false`, `1`/`0` and `t`/`f`. A typo such as `yes` is a
 startup error rather than a silent `false`.
@@ -1191,13 +1197,16 @@ the full target design and
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** Sending Twitch chat messages,
-chat commands, scheduled bot messages, a unified multi-provider operator
-chat, an OBS overlay, alert rules or rendering, TTS, YouTube live chat,
-and Kick/TikTok engagement are all still unimplemented — see
-[`docs/engagement-architecture.md`](docs/engagement-architecture.md). The
-diagnostic Engagement page added in this stage is explicitly **not** the
-finished operator chat or an overlay — it exists to make the Event Bus
-and the Twitch connector's state genuinely observable.
+chat commands, scheduled bot messages, an OBS overlay, alert rules or
+rendering, TTS, YouTube live chat, and Kick/TikTok engagement are all
+still unimplemented — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
+real, unified operator chat consuming this Event Bus is implemented —
+see [Unified operator chat](#unified-operator-chat) below. The
+diagnostic Engagement page added in this stage is explicitly **not**
+the operator chat or an overlay — it exists to make the Event Bus and
+the Twitch connector's state genuinely observable, and stays a
+separate page from Chat.
 
 ### The Engagement Event Bus
 
@@ -1321,6 +1330,106 @@ provides more reliably than a real WebSocket exchange) — see
 
 ---
 
+## Unified operator chat
+
+Stage 9 adds a real, working **Chat** page (`/chat`): merged, live
+Twitch chat across every connected account whose engagement connector
+is enabled, distinct from the Engagement page's connector diagnostics.
+Chat = the daily working view; Engagement = "is the connector actually
+healthy." Neither replaces the other.
+
+**What this stage does not implement.** Sending chat, chat commands,
+scheduled bot messages, the OBS overlay, alerts, TTS, remote moderation
+actions (bans/timeouts/message deletion sent *to* Twitch), and
+YouTube/Kick/TikTok chat all remain exactly as planned before this
+stage — a message appearing in operator chat is never proof this
+application's own outgoing FFmpeg branch works; that is an unrelated,
+separately verified fact.
+
+### The operator-chat projection
+
+`internal/operatorchat` subscribes to the same Engagement Event Bus and
+converts normalized events into a chat-shaped, lifecycle-aware public
+item model — never the other way around; the projection never mutates
+the Event Bus's own retained history, and it never imports the Twitch
+provider package. It is **in-memory only**, independently bounded from
+the Event Bus (default capacity 500, configurable via
+`STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE`, 100–5000) and begins empty
+on every backend start — nothing about this stage claims pre-restart
+chat history.
+
+Every revision — a brand-new message/activity/moderation/system item,
+or a lifecycle update to an existing one (a message becoming deleted) —
+is a complete "upsert" carrying its own monotonically increasing
+sequence, replayed identically by the bounded snapshot endpoint and the
+live SSE stream. A message becoming deleted updates the **same** item
+id in place, with its original content preserved and a visible deleted
+marker — it is never silently removed and never produces a second row.
+A deletion referencing a message no longer retained produces a small,
+honest moderation item instead of inventing content. A whole-chat clear
+or a per-user clear ("clear this user's messages," which needs no
+reference to any specific prior message) is scoped exactly to the
+provider/account/user it targets — never a different account, never a
+different user.
+
+### Merged accounts, badges and emotes
+
+A user may have more than one connected Twitch account; the merged
+timeline never guesses which one "the" source is — every item carries
+its own connected-account id, and the account label is shown only when
+there is more than one account contributing (never a name nobody needs
+to disambiguate). Twitch chat badges are resolved from the
+channel-specific catalog first, then the global one, through a
+bounded, TTL'd (1 hour), single-flight cache — see
+[`docs/provider-integrations/twitch-engagement.md`](docs/provider-integrations/twitch-engagement.md)'s
+Stage 9 addendum for the full research this is built on, including
+where that channel-then-global order is this project's own defensible
+inference rather than an explicitly documented Twitch rule. Emote
+images are built as a pure URL from the fragment's own emote id — no
+catalog fetch, no cache, nothing that can go stale. A badge or emote
+that cannot be resolved is simply omitted or falls back to its plain
+text; the chat message itself is never discarded or blocked on it.
+
+### Filters, settings and privacy
+
+The Chat page filters by connected account (persisted per account) and
+by explicitly-hidden or bot-marked users (a small "hide this
+user"/"mark as bot" action per message, backed by its own persisted
+list — identified by the provider's own stable user id, never a
+display name someone can change, and never a heuristic guessing "bot"
+from a username). Display preferences (platform icon/name, account
+label, badges, timestamps, activity events, deleted messages, command
+messages, compact mode) persist in SQLite and apply immediately while
+being edited, saved only on an explicit action. **None of this is chat
+content**: no message text, no username treated as authoritative
+identity, no token, and no raw provider event is ever persisted — see
+the migration's own scope note in
+`apps/server/internal/storage/sqlite/migrations/0010_operator_chat_preferences.sql`.
+The timeline auto-scrolls while at the bottom, pauses the moment an
+operator scrolls up, and offers an explicit "Jump to latest" control
+with an unseen count rather than silently stealing the viewport.
+
+### Verifying it for real
+
+`scripts/verify-operator-chat.mjs` exercises the whole stack end to end
+against the real backend and the same kind of fake Twitch OAuth/Helix/
+EventSub servers `verify-twitch-engagement.mjs` uses (extended with
+fake `GET /chat/badges/global` and `GET /chat/badges` routes) — badge
+channel-then-global resolution with cache-hit counts, the emote CDN
+URL, an exact deletion updating the same item id, a per-user clear and
+a whole-chat clear each correctly scoped, every activity type
+(including the gift batch staying distinct from its recipient, and
+bits never labeled a donation), preferences/hidden-user/bot-user
+persistence surviving a real backend restart while chat content itself
+resets to empty, and the SSE stream — entirely on loopback, with **no
+real Twitch account or network request to Twitch involved**. A
+representative subset of scenarios (a second connected account merging
+into the timeline, a deliberately forced projection-side gap) is
+covered by Go unit tests instead — see
+[`docs/progress.md`](docs/progress.md) for exactly which.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -1389,6 +1498,19 @@ All endpoints live under `/api` and return `application/json`.
 | `PUT` | `/api/connected-accounts/{id}/engagement` | Enable or disable the connector. Body `{enabled}`. Persists; an enabled connector reconnects automatically after a backend restart. |
 | `POST` | `/api/connected-accounts/{id}/engagement/authorize` | Start an identity-bound Device Code Flow requesting the union of the account's existing scopes and the engagement profile. **No request body.** Reuses the Twitch device-flow attempt snapshot shape. |
 | `POST` | `/api/connected-accounts/{id}/engagement/restart` | Cancel and restart the connector without changing its persisted enabled setting. **No request body.** |
+| `GET` | `/api/operator-chat/status` | Operator-chat projection status: schema version, buffer capacity, retained count, oldest/newest sequence, active subscribers, and a one-way "bus gap ever detected" flag. No message content. |
+| `GET` | `/api/operator-chat/items` | A bounded snapshot of retained operator-chat items. Query params `after`/`limit` (capped at 1000), repeatable `accountId`, comma-separated `kinds`, `includeDeleted`; reports `gap: true` when `after` is no longer retrievable. |
+| `GET` | `/api/operator-chat/stream` | Server-Sent Events: live operator-chat items (each a complete current-state upsert) as they change. Supports `Last-Event-ID` (or `?after=`) for replay, the same `accountId`/`kinds`/`includeDeleted` filters, emits `operator-chat.gap` when replay is incomplete, and periodic keepalive comments. Bounded concurrent clients. |
+| `GET` | `/api/operator-chat/preferences` | Persisted display preferences, or the documented defaults if never saved. |
+| `PUT` | `/api/operator-chat/preferences` | Full replacement of every preference field. Unknown fields rejected. |
+| `GET` | `/api/operator-chat/account-visibility` | Every connected account with an explicit visibility override. An account absent from this list is visible by default. |
+| `PUT` | `/api/operator-chat/account-visibility/{id}` | Set one connected account's chat visibility. Body `{visible}`. `404` for an unknown account. |
+| `GET` | `/api/operator-chat/hidden-users` | Every operator-hidden user, identified by provider user id. |
+| `POST` | `/api/operator-chat/hidden-users` | Hide a user, idempotently. Body `{providerId, connectedAccountId, providerUserId, label?}`. |
+| `DELETE` | `/api/operator-chat/hidden-users/{id}` | Un-hide, by the entry's own id. Responds 204; `404` if it no longer exists. |
+| `GET` | `/api/operator-chat/bot-users` | Every operator-marked bot user — a separate list from hidden users. |
+| `POST` | `/api/operator-chat/bot-users` | Mark a user as a bot, idempotently. Same body shape as hidden-users. |
+| `DELETE` | `/api/operator-chat/bot-users/{id}` | Unmark, by the entry's own id. Responds 204; `404` if it no longer exists. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -1520,7 +1642,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, and the Engagement page/connector card/event feed
+npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, and the Chat page/message/activity/moderation rows
 npm run build       # production build
 ```
 
@@ -1545,6 +1667,7 @@ node scripts/verify-ffmpeg-branches.mjs           # real FFmpeg + MediaMTX desti
 node scripts/verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
 node scripts/verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, broadcast/category, publish - fake Google only
 node scripts/verify-twitch-engagement.mjs         # Event Bus + EventSub connector - fake Twitch only
+node scripts/verify-operator-chat.mjs             # unified operator chat: projection, preferences, badges/emotes - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -1602,6 +1725,18 @@ revocation, restart, disable and disconnect. See
 [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
 for the full list of what it covers and what is instead covered by Go
 unit tests.
+
+The operator-chat script reuses the same fake OAuth/Helix/EventSub
+servers, extended with fake `GET /chat/badges/global` and
+`GET /chat/badges` routes. It covers badge channel-then-global
+resolution with cache-hit counts, the emote CDN URL, an exact deletion
+updating the same item id, a per-user clear and a whole-chat clear each
+correctly scoped, every activity type (gift batch vs. recipient, bits
+never a donation), preferences/hidden-user/bot-user persistence
+surviving a real backend restart while chat content itself resets, and
+the SSE stream. See
+[Unified operator chat](#unified-operator-chat) for the full list of
+what it covers and what is instead covered by Go unit tests.
 
 **None of these scripts touch your real database, your managed MediaMTX
 installation, your real OS credential store, or a real Twitch/Google
@@ -1661,7 +1796,9 @@ apps/web/src/i18n/
     │   ├── pages.json        # page titles and planned-feature descriptions
     │   ├── errors.json       # backend error messages and code mappings
     │   ├── runtime.json      # MediaMTX/ingest state, dependency status
-    │   └── accounts.json     # Twitch integration, device flow, account link, publish
+    │   ├── accounts.json     # Twitch integration, device flow, account link, publish
+    │   ├── engagement.json   # Event Bus status, connector state, diagnostic event feed
+    │   └── chat.json         # unified operator chat: kinds, activity/moderation labels, filters, settings, autoscroll
     └── pl/                   # Polish translation, same structure
 ```
 
@@ -1757,9 +1894,10 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── api/            # Zod contracts + transport for the platform, account and engagement API
+│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement and operator-chat API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
+│   │   │   │   ├── chat/       # Message/activity/moderation rows, filter bar, settings panel, badge/emote images
 │   │   │   │   ├── engagement/ # Twitch connector card, bounded recent-events feed
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
 │   │   │   │   ├── metadata/   # Metadata editor with platform tabs, Twitch/YouTube category pickers, publish panel
@@ -1769,11 +1907,11 @@ rest of the repository.
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
-│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the SSE client hook
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement and operator-chat SSE client hooks
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
-│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings
-│   │   │   ├── pages/          # Route views, including EngagementPage
+│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat reducer and autoscroll state machine
+│   │   │   ├── pages/          # Route views, including EngagementPage and ChatPage
 │   │   │   └── test/           # Rendered-component test harness (Testing Library provider wrapper)
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
@@ -1786,13 +1924,16 @@ rest of the repository.
 │           ├── domain/account/ # Connected-account model, token bundle, service (provider-independent)
 │           ├── domain/engagement/       # Normalized engagement-event model (Stage 8A)
 │           ├── domain/engagementsettings/ # Per-account engagement-connector enable/disable preference
+│           ├── domain/operatorchatprefs/ # Persisted operator-chat preferences, account visibility, hidden/bot-user lists (Stage 9)
 │           ├── domain/platform/# Provider registry, models, validation, service
 │           ├── domain/credential/# Destination stream-key service (OS credential store)
 │           ├── domain/output/  # Destination output-settings model, validation, service
 │           ├── domain/remotetarget/ # Remote broadcast/target association (YouTube)
 │           ├── engagement/     # The Engagement Event Bus (ring buffer, dedup, subscriptions)
+│           ├── operatorchat/   # The unified operator-chat projection (Stage 9) - provider-independent, in-memory only
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
 │           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services
+│           │   └── chatassets/ # Twitch chat badge (cached) and emote (pure URL) resolution (Stage 9)
 │           ├── provider/youtube/# YouTube OAuth (PKCE) + Data API client, adapter, metadata service
 │           ├── runtime/deviceflow/# Device-authorization attempt state machine
 │           ├── runtime/youtubeauth/# YouTube Authorization Code + PKCE loopback-callback attempt manager
@@ -1806,10 +1947,10 @@ rest of the repository.
 ├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
-│   ├── engagement-architecture.md # Engagement platform architecture (partly implemented as of stage 8A)
+│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9)
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
-│   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A)
+│   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
 │   │   └── youtube.md          # Researched Google/YouTube API contract
 │   └── progress.md             # Work journal
 ├── scripts/
@@ -1818,7 +1959,8 @@ rest of the repository.
 │   ├── verify-ffmpeg-branches.mjs  # Real FFmpeg + MediaMTX destination-branch check
 │   ├── verify-twitch-account-integration.mjs # Twitch device flow, linking, publish - fake Twitch only
 │   ├── verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, publish - fake Google only
-│   └── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
+│   ├── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
+│   └── verify-operator-chat.mjs    # Unified operator chat: projection, preferences, badges/emotes - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -1837,7 +1979,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Unified operator chat, OBS Browser Source overlay, outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** Twitch chat/events reading itself is real as of stage 8A (see [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)) — everything built on top of that event stream is still planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| OBS Browser Source overlay, outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9 (see [Unified operator chat](#unified-operator-chat)) — everything still built on top of it (the overlay, outbound chat, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -1892,6 +2034,13 @@ directly next to the control.
 - **A real Server-Sent Events stream** (`GET /api/engagement/stream`) with
   replay via `Last-Event-ID` and an explicit gap signal for evicted
   history, and the diagnostic Engagement page that consumes it live.
+- **A real, unified operator Chat page** (`/chat`) merging live Twitch
+  chat across every connected account with an enabled connector: real
+  ordered fragments, resolved Twitch badges and emote images, message
+  deletion and chat/user clearing reflected in place, activity events
+  inline, account/kind/bot/hidden-user filtering, persisted display
+  preferences, and autoscroll with a jump-to-latest control - see
+  [Unified operator chat](#unified-operator-chat).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -1903,8 +2052,8 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Unified operator chat and the OBS Browser Source overlay** (stages
-  9-10) — both read the Engagement Event Bus stage 8A now provides.
+- **The OBS Browser Source overlay** (stage 10) — reads the same
+  operator-chat projection stage 9 now provides.
 - **Outbound chat, scheduled bot messages, the alert engine, TTS, goal
   widgets** and the rest of the engagement and overlay platform -
   architecture only so far, see

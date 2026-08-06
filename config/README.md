@@ -130,3 +130,17 @@ with no transcoding, is this stage's deliberate scope.
    here** - see `docs/engagement-architecture.md` §6.5: the Engagement
    Event Bus is an in-memory-only ring buffer that resets on every backend
    restart, by design.
+8. Stage 9's unified operator chat follows the same rule: the operator's
+   display preferences, per-account chat visibility, and hidden-user/
+   bot-user lists are a small set of ordinary SQLite tables
+   (`operator_chat_preferences` and friends) alongside the rest of this
+   application's configuration - not a file in this directory. **Chat
+   content itself (message text, badges, fragments, the merged timeline)
+   is never written to SQLite or to any file anywhere** - the operator-
+   chat projection (`internal/operatorchat`) is an in-memory-only ring
+   buffer, independently bounded from the Event Bus and reset on every
+   backend restart, exactly like it. The Twitch chat-badge image cache
+   (`internal/provider/twitch/chatassets`) is likewise in-memory only,
+   with a 1-hour TTL - never a file, never a database row. There is no
+   overlay or template configuration yet (that remains stage 10+, still
+   planned) for this directory to hold.
