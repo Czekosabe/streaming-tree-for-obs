@@ -26,6 +26,7 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_TWITCH_CLIENT_ID",
 		"STREAMING_TREE_YOUTUBE_CLIENT_ID",
 		"STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE",
+		"STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -476,5 +477,60 @@ func TestEngagementBufferSizeConstantsMatchBusPackage(t *testing.T) {
 	}
 	if maxEngagementBufferSize != 10000 {
 		t.Errorf("maxEngagementBufferSize = %d, want 10000 (must match internal/engagement.MaxCapacity)", maxEngagementBufferSize)
+	}
+}
+
+func TestOperatorChatBufferSizeDefault(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.OperatorChatBufferSize != 500 {
+		t.Errorf("OperatorChatBufferSize = %d, want default 500", cfg.OperatorChatBufferSize)
+	}
+}
+
+func TestOperatorChatBufferSizeOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE", "1200")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.OperatorChatBufferSize != 1200 {
+		t.Errorf("OperatorChatBufferSize = %d, want 1200", cfg.OperatorChatBufferSize)
+	}
+}
+
+func TestOperatorChatBufferSizeRejectsOutOfRangeValues(t *testing.T) {
+	for _, raw := range []string{"0", "99", "5001", "not-a-number", "-5"} {
+		t.Run(raw, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE", raw)
+			if _, err := Load(); err == nil {
+				t.Errorf("expected Load() to reject STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE=%q", raw)
+			}
+		})
+	}
+}
+
+func TestOperatorChatBufferSizeConstantsMatchProjectionPackage(t *testing.T) {
+	// internal/operatorchat.DefaultCapacity/MinCapacity/MaxCapacity must
+	// stay numerically identical to this package's own duplicated
+	// constants - see defaultOperatorChatBufferSize's own doc comment for
+	// why they are duplicated rather than imported (this package cannot
+	// import internal/operatorchat without creating a dependency a
+	// low-level config package should not have).
+	if defaultOperatorChatBufferSize != 500 {
+		t.Errorf("defaultOperatorChatBufferSize = %d, want 500 (must match internal/operatorchat.DefaultCapacity)", defaultOperatorChatBufferSize)
+	}
+	if minOperatorChatBufferSize != 100 {
+		t.Errorf("minOperatorChatBufferSize = %d, want 100 (must match internal/operatorchat.MinCapacity)", minOperatorChatBufferSize)
+	}
+	if maxOperatorChatBufferSize != 5000 {
+		t.Errorf("maxOperatorChatBufferSize = %d, want 5000 (must match internal/operatorchat.MaxCapacity)", maxOperatorChatBufferSize)
 	}
 }

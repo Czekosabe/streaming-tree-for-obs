@@ -73,6 +73,18 @@ type Options struct {
 	// management API. Required alongside EngagementBus and Accounts/
 	// DeviceFlow for the engagement routes to register.
 	EngagementConnectors EngagementConnectorService
+	// OperatorChatProjection serves the Stage 9 unified-operator-chat
+	// status/snapshot/SSE API. Required alongside OperatorChatPrefs for the
+	// operator-chat routes to register.
+	OperatorChatProjection OperatorChatProjectionService
+	// OperatorChatPrefs serves persisted operator-chat preferences,
+	// per-account visibility, and the hidden-user/bot-user lists.
+	OperatorChatPrefs OperatorChatPrefsService
+	// OperatorChatAssets resolves Twitch chat badge image URLs at
+	// serialization time. May be nil - items still serialize without
+	// resolved badge images (see OperatorChatAssetResolver's own doc
+	// comment).
+	OperatorChatAssets OperatorChatAssetResolver
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -120,6 +132,10 @@ func NewRouter(opts Options) http.Handler {
 	if opts.EngagementBus != nil && opts.Accounts != nil && opts.DeviceFlow != nil &&
 		opts.EngagementSettings != nil && opts.EngagementConnectors != nil {
 		registerEngagementRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.EngagementBus, opts.EngagementSettings, opts.EngagementConnectors)
+	}
+
+	if opts.OperatorChatProjection != nil && opts.OperatorChatPrefs != nil && opts.Accounts != nil {
+		registerOperatorChatRoutes(mux, logger, opts.Accounts, opts.OperatorChatProjection, opts.OperatorChatPrefs, opts.OperatorChatAssets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

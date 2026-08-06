@@ -6673,3 +6673,162 @@ Build the operator-chat HTTP API: status/items/stream(SSE)/
 preferences/hidden-users/bot-users, tying the projection, the
 preferences service, and this asset resolver together for the
 frontend.
+
+## 2026-08-06 13:55 — feat(server): add operator chat HTTP API and wiring
+
+### Status
+Completed
+
+### Scope
+The HTTP surface that ties the previous three commits' pieces
+together — the projection, persisted preferences, and the Twitch
+asset resolver — into one API the frontend can consume, plus the
+`STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE` environment variable and
+the `cmd/server`/`cmd/testserver` wiring that actually constructs and
+starts everything at process startup. This is the last backend commit
+before the frontend Chat page can be built against a real, running
+API instead of a mock.
+
+### Technical decisions
+
+**Routes** (`internal/httpapi/operatorchat.go`, wired into
+`router.go`'s `Options`/`NewRouter` exactly like every other optional
+route group — nil-checked, so a health-only test server stays
+buildable): `GET /api/operator-chat/status`,
+`GET /api/operator-chat/items`, `GET /api/operator-chat/stream` (SSE),
+`GET`/`PUT /api/operator-chat/preferences`,
+`GET /api/operator-chat/account-visibility`,
+`PUT /api/operator-chat/account-visibility/{id}`,
+`GET`/`POST /api/operator-chat/hidden-users`,
+`DELETE /api/operator-chat/hidden-users/{id}`, and the identical
+shape again for `/bot-users`. Every path is registered twice (method-
+aware pattern plus a bare-path 405 fallback), matching every other
+route group in this file.
+
+**Asset resolution happens at serialization time, in this file only.**
+`toOperatorChatItemResponse`/`toOperatorChatUserResponse` call the
+injected `OperatorChatAssetResolver` (satisfied structurally by
+`*chatassets.Resolver`) per badge and `chatassets.EmoteImageURL` per
+emote fragment while building the JSON response — this is the one
+place in the whole stack where "Twitch" and "the provider-independent
+projection" meet, exactly as planned when the projection was built.
+`OperatorChatAssets` in `Options` may be `nil`; items still serialize
+correctly without resolved image URLs (text over decoration, per
+Part 11) — no route depends on it being present.
+
+**Single complete-upsert SSE event name, not separate item/update
+events.** `handleOperatorChatStream` emits every revision — a new item
+or a lifecycle update to an existing one — as one
+`event: operator-chat.item`, mirroring `handleEngagementStream`'s own
+structure (Last-Event-ID replay, an explicit `operator-chat.gap` event
+on eviction or on a dropped slow-consumer subscription, periodic
+keepalive comments, a bounded client count via the same
+`atomic.Int32` pattern). This directly follows from the projection's
+own "Approach A" revision-stream design from the first Stage 9 commit
+— there is no second event shape to keep in sync with the first.
+
+**Server-side filtering (`operatorChatItemFilter`) is shared between
+the bounded snapshot endpoint and the SSE stream** — `accountId`
+(repeatable query param), `kinds` (comma-separated), `includeDeleted`
+(defaults true) — rather than only ever filtering client-side. An
+unrecognized `kinds` value is rejected with
+`422 operator_chat_invalid_filter` rather than silently ignored, so a
+frontend typo fails loudly.
+
+**Stable error codes, mapped once.** `writeOperatorChatError` maps
+`operatorchat.ErrClosed` → `operator_chat_unavailable` (503),
+`operatorchatprefs.ErrAccountNotFound` → `operator_chat_account_not_found`
+(404), `operatorchatprefs.ErrUserNotFound` → `operator_chat_user_invalid`
+(404), and falls back to the shared `writeDomainError` for anything
+else (a storage failure logged server-side and answered with a
+generic 500, never a raw SQLite message). Hidden/bot-user add requests
+missing any of `providerId`/`connectedAccountId`/`providerUserId` are
+rejected with the same `operator_chat_user_invalid` code before ever
+reaching the service layer. Every hidden/bot-user mutation first calls
+`AccountService.GetAccount` so an unknown connected account answers
+with the existing, already-tested `writeAccountError` mapping
+(`account_not_found`) rather than a confusing foreign-key-shaped
+`operator_chat_account_not_found` at the wrong layer — the
+`operatorchatprefs`-sourced code is reserved for the account-visibility
+endpoint, which has no separate account lookup of its own before the
+repository call.
+
+**Config**: `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE` added to
+`internal/config` following `STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE`'s
+exact precedent — default 500 / min 100 / max 5000 (mirroring
+`internal/operatorchat.DefaultCapacity`/`MinCapacity`/`MaxCapacity`
+literally, pinned by
+`TestOperatorChatBufferSizeConstantsMatchProjectionPackage` since this
+low-level package cannot import `internal/operatorchat` without
+creating a dependency it should not have), invalid values fail
+`Load()` outright rather than silently falling back.
+
+**Startup wiring** (`cmd/server/main.go`, mirrored exactly in
+`cmd/testserver/main.go`): `operatorChatProjection := oc.New(...)`
+is constructed and `Start`ed right after `twitchEngagementManager`
+(it needs `destinationLookup`, defined at that point), sharing the
+same `eventBus` the engagement manager publishes to and the same
+`destinationLookup` closure. `operatorChatPrefsService` and
+`operatorChatAssets` (`chatassets.NewResolver(twitchClient,
+accountService, nil)`) are constructed alongside it. All three are
+passed into `httpapi.NewRouter`'s new `Options` fields. Shutdown order:
+`operatorChatProjection.Shutdown(shutdownCtx)` is inserted between
+`twitchEngagementManager.Shutdown(shutdownCtx)` and
+`eventBus.Shutdown()` in both shutdown paths (listener-failure and
+graceful-signal) — the engagement connectors stop producing new events
+before the projection stops consuming them, and the projection stops
+consuming before the bus itself is torn down.
+
+### Files changed
+- `apps/server/internal/httpapi/operatorchat.go`,
+  `operatorchat_test.go` (new).
+- `apps/server/internal/httpapi/router.go` — three new `Options`
+  fields, one new registration call.
+- `apps/server/internal/config/config.go`,
+  `config_test.go` — `OperatorChatBufferSize` +
+  `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE`.
+- `apps/server/cmd/server/main.go`,
+  `apps/server/cmd/testserver/main.go` — construct and wire the
+  projection/preferences/asset resolver; extend the shutdown sequence.
+- `docs/progress.md` (this entry)
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` (whole module) — clean.
+- `go test ./internal/httpapi/... -run OperatorChat -v` — 17/17 pass:
+  status reports capacity/counts; a published chat message appears in
+  `GET /items` with the correct kind/text/account; `kinds=activity`
+  filters correctly; an unknown `kinds` value is rejected with
+  `operator_chat_invalid_filter`; preferences report the documented
+  defaults before any save and round-trip through PUT; an unknown
+  field in the preferences body is rejected (400, via the existing
+  strict-decode helper); setting visibility for an unknown account
+  returns 404; account visibility round-trips through GET/PUT; adding
+  a hidden user without all three identity fields is rejected with
+  `operator_chat_user_invalid`; adding one for an unknown account
+  returns 404; hidden users can be added, listed, and removed (204 on
+  delete); removing an absent hidden user returns 404; the bot-users
+  list stays independent of the hidden-users list; a wrong HTTP method
+  returns 405 with an `Allow` header; the SSE stream serves the
+  correct headers, replays a previously-published message as
+  `event: operator-chat.item`, and never leaks an
+  `accessToken`/`sessionId`-shaped field.
+- `go test ./internal/config/... -v` — includes 4 new
+  `OperatorChatBufferSize` tests (default, override, out-of-range
+  rejection, constants pinned to `internal/operatorchat`) alongside
+  every pre-existing config test; all pass.
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  — both binaries build cleanly with the new wiring.
+- `go test ./...` (whole module) — every package passes; no
+  regression in Stage 1–8A or in this stage's own earlier commits.
+
+### Known limitations
+No frontend consumes this API yet. `docs/provider-integrations/twitch-engagement.md`'s
+own note about the badge channel/global override order being an
+inference (not an officially confirmed rule) still applies here, since
+`ResolveBadge` is exactly that function called at serialization time.
+
+### Next step
+Build the frontend: Zod contracts and TanStack Query hooks for the new
+endpoints, an SSE client hook mirroring `use-engagement-stream.ts`'s
+conventions, the Chat page itself with its filter/settings panels and
+autoscroll behavior, navigation, and the EN/PL `chat` i18n namespace.

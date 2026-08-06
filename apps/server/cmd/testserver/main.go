@@ -32,12 +32,15 @@ import (
 	"github.com/streaming-tree/server/internal/domain/account"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
+	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
+	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/provider/twitch"
+	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
 	"github.com/streaming-tree/server/internal/runtime/branch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
@@ -191,6 +194,19 @@ func run() error {
 		logger.Warn("could not restore enabled Twitch engagement connectors at startup", slog.Any("error", err))
 	}
 
+	// Stage 9: the unified-operator-chat projection consumes the same
+	// Event Bus, begins empty regardless of what the bus already retains
+	// (see operatorchat.Projection.Start's own doc comment), and is
+	// independently bounded from it - see cfg.OperatorChatBufferSize.
+	operatorChatProjection := oc.New(oc.Options{
+		Source: eventBus, Capacity: cfg.OperatorChatBufferSize, Logger: logger, Destinations: destinationLookup,
+	})
+	if err := operatorChatProjection.Start(ctx); err != nil {
+		return err
+	}
+	operatorChatPrefsService := operatorchatprefs.NewService(sqlite.NewOperatorChatPrefsRepository(db.DB), nil, nil)
+	operatorChatAssets := chatassets.NewResolver(twitchClient, accountService, nil)
+
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
 		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
 	})
@@ -241,6 +257,10 @@ func run() error {
 		EngagementBus:        eventBus,
 		EngagementSettings:   engagementSettingsService,
 		EngagementConnectors: twitchEngagementManager,
+
+		OperatorChatProjection: operatorChatProjection,
+		OperatorChatPrefs:      operatorChatPrefsService,
+		OperatorChatAssets:     operatorChatAssets,
 	})
 
 	server := &http.Server{
@@ -272,6 +292,7 @@ func run() error {
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
+		operatorChatProjection.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -288,6 +309,7 @@ func run() error {
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
+		operatorChatProjection.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

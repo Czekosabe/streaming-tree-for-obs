@@ -64,6 +64,13 @@ type Config struct {
 	// to this configured value on every backend start, since the buffer
 	// itself always starts empty.
 	EngagementBufferSize int
+
+	// OperatorChatBufferSize is the Stage 9 unified-operator-chat
+	// projection's in-memory ring buffer capacity - see
+	// internal/operatorchat.Projection. Independent of
+	// EngagementBufferSize (the projection's own capacity, not the Event
+	// Bus's) and never persisted, for the same reason.
+	OperatorChatBufferSize int
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -135,6 +142,15 @@ const (
 	defaultEngagementBufferSize = 1000
 	minEngagementBufferSize     = 100
 	maxEngagementBufferSize     = 10000
+
+	// defaultOperatorChatBufferSize, minOperatorChatBufferSize and
+	// maxOperatorChatBufferSize mirror internal/operatorchat's own
+	// DefaultCapacity/MinCapacity/MaxCapacity exactly - duplicated here for
+	// the same reason as the Engagement Event Bus's constants above, kept
+	// in sync by TestOperatorChatBufferSizeConstantsMatchProjectionPackage.
+	defaultOperatorChatBufferSize = 500
+	minOperatorChatBufferSize     = 100
+	maxOperatorChatBufferSize     = 5000
 )
 
 // defaultAllowedOrigins covers the Vite dev server on both loopback spellings.
@@ -148,12 +164,13 @@ var defaultAllowedOrigins = []string{
 // so a typo fails loudly at startup instead of silently falling back.
 func Load() (Config, error) {
 	cfg := Config{
-		Host:                 defaultHost,
-		Port:                 defaultPort,
-		AllowedOrigins:       defaultAllowedOrigins,
-		ReadHeaderTimeout:    defaultReadHeaderTimeout,
-		ShutdownTimeout:      defaultShutdownTimeout,
-		EngagementBufferSize: defaultEngagementBufferSize,
+		Host:                   defaultHost,
+		Port:                   defaultPort,
+		AllowedOrigins:         defaultAllowedOrigins,
+		ReadHeaderTimeout:      defaultReadHeaderTimeout,
+		ShutdownTimeout:        defaultShutdownTimeout,
+		EngagementBufferSize:   defaultEngagementBufferSize,
+		OperatorChatBufferSize: defaultOperatorChatBufferSize,
 	}
 
 	if raw, ok := lookup("STREAMING_TREE_HOST"); ok {
@@ -222,6 +239,19 @@ func Load() (Config, error) {
 				size, minEngagementBufferSize, maxEngagementBufferSize)
 		}
 		cfg.EngagementBufferSize = size
+	}
+
+	if raw, ok := lookup("STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE"); ok {
+		size, err := strconv.Atoi(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE: %q is not a number", raw)
+		}
+		if size < minOperatorChatBufferSize || size > maxOperatorChatBufferSize {
+			return Config{}, fmt.Errorf(
+				"STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE: %d is outside the range %d-%d",
+				size, minOperatorChatBufferSize, maxOperatorChatBufferSize)
+		}
+		cfg.OperatorChatBufferSize = size
 	}
 
 	return cfg, nil
