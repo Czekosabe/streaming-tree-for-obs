@@ -9315,3 +9315,106 @@ the final Stage 10 corrective-pass entry was wrong.
 Begin Stage 11A: research the current official Twitch outbound-chat
 contract, then implement the manual-sending foundation described in
 this task's own specification.
+
+## 2026-08-07 06:15 — docs: define Twitch outbound chat contract
+
+### Status
+Completed
+
+### Scope
+Stage 11A's own mandatory pre-implementation research: re-check current
+official Twitch documentation for outbound (sending) chat before
+designing or writing any code, per this task's Part 2. Produces
+`docs/provider-integrations/twitch-outbound-chat.md`, the third
+Twitch-subsystem contract document alongside `twitch.md` (OAuth +
+metadata) and `twitch-engagement.md` (EventSub inbound).
+
+### Changes
+Inspected: chat overview, chat/authenticating, chat/send-receive-messages,
+chat/irc-migration, the Send Chat Message API reference section,
+authentication/scopes, api/guide (rate limiting), and the Get Shared Chat
+Session reference section - all official `dev.twitch.tv` pages.
+
+**Stop-condition check (all four confirmed, no contradiction found):**
+sending with a User Access Token, scope `user:write:chat`, `sender_id` as
+the connected user, and `POST /helix/chat/messages` as the endpoint are
+all still current - implementation proceeds as planned, no report-and-halt
+needed.
+
+**Scope confirmed via triangulation across three independent pages:**
+`user:write:chat` ("Send chat messages to a chatroom"), distinct from the
+IRC-only `chat:edit` ("...using an IRC connection"). One fetch pass of the
+large API reference page returned an uncorroborated `user:manage:chat`
+instead - that string does not appear anywhere in the canonical scopes
+list, so it is recorded in the new document as a research anomaly rather
+than trusted, exactly the kind of single-source claim this project's own
+verification standard exists to catch.
+
+**IRC rejected on Twitch's own recommendation**, not this application's
+preference alone: the irc-migration guide explicitly recommends EventSub
+for reading and the Twitch API for sending. IRC would also mean a second
+credential/connection model and no structured `is_sent`/`drop_reason`
+outcome - incompatible with this stage's "never claim success without
+`is_sent: true`" requirement.
+
+**`is_sent`/`drop_reason` behavior documented precisely:** a `200 OK`
+response is not itself proof of delivery; `is_sent: false` (with a
+`drop_reason.code`, e.g. the documented `automod_held` example) is a
+stable, non-retryable "dropped" outcome, never a success. Only
+`drop_reason.code` is ever meant to leave a future parsing layer - the
+human-readable `drop_reason.message` prose is documented as never to be
+persisted or exposed.
+
+**Two distinct rate-limit layers identified:** the standard Helix
+`Ratelimit-*` header / `429` token bucket (unchanged from every other
+Helix call `twitch.md` already documents), and a *separate*,
+chat-backend-specific `420 Enhance Your Calm` this endpoint alone can
+return for sending too quickly - Twitch does not publish an exact number
+for the latter, so this application's own conservative local rate limits
+are a safety ceiling, not a claim about Twitch's real threshold.
+
+**`for_source_only` and Shared Chat distribution recorded as an open,
+honestly-flagged point**, not a confirmed fact: the most reliable verbatim
+extraction of the Request Body table this research pass obtained listed
+only `message` and `reply_parent_message_id`, with no `for_source_only`
+row; other fetch passes of the same large reference page returned
+inconsistent/truncated results for that specific field. Rather than assert
+either way, the document states plainly that this application never sends
+`for_source_only` regardless of which reading eventually proves correct -
+safe under both. Shared Chat's warning requirement in Stage 11A is
+disclosure-based specifically because this application has no reliable way
+to detect whether a session is active, matching the stage task's own
+premise.
+
+### Files changed
+- `docs/provider-integrations/twitch-outbound-chat.md` (new).
+- `docs/progress.md` (this entry).
+
+### Technical decisions
+- Kept as a separate document from `twitch.md`/`twitch-engagement.md`
+  rather than appended to either, for the same reason those two are
+  already split: independently re-checkable, so a future Send-Chat-Message
+  API change never forces re-reading the OAuth or EventSub contracts.
+- Recorded the `user:manage:chat` research anomaly explicitly rather than
+  silently dropping it, and the `for_source_only` ambiguity explicitly
+  rather than asserting a confident answer this research pass could not
+  fully back up - consistent with this project's standing "verify, do not
+  guess" discipline.
+
+### Automated validation
+Not applicable - documentation only, no code changed yet.
+
+### Known limitations
+`for_source_only`'s exact current documented behavior (whether it exists
+at all in the current Request Body shape, and precisely how it interacts
+with Shared Chat for a User Access Token) was not resolved with full
+confidence by this research pass, for the reasons stated in the new
+document's own "A note on `for_source_only`" section. This does not block
+implementation, since the application's own design never sends the field
+under any circumstance - but it should be the first thing re-checked if
+this contract is ever revisited.
+
+### Next step
+Design and implement the outbound-chat capability profile (additive
+`user:write:chat` scope, independent of metadata and inbound-engagement
+health) and the provider-independent sending abstraction.
