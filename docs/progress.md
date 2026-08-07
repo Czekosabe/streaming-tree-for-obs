@@ -10094,3 +10094,115 @@ None beyond what earlier Stage 11A entries already recorded.
 Run the full closing regression (frontend checks, backend checks, and
 all nine integration scripts by exact name), then push and produce the
 final report.
+
+## 2026-08-07 08:00 — feat(server): persist chat automation rules
+
+### Status
+Complete.
+
+### Scope
+Stage 11B, Part 1: the persistence layer for scheduled-message and
+chat-command definitions - schema, domain model, validation, and CRUD
+service - with no scheduler, no command matching, and no dispatcher
+wiring yet (those follow in the next two commits). Reuses Stage 11A's
+outbound dispatcher later; this commit adds no second outbound
+pipeline and no runtime automation logic at all.
+
+### Changes
+- `internal/storage/sqlite/migrations/0012_chat_automation.sql` (new) -
+  six tables: `chat_schedules`, `chat_schedule_targets`,
+  `chat_schedule_messages`, `chat_commands`, `chat_command_aliases`,
+  `chat_command_targets`. Follows migration 0011's exact style (`TEXT`
+  primary keys, `INTEGER ... CHECK (col IN (0,1))` booleans, `CHECK`
+  enums, `ON DELETE CASCADE` for schedule/command children,
+  `ON DELETE SET NULL` for the optional `platform_id` context column
+  so deleting a destination drops only its metadata context, never an
+  operator's schedule/command target). `chat_commands.name` and
+  `chat_command_aliases.alias` each carry their own `UNIQUE`
+  constraint; the *cross-table* global-uniqueness rule the task
+  requires (a name may not equal another command's alias, and vice
+  versa) cannot be expressed as a single SQL constraint across two
+  tables, so it is enforced in the domain `Service` instead (see
+  below).
+- `internal/domain/chatautomation/` (new package) - `model.go`
+  (`Role` closed enum - `everyone`/`subscriber`/`vip`/`moderator`/
+  `broadcaster`, deliberately no `follower`; `Target`; `Schedule`/
+  `ScheduleMessage`; `Command`), `errors.go`, `ids.go`
+  (`sched_`/`schedmsg_`/`cmd_` prefixes), `validation.go` (every bound
+  from the task's Part 5/12: name 1-80 code points, interval 60s-24h,
+  first delay 0-24h, jitter 0-15min, minimum chat messages 0-1000, max
+  sends/hour 1-60, template ≤500 code points before expansion, up to
+  20 message alternatives, command names/aliases ASCII
+  `[a-z0-9_-]{1,32}` only, cooldowns 0-3600s/0-24h), `repository.go`
+  (the `Repository` port), `service.go` (`Service`: validated CRUD,
+  plus the deterministic platform-context check from Part 4 - an
+  explicit `platform_id` target must exist, share the target
+  account's own provider, and currently be linked to that same
+  account - and the cross-table command name/alias uniqueness check).
+- `internal/storage/sqlite/chatautomation_repository.go` (new) -
+  `ChatAutomationRepository`, matching `chatoverlay_repository.go`'s
+  exact pattern: one transaction per multi-table write (a schedule's
+  own row plus its full target and message set; a command's own row
+  plus its full alias and target set - delete-then-reinsert on
+  update, exactly like `chatoverlay.SetAccounts`), `sql.ErrNoRows` →
+  `found=false`, `isForeignKeyViolation`/`isUniqueViolation` mapped to
+  `ErrAccountNotFound`/`ErrCommandNameConflict`.
+
+### Files changed
+- `apps/server/internal/storage/sqlite/migrations/0012_chat_automation.sql` (new).
+- `apps/server/internal/domain/chatautomation/{model,errors,ids,validation,repository,service}.go` (new),
+  `{validation,service}_test.go` (new).
+- `apps/server/internal/storage/sqlite/chatautomation_repository.go` (new),
+  `chatautomation_repository_test.go` (new).
+
+### Technical decisions
+- **`AccountLookup`/`PlatformLookup` are narrow, primitive-typed
+  interfaces** (`AccountProviderID(ctx, id) (string, bool, error)`,
+  `PlatformProviderID`/`PlatformLinkedAccountID`), not the concrete
+  `account.Service`/`platform.Service` types. Confirmed by grep that
+  no existing domain package in this project imports another domain
+  package's concrete service - `internal/domain/chatautomation`
+  follows that same discipline rather than being the first exception.
+  The concrete adapter over `account.Service`/`platform.Service` is
+  wired in the next commit, where the runtime package that actually
+  needs both already exists.
+- **Command global uniqueness is enforced in the `Service`, not by a
+  single SQL constraint**, because SQLite (like standard SQL) cannot
+  express a `UNIQUE` constraint spanning two different tables
+  (`chat_commands.name` vs. `chat_command_aliases.alias`). Each table
+  still carries its own `UNIQUE` column as defense in depth; the
+  service-level `Repository.NameOrAliasInUse` check is authoritative.
+- **`platform_id` uses `ON DELETE SET NULL`, not `CASCADE`** - unlike
+  every other foreign key in this schema. Deleting a destination
+  platform must never silently delete an operator's schedule or
+  command target; it should only drop that target's placeholder
+  metadata context, exactly matching Part 4's own "if omitted,
+  placeholders requiring destination metadata may become unresolved"
+  behavior rather than an unexpected loss of the whole rule.
+- Domain `Schedule`/`Command` structs embed their own `Targets`/
+  `Messages`/`Aliases` slices directly (unlike `chatoverlay.Profile`,
+  which keeps accounts/hidden-users/blocked-terms as separate
+  `Service` methods) - a schedule or command is never meaningfully
+  read, previewed, or validated without its full target/message/alias
+  set, so nesting them avoids a caller forgetting a second fetch.
+
+### Automated validation
+- `go build ./...` - clean.
+- `gofmt -l .` - clean.
+- `go vet ./internal/domain/chatautomation/...` - clean.
+- `go test ./internal/domain/chatautomation/... ./internal/storage/sqlite/...` -
+  all passing, including 9 new repository tests (round trip, FK
+  rejection, cascade delete, update replacing the full target/message
+  set, global name/alias uniqueness) and 18 new domain tests
+  (validation bounds table, service-level target/platform-context
+  validation, command normalization/conflict/role rejection).
+
+### Known limitations
+No scheduler, command matcher, dispatcher wiring, HTTP API, or
+frontend yet - this commit is persistence only, exactly as scoped.
+
+### Next step
+Implement the runtime automation engine
+(`internal/chatautomation`): safe placeholder rendering, the
+quota-aware dispatch wrapper over Stage 11A's existing outbound
+dispatcher, and the in-memory scheduler.
