@@ -9882,3 +9882,118 @@ with existing precedent, not a new gap this stage introduced.
 Write the ninth integration script
 (`scripts/verify-twitch-outbound-chat.mjs`), run it at least twice,
 then complete the Stage 11A documentation pass.
+
+## 2026-08-07 06:55 — test: verify Twitch outbound chat locally
+
+### Status
+Complete.
+
+### Scope
+Ninth integration script, `scripts/verify-twitch-outbound-chat.mjs`,
+covering the manual outbound-chat foundation end to end against real
+`-tags integration` server code and local fakes only (fake Twitch
+OAuth, Helix, and EventSub WebSocket - no real Twitch is ever
+contacted). Run twice to confirm the result is not flaky.
+
+### Changes
+Reused `verify-twitch-engagement.mjs`'s exact fake-server boilerplate
+(spawn/kill helpers, `waitUntil`, OAuth/Helix/EventSub server
+scaffolding, `mintToken`) and extended it with a `refresh_token` grant
+on the fake OAuth `/token` endpoint and a `POST /chat/messages`
+handler on the fake Helix server whose behaviour switches on a
+`chatMessagesMode` flag the script sets before each step: `success`,
+`dropped` (`is_sent:false` with a `drop_reason` carrying a
+script-local secret marker never allowed to leak into any response or
+log), `401-once`, `401-twice`, `403`, `422`, `429` (with a
+`Ratelimit-Reset` header), `5xx`, and `transport-uncertain` (the
+socket is destroyed after the request body is fully read but before
+any response is written - the closest a loopback fake can come to "the
+request may have reached Twitch but no trustworthy response was ever
+received").
+
+22 steps, covering: the account initially lacking outbound-chat
+permission while metadata and inbound-engagement stay independently
+healthy; the authorize attempt requesting the exact scope union
+(`channel:manage:broadcast` preserved, `user:write:chat` added, never
+`user:bot`/`channel:bot`/`user:read:chat`); an identity-mismatched
+completion being rejected with `oauth_identity_mismatch` and leaving
+the account untouched; a same-identity upgrade persisting to
+`capability: "ready"`; a successful send using the account's own
+provider user ID for both `broadcaster_id` and `sender_id` with no
+`for_source_only`/`pin` ever sent and no message text ever echoed back
+in the response; `reply_parent_message_id` forwarding; HTTP 200 with
+`is_sent:false` surfacing as a stable 422
+`outbound_chat_message_dropped` (never a 200 success) with Twitch's own
+drop-reason prose never exposed; a single 401 transparently refreshing
+and retrying exactly once; a second consecutive 401 stopping (not
+looping) and marking the account `account_reconnect_required`, then
+recovering; 403/422/429/5xx/transport-uncertain all mapping to their
+documented stable codes and HTTP statuses without any automatic retry,
+with 429 additionally exposing a sanitized `retryAt`; two independently
+connected accounts sending in immediate succession with neither
+account's queue or rate limiter affected by the other; a sent
+message's real EventSub echo appearing exactly once in operator chat
+with no optimistic duplicate ever inserted client- or server-side; and
+a final sweep of every captured HTTP response body and the backend's
+own stdout/stderr for access/refresh tokens, outbound message text,
+raw Twitch drop-reason prose, and any real Twitch hostname.
+
+### Files changed
+- `scripts/verify-twitch-outbound-chat.mjs` (new).
+
+### Technical decisions
+- **Recovery after the second-401 test uses `POST
+  .../outbound-chat/authorize` again, not the generic `POST
+  .../reconnect` endpoint.** Traced `handleReconnectAccount`'s Go
+  source before writing this step: it calls `deviceFlow.StartAttempt`,
+  which requests only the default per-provider scope list
+  (`channel:manage:broadcast` alone for Twitch), not
+  `StartAttemptWithScopes`. Using the generic endpoint here would have
+  silently narrowed the account back to metadata-only, stripping
+  `user:write:chat` and breaking every step after it. The
+  outbound-chat-specific authorize endpoint unions the account's
+  *current* scopes (already including `user:write:chat`) instead, so
+  it recovers without narrowing - exactly the "never narrow" guarantee
+  the capability-upgrade design commits to elsewhere.
+- **A genuine bug was found and fixed while writing this script, not
+  just a test workaround:** the fake EventSub WebSocket server never
+  emitted Twitch's own periodic `session_keepalive` frames, and the
+  real connector (`internal/runtime/twitchengagement/connector.go`)
+  treats a socket idle for longer than the negotiated
+  `keepalive_timeout_seconds` (30, here) plus a 5-second grace window
+  as lost, silently reconnecting to a new WebSocket. The script's
+  first run failed at the EventSub-echo step because the cumulative
+  real time spent on the many HTTP round-trips in the steps before it
+  exceeded that 35-second window, so the script's later
+  `sendWS(socket1, ...)` call was writing into a socket the backend no
+  longer read from - confirmed directly in the backend's own debug log
+  (`"twitch engagement connector lost connection, reconnecting"
+  error="context ended"`, timed exactly to the idle gap). Fixed by
+  sending a `session_keepalive` frame on `socket1` every 5 real
+  seconds for the remainder of the script; any received frame (not
+  only a keepalive-typed one) resets the connector's read deadline, so
+  this reproduces exactly what a real Twitch EventSub session does and
+  is not merely a script-side timing hack.
+- Reused `findEventOfType`'s polling helper (originally written for
+  `verify-twitch-engagement.mjs`) to search `/api/operator-chat/items`
+  by matching `message.plainText` against the echoed text - the
+  parameter name (`type`) is carried over unchanged from that script
+  for consistency, even though this call site matches on text rather
+  than a subscription type.
+
+### Automated validation
+- `node scripts/verify-twitch-outbound-chat.mjs` - all 22 steps
+  passed, run twice in direct succession with no flakiness observed.
+
+### Known limitations
+No manual browser/OBS/real-Twitch testing performed - see the final
+report. The script's own EventSub-echo step simulates the real
+Twitch-delivered echo by hand (a real send does not synthesize its own
+echo locally); this is documented in the script's own comment at that
+step, matching the product's actual no-optimistic-echo design.
+
+### Next step
+Complete the Stage 11A documentation pass (README, project overview,
+engagement architecture, the twitch-engagement cross-reference, and a
+config/README + THIRD_PARTY_NOTICES audit), then run the full closing
+regression.
