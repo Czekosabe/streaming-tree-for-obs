@@ -10206,3 +10206,155 @@ Implement the runtime automation engine
 (`internal/chatautomation`): safe placeholder rendering, the
 quota-aware dispatch wrapper over Stage 11A's existing outbound
 dispatcher, and the in-memory scheduler.
+
+## 2026-08-07 14:57 — feat(server): run scheduled chat automation and execute safe chat commands
+
+### Status
+Complete.
+
+### Scope
+The full Stage 11B in-memory automation runtime (`internal/chatautomation`):
+safe placeholder rendering, the quota-aware wrapper over Stage 11A's
+existing outbound dispatcher, the centralized scheduler, and the
+Event-Bus-driven command engine - everything except the HTTP API and
+the frontend, which follow in the next commits. No second outbound
+pipeline exists anywhere in this commit: every automated send, whether
+scheduled or command-triggered, ends at the exact same
+`internal/outboundchat.Manager.Send` Stage 11A already built.
+
+### Changes
+- **`placeholders.go`** - a closed, declarative placeholder language:
+  `ParseTemplate` (pure parser: literal/placeholder segments, `{{`/`}}`
+  escapes, rejects unmatched/empty/nested-looking braces),
+  `ValidateTemplatePlaceholders` (save-time: rejects any name outside
+  `KnownPlaceholders`), `Render` (expansion: an unresolved or unknown
+  placeholder substitutes as empty text and is reported in
+  `Unresolved`, never a hard failure - only a malformed template is),
+  `Context` (`ChannelName`/`Platform`/`ChannelURL` always resolvable
+  from an account; `StreamTitle`/`StreamUptime` are `*string`, nil
+  meaning "known placeholder, currently unresolvable" - never a
+  fabricated value), `PlatformDisplayName` (fixed, never-translated
+  brand names), `ChannelURL` (a pure, local, allow-listed Twitch URL
+  builder - never fetched from Twitch, never accepted from a chat
+  message).
+- **`dispatch.go`** - `automationQueueQuota = outboundchat.MaxQueueDepth / 2`
+  (10 of 20); `dispatcher.send` checks the target account's current
+  outbound queue depth via `outboundchat.Manager.Status` and rejects
+  immediately with `ErrQueueFull` at quota, never blocking and never
+  growing an unbounded backlog. `skipReasonForErr` maps outbound/account
+  errors to a stable `SkipReason`.
+- **`scheduler.go`** - one centralized poll loop (`schedulerPollInterval
+  = 20ms` real time, the same "poll rather than one big timer" reasoning
+  `internal/outboundchat/dispatcher.go`'s own `rateLimitPollInterval`
+  already documents, so a test's fake-clock `Advance` is always picked
+  up promptly) tracking every schedule's own `nextBaseDue`/`nextFireAt`,
+  per-(schedule,account) activity/rolling-hour-send state. `firstDue`
+  applies the documented startup floor (`now + firstDelay`, or `now +
+  5s` when firstDelay is zero). `advanceDueLocked` always advances the
+  *base* point by exactly one interval and re-jitters from there -
+  never from "now" or from the previous jittered fire time - so
+  processing delay or jitter itself can never accumulate drift.
+  `executeOneTarget` is the one shared path for both an automatic due
+  execution and manual Send Now: ingest-receiving check, (skipped for
+  Send Now) minimum-activity check, rolling max-per-hour check, message
+  selection (`selectMessage` excludes the immediately-previous message
+  from the candidate pool when the group has more than one), context
+  building, render, dispatch. `tick()` advances a due schedule's timing
+  *before* spawning its execution goroutine, so the same due moment can
+  never be picked up twice. `sendNow` reuses `executeOneTarget` with
+  `manual=true` and serializes against a concurrently-due automatic
+  execution of the same schedule via the schedule's own `execMu`.
+- **`commands.go`** - `parseCommandToken` (the fixed `!` prefix parser:
+  exact-start match, `!!` rejected, arguments ignored), `roleSatisfies`
+  (the Part 15 semantic role rules - moderator/VIP satisfy subscriber
+  only when the event independently reports it), `commandRuntime`
+  (`tryReserveCooldown`: reserved atomically before rendering/dispatch
+  and **never rolled back**, even on a later failure - the chosen,
+  documented race-safe policy), `commandEngine.handleEvent` (the full
+  Part 14 self-message hard rule - identity comparison against the
+  connected account's own provider user id, never a tracked outbound
+  message id - plus synthetic/target/role/cooldown/response-age gates,
+  in that order, before ever calling `dispatch.send` with
+  `SourceCommand` and `ReplyParentMessageID: evt.ProviderEventID` for
+  the same-account reply).
+- **`runtime.go`** - `Manager`: the CRUD façade over
+  `internal/domain/chatautomation.Service` (triggering a scheduler/
+  command-engine reload after every write), the **one, shared**
+  Engagement Event Bus subscription both the command engine and the
+  scheduler's own activity counter read from (`consume` routes every
+  event to both `commands.handleEvent` and `recordActivity` - no second
+  subscription, no direct Twitch inbound connection), a reconnect loop
+  that always resubscribes from the bus's *current* position (never
+  replaying historical messages into a late command match, per Part 29),
+  `SendNow`, `Status`, `Preview`.
+- **`models.go`**/**`errors.go`** - `ScheduleState`/`SkipReason` closed
+  enums, `ScheduleSnapshot`/`CommandSnapshot`/`EngineStatus`/`Status`/
+  `SendResult` (never message text, never a triggering username).
+
+### Files changed
+- `apps/server/internal/chatautomation/` (new package): `placeholders.go`,
+  `dispatch.go`, `scheduler.go`, `commands.go`, `runtime.go`, `models.go`,
+  `errors.go`, and matching `_test.go` files for each.
+
+### Technical decisions
+- **`dispatcher` depends on a narrow `outboundSender` interface
+  (`Status`+`Send`), not the concrete `*outboundchat.Manager`** - added
+  after the first version of the quota tests turned out to be
+  genuinely flaky: filling a real dispatcher's queue with blocked
+  concurrent goroutines interacted with `outboundchat`'s own local
+  1-second-per-account dispatch floor in ways a frozen fake clock could
+  never satisfy (the floor checks `now() >= lastStart + 1s`, and a
+  clock that never advances makes that permanently false), causing a
+  real goroutine to hang forever inside the rate-limit poll loop rather
+  than the test's own intended scenario. Switching to a trivial fake
+  `outboundSender` removed the need for real dispatcher concurrency or
+  clock timing entirely, made the quota tests deterministic and
+  sub-millisecond, and is a genuinely cleaner boundary regardless of
+  the test benefit (mirrors `outboundchat.AccountAccessor`'s own
+  narrow-interface pattern one layer up).
+- **Every reload (schedule or command) resets ALL runtime state for
+  that rule uniformly** - next-run timing, per-account activity
+  counters, and cooldowns are all recomputed fresh rather than
+  diffing exactly which field changed. Simpler, safe, and matches the
+  task's own explicit "edit interval -> recalculate next run" and
+  "target changes -> reset target-specific runtime counters safely"
+  requirements without needing a separate diffing code path.
+- **Cooldown reservation is never rolled back**, even when the
+  subsequent render or dispatch attempt fails - the simpler of the two
+  race-safe policies the task's own Part 16 explicitly allows choosing
+  between, at the acceptable cost of "spending" a cooldown on a rare
+  failed attempt in exchange for zero risk of a duplicate concurrent
+  response.
+- **The scheduler and command engine share exactly one Event Bus
+  subscription**, owned by `Manager`, not two - satisfying Part 29/30's
+  "may share one internal subscription" and "no redundant EventSub
+  WebSocket connections" requirements directly, rather than as an
+  afterthought.
+- **`{streamUptime}` is derived from `mediamtx.IngestSnapshot.ConnectedAt`**
+  (confirmed to already exist, populated only while `IngestState ==
+  IngestReceiving`) via the new `IngestChecker.ReceivingSince` method -
+  no new timestamp tracking was needed in the MediaMTX runtime model,
+  contrary to the task's own anticipated fallback ("add a small
+  in-memory receiving-start timestamp... with tests").
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./internal/chatautomation/...` - clean.
+- `go test ./internal/chatautomation/...` - 51 tests, all passing,
+  sub-100ms total (placeholder parsing/rendering, scheduler timing/
+  gating/message-selection with a fake clock and injectable
+  randomness, command matching/roles/cooldowns/self-protection with a
+  fake Event Bus event, dispatch quota policy).
+- `go build ./...` and `go test ./...` (every backend package) - clean,
+  confirming this new package does not affect any existing one.
+
+### Known limitations
+No HTTP API or frontend yet - CRUD, Send Now, preview and status are
+only reachable through `Manager`'s own Go API in this commit. No
+integration-level (real backend process) verification yet - that is
+the tenth integration script, still pending.
+
+### Next step
+Add the HTTP API (`internal/httpapi/chatautomation.go`) and wire
+`chatautomation.Manager` into `cmd/server`/`cmd/testserver`/
+`internal/httpapi/router.go`, then the frontend.
