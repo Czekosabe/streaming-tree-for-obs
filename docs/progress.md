@@ -9418,3 +9418,151 @@ this contract is ever revisited.
 Design and implement the outbound-chat capability profile (additive
 `user:write:chat` scope, independent of metadata and inbound-engagement
 health) and the provider-independent sending abstraction.
+
+## 2026-08-07 06:35 — feat(server): add Twitch outbound chat capability
+
+### Status
+Completed
+
+### Scope
+The first of Stage 11A's two backend commits: the additive outbound-chat
+scope profile, a new provider-independent `internal/outboundchat` package
+(request/result/capability types, the `Provider` interface, and backend-
+authoritative message/reply-parent validation), and the real Twitch Send
+Chat Message client + adapter implementing that interface. Deliberately
+does **not** include the dispatcher, HTTP API, or frontend yet - those are
+the next commit and beyond.
+
+### Changes
+
+**Scope profile, mirroring the existing engagement pattern exactly.**
+`internal/provider/twitch/outbound_chat_scopes.go` adds
+`OutboundChatScopeProfile = ["user:write:chat"]`,
+`AssessOutboundChatCapability`, and `UnionScopesWithOutboundChat` - the
+same shape as `engagement_scopes.go`'s own `EngagementScopeProfile`/
+`AssessEngagementCapability`/`UnionScopes`, refactored to share one
+private `assessCapability`/`unionScopes` helper so both profiles are
+provably assessed and unioned the same way. `account.Service.RequiredScopes`
+is untouched - metadata health stays exactly `channel:manage:broadcast`,
+confirmed independent by a dedicated test
+(`TestAssessOutboundChatCapabilityIsIndependentOfEngagementScopes`).
+Deliberately never includes `user:bot`/`channel:bot` - this stage sends as
+the connected account itself, not a separate bot identity (see the
+contract document's own reasoning).
+
+**Provider-independent foundation: `internal/outboundchat`.** New package,
+importing `internal/domain/account` only - never
+`internal/provider/twitch`, matching how `account.Provider` itself keeps
+the connected-account foundation provider-independent. `Provider` is the
+narrow interface (`AssessCapability`, `SendChatMessage`) a future second
+outbound-capable provider would implement without this package ever
+changing; `SendMessageRequest`/`SendMessageResult`/`Capability` carry only
+provider-independent fields (never a token, raw response, or the message
+text in a result). `SendChatMessage`'s `clientID` is passed explicitly by
+the caller, matching every other `account.Provider` method's own
+convention, rather than the interface's own account resolving it
+internally.
+
+**Backend-authoritative validation.** `ValidateMessage` enforces valid
+UTF-8, non-empty after trimming Unicode whitespace, a maximum of 500 code
+points (counted by rune, matching the task's own "Unicode code points"
+wording - a multi-code-point emoji sequence counts as multiple, which is
+the literal, correct reading), and rejection of every C0 control character
+(which covers NUL and CR/LF as a subset, not three separate checks).
+Never truncates - an over-length message is rejected outright.
+`ValidateReplyParentMessageID` is a pure shape check (bounded length,
+UTF-8, no control characters); it says nothing about whether the id
+actually belongs to a message the sending account may reference - that
+ownership check is the HTTP layer's job, in the next commit.
+
+**The real Twitch adapter.** `outbound_chat_client.go`'s
+`Client.SendChatMessage` POSTs to `/helix/chat/messages` with exactly
+`broadcaster_id`/`sender_id`/`message`/`reply_parent_message_id` - never
+`for_source_only`, `pin`, or any field the browser could influence.
+Reuses the existing `doHelix` plumbing (bounded response body, parsed
+`Ratelimit-*` headers, single 15s timeout) unchanged. Status mapping:
+`401`→`ErrUnauthorized` (the existing `account.Service.WithFreshToken`
+already refreshes and retries exactly once on this, unchanged by this
+commit), `403`→`ErrForbidden`, `429` **and** the chat-backend-specific
+`420`→`ErrRateLimited` (both surfaced as the same stable rate-limited
+outcome to the rest of the application), `5xx`→`ErrUnavailable`. A
+malformed/non-Twitch-shaped 200 body (wrong item count, missing
+`message_id` when `is_sent` is true) also maps to `ErrInvalidResponse`
+rather than being trusted. `is_sent: false` is parsed as a normal,
+non-error `SendChatMessageResult` carrying only `drop_reason.code` -
+`drop_reason.message` is decoded (to keep the wire struct honest about the
+real shape) but never read by any caller.
+
+**A new, deliberately distinct sentinel: `ErrTransportUncertain`.** Every
+other call in this package treats a network-level failure the same as a
+5xx (`ErrUnavailable`), because every other call is safely retryable. A
+chat send is not: `doHelix`'s own error path (a request that may have left
+this process with no trustworthy response ever received) is now mapped to
+this new, separate sentinel here specifically, so the adapter layer can
+tell "Twitch gave a definite bad answer" (`ErrUnavailable` →
+`outboundchat.ErrProviderFailure`) apart from "no trustworthy answer was
+ever received" (`ErrTransportUncertain` → `outboundchat.ErrDeliveryUnknown`)
+- exactly the distinction the retry-safety policy in
+`docs/provider-integrations/twitch-outbound-chat.md` requires.
+
+**`Adapter.SendChatMessage`'s error mapping** (`mapSendChatMessageErr`) is
+the one place Twitch-native and provider-independent vocabularies meet for
+sending, mirroring `metadata.go`'s existing `mapProviderErr` for
+publishing: `ErrUnauthorized` passes through unchanged (so
+`WithFreshToken`'s refresh-and-retry-once still works once this is wired
+into a caller in the next commit); `ErrRateLimited` becomes
+`*outboundchat.RateLimitedError{RetryAt}`, built from the already-parsed
+rate-limit header data; everything else maps to `outboundchat.ErrForbidden`
+/ `ErrProviderFailure` / `ErrDeliveryUnknown` as appropriate.
+
+### Files changed
+- `apps/server/internal/provider/twitch/engagement_scopes.go` (refactored
+  to share `assessCapability`/`unionScopes` helpers).
+- `apps/server/internal/provider/twitch/outbound_chat_scopes.go` (new).
+- `apps/server/internal/provider/twitch/outbound_chat_client.go` (new).
+- `apps/server/internal/provider/twitch/outbound_chat_adapter.go` (new).
+- `apps/server/internal/provider/twitch/errors.go` (`ErrTransportUncertain`).
+- `apps/server/internal/outboundchat/model.go`,`errors.go`,`validation.go`
+  (new package).
+- Matching `_test.go` files for every file above.
+
+### Technical decisions
+- Kept `outbound_chat_client.go`'s status-mapping `default` branch (400/404
+  and anything else undocumented) folded into `ErrUnavailable` rather than
+  inventing a bespoke path: this application always validates message
+  length and always sends the connected account's own IDs, so Twitch
+  answering 400/404 to a well-formed request from this application is not
+  a normal outcome its own input could cause.
+- `SendMessageResult.Code` is a small, application-owned vocabulary
+  (currently only `"dropped"`), not Twitch's own `drop_reason.code` values
+  (like `"automod_held"`) - keeping Twitch-specific drop-reason vocabulary
+  out of the provider-independent result type, consistent with why the
+  interface exists at all.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go test ./internal/provider/twitch/... ./internal/outboundchat/... -v` -
+  all new tests pass: scope union/independence (9 tests), the Send Chat
+  Message client's exact request shape, `is_sent:false` as a non-error,
+  malformed/oversized/timeout handling, every documented status code
+  (400/401/403/404/420/429/500/503), rate-limit header parsing on 429; the
+  adapter's capability mirroring, broadcaster/sender-id-from-account-only
+  behavior, dropped-result mapping, error-sentinel mapping, rate-limited
+  retry-at, transport/malformed → delivery-unknown; message validation
+  (empty, whitespace-only, invalid UTF-8, NUL, CRLF, lone LF, other C0
+  controls, exactly-500/501 code points, emoji/combining-character/Twitch-
+  emote-name acceptance); reply-parent-id validation.
+- `go test ./...` (whole module) - every package passes, no regression.
+
+### Known limitations
+No dispatcher, no HTTP API, and no wiring into `cmd/server`/`cmd/testserver`
+yet - `Adapter.SendChatMessage` is fully implemented and tested in
+isolation but not yet reachable from any real request path. This is
+intentional, matching the suggested commit split's own separation between
+"capability" and "dispatch."
+
+### Next step
+Build the in-memory, bounded, per-account outbound dispatcher (ordering,
+isolation, local rate limiting, cancellation, no goroutine leak), the
+runtime snapshot, the HTTP API, and wire everything into both binaries.

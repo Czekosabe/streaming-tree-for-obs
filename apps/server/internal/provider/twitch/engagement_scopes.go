@@ -31,20 +31,29 @@ type CapabilityAssessment struct {
 // scopes (as last confirmed by validation - see account.Account.Scopes)
 // satisfy EngagementScopeProfile.
 func AssessEngagementCapability(grantedScopes []string) CapabilityAssessment {
+	return assessCapability(grantedScopes, EngagementScopeProfile)
+}
+
+// assessCapability compares grantedScopes against an arbitrary required
+// profile - the shared implementation behind AssessEngagementCapability and
+// AssessOutboundChatCapability (see outbound_chat_scopes.go). Each
+// capability keeps its own named wrapper rather than exposing this directly,
+// so a call site can never accidentally pass the wrong profile by mistake.
+func assessCapability(grantedScopes, profile []string) CapabilityAssessment {
 	granted := make(map[string]bool, len(grantedScopes))
 	for _, s := range grantedScopes {
 		granted[s] = true
 	}
 
 	var missing []string
-	for _, required := range EngagementScopeProfile {
+	for _, required := range profile {
 		if !granted[required] {
 			missing = append(missing, required)
 		}
 	}
 
 	return CapabilityAssessment{
-		Required:                  EngagementScopeProfile,
+		Required:                  profile,
 		Granted:                   grantedScopes,
 		Missing:                   missing,
 		Available:                 len(missing) == 0,
@@ -62,15 +71,23 @@ func AssessEngagementCapability(grantedScopes []string) CapabilityAssessment {
 // docs/provider-integrations/twitch-engagement.md's scope-profile design
 // decision.
 func UnionScopes(existing []string) []string {
-	seen := make(map[string]bool, len(existing)+len(EngagementScopeProfile))
-	out := make([]string, 0, len(existing)+len(EngagementScopeProfile))
+	return unionScopes(existing, EngagementScopeProfile)
+}
+
+// unionScopes returns the union of existing and profile, with stable,
+// deduplicated ordering: existing scopes first, then any profile scope not
+// already present. Shared by UnionScopes and
+// UnionScopesWithOutboundChat (outbound_chat_scopes.go).
+func unionScopes(existing, profile []string) []string {
+	seen := make(map[string]bool, len(existing)+len(profile))
+	out := make([]string, 0, len(existing)+len(profile))
 	for _, s := range existing {
 		if !seen[s] {
 			seen[s] = true
 			out = append(out, s)
 		}
 	}
-	for _, s := range EngagementScopeProfile {
+	for _, s := range profile {
 		if !seen[s] {
 			seen[s] = true
 			out = append(out, s)

@@ -28,6 +28,17 @@ var (
 
 	// ErrForbidden means Twitch answered 403 - most often a missing scope.
 	ErrForbidden = errors.New("twitch forbidden")
+
+	// ErrTransportUncertain means the request may have left this process
+	// but no trustworthy HTTP response was ever received - a network
+	// failure, a timeout, or a connection reset mid-response. Deliberately
+	// distinct from ErrUnavailable (which means Twitch gave a definite 5xx
+	// answer): only outbound_chat_client.go's SendChatMessage returns this,
+	// since every other call in this package is safely retryable and never
+	// needed the distinction before Stage 11A - see
+	// docs/provider-integrations/twitch-outbound-chat.md's "Uncertain-
+	// outcome and retry policy".
+	ErrTransportUncertain = errors.New("twitch response uncertain")
 )
 
 // wireErr builds a sanitized error for an unexpected HTTP status: it names
