@@ -9997,3 +9997,100 @@ Complete the Stage 11A documentation pass (README, project overview,
 engagement architecture, the twitch-engagement cross-reference, and a
 config/README + THIRD_PARTY_NOTICES audit), then run the full closing
 regression.
+
+## 2026-08-07 07:05 — docs: document Stage 11A outbound chat
+
+### Status
+Complete.
+
+### Scope
+The Stage 11A documentation pass: bring every cross-referencing
+document up to date with the now-completed manual outbound-chat
+foundation, without rewriting any prior stage's historical callouts.
+
+### Changes
+- **README.md**: project-state banner and its anchor list now mention
+  real manual Twitch chat sending; the Roadmap table splits stage 11
+  into 11A (**Completed**) and 11B (Planned); a new
+  [Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
+  section (capability profile, dispatcher, composer, replies, "Verifying
+  it for real") was added between the OBS overlay section and the REST
+  API reference; the REST API table gained the three
+  `outbound-chat`/`outbound-chat/authorize`/`outbound-chat/messages`
+  rows plus a new stable-error-code paragraph; the integration-checks
+  section, directory tree, and demo-only/what's-real/what's-planned
+  lists all now list the ninth script and the outbound-chat package/
+  component paths. Every place that previously said "outbound chat...
+  remains planned" was corrected to distinguish manual (now real) from
+  scheduled/commands (still stage 11B) rather than being silently left
+  wrong.
+- **docs/project-overview.md**: §8.1 gained a "Stage 11A added no new
+  persisted fact" paragraph (the outbound-chat capability is computed,
+  not stored - the third independent profile on the same account row)
+  and a matching runtime-state paragraph for the in-memory dispatcher;
+  §13's roadmap table splits stage 11 the same way README's does; §16's
+  status line now says "four pieces... are real as of stage 11A" and
+  its closing paragraph gained a Stage 11A implementation summary
+  matching the existing stage 9/10 ones, without touching their text.
+- **docs/engagement-architecture.md**: a new "Factual status update
+  (stage 11A, completed)" blockquote was appended after §6.4's existing
+  stage 8A one (never editing it), plus one after §4's stage 10
+  blockquote; §7.2 gained a short factual-update blockquote about the
+  new Reply action and the `providerMessageId` field; a new §8.0
+  "Manual sending — implemented (stage 11A)" subsection was added
+  before §8.1, with §8.1 and §8.2 each gaining a "Status: still
+  planned (stage 11B)" marker and §8.2 gaining a recorded (not
+  implemented) design requirement for stage 11B's future command
+  parser to ignore the sending account's own echoed messages; §18's
+  table and dependency list split stage 11 the same way.
+- **docs/provider-integrations/twitch-engagement.md**: the "Areas
+  reserved for later stages" bullet for stage 11 was split into 11A
+  (now implemented, cross-referencing `twitch-outbound-chat.md`) and
+  11B (still planned); a concise "Stage 11A addendum" section was
+  appended at the end explaining why inbound and outbound stay
+  independent (separate scope profiles, separate health, one shared
+  fact - a sent message returns through this same EventSub
+  subscription) without duplicating the actual outbound contract,
+  which lives entirely in `twitch-outbound-chat.md`.
+- **config/README.md**: a new rule 10, matching the existing
+  per-stage pattern (rules 7-9), states plainly that stage 11A added
+  no new file and no new environment variable here - the dispatcher's
+  bounds are fixed Go constants and its state is runtime-only, and the
+  one thing granted (`user:write:chat`) is an additive OAuth scope on
+  the existing token bundle, not a new secret type.
+- **THIRD_PARTY_NOTICES.md**: audited, not edited - `git log` confirms
+  no commit in this stage touched `go.mod`/`go.sum`/`package.json`/
+  `package-lock.json`, so no new dependency exists to document.
+
+### Files changed
+- `README.md`, `config/README.md`, `docs/project-overview.md`,
+  `docs/engagement-architecture.md`,
+  `docs/provider-integrations/twitch-engagement.md`.
+
+### Technical decisions
+- Followed this project's own established pattern exactly: a
+  completed stage's documentation update is a **new**, clearly-dated
+  blockquote or paragraph appended after the old planning text, never
+  an edit to what an earlier stage's callout said - even where an
+  older callout ("everything from stage 11 onward remains exactly as
+  planned") is now factually incomplete, it is superseded by a new
+  blockquote immediately following it rather than rewritten in place,
+  matching exactly how the stage 9 callout was left untouched when
+  stage 10 completed.
+- Confirmed no dependency-manifest file changed anywhere in this
+  stage's commit range before writing the THIRD_PARTY_NOTICES.md audit
+  conclusion, rather than assuming.
+
+### Automated validation
+Documentation only - no build/test/lint run for this commit
+specifically; the full closing regression (frontend, backend, all nine
+integration scripts) runs as its own, final step before Stage 11A is
+considered complete.
+
+### Known limitations
+None beyond what earlier Stage 11A entries already recorded.
+
+### Next step
+Run the full closing regression (frontend checks, backend checks, and
+all nine integration scripts by exact name), then push and produce the
+final report.

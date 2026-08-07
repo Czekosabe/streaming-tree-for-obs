@@ -162,3 +162,18 @@ with no transcoding, is this stage's deliberate scope.
    a later, separate stage, `docs/engagement-architecture.md` §13) - the
    visual settings above are plain per-profile SQLite columns, not an
    exported, shareable package.
+10. Stage 11A's manual outbound-chat foundation adds **no new file here
+    and no new environment variable**. The in-memory per-account send
+    dispatcher (`internal/outboundchat`) is runtime state only - queue
+    contents, dispatcher state, recent-send timestamps and the local
+    rate-limit window all reset on every backend restart, the same
+    category as the branch supervisor's and the Twitch EventSub
+    connector's own runtime state above - never written to SQLite or to
+    a file in this directory. Its bounds (queue capacity, the 1-second
+    local dispatch floor, the 20-per-30-second window) are fixed Go
+    constants rather than configurable settings, a deliberate choice
+    over adding a new environment variable for values this stage has no
+    evidence yet need tuning per deployment. The one thing granted
+    (`user:write:chat`) is an additive Twitch OAuth scope, stored in the
+    OS credential store exactly like every other scope on the account's
+    existing token bundle - not a new secret type, and not a file here.

@@ -205,8 +205,17 @@ continuity there.
 - **Stage 9 (unified operator chat):** consuming the normalized events this
   stage's bus produces in an actual chat UI. Stage 8A's own diagnostic event
   view is explicitly not this.
-- **Stage 11 (outbound chat):** `user:write:chat` and sending messages. Not
-  requested or used anywhere in stage 8A.
+- **Stage 11A (manual outbound chat, now implemented):** `user:write:chat`
+  and sending/replying via the real Send Chat Message API. Not requested
+  or used anywhere in this stage 8A connector - it is a third,
+  independently assessed capability profile on the same connected
+  account, researched and implemented separately. See
+  [`twitch-outbound-chat.md`](twitch-outbound-chat.md) for the full
+  contract, and the addendum at the end of this document for how the two
+  stay independent.
+- **Stage 11B (scheduled bot messages, chat commands):** still planned,
+  building on stage 11A's own dispatcher rather than this inbound
+  connector.
 - **Stage 12 (alerts):** rule matching against these events. Not implemented.
 - **Badge image resolution, per-message avatar fetching:** stage 8A carries
   badge/emote **IDs** in the normalized model but does not resolve them to
@@ -374,3 +383,33 @@ plain text rather than hiding it.
   returns per badge version are read but never rendered as a clickable
   element - operator chat is a read-only diagnostic/working view, not an
   interactive Twitch chat client.
+
+---
+
+## Stage 11A addendum — relationship to outbound chat
+
+This document covers **inbound** EventSub reading only. Stage 11A added
+manual **outbound** Twitch chat sending and replying, researched and
+documented entirely separately in
+[`twitch-outbound-chat.md`](twitch-outbound-chat.md) - that document is
+the authoritative contract for the Send Chat Message API, `is_sent`/
+`drop_reason` behavior, rate limits and retry policy, not this one.
+
+The two stay independent by design, not by accident:
+
+- **Independent scope profiles.** Reading chat needs the five scopes in
+  [Scopes](#scopes) above; sending needs only `user:write:chat` -
+  requested through its own capability assessment
+  (`AssessOutboundChatCapability`), never merged into the engagement
+  profile this document defines.
+- **Independent health.** An account can be healthy for inbound
+  engagement while `permission_required` for outbound chat, or vice
+  versa - exactly the same independence stage 8A already established
+  between metadata and engagement health (see
+  [Scope-profile design decision](#scope-profile-design-decision)
+  above).
+- **One shared fact.** A message sent through the outbound-chat
+  dispatcher returns through *this* document's own `channel.chat.message`
+  subscription, like any other message - Stage 11A adds no separate echo
+  path and no optimistic local copy. See `twitch-outbound-chat.md` for
+  why, and engagement-architecture.md §8.0 for the full design.

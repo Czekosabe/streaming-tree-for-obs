@@ -152,6 +152,12 @@ of this document to reason about two credential lifecycles as if they were one.
 > Everything from stage 11 onward remains exactly as planned before this
 > stage.
 
+> **Factual status update (stage 11A, completed):** manual outbound
+> Twitch chat sending and replying, part of what stage 11 originally
+> covered, now exists too - see §8.0. Scheduled bot messages and chat
+> commands (§8.1-8.3) remain exactly as planned before this stage - see
+> stage 11B in [project-overview.md §13](project-overview.md#13-roadmap).
+
 ## 5. Normalized engagement event model
 
 ### 5.1 Design goal
@@ -405,6 +411,19 @@ connector.
 > still not requested anywhere - that remains stage 11's scope. See
 > [`docs/provider-integrations/twitch-engagement.md`](provider-integrations/twitch-engagement.md).
 
+> **Factual status update (stage 11A, completed):** `user:write:chat` is
+> now requested too, as a **third**, independently assessed scope
+> profile (`AssessOutboundChatCapability`) on the same connected-account
+> row stages 7A and 8A already extended - never merged into the
+> engagement upgrade above, and never widening what an account needs for
+> metadata or inbound engagement to stay healthy. The upgrade reuses the
+> same identity-bound Device Code Flow again: it requests the union of
+> the account's current scopes plus `user:write:chat`, rejects a
+> completion from a different Twitch identity, and never requests
+> `user:bot`/`channel:bot` (this application has no separate bot
+> identity to authorize). See
+> [`docs/provider-integrations/twitch-outbound-chat.md`](provider-integrations/twitch-outbound-chat.md).
+
 ### 6.5 In-memory buffer versus persisted history
 
 The default and only currently planned storage model is an **in-memory,
@@ -480,6 +499,14 @@ own
 the full user-facing description and
 [progress.md](progress.md) for the design decisions.
 
+> **Factual status update (stage 11A, completed):** a **Reply** action
+> now appears on an eligible message (real, non-deleted, Twitch,
+> message-kind, with a known provider message id) - see §8.0. Each
+> item's own provider message id was added to the operator-chat item
+> model as a narrowly-scoped field for this purpose, deliberately never
+> added to the public overlay item model in §7.3 below, which has no
+> legitimate use for it.
+
 ### 7.3 OBS chat overlay — implemented (stage 10)
 
 **Status: implemented.** A filtered **public** Browser Source, any number
@@ -520,9 +547,59 @@ section for the full user-facing description and
 
 ## 8. Outbound chat and bot automation
 
+### 8.0 Manual sending — implemented (stage 11A)
+
+**Status: implemented, manual only.** A connected Twitch account can
+send a chat message, or reply to one, as itself, from a composer on
+the Chat page - `internal/outboundchat` (backend: provider-independent
+send model, validation, in-memory per-account dispatcher),
+`internal/provider/twitch`'s Send Chat Message adapter, and
+`OutboundChatComposer.tsx` (frontend). What is real today:
+
+- a third, independently assessed capability profile
+  (`user:write:chat`) on the same connected account §6.4 already
+  extended twice, upgraded through the same identity-bound Device Code
+  Flow every other permission upgrade in this application uses,
+- a bounded, in-memory, per-account send queue - one send in flight per
+  account, order preserved, a full queue rejected explicitly rather
+  than grown without bound, reset on every backend restart like every
+  other runtime projection in this document (§6.5),
+- a local rate limiter (at most one dispatch per second, at most 20 in
+  a rolling 30-second window) independent per account, plus honoring a
+  real Twitch rate-limit response's own reported reset time,
+- manual sending and replying from the Chat page, with **no optimistic
+  local echo** - a sent message reappears through the same Event
+  Bus/operator-chat pipeline §7 already built, once Twitch's own
+  EventSub delivers it back, exactly like any other message,
+- a persistent Shared Chat disclosure (Twitch may distribute a sent
+  message to other channels in the same session) - a warning, never a
+  claim that a session is currently active,
+- **no automatic retry** on an uncertain outcome (a `403`/`422`/`429`/
+  `5xx`/transport failure), to avoid a real duplicate send - the one
+  documented exception is a single transparent refresh-and-retry on
+  exactly one `401`, the same rule every other Twitch call in this
+  application already follows.
+
+**Not yet real, deliberately deferred to stage 11B:** everything §8.1
+and §8.2 below describe - scheduled/randomized sends, message groups,
+streaming-hour windows, viewer/chat-activity thresholds, cooldowns,
+automatic suspension, chat commands, aliases, per-user/global cooldowns,
+role gating, and the placeholder system (§8.3). Stage 11B is expected to
+build directly on stage 11A's own dispatcher and sending abstraction
+(the dispatcher's `Source` type already reserves `command`/`scheduled`
+values it does not yet implement) rather than replacing them - see
+[`docs/provider-integrations/twitch-outbound-chat.md`](provider-integrations/twitch-outbound-chat.md)
+and the README's own
+[Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
+section for the full design and user-facing behavior of what stage 11A
+actually implemented, and [progress.md](progress.md) for the design
+decisions.
+
 ### 8.1 Scheduled bot messages
 
-Planned settings per scheduled message:
+**Status: still planned (stage 11B)**, building on stage 11A's
+dispatcher (§8.0) rather than a separate mechanism. Planned settings
+per scheduled message:
 
 - enabled/disabled,
 - one or more target platforms (via connectors that `canSendChat`, §6.3),
@@ -547,8 +624,16 @@ Planned settings per scheduled message:
 
 ### 8.2 Chat commands
 
-Planned example commands: `!discord`, `!socials`, `!uptime`, `!title`,
-`!game`, `!commands`.
+**Status: still planned (stage 11B).** Planned example commands:
+`!discord`, `!socials`, `!uptime`, `!title`, `!game`, `!commands`.
+
+> **Design requirement recorded for stage 11B, not implemented now:**
+> command recognition must ignore any inbound message whose provider
+> user id equals the connected sending account's own provider user id
+> - stage 11A's manual sends return through EventSub as ordinary
+> messages (§8.0), exactly as they should, and a future command parser
+> must not mistake the account's own sent message for a viewer's
+> command.
 
 Planned settings per command:
 
@@ -875,7 +960,8 @@ that table.
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set |
 | 9 | Unified operator chat (§7.2) — **Completed** |
 | 10 | OBS chat overlay (§7.3) — **Completed** |
-| 11 | Outbound chat, scheduled bot messages and commands (§8) |
+| 11A | Manual outbound Twitch chat sending and replying (§8.0) — **Completed** |
+| 11B | Scheduled bot messages and chat commands (§8.1–8.3) |
 | 12 | Alert engine and alert queue (§9–10) |
 | 13 | Visual overlay designers (§13.1) |
 | 14 | Built-in templates and template import/export (§13.3) |
@@ -906,8 +992,12 @@ Dependencies that constrain this order:
   reads stage 9's own revision stream instead, not the bus directly - so
   stage 9 is a genuine prerequisite of stage 10, not merely a sibling
   consumer of stage 8 the way the diagram in §6.1 originally proposed.
-- Stage 11 (outbound/bot) needs connector send-message capability (§6.3),
-  which is part of the stage 8 Twitch connector's capability declaration.
+- Stage 11A (manual outbound) needed connector send-message capability
+  (§6.3), declared as its own independent capability profile (§6.4),
+  never merged into the stage 8A connector's own inbound capability.
+  Stage 11B (scheduled/bot) is expected to build directly on stage
+  11A's own dispatcher and sending abstraction (§8.0) rather than
+  replacing them.
 - Stage 12 (alerts) needs stage 8's normalized events; the alert queue (§10)
   is not useful without the rule engine that feeds it, so they are one stage.
 - Stage 13 (designers) needs a stable overlay data shape to design against,

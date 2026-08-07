@@ -20,12 +20,15 @@ credential-store foundation (stage 5), the Twitch and YouTube
 connected-account integrations (stages 7A/7B), the first real piece
 of the engagement platform itself — a normalized Engagement Event Bus and
 a real Twitch inbound connector reading chat and channel events (stage
-8A) — a real, unified operator chat consuming that bus (stage 9) — and a
+8A) — a real, unified operator chat consuming that bus (stage 9) — a
 real, public OBS Browser Source chat overlay consuming that same
-operator-chat projection (stage 10) — are all completed. Everything still
-on top of that (outbound chat, alerts, TTS) remains planned.
+operator-chat projection (stage 10) — and a real, manual outbound-chat
+foundation letting an operator send and reply as their own connected
+Twitch account from the Chat page (stage 11A) — are all completed.
+Scheduled bot messages and chat commands (stage 11B), alerts, and TTS
+remain planned.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat and a real OBS Browser Source chat overlay all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay and real manual Twitch chat sending all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -50,26 +53,36 @@ on top of that (outbound chat, alerts, TTS) remains planned.
 > **Overlays** page manages any number of persisted overlay profiles, each
 > with its own unguessable public URL, visual settings and filters, served
 > over a public HTTP + Server-Sent Events API with no application chrome.
-> See
+> A connected Twitch account can also, after its own explicit
+> additional-permission step, **send real chat messages and replies as
+> that account** from the Chat page's composer — a bounded, per-account
+> dispatcher and a real Twitch Send Chat Message adapter, with no
+> separate bot identity, no optimistic local echo (the sent message
+> appears the same way any other message does, once Twitch's own EventSub
+> delivers it back), and honest rate-limited/dropped/delivery-unknown
+> states rather than a false "sent" claim. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
 > [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
 > [Unified operator chat](#unified-operator-chat),
-> [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
+> [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
+> [Sending Twitch chat manually](#sending-twitch-chat-manually)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
 > never starts on its own, and a backend restart never resumes one
 > automatically. The same is true of publishing metadata: saving locally and
 > publishing to the platform are two separate, both-explicit actions, for
-> both Twitch and YouTube. Enabling the Twitch engagement connector is
-> equally explicit, and restoring it automatically on the next backend
-> start only ever applies to a connector you already enabled yourself.
+> both Twitch and YouTube. Enabling the Twitch engagement connector, and
+> upgrading an account's permission to send chat, are equally explicit —
+> restoring an enabled connector automatically on the next backend start
+> only ever applies to one you already enabled yourself, and sending is
+> always an operator-initiated action, never scheduled or automatic.
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything else still built **on top of** the operator chat — outbound
-> chat and bot messages, alerts, TTS — are still **planned**. Whatever
+> everything else still built **on top of** the operator chat — scheduled
+> bot messages, chat commands, alerts, TTS — are still **planned**. Whatever
 > remains a placeholder is marked with a **Demo** badge — the full list is
 > in [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -94,6 +107,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents)
 - [Unified operator chat](#unified-operator-chat)
 - [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
+- [Sending Twitch chat manually](#sending-twitch-chat-manually)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -118,8 +132,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 8A | Engagement Event Bus and a real Twitch inbound connector | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
-| 10 | OBS Browser Source chat overlay: persisted overlay profiles, a public per-overlay projection, a public HTTP/SSE API, a frontend renderer and the Overlays management page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 11–19 | Outbound chat, alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 10 | OBS Browser Source chat overlay: persisted overlay profiles, a public per-overlay projection, a public HTTP/SSE API, a frontend renderer and the Overlays management page | **Completed** — see [progress.md](docs/progress.md) |
+| 11A | Manual outbound Twitch chat: additive send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, manual sending and replies from the Chat page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 11B | Scheduled bot messages and chat commands, built on the same dispatcher | Planned |
+| 12–19 | Alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -832,13 +848,17 @@ now real**: stage 8A added a genuine EventSub WebSocket connector reading
 chat messages, follows, subscriptions, gifts, cheers, raids, channel-point
 redemptions and remote stream status onto an in-memory Engagement Event
 Bus, stage 9 added a real, working **unified operator chat page** that
-consumes it, and stage 10 added a real, public **OBS Browser Source chat
-overlay** that in turn consumes that same operator-chat projection — see
+consumes it, stage 10 added a real, public **OBS Browser Source chat
+overlay** that in turn consumes that same operator-chat projection, and
+stage 11A added **manual outbound chat sending** — a third, independent
+capability profile letting the same connected account send and reply to
+real Twitch chat messages — see
 [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
-[Unified operator chat](#unified-operator-chat) and
-[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay). What
-remains planned, unaffected by any of that: outbound Twitch chat and bot
-messages, the alert engine, text-to-speech, donations from external
+[Unified operator chat](#unified-operator-chat),
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) and
+[Sending Twitch chat manually](#sending-twitch-chat-manually). What
+remains planned, unaffected by any of that: scheduled bot messages, chat
+commands, the alert engine, text-to-speech, donations from external
 services, viewer counts, and analytics — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
@@ -1209,27 +1229,33 @@ channel-point redemptions, and remote stream online/offline) onto an
 in-memory **Engagement Event Bus**, and stream them live to a new
 diagnostic **Engagement** page in the interface. This is stage 8A of the
 roadmap — the foundation later stages build the unified operator chat
-(stage 9), the OBS Browser Source overlay (stage 10), outbound chat and
-bot messages (stage 11), and the alert engine (stage 12) on top of. See
+(stage 9), the OBS Browser Source overlay (stage 10), manual outbound
+chat sending (stage 11A), scheduled bot messages and chat commands
+(stage 11B), and the alert engine (stage 12) on top of. See
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) for
 the full target design and
 [`docs/provider-integrations/twitch-engagement.md`](docs/provider-integrations/twitch-engagement.md)
 for the fully researched Twitch EventSub contract.
 
-**What this stage does not implement.** Sending Twitch chat messages,
-chat commands, scheduled bot messages, alert rules or rendering, TTS,
+**What this stage does not implement.** This stage is *inbound* only:
+reading chat and events, never sending anything to Twitch. Chat
+commands, scheduled bot messages, alert rules or rendering, TTS,
 YouTube live chat, and Kick/TikTok engagement are all still
 unimplemented — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
 real, unified operator chat consuming this Event Bus is implemented —
-see [Unified operator chat](#unified-operator-chat) below — and a real,
+see [Unified operator chat](#unified-operator-chat) below — a real,
 public OBS Browser Source overlay consuming that chat's own projection
 in turn is also implemented — see
-[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay). The
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) —
+and manually sending/replying as the connected account is implemented
+too, as its own independent capability profile — see
+[Sending Twitch chat manually](#sending-twitch-chat-manually). The
 diagnostic Engagement page added in this stage is explicitly **not**
-the operator chat or an overlay — it exists to make the Event Bus and
-the Twitch connector's state genuinely observable, and stays a
-separate page from both Chat and Overlays.
+the operator chat, an overlay, or the outbound-chat composer — it
+exists to make the Event Bus and the Twitch connector's state
+genuinely observable, and stays a separate page from Chat, Overlays
+and the composer built into the Chat page.
 
 ### The Engagement Event Bus
 
@@ -1262,7 +1288,10 @@ above already exists with only the metadata scope
 additional, narrowly-scoped permissions: `user:read:chat`,
 `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`
 and `channel:read:redemptions` — never `user:write:chat` (sending chat
-messages), which belongs to a later stage this one does not implement.
+messages), which belongs to a separate, independently assessed
+outbound-chat capability profile instead — see
+[Sending Twitch chat manually](#sending-twitch-chat-manually). Reading
+and sending are deliberately never bundled into one upgrade request.
 
 Clicking **Authorize engagement access** on the Engagement page starts a
 new Device Code Flow attempt, reusing the exact same flow the initial
@@ -1365,14 +1394,19 @@ is enabled, distinct from the Engagement page's connector diagnostics.
 Chat = the daily working view; Engagement = "is the connector actually
 healthy." Neither replaces the other.
 
-**What this stage does not implement.** Sending chat, chat commands,
-scheduled bot messages, alerts, TTS, remote moderation actions
-(bans/timeouts/message deletion sent *to* Twitch), and YouTube/Kick/TikTok
-chat all remain exactly as planned before this stage — a message
-appearing in operator chat is never proof this application's own
-outgoing FFmpeg branch works; that is an unrelated, separately verified
-fact. The public OBS Browser Source overlay built on top of this same
-projection **is** implemented (stage 10) — see
+**What this stage (9) did not implement, and what has changed since.**
+At stage 9, sending chat, chat commands, scheduled bot messages,
+alerts, TTS, remote moderation actions (bans/timeouts/message deletion
+sent *to* Twitch), and YouTube/Kick/TikTok chat all remained exactly as
+planned. That is still true for chat commands, scheduled bot messages,
+alerts, TTS, remote moderation actions and YouTube/Kick/TikTok chat —
+but stage 11A added real **manual** sending and replying, from a
+composer built into this same Chat page — see
+[Sending Twitch chat manually](#sending-twitch-chat-manually). A
+message appearing in operator chat is never proof this application's
+own outgoing FFmpeg branch works; that is an unrelated, separately
+verified fact. The public OBS Browser Source overlay built on top of
+this same projection **is** implemented (stage 10) — see
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay).
 
 ### The operator-chat projection
@@ -1574,6 +1608,133 @@ with **no real Twitch account or OBS installation involved**. See
 
 ---
 
+## Sending Twitch chat manually
+
+Stage 11A adds a real, manual outbound-chat foundation: a connected
+Twitch account can, after its own explicit additional-permission step,
+send chat messages and replies to its own channel as itself, from a
+composer built into the Chat page. There is **no separate bot
+identity** — every sent message is attributed to the same Twitch
+account already connected under
+[Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
+using the real
+[Send Chat Message](https://dev.twitch.tv/docs/api/reference/#send-chat-message)
+API — never IRC, never a scraped or automated browser session. See
+[`docs/provider-integrations/twitch-outbound-chat.md`](docs/provider-integrations/twitch-outbound-chat.md)
+for the fully researched contract this is built on.
+
+**What this stage does not implement.** Scheduled/randomized messages,
+message groups, streaming-hour windows, chat commands, cooldowns,
+placeholder substitution, a separate bot account, announcements,
+whispers, pinned messages, and remote moderation actions sent *to*
+Twitch are all still unimplemented — that is stage 11B and later, see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+This stage is deliberately scoped to **manual, operator-initiated**
+sending only.
+
+### A third, independent capability profile
+
+Reading chat (stage 8A's `user:read:chat` and its four siblings) and
+sending chat (`user:write:chat`) are two separate, independently
+assessed capability profiles on the same connected account — alongside
+the original metadata profile from stage 7A
+(`channel:manage:broadcast`). An account can be healthy for metadata
+and inbound engagement while still needing its own separate
+outbound-chat permission upgrade, shown as its own capability state
+(unsupported / permission required / ready / error) wherever the
+composer or its status is shown. Authorizing outbound chat reuses the
+same identity-bound Device Code Flow every other permission upgrade in
+this application uses: it requests the **union** of the account's
+current scopes plus `user:write:chat` (never narrowing, never
+requesting `user:bot` or `channel:bot`, which this application does
+not use), rejects a completion from a different Twitch identity, and
+atomically replaces the token bundle only once the upgrade succeeds.
+
+### The in-memory outbound-chat dispatcher
+
+`internal/outboundchat` keeps one bounded, in-memory, per-account send
+queue (`internal/outboundchat/dispatcher.go`) — reset on every backend
+restart, never written to SQLite, exactly like the Engagement Event
+Bus and the operator-chat projection above. Only one send is ever
+in flight per account at a time, order is preserved, and a queue at
+capacity fails a new send explicitly rather than growing without
+bound. A local rate limiter caps how often a single account can start
+a new send (no more than one dispatch per second, and no more than 20
+within a rolling 30-second window) independently of any other
+account's own limiter, and a real Twitch `429`/rate-limit response
+paces the next send using Twitch's own reported reset time rather than
+guessing. **A send is never automatically retried** except for a
+single, transparent refresh-and-retry on exactly one `401`, the same
+rule every other Twitch call in this application already follows — a
+`403`, `422`, `429`, `5xx`, or an uncertain transport failure (the
+request may or may not have reached Twitch) is always surfaced
+honestly rather than silently retried, since retrying an uncertain
+send risks a real duplicate message.
+
+### The Chat page composer
+
+The Chat page's composer appears only for a Twitch-capable connected
+account (with an account selector when more than one qualifies),
+labeled **"Send as \<display name\>"** — never "bot" — with a live
+character counter matching the backend's own 500-Unicode-code-point
+limit exactly (a single emoji counts as one code point, the same way
+the backend counts Unicode runes, not UTF-16 units). **A sent message
+is never optimistically appended to the timeline.** The composer only
+ever shows a confirmed send outcome; the message itself reappears in
+the merged timeline the same way any other message does, once
+Twitch's own EventSub delivery echoes it back through the existing
+Engagement Event Bus and operator-chat projection described above —
+if inbound engagement is not enabled for that account, the composer
+says so plainly instead of implying a local echo is coming. A
+persistent notice discloses that Twitch's own Shared Chat feature may
+distribute a sent message to other channels in the same session,
+without ever claiming a session is currently active (this application
+has no way to know that). Every non-success outcome — permission
+required, backend unavailable, rate-limited (with a formatted retry
+time when Twitch provided one), dropped by Twitch (for example held by
+AutoMod), or delivery-unknown — is shown with its own explanation, and
+only a confirmed send clears the composer; every other outcome leaves
+the typed text in place to edit and resend.
+
+### Replies
+
+A **Reply** action appears on an eligible operator-chat item — a real,
+non-deleted Twitch message with a known provider message id, never an
+activity, a moderation row, a deleted placeholder, or a non-Twitch
+item — and locks the composer to that message's own connected account,
+showing a small preview with a cancel control. The reply target is
+cleared only after a confirmed send; a validation, drop, or
+rate-limit failure preserves both the typed text and the active reply
+target so the operator can just fix and resend. A sent message's own
+provider message id (needed to let *others* reply to it later) was
+added to the operator-chat item model as a narrowly-scoped field —
+deliberately never added to the public overlay DTO, since a public
+Browser Source viewer has no legitimate use for it.
+
+### Verifying it for real
+
+`scripts/verify-twitch-outbound-chat.mjs` exercises the whole feature
+end to end against the real backend and the same kind of fake Twitch
+OAuth/Helix/EventSub servers the other engagement scripts use,
+extended with a `POST /chat/messages` fake and a `refresh_token` grant
+— the exact scope union (including the absence of `user:bot`/
+`channel:bot`), an identity-mismatched upgrade rejected, a successful
+upgrade persisting, a send using the account's own provider user id
+for both broadcaster and sender with no `for_source_only`/`pin` ever
+sent, reply-parent forwarding, a `200` response with `is_sent:false`
+surfaced as a stable dropped error (Twitch's own drop-reason prose
+never exposed), a single `401` transparently refreshed and retried
+exactly once, a second `401` stopping rather than looping, every other
+error status mapped and never auto-retried (with `429` exposing a
+sanitized retry time), two connected accounts sending with fully
+isolated queues and rate limits, and a sent message's real EventSub
+echo appearing exactly once with no optimistic duplicate — entirely on
+loopback, with **no real Twitch account or network request to Twitch
+involved**. See [`docs/progress.md`](docs/progress.md) for exactly
+what it covers.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -1642,6 +1803,9 @@ All endpoints live under `/api` and return `application/json`.
 | `PUT` | `/api/connected-accounts/{id}/engagement` | Enable or disable the connector. Body `{enabled}`. Persists; an enabled connector reconnects automatically after a backend restart. |
 | `POST` | `/api/connected-accounts/{id}/engagement/authorize` | Start an identity-bound Device Code Flow requesting the union of the account's existing scopes and the engagement profile. **No request body.** Reuses the Twitch device-flow attempt snapshot shape. |
 | `POST` | `/api/connected-accounts/{id}/engagement/restart` | Cancel and restart the connector without changing its persisted enabled setting. **No request body.** |
+| `GET` | `/api/connected-accounts/{id}/outbound-chat` | One Twitch account's outbound-chat status: capability (`unsupported`/`permission_required`/`ready`/`error`), required/granted/missing scopes, dispatcher state, queue depth/capacity, last attempt/success times, last stable error code, sanitized retry time, whether sending is currently possible, and a standing Shared Chat disclosure identifier. No credential, no message content. |
+| `POST` | `/api/connected-accounts/{id}/outbound-chat/authorize` | Start an identity-bound Device Code Flow requesting the union of the account's existing scopes and `user:write:chat`. **No request body.** Reuses the Twitch device-flow attempt snapshot shape. |
+| `POST` | `/api/connected-accounts/{id}/outbound-chat/messages` | Send one chat message (optionally a reply) as this account. Body `{message, replyParentMessageId?}`, capped at 8 KiB. Response `{sent, providerMessageId, sentAt}` — never echoes the message text. |
 | `GET` | `/api/operator-chat/status` | Operator-chat projection status: schema version, buffer capacity, retained count, oldest/newest sequence, active subscribers, and a one-way "bus gap ever detected" flag. No message content. |
 | `GET` | `/api/operator-chat/items` | A bounded snapshot of retained operator-chat items. Query params `after`/`limit` (capped at 1000), repeatable `accountId`, comma-separated `kinds`, `includeDeleted`; reports `gap: true` when `after` is no longer retrievable. |
 | `GET` | `/api/operator-chat/stream` | Server-Sent Events: live operator-chat items (each a complete current-state upsert) as they change. Supports `Last-Event-ID` (or `?after=`) for replay, the same `accountId`/`kinds`/`includeDeleted` filters, emits `operator-chat.gap` when replay is incomplete, and periodic keepalive comments. Bounded concurrent clients. |
@@ -1765,6 +1929,20 @@ the credential endpoints: `platform_not_found`, `credential_not_found`,
 `credential_store_unavailable` (503), `credential_store_failure` (500) - see
 "Stream key security" below.
 
+**Stable error codes for the outbound-chat endpoints:**
+`outbound_chat_unsupported` (503, non-Twitch account), `account_not_found`
+(404, reusing the same code every other per-account endpoint already
+uses), `outbound_chat_permission_required` (422), `account_reconnect_required`
+(409, a second consecutive `401` from Twitch), `outbound_chat_queue_full`
+(429), `outbound_chat_rate_limited` (429, with a sanitized retry time in
+the status endpoint), `outbound_chat_forbidden` (403), `outbound_chat_message_dropped`
+(422, Twitch accepted the request but did not deliver the message - its
+own drop-reason prose is never included), `outbound_chat_delivery_unknown`
+(502, a transport failure with no trustworthy result), `outbound_chat_provider_failure`
+(502, a Twitch 5xx), and `outbound_chat_cancelled` (503). None of these
+responses, nor the send endpoint's own success response, ever echoes the
+sent message text.
+
 ---
 
 ## Production build
@@ -1805,7 +1983,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, the Chat page/message/activity/moderation rows, and the chat-overlay renderer/Overlays management page
+npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, the Chat page/message/activity/moderation rows, the outbound-chat composer, and the chat-overlay renderer/Overlays management page
 npm run build       # production build
 ```
 
@@ -1832,6 +2010,7 @@ node scripts/verify-youtube-account-integration.mjs # YouTube PKCE flow, linking
 node scripts/verify-twitch-engagement.mjs         # Event Bus + EventSub connector - fake Twitch only
 node scripts/verify-operator-chat.mjs             # unified operator chat: projection, preferences, badges/emotes - fake Twitch only
 node scripts/verify-chat-overlay.mjs              # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
+node scripts/verify-twitch-outbound-chat.mjs      # manual outbound chat: capability, dispatcher, sending/replies - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -1914,6 +2093,24 @@ hidden-user data, the public slug, or access tokens. See
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) for
 the full list of what it covers and what is instead covered by Go unit
 tests.
+
+The outbound-chat script reuses the same fake OAuth/Helix/EventSub
+servers once more, extended with a `POST /chat/messages` fake (switched
+between success, dropped, `401`/`403`/`422`/`429`/5xx, and a
+transport-destroyed "uncertain" response by the step under test) and a
+`refresh_token` grant on the fake OAuth server. It covers the exact
+scope union (including the permanent absence of `user:bot`/
+`channel:bot`), an identity-mismatched upgrade rejected, a successful
+upgrade persisting, a send using the account's own provider user id for
+both broadcaster and sender with no `for_source_only`/`pin` ever sent,
+reply-parent forwarding, `is_sent:false` surfaced as a stable dropped
+error, a single `401` refreshed and retried exactly once, a second
+`401` stopping and recovering, every other error status mapped and
+never auto-retried, two accounts with fully isolated queues and rate
+limits, and a sent message's real EventSub echo appearing exactly once
+with no optimistic duplicate. See
+[Sending Twitch chat manually](#sending-twitch-chat-manually) for the
+full list of what it covers.
 
 **None of these scripts touch your real database, your managed MediaMTX
 installation, your real OS credential store, or a real Twitch/Google
@@ -2071,10 +2268,10 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement, operator-chat and chat-overlay API
+│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement, operator-chat, chat-overlay and outbound-chat API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
-│   │   │   │   ├── chat/       # Message/activity/moderation rows, filter bar, settings panel, badge/emote images
+│   │   │   │   ├── chat/       # Message/activity/moderation rows, filter bar, settings panel, badge/emote images, the outbound-chat composer (Stage 11A)
 │   │   │   │   ├── chat-overlay/ # The public overlay renderer tree (Stage 10) - shared by the public route and the Overlays preview panel
 │   │   │   │   ├── engagement/ # Twitch connector card, bounded recent-events feed
 │   │   │   │   ├── layout/     # Shell: sidebar, top bar
@@ -2086,7 +2283,7 @@ rest of the repository.
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
-│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement, operator-chat and chat-overlay SSE client hooks
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement, operator-chat and chat-overlay SSE client hooks, outbound-chat status/send/authorize hooks
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
 │   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat and chat-overlay reducers, autoscroll state machine, overlay preview fixtures
@@ -2112,8 +2309,9 @@ rest of the repository.
 │           ├── engagement/     # The Engagement Event Bus (ring buffer, dedup, subscriptions)
 │           ├── operatorchat/   # The unified operator-chat projection (Stage 9) - provider-independent, in-memory only
 │           ├── chatoverlay/    # The public per-overlay chat projection (Stage 10) - consumes operatorchat's own revision stream, not the Event Bus directly
+│           ├── outboundchat/   # Provider-independent send model, validation, in-memory per-account dispatcher (Stage 11A) - never imports the Twitch provider package
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
-│           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services
+│           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services, the Send Chat Message adapter (Stage 11A)
 │           │   └── chatassets/ # Twitch chat badge (cached) and emote (pure URL) resolution (Stage 9)
 │           ├── provider/youtube/# YouTube OAuth (PKCE) + Data API client, adapter, metadata service
 │           ├── runtime/deviceflow/# Device-authorization attempt state machine
@@ -2128,11 +2326,12 @@ rest of the repository.
 ├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
-│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10)
+│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10, manual outbound chat as of stage 11A)
 │   ├── obs-browser-source.md   # Researched OBS Browser Source contract and Stage 10 recommendations
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
+│   │   ├── twitch-outbound-chat.md # Researched Twitch Send Chat Message API contract (Stage 11A)
 │   │   └── youtube.md          # Researched Google/YouTube API contract
 │   └── progress.md             # Work journal
 ├── scripts/
@@ -2143,7 +2342,8 @@ rest of the repository.
 │   ├── verify-youtube-account-integration.mjs # YouTube PKCE flow, linking, publish - fake Google only
 │   ├── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
 │   ├── verify-operator-chat.mjs    # Unified operator chat: projection, preferences, badges/emotes - fake Twitch only
-│   └── verify-chat-overlay.mjs     # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
+│   ├── verify-chat-overlay.mjs     # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
+│   └── verify-twitch-outbound-chat.mjs # Manual outbound chat: capability, dispatcher, sending/replies - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -2162,7 +2362,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Outbound chat/bot messages, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9 and a real, public OBS Browser Source chat overlay built on top of it as of stage 10 (see [Unified operator chat](#unified-operator-chat) and [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)) — everything still built on top of *those* (outbound chat, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Scheduled bot messages, chat commands, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, and real *manual* outbound chat sending/replying as of stage 11A (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) and [Sending Twitch chat manually](#sending-twitch-chat-manually)) — everything still built on top of *those* (scheduled/automatic sending, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -2232,6 +2432,13 @@ directly next to the control.
   API; and a live preview panel on the management page reusing the exact
   same renderer - see
   [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay).
+- **Real manual Twitch chat sending and replying**, as the connected
+  account itself, through Twitch's real Send Chat Message API - a
+  third, independent per-account permission upgrade; an in-memory,
+  bounded, per-account send queue with local and provider rate-limit
+  handling; a Chat page composer with no optimistic local echo; and a
+  Reply action locked to the message's own connected account - see
+  [Sending Twitch chat manually](#sending-twitch-chat-manually).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -2243,9 +2450,11 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Outbound chat, scheduled bot messages, the alert engine, TTS, goal
-  widgets, a visual overlay designer and overlay templates** and the rest
-  of the engagement and overlay platform - architecture only so far, see
+- **Scheduled bot messages and chat commands** (stage 11B), built on the
+  same in-memory dispatcher stage 11A introduced.
+- **The alert engine, TTS, goal widgets, a visual overlay designer and
+  overlay templates** and the rest of the engagement and overlay
+  platform - architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 

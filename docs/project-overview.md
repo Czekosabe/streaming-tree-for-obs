@@ -530,6 +530,22 @@ nothing that constitutes actual chat content is ever stored here either
 - only the operator's own presentation and filtering choices for that
 overlay.
 
+**Stage 11A added no new persisted fact of its own.** Manual
+outbound-chat permission is a third, independently assessed capability
+profile on the same connected-account row already described under
+stage 8A above - `internal/provider/twitch.AssessOutboundChatCapability`
+computes it on demand from the account's already-stored granted
+scopes (this time checking for `user:write:chat`), exactly the way
+`AssessEngagementCapability` already does for the five inbound scopes.
+Metadata health, inbound-engagement health and outbound-chat health
+are three independent facts about the same account, never conflated:
+an account can be perfectly healthy for metadata and for reading chat
+while still needing its own separate permission upgrade before it can
+send anything. There is no new SQLite table and no new column - the
+capability is computed, not stored, and the queue/dispatcher state
+that goes with it is pure runtime state, described below alongside
+every other in-memory projection in this section.
+
 ### Runtime stream state
 
 Whether the ingest service is running, whether a publisher is connected,
@@ -604,6 +620,21 @@ deduplication, deletion or moderation-filtering logic is duplicated a
 second time. Like every runtime projection in this section, it begins
 empty on every backend start and tracks only its own sequence/capacity/
 subscriber counts, never a raw provider payload.
+
+**Stage 11A's outbound-chat dispatcher (`internal/outboundchat`) is
+runtime state of the same kind, at the opposite end of the pipeline**:
+one bounded, in-memory-only send queue per connected account (not
+persisted, not shared with any other account's queue), tracking only
+its own state (idle/queued/sending/rate\_limited/stopping/error), queue
+depth/capacity, last-attempt/last-success timestamps, a stable last
+error code and a sanitized retry time - never a message's own text,
+never a Twitch response body or header, never the OAuth token used to
+send it. It begins empty on every backend restart exactly like the
+Event Bus and the two chat projections above; nothing about a queued
+or in-flight send survives a restart, and no outbound message is ever
+persisted anywhere once sent, matching this project's existing rule
+that actual chat content - inbound or outbound - is never written to
+SQLite.
 
 **Hydration protocol.** The frontend overlay route fetches the public
 config once, then opens the public SSE stream and relies entirely on
@@ -919,7 +950,8 @@ it is architected; this table only tracks status and dependencies.
 | 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat page consuming the Engagement Event Bus, provider-independent projection, persisted preferences, Twitch badge/emote resolution (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 10 | OBS chat overlay: persisted overlay profiles, a public per-overlay projection over the operator-chat projection, a public HTTP/SSE API and a management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
-| 11 | Outbound chat, scheduled bot messages and commands | Planned |
+| 11A | Manual outbound Twitch chat: a third, independent send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, and manual sending/replying from the Chat page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
+| 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced | Planned |
 | 12 | Alert engine and alert queue | Planned |
 | 13 | Visual overlay designers | Planned |
 | 14 | Built-in templates and template import/export | Planned |
@@ -960,8 +992,16 @@ Key dependencies:
   without the bus. Deferring 7C costs nothing on the critical path; deferring
   8A further would have blocked the rest of the engagement platform for no
   reason.
-- Stage 11 (outbound/bot) needs connector send-message capability, declared as
-  part of a connector's capability set from stage 8 onward.
+- Stage 11A (manual outbound chat) needed connector send-message
+  capability, declared as its own independent capability profile
+  (`AssessOutboundChatCapability`) reusing stage 8A's own
+  capability-assessment pattern rather than widening the inbound
+  profile. Stage 11B (scheduled bot messages, chat commands) will build
+  directly on stage 11A's own in-memory dispatcher and provider-
+  independent sending abstraction (`internal/outboundchat`) rather than
+  replacing them - the dispatcher's `Source` type already reserves
+  `command`/`scheduled` values stage 11B will implement, unused by
+  stage 11A itself.
 - Stage 12 (alerts) needs stage 8's normalized events.
 - Stage 13 (designers) needs a stable overlay shape, which only exists once
   stages 9/10 (chat) and 12 (alerts) establish what an overlay renders.
@@ -1150,19 +1190,21 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: three pieces of this section are real as of stage 10 - the
+**Status: four pieces of this section are real as of stage 11A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
-(stage 9), and a public OBS Browser Source chat overlay consuming that
-same operator-chat projection (stage 10). Everything else described
-below (outbound chat/bot messages, alerts, visual designers, TTS,
-goal/counter widgets) remains planned.**
+(stage 9), a public OBS Browser Source chat overlay consuming that same
+operator-chat projection (stage 10), and manual outbound chat
+sending/replying as the connected account itself (stage 11A). Everything
+else described below (scheduled bot messages, chat commands, alerts,
+visual designers, TTS, goal/counter widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
 platform**: normalized chat and events from multiple platforms, a unified
-operator chat, OBS Browser Source overlays, outbound chat and scheduled bot
-messages, alerts and an alert queue, visual overlay designers with a safe
-template format, text-to-speech, and goal/counter widgets.
+operator chat, OBS Browser Source overlays, outbound chat with scheduled
+bot messages and commands, alerts and an alert queue, visual overlay
+designers with a safe template format, text-to-speech, and goal/counter
+widgets.
 
 The full architecture — the normalized event model, the connector interface
 and capability model, deduplication and ordering rules, the operator-chat vs.
@@ -1196,9 +1238,12 @@ made from stage 5 onward:
 3. **Provider support is planned honestly**: Twitch first (stage 7A,
    account and metadata only, extended in stage 8A with a real inbound
    engagement connector requesting additional, separately-tracked scopes on
-   the same account - no outbound chat yet), then YouTube (stage 7B,
+   the same account, then in stage 11A with a real, independently-scoped
+   **manual** outbound-sending capability on that same account - scheduled/
+   automatic sending remains stage 11B), then YouTube (stage 7B,
    account, broadcast selection and metadata only - no live chat, no Super
-   Chat, no membership events). Kick and TikTok account integration (stage
+   Chat, no membership events, no outbound chat). Kick and TikTok account
+   integration (stage
    7C) are deliberately **deferred** rather than blocking: they are not a
    dependency of the Event Bus, which only needs the Twitch adapter that
    already exists. Kick account integration is expected to land together
@@ -1228,7 +1273,22 @@ unauthenticated HTTP + SSE API, a frontend renderer shared between the
 public route and the management preview, and the Overlays management
 page - see the README's own
 [OBS Browser Source chat overlay](../README.md#obs-browser-source-chat-overlay)
-section for the full design and user-facing behavior. Everything else
-this section describes (outbound chat, alerts, TTS, goal widgets,
-further providers, a visual overlay designer, overlay templates) remains
-planned, unaffected by stage 9's or stage 10's own completion.
+section for the full design and user-facing behavior. Stage 11A
+implemented real, manual outbound Twitch chat sending and replying: a
+third, independently assessed capability profile on the same connected
+account (`AssessOutboundChatCapability`, requesting only
+`user:write:chat`), a provider-independent sending abstraction and
+in-memory per-account dispatcher (`apps/server/internal/outboundchat`)
+that never persists a queued or sent message, a real Twitch Send Chat
+Message adapter, and a composer built into the Chat page with no
+optimistic local echo - the sent message reappears through the same
+Event Bus / operator-chat pipeline stage 9 already built, once Twitch's
+own EventSub delivers it back - see the README's own
+[Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
+section and
+[docs/provider-integrations/twitch-outbound-chat.md](provider-integrations/twitch-outbound-chat.md)
+for the full design, contract and user-facing behavior. Everything else
+this section describes (scheduled bot messages, chat commands, alerts,
+TTS, goal widgets, further providers, a visual overlay designer, overlay
+templates) remains planned, unaffected by stage 9's, stage 10's or stage
+11A's own completion.
