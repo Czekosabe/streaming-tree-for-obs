@@ -85,7 +85,7 @@ func TestAdapterSendChatMessageMapsErrorsToOutboundChatSentinels(t *testing.T) {
 		status  int
 		wantErr error
 	}{
-		{"unauthorized", http.StatusUnauthorized, ErrUnauthorized},
+		{"unauthorized", http.StatusUnauthorized, outboundchat.ErrUnauthorized},
 		{"forbidden", http.StatusForbidden, outboundchat.ErrForbidden},
 		{"serverError", http.StatusInternalServerError, outboundchat.ErrProviderFailure},
 	}

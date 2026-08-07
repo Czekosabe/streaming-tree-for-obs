@@ -16,6 +16,7 @@ func (p *Projection) buildMessageItem(evt engagement.Event) Item {
 	item := Item{
 		ID:                 messageItemID(evt.ProviderID, evt.ConnectedAccountID, evt.ProviderEventID),
 		SourceEventID:      evt.ID,
+		ProviderMessageID:  evt.ProviderEventID,
 		ProviderID:         string(evt.ProviderID),
 		ConnectedAccountID: evt.ConnectedAccountID,
 		DestinationID:      p.resolveDestination(evt.ConnectedAccountID),

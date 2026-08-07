@@ -166,6 +166,18 @@ type Item struct {
 	// or updated this item (the original message's bus event ID for an
 	// unmodified message; the deletion event's ID after a deletion).
 	SourceEventID string
+	// ProviderMessageID is the provider's own raw chat-message identifier
+	// (Twitch's channel.chat.message message_id), present only for
+	// KindMessage. Not a credential, but deliberately never added to the
+	// public OBS overlay DTO (internal/httpapi's
+	// publicChatOverlayItemResponse) - it exists here only so the private
+	// operator Chat page can populate Stage 11A's reply_parent_message_id
+	// when the operator replies to an existing Twitch message. Distinct
+	// from ID (this package's own composite key) and from SourceEventID
+	// (the Engagement Event Bus's internal id) - see messageItemID's own
+	// doc comment for why those two are not usable as a Twitch reply
+	// target.
+	ProviderMessageID string
 
 	ProviderID         string
 	ConnectedAccountID string

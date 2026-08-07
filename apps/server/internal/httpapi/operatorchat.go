@@ -198,6 +198,11 @@ type operatorChatItemResponse struct {
 	Sequence      uint64 `json:"sequence"`
 	ID            string `json:"id"`
 	SourceEventID string `json:"sourceEventId,omitempty"`
+	// ProviderMessageID is present only for a message-kind item - see
+	// operatorchat.Item.ProviderMessageID's own doc comment. Used by the
+	// Chat page's Stage 11A Reply action; never added to the public OBS
+	// overlay DTO.
+	ProviderMessageID string `json:"providerMessageId,omitempty"`
 
 	ProviderID         string `json:"providerId"`
 	ConnectedAccountID string `json:"connectedAccountId"`
@@ -259,7 +264,8 @@ func toOperatorChatMessageResponse(m *oc.Message) *operatorChatMessageResponse {
 func toOperatorChatItemResponse(ctx context.Context, item oc.Item, assets OperatorChatAssetResolver) operatorChatItemResponse {
 	resp := operatorChatItemResponse{
 		Version: item.Version, Sequence: item.Sequence, ID: item.ID, SourceEventID: item.SourceEventID,
-		ProviderID: item.ProviderID, ConnectedAccountID: item.ConnectedAccountID, DestinationID: item.DestinationID,
+		ProviderMessageID: item.ProviderMessageID,
+		ProviderID:        item.ProviderID, ConnectedAccountID: item.ConnectedAccountID, DestinationID: item.DestinationID,
 		Kind: string(item.Kind), OccurredAt: item.OccurredAt.UTC().Format(time.RFC3339Nano), ReceivedAt: item.ReceivedAt.UTC().Format(time.RFC3339Nano),
 		User: toOperatorChatUserResponse(ctx, item.ConnectedAccountID, item.User, assets), Message: toOperatorChatMessageResponse(item.Message),
 		Lifecycle: operatorChatLifecycleResponse{Deleted: item.Lifecycle.Deleted, DeletionReason: string(item.Lifecycle.DeletionReason)},

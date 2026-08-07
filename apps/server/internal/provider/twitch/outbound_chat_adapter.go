@@ -54,11 +54,12 @@ func (a *Adapter) SendChatMessage(ctx context.Context, acc account.Account, toke
 func mapSendChatMessageErr(err error, limit rateLimit) error {
 	switch {
 	case errors.Is(err, ErrUnauthorized):
-		// Propagated as-is: the caller drives this through
-		// account.Service.WithFreshToken, which refreshes and retries
-		// exactly once on ErrUnauthorized-shaped failures - see
+		// Translated to the provider-independent sentinel - the dispatcher
+		// (internal/outboundchat) drives the refresh-and-retry-once policy
+		// via account.Service.WithFreshToken without ever needing to know
+		// this originated as a Twitch-specific 401 - see
 		// Client.SendChatMessage's own doc comment.
-		return err
+		return outboundchat.ErrUnauthorized
 	case errors.Is(err, ErrForbidden):
 		return outboundchat.ErrForbidden
 	case errors.Is(err, ErrRateLimited):

@@ -41,6 +41,7 @@ import (
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
+	"github.com/streaming-tree/server/internal/outboundchat"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -228,6 +229,12 @@ func run() error {
 		return err
 	}
 
+	// Stage 11A: same wiring as cmd/server/main.go - the twitchAdapter
+	// already constructed above also implements outboundchat.Provider.
+	outboundChatManager := outboundchat.NewManager(outboundchat.ManagerOptions{
+		Accounts: accountService, Providers: []outboundchat.Provider{twitchAdapter},
+	})
+
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
 		Accounts: accountService, Client: youtubeClient, RequiredScopes: []string{youtube.RequiredScope}, Logger: logger,
 	})
@@ -286,6 +293,8 @@ func run() error {
 
 		ChatOverlayProfiles: chatOverlayProfileService,
 		ChatOverlayRuntime:  chatOverlayManager,
+
+		OutboundChat: outboundChatManager,
 	})
 
 	server := &http.Server{
@@ -319,6 +328,7 @@ func run() error {
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
+		_ = outboundChatManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -337,6 +347,7 @@ func run() error {
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
+		_ = outboundChatManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

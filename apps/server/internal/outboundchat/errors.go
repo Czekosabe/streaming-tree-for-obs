@@ -12,6 +12,13 @@ import (
 // here, matching how internal/provider/twitch's own metadata publishing
 // already reuses them.
 var (
+	// ErrUnauthorized means the provider rejected the token outright (for
+	// example Twitch's own 401). Provider-independent by design - see
+	// Provider's own doc comment - so the dispatcher can drive a uniform
+	// refresh-and-retry-once policy without ever importing a concrete
+	// provider package's own sentinel error.
+	ErrUnauthorized = errors.New("outbound chat token rejected")
+
 	// ErrUnsupportedProvider means the connected account's provider has no
 	// outbound-chat Provider registered with the dispatcher's Manager.
 	ErrUnsupportedProvider = errors.New("provider does not support outbound chat")

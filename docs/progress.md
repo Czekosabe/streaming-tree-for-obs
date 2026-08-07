@@ -9566,3 +9566,183 @@ intentional, matching the suggested commit split's own separation between
 Build the in-memory, bounded, per-account outbound dispatcher (ordering,
 isolation, local rate limiting, cancellation, no goroutine leak), the
 runtime snapshot, the HTTP API, and wire everything into both binaries.
+
+## 2026-08-07 07:15 — feat(server): dispatch outbound chat messages
+
+### Status
+Completed
+
+### Scope
+Stage 11A's second backend commit: the in-memory bounded per-account
+outbound-chat dispatcher (`internal/outboundchat.Manager`), the Stage
+11A HTTP API (status/authorize/messages), wiring into both
+`cmd/server` and `cmd/testserver`, and a small, narrowly-scoped
+addition to the private operator-chat DTO
+(`providerMessageId`) that Stage 11A's reply feature needs. No
+frontend yet.
+
+### Changes
+
+**Dispatcher architecture.** One `accountDispatcher` per connected
+account, created lazily on first send and held in `Manager`'s own
+map (mutex-guarded, mirroring `internal/runtime/twitchengagement.
+Manager`'s own connector-per-account pattern). Each dispatcher owns a
+single buffered channel (`MaxQueueDepth = 20`) and one worker
+goroutine, so sends within one account are strictly ordered and only
+one provider call is ever in flight per account, while accounts never
+contend with each other. `Manager.Send` validates the message/reply-
+parent shape and the account's capability *before* ever touching the
+queue, so an invalid or forbidden send never occupies a queue slot.
+
+**Local rate limiting is a poll, not a single timer** - a genuinely
+important fix found while writing the fake-clock tests: a real
+`time.Timer`'s fire time is fixed at construction from whatever the
+(possibly fake) clock said *then*; a test later calling
+`clock.Advance(...)` cannot pull an already-running real timer
+earlier. `accountDispatcher.process` instead re-checks
+`nextAllowedStart()` every 10ms of real time in a loop, so a test's
+fake-clock advance is picked up on the very next tick instead of
+requiring the wait to elapse in real wall-clock time. Enforces both a
+1-second floor between dispatch starts and a 20-per-30-second rolling
+window per account, plus a `providerNotBefore` floor set from a
+`RateLimitedError`'s own `RetryAt` hint - "respect a provider 429/
+reset time" applies to *pacing the next send*, not merely reporting
+the hint in the snapshot.
+
+**Retry safety reuses existing infrastructure, not new code.**
+`accountDispatcher.sendOnce` drives the provider call through
+`account.Service.WithFreshToken` exactly as `MetadataService.Publish`
+already does - its existing single-flight-refresh-then-retry-once-on-
+401 behavior is inherited for free. To make this work without
+`internal/outboundchat` depending on `internal/provider/twitch`, a
+provider-independent `outboundchat.ErrUnauthorized` sentinel was
+added (fixing a design gap the first attempt at
+`Adapter.SendChatMessage`'s error mapping had introduced - it
+originally passed the raw `twitch.ErrUnauthorized` straight through,
+which the dispatcher could never check without an import the
+architecture forbids). `RateLimitedError`, `ErrDeliveryUnknown` and
+`ErrProviderFailure` are never retried automatically anywhere in this
+call chain - only a clear 401 gets the existing one-retry treatment.
+
+**Once a send genuinely begins, it is never abandoned.** The
+provider call runs under `context.WithTimeout(context.WithoutCancel(
+job.ctx), providerCallTimeout)` - decoupled from the original HTTP
+request's own context - so a client disconnecting (or an HTTP-layer
+timeout) after dispatch has already started can never turn a real,
+possibly-delivered send into a silently-abandoned one. Cancellation is
+only honored *before* a job is dequeued (`ErrCancelled`, queue-side).
+
+**Runtime snapshot** (`outboundchat.Snapshot`) merges a fresh
+capability assessment (queried live from the registered `Provider`,
+never cached) with the dispatcher's own cached runtime state
+(idle/queued/sending/rate_limited/stopping/error, queue depth/
+capacity, last attempt/success timestamps, a stable
+`lastErrorCode` - never a message-shaped field anywhere on the
+struct, confirmed by a dedicated test).
+
+**HTTP API** (`internal/httpapi/outboundchat.go`): `GET
+/api/connected-accounts/{id}/outbound-chat`,`POST .../authorize`
+(reuses the existing device-flow response shape via
+`twitch.UnionScopesWithOutboundChat`, mirroring
+`handleAuthorizeEngagement` exactly), `POST .../messages`. The
+4-value `capability` label (unsupported/permission_required/ready/
+error) is computed at the HTTP layer from `ProviderSupported` +
+`Capability.PermissionUpgradeRequired` + the account's own
+`StatusReconnectRequired` - deliberately not baked into
+`outboundchat.Snapshot` itself, which stays a raw-facts struct. A
+dropped message (`Sent: false`, no Go error) is surfaced as a stable
+422 `outbound_chat_message_dropped` **application error**, never a
+200 body - "a stable application error... consistently," per the
+task's own wording. The send request body is capped at 8 KiB (well
+under the general 64 KiB `decodeJSON` default - a real body never
+needs more than a few hundred bytes), and unknown-field rejection
+(`decodeJSON`'s existing `DisallowUnknownFields`) is what actually
+enforces "the browser must never choose a raw Twitch user ID" at the
+wire level: a `broadcasterId` field in the request body fails with
+400 `unknown_field`, not silently ignored.
+
+**One deliberate deviation from the task's own suggested error-code
+list**, recorded here rather than silently applied: account-not-found
+uses the *existing* shared `account_not_found` code (via
+`writeAccountError`, exactly like every other per-account endpoint in
+this codebase already does) rather than introducing a new
+`connected_account_not_found` synonym meaning the identical thing.
+Consistency with this codebase's own established convention won out
+over the task's own suggested name for this one code.
+
+**`providerMessageId` added to `operatorchat.Item`**, populated
+directly from `evt.ProviderEventID` in `buildMessageItem` - the raw
+Twitch `channel.chat.message` `message_id`. Neither `Item.ID` (a
+composite key: provider+account+provider-event-id, not reversible)
+nor `SourceEventID` (the Engagement Event Bus's own internal id) could
+serve as a Twitch reply target, so a new field was genuinely needed,
+not a renaming of an existing one. Added to the private
+`operatorChatItemResponse` DTO only - confirmed absent from
+`internal/chatoverlay`'s separate, independent `Item`/DTO types (the
+public OBS overlay never sees it; grep-confirmed, not just asserted).
+
+### Files changed
+- `apps/server/internal/outboundchat/dispatcher.go` (new),
+  `dispatcher_test.go` (new).
+- `apps/server/internal/outboundchat/errors.go` (`ErrUnauthorized`).
+- `apps/server/internal/provider/twitch/outbound_chat_adapter.go`
+  (`ErrUnauthorized` mapping fix), `outbound_chat_adapter_test.go`
+  (updated expectation).
+- `apps/server/internal/httpapi/outboundchat.go` (new),
+  `outboundchat_test.go` (new).
+- `apps/server/internal/httpapi/router.go` (`OutboundChat` wiring).
+- `apps/server/internal/operatorchat/model.go`, `message.go`
+  (`ProviderMessageID`).
+- `apps/server/internal/httpapi/operatorchat.go`
+  (`providerMessageId` DTO field).
+- `apps/server/cmd/server/main.go`, `cmd/testserver/main.go`
+  (`outboundchat.Manager` construction, `OutboundChat` wiring,
+  shutdown).
+
+### Technical decisions
+- Chose polling (10ms) over a single real timer for rate-limit waits
+  specifically because it is the only way a fake-clock test can
+  deterministically drive the wait without requiring real elapsed
+  time - discovered directly from a failing test (`TestQueueCapacityAndQueueFull`
+  hung for the real ~20 seconds a 20-item drain would need under the
+  1-second floor before this fix).
+- `Manager.Status` never returns an error for "provider unsupported" -
+  that is a normal, structured `Snapshot.ProviderSupported: false`,
+  not a Go error - but does propagate a genuine `account.ErrNotFound`
+  as an error, matching the same "structured blocker vs. real error"
+  split `MetadataService.Preview`/`Publish` already established.
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...` - clean.
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...`
+  - clean, both binaries.
+- `go test ./internal/outboundchat/... -v` - 32 tests: unsupported
+  provider, permission required, invalid-message rejection before
+  queueing, per-account ordering, one-in-flight-per-account, account
+  isolation, queue capacity/full, the 1-second floor, the 20-per-30s
+  window, provider-rate-limit pause with retry-at, rate-limited/
+  delivery-unknown never auto-retried, cancellation while queued,
+  shutdown, snapshot carries no message content, fresh-manager empty
+  state, plus all message/reply-parent validation cases - run three
+  consecutive times with no flakiness (`-count=1`, repeated).
+- `go test ./internal/httpapi/... -run OutboundChat -v` - 19 tests:
+  GET status (ready/permission_required/not_found/405+Allow),
+  authorize (device-flow shape, rejects a non-empty body), send
+  (success, reply forwarded, permission_required, not_found,
+  validation_failed, unknown_field, wrong content type, body-too-
+  large, dropped, rate_limited, delivery_unknown, provider_failure,
+  queue_full) - response never echoes sent text, confirmed directly.
+- `go test ./...` (whole module) - every package passes, no
+  regression from the `operatorchat.Item` field addition or the
+  `twitch` package's `ErrUnauthorized`-mapping fix.
+
+### Known limitations
+No frontend yet - the entire API is reachable only via direct HTTP
+calls in tests. No integration script yet. Documentation not yet
+updated for Stage 11A (both are the remaining commits).
+
+### Next step
+Build the frontend: Zod schemas, transport, TanStack Query hooks, the
+Chat page composer (capability gating, account selector, character
+counter, Shared Chat warning) and the Reply feature, in English and
+Polish.

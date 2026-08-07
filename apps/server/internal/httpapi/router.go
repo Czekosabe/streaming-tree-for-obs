@@ -99,6 +99,10 @@ type Options struct {
 	// the management API rebuilds on every settings change and the
 	// public API (/api/public/chat-overlays/...) reads from.
 	ChatOverlayRuntime ChatOverlayRuntime
+	// OutboundChat serves the Stage 11A manual outbound-chat API
+	// (per-account status, permission upgrade, sending). Required
+	// alongside Accounts and DeviceFlow for those routes to register.
+	OutboundChat OutboundChatService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -154,6 +158,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.ChatOverlayProfiles != nil && opts.ChatOverlayRuntime != nil && opts.Accounts != nil {
 		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets)
+	}
+
+	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.OutboundChat != nil {
+		registerOutboundChatRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.OutboundChat)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
