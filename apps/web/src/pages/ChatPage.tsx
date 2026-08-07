@@ -8,6 +8,7 @@ import { ChatFilterBar } from '@/components/chat/ChatFilterBar';
 import { ChatSettingsPanel } from '@/components/chat/ChatSettingsPanel';
 import { MessageRow } from '@/components/chat/MessageRow';
 import { ModerationRow } from '@/components/chat/ModerationRow';
+import { OutboundChatComposer } from '@/components/chat/OutboundChatComposer';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -26,6 +27,7 @@ import {
 } from '@/hooks/use-operator-chat';
 import { useOperatorChatStream } from '@/hooks/use-operator-chat-stream';
 import { autoscrollReducer, initialAutoscrollState, isNearBottom } from '@/models/autoscroll';
+import { replyTargetFor, type ReplyTarget } from '@/models/outbound-chat';
 import { isCommandMessage } from '@/models/operator-chat-presentation';
 
 /**
@@ -67,6 +69,13 @@ export function ChatPage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Stage 11A reply state - component state only, never persisted (no
+  // browser storage - see the stage's own "do not persist reply state"
+  // requirement). Cleared only after a confirmed successful send;
+  // preserved across validation/drop/rate-limit failures so the operator
+  // can edit and retry.
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
 
   const visibleItems = stream.items.filter((item) => {
     if (!isAccountVisible(item.connectedAccountId)) return false;
@@ -183,6 +192,7 @@ export function ChatPage() {
               visibleItems.map((item) => {
                 if (item.kind === 'message') {
                   const providerUserId = item.user?.providerUserId;
+                  const target = replyTargetFor(item);
                   return (
                     <MessageRow
                       key={item.id}
@@ -209,6 +219,7 @@ export function ChatPage() {
                                 providerUserId,
                               })
                       }
+                      onReply={target === null ? undefined : () => setReplyTarget(target)}
                     />
                   );
                 }
@@ -237,6 +248,13 @@ export function ChatPage() {
             </div>
           )}
         </Panel>
+
+        <OutboundChatComposer
+          twitchAccounts={twitchAccounts}
+          replyTarget={replyTarget}
+          onCancelReply={() => setReplyTarget(null)}
+          onReplySent={() => setReplyTarget(null)}
+        />
       </div>
 
       <ChatSettingsPanel

@@ -149,4 +149,34 @@ describe('MessageRow', () => {
     renderRow(baseItem());
     expect(screen.queryByLabelText('Hide this user')).not.toBeInTheDocument();
   });
+
+  it('calls onReply when the reply action is used', () => {
+    const onReply = vi.fn();
+    renderWithProviders(
+      <ul>
+        <MessageRow item={baseItem()} preferences={DEFAULT_OPERATOR_CHAT_PREFERENCES} accountLabel={null} onReply={onReply} />
+      </ul>,
+    );
+    screen.getByLabelText('Reply to Viewer').click();
+    expect(onReply).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the reply action when no handler is supplied', () => {
+    renderRow(baseItem());
+    expect(screen.queryByLabelText(/^Reply to/)).not.toBeInTheDocument();
+  });
+
+  it('omits the reply action for a deleted message even when a handler is supplied', () => {
+    renderWithProviders(
+      <ul>
+        <MessageRow
+          item={baseItem({ lifecycle: { deleted: true, deletionReason: 'moderator_deleted' } })}
+          preferences={DEFAULT_OPERATOR_CHAT_PREFERENCES}
+          accountLabel={null}
+          onReply={vi.fn()}
+        />
+      </ul>,
+    );
+    expect(screen.queryByLabelText(/^Reply to/)).not.toBeInTheDocument();
+  });
 });

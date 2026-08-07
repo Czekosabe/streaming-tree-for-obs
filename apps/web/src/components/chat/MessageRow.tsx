@@ -1,4 +1,4 @@
-import { EyeOff, Bot } from 'lucide-react';
+import { EyeOff, Bot, Reply } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { OperatorChatItem, OperatorChatPreferences } from '@/api/operator-chat-schemas';
@@ -20,12 +20,17 @@ type MessageRowProps = {
   accountLabel: string | null;
   onHideUser?: (() => void) | undefined;
   onMarkBot?: (() => void) | undefined;
+  /** Present only when item is Reply-eligible (see
+   * models/outbound-chat.ts's own replyTargetFor) - a real, non-deleted
+   * Twitch message. Never shown for activities, moderation rows, deleted
+   * placeholders, or non-Twitch items. */
+  onReply?: (() => void) | undefined;
 };
 
 /** Chat-shaped item row: identity, badges, ordered fragments, and lifecycle
  * (deleted) state. Never uses dangerouslySetInnerHTML - every fragment is
  * rendered from typed, validated data, never raw HTML. */
-export function MessageRow({ item, preferences, accountLabel, onHideUser, onMarkBot }: MessageRowProps) {
+export function MessageRow({ item, preferences, accountLabel, onHideUser, onMarkBot, onReply }: MessageRowProps) {
   const { t } = useTranslation('chat');
   const message = item.message;
   if (message === undefined) return null;
@@ -80,30 +85,37 @@ export function MessageRow({ item, preferences, accountLabel, onHideUser, onMark
           </span>
         )}
 
-        {(onHideUser !== undefined || onMarkBot !== undefined) &&
-          !anonymous &&
-          item.user?.providerUserId !== undefined && (
-            <span className="ml-auto hidden shrink-0 items-center gap-1 group-hover:inline-flex">
-              {onHideUser !== undefined && (
-                <IconButton
-                  label={t('filters.hideUserAction')}
-                  icon={<EyeOff className="size-3.5" />}
-                  variant="ghost"
-                  className="size-6"
-                  onClick={onHideUser}
-                />
-              )}
-              {onMarkBot !== undefined && (
-                <IconButton
-                  label={t('filters.markBotAction')}
-                  icon={<Bot className="size-3.5" />}
-                  variant="ghost"
-                  className="size-6"
-                  onClick={onMarkBot}
-                />
-              )}
-            </span>
-          )}
+        {(onHideUser !== undefined || onMarkBot !== undefined || onReply !== undefined) && !deleted && (
+          <span className="ml-auto hidden shrink-0 items-center gap-1 group-hover:inline-flex">
+            {onReply !== undefined && (
+              <IconButton
+                label={t('reply', { name: anonymous ? t('anonymous') : name })}
+                icon={<Reply className="size-3.5" />}
+                variant="ghost"
+                className="size-6"
+                onClick={onReply}
+              />
+            )}
+            {!anonymous && item.user?.providerUserId !== undefined && onHideUser !== undefined && (
+              <IconButton
+                label={t('filters.hideUserAction')}
+                icon={<EyeOff className="size-3.5" />}
+                variant="ghost"
+                className="size-6"
+                onClick={onHideUser}
+              />
+            )}
+            {!anonymous && item.user?.providerUserId !== undefined && onMarkBot !== undefined && (
+              <IconButton
+                label={t('filters.markBotAction')}
+                icon={<Bot className="size-3.5" />}
+                variant="ghost"
+                className="size-6"
+                onClick={onMarkBot}
+              />
+            )}
+          </span>
+        )}
       </div>
 
       <div className={cn('mt-0.5 whitespace-pre-wrap wrap-break-word text-ink', deleted && 'italic text-ink-faint line-through')}>

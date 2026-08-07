@@ -97,6 +97,11 @@ export const operatorChatItemSchema = z.object({
   sequence: z.number(),
   id: z.string().min(1),
   sourceEventId: z.string().optional(),
+  /** The provider's own raw chat-message id (Twitch's message_id), present
+   * only for a message-kind item. Used by the Stage 11A Reply action to
+   * target a reply_parent_message_id - never a credential, never present
+   * on the public OBS overlay's own item shape. */
+  providerMessageId: z.string().optional(),
   providerId: z.string().min(1),
   connectedAccountId: z.string().min(1),
   destinationId: z.string().optional(),

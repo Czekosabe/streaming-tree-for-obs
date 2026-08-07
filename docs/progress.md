@@ -9746,3 +9746,139 @@ Build the frontend: Zod schemas, transport, TanStack Query hooks, the
 Chat page composer (capability gating, account selector, character
 counter, Shared Chat warning) and the Reply feature, in English and
 Polish.
+
+## 2026-08-07 08:10 — feat(web): add manual Twitch chat sending
+
+### Status
+Completed
+
+### Scope
+Stage 11A's frontend: the outbound-chat data layer (Zod schemas,
+transport, TanStack Query hooks), a real composer on the Chat page,
+and the Reply feature - manually replying to an existing Twitch
+message from the operator's own timeline. English and Polish
+throughout.
+
+### Changes
+
+**Data layer mirrors the existing engagement pattern exactly.**
+`api/outbound-chat-schemas.ts`/`outbound-chat.ts` and
+`hooks/use-outbound-chat.ts` follow `engagement-schemas.ts`/
+`engagement.ts`/`use-engagement.ts` field-for-field: the authorize
+mutation reuses `deviceFlowSnapshotSchema` (no duplicate schema for
+what is structurally the same device-flow response), and the status
+query polls every 5 seconds while mounted, matching
+`STATUS_POLL_INTERVAL_MS`'s own precedent, so a permission upgrade
+completed via the Device Code Flow or a rate-limit window elapsing is
+picked up without a manual refresh.
+
+**The composer never optimistically appends the sent message.** A
+successful send's response is never written into any local chat list
+- the real EventSub echo (already flowing through the existing
+operator-chat SSE stream) is what produces the timeline item, exactly
+as the stage requires. When inbound engagement is disabled or not yet
+connected for the selected account (checked via the existing
+`useAccountEngagementQuery`), the composer explains that no local echo
+is expected yet, rather than silently doing nothing.
+
+**Every required composer state is a distinct, testable branch**
+driven by `OutboundChatStatus.capability`/`dispatcherState` and the
+send mutation's own `ApiError.code`: permission-required (with an
+inline authorize button reusing the exact same pattern
+`TwitchConnectorCard.tsx` already uses for engagement), unsupported,
+backend-unavailable, rate-limited (with a formatted retry time when
+the backend provides one), dropped, delivery-unknown, forbidden,
+provider-failure, and queue-full. A validation/drop/rate-limit failure
+never clears the typed message - only a confirmed `sent: true` does,
+via the mutation's own `onSuccess`.
+
+**Character counting matches the backend's own semantics exactly.**
+`codePointLength` uses `Array.from(text).length`, which - unlike
+`string.length` - counts a surrogate-pair astral character (most
+emoji) as one code point, not two, mirroring Go's own
+`for _, r := range message` rune iteration in
+`internal/outboundchat.ValidateMessage`. Verified directly: a single
+🎉 has `string.length === 2` but `codePointLength === 1`.
+
+**Reply feature.** `models/outbound-chat.ts`'s `replyTargetFor` is the
+one, pure, testable gate for Reply-eligibility: a real, non-deleted,
+Twitch-provider message-kind item with a known `providerMessageId` -
+never an activity, moderation row, deleted placeholder, or non-Twitch
+item. `MessageRow` gained an `onReply` prop (mirroring `onHideUser`/
+`onMarkBot` exactly) plus its own defensive `!deleted` guard on the
+whole action row. `ChatPage` holds `replyTarget` as plain component
+state (never persisted - no browser storage), computing it fresh per
+item via `replyTargetFor` rather than trusting a stale prop. The
+composer locks its account selector to the reply's own account
+(`useEffect` on `replyTarget` changing) and shows a truncated preview;
+`onReplySent` (called only from the send mutation's `onSuccess`)
+clears it, while any error path leaves both the typed text and the
+active reply target untouched for the operator to edit and retry.
+
+**`providerMessageId` added to `operatorChatItemSchema`** (optional,
+message-kind only) - the frontend counterpart to the previous
+commit's backend DTO addition, with the same doc comment explaining
+why `id`/`sourceEventId` cannot serve as a Twitch reply target.
+
+**Shared Chat disclosure is static, not conditional on any detected
+state** - the warning renders unconditionally whenever the composer is
+in its `ready` capability state, worded to disclose possible
+distribution without ever claiming a session is currently active
+(directly asserted in a test: the warning text is checked to contain
+"may distribute" and explicitly checked to *not* contain "is currently
+active").
+
+### Files changed
+- `apps/web/src/api/outbound-chat-schemas.ts` (new),
+  `outbound-chat-schemas.test.ts` (new).
+- `apps/web/src/api/outbound-chat.ts` (new).
+- `apps/web/src/hooks/use-outbound-chat.ts` (new).
+- `apps/web/src/models/outbound-chat.ts` (new),
+  `outbound-chat.test.ts` (new).
+- `apps/web/src/components/chat/OutboundChatComposer.tsx` (new),
+  `OutboundChatComposer.test.tsx` (new).
+- `apps/web/src/components/chat/MessageRow.tsx` (`onReply` prop),
+  `MessageRow.test.tsx` (new reply tests).
+- `apps/web/src/pages/ChatPage.tsx` (reply state, composer wiring).
+- `apps/web/src/api/operator-chat-schemas.ts`
+  (`providerMessageId` field).
+- `apps/web/src/i18n/resources/{en,pl}/chat.json` (`compose.*` keys).
+
+### Technical decisions
+- Discovered and fixed a real test bug while writing the composer's
+  rendered tests, not a component bug: `findByLabelText` resolves as
+  soon as the (initially `disabled`) textarea mounts, before the
+  status query resolves - typing into it before explicitly awaiting
+  `toBeEnabled()` silently no-ops (userEvent never types into a
+  disabled control). All six affected tests were fixed the same way;
+  the component's own disabled-while-loading behavior was already
+  correct.
+- Kept the composer's per-state branches as plain conditional JSX
+  rather than a single big state-machine reducer: every branch reads
+  directly from either `OutboundChatStatus` (server-driven) or
+  `ApiError.code` (the last mutation's own outcome) with no
+  client-side state duplicating what the server already reports -
+  there was no local transition logic complex enough to warrant
+  extracting into a reducer, unlike Part 11's exit-animation state
+  machine.
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 12 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 60 test files, 782 tests, all passing
+  (includes every new test named above; zero regressions in the 15
+  pre-existing files touching operator chat).
+- `npm run build` - clean production build.
+
+### Known limitations
+No frontend E2E/manual browser testing performed - see the final
+report. The composer does not yet re-fetch immediately after a
+successful authorize (it relies on the existing 5-second poll, same as
+`TwitchConnectorCard.tsx`'s own engagement authorize flow) - consistent
+with existing precedent, not a new gap this stage introduced.
+
+### Next step
+Write the ninth integration script
+(`scripts/verify-twitch-outbound-chat.mjs`), run it at least twice,
+then complete the Stage 11A documentation pass.
