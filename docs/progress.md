@@ -9203,3 +9203,115 @@ scaffolded at any point during this corrective pass - every commit
 above is scoped to Stage 10 documentation accuracy, the exit-animation
 gap, and the journal chronology, exactly as this corrective task
 required.
+
+## 2026-08-07 05:45 — fix(docs): correct Stage 10 final validation record
+
+### Status
+Completed
+
+### Scope
+A standalone correction, before Stage 11A implementation begins, to two
+factual problems in the previous entry
+(`## 2026-08-06 14:00 — docs: complete Stage 10 corrective pass`). Per
+this journal's own rule 4, the old entry is left exactly as it was
+written; this entry appends the correction rather than editing it.
+
+### Changes
+
+**1. "Local fakes only" was imprecise for two of the eight scripts.**
+The previous entry's integration-script summary said all eight scripts
+ran "with local fakes only - no real Twitch, YouTube, MediaMTX or OBS
+ever contacted." That is accurate for six of the eight scripts (every
+Twitch/YouTube account-integration and engagement script talks only to
+a local fake OAuth/Helix/EventSub server), but not for the two
+MediaMTX/FFmpeg scripts, which were never fake in the first place -
+this was true since Stage 6, not something this corrective pass
+introduced. Re-reading both scripts' own top-of-file doc comments
+confirms:
+
+- `verify-mediamtx-runtime.mjs` downloads, checksum-verifies, installs,
+  starts and supervises the **real, pinned MediaMTX v1.19.3 binary**
+  through the application's own managed-installer endpoint - not a
+  fake or a stub.
+- `verify-ffmpeg-branches.mjs` spawns a **real FFmpeg** executable
+  against **real, local MediaMTX instances** (one source, one sink per
+  destination branch) - again not a fake.
+- Both confine every process to dynamically-chosen **loopback** ports
+  and a temporary data directory; neither ever contacts a real
+  streaming platform, a real Twitch/YouTube account, or a real OBS
+  installation.
+- The **only** genuine external-network dependency across all nine
+  (now including Stage 11A's own) scripts is `verify-mediamtx-
+  runtime.mjs`'s download of the pinned MediaMTX release archive **the
+  first time it runs on a machine without it already cached** - a real
+  network fetch of a real, versioned, checksummed third-party binary,
+  categorically different from contacting a real Twitch/YouTube/OBS
+  *service or account*, which no script anywhere in this project does.
+
+The accurate four-way distinction, going forward: **(a)** real local
+binaries (MediaMTX, FFmpeg) - genuinely present, genuinely run,
+loopback-only; **(b)** local fake provider APIs (Twitch OAuth/Helix/
+EventSub, Google OAuth/YouTube Data API) - HTTP servers this
+repository's own scripts implement, never real Twitch/Google; **(c)**
+real external provider services/accounts - never contacted by any of
+the nine scripts, anywhere, under any condition; **(d)** the one real
+network access point - the pinned MediaMTX archive download, which is
+about fetching a trusted release artifact, not about contacting an
+account-bound service.
+
+**2. The previous entry's own heading was future-dated relative to its
+matching commit.** The heading read
+`## 2026-08-06 14:00 — docs: complete Stage 10 corrective pass`, but
+the completed final report for that entry was returned to the user
+before 14:00 local time. `git log --format=fuller` for the matching
+commit confirms this directly:
+
+```
+commit 2154bdecbb152aa0954294883c8064c1e2efb03c
+AuthorDate: Thu Aug 6 13:31:01 2026 +0200
+CommitDate: Thu Aug 6 13:31:01 2026 +0200
+```
+
+Both AuthorDate and CommitDate are `13:31:01`, not `14:00` - the
+heading is roughly 29 minutes later than the commit it describes,
+confirming the same class of labeling defect (a manually-chosen
+heading time drifting from the real moment of work) the prior entry's
+own journal-chronology investigation already found and documented for
+three earlier headings. No exact replacement time is invented here:
+the commit's own AuthorDate/CommitDate (`13:31:01 CEST/CEST`,
+2026-08-06) is the only value Git evidence actually proves, and is
+recorded as such rather than guessing a more "plausible" round number.
+
+### Files changed
+- `docs/progress.md` (this entry only - the corrected entry's own text
+  is untouched).
+
+### Technical decisions
+- Both corrections are pure documentation; no code, test, or script
+  behavior changed. `scripts/verify-mediamtx-runtime.mjs` and
+  `scripts/verify-ffmpeg-branches.mjs` themselves needed no change -
+  they were already accurately described by their own doc comments,
+  it was only this journal's summary sentence that mischaracterized
+  them.
+- No Git history was rewritten and no commit date was altered - the
+  future-dated heading is a journal-formatting defect, not a Git
+  problem, exactly like the three headings the prior entry already
+  identified and left in place.
+
+### Automated validation
+Not applicable - no code changed. `git log --format=fuller` was the
+evidence source for the heading correction; both scripts' own
+top-of-file doc comments were re-read directly for the MediaMTX/FFmpeg
+correction.
+
+### Known limitations
+None introduced by this correction. The underlying six-fakes/two-reals
+integration-script split was already correct in every earlier entry
+that described the scripts individually (see the Stage 6 and Stage 10
+entries introducing each script) - only this one summary sentence in
+the final Stage 10 corrective-pass entry was wrong.
+
+### Next step
+Begin Stage 11A: research the current official Twitch outbound-chat
+contract, then implement the manual-sending foundation described in
+this task's own specification.
