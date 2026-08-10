@@ -11435,3 +11435,126 @@ Expose the alert management and public HTTP/SSE APIs
 (`internal/httpapi/alerts.go`), wire the Manager into
 `cmd/server/main.go` and `cmd/testserver/main.go`, and add the public
 `/api/public/alert-profiles/{slug}/...` surface - still no frontend.
+
+## 2026-08-10 09:09 — feat(server): expose alert management and public APIs
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 22/23/27/28/29/30/36/37/40/46: the private alert
+management API, the public unauthenticated alert API and its SSE
+protocol, and wiring `alerts.Manager` into both `cmd/server/main.go`
+and `cmd/testserver/main.go`. Still no frontend.
+
+### Changes
+- `apps/server/internal/alerts/wiring.go` (new): `AccountLookupAdapter`
+  (mirrors `internal/chatautomation`'s own exactly), `NewDomainService`.
+- `apps/server/internal/alerts/templates.go`: added `PreviewTemplate`
+  (Part 37's stateless editor preview - renders against representative
+  fixture data for an event type, independent of any saved rule).
+- `apps/server/internal/httpapi/alerts.go` (new, ~700 lines):
+  `AlertsService` interface; `registerAlertRoutes` wiring 21 routes
+  (`GET /api/alert-event-types`; profile CRUD + rotate-slug; rule CRUD
+  under a profile + a dedicated `/api/alert-rule-preview` + per-rule
+  `/test`; five queue commands; two public endpoints); DTOs mirroring
+  every domain/runtime type; `handlePublicAlertStream` (Last-Event-ID
+  replay, an unknown/disabled slug rendering an empty `alert.reset`
+  rather than an error, a bounded per-profile client limiter, periodic
+  keepalive - the same shape as `handlePublicChatOverlayStream`);
+  `writeAlertsError` mapping every domain/runtime sentinel to a stable
+  code from Part 46's own list.
+- `apps/server/internal/httpapi/router.go`: added `Alerts
+  AlertsService` to `Options`; registered whenever non-nil (no
+  `Accounts` co-dependency needed at the router layer - account
+  existence is already checked inside the Manager).
+- `apps/server/cmd/server/main.go` / `cmd/testserver/main.go`
+  (identical wiring in both): constructed `alertsDomainService :=
+  alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB),
+  accountService)` and `alertsManager := alerts.NewManager(...)`
+  right after the Stage 11B automation block, sharing the same
+  `eventBus`; called `alertsManager.Start(ctx)`; added `Alerts:
+  alertsManager` to `httpapi.Options`; added `_ =
+  alertsManager.Shutdown(shutdownCtx)` to both shutdown blocks in both
+  files, positioned right after `chatAutomationManager.Shutdown` and
+  before `eventBus.Shutdown()`.
+- `apps/server/internal/httpapi/alerts_test.go` (new, 31 tests): a
+  real sqlite-backed harness (`account.Service` + `bus.Bus` +
+  `alerts.Manager` + `NewRouter`), covering profile/rule CRUD,
+  capability-driven rejection (`alert_rule_condition_unsupported`),
+  unknown-placeholder rejection, unknown-account rejection, the
+  overlap-warning list, `Test Rule` (including rejecting a disabled
+  profile and never touching the queue via preview), every queue
+  command (including the empty-queue 409s), body/content-type/method
+  validation, the capability-driven `/api/alert-event-types` endpoint,
+  and two real SSE stream reads (a fresh connection's `alert.reset`
+  followed by a live `alert.show` for a real published event, and an
+  unknown slug rendering an empty reset rather than an error).
+
+### Technical decisions
+- **`/api/alert-rule-preview` is deliberately NOT nested under
+  `/api/alert-rules/`** (e.g. not `/api/alert-rules/preview`) - a real
+  `net/http.ServeMux` registration-time panic, not a style choice:
+  a bare, all-methods catch-all registered for the literal path
+  `/api/alert-rules/preview` (used for its own 405 response) conflicts
+  with the method-specific `{id}` wildcard pattern also covering that
+  same path (`{id}="preview"` is a syntactically valid match), and Go's
+  mux refuses to resolve the ambiguity at startup. Discovered
+  immediately by the first HTTP test run (a panic, not a subtle bug),
+  fixed by choosing a route path with no shared prefix.
+- **A real, load-bearing bug was found and fixed in the same
+  commit**: every queue-command handler and `handleRotateAlertProfileSlug`
+  called `requireEmptyBody` with inverted polarity
+  (`if requireEmptyBody(...) { return }` instead of `if
+  !requireEmptyBody(...) { return }`) - `requireEmptyBody` returns
+  `true` when the body is empty (fine to proceed), so the inverted
+  check returned early on the SUCCESS path and only continued
+  processing after already writing a 400 error on the failure path,
+  producing an always-empty response body on every legitimate
+  no-body request. Caught immediately by the first test run against
+  these five endpoints (`response body: EOF` / wrong status codes),
+  confirmed against every other correct call site in the codebase
+  (`grep` showed six other files, all using `if !requireEmptyBody`),
+  and fixed by correcting the polarity - never masked by adjusting the
+  test instead.
+- **`AlertsService` needs no `AccountService`/`Accounts` co-dependency
+  at the router-registration layer**, unlike `ChatAutomationService`'s
+  own gate (`Accounts != nil && ChatAutomation != nil`) - account
+  existence for a rule's account filter is already validated inside
+  `alerts.Manager` (via the domain service's own `AccountLookup`), so
+  the HTTP layer never needs a second, separate account reference.
+  `router.go` registers alert routes whenever `Alerts != nil` alone.
+- **The public stream's fresh-connection reset is a synthetic
+  revision, not a ring replay** - `handlePublicAlertStream` builds it
+  from `Manager.CurrentReset` (current state right now) and tags it
+  with `Manager.LatestSequence` as its own `id:`, then subscribes from
+  that same sequence going forward - deliberately never replays past
+  `show`/`hide` history to a fresh connection (Part 23: "no historical
+  queue content"), only a reconnecting client presenting a real
+  `Last-Event-ID` gets ring replay (and an explicit `alert.gap` +
+  fresh reset if that range was already evicted).
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+- `go test ./...` - every package passes, including the new 31 HTTP
+  tests (`internal/httpapi`, 4.9s total including all pre-existing
+  suites) and all 66+ `internal/alerts`/`internal/domain/alerts`
+  tests from earlier commits, re-run unchanged. The alerts HTTP suite
+  was additionally stress-run 4 times with `-count=1` with no
+  flakiness observed.
+
+### Known limitations
+No frontend yet - every endpoint above is exercised only through Go
+tests and will be exercised end-to-end by the eleventh integration
+script once the frontend exists enough to justify writing it (or
+directly, since the script talks to the backend over HTTP regardless
+of frontend completeness).
+
+### Next step
+Build the public alert Browser Source renderer and its `/overlay/alerts/{publicSlug}`
+route (Part 38/39), reusing the Stage 10 Browser Source research
+rather than inventing a second OBS architecture - no management UI
+yet.

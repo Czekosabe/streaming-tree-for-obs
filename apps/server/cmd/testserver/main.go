@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/streaming-tree/server/internal/alerts"
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
@@ -274,6 +275,17 @@ func run() error {
 		return err
 	}
 
+	// Stage 12A: the alert runtime - identical wiring to cmd/server, see
+	// its own comment.
+	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
+	alertsManager := alerts.NewManager(alerts.ManagerOptions{
+		DomainService: alertsDomainService,
+		Bus:           eventBus,
+	})
+	if err := alertsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	branchManager := branch.NewManager(branch.Options{
 		Platforms:   platformService,
 		Outputs:     outputService,
@@ -315,6 +327,7 @@ func run() error {
 
 		OutboundChat:   outboundChatManager,
 		ChatAutomation: chatAutomationManager,
+		Alerts:         alertsManager,
 	})
 
 	server := &http.Server{
@@ -350,6 +363,7 @@ func run() error {
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
+		_ = alertsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -370,6 +384,7 @@ func run() error {
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
+		_ = alertsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

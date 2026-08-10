@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 )
@@ -331,4 +332,36 @@ func EventTypeLabel(t domain.EventType, lang domain.Language) string {
 		return label
 	}
 	return string(t)
+}
+
+// PreviewTemplate renders template against representative fixture data
+// for eventType - the Stage 12A task's own Part 37 "editor preview:
+// local and instant, does not touch queue." Every capability-available
+// field is populated from the fixture regardless of any rule's own
+// Show* toggles (those are separate, additional presentation elements,
+// not part of the template text itself) - never sends, never persists,
+// never contacts Twitch, never touches a real queue.
+func PreviewTemplate(eventType domain.EventType, template string, lang domain.Language) (RenderResult, error) {
+	evt := buildFixtureEvent(eventType, "", time.Now().UTC())
+	capability := domain.CapabilityFor(eventType)
+
+	ctx := Context{Platform: PlatformDisplayName(domain.ProviderID(evt.ProviderID)), EventType: EventTypeLabel(eventType, lang)}
+	if capability.HasUser && evt.User != nil && !evt.User.Anonymous {
+		name := evt.User.DisplayName
+		ctx.Username = &name
+	}
+	if capability.HasMessage && evt.Message != nil {
+		text := evt.Message.Text
+		ctx.Message = &text
+	}
+	if capability.HasQuantity && evt.Quantity != nil {
+		q := *evt.Quantity
+		ctx.Quantity = &q
+	}
+	if capability.HasRewardTitle {
+		if title, ok := evt.ProviderExtra["rewardTitle"]; ok {
+			ctx.RewardTitle = &title
+		}
+	}
+	return Render(template, ctx)
 }

@@ -108,6 +108,11 @@ type Options struct {
 	// same Stage 11A outbound dispatcher OutboundChat itself uses.
 	// Required alongside Accounts for those routes to register.
 	ChatAutomation ChatAutomationService
+	// Alerts serves the Stage 12A alert management API
+	// (/api/alert-profiles/..., /api/alert-rules/...) and the public
+	// alert API (/api/public/alert-profiles/...). When nil, none of
+	// those routes are registered.
+	Alerts AlertsService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -171,6 +176,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Accounts != nil && opts.ChatAutomation != nil {
 		registerChatAutomationRoutes(mux, logger, opts.ChatAutomation)
+	}
+
+	if opts.Alerts != nil {
+		registerAlertRoutes(mux, logger, opts.Alerts)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

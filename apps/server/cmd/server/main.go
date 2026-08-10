@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/streaming-tree/server/internal/alerts"
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
@@ -312,6 +313,23 @@ func run() error {
 		return err
 	}
 
+	// Stage 12A: the alert runtime (rule matching, bounded per-profile
+	// queues, playback, the public Browser Source SSE protocol).
+	// Consumes the same Event Bus as every other engagement consumer
+	// above, through its own single shared subscription - never a
+	// second EventSub connection, never a direct call into
+	// internal/provider/twitch. Persisted profile/rule definitions live
+	// in their own migration; every queue/playback runtime value stays
+	// in memory only.
+	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
+	alertsManager := alerts.NewManager(alerts.ManagerOptions{
+		DomainService: alertsDomainService,
+		Bus:           eventBus,
+	})
+	if err := alertsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Every branch begins with desiredRunning false: a backend restart never
 	// resumes a broadcast on its own, so nothing is started here.
 	branchManager := branch.NewManager(branch.Options{
@@ -363,6 +381,7 @@ func run() error {
 
 		OutboundChat:   outboundChatManager,
 		ChatAutomation: chatAutomationManager,
+		Alerts:         alertsManager,
 	})
 
 	server := &http.Server{
@@ -403,6 +422,7 @@ func run() error {
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
+		_ = alertsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -440,6 +460,7 @@ func run() error {
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
+		_ = alertsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
