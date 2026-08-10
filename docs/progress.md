@@ -11069,3 +11069,121 @@ Implement the provider-independent alert matching engine
 closed alert placeholder template language, and the conversion
 between `engagement.Event` and this domain's own types - still no
 queue or HTTP surface.
+
+## 2026-08-10 08:38 — feat(server): match engagement alerts
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 3/9/10/11/32: the provider-independent alert matching
+engine (`internal/alerts`) - pure, side-effect-free conversion from a
+normalized `engagement.Event` plus a profile's rules into zero or more
+self-contained `Instance` values, and the closed alert placeholder
+template language. Still no queue, playback, or HTTP surface - a
+matched `Instance` is returned to its caller, not yet enqueued
+anywhere.
+
+### Changes
+- `apps/server/internal/alerts/errors.go` (new): package doc comment
+  establishing the domain-vs-runtime split (mirrors
+  `internal/chatautomation/errors.go`'s own); runtime-layer
+  `ErrProfileNotFound`/`ErrRuleNotFound`; `ErrPlaceholderInvalid`,
+  `ErrRenderedTextTooLong`; queue-shaped sentinels reserved for the
+  next commit (`ErrQueuePaused`, `ErrQueueEmpty`, `ErrQueueFull`,
+  `ErrProfileDisabled`, `ErrNoReplaySnapshot`); `SkipReason` closed
+  enum.
+- `apps/server/internal/alerts/models.go` (new): `clock` type;
+  `Instance` - the in-memory alert model from Part 9, deliberately
+  excluding every field Part 9 forbids (no token, stream key, EventSub
+  session id, raw provider payload, or arbitrary `ProviderExtra`
+  passthrough - only the one explicitly named exception,
+  `RewardTitle`, sourced from exactly one named `ProviderExtra` key).
+- `apps/server/internal/alerts/matcher.go` (new): `mapEventType`
+  (the one place `engagement.Type` converts to `domain.EventType`),
+  `MatchEvent` (pure - no `context.Context` parameter at all, so a
+  network call is structurally impossible to add without changing the
+  signature, not merely "avoided" - satisfies Part 32's "do not
+  perform network I/O during matching" more strongly than a
+  convention), `buildInstance` (renders one `Instance` from a rule's
+  own snapshot, honoring each `Show*` toggle and the event type's real
+  `Capability`).
+- `apps/server/internal/alerts/templates.go` (new): `KnownPlaceholders`
+  (`username`, `platform`, `eventType`, `quantity`, `message`,
+  `rewardTitle` - deliberately alerts' own closed set, not
+  chat-automation's), `AvailablePlaceholders` (derived from
+  `domain.CapabilityFor`, never a hand-maintained second list),
+  `ParseTemplate`/`Render` (ported byte-for-byte from
+  `internal/chatautomation/placeholders.go`'s own closed-grammar
+  parser - same `{{`/`}}` escaping, same "malformed brace is the only
+  hard failure" contract), `ValidateTemplateForEventType` (the
+  alert-specific capability-driven template check - rejects
+  `{quantity}` on a `follow` rule even though `quantity` is a known
+  placeholder overall), `PlatformDisplayName` (never translated -
+  reused convention), `EventTypeLabel` (the one alert placeholder that
+  *is* translated, since "Follow"/"Bits"/"Raid" etc. are plain English/
+  Polish words, not provider brand names - resolved via the owning
+  profile's own explicit `language` field, never inferred).
+- Test files: `internal/alerts/matcher_test.go` (18 tests, including a
+  table test covering all 8 real event types, non-overlapping Bits
+  tiers 1-99/100-999/1000+, inclusive boundary checks, an anonymous
+  cheer never fabricating an identity, and a structural
+  no-network-call test), `internal/alerts/templates_test.go` (19
+  tests: normal/multiple/adjacent/escaped/unknown/unmatched/
+  nested-looking/unavailable/anonymous/Unicode/long-output/
+  never-interprets-HTML cases, plus capability-driven placeholder
+  availability and localized event-type labels).
+
+### Technical decisions
+- **`MatchEvent` takes no `context.Context`** - a deliberate departure
+  from this project's usual signature convention for anything that
+  might do I/O, chosen specifically *because* the Stage 12A task's own
+  Part 32 requires matching to never perform I/O: omitting the
+  parameter makes that a compile-time structural guarantee (nothing
+  in this function can start an HTTP request even by mistake) rather
+  than a discipline someone has to remember to uphold.
+- **Instance snapshots the rule's presentation at match time**
+  (`buildInstance` copies `EntryAnimation`/`ExitAnimation`/
+  `AnimationDurationMS`/`Priority`/`DurationMS` by value from the
+  `domain.Rule` passed in) - this is Part 9's "Policy A" now actually
+  implemented, not just decided: nothing about a queued `Instance`
+  ever re-reads the rule it came from.
+- **Role gating is implemented as a defensive no-op, not omitted
+  entirely**: `MatchEvent` still checks `rule.RequiredRole !=
+  RoleEveryone` and skips such a rule, even though
+  `ValidateRuleConditions` (previous commit) already prevents saving
+  one for any of the 8 real event types - belt-and-braces against
+  stale data (a role capability added in a future migration without a
+  corresponding matcher update) rather than assuming validation at
+  save time is the only line of defense.
+- **`{eventType}` is resolved server-side into the profile's own
+  `language`**, unlike every other alert placeholder (which are
+  user-facing data, not application UI strings) - this is the one
+  place Stage 12A's own placeholder language needed a translation
+  table at all, kept intentionally small (8 event types × 2
+  languages) and colocated with the rest of the closed placeholder
+  vocabulary rather than routed through the frontend i18n system,
+  since rendering happens on the backend before the public alert
+  payload is ever built.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` - clean.
+- `go test ./internal/alerts/...` - 37 tests pass (18 matcher + 19
+  template).
+
+### Known limitations
+No queue, playback, subscription, or HTTP API yet - a matched
+`Instance` is only ever constructed and returned in-memory by this
+commit's own tests, never actually queued or rendered publicly.
+`ErrQueuePaused`/`ErrQueueEmpty`/`ErrQueueFull`/`ErrProfileDisabled`/
+`ErrNoReplaySnapshot` are declared now but unused until the next
+commit, to keep `internal/alerts/errors.go` as one complete,
+reviewable file rather than growing it piecemeal across commits.
+
+### Next step
+Implement the bounded per-profile alert queue, playback timer,
+pause/resume/skip/replay/clear queue commands, the Manager's single
+shared Event Bus subscription, and the local synthetic test-alert
+path - still no HTTP surface.

@@ -1,0 +1,191 @@
+package alerts
+
+import (
+	"time"
+
+	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/engagement"
+)
+
+// mapEventType converts a normalized engagement.Type to this
+// application's own closed domain.EventType, or ok=false when t is not
+// one of the 8 real, currently alert-capable Twitch event types (see
+// docs/progress.md's Stage 12A persistence entry for exactly how that
+// list was derived from the real Twitch normalization code, not the
+// aspirational planning-doc list).
+func mapEventType(t engagement.Type) (domain.EventType, bool) {
+	switch t {
+	case engagement.TypeFollow:
+		return domain.EventFollow, true
+	case engagement.TypeSubscription:
+		return domain.EventSubscription, true
+	case engagement.TypeResubscription:
+		return domain.EventResubscription, true
+	case engagement.TypeGiftedSubscription:
+		return domain.EventGiftedSubscription, true
+	case engagement.TypeSubscriptionGiftBatch:
+		return domain.EventSubscriptionGiftBatch, true
+	case engagement.TypeBits:
+		return domain.EventBits, true
+	case engagement.TypeRaid:
+		return domain.EventRaid, true
+	case engagement.TypeChannelPointRedemption:
+		return domain.EventChannelPointRedemption, true
+	default:
+		return "", false
+	}
+}
+
+func containsProvider(list []domain.ProviderID, p domain.ProviderID) bool {
+	for _, v := range list {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAccount(list []string, id string) bool {
+	for _, v := range list {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+func quantityInRange(q int64, min, max *int64) bool {
+	if min != nil && q < *min {
+		return false
+	}
+	if max != nil && q > *max {
+		return false
+	}
+	return true
+}
+
+// MatchEvent evaluates every enabled rule in rules (already scoped to
+// one profile by the caller) against evt and returns one Instance per
+// matching rule - Part 8's "simpler policy": every matching rule
+// enqueues independently, never first-match-wins, never dependent on
+// rule slice order (the caller passes rules in the repository's own
+// created_at order, but MatchEvent itself never relies on that).
+//
+// Pure and side-effect free (Part 32: "do not perform network I/O
+// during matching") - now is injected so callers can build a
+// deterministic QueuedAt.
+func MatchEvent(evt engagement.Event, rules []domain.Rule, now time.Time, lang domain.Language) []Instance {
+	// Part 11/32 step 1: a synthetic event must never enter the real
+	// alert rule path as if genuine.
+	if evt.Synthetic {
+		return nil
+	}
+	eventType, ok := mapEventType(evt.Type)
+	if !ok {
+		return nil
+	}
+
+	var out []Instance
+	for _, rule := range rules {
+		if !rule.Enabled || rule.EventType != eventType {
+			continue
+		}
+		if len(rule.Providers) > 0 && !containsProvider(rule.Providers, domain.ProviderID(evt.ProviderID)) {
+			continue
+		}
+		if len(rule.Accounts) > 0 && !containsAccount(rule.Accounts, evt.ConnectedAccountID) {
+			continue
+		}
+		// Defensive only: no Stage 12A event type ever supplies role
+		// data (see capability.go), and rule validation already rejects
+		// saving a non-"everyone" RequiredRole for any of them - so a
+		// rule reaching this point with a different role can never
+		// actually be satisfied.
+		if rule.RequiredRole != domain.RoleEveryone {
+			continue
+		}
+		var quantity *int64
+		if evt.Quantity != nil {
+			quantity = evt.Quantity
+		}
+		if rule.MinimumQuantity != nil || rule.MaximumQuantity != nil {
+			if quantity == nil || !quantityInRange(*quantity, rule.MinimumQuantity, rule.MaximumQuantity) {
+				continue
+			}
+		}
+		out = append(out, buildInstance(rule, evt, eventType, now, lang, false, false))
+	}
+	return out
+}
+
+// buildInstance renders one Instance from rule's own snapshot and evt's
+// data - Part 9's "Policy A" (a queued alert never observes a later
+// rule edit).
+func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.EventType, now time.Time, lang domain.Language, synthetic, replayed bool) Instance {
+	capability := domain.CapabilityFor(eventType)
+
+	inst := Instance{
+		ProfileID: rule.ProfileID, RuleID: rule.ID,
+		SourceEventID: evt.ID, ProviderID: domain.ProviderID(evt.ProviderID),
+		ConnectedAccountID: evt.ConnectedAccountID, EventType: eventType,
+		QueuedAt: now, Priority: rule.Priority, DurationMS: rule.DurationMS,
+		PlatformLabel:  PlatformDisplayName(domain.ProviderID(evt.ProviderID)),
+		EntryAnimation: rule.EntryAnimation, ExitAnimation: rule.ExitAnimation, AnimationDurationMS: rule.AnimationDurationMS,
+		GroupCount: 1, Synthetic: synthetic, Replayed: replayed,
+	}
+
+	var username *string
+	if capability.HasUser && evt.User != nil {
+		inst.Anonymous = evt.User.Anonymous
+		if !evt.User.Anonymous {
+			name := evt.User.DisplayName
+			if name == "" {
+				name = evt.User.Login
+			}
+			if rule.ShowUsername {
+				inst.Username = name
+			}
+			username = &name
+		}
+	}
+
+	var messagePtr *string
+	if capability.HasMessage && evt.Message != nil {
+		text := evt.Message.Text
+		if rule.ShowMessage {
+			inst.Message = text
+		}
+		messagePtr = &text
+	}
+
+	if capability.HasQuantity && evt.Quantity != nil {
+		q := *evt.Quantity
+		if rule.ShowQuantity {
+			inst.Quantity = &q
+		}
+	}
+
+	var rewardTitlePtr *string
+	if capability.HasRewardTitle {
+		if title, ok := evt.ProviderExtra["rewardTitle"]; ok && title != "" {
+			inst.RewardTitle = title
+			rewardTitlePtr = &title
+		}
+	}
+
+	var quantityForTemplate *int64
+	if capability.HasQuantity && evt.Quantity != nil {
+		q := *evt.Quantity
+		quantityForTemplate = &q
+	}
+
+	ctx := Context{
+		Username: username, Platform: inst.PlatformLabel, EventType: EventTypeLabel(eventType, lang),
+		Quantity: quantityForTemplate, Message: messagePtr, RewardTitle: rewardTitlePtr,
+	}
+	if result, err := Render(rule.TextTemplate, ctx); err == nil {
+		inst.RenderedText = result.Text
+	}
+
+	return inst
+}
