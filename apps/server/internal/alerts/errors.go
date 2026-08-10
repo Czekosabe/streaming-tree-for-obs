@@ -51,6 +51,11 @@ var (
 	// ErrNoReplaySnapshot means Replay Previous was called with no
 	// completed/skipped alert yet recorded for this profile.
 	ErrNoReplaySnapshot = errors.New("no previous alert available to replay")
+
+	// ErrProjectionClosed means Subscribe was called after the owning
+	// profile's runtime was shut down (profile deleted, or backend
+	// shutting down).
+	ErrProjectionClosed = errors.New("alert profile playback stream is closed")
 )
 
 // SkipReason is a stable, loggable reason a queued item never played -

@@ -11187,3 +11187,163 @@ Implement the bounded per-profile alert queue, playback timer,
 pause/resume/skip/replay/clear queue commands, the Manager's single
 shared Event Bus subscription, and the local synthetic test-alert
 path - still no HTTP surface.
+
+## 2026-08-10 08:50 — feat(server): run alert queues and playback
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 12/13/14/15/16/17/18/19/20/23/27/28/31/33/34: the
+bounded per-profile alert queue, the playback state machine, the
+public playback revision/SSE protocol's internal projection, the
+Manager tying persistence + matching + queue + the ONE shared Event
+Bus subscription together, and the local synthetic test-alert path.
+Still no HTTP surface - everything in this commit is exercised only
+through direct Go calls and a real, in-process `bus.Bus` in tests.
+
+### Changes
+- `apps/server/internal/alerts/queue.go` (new): `queue` - a bounded,
+  per-profile slice-backed structure (priority desc, then FIFO within
+  a priority tier), `enqueue` implementing Part 14's exact capacity
+  policy (below capacity: always accept; at capacity: evict the
+  current lowest-priority/oldest item only if the new item's priority
+  is strictly higher, otherwise reject the new item outright - the
+  currently-playing alert is structurally outside this type and can
+  never be evicted by it), `popNextEligible` implementing Part 15's
+  expiration loop (discard-and-continue past any item older than
+  `maxAge`, counting each), `clear`/`list`.
+- `apps/server/internal/alerts/projection.go` (new): `Operation`
+  (`show`/`hide`/`reset`/`paused`/`gap`), `PublicAlert` (Part 22's
+  exact field list - `AvatarURL` deliberately omitted entirely rather
+  than always-nil, since no Stage 12A event type's Twitch
+  normalization ever populates `engagement.User.AvatarURL` today),
+  `Revision`, and a self-contained ring-buffered `projection` +
+  `Subscription` - a from-scratch reimplementation of
+  `internal/engagement.Bus`'s own ring/gap/non-blocking-fan-out/
+  slow-consumer-drop mechanics retyped for `Revision`, matching this
+  project's own established precedent of `internal/chatoverlay`'s
+  `Projection` likewise reimplementing rather than sharing generic
+  code with the Engagement Event Bus.
+- `apps/server/internal/alerts/playback.go` (new): `AlertSummary`
+  (the management-safe, content-carrying view - Part 30's "may
+  contain user-facing alert content because this is the private
+  operator API"), `ProfileStatus` (the bounded management snapshot),
+  `profileRuntime` - one profile's queue + currently-playing alert +
+  pause flag + single replay slot + counters, with `tick` (complete
+  an expired current alert, then promote the next eligible item
+  unless paused), the chosen pause policy (current alert always
+  finishes normally; the queue simply does not advance until
+  `resume()` - see the persistence-commit entry above for why this
+  was chosen over remaining-duration freezing), `skipCurrent` (never
+  requeues, counts as skipped not played), `replayPrevious`
+  (front-of-queue via a dedicated `pendingReplay` slot that `tick`
+  checks before the normal queue, bypassing capacity/priority
+  entirely and never recreating an Engagement Event Bus event), and
+  `applyProfile`'s disable/re-enable handling (Part 34: disabling
+  clears the queue and hides the current alert immediately; a later
+  re-enable begins genuinely empty).
+- `apps/server/internal/alerts/testevents.go` (new): `buildFixtureEvent`
+  (one synthetic, always-`Synthetic:true`, never-bus-published
+  `engagement.Event` per real event type, driven by the same
+  `domain.Capability` table the matcher itself uses - so a fixture can
+  never claim a field a real event of that type could never carry),
+  the four presentation-edge scenarios (`very_long_username`,
+  `very_long_message`, `anonymous_bits`, `missing_avatar`),
+  `BuildTestInstance` (reuses `matcher.go`'s own `buildInstance`, so a
+  test alert renders through the exact same code path a real match
+  would).
+- `apps/server/internal/alerts/manager.go` (new): `Manager` - the
+  CRUD façade over `internal/domain/alerts` (reloading the owning
+  profile's cached rule set after every rule write, and the
+  profile's own cached settings after every profile write - Part 33's
+  "must become live without restart"), one `profileRuntime` per
+  profile, the ONE shared `bus.Subscription` (`runSubscription`/
+  `consume`, byte-for-byte the same reconnect-from-current-position
+  safety rule as `internal/chatautomation`'s own), a real-time 20ms
+  poll loop (`alertsPollInterval`, the same reasoning as
+  chatautomation's own `schedulerPollInterval`), and `TestRule` (Part
+  27/28's primary test-alert entry point - rejects a disabled profile
+  up front rather than silently queuing something that can never
+  play).
+- Test files: `internal/alerts/queue_test.go` (13 tests: capacity
+  accept/reject/evict, priority ordering, FIFO ties, expiration,
+  clear, bounded ordered listing), `internal/alerts/playback_test.go`
+  (15 tests: promotion, one-active-alert-at-a-time, natural
+  completion, the pause policy exactly as documented, skip, replay
+  including "never creates an Event Bus event," clear-leaves-current-
+  alone, disable/re-enable, capacity-dropped and synthetic counters),
+  `internal/alerts/manager_test.go` (9 tests using a real, in-process
+  `bus.Bus` and a fake clock: a real published follow event reaching
+  a profile's queue, a synthetic real-bus event being completely
+  ignored, `TestRule` going through the real queue and being rejected
+  for a disabled profile, a rule edit taking effect without a
+  restart, profile deletion tearing down its runtime, two profiles
+  staying isolated from each other's skip action, and a simulated
+  restart - new `Manager` over the same domain service - preserving
+  definitions while fully resetting runtime state with no missed-
+  alert replay).
+
+### Technical decisions
+- **The public playback stream reuses the Engagement Event Bus's own
+  ring/subscription design rather than importing it.** `bus.Bus` is
+  generic over `engagement.Event` only (no Go generics were used when
+  it was written), so retyping it for `Revision` meant either adding
+  generics to a Stage 8A file untouched since or duplicating the
+  ~150 lines of ring/gap/subscription logic locally - chosen the
+  latter specifically because `internal/chatoverlay`'s own
+  `Projection` already established this exact precedent for the same
+  reason, so this is now the second, not first, instance of the
+  pattern in this codebase.
+- **`Replay Previous` bypasses the normal queue entirely** via a
+  dedicated `pendingReplay` slot on `profileRuntime`, rather than
+  re-inserting the replayed instance into the priority queue with an
+  elevated priority. This was chosen because true front-of-queue
+  behavior needs to be unconditional (ahead of literally everything
+  else queued, regardless of numeric priority), and routing it
+  through the same capacity-bounded queue would either need a
+  priority value outside the normal 0-100 range (a special case
+  leaking into validation) or risk a real, high-priority queued alert
+  losing its own capacity slot to a replay. The dedicated slot makes
+  the "replay never displaces a queued item's own capacity" guarantee
+  structural rather than a rule to remember.
+- **`TestRule` is the only test-alert entry point implemented in this
+  stage** - Part 28 explicitly marks the profile-level generic-
+  scenario endpoint (`POST /api/alert-profiles/{id}/test`) as
+  optional ("if clean"), and building it well would need a
+  default/fallback presentation not tied to any real rule's own
+  template/animations/visibility settings, which is added complexity
+  for an explicitly optional feature. `POST /api/alert-rules/{id}/test`
+  (next commit) is Part 28's own clearly preferred primary path and
+  is the only one implemented.
+- **Gap/reconnect behavior on the shared Event Bus subscription is
+  exercised structurally (the same `runSubscription`/`consume` code
+  chatautomation already proved this pattern with) but not by a
+  dedicated unit test that forces a slow-consumer drop** - the
+  eleventh integration script (Part 51) exercises this against a real
+  backend restart instead, matching how deeper timing scenarios were
+  handled in the Stage 11B session.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` - clean.
+- `go test ./internal/alerts/...` - 66 tests pass (37 from the
+  previous commit + 13 queue + 15 playback + 9 manager, minus
+  overlapping subtests counted once - see the `-v` run for the exact
+  breakdown). `go test -race` is unavailable in this environment
+  (`CGO_ENABLED=0`, no C toolchain configured), matching every earlier
+  Go test run in this project's own history - not a new limitation.
+
+### Known limitations
+No HTTP API or frontend yet. The public SSE protocol's actual HTTP
+handler (Last-Event-ID parsing, the fresh-connection synthetic reset,
+the bounded-client limiter) is deferred to the next commit -
+`projection.go` only provides the underlying `Subscribe`/`Revision`
+mechanics a handler will call into.
+
+### Next step
+Expose the alert management and public HTTP/SSE APIs
+(`internal/httpapi/alerts.go`), wire the Manager into
+`cmd/server/main.go` and `cmd/testserver/main.go`, and add the public
+`/api/public/alert-profiles/{slug}/...` surface - still no frontend.
