@@ -12161,3 +12161,71 @@ scripts) runs as its own, separate step next.
 ### Next step
 Run the full closing regression across frontend, backend, and all
 eleven integration scripts, then push and produce the final report.
+
+## 2026-08-10 12:40 — closing regression: Stage 12A
+
+### Status
+Complete. Every check below was actually re-run for this entry, not
+copied from an earlier claim.
+
+### Scope
+The full closing regression required before Stage 12A can be
+considered done, mirroring the Stage 11B closing-regression entry's own
+format and rigor.
+
+### Backend
+- `gofmt -l .` (from `apps/server`) - no output, nothing unformatted.
+- `go vet ./...` - clean.
+- `go test ./...` - all 30 packages with test files pass (including
+  `internal/alerts`, `internal/domain/alerts`, `internal/httpapi`, and
+  the new `TestProfileRuntimeCapacityEvictionCountedAsDropped`).
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Frontend
+- `npm run i18n:check` - 2 languages (en, pl), 14 namespaces, no
+  differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - **918 tests pass, 68 test files** (verified
+  against this run's own output, not copied from an earlier claim).
+- `npm run build` - clean production build (the existing >500 kB single-
+  chunk warning is pre-existing and unrelated to Stage 12A).
+
+### Integration scripts - all eleven, by exact name
+Run in this order, each to completion, none weakened from its own
+prior assertions:
+
+1. `verify-persistence.mjs` - PASSED.
+2. `verify-mediamtx-runtime.mjs` - PASSED.
+3. `verify-ffmpeg-branches.mjs` - PASSED (real FFmpeg, real MediaMTX,
+   real local network I/O over loopback only).
+4. `verify-twitch-account-integration.mjs` - PASSED.
+5. `verify-youtube-account-integration.mjs` - PASSED.
+6. `verify-twitch-engagement.mjs` - PASSED.
+7. `verify-operator-chat.mjs` - PASSED.
+8. `verify-chat-overlay.mjs` - PASSED.
+9. `verify-twitch-outbound-chat.mjs` - PASSED.
+10. `verify-chat-automation.mjs` - PASSED.
+11. `verify-alerts.mjs` - PASSED (39/39 steps; this is its third clean
+    run overall - twice during development, per Part 55's own "run at
+    least twice" requirement, plus this closing-regression run).
+
+No real Twitch, YouTube, or OBS account/installation was contacted or
+used anywhere in this regression. Real local MediaMTX and FFmpeg
+processes were genuinely exercised by `verify-mediamtx-runtime.mjs` and
+`verify-ffmpeg-branches.mjs` only, entirely on loopback, exactly as
+every prior stage's own regression has done.
+
+### Git state at the end of this entry
+11 commits ahead of `origin/main` (`0a4abdc` through `4d91f69`), 0
+behind, working tree clean. Not yet pushed - pushing is the next step,
+pending the user's explicit go-ahead per this project's established
+convention.
+
+### Next step
+Push all eleven Stage 12A commits to `origin/main`, verify the branch
+reports `0 0` ahead/behind and a clean tree, and produce the final
+report. Stage 12A is complete; Stage 12 as a whole remains **not**
+complete until Stage 12B (mid-alert preemption, bounded alert grouping)
+lands; Stage 13 (the full visual designer) remains planned.
