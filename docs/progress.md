@@ -10358,3 +10358,119 @@ the tenth integration script, still pending.
 Add the HTTP API (`internal/httpapi/chatautomation.go`) and wire
 `chatautomation.Manager` into `cmd/server`/`cmd/testserver`/
 `internal/httpapi/router.go`, then the frontend.
+
+## 2026-08-10 05:42 — feat(server): expose chat automation HTTP API
+
+### Status
+Complete.
+
+### Scope
+The Stage 11B REST API (`/api/chat-automation/...`) and its wiring into
+`cmd/server`/`cmd/testserver`/`internal/httpapi/router.go` - schedules,
+commands, status and local preview rendering, on top of the runtime
+engine the previous commit added. Also adds the small concrete adapters
+(`internal/chatautomation/wiring.go`) bridging the runtime package's
+own decoupled interfaces to the concrete `account.Service`,
+`platform.Service`, `mediamtx.Supervisor` and `operatorchatprefs.Service`
+this application already constructs.
+
+### Changes
+- `internal/httpapi/chatautomation.go` (new) - `ChatAutomationService`
+  interface (the exact method set `*chatautomation.Manager` already
+  implements), `registerChatAutomationRoutes` (12 routes: status;
+  schedules list/create/get/update/delete/send-now; commands list/
+  create/get/update/delete; preview), request/response DTOs (schedule
+  and command responses embed their own runtime snapshot - state,
+  next-run time, per-target last-attempt/success/skip-reason/sends-
+  this-hour - never message text, never a rendered template),
+  `writeChatAutomationError` (maps every domain/runtime/outbound error
+  this stage introduces to a stable code and status, reusing
+  `account_not_found`-style precedent from Stage 11A's own
+  `writeOutboundChatError` where the underlying condition is identical
+  - e.g. `account.ErrReconnectRequired` still maps to the existing
+  `account_reconnect_required` code rather than a new synonym).
+  `validateTemplatesKnown` rejects an unknown/malformed placeholder
+  with `chat_automation_placeholder_invalid` (422) before the request
+  ever reaches domain validation - Part 19's save-time rule.
+- `internal/httpapi/router.go` - `Options.ChatAutomation` field;
+  registered when both `Accounts` and `ChatAutomation` are non-nil,
+  matching every other optional route group's own gate-condition
+  pattern.
+- `internal/chatautomation/wiring.go` (new) - `AccountLookupAdapter`/
+  `PlatformLookupAdapter` (bridge to `domain/chatautomation`'s
+  primitive-typed `AccountLookup`/`PlatformLookup`), `MediaMTXIngestChecker`
+  (`IsReceiving`/`ReceivingSince` from `mediamtx.Supervisor.Snapshot().Ingest`),
+  `BotUserCheckerAdapter` (wraps `operatorchatprefs.Service.BotUsers`),
+  `NewDomainService` (one-call constructor combining the domain
+  repository with both lookup adapters).
+- `cmd/server/main.go` / `cmd/testserver/main.go` (identical wiring in
+  both, matching the file's own established twin-file convention) -
+  construct `chatAutomationDomainService` and `chatAutomationManager`
+  right after the MediaMTX supervisor starts (needs `supervisor` for
+  ingest state), reusing `outboundChatManager`, `accountService`,
+  `platformService`, `eventBus` and `operatorChatPrefsService` already
+  constructed for earlier stages; add `ChatAutomation: chatAutomationManager`
+  to `httpapi.Options`; add `_ = chatAutomationManager.Shutdown(shutdownCtx)`
+  to both shutdown blocks in both files, positioned before
+  `eventBus.Shutdown()` since the automation manager's own subscription
+  depends on the bus staying alive until then (mirrors where
+  `outboundChatManager.Shutdown` already sits).
+
+### Files changed
+- `apps/server/internal/httpapi/chatautomation.go` (new),
+  `chatautomation_test.go` (new).
+- `apps/server/internal/httpapi/router.go` (`ChatAutomation` field + gate).
+- `apps/server/internal/chatautomation/wiring.go` (new).
+- `apps/server/cmd/server/main.go`, `apps/server/cmd/testserver/main.go`
+  (identical wiring additions).
+
+### Technical decisions
+- **The adapters live in the runtime package (`internal/chatautomation`),
+  not in `cmd/server` directly** - `internal/chatautomation` already
+  depends on `internal/domain/account` and `internal/domain/platform`
+  (scheduler.go/commands.go), so adding `mediamtx` and
+  `operatorchatprefs` there too keeps every concrete-wiring concern in
+  one place reusable identically by both `cmd/server` and
+  `cmd/testserver`, rather than duplicating adapter structs in each
+  `main.go`.
+- **Schedule/command GET and LIST responses embed the runtime
+  snapshot directly** rather than requiring a second request to the
+  status endpoint - a deliberate deviation from a stricter separation,
+  chosen because the frontend's schedule/command list views need
+  next-run/state/last-skip-reason for every row immediately, and
+  `GET /api/chat-automation/status` remains the authoritative full
+  aggregate for the dedicated status view.
+- **`writeChatAutomationError` reuses existing stable codes where the
+  underlying condition is identical to one Stage 11A already defined**
+  (`account_not_found` is NOT reused here since the task's own Part 28
+  explicitly lists `chat_automation_account_not_found` as its own
+  code, unlike outbound-chat's deliberate reuse decision - so this
+  stage follows the task's literal list where given, and only reuses
+  `account_reconnect_required` where the task's own list does not
+  provide a chat-automation-specific alternative for that exact
+  condition).
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` and `go build -tags integration ./cmd/testserver/...` - clean.
+- `go test ./internal/httpapi/...` - 20 new chat-automation HTTP tests,
+  all passing on the first real run against a real SQLite database,
+  real `account.Service`/`platform.Service`, and the real
+  `chatautomation.Manager` (create/get/update/delete for both
+  schedules and commands, unknown-field/wrong-content-type/malformed-
+  placeholder/missing-target/unknown-account rejection, 405 with
+  Allow, send-now honoring `onlyWhileIngestReceiving` and returning a
+  per-target result, command-name conflict returning 409, status
+  aggregation, preview rendering with no provider call, unresolved-
+  placeholder warning, and a final scan confirming no token ever
+  appears in a response body).
+- `go test ./...` (every backend package) - clean, zero regressions.
+
+### Known limitations
+No frontend yet. The tenth integration script (real backend process,
+fake Twitch) has not been written yet.
+
+### Next step
+Build the frontend: schemas, hooks, the Automation page (scheduled
+messages and chat commands sections), i18n, and the sidebar nav entry.

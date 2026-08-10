@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/buildinfo"
+	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
@@ -255,6 +256,24 @@ func run() error {
 	})
 	supervisor.Start(ctx)
 
+	// Stage 11B: the automation runtime (scheduled messages, chat
+	// commands) - identical wiring to cmd/server, see its own comment.
+	chatAutomationDomainService := chatautomation.NewDomainService(
+		sqlite.NewChatAutomationRepository(db.DB), accountService, platformService,
+	)
+	chatAutomationManager := chatautomation.NewManager(chatautomation.ManagerOptions{
+		DomainService: chatAutomationDomainService,
+		Outbound:      outboundChatManager,
+		Bus:           eventBus,
+		Ingest:        chatautomation.MediaMTXIngestChecker{Supervisor: supervisor},
+		Accounts:      accountService,
+		Platforms:     platformService,
+		BotUsers:      chatautomation.BotUserCheckerAdapter{Prefs: operatorChatPrefsService},
+	})
+	if err := chatAutomationManager.Start(ctx); err != nil {
+		return err
+	}
+
 	branchManager := branch.NewManager(branch.Options{
 		Platforms:   platformService,
 		Outputs:     outputService,
@@ -294,7 +313,8 @@ func run() error {
 		ChatOverlayProfiles: chatOverlayProfileService,
 		ChatOverlayRuntime:  chatOverlayManager,
 
-		OutboundChat: outboundChatManager,
+		OutboundChat:   outboundChatManager,
+		ChatAutomation: chatAutomationManager,
 	})
 
 	server := &http.Server{
@@ -329,6 +349,7 @@ func run() error {
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
+		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -348,6 +369,7 @@ func run() error {
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
+		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

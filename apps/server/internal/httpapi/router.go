@@ -103,6 +103,11 @@ type Options struct {
 	// (per-account status, permission upgrade, sending). Required
 	// alongside Accounts and DeviceFlow for those routes to register.
 	OutboundChat OutboundChatService
+	// ChatAutomation serves the Stage 11B scheduled-message/chat-command
+	// automation API (/api/chat-automation/...), built on top of the
+	// same Stage 11A outbound dispatcher OutboundChat itself uses.
+	// Required alongside Accounts for those routes to register.
+	ChatAutomation ChatAutomationService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -162,6 +167,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.OutboundChat != nil {
 		registerOutboundChatRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.OutboundChat)
+	}
+
+	if opts.Accounts != nil && opts.ChatAutomation != nil {
+		registerChatAutomationRoutes(mux, logger, opts.ChatAutomation)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

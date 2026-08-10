@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/buildinfo"
+	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
@@ -288,6 +289,29 @@ func run() error {
 		slog.String("rtmp", snapshot.Connection.ServerURL),
 	)
 
+	// Stage 11B: the automation runtime (scheduled messages, chat
+	// commands). Reuses outboundChatManager - no second outbound
+	// pipeline - and shares one Event Bus subscription for both command
+	// matching and activity counting. Persisted definitions live in
+	// their own migration; runtime state (next-run times, cooldowns,
+	// activity counters) is in-memory only, exactly like every other
+	// automation runtime manager above.
+	chatAutomationDomainService := chatautomation.NewDomainService(
+		sqlite.NewChatAutomationRepository(db.DB), accountService, platformService,
+	)
+	chatAutomationManager := chatautomation.NewManager(chatautomation.ManagerOptions{
+		DomainService: chatAutomationDomainService,
+		Outbound:      outboundChatManager,
+		Bus:           eventBus,
+		Ingest:        chatautomation.MediaMTXIngestChecker{Supervisor: supervisor},
+		Accounts:      accountService,
+		Platforms:     platformService,
+		BotUsers:      chatautomation.BotUserCheckerAdapter{Prefs: operatorChatPrefsService},
+	})
+	if err := chatAutomationManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Every branch begins with desiredRunning false: a backend restart never
 	// resumes a broadcast on its own, so nothing is started here.
 	branchManager := branch.NewManager(branch.Options{
@@ -337,7 +361,8 @@ func run() error {
 		ChatOverlayProfiles: chatOverlayProfileService,
 		ChatOverlayRuntime:  chatOverlayManager,
 
-		OutboundChat: outboundChatManager,
+		OutboundChat:   outboundChatManager,
+		ChatAutomation: chatAutomationManager,
 	})
 
 	server := &http.Server{
@@ -377,6 +402,7 @@ func run() error {
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
+		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -413,6 +439,7 @@ func run() error {
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
+		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
