@@ -10946,3 +10946,126 @@ Stage 12A task), commit both documentation fixes together, then begin
 Stage 12A: persisted alert rules, the alert matching engine, the
 bounded alert queue, the fixed OBS alert overlay, and local synthetic
 test alerts.
+
+## 2026-08-10 08:33 — feat(server): persist alert profiles and rules
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 3/5/6/7: the provider-independent, persisted alert
+domain - alert-output profiles and the alert rules that belong to
+them - plus its SQLite repository. No matching, queueing, or HTTP
+surface yet; those are separate commits.
+
+### Changes
+- `apps/server/internal/storage/sqlite/migrations/0013_alerts.sql`
+  (new): `alert_profiles` (public-slug-keyed, fixed presentation
+  columns - language/theme/position/text_align - queue bounds),
+  `alert_rules` (profile_id cascade, closed event_type CHECK against
+  the 8 real Twitch alert-capable types, priority/duration bounds,
+  nullable minimum/maximum_quantity, reserved required_role,
+  visibility toggles, template, animation choices), `alert_rule_providers`
+  and `alert_rule_accounts` (empty = "any", non-empty = explicit
+  allowlist).
+- `apps/server/internal/domain/alerts/` (new package): `model.go`
+  (Profile/Rule and every closed enum - EventType, Role, Theme,
+  Position, TextAlign, Animation, Language - each its own type, never
+  importing internal/domain/engagement or any sibling domain
+  package's concrete type, confirmed as the established convention by
+  grepping every existing internal/domain/* package before writing
+  this), `capability.go` (the per-event-type Capability table required
+  by Part 6), `validation.go` (bounds + capability-driven
+  ValidateRuleConditions), `ids.go` (`alprof_`/`alrule_` random ids,
+  a 160-bit public slug mirroring chatoverlay's own), `errors.go`,
+  `repository.go` (the `Repository` port), `service.go` (profile CRUD
+  + slug rotation, rule CRUD with account-existence and
+  capability-driven validation, and `OverlapWarnings` - the Part 8
+  "simpler policy" overlap detector).
+- `apps/server/internal/storage/sqlite/alerts_repository.go` (new):
+  `AlertsRepository`, transactional multi-table writes for a rule's
+  provider/account filter sets (delete-then-reinsert, mirroring
+  `chatautomation_repository.go`'s own pattern), FK/UNIQUE-violation
+  mapping to domain sentinels.
+- Test files: `internal/domain/alerts/service_test.go` (16 tests, a
+  `fakeRepo`/`fakeAccountLookup` in-memory harness),
+  `internal/domain/alerts/validation_test.go` (13 tests/subtests),
+  `internal/storage/sqlite/alerts_repository_test.go` (12 tests, real
+  migrated DB + the package's existing `createTestAccount` helper).
+
+### Technical decisions
+- **Read the real Twitch normalization code
+  (`internal/provider/twitch/eventsub_normalize.go`) before writing
+  the capability table**, rather than trusting the task's own
+  suggested per-type capability sketch or the aspirational event list
+  in `docs/engagement-architecture.md` §9.1. Confirmed: `User.Roles`
+  is never populated for any of the 8 alert-capable event types (only
+  `Color`/`Badges` are ever set, and only for `chat.message`), so
+  `RequiredRole` is modeled as a reserved column (schema + domain
+  type) but `ValidateRuleConditions` currently rejects anything but
+  `RoleEveryone` for every real event type - satisfying Part 6's own
+  "role conditions where normalized data actually supplies roles"
+  honestly (nowhere, today) rather than fabricating role support.
+  Also confirmed: `Amount`/`Currency` are never populated by any of
+  the 8 normalization functions, so no amount/currency column or
+  threshold exists in this schema at all (Part 7's own "leave real
+  monetary thresholds for the connector stage that first needs them"),
+  and the suggested schema's `show_amount` column was replaced with
+  `show_quantity`, the real equivalent for Bits amount/gift count/raid
+  viewer count.
+- **No domain package in this project imports another domain
+  package's concrete type** - confirmed by grepping every
+  `internal/domain/*` package's imports before designing
+  `alerts.ProviderID`/`alerts.EventType` as their own closed types
+  (mirroring `chatautomation.Role`'s own precedent), never
+  `engagement.ProviderID`/`engagement.Type`. The runtime layer
+  (`internal/alerts`, not yet written) will own the conversion between
+  `engagement.Event` and this domain's types, exactly like
+  `internal/chatautomation` already converts between its own `Role`
+  and an event's role concept.
+- **Grouping (Part 21) and mid-alert preemption (Part 13) are
+  explicitly deferred to Stage 12B** - both are named by the task
+  itself as acceptable deferrals. No `allow_grouping`/`group_window_ms`
+  columns were added to `alert_rules` at all (rather than adding dead,
+  unused columns now), since Stage 12B's own migration will add them
+  together with the runtime behavior. This is the first explicit
+  Stage 12B item; Stage 12 as a whole will not be marked complete
+  when Stage 12A finishes.
+- **Part 8's "simpler policy" was chosen**: every enabled rule
+  matching an event enqueues independently; non-overlapping quantity
+  ranges are the operator's own responsibility, surfaced via a
+  computed (never persisted) `OverlapWarnings` check comparing every
+  enabled-rule pair sharing a profile and event type. Rule evaluation
+  order is by creation time (`ORDER BY created_at, id`), explicitly
+  never raw SQLite row order, and multiple matching rules are
+  independent, not first-match-wins.
+- **Pause policy chosen** (recorded here ahead of the queue/playback
+  commit that implements it, per Part 17's own "choose one and
+  document it"): the simpler of the two accepted policies - the
+  current alert finishes normally, and the queue does not advance
+  until resume - rather than remaining-duration freezing.
+- **Replay-previous policy chosen** (same rationale): an explicit
+  front-of-queue replay, marked `replayed=true`, never recreating an
+  Event Bus event.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` - clean.
+- `go test ./internal/domain/alerts/... ./internal/storage/sqlite/...`
+  - all new tests pass (16 + 13 subtests in `domain/alerts`, 12 in the
+    sqlite repository), plus every pre-existing `internal/storage/sqlite`
+    test still passes unchanged.
+
+### Known limitations
+No matcher, queue, playback, HTTP API, or frontend yet - persistence
+only, exactly as scoped for this commit. `RequiredRole`/monetary
+thresholds are reserved-but-inapplicable, documented above, not a
+gap to close later within Stage 12A itself.
+
+### Next step
+Implement the provider-independent alert matching engine
+(`internal/alerts`): the event-type capability-aware matcher, the
+closed alert placeholder template language, and the conversion
+between `engagement.Event` and this domain's own types - still no
+queue or HTTP surface.
