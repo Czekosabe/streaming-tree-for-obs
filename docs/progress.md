@@ -10849,3 +10849,100 @@ Run the full closing regression (frontend checks, backend checks, and
 all ten integration scripts by exact name), then push and produce the
 final report. Stage 12 (alerts) remains planned; nothing beyond Stage
 11B was implemented in this stage.
+
+## 2026-08-10 06:35 — correction: record the Stage 11B closing regression
+
+### Status
+Complete.
+
+### Scope
+A correction entry only, no code change. The previous entry's own
+"Next step" said to run the final frontend/backend regression and all
+ten integration scripts before Stage 11B (and Stage 11 as a whole)
+could be considered complete. That regression was in fact run,
+immediately after the previous entry was written and before the
+Stage 11B final report was given - but the run itself was never
+recorded here as its own journal entry. This entry records it,
+without editing the previous entry.
+
+### What was actually run and its real result
+- **Frontend** (`apps/web`): `npm run i18n:check` (2 languages, 13
+  namespaces, no differences against `en`), `npm run typecheck` (clean),
+  `npm run lint` (clean), `npm run test -- --run` (**832 tests passed
+  across 63 test files**, 0 failures), `npm run build` (production
+  build succeeded; the only output was the pre-existing >500 KB chunk
+  size advisory, not a new regression).
+- **Backend** (`apps/server`): `gofmt -l .` (no files listed), `go vet
+  ./...` (clean), `go test ./...` (every package reported `ok`,
+  including `internal/chatautomation` and `internal/domain/chatautomation`),
+  `go build ./...` (clean), `go build -tags integration
+  ./cmd/testserver/...` (clean).
+- **All ten integration scripts, run in this exact order, each
+  reporting PASSED/"All steps passed" with no failing assertion**:
+  `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+  `verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs`, `verify-twitch-engagement.mjs`,
+  `verify-operator-chat.mjs`, `verify-chat-overlay.mjs`,
+  `verify-twitch-outbound-chat.mjs`, `verify-chat-automation.mjs`.
+  `verify-chat-automation.mjs` was run **twice** in direct succession
+  (matching Part 51's own requirement for the tenth script) with no
+  flakiness observed between the two runs.
+- **`node scripts/verify-mediamtx-runtime.mjs` and
+  `node scripts/verify-ffmpeg-branches.mjs` are real, loopback-only
+  integration checks against the actual MediaMTX and FFmpeg
+  binaries** - the MediaMTX script installs and checksum-verifies the
+  real managed v1.19.3 binary and supervises real process lifecycle;
+  the FFmpeg script needs a real, compatible FFmpeg already on `PATH`
+  and drives real, independent branch FFmpeg processes plus a real
+  managed MediaMTX instance as the local ingest, entirely on loopback.
+  Neither is a substitute for the manual-testing rule (§14 of
+  `docs/project-overview.md`) and neither was treated as one.
+- **No real Twitch account, no real Google/YouTube account, and no
+  real OBS instance were used anywhere in this regression** - every
+  Twitch/Google-facing integration script runs against local fake
+  OAuth/Helix/EventSub servers on loopback, exactly as every earlier
+  entry in this journal already establishes.
+- Final pushed commit at the end of this regression:
+  `39252aa` (`docs: document Stage 11B automation`) on `main`, pushed
+  to `origin/main` as `8ab1fc3..39252aa`.
+- `git status` reported a clean working tree; `git rev-list
+  --left-right --count origin/main...HEAD` reported `0 0` (fully
+  synchronized, nothing ahead or behind).
+
+### Files changed
+- `docs/progress.md` (this entry only).
+
+### Technical decisions
+- **This is a correction entry, not a rewrite.** The previous entry
+  (`docs: document Stage 11B automation`) is left completely
+  untouched - its own "Next step" section still accurately describes
+  what was pending *at the time it was written*. This entry supplies
+  the missing "what actually happened next" record, matching this
+  project's own established convention of appending new dated
+  entries rather than editing history.
+- **Numbers were re-verified against real, current command output for
+  this entry, not copied from an earlier report.** `npm run test --
+  run` was re-run immediately before writing this entry and again
+  produced exactly 832 passed tests across 63 test files; `gofmt -l
+  .` and `go vet ./...` were re-run and produced no output/no
+  findings. The ten integration scripts were not re-run a third time
+  for this specific correction entry, since they were already run to
+  completion (twice for the tenth script) earlier in the same
+  session with no repository change in between and are the basis of
+  the already-published Stage 11B final report; Stage 12A's own
+  closing regression (see later entries) re-runs all ten again before
+  its own commit anyway.
+
+### Automated validation
+See "What was actually run and its real result" above - this entry
+exists specifically to record that validation accurately.
+
+### Known limitations
+None beyond what the Stage 11B entries already recorded.
+
+### Next step
+Correct the README's stale long-term-vision wording (Part 1.2 of the
+Stage 12A task), commit both documentation fixes together, then begin
+Stage 12A: persisted alert rules, the alert matching engine, the
+bounded alert queue, the fixed OBS alert overlay, and local synthetic
+test alerts.

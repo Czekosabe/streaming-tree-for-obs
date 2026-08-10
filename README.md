@@ -11,23 +11,22 @@ others.
 Tree is planned to grow into a local streaming engagement and overlay
 platform: normalized chat and events from multiple platforms, a unified
 operator chat, OBS Browser Source overlays, alerts, scheduled bot messages and
-chat commands, visual overlay designers, text-to-speech and goal widgets.
-Most of that still does not exist — it is architecture and planning,
-detailed in
-[`docs/engagement-architecture.md`](docs/engagement-architecture.md) — but it
-shapes decisions made today. The foundation is built incrementally: the
-credential-store foundation (stage 5), the Twitch and YouTube
-connected-account integrations (stages 7A/7B), the first real piece
-of the engagement platform itself — a normalized Engagement Event Bus and
-a real Twitch inbound connector reading chat and channel events (stage
-8A) — a real, unified operator chat consuming that bus (stage 9) — a
-real, public OBS Browser Source chat overlay consuming that same
-operator-chat projection (stage 10) — a real, manual outbound-chat
-foundation letting an operator send and reply as their own connected
-Twitch account from the Chat page (stage 11A) — and now real scheduled
-bot messages and safe chat commands built on that same outbound
-foundation (stage 11B) — are all completed, completing stage 11 as a
-whole. Alerts and TTS remain planned.
+chat commands, visual overlay designers, text-to-speech and goal widgets. A
+substantial part of that is real today, not just architecture: a normalized
+Engagement Event Bus and a real Twitch inbound connector (stage 8A), a real,
+unified operator chat consuming that bus (stage 9), a real, public OBS Browser
+Source chat overlay consuming that same operator-chat projection (stage 10),
+real manual outbound Twitch chat sending and replying (stage 11A), and real
+scheduled bot messages and safe chat commands built on that same foundation
+(stage 11B) — completing stage 11 as a whole. **Still planned**: alerts, the
+full visual overlay designer and templates, text-to-speech, goal/counter
+widgets, additional engagement providers (YouTube, Kick chat/events), and
+external donation-service connectors — detailed in
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
+also shapes decisions made today about what is built first. The foundation
+was built incrementally: the credential-store foundation (stage 5), the
+Twitch and YouTube connected-account integrations (stages 7A/7B), then each
+engagement piece above in order (stages 8A through 11B).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending and real scheduled messages/chat commands all work
 >
