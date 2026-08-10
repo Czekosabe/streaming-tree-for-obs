@@ -62,6 +62,8 @@ export const ALERT_EVENT_TYPES = [
   'channel_point_redemption',
 ] as const;
 
+export const ALERT_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'broadcaster'] as const;
+
 export const ALERT_ANIMATIONS = ['none', 'fade', 'slide_up', 'slide_left', 'scale'] as const;
 export const ALERT_THEMES = ['minimal', 'compact', 'large'] as const;
 export const ALERT_POSITIONS = ['top', 'center', 'bottom'] as const;

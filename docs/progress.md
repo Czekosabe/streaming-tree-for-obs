@@ -11699,3 +11699,124 @@ Build the Alerts management page (`/alerts`): profile list/editor,
 rule list/editor with capability-driven fields, queue controls, Test
 Rule, and the local editor preview reusing `AlertRenderer` - plus the
 new `alerts` i18n namespace in English and Polish.
+
+## 2026-08-10 10:58 — feat(web): manage alert rules and queues
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 34/35/36/37/44/45/46: the `/alerts` management page -
+profile list/create/rename/delete/rotate-URL, live queue state and
+controls, capability-driven rule create/edit/delete, Test Rule, and
+the local editor preview reusing `AlertRenderer` from the previous
+commit - plus the new `alerts` i18n namespace in English and Polish
+and its nav entry.
+
+### Changes
+- `apps/web/src/i18n/resources/{en,pl}/alerts.json` (new, ~110 keys
+  each): page/profiles/queue/rules/test/common/errors sections,
+  covering every field, control, confirmation, and stable `alert_*`
+  error code. Registered in `i18n/config.ts`'s `NAMESPACES` and
+  `i18n/resources.ts`.
+- `apps/web/src/components/layout/nav-items.ts` /
+  `i18n/resources/{en,pl}/navigation.json`: added the `/alerts` nav
+  entry (Bell icon, "Alerts"/"Alerty").
+- `apps/web/src/components/alerts/ProfileManager.tsx` (new): the
+  profile list panel, `CreateProfileModal` (its own component with
+  local `name` state - see Technical decisions for why this is
+  load-bearing, not stylistic), and `ProfileEditor` (settings form,
+  Browser Source URL with copy/open/rotate-with-confirmation, delete-
+  with-confirmation).
+- `apps/web/src/components/alerts/QueuePanel.tsx` (new): live queue
+  status (5s poll) and pause/resume/skip/replay/clear controls, a
+  sticky input-gap warning, and the six counters from Part 30 - Clear
+  Queue is the only command behind a confirmation dialog (Skip/Replay
+  are lower-impact and immediately reversible-in-effect).
+- `apps/web/src/components/alerts/RuleManager.tsx` (new): rule list
+  with per-rule overlap warnings, Test Rule, delete-with-confirmation,
+  and `RuleFormModal` - capability-driven fields (quantity thresholds,
+  role, and each `show*` toggle only render when
+  `useAlertEventTypesQuery`'s real, backend-derived capability says
+  the selected event type actually supports them), placeholder-
+  insertion buttons scoped to `capability.availablePlaceholders`, and
+  `EditorPreview` (fires `useAlertPreviewMutation` on template/event-
+  type change, rendering the result through the real `AlertRenderer`
+  inside a small bounded preview box - never a second, approximate
+  preview implementation, per Part 37).
+- `apps/web/src/models/alerts.ts`: added `ALERT_ROLES` (a proper
+  `as const` tuple, needed for i18next's literal-key typing on the
+  role `<select>`).
+- `apps/web/src/pages/AlertsPage.tsx` (new): the page shell
+  (`AppShell` + `ProfileManager`) and its `/alerts` route in `App.tsx`.
+- `apps/web/src/pages/AlertsPage.test.tsx` (new, 9 rendered tests):
+  empty state, create profile (typing a real multi-character name -
+  see Technical decisions for why this test caught a real bug),
+  selecting a profile shows its Browser Source URL, delete
+  confirmation, pause/resume, listing a rule, capability-driven field
+  visibility switching live when the event type changes, Test Rule
+  showing its synthetic notice, and the overlap warning appearing on
+  both sides of an overlapping pair.
+
+### Technical decisions
+- **A real bug was found and fixed by the create-profile rendered
+  test, not by inspection**: the first version kept the create
+  dialog's `name` draft state in `ProfileManager` itself. Since typing
+  re-rendered `ProfileManager` on every keystroke, the inline `onClose`
+  arrow function passed to `Modal` got a new identity each time; `Modal`'s
+  own focus-management `useEffect` depends on `onClose`, so it re-ran on
+  every keystroke, and its cleanup (`previouslyFocused.current?.focus()`)
+  plus its body (`focusable[0]?.focus()`) together yanked focus away
+  from the name input after the very first character - `userEvent.type`
+  kept typing into a now-unfocused, stale element reference, so only
+  "M" of "Main" ever landed. Confirmed the mechanism by temporarily
+  logging the dialog's HTML mid-test and observing `value="M"` before
+  the second keystroke. **Fixed by extracting a dedicated
+  `CreateProfileModal` component with its own local `name` state**,
+  mirroring `ScheduleFormModal`'s already-established pattern
+  (`components/automation/ScheduleManager.tsx`) of keeping a modal's
+  own draft state inside the modal component itself, specifically so
+  the parent never re-renders while typing and the props `Modal`
+  depends on for its effect stay referentially stable. `RuleFormModal`
+  already followed this pattern from the start (own local `draft`
+  state), so it was never affected. This is a latent behavior of the
+  shared `Modal` component (any modal whose `onClose`/`dismissible`
+  prop is an unstable reference while its own draft state lives in the
+  parent would exhibit the same symptom) - not fixed in `Modal.tsx`
+  itself in this commit, since every current call site across the
+  codebase already keeps draft state locally; documented here so a
+  future modal author does not reintroduce it.
+- **Providers filter is a single "restrict to Twitch" toggle, not a
+  general multi-select** - Twitch is the only supported provider today
+  (Part 2: "no new provider integration in Stage 12A"), so a real
+  multi-select would have exactly one meaningful option. The toggle
+  still exercises the real `providers: string[]` field end-to-end
+  (empty vs. `["twitch"]`) so no backend/frontend contract work is
+  needed when a second provider is added later.
+- **Clear Queue is the only queue command behind a confirmation
+  dialog** - Skip Current and Replay Previous are single, low-blast-
+  radius, effectively-reversible-in-effect actions (skip just advances
+  to whatever is next; replay just re-shows the last one), while Clear
+  Queue discards every not-yet-played item at once and has no undo.
+  Matches this project's own established "match confirmation weight to
+  actual reversibility" convention (see the outbound-chat Send Now and
+  chat-automation Send Now dialogs from earlier stages).
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 14 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 918 tests pass (9 new), 68 test files.
+- `npm run build` - clean production build.
+
+### Known limitations
+None beyond what earlier Stage 12A frontend entries already recorded.
+Providers filter is intentionally a single Twitch-restriction toggle
+rather than a general control, documented above as deliberate, not a
+gap.
+
+### Next step
+Write the eleventh local integration script
+(`scripts/verify-alerts.mjs`), run it at least twice, then the
+Stage 12A documentation pass and the full closing regression across
+all eleven integration scripts.

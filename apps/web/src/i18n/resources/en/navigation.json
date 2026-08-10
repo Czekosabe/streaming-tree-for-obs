@@ -13,6 +13,7 @@
     "chat": "Chat",
     "overlays": "Overlays",
     "automation": "Automation",
+    "alerts": "Alerts",
     "settings": "Settings",
     "logs": "Logs"
   },

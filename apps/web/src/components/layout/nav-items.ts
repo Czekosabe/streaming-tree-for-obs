@@ -1,6 +1,7 @@
 import type { ParseKeys } from 'i18next';
 import {
   Activity,
+  Bell,
   Bot,
   FileText,
   LayoutDashboard,
@@ -31,6 +32,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/chat', labelKey: 'items.chat', icon: MessageSquare, planned: false },
   { to: '/overlays', labelKey: 'items.overlays', icon: MonitorPlay, planned: false },
   { to: '/automation', labelKey: 'items.automation', icon: Bot, planned: false },
+  { to: '/alerts', labelKey: 'items.alerts', icon: Bell, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];
