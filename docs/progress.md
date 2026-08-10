@@ -12902,3 +12902,167 @@ The twelfth local integration script
 (`scripts/verify-alert-advanced-queue.mjs`), run at least twice, then
 the Stage 12B documentation pass and the full closing regression
 across all twelve integration scripts.
+
+## 2026-08-10 20:41 — test: verify advanced alert queue locally
+
+### What
+Added the twelfth local integration script,
+`scripts/verify-alert-advanced-queue.mjs`, covering Stage 12B
+(grouping + preemption) against a real backend, real fake-Twitch
+EventSub/OAuth/Helix servers, and the real public SSE stream - no
+mocks of the alert subsystem itself, exactly like
+`scripts/verify-alerts.mjs`'s own Stage 12A harness. Every boilerplate
+helper (fake OAuth/Helix/EventSub servers, `spawnCaptured`/
+`killTree`/`waitUntil`/`request`/SSE reader/`connectMetadataAccount`/
+`enableEngagement`) was copied verbatim from `verify-alerts.mjs`;
+`ruleBody` was extended with the four new Stage 12B fields
+(`allowGrouping`, `groupWindowMs`, `interruptMode`, `interruptible`),
+defaulted to the same Stage-12A-preserving safe values the rule
+editor's own `emptyDraft` uses. `main()` is a fresh, focused sequence,
+not a copy of Stage 12A's own end-to-end tour.
+
+Run twice in a row (`node scripts/verify-alert-advanced-queue.mjs`),
+both clean, before this commit - see the terminal transcript for the
+full step list of each run.
+
+### Scenarios covered directly by this script (representative subset
+of the Stage 12B task's own ~39-item Part 43 list)
+- Rule-creation rejection matrix: `allowGrouping=true` on a
+  non-groupable type (follow, 422), on `gifted_subscription`
+  specifically (422 - structurally proves it can never merge with
+  `subscription_gift_batch`, since it is simply never `Groupable`),
+  combined with `showMessage=true` on a `RequiresNoMessage` type
+  (bits, 422), combined with a `{message}`-referencing template on
+  bits (422), an out-of-bounds `groupWindowMs` rejected unconditionally
+  regardless of `allowGrouping` (422), and an unrecognized
+  `interruptMode` value (422).
+- `/api/alert-event-types` reports the real `groupable`/
+  `groupingRequiresHiddenMessage` values for bits (true/true), follow
+  (false), and channel_point_redemption (true/true).
+- Two real Bits cheers from the same actor within the window merge
+  into one queued alert: `groupCount=2`, quantity truthfully summed
+  (50+30=80), `{groupCount}` re-renders live in the text, and
+  `totalGroupedMembers`/`totalGroupsCreated` each increment exactly
+  once while `totalEnqueued` increments only once (the merged member
+  never took a new queue slot).
+- A third cheer from a *different* actor never joins that group (a
+  distinct second queued alert appears instead).
+- Two real channel-point redemptions of the *same* reusable reward
+  from the same actor merge by subject (reward id) with no quantity
+  involved, and never carry a real user-input message; a redemption of
+  a *different* reward id from the same actor never joins that group.
+- Real-event preemption end-to-end, subscribed to the public SSE
+  stream from before the first alert ever plays: the low-priority
+  alert shows, a real higher-priority interrupting event arrives, the
+  stream emits `alert.hide` with `reason=preempted` naming exactly the
+  outgoing alert id, the hide payload's only keys are
+  `paused`/`alertId`/`reason` (asserted via `Object.keys`), the raw SSE
+  chunk never repeats the outgoing alert's text or username, and the
+  incoming alert then shows immediately with its own distinct alert
+  id (never a resumed remainder) - `totalPreempted` increments exactly
+  once and the management queue status agrees.
+- Equal priority never preempts (the other same-priority raid rule was
+  temporarily disabled via `PUT .../enabled:false` for this one step,
+  since it would otherwise also match the same raid event and
+  independently preempt - re-enabled immediately after).
+- A non-interruptible (`interruptible=false`) current alert is never
+  preempted by a strictly-higher-priority candidate - it queues
+  instead.
+- A paused queue never preempts (only ever grows the queue).
+- A synthetic Test Rule alert never preempts a *real* current alert
+  (queues instead, still correctly marked synthetic in the queue); a
+  synthetic Test Rule alert *may* preempt another *synthetic* current
+  alert (`totalPreempted` increments for that transition too).
+- Replay Previous never preempts the current alert - queuing a replay
+  while something is playing leaves the current alert fully
+  untouched; the replay only plays once the queue is naturally free.
+- A full backend restart: every rule's `allowGrouping`/
+  `groupWindowMs`/`interruptMode`/`interruptible` fields persist
+  exactly; `totalGroupedMembers`/`totalGroupsCreated`/`totalPreempted`
+  all reset to 0 with an empty queue and no replay; a freshly
+  re-authorized account's real events still group correctly
+  afterward.
+- The public stream's grouped-alert payload carries only the
+  aggregate `groupCount`/`quantity` - asserted to never contain a
+  `members`/`memberIds`/`usernames` key of any kind.
+- The usual closing scan: no access/refresh token or real (non-test)
+  alert username in backend stdout/stderr or any captured HTTP/SSE
+  response body.
+
+### Scenarios deliberately not re-covered here (already covered by a
+specific named Go/frontend test, per this script's own file-header
+policy and Part 43's explicit "document every omission" allowance)
+- Every grouping pure-logic edge case (key derivation per
+  discriminating field, reward-id scoping, fixed non-extending window
+  anchored to the first member, `MaxGroupMembers` bound starting a new
+  candidate, overflow-safe quantity summation, priority/insertion-
+  sequence/expiration-anchor preserved by a merge, real+synthetic
+  never grouping, replay never grouping, gifted-recipient never
+  grouping with a gift batch even structurally): `internal/alerts/
+  advanced_queue_test.go`'s `TestGroupingEligibleRejectsSynthetic
+  ReplayAnonymous`, `TestGroupKeyDiffersOnEveryDiscriminatingField`,
+  `TestGroupKeyRewardIDOnlyForSubjectFromRewardIDTypes`,
+  `TestWindowOpenAnchoredToFirstMember`,
+  `TestSafeAddInt64ClampsOnOverflow`,
+  `TestMergeGroupMemberSumsQuantityAndRerenders`,
+  `TestMergeGroupMemberRespectsMaxGroupMembers`,
+  `TestMergeGroupMemberNeverSumsForSameActorSameSubjectCountStrategy`,
+  `TestTryGroupFirstMemberStartsAsNormalQueueItemNotGrouped`,
+  `TestTryGroupSecondCompatibleEventMergesWithoutNewQueueSlot`,
+  `TestTryGroupPreservesEarliestQueuedAtAndExpirationAnchor`,
+  `TestTryGroupPriorityAndInsertionSequenceUnchangedByMerge`,
+  `TestTryGroupEventOutsideWindowStartsNewCandidate`,
+  `TestTryGroupLaterMemberNeverExtendsTheWindow`,
+  `TestTryGroupMaxGroupSizeStartsNewCandidate`,
+  `TestTryGroupRejectsDifferentActorProviderAccountEventTypeRule
+  Snapshot`, `TestTryGroupRealAndSyntheticNeverGroupTogether`,
+  `TestTryGroupReplayNeverGroups`,
+  `TestTryGroupGiftedRecipientNeverGroupsWithGiftBatch`,
+  `TestGroupingCapabilitiesMatchTaskWorkedExamples`.
+- Every preemption pure-logic edge case (default rules never preempt,
+  the stale-timer-immunity proof, queued items below current keeping
+  their order, normal queue selection resuming correctly after a
+  preemption, preemption never counted as played/expired, the
+  concurrent-enqueue determinism proof):
+  `TestPreemptionDefaultRulesNeverPreempt`,
+  `TestPreemptionEqualOrLowerPriorityNeverPreempts`,
+  `TestPreemptionCurrentNotInterruptibleBlocksEvenEligibleIncoming`,
+  `TestPreemptionEligibleHigherPriorityPreemptsImmediately`,
+  `TestPreemptionPausedQueuePreventsIt`,
+  `TestPreemptionNotCountedAsPlayedOrExpired`,
+  `TestPreemptionStaleTimerCannotHideReplacement`,
+  `TestPreemptionLowerPriorityQueuedItemsKeepTheirOrder`,
+  `TestPreemptionThenNormalQueueSelectionResumes`,
+  `TestPreemptionReplayNeverPreempts`,
+  `TestPreemptionSyntheticNeverPreemptsReal`,
+  `TestPreemptionRealMayPreemptSyntheticCurrent`,
+  `TestPreemptionSyntheticMayPreemptSyntheticCurrent`,
+  `TestPreemptionHideRevisionCarriesReasonAndNoPriorContent`,
+  `TestPreemptionConcurrentEnqueueMatchedIsSerialized`.
+- Domain-level validation edge cases (every individual bound/enum
+  value, not just one representative rejection each):
+  `internal/domain/alerts/validation_test.go`'s new group-window and
+  interrupt-mode test functions, plus `TestCreateAlertRuleRejects
+  GroupingForUngroupableEventType`,
+  `TestCreateAlertRuleRejectsGroupingWithMessageShown`,
+  `TestCreateAlertRuleRejectsGroupingWithMessagePlaceholder`,
+  `TestCreateAlertRuleAcceptsGroupingAndInterruptFields`,
+  `TestListAlertEventTypesExposesGroupingCapability` in
+  `internal/httpapi/alerts_test.go`.
+- The two full-stack Go end-to-end tests already exercising a real
+  matched event through grouping and through preemption:
+  `TestManagerRealEventsGroupEndToEnd` and
+  `TestManagerRealEventPreemptsEndToEnd` in
+  `internal/alerts/manager_test.go`.
+- Every frontend-only concern (schema parsing/rejection, the rule
+  editor's capability-gated grouping section and always-visible
+  interruption section, the renderer's group-count badge, the queue
+  panel's new counters and current-alert badges, the reducer's
+  `lastHideReason`): `api/alerts-schemas.test.ts`,
+  `models/alerts.test.ts`, `models/alert-stream-reducer.test.ts`,
+  `pages/AlertsPage.test.tsx`, `pages/PublicAlertPage.test.tsx` - all
+  already updated and passing, see the previous entry.
+
+### Automated validation
+- `node scripts/verify-alert-advanced-queue.mjs` - run twice, both
+  clean, all steps passed.
