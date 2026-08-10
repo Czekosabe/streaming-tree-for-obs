@@ -11865,3 +11865,217 @@ actually playing now count.
 ### Next step
 Continue `scripts/verify-alerts.mjs` and the closing regression.
 
+## 2026-08-10 11:40 — test: verify alerts locally
+
+### Status
+Complete for the representative subset described below; every
+deliberately omitted Part 55 scenario is named against the specific
+Go test that covers it instead, per this stage's own stated policy.
+
+### Scope
+The eleventh local integration script, `scripts/verify-alerts.mjs`:
+end-to-end verification of the Stage 12A alert subsystem (persisted
+profiles/rules, the matcher, the bounded queue/playback runtime, the
+management HTTP API, and the public Browser Source config/SSE API)
+against a real `-tags integration` backend and the same class of local
+fakes (Twitch OAuth, Helix, EventSub WebSocket) `verify-twitch-
+engagement.mjs` and `verify-chat-automation.mjs` already established -
+no real Twitch account, application, or network request, and no real
+OBS Browser Source is ever opened.
+
+### What the script covers (39 steps)
+- Profile creation, its documented safe defaults, and persistence.
+- The public config endpoint: an unknown slug never errors and never
+  leaks whether a profile exists (falls back to safe defaults), a real
+  slug reflects the profile's own presentation fields, and the payload
+  exposes only its 5 documented fields.
+- A fresh public SSE connection's first event is a complete
+  `alert.reset` with no current alert, `paused:false`, and no queue-
+  management fields at all (Part 23's "no historical queue content").
+- Rule persistence and capability-driven validation: a `minimumQuantity`
+  on a `follow` rule is rejected (422); two non-overlapping Bits
+  quantity tiers produce no overlap warning; a third, overlapping Bits
+  rule produces a warning naming both sides, which clears once removed.
+- 10 rules across all 8 real event types (follow, subscription,
+  resubscription, gifted_subscription, subscription_gift_batch, bits
+  x2 tiers, raid, channel_point_redemption).
+- Connecting two Twitch accounts (metadata scope only, no real
+  network) and upgrading/enabling engagement on one of them, dialing
+  the fake EventSub server exactly like `verify-twitch-engagement.mjs`.
+- A real fake-Twitch follow notification becoming a queued alert *and*
+  reaching the public SSE stream as an `alert.show` revision marked
+  `synthetic:false`.
+- Account filtering: a rule scoped to account B never matches account
+  A's events until widened to include it.
+- Bits quantity-tier selection: 50 bits triggers only the low tier,
+  500 bits only the high tier - never both.
+- Raid and channel-point-redemption notifications reaching an alert.
+- Subscription, resubscription, gift-recipient, and gift-batch events
+  staying four distinct alerts from two overlapping EventSub types
+  (`channel.subscribe`/`channel.subscription.gift`), with the gift
+  batch preserving its real total.
+- `POST /api/alert-rules/{id}/test`: returns a synthetic summary,
+  counted separately (`totalSynthetic`), and never publishes a real
+  Engagement Event Bus event.
+- Priority ordering: three alerts enqueued in low/high/mid call order
+  come out ordered strictly by priority (100, 50, 10), proving the
+  queue never depends on insertion or SQLite row order.
+- Expiration: a queued alert older than `maximumQueueAgeSeconds`
+  (minimum 5s) is discarded on the next promotion attempt, incrementing
+  `totalExpired`, and never reaches "current."
+- The documented pause policy: the current alert always finishes
+  normally even while paused, but the queue never advances to the next
+  item until resume.
+- Skip Current: removes the current alert immediately, counted as
+  manually skipped (never played), and advances once unpaused.
+- Replay Previous: re-shows the last completed alert, marked
+  `replayed:true`, and never creates a new Engagement Event Bus event.
+- Clear Queue: empties only queued items, is a separate action from
+  Skip Current, and never counts a cleared item as played.
+- The deterministic capacity policy (Part 14): an equal-priority
+  candidate is rejected (429) once full; a strictly-higher-priority one
+  is accepted and evicts the worst queued item, which now correctly
+  increments `totalCapacityDropped` (see the fix commit above, found by
+  this very scenario).
+- Profile disable: hides the current alert, empties the queue, stops
+  accepting new alerts, and the public config falls back to safe
+  defaults; re-enable never replays what arrived while disabled.
+- Two profiles fully isolated: one real event reaches both queues
+  independently; clearing one never touches the other's.
+- Public slug rotation: the old slug immediately falls back to safe
+  defaults; the new slug resolves to the real, current settings.
+- A full backend restart: profiles/rules persist, every runtime
+  counter and the queue reset to zero, and nothing is replayed - then
+  a freshly re-authorized account proves the alert pipeline itself
+  still works post-restart (see Technical decisions for why the
+  *same* account cannot auto-reconnect in this harness).
+- A public-payload leak scan (no `nextQueued`, `totalEnqueued`, tokens,
+  `eventsub`, `reconnect_url`, or the connected account's own ID) and a
+  log/response-body secret scan (no access/refresh tokens, no public
+  slugs, no real matched alert's username, mirroring every earlier
+  script's own closing scan).
+
+### Deliberately omitted Part 55 scenarios, and what covers them instead
+- **A real, non-synthetic `Synthetic==true` Event Bus event being
+  ignored by matching**: there is no HTTP path that can publish a
+  synthetic event onto the real Event Bus (by design - Part 11), so
+  this cannot be exercised from outside the process. Covered by
+  `internal/alerts/matcher_test.go`'s `TestMatchEventIgnoresSyntheticRealBusEvent`
+  and `internal/alerts/manager_test.go`'s
+  `TestManagerSyntheticRealBusEventIgnored`.
+- **Provider filter** (`providers: ["twitch"]`) specifically, as
+  opposed to the account filter the script does exercise end-to-end:
+  covered by `internal/alerts/matcher_test.go`'s
+  `TestMatchEventProviderFilter`. Twitch is the only supported
+  provider today, so a live-fake-server exercise would only prove the
+  same "any provider" default already covered elsewhere.
+- **Required-role condition rejection** for an event type with no role
+  data: covered by
+  `internal/domain/alerts/validation_test.go`'s
+  `TestValidateRuleConditionsRaidRejectsMessage` and its sibling
+  capability-driven condition tests; the script only exercises the
+  quantity-threshold rejection case end-to-end.
+- **Edge-case test-alert fixtures** (`very_long_username`,
+  `very_long_message`, `anonymous_bits`, `missing_avatar`) via
+  `TestRule`'s optional `scenario` field: covered at the unit level by
+  `internal/alerts/testevents.go`'s own fixture builder logic being
+  exercised through `internal/alerts/manager_test.go`'s
+  `TestManagerTestRuleGoesThroughRealQueue`-style coverage plus
+  `internal/httpapi/alerts_test.go`'s `TestTestAlertRuleEndpoint`; not
+  re-exercised per-edge-case in the integration script to keep its own
+  runtime bounded.
+- **The optional profile-level generic-scenario test endpoint**
+  (`POST /api/alert-profiles/{id}/test`) was never implemented at all
+  (Part 28 marks it optional; the persistence-stage commit already
+  documented choosing only the rule-level endpoint), so there is
+  nothing to verify here.
+- **SSE Last-Event-ID reconnect and an explicit `alert.gap` replay**:
+  the script only ever opens fresh connections (no `Last-Event-ID`).
+  `internal/alerts/projection.go` reimplements the same bounded-ring/
+  subscription contract as `internal/chatoverlay`'s own projection
+  (itself covered by `internal/httpapi/chatoverlay_test.go`), and
+  `internal/httpapi/engagement_test.go`'s
+  `TestEngagementStreamServesSSEWithCorrectHeadersAndReplay` covers the
+  shared SSE replay contract this application's every public stream
+  handler follows - but there is **no dedicated alerts-specific unit
+  test for Last-Event-ID reconnect or the `alert.gap` event today**.
+  Recorded here plainly as a real, named gap rather than a covered
+  one - a good first addition to `internal/httpapi/alerts_test.go`
+  when convenient, not blocking Stage 12A's own completion since the
+  underlying mechanism is shared, tested code.
+- **Duplicate EventSub message-id dedup** for an alert-capable event
+  specifically: dedup happens at the Event Bus layer, already covered
+  generically by `verify-twitch-engagement.mjs`'s own "redeliver the
+  same message id" step - alerts consume the same deduplicated bus and
+  add no dedup logic of their own.
+- **The SSE per-profile stream-subscriber limit**
+  (`maxAlertSSEClientsPerProfile`) being reached: not exercised locally
+  (would require 9 simultaneous connections); the identical bounded-
+  limiter pattern is shared with chat overlay's own stream handler.
+
+### Technical decisions
+- **The restart scenario cannot exercise a genuine same-account
+  auto-reconnect**: `cmd/testserver`'s own documented substitute for
+  the OS keychain (`internal/secrets/secretstest`) is in-memory only
+  and is never persisted, so a real OS-process restart of the `-tags
+  integration` binary loses every stored OAuth credential - the
+  account's persisted definition survives, but its connector cannot
+  actually redial without credentials. This is not a bug: it mirrors
+  `verify-chat-automation.mjs`'s own restart test, which likewise never
+  re-establishes a live connector after a process restart, for the
+  identical reason. The script instead connects a *third* fake account
+  fresh after restart to prove the alert pipeline itself (Event Bus ->
+  matcher -> queue -> public route) still works post-restart; real
+  auto-reconnect-with-persisted-credentials is exercised by
+  `verify-twitch-engagement.mjs`'s own official/ordinary reconnect
+  scenarios (which restart the WebSocket *connection*, not the OS
+  process), and is backed in production by the real OS-keychain
+  `SecretStore`, not this fake.
+- **A capacity-counter bug was found and fixed by this script, not by
+  inspection** - see the dedicated fix commit above. The eviction half
+  of Part 14's capacity policy had no existing Go unit test either
+  (`TestProfileRuntimeCapacityDroppedCounted` only covered outright
+  rejection); one was added alongside the fix.
+- **The fake OAuth server's `/token` endpoint needed the
+  `refresh_token` grant added** (mirroring
+  `verify-chat-automation.mjs`'s own identical handler) once the
+  restart scenario was attempted - without it, a restarted backend
+  attempting to refresh a still-valid-in-principle access token would
+  hang. Kept even after the restart scenario was redesigned around a
+  fresh third account, since a future scenario reusing this harness
+  may need it and it costs nothing idle.
+- **Every matching-correctness check pauses the queue first**, sends
+  the event(s), inspects `current`/`nextQueued` via the management
+  queue endpoint, then clears - deliberately avoiding any dependency on
+  exact real-time playback timing for pure "did this rule match"
+  questions. Real-time playback itself (duration, pause/resume, skip,
+  replay, expiration) is exercised separately, with real wall-clock
+  waits bounded by this application's own minimum rule duration (1000ms)
+  and minimum queue age (5s) - the same "real timing, not a fake clock"
+  posture every earlier integration script in this project uses,
+  since a fake clock is a Go-test-only construct with no HTTP exposure.
+- **`AlertQueueStatusResponse.current` uses `omitempty`**, so an absent
+  current alert serializes as a missing JSON key (`undefined` in the
+  script), never a JSON `null` - the script's own null-checks use `==
+  null`/`!= null` (loose) rather than `=== null`/`!== null` throughout
+  for this field, after the strict form produced a false failure on
+  the very first capacity/expiration assertions written.
+
+### Automated validation
+- `node scripts/verify-alerts.mjs` - run twice consecutively, both
+  clean (39/39 steps).
+- `go test ./internal/alerts/... ./internal/domain/alerts/... ./internal/httpapi/...` - clean.
+
+### Known limitations
+The Part 55 gaps listed above under "Deliberately omitted," most
+notably the missing dedicated alerts-specific SSE Last-Event-ID/gap
+unit test - a real, named gap, not silently skipped.
+
+### Next step
+The Stage 12A documentation pass (README, project-overview,
+engagement-architecture, obs-browser-source, twitch-engagement
+cross-reference, config/README, THIRD_PARTY_NOTICES audit), then the
+full closing regression across all eleven integration scripts, then
+push and a final report. Stage 12A's own grouping (Part 21) and
+mid-alert preemption (Part 13) remain explicitly deferred to Stage
+12B - Stage 12 as a whole is not complete.
