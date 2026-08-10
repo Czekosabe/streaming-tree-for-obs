@@ -312,6 +312,8 @@ func handleChatAutomationStatus(logger *slog.Logger, automation ChatAutomationSe
 				TotalCooldownSkips: status.Engine.TotalCooldownSkips, TotalRoleSkips: status.Engine.TotalRoleSkips,
 				TotalSelfSkips: status.Engine.TotalSelfSkips, LastErrorCode: status.Engine.LastErrorCode,
 			},
+			Schedules: make([]scheduleResponse, 0, len(status.Schedules)),
+			Commands:  make([]commandResponse, 0, len(status.Commands)),
 		}
 		for _, s := range status.Schedules {
 			resp.Schedules = append(resp.Schedules, toScheduleResponse(domain.Schedule{ID: s.ScheduleID, Enabled: s.Enabled}, s, true))
@@ -412,8 +414,15 @@ func handleDeleteSchedule(logger *slog.Logger, automation ChatAutomationService)
 func handleSendNowSchedule(logger *slog.Logger, automation ChatAutomationService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		// The request body is optional (omitted entirely, or "{}", both mean
+		// "every current target"). Checking r.ContentLength rather than
+		// hasRequestBody's own one-byte peek matters here: hasRequestBody
+		// reads (and so permanently consumes) one byte from r.Body to
+		// answer the question, which would corrupt a subsequent real
+		// decode of that same body - fine for requireEmptyBody elsewhere
+		// (which never decodes afterward), wrong here.
 		var body sendNowRequest
-		if hasRequestBody(w, r) {
+		if r.ContentLength > 0 {
 			if err := decodeJSONWithLimit(w, r, &body, maxChatAutomationBodyBytes); err != nil {
 				writeDecodeError(w, logger, err)
 				return

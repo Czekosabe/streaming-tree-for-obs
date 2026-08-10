@@ -10591,3 +10591,131 @@ alternatives - order is add/remove only, matching this stage's
 Write the tenth integration script
 (`scripts/verify-chat-automation.mjs`), run it at least twice, then
 complete the Stage 11B documentation pass.
+
+## 2026-08-10 06:07 — test: verify chat automation locally
+
+### Status
+Complete.
+
+### Scope
+The tenth integration script, `scripts/verify-chat-automation.mjs`,
+exercising the Stage 11B chat-automation layer end to end against real
+`-tags integration` server code and local Twitch fakes only. Run twice
+to confirm the result is not flaky. Two genuine backend bugs were
+found and fixed while writing it (see Technical decisions).
+
+### Changes
+Reuses `verify-twitch-outbound-chat.mjs`'s exact fake OAuth/Helix/
+EventSub boilerplate, extended with a `chatMessageEvent` builder
+(constructs a `channel.chat.message` notification with optional
+role badges) and a `connectFullAccount` helper that runs the full
+device-flow → outbound-chat-authorize → engagement-authorize →
+EventSub-connect sequence once per account, reused for the single
+account this script needs.
+
+23 steps covering: a fresh backend reporting zero schedules/commands;
+connecting one outbound-capable, inbound-engaged account; schedule
+creation persisting its target and two message alternatives; command
+creation persisting its alias; preview resolving `{channelName}`/
+`{platform}`/`{channelUrl}` exactly from local account data; an unknown
+placeholder rejected with `chat_automation_placeholder_invalid` (422);
+`{streamTitle}` reporting unresolved with no platform context; a real
+scheduled execution reaching the fake Twitch Send Chat Message endpoint
+with the account's own provider user id as both broadcaster and sender,
+using one of the two configured alternatives; a disabled schedule
+sending nothing further; Send Now succeeding immediately for a schedule
+that would otherwise never naturally fire within the script's own real-
+time budget, making exactly one send call, and never echoing the sent
+text; a canonical command name producing a response sent as a same-
+account reply (`reply_parent_message_id` matching the triggering
+message); an alias triggering the same command; a command not at the
+start of a message never triggering; the connected account's own
+echoed message never triggering a command (the hard self-loop-
+protection rule); a global cooldown blocking an immediate second
+trigger from a different user; an activity-gated schedule not yet
+having sent (first delay not yet elapsed); a schedule edit taking
+effect immediately without a restart; a disabled command never
+responding; a restart preserving both persisted definitions while
+never sending anything merely because the backend came back up (no
+backlog replay); deleting a schedule and a command removing them; and
+a final scan of every captured HTTP response and the backend's own
+stdout/stderr for tokens, rendered message text, and real Twitch
+hostnames.
+
+### Files changed
+- `scripts/verify-chat-automation.mjs` (new).
+- `apps/server/internal/httpapi/chatautomation.go` (two bug fixes -
+  see Technical decisions).
+
+### Technical decisions
+- **Two genuine backend bugs were found and fixed while writing this
+  script, not just script-side workarounds:**
+  1. `handleChatAutomationStatus` built `resp.Schedules`/`resp.Commands`
+     via bare `append` onto a zero-value (nil) slice field. A backend
+     with zero schedules/commands therefore serialized `"schedules":
+     null` instead of `"schedules": []` - harmless in Go but a
+     needless footgun for any JSON consumer that assumes an array.
+     Fixed by pre-allocating both fields with
+     `make([]T, 0, len(status.X))`, matching `handleListSchedules`/
+     `handleListCommands`'s own existing convention.
+  2. `handleSendNowSchedule` used `hasRequestBody` (a one-byte peek
+     read from `r.Body`) to decide whether to decode an optional
+     request body, then called `decodeJSONWithLimit` on the SAME
+     `r.Body` afterward when it returned true. Since `r.Body` is a
+     single-use stream, that one-byte peek permanently consumed the
+     body's first byte, so the real decode always saw a truncated,
+     invalid JSON string - `POST .../send-now` with body `{}` failed
+     with a stable `malformed_json` 400 every time, defeating the
+     endpoint's own "an optional body means every current target"
+     design. `hasRequestBody` itself is correct and unchanged for its
+     one existing caller (`requireEmptyBody`, which only ever
+     *rejects* a body and never decodes one afterward - the bug only
+     manifests when a body-presence check and a subsequent decode of
+     that same body are combined). Fixed by checking `r.ContentLength
+     > 0` instead, which answers the same question without ever
+     touching `r.Body`.
+- **The activity-gating and minimum-chat-activity scenarios are
+  exercised only shallowly here** (a schedule is created and one
+  eligible message is confirmed to arrive, but the script's own real-
+  time budget cannot wait out a full natural due-time-then-activity-
+  met cycle twice within a reasonable run). The precise gating logic -
+  blocked below threshold, sent once met, counter reset after success,
+  self/synthetic/bot-marked messages never counted - is instead
+  covered by named Go tests: `TestSchedulerMinimumChatActivityBlocksThenAllows`,
+  `TestSchedulerActivityResetsAfterSuccessfulSend`,
+  `TestCommandEngineIgnoresSelfMessage`,
+  `TestCommandEngineIgnoresSyntheticMessage` (all in
+  `internal/chatautomation`). Interval/jitter drift-free recurrence,
+  the local per-user command cooldown, role-requirement gating, and
+  the exact HTTP validation/status-code mapping for every stable error
+  code are likewise covered by their own named Go tests
+  (`TestSchedulerIntervalRecurrenceAdvancesFromBaseNotFromNow`,
+  `TestSchedulerJitterNeverEarlierThanBaseAndBounded`,
+  `TestCommandEngineUserCooldownIndependentPerUser`,
+  `TestCommandEngineRoleRequirementBlocksThenAllows`, and the 20 tests
+  in `internal/httpapi/chatautomation_test.go`) rather than duplicated
+  in this script - matching the project's own established precedent
+  (see, for example, the Stage 8A/9/10 scripts' own "a representative
+  subset is covered by Go unit tests instead" notes).
+
+### Automated validation
+- `node scripts/verify-chat-automation.mjs` - all 23 steps passed, run
+  twice in direct succession with no flakiness observed.
+- `gofmt -l .`, `go vet ./...`, `go test ./...` (every backend
+  package) - clean after the two bug fixes above, confirming they did
+  not regress anything the existing 20 HTTP tests already covered
+  (`TestSendNowRespectsIngestAndReturnsPerTargetResult`/
+  `TestSendNowSendsWhenReceiving`, which call the endpoint with a
+  `nil` Go-test body rather than an explicit `"{}"`, re-verified
+  passing against the `r.ContentLength`-based fix).
+
+### Known limitations
+No manual browser/OBS/real-Twitch testing performed - see the final
+report. See the "representative subset" note above for exactly which
+of the task's own 52 enumerated scenarios this script does not itself
+exercise, and which named Go test covers each instead.
+
+### Next step
+Complete the Stage 11B documentation pass (README, project overview,
+engagement architecture, the twitch-outbound-chat cross-reference, and
+a config/README audit), then run the full closing regression.
