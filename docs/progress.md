@@ -11558,3 +11558,144 @@ Build the public alert Browser Source renderer and its `/overlay/alerts/{publicS
 route (Part 38/39), reusing the Stage 10 Browser Source research
 rather than inventing a second OBS architecture - no management UI
 yet.
+
+## 2026-08-10 10:39 — feat(web): render OBS alerts
+
+### Status
+Complete.
+
+### Scope
+Stage 12A, Part 38/39: the frontend data layer for the whole alert API
+(schemas, transport, TanStack Query hooks, backend-mirroring
+validation helpers) and the public OBS Browser Source alert renderer
+and route (`/overlay/alerts/:publicSlug`). No management UI yet - that
+is the next commit.
+
+### Changes
+- `apps/web/src/api/alerts-schemas.ts` (new): Zod contracts for every
+  DTO `internal/httpapi/alerts.go` returns - profiles, rules
+  (including nullable thresholds), the overlap-warning list, queue
+  status, the rule-preview response, the public profile config, and
+  the public alert payload/SSE revision envelope.
+- `apps/web/src/api/alerts.ts` (new): transport functions for every
+  management, queue-command, preview, and public-config endpoint.
+- `apps/web/src/hooks/use-alerts.ts` (new): TanStack Query hooks for
+  event types (capability table, `staleTime: Infinity` - it is a fixed
+  backend enum, not runtime state), profiles, rules, queue status
+  (5s poll, matching chat-automation's own precedent), every queue
+  command mutation, Test Rule, the local template-preview mutation
+  (never invalidates a cache), and the public profile-config query.
+- `apps/web/src/models/alerts.ts` (new): every Stage 12A validation
+  bound mirrored from `internal/domain/alerts/validation.go`, the
+  closed alert placeholder vocabulary (deliberately its own set, not
+  chat-automation's), `extractPlaceholderNames`/`unknownPlaceholderNames`
+  (light client-side mirrors of the backend parser) plus a new
+  `unsupportedPlaceholderNames` that cross-references the real,
+  backend-fetched capability list rather than a second hand-maintained
+  table, `isValidThresholdRange`, and `insertPlaceholder`.
+- `apps/web/src/models/alert-stream-reducer.ts` (new): the tiny
+  `{current, paused}` reducer for one profile's playback stream -
+  deliberately much smaller than `models/chat-overlay-reducer.ts`'s
+  own keyed-list reducer, since an alert profile has exactly one
+  current slot and the public stream never carries queued-future
+  content.
+- `apps/web/src/hooks/use-alert-stream.ts` (new): the SSE client for
+  `GET /api/public/alert-profiles/{slug}/stream` - one `EventSource`
+  per slug, Zod-validated payloads, `show`/`hide`/`reset`/`paused`/`gap`
+  handling, closes and drops state on unmount/slug change. Mirrors
+  `hooks/use-chat-overlay-stream.ts`'s own "no separate snapshot
+  fetch" reasoning (the stream's first event is already a complete
+  reset).
+- `apps/web/src/components/alerts/alert-style.ts` (new): maps a
+  profile's theme/position/text-align onto CSS, and **reuses the
+  existing chat-overlay entry/exit animation Tailwind utility classes**
+  (`animate-chat-overlay-fade-in`/`-out` etc. already in `index.css`)
+  rather than duplicating four more keyframe sets - see Technical
+  decisions.
+- `apps/web/src/components/alerts/AlertRenderer.tsx` (new): the shared
+  renderer both the public route and (next commit) the management
+  editor preview will use - a single positioned banner tracking its
+  own local entry/leaving transition (an alert profile has one slot,
+  unlike chat overlay's scrolling list), with the same hard
+  fallback-timer guarantee `OverlayLeavingItem.tsx` already
+  established (never rely on `animationend` alone). Shows the
+  backend-rendered text plus a small optional quantity/platform badge
+  row - reuses the existing `providerGlyphClass` mapping
+  (`models/provider-labels.ts`) rather than a new icon system.
+- `apps/web/src/pages/PublicAlertPage.tsx` (new): the standalone
+  Browser Source page - no `AppShell`, no chrome, transparent,
+  full-viewport, renders nothing visible while the config is loading
+  (never a spinner on a live broadcast) - mirrors
+  `pages/OverlayChatPage.tsx`'s own doc comment and structure exactly.
+- `apps/web/src/App.tsx`: added the `/overlay/alerts/:publicSlug`
+  route, outside every layout wrapper, right after the existing
+  `/overlay/chat/:publicSlug` route.
+- Test files: `api/alerts-schemas.test.ts` (16 tests), `models/alerts.test.ts`
+  (26 tests, including the new capability-cross-referenced
+  `unsupportedPlaceholderNames`), `models/alert-stream-reducer.test.ts`
+  (7 tests), `pages/PublicAlertPage.test.tsx` (9 rendered tests using
+  the same `FakeEventSource` pattern `OverlayChatPage.test.tsx`
+  established - no application shell, no visible alert before a show
+  event, live show/hide, immediate replacement on a new show mid-
+  display, a reset carrying a live alert, an anonymous/no-avatar
+  alert, and a synthetic alert carrying `data-synthetic` while
+  rendering identically to a real one).
+
+### Technical decisions
+- **The alert entry/exit animations reuse
+  `components/chat-overlay/overlay-style.ts`'s own Tailwind
+  `@utility` classes and keyframes verbatim, rather than adding four
+  new `@keyframes alert-*` blocks.** This works correctly (not just
+  by coincidence) because those utilities read a CSS custom property
+  by name (`--chat-overlay-animation-duration`) rather than being
+  bound to any chat-overlay-specific selector, and
+  `alertContainerStyle` sets that same custom property fresh on the
+  alert renderer's own container - CSS custom properties resolve by
+  DOM scope, not by the name's origin. Chosen specifically because
+  Part 25 requires "only application-owned animation classes" and the
+  five-value `Animation` enum (`none`/`fade`/`slide_up`/`slide_left`/`scale`)
+  is already byte-for-byte identical between the two domains at the
+  Go level (`internal/domain/chatoverlay.Animation` and
+  `internal/domain/alerts.Animation`) - duplicating the CSS would
+  contradict the whole reason the enum was kept identical.
+  Documented here and in `alert-style.ts`'s own doc comment so a
+  future reader does not mistake the shared class prefix for a
+  layering mistake.
+- **`AlertRenderer` manages its own local leaving/entering state
+  instead of reusing `models/chat-overlay-reducer.ts`'s keyed-list
+  approach** - an alert profile has exactly one slot, so a full
+  id-keyed "active vs. leaving" map would be solving a problem that
+  does not exist here; a single `{alert, leaving}` local state plus
+  the same hard-fallback-timer pattern is simpler and exactly as
+  correct.
+- **`unsupportedPlaceholderNames` takes the capability list as a
+  parameter rather than hard-coding a second copy of
+  `internal/alerts/capability.go`'s table in TypeScript** - the same
+  "backend is the one source of truth, frontend fetches and
+  cross-references it" principle `useAlertEventTypesQuery` exists to
+  serve; a rule editor (next commit) will pass the query's own result
+  through.
+
+### Automated validation
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 909 tests pass (77 new, up from 832 at the
+  end of Stage 11B), 67 test files.
+- `npm run build` - clean production build.
+- `npm run i18n:check` not run for this commit specifically - no
+  translatable UI string was added (the public route renders only
+  backend-provided data and a fixed, non-textual layout); the
+  management page commit will add the `alerts` namespace and run it.
+
+### Known limitations
+No management UI yet (`/alerts` page, profile/rule editors, queue
+controls) - profiles and rules can only be created/edited through the
+backend HTTP API or (next) the management page, not yet through any
+UI. `AlertRenderer`'s editor-preview use is wired for the next commit
+but not yet exercised by it.
+
+### Next step
+Build the Alerts management page (`/alerts`): profile list/editor,
+rule list/editor with capability-driven fields, queue controls, Test
+Rule, and the local editor preview reusing `AlertRenderer` - plus the
+new `alerts` i18n namespace in English and Polish.

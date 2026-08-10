@@ -12,6 +12,7 @@ import { NotFoundPage } from '@/pages/NotFoundPage';
 import { OverlayChatPage } from '@/pages/OverlayChatPage';
 import { OverlaysPage } from '@/pages/OverlaysPage';
 import { LogsPage, MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
+import { PublicAlertPage } from '@/pages/PublicAlertPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StreamsPage } from '@/pages/StreamsPage';
 
@@ -35,6 +36,9 @@ export function App() {
                 operator dashboard's chrome - see OverlayChatPage's own
                 doc comment. */}
             <Route path="/overlay/chat/:publicSlug" element={<OverlayChatPage />} />
+            {/* No AppShell here either - see PublicAlertPage's own doc
+                comment. */}
+            <Route path="/overlay/alerts/:publicSlug" element={<PublicAlertPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>
