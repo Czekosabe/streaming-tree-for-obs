@@ -204,11 +204,17 @@ func (pr *profileRuntime) enqueueLocked(inst Instance, now time.Time, newID func
 	if err == nil {
 		inst.ID = id
 	}
-	accepted, _ := pr.queue.enqueue(inst, now)
+	accepted, evicted := pr.queue.enqueue(inst, now)
 	if accepted {
 		pr.totalEnqueued++
 		if inst.Synthetic {
 			pr.totalSynthetic++
+		}
+		// An evicted item never gets shown either - it counts as
+		// capacity-dropped exactly like an outright rejection (Part 14),
+		// even though the new arrival itself was accepted.
+		if evicted != nil {
+			pr.totalDropped++
 		}
 	} else {
 		pr.totalDropped++

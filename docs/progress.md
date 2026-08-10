@@ -11820,3 +11820,48 @@ Write the eleventh local integration script
 (`scripts/verify-alerts.mjs`), run it at least twice, then the
 Stage 12A documentation pass and the full closing regression across
 all eleven integration scripts.
+
+## 2026-08-10 11:35 — fix(server): count evicted queue items toward the capacity-dropped counter
+
+### Status
+Complete.
+
+### Scope
+A one-line correctness bug in `internal/alerts/playback.go`'s
+`enqueueLocked`, found while writing `scripts/verify-alerts.mjs`'s own
+capacity-policy scenario (Part 14), not by inspection.
+
+### The bug
+`queue.enqueue` returns `(accepted bool, evicted *Instance)`: when a
+strictly-higher-priority candidate arrives at a full queue, it evicts
+the current lowest-priority item and `accepted=true` for the new
+arrival. `enqueueLocked` was discarding the `evicted` return value
+(`accepted, _ := pr.queue.enqueue(inst, now)`) and only incrementing
+`pr.totalDropped` in the `!accepted` branch. The evicted item never
+gets shown either - it is exactly as "dropped for capacity" (Part 14)
+as an outright rejection - but the counter silently missed it,
+undercounting `totalCapacityDropped` for every eviction.
+
+### Fix
+`enqueueLocked` now captures `evicted` and increments `totalDropped`
+whenever `evicted != nil`, in addition to the existing
+outright-rejection branch - both paths a candidate can fail to end up
+actually playing now count.
+
+### Changes
+- `apps/server/internal/alerts/playback.go`: `enqueueLocked` now reads
+  and acts on `queue.enqueue`'s `evicted` return value.
+- `apps/server/internal/alerts/playback_test.go`: added
+  `TestProfileRuntimeCapacityEvictionCountedAsDropped`, the eviction
+  half of the capacity policy that the pre-existing
+  `TestProfileRuntimeCapacityDroppedCounted` never covered (that one
+  only exercises the outright-rejection case).
+
+### Automated validation
+- `go test ./internal/alerts/... ./internal/domain/alerts/... ./internal/httpapi/...` - clean, including the new test.
+- `go vet ./...`, `gofmt -l .` - clean.
+- `go build ./...`, `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Next step
+Continue `scripts/verify-alerts.mjs` and the closing regression.
+

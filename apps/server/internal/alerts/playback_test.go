@@ -281,6 +281,31 @@ func TestProfileRuntimeCapacityDroppedCounted(t *testing.T) {
 	}
 }
 
+// TestProfileRuntimeCapacityEvictionCountedAsDropped covers the other half
+// of Part 14's capacity policy: a strictly-higher-priority arrival is
+// itself accepted (and counted as enqueued), but the lower-priority item it
+// evicts never gets shown either - it must still be counted as
+// capacity-dropped, exactly like an outright rejection.
+func TestProfileRuntimeCapacityEvictionCountedAsDropped(t *testing.T) {
+	p := testProfile()
+	p.MaxQueueItems = 1
+	pr := newProfileRuntime("alprof_1", p, staticID)
+	now := time.Now()
+	pr.enqueueMatched([]Instance{mkInstance("a", 50, now)}, now, staticID)
+	pr.enqueueMatched([]Instance{mkInstance("b", 90, now)}, now, staticID) // accepted, evicts "a"
+	st := pr.status()
+	// Both arrivals were themselves accepted (each increments
+	// TotalEnqueued), but "a" never gets shown once evicted - it must
+	// still increment TotalCapacityDropped exactly like an outright
+	// rejection would.
+	if st.TotalEnqueued != 2 || st.TotalCapacityDropped != 1 {
+		t.Errorf("status = %+v, want TotalEnqueued=2 TotalCapacityDropped=1 (the evicted item counted as dropped)", st)
+	}
+	if len(st.NextQueued) != 1 || st.NextQueued[0].Priority != 90 {
+		t.Errorf("NextQueued = %+v, want only the higher-priority (90) item", st.NextQueued)
+	}
+}
+
 func TestProfileRuntimeSyntheticCounterSeparate(t *testing.T) {
 	pr := newTestRuntime()
 	now := time.Now()
