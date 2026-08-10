@@ -49,6 +49,7 @@ function baseRule(overrides: Partial<AlertRule> = {}): AlertRule {
     requiredRole: 'everyone', showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
     textTemplate: '{username} just followed!', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     providers: [], accounts: [],
+    allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
     createdAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z',
     ...overrides,
   };
@@ -58,7 +59,8 @@ function baseQueueStatus(overrides: Partial<AlertQueueStatus> = {}): AlertQueueS
   return {
     profileId: 'alprof_1', enabled: true, paused: false, queuedCount: 0, queueCapacity: 100,
     nextQueued: [], totalEnqueued: 0, totalPlayed: 0, totalExpired: 0, totalCapacityDropped: 0,
-    totalManuallySkipped: 0, totalSynthetic: 0, replayAvailable: false, activeSubscribers: 0, inputGap: false,
+    totalManuallySkipped: 0, totalSynthetic: 0, totalGroupedMembers: 0, totalGroupsCreated: 0, totalPreempted: 0,
+    replayAvailable: false, activeSubscribers: 0, inputGap: false,
     ...overrides,
   };
 }
@@ -68,11 +70,13 @@ const eventTypes = [
     eventType: 'follow' as const, hasUser: true, hasMessage: false, hasQuantity: false,
     hasAnonymity: false, hasRewardTitle: false, hasRoles: false,
     availablePlaceholders: ['platform', 'eventType', 'username'],
+    groupable: false, groupingRequiresHiddenMessage: false,
   },
   {
     eventType: 'bits' as const, hasUser: true, hasMessage: true, hasQuantity: true,
     hasAnonymity: true, hasRewardTitle: false, hasRoles: false,
-    availablePlaceholders: ['platform', 'eventType', 'username', 'quantity', 'message'],
+    availablePlaceholders: ['platform', 'eventType', 'username', 'quantity', 'message', 'groupCount'],
+    groupable: true, groupingRequiresHiddenMessage: true,
   },
 ];
 
@@ -188,6 +192,76 @@ describe('AlertsPage', () => {
     expect(await screen.findByText(/minimum quantity/i)).toBeInTheDocument();
   });
 
+  it('grouping control is unavailable for follow, available for bits, and reveals the group window once enabled (Stage 12B)', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    // Default event type is "follow" - not groupable - so the grouping
+    // toggle is absent and the explanatory "unavailable" hint shows
+    // instead.
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.queryByText(/group similar queued alerts/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/no safe way to group this event type/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/group window/i)).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/event type/i), 'bits');
+
+    const groupingToggle = await screen.findByText(/group similar queued alerts/i);
+    expect(groupingToggle).toBeInTheDocument();
+    expect(screen.queryByLabelText(/group window/i)).not.toBeInTheDocument();
+
+    await user.click(groupingToggle);
+    expect(await screen.findByLabelText(/group window/i)).toBeInTheDocument();
+  });
+
+  it('interruption controls (interrupt lower-priority, allow interruption) are always shown regardless of event type', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    await screen.findByLabelText(/^name$/i);
+    expect(await screen.findByText(/interrupt lower-priority alert/i)).toBeInTheDocument();
+    expect(await screen.findByText(/allow this alert to be interrupted/i)).toBeInTheDocument();
+  });
+
+  it('grouping is force-disabled by default and enabling it on a message-bearing type turns off "show message"', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    await screen.findByLabelText(/^name$/i);
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/event type/i), 'bits');
+
+    const showMessageToggle = await screen.findByLabelText(/show message/i);
+    await user.click(showMessageToggle);
+    expect(showMessageToggle).toBeChecked();
+
+    await user.click(await screen.findByText(/group similar queued alerts/i));
+    expect(showMessageToggle).not.toBeChecked();
+    expect(await screen.findByText(/has been turned off for you/i)).toBeInTheDocument();
+  });
+
   it('test rule sends a request and shows a synthetic notice', async () => {
     vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
     vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [baseRule()], overlapWarnings: [] });
@@ -195,6 +269,7 @@ describe('AlertsPage', () => {
     vi.mocked(alertsApi).testAlertRule.mockResolvedValue({
       alertId: 'alinst_1', ruleId: 'alrule_1', eventType: 'follow', queuedAt: '2026-08-10T00:00:00Z',
       priority: 50, renderedText: 'Ann just followed!', synthetic: true, replayed: false,
+      groupCount: 1, interruptible: true,
     });
     renderPage();
 

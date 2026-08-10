@@ -56,8 +56,14 @@
       "totalExpired": "Expired",
       "totalCapacityDropped": "Dropped (full)",
       "totalManuallySkipped": "Skipped",
-      "totalSynthetic": "Test alerts"
-    }
+      "totalSynthetic": "Test alerts",
+      "totalGroupedMembers": "Grouped members",
+      "totalGroupsCreated": "Groups created",
+      "totalPreempted": "Interrupted"
+    },
+    "currentGroupCount": "Grouped ×{{count}}",
+    "currentInterruptible": "Can be interrupted",
+    "currentNotInterruptible": "Protected from interruption"
   },
   "rules": {
     "title": "Rules",
@@ -94,8 +100,22 @@
       "accounts": "Account filter",
       "accountsHint": "Empty means any connected account.",
       "addAccount": "Add account",
-      "removeAccount": "Remove account"
+      "removeAccount": "Remove account",
+      "allowGrouping": "Group similar queued alerts",
+      "allowGroupingHint": "Only alerts still waiting in the queue are ever merged - the alert currently visible is never changed into a group. Merging never extends how long the group can wait before it expires, and only genuinely matching real events from the same person merge together.",
+      "groupingHidesMessageHint": "Grouping is only safe when no single member's message is shown, since a merged alert can no longer point to one specific message - \"Show message\" has been turned off for you.",
+      "groupWindowMs": "Group window (ms)",
+      "groupWindowMsHint": "1000-30000 milliseconds, counted from the first alert in the group. A later match after the window closes starts a new group instead of joining this one.",
+      "groupingTemplateUnsafe": "This template still references the message placeholder, which is unsafe once grouping is enabled - remove it or turn grouping off.",
+      "interruptEnabled": "Interrupt lower-priority alert",
+      "interruptEnabledHint": "When a real event matches this rule, it immediately replaces whatever is currently playing, but only if that alert's own priority is strictly lower and it allows itself to be interrupted. Equal priority never interrupts. Disabled while the queue is paused.",
+      "interruptible": "Allow this alert to be interrupted",
+      "interruptibleHint": "Lets a later, higher-priority, interruption-enabled alert replace this one while it is playing. An interrupted alert is never resumed automatically - use Replay Previous to show it again."
     },
+    "interruption": {
+      "title": "Interruption"
+    },
+    "groupingUnavailableHint": "No safe way to group this event type exists - merging different people's events, or aggregating a value that would become misleading, is never attempted.",
     "eventType": {
       "follow": "Follow",
       "subscription": "Subscription",
@@ -121,6 +141,9 @@
       "slide_left": "Slide left",
       "scale": "Scale"
     }
+  },
+  "renderer": {
+    "groupCountLabel": "{{count}} grouped alerts"
   },
   "test": {
     "scenarioDefault": "Representative fixture",

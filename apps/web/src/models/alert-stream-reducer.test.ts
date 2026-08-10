@@ -7,7 +7,7 @@ import { alertStreamReducer, createAlertStreamState } from './alert-stream-reduc
 function makeAlert(overrides: Partial<PublicAlert> = {}): PublicAlert {
   return {
     schemaVersion: 1, alertId: 'alinst_1', eventType: 'follow', providerId: 'twitch',
-    synthetic: false, replayed: false, renderedText: 'Ann followed!',
+    synthetic: false, replayed: false, renderedText: 'Ann followed!', groupCount: 1,
     durationMs: 5000, entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     ...overrides,
   };
@@ -27,8 +27,21 @@ describe('alertStreamReducer', () => {
 
   it('hide clears the current alert', () => {
     let state = alertStreamReducer(createAlertStreamState(), { type: 'show', alert: makeAlert(), paused: false });
-    state = alertStreamReducer(state, { type: 'hide', paused: false });
+    state = alertStreamReducer(state, { type: 'hide', paused: false, reason: 'completed' });
     expect(state.current).toBeNull();
+  });
+
+  it('hide records its own reason (Stage 12B, e.g. "preempted")', () => {
+    let state = alertStreamReducer(createAlertStreamState(), { type: 'show', alert: makeAlert(), paused: false });
+    state = alertStreamReducer(state, { type: 'hide', paused: false, reason: 'preempted' });
+    expect(state.lastHideReason).toBe('preempted');
+  });
+
+  it('a show after a hide clears the last hide reason', () => {
+    let state = alertStreamReducer(createAlertStreamState(), { type: 'show', alert: makeAlert(), paused: false });
+    state = alertStreamReducer(state, { type: 'hide', paused: false, reason: 'preempted' });
+    state = alertStreamReducer(state, { type: 'show', alert: makeAlert({ alertId: 'alinst_2' }), paused: false });
+    expect(state.lastHideReason).toBeNull();
   });
 
   it('reset replaces state wholesale, including paused', () => {

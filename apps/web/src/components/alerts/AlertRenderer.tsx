@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { PublicAlert, PublicAlertProfileConfig } from '@/api/alerts-schemas';
 import { cn } from '@/lib/cn';
@@ -61,6 +62,7 @@ export function AlertRenderer({
   config: PublicAlertProfileConfig;
   current: PublicAlert | null;
 }) {
+  const { t } = useTranslation('alerts');
   const prefersReducedMotion = usePrefersReducedMotion();
   const [displayed, setDisplayed] = useState<Displayed | null>(null);
 
@@ -114,7 +116,7 @@ export function AlertRenderer({
         onAnimationEnd={leaving ? () => setDisplayed(null) : undefined}
       >
         <div data-testid="alert-text">{alert.renderedText}</div>
-        {(alert.quantity !== null && alert.quantity !== undefined) || alert.providerId !== '' ? (
+        {(alert.quantity !== null && alert.quantity !== undefined) || alert.providerId !== '' || alert.groupCount > 1 ? (
           <div className="mt-1 flex items-center justify-center gap-2 text-xs opacity-80" data-testid="alert-meta">
             {alert.providerId !== '' ? (
               <span className={providerGlyphClass(alert.providerId)} data-testid="alert-provider-glyph">
@@ -123,6 +125,15 @@ export function AlertRenderer({
             ) : null}
             {alert.quantity !== null && alert.quantity !== undefined ? (
               <span data-testid="alert-quantity">{alert.quantity}</span>
+            ) : null}
+            {alert.groupCount > 1 ? (
+              <span
+                className="rounded-full border border-current/40 px-1.5 py-0.5 font-mono tabular-nums"
+                data-testid="alert-group-count"
+                aria-label={t('renderer.groupCountLabel', { count: alert.groupCount })}
+              >
+                {`×${alert.groupCount}`}
+              </span>
             ) : null}
           </div>
         ) : null}

@@ -37,6 +37,12 @@ export const DEFAULT_MAXIMUM_QUEUE_AGE_SECONDS = 120;
 export const MIN_MAXIMUM_QUEUE_AGE_SECONDS = 5;
 export const MAX_MAXIMUM_QUEUE_AGE_SECONDS = 3600;
 
+/** Stage 12B: a rule's grouping window bounds - mirrors
+ * internal/domain/alerts.{Min,Max,Default}GroupWindowMS exactly. */
+export const MIN_GROUP_WINDOW_MS = 1000;
+export const MAX_GROUP_WINDOW_MS = 30000;
+export const DEFAULT_GROUP_WINDOW_MS = 5000;
+
 /** The closed alert placeholder vocabulary - see
  * internal/alerts/templates.go's own KnownPlaceholders. Deliberately a
  * different set from chat automation's (models/chat-automation.ts) -
@@ -48,6 +54,7 @@ export const KNOWN_ALERT_PLACEHOLDERS = [
   'quantity',
   'message',
   'rewardTitle',
+  'groupCount',
 ] as const;
 export type KnownAlertPlaceholder = (typeof KNOWN_ALERT_PLACEHOLDERS)[number];
 
@@ -63,6 +70,10 @@ export const ALERT_EVENT_TYPES = [
 ] as const;
 
 export const ALERT_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'broadcaster'] as const;
+
+/** Stage 12B: mirrors internal/domain/alerts.InterruptMode's own closed
+ * enum exactly. */
+export const ALERT_INTERRUPT_MODES = ['never', 'lower_priority'] as const;
 
 export const ALERT_ANIMATIONS = ['none', 'fade', 'slide_up', 'slide_left', 'scale'] as const;
 export const ALERT_THEMES = ['minimal', 'compact', 'large'] as const;
@@ -103,6 +114,13 @@ export function isValidMaximumQueueAgeSeconds(value: number): boolean {
     value >= MIN_MAXIMUM_QUEUE_AGE_SECONDS &&
     value <= MAX_MAXIMUM_QUEUE_AGE_SECONDS
   );
+}
+
+/** Stage 12B: bounds enforced unconditionally by the backend regardless
+ * of whether grouping is currently enabled on the rule - see
+ * internal/domain/alerts.ValidateRuleFields's own doc comment for why. */
+export function isValidGroupWindowMs(value: number): boolean {
+  return Number.isInteger(value) && value >= MIN_GROUP_WINDOW_MS && value <= MAX_GROUP_WINDOW_MS;
 }
 
 /** Inclusive threshold bounds: both sides optional (null = unbounded),

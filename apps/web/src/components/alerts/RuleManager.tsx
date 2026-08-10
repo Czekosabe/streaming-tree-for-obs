@@ -28,12 +28,15 @@ import {
   ALERT_ANIMATIONS,
   ALERT_EVENT_TYPES,
   ALERT_ROLES,
+  DEFAULT_GROUP_WINDOW_MS,
   codePointLength,
+  extractPlaceholderNames,
   insertPlaceholder,
   isValidAlertName,
   isValidAlertTemplate,
   isValidAnimationDurationMs,
   isValidDurationMs,
+  isValidGroupWindowMs,
   isValidPriority,
   isValidThresholdRange,
   unknownPlaceholderNames,
@@ -56,6 +59,8 @@ function emptyDraft(defaultEventType: AlertRuleInput['eventType']): AlertRuleInp
     showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
     textTemplate: '', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     providers: [], accounts: [],
+    allowGrouping: false, groupWindowMs: DEFAULT_GROUP_WINDOW_MS,
+    interruptMode: 'never', interruptible: true,
   };
 }
 
@@ -67,6 +72,8 @@ function draftFromRule(rule: AlertRule): AlertRuleInput {
     showMessage: rule.showMessage, showQuantity: rule.showQuantity, textTemplate: rule.textTemplate,
     entryAnimation: rule.entryAnimation, exitAnimation: rule.exitAnimation, animationDurationMs: rule.animationDurationMs,
     providers: rule.providers, accounts: rule.accounts,
+    allowGrouping: rule.allowGrouping, groupWindowMs: rule.groupWindowMs,
+    interruptMode: rule.interruptMode, interruptible: rule.interruptible,
   };
 }
 
@@ -217,9 +224,14 @@ function RuleFormModal({
   const templateValid = isValidAlertTemplate(draft.textTemplate);
   const unsupported = unsupportedPlaceholderNames(draft.textTemplate, capability);
   const unknown = unknownPlaceholderNames(draft.textTemplate);
+  const groupWindowValid = isValidGroupWindowMs(draft.groupWindowMs);
+  const groupingTemplateUnsafe =
+    draft.allowGrouping && capability?.groupingRequiresHiddenMessage === true &&
+    extractPlaceholderNames(draft.textTemplate).includes('message');
   const formValid =
     nameValid && priorityValid && durationValid && animationDurationValid && thresholdValid &&
-    templateValid && unsupported.length === 0 && unknown.length === 0;
+    templateValid && unsupported.length === 0 && unknown.length === 0 &&
+    groupWindowValid && !groupingTemplateUnsafe;
 
   const isPending = createMutation.isPending || updateMutation.isPending;
   const errorText = createMutation.isError
@@ -284,6 +296,7 @@ function RuleFormModal({
                   ...d,
                   eventType: e.target.value as AlertRuleInput['eventType'],
                   minimumQuantity: null, maximumQuantity: null, showMessage: false, showQuantity: false,
+                  allowGrouping: false,
                 }))
               }
             />
@@ -345,14 +358,53 @@ function RuleFormModal({
               onCheckedChange={(v) => setDraft((d) => ({ ...d, showUsername: v }))} />
           )}
           {capability?.hasMessage === true && (
-            <ToggleSwitch label={t('rules.fields.showMessage')} checked={draft.showMessage}
-              onCheckedChange={(v) => setDraft((d) => ({ ...d, showMessage: v }))} />
+            <ToggleSwitch
+              label={t('rules.fields.showMessage')}
+              checked={draft.showMessage}
+              disabled={draft.allowGrouping && capability.groupingRequiresHiddenMessage}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, showMessage: v }))}
+            />
           )}
           {capability?.hasQuantity === true && (
             <ToggleSwitch label={t('rules.fields.showQuantity')} checked={draft.showQuantity}
               onCheckedChange={(v) => setDraft((d) => ({ ...d, showQuantity: v }))} />
           )}
         </div>
+
+        {capability?.groupable === true ? (
+          <div className="space-y-2 rounded-lg border border-line p-3">
+            <ToggleSwitch
+              label={t('rules.fields.allowGrouping')}
+              description={t('rules.fields.allowGroupingHint')}
+              checked={draft.allowGrouping}
+              onCheckedChange={(v) =>
+                setDraft((d) => ({
+                  ...d,
+                  allowGrouping: v,
+                  showMessage: v && capability.groupingRequiresHiddenMessage ? false : d.showMessage,
+                }))
+              }
+            />
+            {draft.allowGrouping && (
+              <>
+                {capability.groupingRequiresHiddenMessage && (
+                  <p className="text-[11px] text-ink-faint">{t('rules.fields.groupingHidesMessageHint')}</p>
+                )}
+                <FormField label={t('rules.fields.groupWindowMs')} hint={t('rules.fields.groupWindowMsHint')}>
+                  {({ inputId }) => (
+                    <TextInput id={inputId} type="number" value={draft.groupWindowMs}
+                      onChange={(e) => setDraft((d) => ({ ...d, groupWindowMs: Number(e.target.value) }))} />
+                  )}
+                </FormField>
+                {groupingTemplateUnsafe && (
+                  <p className="text-[11px] text-status-error">{t('rules.fields.groupingTemplateUnsafe')}</p>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="text-[11px] text-ink-faint">{t('rules.groupingUnavailableHint')}</p>
+        )}
 
         <div>
           <FormField
@@ -409,6 +461,24 @@ function RuleFormModal({
                 onChange={(e) => setDraft((d) => ({ ...d, animationDurationMs: Number(e.target.value) }))} />
             )}
           </FormField>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-line p-3">
+          <p className="text-xs font-medium text-ink-muted">{t('rules.interruption.title')}</p>
+          <ToggleSwitch
+            label={t('rules.fields.interruptEnabled')}
+            description={t('rules.fields.interruptEnabledHint')}
+            checked={draft.interruptMode === 'lower_priority'}
+            onCheckedChange={(v) =>
+              setDraft((d) => ({ ...d, interruptMode: (v ? 'lower_priority' : 'never') as AlertRuleInput['interruptMode'] }))
+            }
+          />
+          <ToggleSwitch
+            label={t('rules.fields.interruptible')}
+            description={t('rules.fields.interruptibleHint')}
+            checked={draft.interruptible}
+            onCheckedChange={(v) => setDraft((d) => ({ ...d, interruptible: v }))}
+          />
         </div>
 
         <ToggleSwitch
@@ -476,7 +546,7 @@ function EditorPreview({
           current={{
             schemaVersion: 1, alertId: 'preview', eventType, providerId: 'twitch', synthetic: true, replayed: false,
             renderedText: mutation.data.renderedText, durationMs: 999999, entryAnimation: 'none', exitAnimation: 'none',
-            animationDurationMs: 0,
+            animationDurationMs: 0, groupCount: 1,
           }}
         />
       </div>

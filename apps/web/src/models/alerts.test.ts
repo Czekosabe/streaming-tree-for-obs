@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AlertEventTypeCapability } from '@/api/alerts-schemas';
 
 import {
+  ALERT_INTERRUPT_MODES,
   codePointLength,
   extractPlaceholderNames,
   insertPlaceholder,
@@ -10,6 +11,7 @@ import {
   isValidAlertTemplate,
   isValidAnimationDurationMs,
   isValidDurationMs,
+  isValidGroupWindowMs,
   isValidMaxQueueItems,
   isValidMaximumQueueAgeSeconds,
   isValidPriority,
@@ -55,6 +57,26 @@ describe('isValidDurationMs', () => {
   it('rejects out of range', () => {
     expect(isValidDurationMs(999)).toBe(false);
     expect(isValidDurationMs(30001)).toBe(false);
+  });
+});
+
+describe('isValidGroupWindowMs', () => {
+  it('accepts the boundary values', () => {
+    expect(isValidGroupWindowMs(1000)).toBe(true);
+    expect(isValidGroupWindowMs(30000)).toBe(true);
+  });
+  it('rejects out of range', () => {
+    expect(isValidGroupWindowMs(999)).toBe(false);
+    expect(isValidGroupWindowMs(30001)).toBe(false);
+  });
+  it('rejects a non-integer', () => {
+    expect(isValidGroupWindowMs(5000.5)).toBe(false);
+  });
+});
+
+describe('ALERT_INTERRUPT_MODES', () => {
+  it('is the closed never/lower_priority pair, mirroring the backend enum', () => {
+    expect(ALERT_INTERRUPT_MODES).toEqual(['never', 'lower_priority']);
   });
 });
 
@@ -110,7 +132,9 @@ describe('unknownPlaceholderNames', () => {
     expect(unknownPlaceholderNames('{bogus}')).toEqual(['bogus']);
   });
   it('accepts every known name', () => {
-    expect(unknownPlaceholderNames('{username}{platform}{eventType}{quantity}{message}{rewardTitle}')).toEqual([]);
+    expect(
+      unknownPlaceholderNames('{username}{platform}{eventType}{quantity}{message}{rewardTitle}{groupCount}'),
+    ).toEqual([]);
   });
 });
 
@@ -119,11 +143,13 @@ describe('unsupportedPlaceholderNames', () => {
     eventType: 'follow', hasUser: true, hasMessage: false, hasQuantity: false,
     hasAnonymity: false, hasRewardTitle: false, hasRoles: false,
     availablePlaceholders: ['platform', 'eventType', 'username'],
+    groupable: false, groupingRequiresHiddenMessage: false,
   };
   const bitsCapability: AlertEventTypeCapability = {
     eventType: 'bits', hasUser: true, hasMessage: true, hasQuantity: true,
     hasAnonymity: true, hasRewardTitle: false, hasRoles: false,
-    availablePlaceholders: ['platform', 'eventType', 'username', 'quantity', 'message'],
+    availablePlaceholders: ['platform', 'eventType', 'username', 'quantity', 'message', 'groupCount'],
+    groupable: true, groupingRequiresHiddenMessage: true,
   };
 
   it('flags {quantity} on a follow rule as unsupported (known but unavailable)', () => {

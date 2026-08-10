@@ -56,8 +56,14 @@
       "totalExpired": "Wygasłe",
       "totalCapacityDropped": "Odrzucone (pełna kolejka)",
       "totalManuallySkipped": "Pominięte",
-      "totalSynthetic": "Alerty testowe"
-    }
+      "totalSynthetic": "Alerty testowe",
+      "totalGroupedMembers": "Zgrupowane elementy",
+      "totalGroupsCreated": "Utworzone grupy",
+      "totalPreempted": "Przerwane"
+    },
+    "currentGroupCount": "Zgrupowano ×{{count}}",
+    "currentInterruptible": "Może zostać przerwany",
+    "currentNotInterruptible": "Chroniony przed przerwaniem"
   },
   "rules": {
     "title": "Reguły",
@@ -94,8 +100,22 @@
       "accounts": "Filtr kont",
       "accountsHint": "Puste oznacza dowolne połączone konto.",
       "addAccount": "Dodaj konto",
-      "removeAccount": "Usuń konto"
+      "removeAccount": "Usuń konto",
+      "allowGrouping": "Grupuj podobne alerty w kolejce",
+      "allowGroupingHint": "Łączone są tylko alerty wciąż czekające w kolejce - alert obecnie widoczny nigdy nie zostaje zamieniony w grupę. Łączenie nigdy nie wydłuża czasu, po którym grupa wygasa, a łączą się wyłącznie prawdziwe, dopasowane zdarzenia od tej samej osoby.",
+      "groupingHidesMessageHint": "Grupowanie jest bezpieczne tylko wtedy, gdy wiadomość żadnego pojedynczego elementu nie jest pokazywana, ponieważ połączony alert nie może już wskazywać jednej konkretnej wiadomości - opcja „Pokaż wiadomość” została dla Ciebie wyłączona.",
+      "groupWindowMs": "Okno grupowania (ms)",
+      "groupWindowMsHint": "1000-30000 milisekund, liczone od pierwszego alertu w grupie. Dopasowanie po zamknięciu okna rozpoczyna nową grupę zamiast dołączać do tej.",
+      "groupingTemplateUnsafe": "Ten szablon nadal odwołuje się do symbolu zastępczego wiadomości, co jest niebezpieczne przy włączonym grupowaniu - usuń go lub wyłącz grupowanie.",
+      "interruptEnabled": "Przerwij alert o niższym priorytecie",
+      "interruptEnabledHint": "Gdy prawdziwe zdarzenie dopasuje się do tej reguły, natychmiast zastępuje to, co jest obecnie odtwarzane - ale tylko jeśli priorytet tamtego alertu jest ściśle niższy i pozwala on na przerwanie. Równy priorytet nigdy nie przerywa. Wyłączone, gdy kolejka jest wstrzymana.",
+      "interruptible": "Pozwól na przerwanie tego alertu",
+      "interruptibleHint": "Pozwala późniejszemu, alertowi o wyższym priorytecie i włączonym przerywaniu zastąpić ten podczas odtwarzania. Przerwany alert nigdy nie jest wznawiany automatycznie - użyj opcji „Odtwórz poprzedni”, aby pokazać go ponownie."
     },
+    "interruption": {
+      "title": "Przerywanie"
+    },
+    "groupingUnavailableHint": "Nie istnieje bezpieczny sposób grupowania tego typu zdarzenia - łączenie zdarzeń różnych osób lub sumowanie wartości, która stałaby się myląca, nigdy nie jest podejmowane.",
     "eventType": {
       "follow": "Obserwacja",
       "subscription": "Subskrypcja",
@@ -121,6 +141,9 @@
       "slide_left": "Wjazd z prawej",
       "scale": "Skalowanie"
     }
+  },
+  "renderer": {
+    "groupCountLabel": "{{count}} zgrupowanych alertów"
   },
   "test": {
     "scenarioDefault": "Reprezentatywna fikstura",

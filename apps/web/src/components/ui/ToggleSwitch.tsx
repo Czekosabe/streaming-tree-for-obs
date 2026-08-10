@@ -8,6 +8,7 @@ type ToggleSwitchProps = {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
+  disabled?: boolean;
 };
 
 /**
@@ -20,14 +21,15 @@ export function ToggleSwitch({
   checked,
   onCheckedChange,
   className,
+  disabled = false,
 }: ToggleSwitchProps) {
   const id = useId();
   const descriptionId = `${id}-description`;
 
   return (
-    <div className={cn('flex items-start justify-between gap-3', className)}>
+    <div className={cn('flex items-start justify-between gap-3', disabled && 'opacity-60', className)}>
       <div className="min-w-0">
-        <label htmlFor={id} className="cursor-pointer text-xs font-medium text-ink">
+        <label htmlFor={id} className={cn('text-xs font-medium text-ink', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
           {label}
         </label>
         {description !== undefined && (
@@ -43,15 +45,17 @@ export function ToggleSwitch({
           type="checkbox"
           role="switch"
           checked={checked}
+          disabled={disabled}
           aria-describedby={description !== undefined ? descriptionId : undefined}
           onChange={(event) => onCheckedChange(event.target.checked)}
           className="peer size-0 opacity-0"
         />
         <span
           aria-hidden="true"
-          onClick={() => onCheckedChange(!checked)}
+          onClick={() => !disabled && onCheckedChange(!checked)}
           className={cn(
-            'block h-5 w-9 cursor-pointer rounded-full border transition-colors duration-200',
+            'block h-5 w-9 rounded-full border transition-colors duration-200',
+            disabled ? 'cursor-not-allowed' : 'cursor-pointer',
             'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-soft',
             checked ? 'border-accent bg-accent/70' : 'border-line bg-surface-sunken',
           )}

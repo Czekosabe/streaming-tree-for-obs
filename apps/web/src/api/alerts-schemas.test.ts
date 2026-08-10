@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   alertAnimationSchema,
   alertEventTypeSchema,
+  alertHideReasonSchema,
+  alertInterruptModeSchema,
   alertProfileSchema,
   alertQueueStatusSchema,
   alertRoleSchema,
   alertRuleSchema,
   alertSummarySchema,
   listAlertRulesResponseSchema,
+  publicAlertHideRevisionPayloadSchema,
   publicAlertProfileConfigSchema,
   publicAlertRevisionPayloadSchema,
   publicAlertSchema,
@@ -61,6 +64,21 @@ describe('alertProfileSchema', () => {
   });
 });
 
+describe('alertInterruptModeSchema', () => {
+  it.each(['never', 'lower_priority'])('accepts %s', (value) => {
+    expect(alertInterruptModeSchema.parse(value)).toBe(value);
+  });
+  it('rejects an unrecognized mode', () => {
+    expect(alertInterruptModeSchema.safeParse('sometimes').success).toBe(false);
+  });
+});
+
+describe('alertHideReasonSchema', () => {
+  it.each(['completed', 'skipped', 'preempted', 'profile_disabled', 'reset'])('accepts %s', (value) => {
+    expect(alertHideReasonSchema.parse(value)).toBe(value);
+  });
+});
+
 describe('alertRuleSchema', () => {
   it('parses a full rule with null thresholds', () => {
     const parsed = alertRuleSchema.parse({
@@ -70,12 +88,13 @@ describe('alertRuleSchema', () => {
       showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
       textTemplate: '{username} followed!', entryAnimation: 'fade', exitAnimation: 'fade',
       animationDurationMs: 400, providers: [], accounts: [],
+      allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.minimumQuantity).toBeNull();
   });
 
-  it('parses a rule with real quantity bounds', () => {
+  it('parses a rule with real quantity bounds and grouping/interruption enabled', () => {
     const parsed = alertRuleSchema.parse({
       id: 'alrule_1', profileId: 'alprof_1', name: 'Bits tier', enabled: true,
       eventType: 'bits', priority: 50, durationMs: 5000,
@@ -83,10 +102,13 @@ describe('alertRuleSchema', () => {
       showPlatform: true, showUsername: true, showMessage: false, showQuantity: true,
       textTemplate: '{username} cheered {quantity}', entryAnimation: 'fade', exitAnimation: 'fade',
       animationDurationMs: 400, providers: ['twitch'], accounts: ['acct_1'],
+      allowGrouping: true, groupWindowMs: 8000, interruptMode: 'lower_priority', interruptible: false,
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.minimumQuantity).toBe(100);
     expect(parsed.accounts).toEqual(['acct_1']);
+    expect(parsed.allowGrouping).toBe(true);
+    expect(parsed.interruptMode).toBe('lower_priority');
   });
 });
 
@@ -105,9 +127,19 @@ describe('alertSummarySchema', () => {
     const parsed = alertSummarySchema.parse({
       alertId: 'alinst_1', ruleId: 'alrule_1', eventType: 'follow',
       queuedAt: '2026-01-01T00:00:00Z', priority: 50, renderedText: 'Ann followed!',
-      synthetic: true, replayed: false,
+      synthetic: true, replayed: false, groupCount: 1, interruptible: true,
     });
     expect(parsed.synthetic).toBe(true);
+  });
+
+  it('parses a grouped summary', () => {
+    const parsed = alertSummarySchema.parse({
+      alertId: 'alinst_1', ruleId: 'alrule_1', eventType: 'bits',
+      queuedAt: '2026-01-01T00:00:00Z', priority: 50, renderedText: 'Ann cheered 150 bits (x2)',
+      quantity: 150, synthetic: false, replayed: false, groupCount: 2, interruptible: false,
+    });
+    expect(parsed.groupCount).toBe(2);
+    expect(parsed.interruptible).toBe(false);
   });
 });
 
@@ -117,10 +149,12 @@ describe('alertQueueStatusSchema', () => {
       profileId: 'alprof_1', enabled: true, paused: false,
       queuedCount: 0, queueCapacity: 100, nextQueued: [],
       totalEnqueued: 0, totalPlayed: 0, totalExpired: 0, totalCapacityDropped: 0,
-      totalManuallySkipped: 0, totalSynthetic: 0, replayAvailable: false,
-      activeSubscribers: 0, inputGap: false,
+      totalManuallySkipped: 0, totalSynthetic: 0,
+      totalGroupedMembers: 0, totalGroupsCreated: 0, totalPreempted: 0,
+      replayAvailable: false, activeSubscribers: 0, inputGap: false,
     });
     expect(parsed.current).toBeUndefined();
+    expect(parsed.totalPreempted).toBe(0);
   });
 });
 
@@ -148,7 +182,7 @@ describe('publicAlertSchema', () => {
   it('parses a minimal alert with no user/message/quantity', () => {
     const parsed = publicAlertSchema.parse({
       schemaVersion: 1, alertId: 'alinst_1', eventType: 'follow', providerId: 'twitch',
-      synthetic: false, replayed: false, renderedText: 'Ann followed!',
+      synthetic: false, replayed: false, renderedText: 'Ann followed!', groupCount: 1,
       durationMs: 5000, entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     });
     expect(parsed.username).toBeUndefined();
@@ -157,18 +191,42 @@ describe('publicAlertSchema', () => {
   it('parses an anonymous alert (null username)', () => {
     const parsed = publicAlertSchema.parse({
       schemaVersion: 1, alertId: 'alinst_1', eventType: 'bits', providerId: 'twitch',
-      synthetic: false, replayed: false, username: null, quantity: 500,
+      synthetic: false, replayed: false, username: null, quantity: 500, groupCount: 1,
       renderedText: 'An anonymous cheerer gave 500 bits!',
       durationMs: 5000, entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     });
     expect(parsed.username).toBeNull();
     expect(parsed.quantity).toBe(500);
   });
+
+  it('parses a grouped alert (groupCount > 1)', () => {
+    const parsed = publicAlertSchema.parse({
+      schemaVersion: 1, alertId: 'alinst_1', eventType: 'bits', providerId: 'twitch',
+      synthetic: false, replayed: false, quantity: 150, groupCount: 3,
+      renderedText: 'Ann cheered 150 bits (x3)',
+      durationMs: 5000, entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
+    });
+    expect(parsed.groupCount).toBe(3);
+  });
 });
 
 describe('publicAlertRevisionPayloadSchema', () => {
-  it('parses a hide payload (null alert)', () => {
+  it('parses a reset payload with a null alert', () => {
     const parsed = publicAlertRevisionPayloadSchema.parse({ paused: false, alert: null });
     expect(parsed.alert).toBeNull();
+  });
+});
+
+describe('publicAlertHideRevisionPayloadSchema', () => {
+  it('parses a hide payload (id and reason, never rendered content)', () => {
+    const parsed = publicAlertHideRevisionPayloadSchema.parse({
+      paused: false, alertId: 'alinst_1', reason: 'preempted',
+    });
+    expect(parsed.alertId).toBe('alinst_1');
+    expect(parsed.reason).toBe('preempted');
+  });
+
+  it('rejects a payload shaped like the general revision schema instead ({alert}, not {alertId, reason})', () => {
+    expect(publicAlertHideRevisionPayloadSchema.safeParse({ paused: false, alert: null }).success).toBe(false);
   });
 });

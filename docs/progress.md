@@ -12737,3 +12737,168 @@ Backend HTTP API is already wired as part of this same commit (DTOs,
 validation, event-type capability exposure). Next: the frontend
 (schemas, renderer, rule editor, queue panel), then the twelfth
 integration script.
+
+## 2026-08-10 16:05 — feat(web): manage advanced alert queue behavior
+
+### Status
+Complete.
+
+### Scope
+The frontend half of Stage 12B: render grouped alerts safely, manage
+grouping/interruption on the rule editor, and surface the three new
+queue counters - built entirely on the backend contract from the
+previous commit, no new backend work.
+
+### Schema changes (`api/alerts-schemas.ts`)
+- `alertInterruptModeSchema` (`never`/`lower_priority`) and
+  `alertHideReasonSchema` (`completed`/`skipped`/`preempted`/
+  `profile_disabled`/`reset`), mirroring the backend enums exactly.
+- `alertEventTypeCapabilitySchema` gained `groupable`/
+  `groupingRequiresHiddenMessage`.
+- `alertRuleSchema`/`AlertRuleInput` gained `allowGrouping`/
+  `groupWindowMs`/`interruptMode`/`interruptible`.
+- `alertSummarySchema` gained `groupCount`/`interruptible`;
+  `alertQueueStatusSchema` gained `totalGroupedMembers`/
+  `totalGroupsCreated`/`totalPreempted`; `publicAlertSchema` gained
+  `groupCount` (always present, never optional - an instance starts at
+  1).
+- New `publicAlertHideRevisionPayloadSchema` (`{paused, alertId,
+  reason}`) - **a real, load-bearing fix**, not just an addition: the
+  backend's `alert.hide` SSE event never carried `{alert}` even before
+  this stage (Part 20/36), but the existing
+  `publicAlertRevisionPayloadSchema` required `alert` to be present, so
+  the frontend hook's hide handler was silently discarding every real
+  hide payload's own shape mismatch risk once `groupCount` became a
+  required field on `alert` too. Parsed with its own dedicated schema
+  now, in `hooks/use-alert-stream.ts`.
+
+### `hooks/use-alert-stream.ts` / `models/alert-stream-reducer.ts`
+The hide listener now parses with `publicAlertHideRevisionPayloadSchema`
+and dispatches `{type: 'hide', paused, reason}`. The reducer gained
+`lastHideReason` (informational only - the renderer itself never
+special-cases by reason, Part 21: preemption is urgent, not a distinct
+animation), cleared on every `show`/`reset`, set on `hide`.
+
+### `AlertRenderer.tsx`
+A small, accessible `×N` group-count badge (`data-testid=
+"alert-group-count"`) appears in the meta row only when
+`groupCount > 1` - application-owned styling, no arbitrary CSS, with a
+localized `aria-label`. Never fabricates a username for a cross-actor
+group (impossible anyway - the backend's own grouping key already
+guarantees single-actor membership). Both the public route and the
+rule editor's `EditorPreview` share this exact same component, so a
+grouped preview and a grouped real alert render identically by
+construction, not by parallel implementation.
+
+### `components/ui/ToggleSwitch.tsx`
+Gained an optional `disabled` prop (opacity, `cursor-not-allowed`,
+`aria-disabled` via native `disabled`) - a small, backward-compatible
+addition every existing call site already omits. Needed so the rule
+editor can visibly grey out "Show message" (rather than hide it
+outright) the moment grouping is enabled for a message-bearing type,
+making the forced state change legible instead of a silent no-op.
+
+### `RuleManager.tsx`
+- New "Group similar queued alerts" section, shown only when
+  `capability.groupable` - explains that only queued alerts merge, the
+  currently visible one is never mutated, the window never extends,
+  and only genuinely matching real events merge. Toggling it on for a
+  `groupingRequiresHiddenMessage` type force-sets `showMessage: false`
+  and disables that toggle. The group-window field only appears once
+  grouping is enabled. A live check
+  (`extractPlaceholderNames(...).includes('message')`) blocks Save and
+  shows an inline error if the template still references `{message}`
+  while grouping is on - the same safety rule the backend's
+  `ValidateGroupingTemplate` enforces, mirrored client-side for instant
+  feedback rather than a round trip.
+- New "Interruption" section - "Interrupt lower-priority alert"
+  (`interruptMode`) and "Allow this alert to be interrupted"
+  (`interruptible`) - always shown, since preemption applies uniformly
+  across every event type, unlike grouping. Deliberately plain product
+  language, never "thread/process preemption" (Part 31's own
+  instruction).
+- Changing event type resets `allowGrouping` to `false` alongside the
+  existing quantity/message/quantity reset, so a stale grouping choice
+  from a previous, incompatible event type is never silently carried
+  over.
+
+### `QueuePanel.tsx`
+The current-alert line gains a `×N` badge (mirroring the renderer's
+own) when grouped, plus an "Can be interrupted"/"Protected from
+interruption" badge always shown. The counters grid gains
+`totalGroupedMembers`/`totalGroupsCreated`/`totalPreempted`. No
+optimistic transition anywhere - both badges and every counter come
+straight from the next `useAlertQueueStatusQuery` poll, matching Part
+34's "UI should update from real backend status/SSE... never invent an
+optimistic transition."
+
+### Editor preview vs. Test Rule (Part 32)
+Unchanged from Stage 12A - `EditorPreview` stays local/instant/
+queue-free (now passing `groupCount: 1` in its fixture `PublicAlert`,
+the only change needed since real queue ordering/grouping/preemption
+is structurally impossible to exercise from a stateless preview
+render), and `Test Rule` remains the one path that exercises the real
+queue, including the new `enqueueTest`
+synthetic-may-preempt-synthetic behavior from the previous commit.
+
+### i18n
+New `alerts` namespace keys added to both `en` and `pl`: the grouping
+section's five field labels/hints, the interruption section's four,
+`rules.groupingUnavailableHint`, three new queue counter labels, two
+new current-alert badge strings, and `renderer.groupCountLabel`.
+`npm run i18n:check` - 2 languages, 14 namespaces, no differences.
+
+### Frontend tests
+- `api/alerts-schemas.test.ts`: new `alertInterruptModeSchema`/
+  `alertHideReasonSchema` coverage, `alertRuleSchema` with grouping/
+  interruption fields (including a real quantity-bounds-plus-grouping
+  case), `alertSummarySchema`/`alertQueueStatusSchema`/
+  `publicAlertSchema` all updated for the new required fields plus a
+  dedicated grouped-alert case, and new
+  `publicAlertHideRevisionPayloadSchema` coverage (including a test
+  that the *old* `{alert}` shape is correctly rejected by the new
+  schema - proving the two payload shapes are genuinely distinct, not
+  accidentally compatible).
+- `models/alerts.test.ts`: `isValidGroupWindowMs` boundary/integer
+  cases, `ALERT_INTERRUPT_MODES` content, `{groupCount}` accepted as a
+  known placeholder, capability fixtures updated with
+  `groupable`/`groupingRequiresHiddenMessage`.
+- `models/alert-stream-reducer.test.ts`: `hide` now requires `reason`;
+  new cases for `lastHideReason` being set by `hide` and cleared by a
+  subsequent `show`.
+- `pages/PublicAlertPage.test.tsx`: fixed every existing `alert.hide`
+  emit to the real `{paused, alertId, reason}` shape (the old
+  `{paused, alert: null}` form the tests previously used would now be
+  silently dropped by the dedicated hide schema - this was a real,
+  demonstrated test/production shape mismatch, not just a type
+  nicety); three new tests - a grouped alert renders its own
+  `×3` badge and the right aggregated quantity, an ungrouped
+  (`groupCount:1`) alert never shows the badge, and a preempted
+  alert's old text is gone the instant the urgent alert shows (proving
+  the renderer never overlaps outgoing content, Part 21).
+- `pages/AlertsPage.test.tsx`: fixture updates (`allowGrouping`,
+  `groupWindowMs`, `interruptMode`, `interruptible`, three new queue
+  counters, `groupable`/`groupingRequiresHiddenMessage` on both mocked
+  event-type capabilities); four new rendered tests - grouping control
+  absent for follow with the unavailable hint shown, present for bits
+  with the group-window field appearing only once enabled;
+  interruption controls always present regardless of event type;
+  enabling grouping on a message-bearing type turns off and visibly
+  disables "Show message."
+- Every existing Stage 12A frontend test still passes unchanged.
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 14 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - **942 tests pass, 68 test files**.
+- `npm run build` - clean production build.
+
+### Known limitations
+None beyond what Stage 12A's own frontend entry already recorded.
+
+### Next step
+The twelfth local integration script
+(`scripts/verify-alert-advanced-queue.mjs`), run at least twice, then
+the Stage 12B documentation pass and the full closing regression
+across all twelve integration scripts.

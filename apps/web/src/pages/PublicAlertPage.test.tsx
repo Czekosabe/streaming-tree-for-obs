@@ -54,12 +54,19 @@ function alertPayload(overrides: Record<string, unknown> = {}) {
     synthetic: false,
     replayed: false,
     renderedText: 'Ann just followed!',
+    groupCount: 1,
     durationMs: 5000,
     entryAnimation: 'none',
     exitAnimation: 'none',
     animationDurationMs: 0,
     ...overrides,
   };
+}
+
+/** Stage 12B: `alert.hide` has its own distinct payload shape - never
+ * `{alert}`, only the hidden alert's own id and a stable reason. */
+function hidePayload(overrides: Record<string, unknown> = {}) {
+  return { paused: false, alertId: 'alinst_1', reason: 'completed', ...overrides };
 }
 
 beforeEach(() => {
@@ -112,7 +119,7 @@ describe('PublicAlertPage', () => {
     source.emit('alert.show', { paused: false, alert: alertPayload() });
     await screen.findByText('Ann just followed!');
 
-    source.emit('alert.hide', { paused: false, alert: null });
+    source.emit('alert.hide', hidePayload());
 
     await waitFor(() => expect(screen.queryByText('Ann just followed!')).not.toBeInTheDocument());
   });
@@ -171,5 +178,49 @@ describe('PublicAlertPage', () => {
 
     const item = await screen.findByTestId('alert-item');
     expect(item).toHaveAttribute('data-synthetic', 'true');
+  });
+
+  it('renders a grouped alert with its own group-count badge (Stage 12B)', async () => {
+    vi.mocked(alertsApi).fetchPublicAlertProfileConfig.mockResolvedValue(baseConfig);
+    renderPage();
+    await screen.findByTestId('alert-root');
+
+    FakeEventSource.instances[0]!.emit('alert.show', {
+      paused: false,
+      alert: alertPayload({ renderedText: 'Ann cheered 150 bits (x2)', quantity: 150, groupCount: 3 }),
+    });
+
+    expect(await screen.findByTestId('alert-group-count')).toHaveTextContent('×3');
+    expect(await screen.findByTestId('alert-quantity')).toHaveTextContent('150');
+  });
+
+  it('never shows a group-count badge for an ungrouped (groupCount=1) alert', async () => {
+    vi.mocked(alertsApi).fetchPublicAlertProfileConfig.mockResolvedValue(baseConfig);
+    renderPage();
+    await screen.findByTestId('alert-root');
+
+    FakeEventSource.instances[0]!.emit('alert.show', { paused: false, alert: alertPayload({ groupCount: 1 }) });
+
+    await screen.findByTestId('alert-item');
+    expect(screen.queryByTestId('alert-group-count')).not.toBeInTheDocument();
+  });
+
+  it('a preempted alert leaves no old text behind once the urgent alert shows (Stage 12B)', async () => {
+    vi.mocked(alertsApi).fetchPublicAlertProfileConfig.mockResolvedValue(baseConfig);
+    renderPage();
+    await screen.findByTestId('alert-root');
+    const source = FakeEventSource.instances[0]!;
+
+    source.emit('alert.show', { paused: false, alert: alertPayload({ alertId: 'alinst_1', renderedText: 'Low priority alert' }) });
+    await screen.findByText('Low priority alert');
+
+    // The real backend never sends prior content in a hide payload - only
+    // id and reason (Part 20/36) - and the renderer must never keep
+    // showing the outgoing alert's own text once it is gone.
+    source.emit('alert.hide', hidePayload({ alertId: 'alinst_1', reason: 'preempted' }));
+    source.emit('alert.show', { paused: false, alert: alertPayload({ alertId: 'alinst_2', renderedText: 'Urgent raid alert' }) });
+
+    expect(await screen.findByText('Urgent raid alert')).toBeInTheDocument();
+    expect(screen.queryByText('Low priority alert')).not.toBeInTheDocument();
   });
 });

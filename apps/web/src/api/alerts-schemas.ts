@@ -40,6 +40,17 @@ export type AlertTextAlign = z.infer<typeof alertTextAlignSchema>;
 export const alertLanguageSchema = z.enum(['en', 'pl']);
 export type AlertLanguage = z.infer<typeof alertLanguageSchema>;
 
+/** Stage 12B: whether a rule's own alert may interrupt whatever is
+ * currently playing when it is newly matched. See
+ * internal/domain/alerts.InterruptMode. */
+export const alertInterruptModeSchema = z.enum(['never', 'lower_priority']);
+export type AlertInterruptMode = z.infer<typeof alertInterruptModeSchema>;
+
+/** Stage 12B: the closed public reason an `alert.hide` revision
+ * carries - see internal/alerts.HideReason. */
+export const alertHideReasonSchema = z.enum(['completed', 'skipped', 'preempted', 'profile_disabled', 'reset']);
+export type AlertHideReason = z.infer<typeof alertHideReasonSchema>;
+
 export const alertEventTypeCapabilitySchema = z.object({
   eventType: alertEventTypeSchema,
   hasUser: z.boolean(),
@@ -49,6 +60,12 @@ export const alertEventTypeCapabilitySchema = z.object({
   hasRewardTitle: z.boolean(),
   hasRoles: z.boolean(),
   availablePlaceholders: z.array(z.string()),
+  /** Stage 12B: whether this event type has any safe grouping strategy
+   * at all - see internal/domain/alerts.GroupingCapability. */
+  groupable: z.boolean(),
+  /** Stage 12B: true only when this type also has a real message -
+   * enabling grouping forces "show message" off. */
+  groupingRequiresHiddenMessage: z.boolean(),
 });
 export type AlertEventTypeCapability = z.infer<typeof alertEventTypeCapabilitySchema>;
 
@@ -102,6 +119,10 @@ export const alertRuleSchema = z.object({
   animationDurationMs: z.number(),
   providers: z.array(z.string()),
   accounts: z.array(z.string()),
+  allowGrouping: z.boolean(),
+  groupWindowMs: z.number(),
+  interruptMode: alertInterruptModeSchema,
+  interruptible: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -126,6 +147,10 @@ export type AlertRuleInput = {
   animationDurationMs: number;
   providers: string[];
   accounts: string[];
+  allowGrouping: boolean;
+  groupWindowMs: number;
+  interruptMode: AlertInterruptMode;
+  interruptible: boolean;
 };
 
 export const alertOverlapWarningSchema = z.object({
@@ -153,6 +178,8 @@ export const alertSummarySchema = z.object({
   renderedText: z.string(),
   synthetic: z.boolean(),
   replayed: z.boolean(),
+  groupCount: z.number(),
+  interruptible: z.boolean(),
 });
 export type AlertSummary = z.infer<typeof alertSummarySchema>;
 
@@ -170,6 +197,9 @@ export const alertQueueStatusSchema = z.object({
   totalCapacityDropped: z.number(),
   totalManuallySkipped: z.number(),
   totalSynthetic: z.number(),
+  totalGroupedMembers: z.number(),
+  totalGroupsCreated: z.number(),
+  totalPreempted: z.number(),
   replayAvailable: z.boolean(),
   activeSubscribers: z.number(),
   lastAlertAt: z.string().optional(),
@@ -217,6 +247,7 @@ export const publicAlertSchema = z.object({
   username: z.string().nullable().optional(),
   message: z.string().nullable().optional(),
   quantity: z.number().nullable().optional(),
+  groupCount: z.number(),
   renderedText: z.string(),
   durationMs: z.number(),
   entryAnimation: alertAnimationSchema,
@@ -230,6 +261,16 @@ export const publicAlertRevisionPayloadSchema = z.object({
   alert: publicAlertSchema.nullable(),
 });
 export type PublicAlertRevisionPayload = z.infer<typeof publicAlertRevisionPayloadSchema>;
+
+/** Stage 12B: the `alert.hide` revision's own distinct payload shape -
+ * deliberately never `{alert}` (Part 20/36: no prior rendered content),
+ * only the hidden alert's id and a stable reason. */
+export const publicAlertHideRevisionPayloadSchema = z.object({
+  paused: z.boolean(),
+  alertId: z.string(),
+  reason: alertHideReasonSchema,
+});
+export type PublicAlertHideRevisionPayload = z.infer<typeof publicAlertHideRevisionPayloadSchema>;
 
 /** Every stable alert_* error code the backend can return. */
 export const alertErrorCodeSchema = z.enum([

@@ -59,6 +59,14 @@ export function QueuePanel({ profileId }: { profileId: string }) {
                   {t('common.synthetic')}
                 </span>
               )}
+              {status.current.groupCount > 1 && (
+                <span className="ml-2 rounded-full border border-line px-1.5 py-0.5 text-[10px] text-ink-faint">
+                  {t('queue.currentGroupCount', { count: status.current.groupCount })}
+                </span>
+              )}
+              <span className="ml-2 rounded-full border border-line px-1.5 py-0.5 text-[10px] text-ink-faint">
+                {status.current.interruptible ? t('queue.currentInterruptible') : t('queue.currentNotInterruptible')}
+              </span>
             </p>
           )}
         </div>
@@ -114,6 +122,9 @@ export function QueuePanel({ profileId }: { profileId: string }) {
               ['totalCapacityDropped', status.totalCapacityDropped],
               ['totalManuallySkipped', status.totalManuallySkipped],
               ['totalSynthetic', status.totalSynthetic],
+              ['totalGroupedMembers', status.totalGroupedMembers],
+              ['totalGroupsCreated', status.totalGroupsCreated],
+              ['totalPreempted', status.totalPreempted],
             ] as const
           ).map(([key, value]) => (
             <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-line px-2 py-1">

@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react';
 
-import { publicAlertRevisionPayloadSchema } from '@/api/alerts-schemas';
+import { publicAlertHideRevisionPayloadSchema, publicAlertRevisionPayloadSchema } from '@/api/alerts-schemas';
 import { alertStreamReducer, createAlertStreamState } from '@/models/alert-stream-reducer';
 
 /**
@@ -44,14 +44,24 @@ function resolveStreamUrl(publicSlug: string): string {
   return base === '' ? path : `${base.replace(/\/$/, '')}${path}`;
 }
 
-function parseRevisionPayload(rawEvent: MessageEvent<string>) {
-  let payload: unknown;
+function parseJSON(rawEvent: MessageEvent<string>): unknown {
   try {
-    payload = JSON.parse(rawEvent.data);
+    return JSON.parse(rawEvent.data);
   } catch {
     return undefined;
   }
-  const parsed = publicAlertRevisionPayloadSchema.safeParse(payload);
+}
+
+function parseRevisionPayload(rawEvent: MessageEvent<string>) {
+  const parsed = publicAlertRevisionPayloadSchema.safeParse(parseJSON(rawEvent));
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** `alert.hide` has its own distinct shape (Stage 12B: `{paused,
+ * alertId, reason}`, never `{paused, alert}`) - parsed separately so a
+ * hide revision is never silently dropped by the general schema above. */
+function parseHidePayload(rawEvent: MessageEvent<string>) {
+  const parsed = publicAlertHideRevisionPayloadSchema.safeParse(parseJSON(rawEvent));
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -82,9 +92,9 @@ export function useAlertStream(publicSlug: string | undefined): UseAlertStreamRe
     });
 
     source.addEventListener('alert.hide', (rawEvent: MessageEvent<string>) => {
-      const payload = parseRevisionPayload(rawEvent);
+      const payload = parseHidePayload(rawEvent);
       if (payload === undefined) return;
-      dispatch({ type: 'hide', paused: payload.paused });
+      dispatch({ type: 'hide', paused: payload.paused, reason: payload.reason });
     });
 
     source.addEventListener('alert.reset', (rawEvent: MessageEvent<string>) => {
