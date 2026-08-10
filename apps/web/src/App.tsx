@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
+import { AutomationPage } from '@/pages/AutomationPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
@@ -27,6 +28,7 @@ export function App() {
             <Route path="/engagement" element={<EngagementPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/overlays" element={<OverlaysPage />} />
+            <Route path="/automation" element={<AutomationPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             {/* No AppShell: a standalone Browser Source page, never the

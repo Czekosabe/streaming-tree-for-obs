@@ -10474,3 +10474,120 @@ fake Twitch) has not been written yet.
 ### Next step
 Build the frontend: schemas, hooks, the Automation page (scheduled
 messages and chat commands sections), i18n, and the sidebar nav entry.
+
+## 2026-08-10 05:58 — feat(web): manage chat automation
+
+### Status
+Complete.
+
+### Scope
+The Stage 11B frontend: a new `/automation` page with two sections
+(scheduled messages, chat commands), each with list/create/edit/delete/
+preview, plus Send Now for schedules - all built on the REST API the
+previous commit exposed. No draft persistence, no direct Twitch calls
+from the browser, no message content cached beyond the active mutation.
+
+### Changes
+- `api/chat-automation-schemas.ts` (new) - Zod contracts mirroring
+  `internal/httpapi/chatautomation.go`'s DTOs exactly (schedule/command/
+  target/status/send-now/preview shapes, the closed `scheduleState`/
+  `commandRole` enums).
+- `api/chat-automation.ts` (new) - transport functions for all 12
+  endpoints (status, schedule CRUD + send-now, command CRUD, preview).
+- `hooks/use-chat-automation.ts` (new) - TanStack Query hooks: polling
+  status/list queries (5s interval, matching the engagement/outbound-
+  chat precedent), CRUD mutations invalidating both their own list and
+  the aggregate status, and a non-invalidating preview mutation (it
+  neither sends nor persists anything).
+- `models/chat-automation.ts` (new) - pure, backend-mirroring bounds
+  (interval/first-delay/jitter/activity/rate/name/cooldown ranges,
+  command-name ASCII pattern) for live client-side feedback only - the
+  backend remains the real authority; `extractPlaceholderNames`/
+  `unknownPlaceholderNames` (a light client-side mirror of the Go
+  parser, used only to warn before save) and `insertPlaceholder` (the
+  placeholder-button insertion helper).
+- `components/automation/ScheduleManager.tsx` (new) - list with
+  state badge/next-run/last-success, create/edit modal (name, enabled
+  toggle, interval/first-delay/jitter, only-while-receiving toggle,
+  minimum-activity/max-per-hour, dynamic target rows with account +
+  optional platform-context selects, dynamic message-alternative rows
+  with per-message placeholder-insertion buttons and a live character
+  counter, a live preview block for the first target/message pair),
+  delete confirmation, and a Send Now confirmation dialog listing every
+  target before sending and showing a per-target sent/skipped result
+  afterward - it explicitly never claims a message was queued before
+  the backend confirms `sent: true`, matching Stage 11A's own composer
+  precedent.
+- `components/automation/CommandManager.tsx` (new) - list showing the
+  canonical name with its `!` prefix, match/response counters and
+  aliases; create/edit modal (name, enabled, aliases, required role,
+  global/per-user cooldowns, targets, response template with
+  placeholder buttons and a live preview); delete confirmation.
+- `pages/AutomationPage.tsx` (new) - a two-tab (`role="tablist"`) page
+  inside the existing `AppShell`, switching between the two managers.
+- `components/layout/nav-items.ts`, `App.tsx` - sidebar entry and
+  `/automation` route, following the exact existing pattern.
+- `i18n/resources/{en,pl}/automation.json` (new, ~110 keys each),
+  registered in `i18n/config.ts` and `i18n/resources.ts`; `items.automation`
+  added to both languages' `navigation.json`.
+
+### Files changed
+- `apps/web/src/api/chat-automation-schemas.ts` (new), `.test.ts` (new).
+- `apps/web/src/api/chat-automation.ts` (new).
+- `apps/web/src/hooks/use-chat-automation.ts` (new).
+- `apps/web/src/models/chat-automation.ts` (new), `.test.ts` (new).
+- `apps/web/src/components/automation/ScheduleManager.tsx` (new),
+  `CommandManager.tsx` (new).
+- `apps/web/src/pages/AutomationPage.tsx` (new), `.test.tsx` (new).
+- `apps/web/src/components/layout/nav-items.ts`, `apps/web/src/App.tsx`.
+- `apps/web/src/i18n/config.ts`, `apps/web/src/i18n/resources.ts`,
+  `apps/web/src/i18n/resources/{en,pl}/automation.json` (new),
+  `apps/web/src/i18n/resources/{en,pl}/navigation.json`.
+
+### Technical decisions
+- **The target-account and platform-context pickers are not filtered
+  by outbound-chat capability or by which platform is actually linked
+  to which account** - a deliberate simplification given this stage's
+  time budget: every connected Twitch account and every configured
+  Twitch platform is offered, and an invalid combination (wrong
+  provider, not linked) is caught by the backend's own existing
+  validation (`chat_automation_target_invalid`) and surfaced as a form-
+  level error. This matches the task's own explicit requirement that
+  "one account lacking permission" must never block the rest of the
+  form - the UI does not need to pre-know eligibility to satisfy that.
+- **`errorMessage`'s dynamic `errors.${code}` lookup required a `never`
+  cast** to satisfy i18next's strict literal-union key typing, which
+  cannot statically verify a runtime-constructed string - `{
+  defaultValue: '' }` is passed alongside it so an unmapped code still
+  degrades to the generic fallback message rather than showing a raw,
+  untranslated key.
+- **`ScheduleManager`/`CommandManager` share the same modal-based
+  master-detail shape as `OverlaysPage`**, but inline the form inside
+  each manager file (rather than a further-split editor component) -
+  reasonable for this stage's scope; a future stage could extract a
+  shared `TargetListEditor` if a third automation-rule type is ever
+  added.
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 13 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 63 test files, 832 tests, all passing
+  (includes 21 new pure model tests, 21 new schema tests, and 8 new
+  `AutomationPage` rendered tests: both empty states, listing an
+  existing schedule/command, creating a schedule end to end, delete
+  confirmation, Send Now confirmation + per-target result, and no
+  false "no account ready" warning when a capable account exists).
+- `npm run build` - clean production build.
+
+### Known limitations
+No manual browser testing performed - see the final report. Target/
+platform eligibility is not pre-filtered client-side (see the
+technical-decision note above). No drag-to-reorder for message
+alternatives - order is add/remove only, matching this stage's
+"authoring order, not a visual designer" scope.
+
+### Next step
+Write the tenth integration script
+(`scripts/verify-chat-automation.mjs`), run it at least twice, then
+complete the Stage 11B documentation pass.
