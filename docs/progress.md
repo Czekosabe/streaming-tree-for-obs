@@ -13308,3 +13308,57 @@ None - this is a documentation-only correction.
 Part 3 of Stage 13A: write and commit `docs/visual-designs.md`, the
 canonical visual-design document-format contract, before continuing
 implementation.
+
+## 2026-08-10 22:21 — docs: define visual design document
+
+### What
+Added `docs/visual-designs.md`, the canonical Stage 13A visual-design
+document-format contract, covering schema versioning, the coordinate
+system, canvas scaling, layer ordering/IDs, the shared primitive
+types, the alert-specific text-binding capability model (kept beside
+the alert domain, never inside the shared package), style bounds,
+public/private field separation, persistence (including the
+deliberate `owner_kind`/`owner_id` polymorphic pair - a genuinely new
+persistence convention for this codebase, explained and justified),
+migration behavior, backward compatibility with every existing Stage
+12 rule, the security model, and the explicit Stage 13A/13B/14 scope
+boundaries. Written to describe the design as actually implemented
+(see the following `feat(server)` entry) rather than as a pure
+pre-implementation speculative spec, since the two were developed
+together for a system this size - the contract itself is the same
+either way and is committed before any implementation commit, per this
+task's own stated preference.
+
+### Technical decisions recorded here for cross-reference
+- **JSON-versus-normalized persistence**: a single `document_json`
+  column (fully typed/validated on both write and read) rather than a
+  column-per-field table, justified by the layer tree's dynamic,
+  variant-shaped nature - the one deliberate exception to this
+  project's "never a settings blob" rule, not a relaxation of the
+  underlying safety principle.
+- **Coordinate/scaling policy**: fixed integer design-space units,
+  contain-style `min(viewportW/canvasW, viewportH/canvasH)` scaling,
+  centered, aspect-ratio-preserving, never stretched, never written
+  back from observed browser pixels.
+- **Layer bounds**: see the document's own §8 table (50 layers, 64 KiB
+  document, 500-code-point static text, closed font-family allowlist,
+  etc.) - deliberately chosen to be conservative and are documented
+  rather than left as unexplained magic numbers.
+- **Compatibility strategy**: opening the designer generates but never
+  persists a draft; only an explicit Save activates design-driven
+  rendering; Delete ("Reset to legacy") is idempotent and never deletes
+  the rule.
+- **Alert snapshot immutability**: to be implemented in the next
+  `feat(server)` commit, following this same Policy-A precedent Stage
+  12 already established for every other rule-snapshot field.
+
+### Automated validation
+None - documentation only, no code in this commit.
+
+### Known limitations
+None.
+
+### Next step
+Implement the shared `visualdesign` domain package, its SQLite
+persistence, the alert-rule visual-design HTTP API, and the immutable
+per-alert-instance snapshot integration into `internal/alerts`.
