@@ -722,6 +722,31 @@ arbitrary code execution and no plan to add one (§2).
 
 ## 9. Alerts
 
+> **Factual status update (stage 12A, completed):** a real, provider-
+> independent alert rule engine now exists (`internal/domain/alerts` for
+> persisted profiles/rules, `internal/alerts` for the runtime matcher),
+> covering **8 of the categories planned below** — follow, subscription,
+> resubscription, gifted subscription, subscription gift batch, raid,
+> Bits, and channel-point redemption — exactly the event types the real
+> Twitch normalization code (`internal/provider/twitch/eventsub_normalize.go`)
+> actually produces today, not the larger aspirational list this section
+> still names. **Donation, Super Chat, Super Sticker and membership are
+> real Twitch/YouTube integrations that do not exist yet, so they remain
+> exactly as planned below** — no alert rule can be created for them.
+> Of the planned rule outputs in §9.1: event type, provider filters,
+> connected-account filters, minimum/maximum quantity (with tiers, §9.2 —
+> two non-overlapping Bits tiers are a real, tested scenario), queue
+> priority, duration, entry/exit animation, and a placeholder text
+> template are **all real today**. **Not implemented**: any monetary
+> threshold (no event type populates a real amount yet, so none is
+> fabricated), user-role filters (no event type populates real role
+> data either — reserved, not silently accepted), sound/volume, an
+> image/GIF/video asset (Stage 13's job — only this application's own
+> existing safe glyph/avatar assets are used), and per-rule TTS
+> (stage 17, unimplemented). See
+> [`docs/progress.md`](progress.md)'s Stage 12A entries for the exact
+> capability table and how it was derived.
+
 ### 9.1 Alert rules
 
 An alert rule consumes normalized events (§5) and decides whether to enqueue
@@ -766,6 +791,24 @@ constant this document fixes.
 
 ## 10. Alert queue
 
+> **Factual status update (stage 12A, completed):** a real, bounded,
+> in-memory (never persisted) per-profile alert queue exists
+> (`internal/alerts/queue.go`, `playback.go`). Of the planned behavior
+> below, **real today**: sequential playback (exactly one alert per
+> profile), priority ordering with FIFO tie-breaking, expiration of
+> stale queued alerts, pause, skip-current, replay-previous, clear-queue,
+> and a deterministic capacity policy (a strictly-higher-priority arrival
+> evicts the worst queued item; otherwise it is rejected) that bounds how
+> far the queue can grow. **Deliberately deferred to stage 12B, not
+> implemented in 12A**: grouping of similar events arriving close
+> together, and interrupt/preemption rules letting a high-priority alert
+> jump ahead of one already playing — stage 12A's playback model always
+> lets the current alert finish normally before promoting the next one,
+> even while paused. Stage 12 as a whole is not complete until 12B lands.
+> See [`docs/progress.md`](progress.md)'s Stage 12A queue/playback entry
+> for the exact pause/replay policy chosen among the options this
+> document leaves open.
+
 Alerts do not render immediately on arrival; they enter a queue. Planned
 behaviour:
 
@@ -784,6 +827,24 @@ behaviour:
   configuration, not a hard-coded exception).
 
 ## 11. Preview and test events
+
+> **Factual status update (stage 12A, completed, partial):** a real local
+> synthetic test-alert path exists, but scoped to a **single rule** rather
+> than the visual-designer-oriented "generated scenarios" list below:
+> `POST /api/alert-rules/{id}/test` builds one synthetic `Instance` for a
+> saved rule's own event type (`internal/alerts/testevents.go`) and pushes
+> it through the exact same queue and public renderer a real match would
+> use — never a fake alternate path. Four of the edge-case scenarios named
+> below are real today (`very_long_username`, `very_long_message`,
+> `anonymous_bits`, `missing_avatar`); the rest (small/large donation,
+> Super Chat, membership) have no real event type to preview yet. The
+> optional profile-level generic-scenario endpoint this document's
+> broader design implies was deliberately **not** built in stage 12A —
+> the per-rule endpoint was judged sufficient and simpler; see
+> [`docs/progress.md`](progress.md). §11.3's isolation guarantees are all
+> real and tested: a synthetic alert is marked `Synthetic` end to end,
+> a genuine `Synthetic` Engagement Event is ignored by real rule matching,
+> and a test alert never touches a real counter.
 
 ### 11.1 Purpose
 
@@ -970,6 +1031,11 @@ prerequisite** for:
 - any future outbound bot-message credential (if a connector ever needs one
   beyond its OAuth token).
 
+The stage 12A alert engine (§9–10) needed **no new secret type and no new
+OAuth scope** — it only ever reads events already reaching the Event Bus
+that stage 8A's existing Twitch token already authorized; `internal/alerts`
+never imports `internal/provider/twitch` or talks to Twitch directly.
+
 The `SecretStore` interface is secret-type-agnostic, exactly as anticipated:
 stage 7A's and 7B's connected-account OAuth token bundles both reuse it
 under the same secret type (`oauth-token-bundle:<connected-account-id>`),
@@ -1028,7 +1094,8 @@ that table.
 | 10 | OBS chat overlay (§7.3) — **Completed** |
 | 11A | Manual outbound Twitch chat sending and replying (§8.0) — **Completed** |
 | 11B | Scheduled bot messages and chat commands (§8.1–8.3) — **Completed** |
-| 12 | Alert engine and alert queue (§9–10) |
+| 12A | Alert engine and alert queue (§9–10), scoped to the 8 real Twitch event types, no monetary threshold, no per-rule TTS — **Completed** |
+| 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A |
 | 13 | Visual overlay designers (§13.1) |
 | 14 | Built-in templates and template import/export (§13.3) |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |

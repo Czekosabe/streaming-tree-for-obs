@@ -12079,3 +12079,85 @@ full closing regression across all eleven integration scripts, then
 push and a final report. Stage 12A's own grouping (Part 21) and
 mid-alert preemption (Part 13) remain explicitly deferred to Stage
 12B - Stage 12 as a whole is not complete.
+
+## 2026-08-10 12:10 — docs: document Stage 12A alerts
+
+### Status
+Complete.
+
+### Scope
+The Stage 12A documentation pass: bring every document the task
+required up to date with what actually shipped, without rewriting any
+historical planning paragraph.
+
+### Changes
+- `README.md`: roadmap table split into 12A (**Completed**) and 12B
+  (planned, "Stage 12 as a whole is not complete without it"); the
+  top project-state heading and its blockquote body now mention the
+  alert engine, its runtime-only queue, and what remains planned; the
+  "Connected accounts and Twitch metadata" and "Engagement Event Bus"
+  sections' stale "alert engine ... not implemented" wording corrected;
+  a new **Alerts** section (profiles, rules, the queue, local synthetic
+  test alerts, the fixed presentation, the public Browser Source route,
+  and "Verifying it for real") added before REST API, mirroring the
+  "Scheduled messages and chat commands" section's own structure and
+  depth; 21 new REST API table rows plus a new stable-error-codes
+  paragraph for the alert endpoints; "What is currently demo-only"
+  gained a real "What is real" bullet for alerts and moved mid-alert
+  preemption/grouping into "What will be added later" alongside the
+  Stage 13 designer.
+- `docs/project-overview.md`: roadmap table's stage 12 row split into
+  12A (**Completed**) / 12B (planned); a new "Key dependencies" bullet
+  documenting the domain/runtime split reuse and the real capability
+  table's provenance; §16's status paragraph updated from "five pieces
+  ... real as of stage 11B" to "six pieces ... real as of stage 12A."
+- `docs/engagement-architecture.md`: **factual status update**
+  blockquotes added to the *top* of §9 (Alerts), §10 (Alert queue) and
+  §11 (Preview and test events) - stating plainly what of each
+  section's own planning content is real today, what is deliberately
+  deferred to stage 12B, and what remains entirely unimplemented
+  (donations, Super Chat, membership, monetary thresholds, role
+  filters, TTS-per-rule) - without touching a single word of the
+  surrounding planning prose itself, mirroring the exact pattern stage
+  9/10/11A/11B already established elsewhere in this document. §17.1
+  gained a one-line note that stage 12A needed no new secret type or
+  OAuth scope. §18's roadmap table row split into 12A/12B.
+- `docs/obs-browser-source.md`: a factual-status-update note at the top
+  pointing at a new "Stage 12A: the alert Browser Source route"
+  section near the end, stating plainly that the alert route reuses
+  every OBS-level recommendation in this document unchanged, and what
+  is specific to it (the `alert.reset`/`alert.show`/`alert.gap`
+  application-level contract, no `max_visible_items` analogue since
+  exactly one alert plays at a time, and the shared `AlertRenderer`
+  component). "What was not tested" now also names
+  `scripts/verify-alerts.mjs` alongside the chat-overlay script.
+- `docs/provider-integrations/twitch-engagement.md`: the stale
+  "Stage 12 (alerts): ... Not implemented" bullet under "Areas
+  reserved for later stages" replaced with a factual completion note
+  (no new EventSub subscription type, no new scope, exactly which 8
+  event types are alert-capable), mirroring the 11A/11B bullets right
+  above it. Stage 12B named as still planned.
+- `config/README.md`: new numbered rule 12, following rules 7-11's own
+  established pattern exactly - alert profiles/rules are ordinary
+  SQLite tables (migration `0013_alerts.sql`); the queue, current
+  alert, replay snapshot, and every counter are runtime-only and reset
+  on restart; real matched alert events are never persisted (no
+  supporter history, no alert-event log); synthetic test fixtures are
+  generated in memory and never written anywhere; no alert asset or
+  template file exists yet, since the presentation is fixed, closed
+  columns, not a designer output; no new environment variable was
+  added.
+- `THIRD_PARTY_NOTICES.md`: audited, **not modified** - confirmed via
+  `git diff --stat` across the entire Stage 12A commit range that
+  `apps/server/go.mod`/`go.sum` and `apps/web/package.json`/
+  `package-lock.json` are all unchanged; Stage 12A added no new
+  dependency.
+
+### Automated validation
+Documentation-only change; no build/test step applies. The full closing
+regression (frontend/backend checks plus all eleven integration
+scripts) runs as its own, separate step next.
+
+### Next step
+Run the full closing regression across frontend, backend, and all
+eleven integration scripts, then push and produce the final report.

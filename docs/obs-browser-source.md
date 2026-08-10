@@ -9,6 +9,16 @@ passages are copied from OBS's own documentation. Re-check this
 document whenever OBS changes Browser Source behavior; nothing here is
 guaranteed to stay accurate forever.
 
+> **Factual status update (stage 12A, completed):** the Stage 12A alert
+> route (`/overlay/alerts/{publicSlug}`) reuses this document's research
+> and recommendations **unchanged** - it is the same class of Browser
+> Source, served the same way, with the same shutdown/refresh trade-offs
+> and the same CEF differences. See
+> [Stage 12A: the alert Browser Source route](#stage-12a-the-alert-browser-source-route)
+> near the end of this document for what is specific to it. **No real
+> OBS installation was used for Stage 12A's own verification either** -
+> see "What was not tested" at the end of this document.
+
 ## Sources inspected
 
 - <https://obsproject.com/kb/browser-source> - the Browser Source
@@ -240,15 +250,55 @@ count and lifetime (Part 10), no per-message network request for
 badges/emotes (Stage 9's already-resolved asset URLs are reused
 verbatim), and no custom FPS capture above OBS's own default.
 
+## Stage 12A: the alert Browser Source route
+
+The alert route (`/overlay/alerts/{publicSlug}`) is a **second,
+independent instance of the exact same Browser Source contract** this
+document researched for the chat overlay - same URL-not-local-file
+guidance, same transparent-background/no-custom-CSS recommendation,
+same FPS/permissions guidance, same shutdown/refresh trade-offs, and
+the same CEF differences. Nothing about *how OBS itself is configured*
+changes for an alert source versus a chat overlay one.
+
+What differs is only the **application-level** hydration/reset shape,
+mirroring the chat overlay's own pattern one layer over: the alert page
+fetches `GET /api/public/alert-profiles/{slug}/config` once (theme,
+position, text-alignment, language - never management data), then opens
+`GET /api/public/alert-profiles/{slug}/stream`, whose **first event is
+always a complete `alert.reset`** - the current alert if one exists, and
+the paused flag - never the queue's future contents, which stay
+management-only (`internal/alerts/projection.go` reimplements the same
+bounded-ring/subscription contract `internal/chatoverlay`'s own
+projection already established, not a new mechanism). A reconnect sends
+`Last-Event-ID` exactly like the chat overlay; an unbridgeable gap sends
+an explicit `alert.gap` followed by a fresh `alert.reset`, never a
+silent skip. Since exactly one alert plays at a time per profile (§10 of
+`docs/engagement-architecture.md`), there is no analogue of the chat
+overlay's own `max_visible_items`/`message_lifetime_seconds` bounds to
+configure - the "how much is visible at once" question does not apply
+to a single-slot alert renderer the way it does to a scrolling chat
+overlay.
+
+The alert renderer needs **no OBS-specific permission** either -
+`window.obsstudio` is never referenced, for the same reason the chat
+overlay never references it (see "Browser Source permissions the
+overlay does not need" above) - and the exact same React component
+(`AlertRenderer`) renders both the public route and the Alerts
+management page's own local, instant, queue-free editor preview, so
+what an operator previews while editing a rule is exactly what OBS
+will show.
+
 ## What was not tested
 
-**No real OBS installation was used for this research or for any
-Stage 10 verification.** Every finding above comes from reading the
-official pages listed, not from observing a live Browser Source. The
-local integration script (`scripts/verify-chat-overlay.mjs`) exercises
-the same HTTP/SSE contract a real Browser Source would consume, from a
-plain Node.js HTTP client - it proves the backend's contract is
-correct, not that OBS's own CEF renders it identically. Re-verify this
-document's recommendations manually the first time this feature is
-actually used inside real OBS, and re-check it entirely if OBS changes
-Browser Source's documented behavior in a future release.
+**No real OBS installation was used for this research, for any Stage 10
+verification, or for Stage 12A's own verification.** Every finding above
+comes from reading the official pages listed, not from observing a live
+Browser Source. The local integration scripts
+(`scripts/verify-chat-overlay.mjs`, `scripts/verify-alerts.mjs`)
+exercise the same HTTP/SSE contract a real Browser Source would
+consume, from a plain Node.js HTTP client - they prove the backend's
+contract is correct, not that OBS's own CEF renders either overlay
+identically. Re-verify this document's recommendations manually the
+first time either feature is actually used inside real OBS, and
+re-check it entirely if OBS changes Browser Source's documented
+behavior in a future release.

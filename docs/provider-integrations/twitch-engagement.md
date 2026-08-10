@@ -223,7 +223,20 @@ continuity there.
   second EventSub connection. See the README's own
   [Scheduled messages and chat commands](../../README.md#scheduled-messages-and-chat-commands)
   section for the full design.
-- **Stage 12 (alerts):** rule matching against these events. Not implemented.
+- **Stage 12A (alerts, now implemented):** rule matching against these
+  events. Like stage 11B, the alert engine (`internal/alerts`) is
+  **unchanged** by this connector - it subscribes to the same already-
+  normalized Engagement Event Bus stage 9's operator chat, stage 10's
+  overlay and stage 11B's command engine already consume, never to this
+  connector's WebSocket directly, no new EventSub subscription type, and
+  no new scope. Alert-capable event types are exactly 8 of the ones this
+  document already lists: follow, subscription, resubscription, gifted
+  subscription, subscription gift batch, Bits (`channel.cheer`), raid,
+  and channel-point redemption - `channel.chat.message` and every
+  moderation event stay chat-only and never become an alert. See the
+  README's own [Alerts](../../README.md#alerts) section for the full
+  design. Stage 12B (mid-alert preemption, bounded alert grouping)
+  remains planned.
 - **Badge image resolution, per-message avatar fetching:** stage 8A carries
   badge/emote **IDs** in the normalized model but does not resolve them to
   image URLs or fetch a chatter's avatar per message (avoiding one profile

@@ -16,19 +16,25 @@ substantial part of that is real today, not just architecture: a normalized
 Engagement Event Bus and a real Twitch inbound connector (stage 8A), a real,
 unified operator chat consuming that bus (stage 9), a real, public OBS Browser
 Source chat overlay consuming that same operator-chat projection (stage 10),
-real manual outbound Twitch chat sending and replying (stage 11A), and real
+real manual outbound Twitch chat sending and replying (stage 11A), real
 scheduled bot messages and safe chat commands built on that same foundation
-(stage 11B) — completing stage 11 as a whole. **Still planned**: alerts, the
-full visual overlay designer and templates, text-to-speech, goal/counter
-widgets, additional engagement providers (YouTube, Kick chat/events), and
-external donation-service connectors — detailed in
+(stage 11B), and real **alert rules and a real alert queue** consuming that
+same Event Bus (stage 12A) — persisted alert profiles/rules, a
+provider-independent matching engine, a bounded in-memory queue with
+priority/expiration/pause/resume/skip/replay/clear, local synthetic test
+alerts, and a fixed (not yet a designer) alert presented on its own public
+OBS Browser Source route. **Still planned**: the full visual overlay/alert
+designer and templates, text-to-speech, goal/counter widgets, additional
+engagement providers (YouTube, Kick chat/events), external donation-service
+connectors, and — within the alert engine itself — mid-alert preemption and
+bounded alert grouping (stage 12B) — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 11B).
+engagement piece above in order (stages 8A through 12A).
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending and real scheduled messages/chat commands all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending, real scheduled messages/chat commands, and a real alert engine all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -68,7 +74,17 @@ engagement piece above in order (stages 8A through 11B).
 > aliases, per-role gating, global/per-user cooldowns, and a closed,
 > declarative placeholder language) — managed from a new **Automation**
 > page, with a hard rule that the account's own sent messages can never
-> re-trigger a command. See
+> re-trigger a command. That same Event Bus now also drives real **alerts**:
+> the **Alerts** page manages any number of independent alert profiles, each
+> with its own public OBS Browser Source URL, and rules that match real
+> Twitch follows, subscriptions, resubscriptions, gifted subs, gift-sub
+> batches, Bits and raids and channel-point redemptions — with provider/
+> account filters, quantity thresholds, priority, a closed placeholder
+> template, and a bounded fixed presentation (no free-form designer yet). A
+> bounded in-memory queue plays one alert at a time per profile, with
+> expiration, pause/resume, skip, replay and clear, plus **local synthetic
+> test alerts** that exercise the exact same queue and renderer without ever
+> touching a real Twitch account or event. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
@@ -76,7 +92,8 @@ engagement piece above in order (stages 8A through 11B).
 > [Unified operator chat](#unified-operator-chat),
 > [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
 > [Sending Twitch chat manually](#sending-twitch-chat-manually),
-> [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
+> [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands),
+> [Alerts](#alerts)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
@@ -89,13 +106,16 @@ engagement piece above in order (stages 8A through 11B).
 > only ever applies to one you already enabled yourself. Manual sending is
 > always operator-initiated; a schedule or command only ever runs once you
 > have explicitly created and enabled it, and no missed run is ever
-> replayed after a restart.
+> replayed after a restart. Real alert-event history is never persisted
+> either — the queue, the current alert and every counter are runtime-only
+> and reset cleanly on restart, exactly like the automation runtime above.
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything else still built **on top of** the operator chat and outbound
-> chat — alerts, TTS, goal widgets, visual designers — are still
-> **planned**. Whatever remains a placeholder is marked with a **Demo**
-> badge — the full list is in
+> everything else still built **on top of** the operator chat, outbound
+> chat and alert engine — TTS, goal widgets, a free-form visual designer,
+> donation connectors, and (within alerts specifically) mid-alert
+> preemption and bounded grouping — are still **planned**. Whatever remains
+> a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -121,6 +141,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
 - [Sending Twitch chat manually](#sending-twitch-chat-manually)
 - [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
+- [Alerts](#alerts)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -147,8 +168,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
 | 10 | OBS Browser Source chat overlay: persisted overlay profiles, a public per-overlay projection, a public HTTP/SSE API, a frontend renderer and the Overlays management page | **Completed** — see [progress.md](docs/progress.md) |
 | 11A | Manual outbound Twitch chat: additive send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, manual sending and replies from the Chat page | **Completed** — see [progress.md](docs/progress.md) |
-| 11B | Scheduled messages and safe chat commands, built on the same dispatcher: interval/jitter/activity/rate gating, message groups, aliases, roles, cooldowns, a closed placeholder language, and the Automation page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 12–19 | Alerts, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 11B | Scheduled messages and safe chat commands, built on the same dispatcher: interval/jitter/activity/rate gating, message groups, aliases, roles, cooldowns, a closed placeholder language, and the Automation page | **Completed** — see [progress.md](docs/progress.md) |
+| 12A | Alert rules and queue: persisted alert profiles/rules, a provider-independent matching engine, a bounded in-memory alert queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) alert presentation, and a public OBS Browser Source alert route | **Completed** — see [progress.md](docs/progress.md) |
+| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | Planned — Stage 12 as a whole is **not** complete until this lands |
+| 13–19 | The visual overlay/alert designer, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -865,17 +888,21 @@ consumes it, stage 10 added a real, public **OBS Browser Source chat
 overlay** that in turn consumes that same operator-chat projection, and
 stage 11A added **manual outbound chat sending** — a third, independent
 capability profile letting the same connected account send and reply to
-real Twitch chat messages — and stage 11B added real **scheduled
+real Twitch chat messages — stage 11B added real **scheduled
 messages and safe chat commands** on top of that same profile and
-dispatcher — see
+dispatcher, and stage 12A added a real **alert engine** consuming the
+same Event Bus (persisted alert rules, a matcher, a bounded queue, and a
+public Browser Source alert route) — see
 [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
 [Unified operator chat](#unified-operator-chat),
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
-[Sending Twitch chat manually](#sending-twitch-chat-manually) and
-[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
-What remains planned, unaffected by any of that: the alert engine,
-text-to-speech, donations from external services, viewer counts, and
-analytics — see
+[Sending Twitch chat manually](#sending-twitch-chat-manually),
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
+and [Alerts](#alerts).
+What remains planned, unaffected by any of that: the full visual
+alert/overlay designer, text-to-speech, donations from external
+services, viewer counts, analytics, and (within alerts specifically)
+mid-alert preemption and bounded grouping — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Registering a Twitch application and configuring a Client ID
@@ -1247,16 +1274,15 @@ diagnostic **Engagement** page in the interface. This is stage 8A of the
 roadmap — the foundation later stages build the unified operator chat
 (stage 9), the OBS Browser Source overlay (stage 10), manual outbound
 chat sending (stage 11A), scheduled bot messages and chat commands
-(stage 11B), and the alert engine (stage 12) on top of. See
+(stage 11B), and the alert engine (stage 12A) on top of. See
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) for
 the full target design and
 [`docs/provider-integrations/twitch-engagement.md`](docs/provider-integrations/twitch-engagement.md)
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** This stage is *inbound* only:
-reading chat and events, never sending anything to Twitch. Alert rules
-or rendering, TTS, YouTube live chat, and Kick/TikTok engagement are
-all still unimplemented — see
+reading chat and events, never sending anything to Twitch. TTS, YouTube
+live chat, and Kick/TikTok engagement are all still unimplemented — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
 real, unified operator chat consuming this Event Bus is implemented —
 see [Unified operator chat](#unified-operator-chat) below — a real,
@@ -1265,10 +1291,12 @@ in turn is also implemented — see
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) —
 manually sending/replying as the connected account is implemented too,
 as its own independent capability profile — see
-[Sending Twitch chat manually](#sending-twitch-chat-manually) — and
-real scheduled messages and safe chat commands are now implemented on
-top of that same profile — see
-[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
+[Sending Twitch chat manually](#sending-twitch-chat-manually) — real
+scheduled messages and safe chat commands are implemented on top of
+that same profile — see
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands) —
+and a real alert engine (matching, queue, fixed presentation) now
+consumes this same Event Bus too — see [Alerts](#alerts).
 The diagnostic Engagement page added in this stage is explicitly
 **not** the operator chat, an overlay, the outbound-chat composer, or
 the Automation page — it exists to make the Event Bus and the Twitch
@@ -1903,6 +1931,157 @@ named Go tests.
 
 ---
 
+## Alerts
+
+Stage 12A adds a real **alert engine** on top of the same normalized
+Engagement Event Bus stage 8A built: persisted alert profiles and rules, a
+provider-independent matching engine, a bounded in-memory alert queue, and
+a fixed (not yet a free-form designer) alert presentation, served on its
+own public OBS Browser Source route. Managed from a new **Alerts** page,
+separate from Chat, Overlays and Automation.
+
+**What this stage does not implement.** A free-form visual designer —
+arbitrary positioning, drag-and-drop, uploaded images/GIFs/video/sounds/
+fonts, custom CSS or arbitrary HTML/JS, template import/export — remains
+Stage 13's job. **Mid-alert preemption** (a higher-priority alert
+interrupting one already playing) and **bounded alert grouping**
+(collapsing several near-simultaneous alerts of the same kind into one) are
+deliberately deferred to **Stage 12B** — Stage 12 as a whole is not
+complete without them. No new Twitch scope and no new EventSub
+subscription type were added for this stage: alerts only ever match events
+already reaching the Event Bus, and the alert engine never talks to Twitch
+directly. Text-to-speech, goal/counter widgets, and any donation-service
+connector remain unimplemented. Real alert-event history, queue contents,
+and every counter are **runtime-only** — never persisted — exactly like
+the automation runtime above.
+
+### Genuinely supported alert events
+
+Only what the real Twitch normalization code actually produces today:
+**follow, subscription, resubscription, gifted subscription, gift-sub
+batch, Bits, raid, and channel-point redemption.** Chat messages and
+moderation events never become alerts. Donations, YouTube Super Chat/Super
+Sticker, and membership events are not real sources here and are never
+presented as if they were.
+
+### Alert profiles
+
+An alert profile is an independent OBS Browser Source destination — its
+own public URL, its own queue, its own fixed theme/position/text-alignment
+choice, and its own queue-capacity/expiration bounds (1–500 items,
+5–3600 seconds). Any number of profiles can exist; one profile's queue or
+a slow Browser Source never blocks another's. Like an overlay profile, the
+public URL uses a separate, high-entropy, rotatable slug — never the
+profile's own management id, never a credential, and rotating it
+invalidates the old URL immediately.
+
+### Alert rules
+
+A rule belongs to one profile and matches one event type. It can filter by
+provider and by specific connected account (empty means "any"), set an
+inclusive minimum/maximum quantity threshold (Bits and gift-sub-batch
+tiers, for example, can be made non-overlapping this way — the Rules panel
+warns, without ever silently suppressing either side, if two tiers on the
+same profile *do* overlap), a priority (0–100), a duration (1–30 seconds),
+which fields to show (platform/username/message/quantity — only the ones
+that field genuinely exist for that event type), a closed placeholder
+template (`{username}`, `{platform}`, `{eventType}`, `{quantity}`,
+`{message}`, `{rewardTitle}` — only where the event type actually
+supports it), and bounded entry/exit animations reusing this
+application's own existing overlay animation classes — never an
+arbitrary CSS class, never a backend-supplied stylesheet. Every field the
+rule editor shows is capability-driven: a condition that does not make
+sense for the selected event type (a quantity threshold on a follow rule,
+for instance) is not just hidden — the backend rejects it outright if
+sent anyway.
+
+### The alert queue
+
+Exactly **one alert plays at a time per profile**. A bounded, in-memory
+queue (never persisted) orders pending alerts by priority, then
+first-in-first-out within equal priority — never by database row order,
+and multiple matching rules for the same event always enqueue
+independently rather than "first rule wins." A queued alert older than
+the profile's own maximum age is discarded, never played, the moment it
+would otherwise be promoted. **Pause** freezes queue progression — the
+currently playing alert always finishes normally, but the next one never
+promotes until **Resume**. **Skip Current** removes the playing alert
+immediately (counted separately from a normal completion) and advances
+unless paused. **Replay Previous** re-shows the single most recently
+completed or skipped alert, without ever recreating a real Engagement
+Event or affecting any real counter. **Clear Queue** removes only
+not-yet-played items — the currently playing alert is untouched, and it is
+a separate, distinct action from Skip Current. Disabling a profile hides
+its current alert and empties its queue immediately; re-enabling never
+replays whatever arrived while it was disabled.
+
+### Local synthetic test alerts
+
+**Test Rule**, on any saved rule, creates one alert through the exact same
+queue and public renderer a real match would use — using that rule's real
+presentation settings, regardless of its own provider/account/quantity
+filters — with **no real Twitch account and no real Engagement Event Bus
+event** involved. Every test alert is explicitly marked `synthetic` end to
+end (queue status, the public stream payload), counted in its own separate
+counter, and a genuine `Synthetic` Engagement Event is always ignored by
+real rule matching — a preview can never be mistaken for, or pollute the
+counters of, a real supporter event.
+
+### The fixed alert presentation
+
+A rule's duration, visibility toggles, template and animation choice, plus
+a profile's theme/position/text-alignment, are the whole of what Stage 12A
+lets you configure — never arbitrary coordinates, layers, uploaded
+media, custom fonts, or custom CSS/HTML/JS (Stage 13's job). Animations
+reuse the same bounded, application-owned classes the chat overlay
+already uses, respect `prefers-reduced-motion`, and always complete via a
+hard fallback timer rather than relying solely on an `animationend` event
+that might never fire. No new asset upload path exists for alerts: only
+this application's own existing safe provider/platform glyph mapping and
+an already-available normalized avatar URL are ever used — never a
+fresh, per-alert Twitch API call, never hotlinking an arbitrary
+event-supplied URL. The renderer works correctly with no avatar,
+an anonymous user, no message, and no quantity.
+
+### The public OBS Browser Source alert route
+
+Each profile's alert renders at its own `/overlay/alerts/{publicSlug}`
+route — transparent, no application chrome, no queue contents, no account
+diagnostics, and the exact same React renderer component the Alerts
+page's own rule-editor preview uses, so what you preview is what OBS
+actually shows. It hydrates by fetching a small public config, then
+opening a Server-Sent Events stream whose first event is always a
+complete current-state reset (the current alert if one exists, and the
+paused flag) — **never the queue's future contents**, which stay
+management-only. Reconnecting with `Last-Event-ID` resumes without a gap
+when possible; an unbridgeable gap sends an explicit reset rather than
+silently skipping alerts. Like the chat overlay before it, the public
+slug is an unguessable local locator, not a credential or an
+authentication token, and is never logged.
+
+### Verifying it for real
+
+`scripts/verify-alerts.mjs` exercises the whole feature end to end
+against the real backend, the real Engagement Event Bus, and the same
+kind of fake Twitch OAuth/Helix/EventSub servers the other engagement
+scripts use — profile and rule persistence (including two non-overlapping
+Bits tiers), the public config/stream never leaking management data, a
+real fake-Twitch follow notification reaching the public stream as a
+non-synthetic alert, account filtering, Bits-tier selection with no
+cross-tier triggering, raid/redemption/subscription/resubscription/gift
+events staying distinct, Test Rule going through the real queue,
+strict priority ordering independent of insertion order, expiration,
+the pause policy, skip, replay (never creating a real Event), clear, the
+deterministic capacity policy, profile disable/enable isolation, two
+profiles staying isolated, slug rotation, and a full backend restart
+that preserves profiles/rules while resetting every runtime counter with
+no replay — entirely on loopback, with **no real Twitch account or OBS
+Browser Source involved**. See [`docs/progress.md`](docs/progress.md) for
+exactly what it covers, including the scenarios covered instead by named
+Go tests.
+
+---
+
 ## REST API
 
 All endpoints live under `/api` and return `application/json`.
@@ -2019,6 +2198,28 @@ All endpoints live under `/api` and return `application/json`.
 | `PUT` | `/api/chat-automation/commands/{id}` | Full replacement of a command's definition. Aliases update atomically; takes effect immediately. |
 | `DELETE` | `/api/chat-automation/commands/{id}` | Delete a command and its aliases/targets. Responds 204. |
 | `POST` | `/api/chat-automation/preview` | Render a template locally against one account (and optional platform context). Body `{template, accountId, platformId?}`. Never sends, never persists, never contacts Twitch. |
+| `GET` | `/api/alert-event-types` | The real, capability-derived table of which conditions/placeholders apply to each of the 8 supported alert event types. |
+| `GET` | `/api/alert-profiles` | Every alert profile. |
+| `POST` | `/api/alert-profiles` | Create a profile with safe defaults and a fresh, unguessable public slug. Responds 201 with a `Location` header. |
+| `GET` | `/api/alert-profiles/{id}` | One alert profile. |
+| `PUT` | `/api/alert-profiles/{id}` | Full replacement of a profile's settings. Never accepts or changes `id`, `publicSlug` or `createdAt`. |
+| `DELETE` | `/api/alert-profiles/{id}` | Delete a profile; its runtime stops and its public URL stops serving immediately. Responds 204. |
+| `POST` | `/api/alert-profiles/{id}/rotate-public-slug` | Rotate the public slug. The previous URL stops resolving immediately. **No request body.** |
+| `GET` | `/api/alert-profiles/{id}/rules` | Every rule on this profile, plus any quantity-range overlap warnings. |
+| `POST` | `/api/alert-profiles/{id}/rules` | Create a rule. Responds 201 with a `Location` header. `422` on an unsupported condition for the event type. |
+| `GET` | `/api/alert-profiles/{id}/queue` | This profile's bounded management queue status: paused, current alert, queued count/capacity, a bounded list of next-queued alerts, and every counter (enqueued/played/expired/capacity-dropped/manually-skipped/synthetic). |
+| `POST` | `/api/alert-profiles/{id}/queue/pause` | Freeze queue progression for this profile. **No request body.** |
+| `POST` | `/api/alert-profiles/{id}/queue/resume` | Resume queue progression. **No request body.** |
+| `POST` | `/api/alert-profiles/{id}/queue/skip-current` | Remove the current alert immediately; counted as manually skipped, never played. **No request body.** |
+| `POST` | `/api/alert-profiles/{id}/queue/replay-previous` | Re-show the single most recent completed/skipped alert. Never creates a real Engagement Event. **No request body.** |
+| `POST` | `/api/alert-profiles/{id}/queue/clear` | Remove every not-yet-played queued item; the current alert is untouched. **No request body.** |
+| `GET` | `/api/alert-rules/{id}` | One alert rule. |
+| `PUT` | `/api/alert-rules/{id}` | Full replacement of a rule's definition. Takes effect immediately, without a backend restart. |
+| `DELETE` | `/api/alert-rules/{id}` | Delete a rule. Responds 204. |
+| `POST` | `/api/alert-rules/{id}/test` | Create one synthetic alert through the real queue/renderer using this rule's own presentation. Optional body `{scenario?}` for an edge-case fixture. No real Twitch account or Event Bus event involved. |
+| `POST` | `/api/alert-rule-preview` | Render a template locally against representative fixture data for an event type. Body `{eventType, template, language?}`. Never sends, never persists, never touches the queue. |
+| `GET` | `/api/public/alert-profiles/{publicSlug}/config` | **Unauthenticated.** Public, presentation-only profile configuration — theme/position/text-alignment/language only. |
+| `GET` | `/api/public/alert-profiles/{publicSlug}/stream` | **Unauthenticated.** Server-Sent Events: `alert.show`/`.hide`/`.reset`/`.paused`/`.gap` as the current alert changes. A fresh connection's first event is always a complete current-state reset — never the queue's future contents. An unknown or disabled slug still opens a normal connection, never a hard HTTP error. Bounded concurrent clients per profile. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -2145,6 +2346,20 @@ for chat activity, an unresolved placeholder, an over-length render) is
 not an HTTP error at all — it only ever shows up as a `lastSkipReason`
 in the status/schedule snapshot, since no HTTP request exists at the
 moment a timer decides to skip.
+
+**Stable error codes for the alert endpoints:**
+`alert_profile_not_found` (404), `alert_profile_disabled` (409, an action
+on a disabled profile's queue), `alert_profile_invalid` (422),
+`alert_rule_not_found` (404), `alert_rule_account_not_found` (404, an
+unknown account in a rule's filter), `alert_rule_threshold_invalid` (422,
+minimum exceeds maximum, or a negative bound), `alert_rule_condition_unsupported`
+(422, a condition the event type's own capability does not support — a
+quantity threshold on a follow rule, for instance), `alert_template_invalid`
+(422, an unknown or malformed `{placeholder}`), `alert_queue_empty` (409,
+Skip Current/Replay Previous with nothing to act on), `alert_queue_full`
+(429, the profile's queue is at capacity and the new candidate is not a
+strictly higher priority than the worst queued item). None of these
+responses ever echoes a rendered alert's own text or username.
 
 ---
 
@@ -2682,6 +2897,17 @@ directly next to the control.
   closed, declarative placeholder language shared by both; and an
   Automation page to manage them - see
   [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
+- **A real alert engine**, consuming that same Event Bus — persisted alert
+  profiles and rules; a provider-independent matcher supporting all 8 real
+  Twitch alert-capable event types with provider/account filters,
+  capability-driven quantity thresholds and visibility toggles; a bounded
+  in-memory queue with priority ordering, expiration, pause/resume, skip,
+  replay and clear; local synthetic test alerts that exercise the exact
+  same queue and renderer with no real Twitch account or event involved; a
+  fixed (not yet a free-form designer) alert presentation reusing this
+  application's own existing safe glyph/avatar and animation assets; and a
+  real, public, unauthenticated OBS Browser Source alert route — see
+  [Alerts](#alerts).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -2693,9 +2919,12 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **The alert engine, TTS, goal widgets, a visual overlay designer and
-  overlay templates** and the rest of the engagement and overlay
-  platform - architecture only so far, see
+- **Mid-alert preemption and bounded alert grouping** — deliberately
+  deferred out of the alert engine above into stage 12B; Stage 12 as a
+  whole is not complete until they land.
+- **The full visual overlay/alert designer, overlay templates, TTS, goal
+  widgets, and any donation-service connector** — architecture only so
+  far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 

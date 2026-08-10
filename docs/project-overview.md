@@ -952,8 +952,9 @@ it is architected; this table only tracks status and dependencies.
 | 10 | OBS chat overlay: persisted overlay profiles, a public per-overlay projection over the operator-chat projection, a public HTTP/SSE API and a management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 11A | Manual outbound Twitch chat: a third, independent send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, and manual sending/replying from the Chat page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced: interval/jitter/streaming/activity/rate gating, message groups, command roles/aliases/cooldowns, a closed placeholder language, and the Automation page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
-| 12 | Alert engine and alert queue | Planned |
-| 13 | Visual overlay designers | Planned |
+| 12A | Alert engine and alert queue: persisted alert profiles/rules, a provider-independent matcher over the same Event Bus, a bounded in-memory queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) presentation, and a public OBS Browser Source alert route, plus the Alerts management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
+| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | Planned — stage 12 as a whole is not complete without it |
+| 13 | Visual overlay/alert designers | Planned |
 | 14 | Built-in templates and template import/export | Planned |
 | 15 | YouTube and Kick engagement connectors | Planned |
 | 16 | External donation-service connectors | Planned |
@@ -1004,9 +1005,19 @@ Key dependencies:
   stage 11A itself. Stage 11B's own runtime
   (`internal/chatautomation`) never calls the Twitch client directly;
   every send still goes through that same dispatcher.
-- Stage 12 (alerts) needs stage 8's normalized events.
+- Stage 12A (alert engine and queue) needs stage 8's normalized events, and
+  mirrors stage 11B's own domain/runtime split
+  (`internal/domain/alerts` for persisted profiles/rules,
+  `internal/alerts` for the in-memory matcher/queue/playback that never
+  imports `internal/provider/twitch` directly) rather than inventing a new
+  pattern. Its capability table (which condition/placeholder applies to
+  which of the 8 supported event types) was built by reading the real
+  Twitch normalization code, not the aspirational event list in §16 - see
+  [`docs/progress.md`](progress.md)'s Stage 12A persistence entry. Mid-alert
+  preemption and bounded alert grouping were deliberately deferred to stage
+  12B rather than widening 12A's own scope further.
 - Stage 13 (designers) needs a stable overlay shape, which only exists once
-  stages 9/10 (chat) and 12 (alerts) establish what an overlay renders.
+  stages 9/10 (chat) and 12A (alerts) establish what an overlay renders.
 - Stage 14 (templates) needs stage 13's designer output format.
 - Stage 17 (TTS) and stage 18 (goals/widgets) consume stage 8's bus directly
   and do not depend on the designers.
@@ -1192,14 +1203,19 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: five pieces of this section are real as of stage 11B - the
+**Status: six pieces of this section are real as of stage 12A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
-sending/replying as the connected account itself (stage 11A), and
-scheduled bot messages plus safe chat commands built on that same
-dispatcher (stage 11B). Everything else described below (alerts,
-visual designers, TTS, goal/counter widgets) remains planned.**
+sending/replying as the connected account itself (stage 11A), scheduled
+bot messages plus safe chat commands built on that same dispatcher
+(stage 11B), and a real alert engine plus alert queue consuming that
+same Event Bus (stage 12A) - persisted alert rules, matching, a bounded
+queue, and a fixed (not yet designer-driven) public alert presentation.
+Everything else described below (the full visual designer, TTS,
+goal/counter widgets, and - within alerts specifically - mid-alert
+preemption and bounded grouping, deferred to stage 12B) remains
+planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay

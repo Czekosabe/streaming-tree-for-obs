@@ -200,3 +200,38 @@ with no transcoding, is this stage's deliberate scope.
     usernames, command-use history, or outbound delivery history - see
     `docs/engagement-architecture.md` §17.2. Stage 11B added **no new
     environment variable**.
+12. Stage 12A's alert engine follows the same split established above:
+    persisted **alert profiles and rules** - profile name, enabled
+    state, language, theme/position/text-alignment, queue-capacity/
+    expiration bounds, and its public slug; a rule's event type,
+    priority, duration, quantity thresholds, visibility toggles, text
+    template, animation choice, and provider/account filters
+    (`internal/domain/alerts`, migration `0013_alerts.sql`) - are a
+    small set of ordinary SQLite tables (`alert_profiles`,
+    `alert_rules`, `alert_rule_providers`, `alert_rule_accounts`)
+    alongside the rest of this application's configuration - not a file
+    in this directory. **Everything the alert engine computes or
+    matches at runtime stays out of SQLite and out of this directory**:
+    the queue's own contents, the currently playing alert, the single
+    replay snapshot, every counter (enqueued/played/expired/capacity-
+    dropped/manually-skipped/synthetic), and the public playback
+    revision sequence are all in-memory only (`internal/alerts`), the
+    same category as the outbound-chat dispatcher's and the automation
+    runtime's own state in rules 10-11 above - reset cleanly on every
+    backend restart, with no missed-alert replay. **Real matched alert
+    events - who followed, subscribed, cheered, or raided, and when -
+    are never persisted anywhere**, exactly like inbound chat message
+    text and command-use history above; this application keeps no
+    supporter history or alert-event log. Local synthetic test-alert
+    fixtures (`internal/alerts/testevents.go`) are generated in memory
+    at request time and are never written anywhere either. There is
+    still no alert *asset or template* file for this directory to hold
+    - no uploaded image/GIF/video/sound/font, and no exported template
+    package - since Stage 12A's alert presentation is a fixed, closed
+    set of profile/rule columns (theme, position, animation choice),
+    not a designer output (`docs/engagement-architecture.md` §13).
+    Stage 12A added **no new environment variable** beyond what stage
+    8A's Twitch EventSub connector already reads in the `-tags
+    integration` test binary - the alert engine talks only to the
+    already-normalized Engagement Event Bus, never to Twitch directly,
+    so it needed no fake-server address of its own.
