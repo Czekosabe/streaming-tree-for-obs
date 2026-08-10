@@ -408,6 +408,47 @@ func TestCreateAlertRuleAcceptsGroupingAndInterruptFields(t *testing.T) {
 	}
 }
 
+// TestCreateAlertRuleDefaultsGroupingAndInterruptFieldsWhenOmitted
+// guards a real Stage 12A/12B backward-compatibility bug found by
+// scripts/verify-alerts.mjs's own unchanged ruleBody(), which - being
+// written before Stage 12B existed - never sends allowGrouping/
+// groupWindowMs/interruptMode/interruptible at all. Before this was
+// fixed, an omitted groupWindowMs unmarshaled to Go's int zero value
+// (0), which then failed GroupWindowMS's own unconditional [1000,
+// 30000] bound, and an omitted interruptible unmarshaled to false
+// rather than the documented safe default (true) - silently making
+// every rule created by a pre-Stage-12B client both un-creatable and,
+// had the bound not caught it first, non-interruptible by default.
+func TestCreateAlertRuleDefaultsGroupingAndInterruptFieldsWhenOmitted(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := map[string]any{
+		"name": "Follow alert", "enabled": true, "eventType": "follow", "priority": 50, "durationMs": 5000,
+		"requiredRole": "everyone", "showPlatform": true, "showUsername": true,
+		"textTemplate": "{username} just followed!", "entryAnimation": "fade", "exitAnimation": "fade",
+		"animationDurationMs": 400, "providers": []string{}, "accounts": []string{},
+		// allowGrouping/groupWindowMs/interruptMode/interruptible deliberately omitted.
+	}
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	respBody := decodeAlertsBody(t, resp)
+	if respBody["allowGrouping"] != false {
+		t.Errorf("allowGrouping = %v, want false", respBody["allowGrouping"])
+	}
+	if respBody["groupWindowMs"] != float64(5000) {
+		t.Errorf("groupWindowMs = %v, want the default 5000", respBody["groupWindowMs"])
+	}
+	if respBody["interruptMode"] != "never" {
+		t.Errorf("interruptMode = %v, want never", respBody["interruptMode"])
+	}
+	if respBody["interruptible"] != true {
+		t.Errorf("interruptible = %v, want true (the Stage-12A-preserving safe default)", respBody["interruptible"])
+	}
+}
+
 func TestListAlertEventTypesExposesGroupingCapability(t *testing.T) {
 	ts := newAlertsTestServer(t)
 	resp := ts.do(t, http.MethodGet, "/api/alert-event-types", nil)

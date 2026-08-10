@@ -13168,3 +13168,65 @@ The full closing regression: frontend (`i18n:check`, `typecheck`,
 `lint`, `test -- --run`, `build`), backend (`gofmt`, `go vet`,
 `go test`, `go build`, the `-tags integration` build), then all twelve
 integration scripts by name, then push and verify sync.
+
+## 2026-08-10 21:16 — fix(server): default omitted Stage 12B rule fields safely
+
+### What
+The closing regression's own run of all twelve integration scripts
+caught a real backward-compatibility bug: `scripts/verify-alerts.mjs`
+(Stage 12A's own script, deliberately left unmodified per Part 44 -
+"run every existing integration script unchanged") failed creating its
+very first rule with `422 alert_profile_invalid`, because its
+`ruleBody()` predates Stage 12B and never sends `allowGrouping`/
+`groupWindowMs`/`interruptMode`/`interruptible` at all.
+
+`alertRuleRequest`'s four new fields were plain `bool`/`int`/`string`,
+so an omitted key unmarshaled to Go's own zero values - `0` for
+`groupWindowMs`, which then failed `GroupWindowMS`'s own unconditional
+`[1000, 30000]` bound (the actual cause of the 422); and, had that not
+caught it first, `false` for `interruptible`, silently making every
+rule created by a pre-Stage-12B client non-interruptible by default -
+the exact opposite of Part 16's documented safe default
+(`interruptible=true`, preserving Stage 12A's non-preempting
+behavior). This was a genuine bug in the Stage 12B implementation
+itself, not a stale test: any real client built before Stage 12B
+existed - the frontend's own previous build, a saved API script, or
+this very integration script - would have hit it.
+
+### Fix
+`apps/server/internal/httpapi/alerts.go`'s `alertRuleRequest`:
+`GroupWindowMS` is now `*int` and `Interruptible` is now `*bool` (both
+`json:"...,omitempty"`), and `InterruptMode` defaults on the empty
+string rather than being read literally (`""` is never itself a valid
+`InterruptMode` value, so it is unambiguous). `toInput()` now resolves
+all three to their documented safe defaults
+(`domain.DefaultGroupWindowMS`, `domain.InterruptNever`, `true`) when
+absent, before constructing `domain.RuleInput`. `AllowGrouping` stays
+a plain `bool` unchanged - its zero value (`false`) already *is* its
+documented default, so omission and an explicit `false` are correctly
+indistinguishable there. Both `POST .../rules` (create) and
+`PUT /api/alert-rules/{id}` (update/full-replace) share this same DTO
+and therefore both get the fix - consistent with every other field on
+this endpoint already being full-replacement, not partial-update.
+
+### Tests
+New `internal/httpapi/alerts_test.go` test,
+`TestCreateAlertRuleDefaultsGroupingAndInterruptFieldsWhenOmitted`:
+POSTs a rule body containing none of the four Stage 12B fields and
+asserts the created rule's response carries exactly the documented
+defaults (`allowGrouping=false`, `groupWindowMs=5000`,
+`interruptMode="never"`, `interruptible=true`). The existing
+`TestCreateAlertRuleAcceptsGroupingAndInterruptFields` (an explicit,
+non-default body) still passes unchanged, confirming the fix is purely
+additive - explicit values are never overridden.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` - all packages pass, including the new test.
+- `go build ./...` and `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Next step
+Re-run all twelve integration scripts from a clean state (the failure
+above happened mid-run, after ten had already passed); once all twelve
+pass, push every commit and verify sync.

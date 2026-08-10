@@ -229,14 +229,38 @@ type alertRuleRequest struct {
 	Providers           []string `json:"providers"`
 	Accounts            []string `json:"accounts"`
 
-	AllowGrouping bool `json:"allowGrouping"`
-	GroupWindowMS int  `json:"groupWindowMs"`
-
-	InterruptMode string `json:"interruptMode"`
-	Interruptible bool   `json:"interruptible"`
+	// AllowGrouping, GroupWindowMS, InterruptMode and Interruptible are
+	// Stage 12B additions. GroupWindowMS and Interruptible are pointers
+	// (and InterruptMode defaults on the empty string, never itself a
+	// valid value) so a request from a client that predates Stage 12B -
+	// scripts/verify-alerts.mjs's own unmodified ruleBody() being the
+	// concrete, tested example (Part 44: "run every existing integration
+	// script unchanged") - and simply omits these keys still gets the
+	// documented Stage-12A-preserving safe defaults (AllowGrouping=false,
+	// GroupWindowMS=domain.DefaultGroupWindowMS, InterruptMode=never,
+	// Interruptible=true) in toInput() below, rather than Go's zero
+	// values (0, "", false) being indistinguishable from an explicit
+	// choice and failing GroupWindowMS's own unconditional bound check
+	// or silently making every legacy-created rule non-interruptible.
+	AllowGrouping bool   `json:"allowGrouping"`
+	GroupWindowMS *int   `json:"groupWindowMs,omitempty"`
+	InterruptMode string `json:"interruptMode,omitempty"`
+	Interruptible *bool  `json:"interruptible,omitempty"`
 }
 
 func (r alertRuleRequest) toInput() domain.RuleInput {
+	groupWindowMS := domain.DefaultGroupWindowMS
+	if r.GroupWindowMS != nil {
+		groupWindowMS = *r.GroupWindowMS
+	}
+	interruptMode := domain.InterruptNever
+	if r.InterruptMode != "" {
+		interruptMode = domain.InterruptMode(r.InterruptMode)
+	}
+	interruptible := true
+	if r.Interruptible != nil {
+		interruptible = *r.Interruptible
+	}
 	providers := make([]domain.ProviderID, len(r.Providers))
 	for i, p := range r.Providers {
 		providers[i] = domain.ProviderID(p)
@@ -251,8 +275,8 @@ func (r alertRuleRequest) toInput() domain.RuleInput {
 		ShowPlatform: r.ShowPlatform, ShowUsername: r.ShowUsername, ShowMessage: r.ShowMessage, ShowQuantity: r.ShowQuantity,
 		TextTemplate: r.TextTemplate, EntryAnimation: domain.Animation(r.EntryAnimation), ExitAnimation: domain.Animation(r.ExitAnimation),
 		AnimationDurationMS: r.AnimationDurationMS, Providers: providers, Accounts: accounts,
-		AllowGrouping: r.AllowGrouping, GroupWindowMS: r.GroupWindowMS,
-		InterruptMode: domain.InterruptMode(r.InterruptMode), Interruptible: r.Interruptible,
+		AllowGrouping: r.AllowGrouping, GroupWindowMS: groupWindowMS,
+		InterruptMode: interruptMode, Interruptible: interruptible,
 	}
 }
 
