@@ -210,6 +210,12 @@ type RuleInput struct {
 
 	Providers []ProviderID
 	Accounts  []string
+
+	AllowGrouping bool
+	GroupWindowMS int
+
+	InterruptMode InterruptMode
+	Interruptible bool
 }
 
 func (s *Service) validateRuleInput(ctx context.Context, profileID string, in RuleInput) error {
@@ -221,6 +227,8 @@ func (s *Service) validateRuleInput(ctx context.Context, profileID string, in Ru
 		ShowPlatform: in.ShowPlatform, ShowUsername: in.ShowUsername, ShowMessage: in.ShowMessage, ShowQuantity: in.ShowQuantity,
 		TextTemplate: in.TextTemplate, EntryAnimation: in.EntryAnimation, ExitAnimation: in.ExitAnimation,
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
+		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,
+		InterruptMode: in.InterruptMode, Interruptible: in.Interruptible,
 	}
 	if err := ValidateRuleFields(r); err != nil {
 		return err
@@ -269,6 +277,8 @@ func ruleFromInput(id, profileID string, in RuleInput) Rule {
 		ShowPlatform: in.ShowPlatform, ShowUsername: in.ShowUsername, ShowMessage: in.ShowMessage, ShowQuantity: in.ShowQuantity,
 		TextTemplate: in.TextTemplate, EntryAnimation: in.EntryAnimation, ExitAnimation: in.ExitAnimation,
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
+		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,
+		InterruptMode: in.InterruptMode, Interruptible: in.Interruptible,
 	}
 }
 

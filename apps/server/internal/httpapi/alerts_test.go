@@ -120,6 +120,7 @@ func validFollowRuleBody() map[string]any {
 		"requiredRole": "everyone", "showPlatform": true, "showUsername": true,
 		"textTemplate": "{username} just followed!", "entryAnimation": "fade", "exitAnimation": "fade",
 		"animationDurationMs": 400, "providers": []string{}, "accounts": []string{},
+		"allowGrouping": false, "groupWindowMs": 5000, "interruptMode": "never", "interruptible": true,
 	}
 }
 
@@ -321,6 +322,114 @@ func TestCreateAlertRuleRejectsUnknownAccount(t *testing.T) {
 	respBody := decodeAlertsBody(t, resp)
 	if respBody["error"] != "alert_rule_account_not_found" {
 		t.Errorf("error = %v, want alert_rule_account_not_found", respBody["error"])
+	}
+}
+
+func TestCreateAlertRuleRejectsGroupingForUngroupableEventType(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody() // follow is not groupable
+	body["allowGrouping"] = true
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	respBody := decodeAlertsBody(t, resp)
+	if respBody["error"] != "alert_rule_condition_unsupported" {
+		t.Errorf("error = %v, want alert_rule_condition_unsupported", respBody["error"])
+	}
+}
+
+func TestCreateAlertRuleRejectsGroupingWithMessageShown(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["eventType"] = "bits"
+	body["showQuantity"] = true
+	body["showMessage"] = true
+	body["allowGrouping"] = true
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+}
+
+func TestCreateAlertRuleRejectsGroupingWithMessagePlaceholder(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["eventType"] = "bits"
+	body["showQuantity"] = true
+	body["showMessage"] = false
+	body["allowGrouping"] = true
+	body["textTemplate"] = "{username} cheered: {message}"
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	respBody := decodeAlertsBody(t, resp)
+	if respBody["error"] != "alert_template_invalid" {
+		t.Errorf("error = %v, want alert_template_invalid (a {message} reference is unsafe once grouping is enabled)", respBody["error"])
+	}
+}
+
+func TestCreateAlertRuleAcceptsGroupingAndInterruptFields(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["eventType"] = "bits"
+	body["showQuantity"] = true
+	body["showMessage"] = false
+	body["allowGrouping"] = true
+	body["groupWindowMs"] = 8000
+	body["interruptMode"] = "lower_priority"
+	body["interruptible"] = false
+	body["textTemplate"] = "{username} cheered {quantity} bits (x{groupCount})"
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	respBody := decodeAlertsBody(t, resp)
+	if respBody["allowGrouping"] != true {
+		t.Errorf("allowGrouping = %v, want true", respBody["allowGrouping"])
+	}
+	if respBody["groupWindowMs"] != float64(8000) {
+		t.Errorf("groupWindowMs = %v, want 8000", respBody["groupWindowMs"])
+	}
+	if respBody["interruptMode"] != "lower_priority" {
+		t.Errorf("interruptMode = %v, want lower_priority", respBody["interruptMode"])
+	}
+	if respBody["interruptible"] != false {
+		t.Errorf("interruptible = %v, want false", respBody["interruptible"])
+	}
+}
+
+func TestListAlertEventTypesExposesGroupingCapability(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	resp := ts.do(t, http.MethodGet, "/api/alert-event-types", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var out []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := map[string]bool{}
+	for _, entry := range out {
+		found[entry["eventType"].(string)] = entry["groupable"].(bool)
+	}
+	want := map[string]bool{
+		"follow": false, "subscription": false, "resubscription": false, "gifted_subscription": false,
+		"subscription_gift_batch": true, "bits": true, "raid": false, "channel_point_redemption": true,
+	}
+	for eventType, groupable := range want {
+		if found[eventType] != groupable {
+			t.Errorf("eventType %q groupable = %v, want %v", eventType, found[eventType], groupable)
+		}
 	}
 }
 

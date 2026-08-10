@@ -12365,3 +12365,375 @@ this specific repository's exact configuration shape.
 ### Next step
 Part 2: audit the Stage 12A closing record from Git itself before
 starting Stage 12B feature work.
+
+## 2026-08-10 13:55 — audit: Stage 12A Git-history record
+
+### Status
+Complete. No repository documentation correction needed - see
+conclusion below.
+
+### Scope
+Stage 12B's own mandatory Part 2: verify the Stage 12A closing record
+against `git log` itself, rather than trusting the prior session's own
+prose summary.
+
+### Method
+`git log --oneline` and `git log --format=fuller` from `0a4abdc` (the
+first Stage 12A-adjacent commit) through `97400f4` (the last, already
+pushed) - the exact range the prior session's final chat report
+described as "12 commits pushed, 39252aa..97400f4."
+
+### Result: exact commit count and categorization
+Confirmed **exactly 12 commits** in that range, matching the reported
+total. By exact hash, subject, and this audit's own category
+assignment (a commit is assigned to the category its *own subject and
+diff* belong to, not the category a prior summary guessed):
+
+| # | Hash | Subject | Category |
+| - | ---- | ------- | -------- |
+| 1 | `0a4abdc` | `fix(docs): record Stage 11 completion accurately` | documentation |
+| 2 | `15e5ffc` | `feat(server): persist alert profiles and rules` | backend |
+| 3 | `5bd2cea` | `feat(server): match engagement alerts` | backend |
+| 4 | `cac6a9c` | `feat(server): run alert queues and playback` | backend |
+| 5 | `1d05513` | `fix: close a Start()/Publish race in the alerts Manager test harness` | backend |
+| 6 | `b40fad2` | `feat(server): expose alert management and public APIs` | backend |
+| 7 | `ad823ee` | `feat(web): render OBS alerts` | frontend |
+| 8 | `753c0dc` | `feat(web): manage alert rules and queues` | frontend |
+| 9 | `649bc1b` | `fix(server): count evicted queue items toward the capacity-dropped counter` | backend (found via the integration script, but the change itself is a backend runtime fix) |
+| 10 | `e5a125c` | `test: verify alerts locally` | integration/test |
+| 11 | `4d91f69` | `docs: document Stage 12A alerts` | documentation |
+| 12 | `97400f4` | `docs: record the Stage 12A closing regression` | documentation |
+
+Totals by category: **backend 6** (`15e5ffc`, `5bd2cea`, `cac6a9c`,
+`1d05513`, `b40fad2`, `649bc1b`), **frontend 2** (`ad823ee`,
+`753c0dc`), **integration/test 1** (`e5a125c`), **documentation 3**
+(`0a4abdc`, `4d91f69`, `97400f4`). 6+2+1+3 = **12**, matching the total
+exactly with no double-counting.
+
+### Conclusion: the prior chat final-report prose miscounted; the
+### repository's own documentation did not
+
+The previous session's own **chat-only** final report (never written
+into this file) said "backend work: 6 commits, frontend work: 3
+commits, integration work: 2 commits, documentation work: 2 commits"
+— 6+3+2+2 = 13, one more than the real total of 12. Reconciling
+against the table above: the frontend figure was simply wrong (2 real
+frontend-only commits, not 3), and `649bc1b` was evidently being
+counted under both "backend" (correctly) and "integration" (because it
+was *discovered* by the integration script) in that prose, inflating
+the integration bucket from the correct 1 to a claimed 2. Both are
+narration errors in a chat message, not in this repository.
+
+**`docs/progress.md` itself was checked directly** (`grep -n
+"commits"` across the whole file) for any aggregate count claim
+matching this pattern - none exists. Every commit's own progress entry
+in this file describes only that commit's own scope, never a running
+aggregate total. The one place a commit count *is* stated
+(`## 2026-08-10 12:40 — closing regression: Stage 12A`, written before
+its own commit existed) correctly says "11 commits ahead of
+`origin/main` (`0a4abdc` through `4d91f69`)" - accurate for the moment
+it was written, since the closing-regression commit (`97400f4`) had
+not yet been made.
+
+**Per this task's own stated policy** ("if only the external final
+report wording was ambiguous and the repository is correct, make no
+unnecessary documentation edit, record the audit result in the next
+progress entry"): no correction commit is created. This entry is that
+record.
+
+### Final Stage 12A closing-regression record - present and correct
+Confirmed `docs/progress.md` already contains a genuine post-push
+closing-regression entry (`## 2026-08-10 12:40 — closing regression:
+Stage 12A`, committed as `97400f4`) recording real re-run output for
+every backend/frontend check and all eleven integration scripts by
+name. No entry is missing; nothing to append here.
+
+### Next step
+Begin Stage 12B feature work: inspect the existing Stage 12A schema
+and models (Part 3) before adding any new migration field.
+
+## 2026-08-10 15:20 — feat(server): group and preempt queued alerts
+
+### Status
+Complete.
+
+### Scope
+Stage 12B's two backend capabilities deliberately deferred by Stage
+12A: bounded alert grouping and deterministic mid-alert preemption.
+Implemented together in one commit - see "Why one commit" below for
+why the suggested two-commit split was not followed.
+
+### Part 3 audit: what already existed
+Read `internal/domain/alerts/model.go`, `validation.go`,
+`capability.go`, `service.go`, migration `0013_alerts.sql`, and every
+runtime file in `internal/alerts` before adding anything.
+`Instance.GroupCount` **already existed**, always 1, with a doc
+comment explicitly reserving it for Stage 12B - reused verbatim, no
+duplicate field added. No grouping or interruption field existed
+anywhere else (confirmed by grep); migration `0013` explicitly
+documents deferring `allow_grouping`/`group_window_ms` to Stage 12B.
+Nothing needed removing or renaming.
+
+### New migration
+`0014_alert_grouping_and_interruption.sql` adds four columns to
+`alert_rules`: `allow_grouping` (default 0), `group_window_ms`
+(default 5000, CHECK 1000-30000, unconditional - not gated on
+`allow_grouping`, since a cross-column CHECK's support on `ALTER
+TABLE ADD COLUMN` was not worth risking; the value is simply inert
+while grouping is off), `interrupt_mode` (default `'never'`, CHECK IN
+`('never','lower_priority')`), `interruptible` (default 1). Every
+default preserves every existing rule's exact Stage 12A behavior -
+verified by running the full existing test suite unchanged
+immediately after writing the migration, before adding any new
+Stage 12B code.
+
+### Grouping capability matrix
+New `internal/domain/alerts/grouping.go`: `GroupingCapability` +
+`GroupingCapabilities` map, built from `capability.go`'s own real,
+Twitch-normalization-derived table plus the Stage 12B task's own
+worked examples - not a generic default.
+
+| Event type | Groupable | Strategy | Why |
+| --- | --- | --- | --- |
+| follow | no | - | a real user can follow at most once - no genuine repeat-within-window scenario |
+| subscription | no | - | same - a brand-new subscription happens at most once |
+| resubscription | no | - | recurs at most monthly (never within a bounded window) and carries a real message |
+| gifted_subscription | no | - | this is the *recipient* event - every member would be a *different* person; grouping would misrepresent several people as one actor |
+| subscription_gift_batch | yes | same-actor quantity sum | the task's own example - the same gifter may buy more than one batch in quick succession; "gifted N subs" stays truthful regardless of tier mix |
+| bits | yes | same-actor quantity sum | the task's own example - conditioned on `RequiresNoMessage` (Bits carries a real per-cheer message) |
+| raid | no | - | one broadcaster raids once; summing viewer counts across what would necessarily be *different* raiding broadcasters would misrepresent several raids as one |
+| channel_point_redemption | yes | same-actor same-subject count | the task's own "any additional stable grouping subject such as reward ID" example - a reusable reward may be redeemed repeatedly by the same viewer; conditioned on `RequiresNoMessage` (redemption carries real user-input text) |
+
+`RequiresNoMessage` is enforced twice: `ValidateRuleConditions`
+(domain layer) rejects `AllowGrouping=true` with `ShowMessage=true`;
+`internal/alerts.ValidateGroupingTemplate` (new) additionally rejects
+a saved template that references `{message}` even with
+`ShowMessage=false` - closing a real, pre-existing quirk of
+`buildInstance` where a template's `{message}` resolves independently
+of the `ShowMessage` toggle (the toggle only gates the separate
+`Message` summary/public field). Without the second check, a grouped
+alert's re-render could still leak one arbitrary member's real message
+text through the template. Documented as a deliberate strengthening
+of the task's own Part 11 policy, not a deviation from it.
+
+### Grouping key, window, and bound
+`groupKey` (profile scoping is structural - a group is only ever
+searched within its own profile's queue): rule id, the rule's own
+`UpdatedAt` (so two instances from two different saved versions of the
+same rule id never merge, even mid-edit - Part 4's explicit
+requirement), provider id, connected account id, event type, the
+actor's stable `ProviderUserID` (never the display name, which is
+presentation, not identity), and the reward id (only for
+`SameActorSameSubjectCount`, sourced internally from
+`ProviderExtra["rewardId"]`, never exposed publicly, never the
+renamable title). An anonymous or user-less instance is permanently
+ineligible - "same actor" can never be verified for one, so it never
+starts or joins a group, full stop (a stronger rule than the task
+strictly required, applied uniformly rather than per-type).
+
+The window is anchored to the group's own first member's `QueuedAt`
+(reused directly - no new field) and never extends: `windowOpen`
+checks `now <= firstQueuedAt + groupWindowMS` against the *existing
+queued item's own* `QueuedAt`, never the joining candidate's. Bound:
+`MinGroupWindowMS=1000`, `MaxGroupWindowMS=30000`,
+`DefaultGroupWindowMS=5000`. Group size bound:
+`MaxGroupMembers=1000` (`domain/alerts/grouping.go`) - once reached,
+`queue.findGroupable` skips a full group, so a further compatible
+event starts a new candidate through the normal capacity-policy
+enqueue path, exactly as specified.
+
+### Quantity aggregation, actor safety, no member-history
+Quantity sums only when `GroupingCapability.QuantitySummable` (Bits,
+gift batch) - `safeAddInt64` clamps to `math.MaxInt64` rather than
+wrapping on overflow. `channel_point_redemption`'s strategy never sums
+(no real quantity to sum). `GroupCount` is the only per-member state
+ever retained - no member list, no source-event-id list, no username
+list; `mergeGroupMember` only ever increments a counter and
+re-renders text from the *group's own* stored snapshot fields, never
+concatenating or arbitrarily picking a joining candidate's own
+content. Re-render always uses `ActorDisplayName`/`Quantity`/
+`GroupCount` from the group's own first-member snapshot - never the
+candidate's - so a cross-actor merge (already prevented by the key)
+could never present a fabricated shared identity even if it somehow
+occurred.
+
+### New Instance fields (Policy A snapshot, never re-read live state)
+`ActorProviderUserID`, `ActorDisplayName`, `RewardID`, `TextTemplate`,
+`Language`, `RuleUpdatedAt`, `AllowGrouping`, `GroupWindowMS`,
+`InterruptMode`, `Interruptible` - all copied once at match time in
+`buildInstance`, exactly like every existing Stage 12A snapshot field.
+None are exposed on `PublicAlert`; `AlertSummary` (management-only)
+gains only `GroupCount` and `Interruptible`.
+
+### `{groupCount}` placeholder
+Added to `KnownPlaceholders` and to `AvailablePlaceholders(t)` -
+available whenever the *event type* is grouping-capable (not gated on
+the specific rule's own `AllowGrouping` toggle, since `GroupCount` is
+always a well-defined, non-optional value starting at 1 - simpler than
+a signature change threading `allowGrouping` through every call site,
+and still fully closed: unknown/unsupported placeholders are rejected
+exactly as before). `Context.GroupCount` is a plain `int`, never a
+pointer - always resolvable, never "unavailable" the way
+`Username`/`Message`/`Quantity`/`RewardTitle` can be. `PreviewTemplate`
+uses an illustrative fixture value of 3 (never 1) for a groupable type,
+so an operator previewing `{groupCount}` sees what a genuinely grouped
+alert looks like.
+
+### Preemption model
+`domain.InterruptMode` (`never`/`lower_priority`, default `never`) on
+the *incoming* rule; `Interruptible` (bool, default `true`) on the
+*current* rule - both plain persisted `Rule` fields, both copied onto
+`Instance` at match time. `canPreemptLocked` (Stage 12B task Part 17):
+queue not paused, a current alert exists, incoming never a replay,
+incoming rule's own `InterruptMode == lower_priority`, current rule's
+own `Interruptible == true`, incoming priority strictly greater -
+equal or lower never interrupts. `preemptCurrentLocked`
+(Part 18): the current alert is hidden with reason `preempted`
+(`completeCurrentLocked` also became the one path every completion
+reason - `completed`/`skipped`/`preempted` - flows through, replacing
+the old `(manual bool, reason SkipReason)` split), becomes the one
+safe replay snapshot exactly like a natural completion or a skip
+already did, and the incoming alert is promoted immediately with its
+own fresh duration - never a resumed remainder.
+
+### Stale-timer protection is structural, not a new mechanism (Part 19)
+This runtime has no per-alert timer object at all - `Manager.tick`
+polls every 20ms and only ever compares `pr.current`/
+`pr.currentDeadline`'s *current* values against `now`; preemption
+overwrites both under the same mutex `enqueueMatched` already holds.
+There is nothing a "stale" callback could fire against, by
+construction - the same reasoning already documented for Stage 12A's
+own single-current-alert model, now proven explicitly by
+`TestPreemptionStaleTimerCannotHideReplacement` (ticks exactly at the
+displaced alert's own abandoned deadline and confirms the replacement
+is untouched).
+
+### Synthetic/replay policy (Part 24/25/32)
+Replay never preempts (`canPreemptLocked` rejects `Replayed`) and is
+never grouping-eligible either. A synthetic candidate may only preempt
+a synthetic current, never a real one; a real candidate may preempt
+either a real or a synthetic current - matching the task's own
+preferred policy, implemented as one extra condition in
+`canPreemptLocked` (`inst.Synthetic && !pr.current.Synthetic`) rather
+than a parallel code path. `TestRule`'s own entry point changed from a
+bare `enqueueLocked` call to a new `enqueueTest` method that checks
+`canPreemptLocked` first (so synthetic-vs-synthetic preemption works
+for UI verification) before falling back to the normal enqueue -
+synthetic instances are still never grouping-eligible
+(`groupingEligible` excludes `Synthetic` unconditionally), so no
+separate exclusion was needed there.
+
+### A real pre-existing bug fixed along the way
+`enqueueLocked` assigned a fresh id to its own **local** `Instance`
+copy (a value parameter) but returned only `bool` - the caller's own
+copy, including `TestRule`'s, never observed the assigned id.
+`POST /api/alert-rules/{id}/test`'s response has therefore always
+returned an empty `alertId` in Stage 12A, silently, with no existing
+test catching it (confirmed: no existing test asserted on `AlertID`
+at all). Fixed by changing `enqueueLocked`'s signature to return
+`(Instance, bool)`, needed anyway for `enqueueTest`'s own preemption
+path to report the correct final instance.
+
+### Ordering (Part 26/27) and concurrency (Part 28)
+`enqueueMatched` now: (1) sorts every candidate `MatchEvent` produced
+- priority descending, then rule id ascending, a new `sortCandidates`
+helper, never `MatchEvent`'s own return order (itself only the
+caller's rule-snapshot slice order); (2) at most one candidate may
+immediately preempt in one turn - a `preempted` flag stops after the
+first eligible one; (3) every other candidate is offered to grouping
+before falling back to the normal capacity-policy enqueue. Concurrency
+needed no new synchronization: `handleEvent` already runs on a single
+serial consumer goroutine (`runSubscription`'s own loop reads one
+event at a time), and every other entry point (HTTP queue commands,
+`tick()`, `TestRule`) already took `profileRuntime.mu` before this
+change - `TestPreemptionConcurrentEnqueueMatchedIsSerialized` proves
+it with 20 goroutines racing distinct-priority candidates
+concurrently, asserting the single deterministic winner (impossible
+under any real corruption).
+
+### Why one commit, not two
+The suggested split (`feat(server): group compatible queued alerts`
+then `feat(server): preempt lower-priority alerts`) was not followed:
+Part 26 requires preemption and grouping to share **one** ordered
+`enqueueMatched` pipeline, and both features touch the same
+migration, the same `Instance` struct, the same `AlertSummary`/
+`PublicAlert` DTOs, and the same HTTP request/response bodies.
+Splitting them would have meant either a artificial half-working
+intermediate commit or building grouping fully, then reworking
+`enqueueMatched` a second time to interleave preemption - net busywork
+with no real review benefit, since neither half is independently
+mergeable-and-safe without the other's own tests passing anyway. This
+mirrors the project's own established precedent (see the Stage 7A/7B
+progress entries for the same "combine when the suggested split does
+not reflect the actual dependency graph" reasoning).
+
+### Backend tests
+- `internal/alerts/advanced_queue_test.go` (new, 33 tests): pure
+  `groupKeyFor`/`groupingEligible`/`windowOpen`/`safeAddInt64`/
+  `mergeGroupMember` unit tests; `profileRuntime`-level grouping
+  integration tests (first member ungrouped, second merges without a
+  new queue slot, earliest-`queuedAt`/expiration-anchor preserved,
+  priority/insertion-sequence unchanged, window boundary exact,
+  later member never extends the window, max group size, every
+  discriminating key field via a table-driven subtest, real+synthetic
+  never group, replay never groups, gifted-recipient vs gift-batch
+  never group, the full capability table); preemption tests (default
+  never preempts, equal/lower never preempts, `interruptible=false`
+  blocks, eligible preempts immediately, paused prevents it, never
+  counted played/expired/manually-skipped, the stale-timer proof,
+  lower-priority queued items keep their order, normal selection
+  resumes after the urgent alert finishes, replay never preempts,
+  synthetic-vs-real and synthetic-vs-synthetic per the documented
+  policy, the hide-then-show SSE sequence with reason and no prior
+  content, the 20-goroutine concurrency proof).
+- `internal/domain/alerts/validation_test.go`: window bounds
+  (including "enforced even when grouping is disabled"), unknown
+  `InterruptMode`, grouping rejected for an ungroupable type, rejected
+  with `ShowMessage=true`, accepted for Bits/gift-batch/redemption
+  otherwise.
+- `internal/httpapi/alerts_test.go`: grouping rejected for an
+  ungroupable event type (422), rejected with `showMessage=true`
+  (422), rejected with a `{message}` template reference even when
+  `showMessage=false` (422), accepted with every new field
+  round-tripping through create/get, and the event-type capability
+  endpoint's new `groupable`/`groupingRequiresHiddenMessage` fields
+  matching the real table for all 8 types.
+- `internal/alerts/manager_test.go`: two new real-Event-Bus,
+  fake-clock end-to-end tests (`TestManagerRealEventsGroupEndToEnd` -
+  two real Bits cheers from the same actor merge into one alert with a
+  truthful 150 summed quantity; `TestManagerRealEventPreemptsEndToEnd`
+  - a real raid alert preempts a real, playing, interruptible follow
+  alert, `TotalPreempted` increments, a replay snapshot becomes
+  available) plus an extension to the existing restart test asserting
+  the three new counters (`TotalGroupedMembers`/`TotalGroupsCreated`/
+  `TotalPreempted`) reset to zero exactly like every other Stage 12A
+  counter.
+- Every existing Stage 12A test (queue, playback, matcher, manager,
+  domain, sqlite, httpapi) still passes unchanged - none weakened.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` - all packages pass, including the ~50 new
+  grouping/preemption tests, run repeatedly (`-count=3` on the new
+  file) with no flakiness observed.
+- `go build ./...` and `go build -tags integration
+  ./cmd/testserver/...` - clean.
+
+### Known limitations
+Stable error codes `alert_grouping_unsupported`/
+`alert_group_window_invalid`/`alert_interrupt_mode_invalid` named as
+"possible additions" by the task were **not** added as new codes -
+every new validation failure reuses the existing, already-shared
+`alert_rule_condition_unsupported` (for the two grouping-capability
+checks) or `alert_profile_invalid` (for field-bounds checks, which -
+confirmed by reading `writeAlertsError` - is *already* the generic
+code every rule-field validation failure maps to in Stage 12A, not a
+new naming inconsistency introduced here). Documented as a deliberate
+simplification consistent with existing precedent, not an oversight.
+
+### Next step
+Backend HTTP API is already wired as part of this same commit (DTOs,
+validation, event-type capability exposure). Next: the frontend
+(schemas, renderer, rule editor, queue panel), then the twelfth
+integration script.

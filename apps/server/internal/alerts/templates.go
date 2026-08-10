@@ -22,7 +22,7 @@ const MaxRenderedCodePoints = 240
 // Part 10. Adding a new placeholder means adding it here, to
 // resolvePlaceholder's own switch, and to capability.go's per-event
 // AvailablePlaceholders if it is conditionally available.
-var KnownPlaceholders = []string{"username", "platform", "eventType", "quantity", "message", "rewardTitle"}
+var KnownPlaceholders = []string{"username", "platform", "eventType", "quantity", "message", "rewardTitle", "groupCount"}
 
 func isKnownPlaceholder(name string) bool {
 	for _, k := range KnownPlaceholders {
@@ -51,6 +51,9 @@ func AvailablePlaceholders(t domain.EventType) []string {
 	}
 	if capability.HasRewardTitle {
 		out = append(out, "rewardTitle")
+	}
+	if domain.GroupingCapabilityFor(t).Groupable {
+		out = append(out, "groupCount")
 	}
 	return out
 }
@@ -172,6 +175,31 @@ func ValidateTemplateForEventType(template string, t domain.EventType) error {
 	return nil
 }
 
+// ValidateGroupingTemplate closes the last half of Stage 12B's Part 11
+// safety rule: a rule may only enable grouping for a message-bearing type
+// when ShowMessage is false (domain.ValidateRuleConditions already
+// enforces that half) AND the template itself never references
+// {message} either - otherwise a template could still render one
+// member's real message on every re-render regardless of the toggle,
+// since buildInstance resolves {message} for the template independently
+// of ShowMessage (see its own doc comment). A no-op when allowGrouping is
+// false or the event type's grouping capability does not require this.
+func ValidateGroupingTemplate(template string, t domain.EventType, allowGrouping bool) error {
+	if !allowGrouping || !domain.GroupingCapabilityFor(t).RequiresNoMessage {
+		return nil
+	}
+	segments, err := ParseTemplate(template)
+	if err != nil {
+		return err
+	}
+	for _, s := range segments {
+		if s.kind == segmentPlaceholder && s.text == "message" {
+			return fmt.Errorf("%w: template must not reference {message} while grouping is enabled for event type %q", ErrPlaceholderInvalid, string(t))
+		}
+	}
+	return nil
+}
+
 // Context carries every value Render can substitute for one alert
 // instance. Username/Message/RewardTitle are pointers: nil means "not
 // shown for this alert" (an anonymous actor, no message, a rule that
@@ -184,6 +212,12 @@ type Context struct {
 	Quantity    *int64
 	Message     *string
 	RewardTitle *string
+	// GroupCount is always a known, non-optional value (an instance
+	// starts at 1 and only ever increments) - never a pointer, unlike
+	// the fields above whose absence is meaningful. Only ever resolvable
+	// in a saved template for a grouping-capable event type - see
+	// AvailablePlaceholders.
+	GroupCount int
 }
 
 // RenderResult is the outcome of rendering one template against one
@@ -264,6 +298,8 @@ func resolvePlaceholder(name string, ctx Context) (string, bool) {
 			return "", false
 		}
 		return *ctx.RewardTitle, true
+	case "groupCount":
+		return strconv.Itoa(ctx.GroupCount), true
 	default:
 		return "", false
 	}
@@ -362,6 +398,12 @@ func PreviewTemplate(eventType domain.EventType, template string, lang domain.La
 		if title, ok := evt.ProviderExtra["rewardTitle"]; ok {
 			ctx.RewardTitle = &title
 		}
+	}
+	if domain.GroupingCapabilityFor(eventType).Groupable {
+		// An illustrative, obviously-fictional count (never 1) so a
+		// template author previewing {groupCount} sees what a genuinely
+		// grouped alert looks like, not the trivial single-member case.
+		ctx.GroupCount = 3
 	}
 	return Render(template, ctx)
 }

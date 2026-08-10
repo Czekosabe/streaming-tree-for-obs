@@ -198,7 +198,8 @@ func (r *AlertsRepository) DeleteProfile(ctx context.Context, id string) error {
 const ruleColumns = `id, profile_id, name, enabled, event_type, priority, duration_ms,
 	minimum_quantity, maximum_quantity, required_role,
 	show_platform, show_username, show_message, show_quantity,
-	text_template, entry_animation, exit_animation, animation_duration_ms, created_at, updated_at`
+	text_template, entry_animation, exit_animation, animation_duration_ms,
+	allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at`
 
 func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	var (
@@ -206,13 +207,16 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 		enabled, showPlatform, showUsername, showMsg, showQty int
 		eventType, requiredRole, entryAnim, exitAnim          string
 		minQty, maxQty                                        sql.NullInt64
+		allowGrouping, interruptible                          int
+		interruptMode                                         string
 		createdAt, updatedAt                                  string
 	)
 	if err := scanner.Scan(
 		&ru.ID, &ru.ProfileID, &ru.Name, &enabled, &eventType, &ru.Priority, &ru.DurationMS,
 		&minQty, &maxQty, &requiredRole,
 		&showPlatform, &showUsername, &showMsg, &showQty,
-		&ru.TextTemplate, &entryAnim, &exitAnim, &ru.AnimationDurationMS, &createdAt, &updatedAt,
+		&ru.TextTemplate, &entryAnim, &exitAnim, &ru.AnimationDurationMS,
+		&allowGrouping, &ru.GroupWindowMS, &interruptMode, &interruptible, &createdAt, &updatedAt,
 	); err != nil {
 		return alerts.Rule{}, err
 	}
@@ -225,6 +229,9 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	ru.ShowQuantity = showQty != 0
 	ru.EntryAnimation = alerts.Animation(entryAnim)
 	ru.ExitAnimation = alerts.Animation(exitAnim)
+	ru.AllowGrouping = allowGrouping != 0
+	ru.InterruptMode = alerts.InterruptMode(interruptMode)
+	ru.Interruptible = interruptible != 0
 	if minQty.Valid {
 		v := minQty.Int64
 		ru.MinimumQuantity = &v
@@ -324,12 +331,14 @@ func (r *AlertsRepository) CreateRule(ctx context.Context, ru alerts.Rule) (aler
 			id, profile_id, name, enabled, event_type, priority, duration_ms,
 			minimum_quantity, maximum_quantity, required_role,
 			show_platform, show_username, show_message, show_quantity,
-			text_template, entry_animation, exit_animation, animation_duration_ms, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			text_template, entry_animation, exit_animation, animation_duration_ms,
+			allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ru.ID, ru.ProfileID, ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
 		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity), string(ru.RequiredRole),
 		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity),
-		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS, nowText, nowText,
+		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
+		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, nowText,
 	); err != nil {
 		if isForeignKeyViolation(err) {
 			return alerts.Rule{}, alerts.ErrProfileNotFound
@@ -427,12 +436,14 @@ func (r *AlertsRepository) UpdateRule(ctx context.Context, ru alerts.Rule) (aler
 			name = ?, enabled = ?, event_type = ?, priority = ?, duration_ms = ?,
 			minimum_quantity = ?, maximum_quantity = ?, required_role = ?,
 			show_platform = ?, show_username = ?, show_message = ?, show_quantity = ?,
-			text_template = ?, entry_animation = ?, exit_animation = ?, animation_duration_ms = ?, updated_at = ?
+			text_template = ?, entry_animation = ?, exit_animation = ?, animation_duration_ms = ?,
+			allow_grouping = ?, group_window_ms = ?, interrupt_mode = ?, interruptible = ?, updated_at = ?
 		WHERE id = ?`,
 		ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
 		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity), string(ru.RequiredRole),
 		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity),
-		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS, nowText, ru.ID,
+		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
+		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, ru.ID,
 	)
 	if err != nil {
 		return alerts.Rule{}, alertsStorageErr("update alert rule", err)

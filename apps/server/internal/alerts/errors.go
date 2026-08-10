@@ -69,4 +69,10 @@ const (
 	SkipCapacity   SkipReason = "capacity_dropped"
 	SkipManual     SkipReason = "manually_skipped"
 	SkipProfileOff SkipReason = "profile_disabled"
+	// SkipPreempted means a currently-playing alert was replaced by a
+	// strictly-higher-priority, eligible incoming alert before its own
+	// duration finished (Stage 12B task Part 16-18) - tracked separately
+	// from SkipManual (an operator's own Skip Current action) and its
+	// own dedicated counter, TotalPreempted.
+	SkipPreempted SkipReason = "preempted"
 )

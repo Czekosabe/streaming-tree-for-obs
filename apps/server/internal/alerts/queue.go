@@ -1,6 +1,10 @@
 package alerts
 
-import "time"
+import (
+	"time"
+
+	domain "github.com/streaming-tree/server/internal/domain/alerts"
+)
 
 // item is one queue entry plus its insertion sequence, used to break
 // same-priority ties FIFO (Part 13: "within the same priority use queue
@@ -157,4 +161,25 @@ func (q *queue) list(limit int) []Instance {
 		out = append(out, it.instance)
 	}
 	return out
+}
+
+// findGroupable returns the index of a still-queued item eligible to
+// absorb a candidate sharing key - within its own fixed window (anchored
+// to that item's own QueuedAt, never extended) and not yet at the
+// bounded member cap - or -1 if none exists (Stage 12B task Part 4-6).
+// Never mutates the queue.
+func (q *queue) findGroupable(key groupKey, now time.Time) int {
+	for i, it := range q.items {
+		if groupKeyFor(it.instance) != key {
+			continue
+		}
+		if it.instance.GroupCount >= domain.MaxGroupMembers {
+			continue
+		}
+		if !windowOpen(it.instance.QueuedAt, it.instance.GroupWindowMS, now) {
+			continue
+		}
+		return i
+	}
+	return -1
 }

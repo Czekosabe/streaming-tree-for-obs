@@ -491,11 +491,9 @@ func (m *Manager) TestRule(ctx context.Context, ruleID, edgeScenario string) (Al
 	now := m.now()
 	inst := BuildTestInstance(rule, edgeScenario, now, profile.Language)
 
-	pr.mu.Lock()
-	accepted := pr.enqueueLocked(inst, now, newInstanceID)
-	pr.mu.Unlock()
+	stored, accepted := pr.enqueueTest(inst, now, newInstanceID)
 	if !accepted {
 		return AlertSummary{}, ErrQueueFull
 	}
-	return summarize(inst), nil
+	return summarize(stored), nil
 }

@@ -13,17 +13,19 @@ import (
 // contain user-facing alert content because this is the private
 // operator API") - but still never a raw provider payload or token.
 type AlertSummary struct {
-	AlertID      string
-	RuleID       string
-	EventType    domain.EventType
-	QueuedAt     time.Time
-	Priority     int
-	Username     string
-	Message      string
-	Quantity     *int64
-	RenderedText string
-	Synthetic    bool
-	Replayed     bool
+	AlertID       string
+	RuleID        string
+	EventType     domain.EventType
+	QueuedAt      time.Time
+	Priority      int
+	Username      string
+	Message       string
+	Quantity      *int64
+	RenderedText  string
+	Synthetic     bool
+	Replayed      bool
+	GroupCount    int
+	Interruptible bool
 }
 
 func summarize(inst Instance) AlertSummary {
@@ -31,6 +33,7 @@ func summarize(inst Instance) AlertSummary {
 		AlertID: inst.ID, RuleID: inst.RuleID, EventType: inst.EventType, QueuedAt: inst.QueuedAt,
 		Priority: inst.Priority, Username: inst.Username, Message: inst.Message, Quantity: inst.Quantity,
 		RenderedText: inst.RenderedText, Synthetic: inst.Synthetic, Replayed: inst.Replayed,
+		GroupCount: inst.GroupCount, Interruptible: inst.Interruptible,
 	}
 }
 
@@ -39,7 +42,7 @@ func toPublicAlert(inst Instance) *PublicAlert {
 		SchemaVersion: 1, AlertID: inst.ID, EventType: string(inst.EventType), ProviderID: string(inst.ProviderID),
 		Synthetic: inst.Synthetic, Replayed: inst.Replayed, RenderedText: inst.RenderedText,
 		DurationMS: inst.DurationMS, EntryAnimation: string(inst.EntryAnimation), ExitAnimation: string(inst.ExitAnimation),
-		AnimationDurationMS: inst.AnimationDurationMS,
+		AnimationDurationMS: inst.AnimationDurationMS, GroupCount: inst.GroupCount,
 	}
 	if inst.Username != "" {
 		u := inst.Username
@@ -81,6 +84,20 @@ type ProfileStatus struct {
 	TotalManuallySkipped int64
 	TotalSynthetic       int64
 
+	// TotalGroupedMembers/TotalGroupsCreated: Stage 12B grouping
+	// counters (task Part 15). TotalGroupedMembers increments once per
+	// event merged into an existing group (never for the group's own
+	// first, founding member). TotalGroupsCreated increments exactly
+	// once per queued item, the moment its GroupCount first grows from 1
+	// to 2 - never again for that same item afterward.
+	TotalGroupedMembers int64
+	TotalGroupsCreated  int64
+	// TotalPreempted: Stage 12B task Part 18 - a currently-playing alert
+	// replaced by a strictly-higher-priority incoming one before its own
+	// duration finished. Never counted toward TotalPlayed or
+	// TotalManuallySkipped.
+	TotalPreempted int64
+
 	ReplayAvailable   bool
 	ActiveSubscribers int
 	LastAlertAt       *time.Time
@@ -110,6 +127,7 @@ type profileRuntime struct {
 	lastCompleted *Instance // the one replay-eligible slot (Part 19: "at most one safe replay snapshot")
 
 	totalEnqueued, totalPlayed, totalExpired, totalDropped, totalSkipped, totalSynthetic int64
+	totalGroupedMembers, totalGroupsCreated, totalPreempted                              int64
 	lastAlertAt                                                                          *time.Time
 	lastSkipReason                                                                       SkipReason
 
@@ -180,26 +198,73 @@ func (pr *profileRuntime) disableLocked() {
 	pr.queue.clear()
 	pr.pendingReplay = nil
 	if pr.current != nil {
+		hiddenID := pr.current.ID
 		pr.current = nil
-		pr.proj.publish(OpHide, nil, pr.paused)
+		pr.proj.publishHide(hiddenID, HideReasonProfileDisabled, pr.paused)
 	}
 }
 
-// enqueueMatched enqueues every instance MatchEvent produced for a
-// live, non-synthetic event - counts each as "enqueued," and each
-// capacity-rejected instance as "dropped."
+// enqueueMatched processes every instance MatchEvent produced for one
+// live, non-synthetic event, in the Stage 12B task's own Part 26
+// deterministic order:
+//
+//  1. sort candidates (Part 27: priority desc, then rule id asc - never
+//     MatchEvent's own return order, which itself only reflects the
+//     caller's rule-snapshot slice order),
+//  2. at most one candidate may immediately preempt the current alert in
+//     this turn - the first (highest-priority) eligible one, so an
+//     urgent alert is never buried by a stale queued group or a lower-
+//     priority candidate processed first,
+//  3. every other candidate is offered to grouping before falling back
+//     to the normal capacity-policy enqueue.
 func (pr *profileRuntime) enqueueMatched(instances []Instance, now time.Time, newID func() (string, error)) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 	if !pr.enabled {
 		return
 	}
-	for _, inst := range instances {
-		pr.enqueueLocked(inst, now, newID)
+	sorted := sortCandidates(instances)
+	preempted := false
+	for _, inst := range sorted {
+		if !preempted && pr.canPreemptLocked(inst) {
+			pr.preemptCurrentLocked(inst, now, newID)
+			preempted = true
+			continue
+		}
+		if pr.tryGroupLocked(inst, now) {
+			continue
+		}
+		_, _ = pr.enqueueLocked(inst, now, newID)
 	}
 }
 
-func (pr *profileRuntime) enqueueLocked(inst Instance, now time.Time, newID func() (string, error)) bool {
+// sortCandidates orders instances deterministically - descending
+// priority, then ascending rule id as a stable tiebreaker (Stage 12B
+// task Part 27) - never SQLite row order, Go map iteration, or
+// MatchEvent's own return order. A new slice; instances itself is never
+// mutated.
+func sortCandidates(instances []Instance) []Instance {
+	sorted := make([]Instance, len(instances))
+	copy(sorted, instances)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0; j-- {
+			a, b := sorted[j-1], sorted[j]
+			less := b.Priority > a.Priority || (b.Priority == a.Priority && b.RuleID < a.RuleID)
+			if !less {
+				break
+			}
+			sorted[j-1], sorted[j] = sorted[j], sorted[j-1]
+		}
+	}
+	return sorted
+}
+
+// enqueueLocked assigns inst a fresh id and offers it to the queue's own
+// capacity policy, returning the (possibly id-assigned) instance and
+// whether it was accepted - the caller-visible id matters for TestRule's
+// own response (Part 27), which must report the same id the queue itself
+// now holds.
+func (pr *profileRuntime) enqueueLocked(inst Instance, now time.Time, newID func() (string, error)) (Instance, bool) {
 	id, err := newID()
 	if err == nil {
 		inst.ID = id
@@ -219,7 +284,7 @@ func (pr *profileRuntime) enqueueLocked(inst Instance, now time.Time, newID func
 	} else {
 		pr.totalDropped++
 	}
-	return accepted
+	return inst, accepted
 }
 
 // tick advances this profile's playback state machine by one poll:
@@ -233,7 +298,7 @@ func (pr *profileRuntime) tick(now time.Time) {
 		return
 	}
 	if pr.current != nil && !now.Before(pr.currentDeadline) {
-		pr.completeCurrentLocked(now, false, SkipNone)
+		pr.completeCurrentLocked(now, HideReasonCompleted)
 	}
 	if pr.paused || pr.current != nil {
 		return
@@ -264,24 +329,28 @@ func (pr *profileRuntime) startCurrentLocked(inst Instance, now time.Time) {
 	pr.proj.publish(OpShow, toPublicAlert(inst), pr.paused)
 }
 
-// completeCurrentLocked ends the current alert. manual=true is Skip
-// Current; manual=false is a natural duration timeout. Either way the
-// completed instance becomes the one replay-eligible snapshot (Part 19:
-// both a completed and a skipped alert may be replayed).
-func (pr *profileRuntime) completeCurrentLocked(now time.Time, manual bool, reason SkipReason) {
+// completeCurrentLocked ends the current alert for reason. In every case
+// the completed instance becomes the one replay-eligible snapshot (Part
+// 19: a naturally completed, manually skipped, or preempted alert may
+// all be replayed) - never requeued, never resumed later.
+func (pr *profileRuntime) completeCurrentLocked(now time.Time, reason HideReason) {
 	if pr.current == nil {
 		return
 	}
 	completed := *pr.current
 	pr.current = nil
 	pr.lastCompleted = &completed
-	if manual {
+	switch reason {
+	case HideReasonSkipped:
 		pr.totalSkipped++
-		pr.lastSkipReason = reason
-	} else {
+		pr.lastSkipReason = SkipManual
+	case HideReasonPreempted:
+		pr.totalPreempted++
+		pr.lastSkipReason = SkipPreempted
+	default:
 		pr.totalPlayed++
 	}
-	pr.proj.publish(OpHide, nil, pr.paused)
+	pr.proj.publishHide(completed.ID, reason, pr.paused)
 }
 
 // --- operator queue commands ---------------------------------------------
@@ -309,11 +378,102 @@ func (pr *profileRuntime) skipCurrent(now time.Time) bool {
 	if pr.current == nil {
 		return false
 	}
-	pr.completeCurrentLocked(now, true, SkipManual)
+	pr.completeCurrentLocked(now, HideReasonSkipped)
 	if !pr.paused {
 		pr.promoteNextLocked(now)
 	}
 	return true
+}
+
+// canPreemptLocked reports whether inst (a newly matched candidate) may
+// immediately replace the current alert (Stage 12B task Part 17/25): the
+// queue must not be paused, a current alert must exist, inst must never
+// be a replay (Part 24: "the replayed alert itself must not be allowed
+// to preempt another alert"), a synthetic inst may only ever preempt a
+// synthetic current - never a real one (Part 25: "synthetic test alerts
+// never preempt real alerts," while "synthetic tests may preempt other
+// synthetic tests... allows safe UI verification," and a real inst may
+// preempt either a real or a synthetic current), inst's own rule
+// snapshot must explicitly opt in to interrupting, the current alert's
+// own rule snapshot must not be protected from interruption, and inst's
+// priority must be strictly greater - equal or lower priority never
+// interrupts.
+func (pr *profileRuntime) canPreemptLocked(inst Instance) bool {
+	if pr.paused || pr.current == nil {
+		return false
+	}
+	if inst.Replayed {
+		return false
+	}
+	if inst.Synthetic && !pr.current.Synthetic {
+		return false
+	}
+	if inst.InterruptMode != domain.InterruptLowerPriority {
+		return false
+	}
+	if !pr.current.Interruptible {
+		return false
+	}
+	return inst.Priority > pr.current.Priority
+}
+
+// preemptCurrentLocked implements the Stage 12B task's own Part 18
+// deterministic no-resume semantics: the current alert is hidden with
+// reason "preempted" (cancelling its own duration timer implicitly,
+// since pr.current/pr.currentDeadline are the only state tick() ever
+// reads - there is no separate per-alert timer object to cancel, so a
+// stale callback can never fire against the wrong instance), becomes the
+// one safe replay snapshot, and inst is promoted to current immediately
+// with its own fresh duration - never a resumed remainder of the
+// interrupted alert's own duration.
+func (pr *profileRuntime) preemptCurrentLocked(inst Instance, now time.Time, newID func() (string, error)) {
+	pr.completeCurrentLocked(now, HideReasonPreempted)
+	id, err := newID()
+	if err == nil {
+		inst.ID = id
+	}
+	pr.startCurrentLocked(inst, now)
+}
+
+// tryGroupLocked offers inst to grouping (Stage 12B task Part 4-6):
+// merges it into a compatible, still-queued, in-window, not-yet-full
+// group when one exists, and reports true if it did (the caller must
+// then never also enqueue inst separately). A candidate that is not
+// itself grouping-eligible, or for which no compatible group is found,
+// is left for the caller's own normal enqueue path.
+func (pr *profileRuntime) tryGroupLocked(inst Instance, now time.Time) bool {
+	if !groupingEligible(inst) {
+		return false
+	}
+	idx := pr.queue.findGroupable(groupKeyFor(inst), now)
+	if idx < 0 {
+		return false
+	}
+	member := &pr.queue.items[idx].instance
+	wasSingle := member.GroupCount == 1
+	mergeGroupMember(member, inst)
+	pr.totalGroupedMembers++
+	if wasSingle && member.GroupCount > 1 {
+		pr.totalGroupsCreated++
+	}
+	return true
+}
+
+// enqueueTest is TestRule's own entry point (Stage 12B task Part 32): a
+// synthetic candidate never groups (groupingEligible excludes every
+// synthetic instance unconditionally) but may preempt a currently
+// SYNTHETIC alert exactly like a real candidate can - canPreemptLocked's
+// own synthetic-vs-real guard already ensures it can never preempt a
+// real one. Returns the accepted instance (with its final id) and
+// whether it was accepted at all.
+func (pr *profileRuntime) enqueueTest(inst Instance, now time.Time, newID func() (string, error)) (Instance, bool) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	if pr.canPreemptLocked(inst) {
+		pr.preemptCurrentLocked(inst, now, newID)
+		return *pr.current, true
+	}
+	return pr.enqueueLocked(inst, now, newID)
 }
 
 // replayPrevious re-shows the last completed/skipped alert (Part 19):
@@ -355,6 +515,7 @@ func (pr *profileRuntime) status() ProfileStatus {
 		QueuedCount: pr.queue.len(), QueueCapacity: pr.queue.maxItems,
 		TotalEnqueued: pr.totalEnqueued, TotalPlayed: pr.totalPlayed, TotalExpired: pr.totalExpired,
 		TotalCapacityDropped: pr.totalDropped, TotalManuallySkipped: pr.totalSkipped, TotalSynthetic: pr.totalSynthetic,
+		TotalGroupedMembers: pr.totalGroupedMembers, TotalGroupsCreated: pr.totalGroupsCreated, TotalPreempted: pr.totalPreempted,
 		ReplayAvailable: pr.lastCompleted != nil, ActiveSubscribers: pr.proj.activeSubscribers(),
 		LastAlertAt: pr.lastAlertAt, LastSkipReason: pr.lastSkipReason,
 	}

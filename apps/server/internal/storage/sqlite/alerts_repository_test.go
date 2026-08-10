@@ -124,6 +124,7 @@ func testRule(id, profileID string) alerts.Rule {
 		ShowPlatform: true, ShowUsername: true,
 		TextTemplate:   "{username} just followed!",
 		EntryAnimation: alerts.AnimationFade, ExitAnimation: alerts.AnimationFade, AnimationDurationMS: 400,
+		GroupWindowMS: alerts.DefaultGroupWindowMS, InterruptMode: alerts.InterruptNever, Interruptible: true,
 	}
 }
 

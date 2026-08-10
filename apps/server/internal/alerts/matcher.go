@@ -132,6 +132,9 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 		PlatformLabel:  PlatformDisplayName(domain.ProviderID(evt.ProviderID)),
 		EntryAnimation: rule.EntryAnimation, ExitAnimation: rule.ExitAnimation, AnimationDurationMS: rule.AnimationDurationMS,
 		GroupCount: 1, Synthetic: synthetic, Replayed: replayed,
+		TextTemplate: rule.TextTemplate, Language: lang, RuleUpdatedAt: rule.UpdatedAt,
+		AllowGrouping: rule.AllowGrouping, GroupWindowMS: rule.GroupWindowMS,
+		InterruptMode: rule.InterruptMode, Interruptible: rule.Interruptible,
 	}
 
 	var username *string
@@ -146,6 +149,8 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 				inst.Username = name
 			}
 			username = &name
+			inst.ActorDisplayName = name
+			inst.ActorProviderUserID = evt.User.ProviderUserID
 		}
 	}
 
@@ -171,6 +176,9 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 			inst.RewardTitle = title
 			rewardTitlePtr = &title
 		}
+		if id, ok := evt.ProviderExtra["rewardId"]; ok {
+			inst.RewardID = id
+		}
 	}
 
 	var quantityForTemplate *int64
@@ -182,6 +190,7 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 	ctx := Context{
 		Username: username, Platform: inst.PlatformLabel, EventType: EventTypeLabel(eventType, lang),
 		Quantity: quantityForTemplate, Message: messagePtr, RewardTitle: rewardTitlePtr,
+		GroupCount: inst.GroupCount,
 	}
 	if result, err := Render(rule.TextTemplate, ctx); err == nil {
 		inst.RenderedText = result.Text

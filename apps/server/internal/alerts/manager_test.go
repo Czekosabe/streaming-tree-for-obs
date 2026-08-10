@@ -190,7 +190,7 @@ func createTestProfileAndRule(t *testing.T, mgr *Manager, eventType domain.Event
 		Name: "r", Enabled: true, EventType: eventType, Priority: 50, DurationMS: 5000,
 		RequiredRole: domain.RoleEveryone, ShowPlatform: true, ShowUsername: true,
 		TextTemplate: "{username}", EntryAnimation: domain.AnimationFade, ExitAnimation: domain.AnimationFade,
-		AnimationDurationMS: 400,
+		AnimationDurationMS: 400, GroupWindowMS: domain.DefaultGroupWindowMS, InterruptMode: domain.InterruptNever, Interruptible: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateRule() error = %v", err)
@@ -319,7 +319,7 @@ func TestManagerRuleReloadTakesEffectWithoutRestart(t *testing.T) {
 		Name: r.Name, Enabled: false, EventType: r.EventType, Priority: r.Priority, DurationMS: r.DurationMS,
 		RequiredRole: r.RequiredRole, ShowPlatform: r.ShowPlatform, ShowUsername: r.ShowUsername,
 		TextTemplate: r.TextTemplate, EntryAnimation: r.EntryAnimation, ExitAnimation: r.ExitAnimation,
-		AnimationDurationMS: r.AnimationDurationMS,
+		AnimationDurationMS: r.AnimationDurationMS, GroupWindowMS: r.GroupWindowMS, InterruptMode: r.InterruptMode, Interruptible: r.Interruptible,
 	}); err != nil {
 		t.Fatalf("ReplaceRule() error = %v", err)
 	}
@@ -423,5 +423,140 @@ func TestManagerRestartResetsRuntimeButKeepsDefinitions(t *testing.T) {
 	}
 	if st.TotalEnqueued != 0 || st.Current != nil || st.QueuedCount != 0 {
 		t.Errorf("status after restart = %+v, want fully reset runtime state (no missed-alert replay)", st)
+	}
+	if st.TotalGroupedMembers != 0 || st.TotalGroupsCreated != 0 || st.TotalPreempted != 0 {
+		t.Errorf("status after restart = %+v, want the Stage 12B counters reset too", st)
+	}
+}
+
+func publishCheer(t *testing.T, b *bus.Bus, now time.Time, userID string, bits int64, dedupe string) {
+	t.Helper()
+	evt := engagement.Event{
+		SchemaVersion: engagement.CurrentSchemaVersion, ProviderID: engagement.ProviderTwitch,
+		ConnectedAccountID: "acct_1", Type: engagement.TypeBits, PlatformTimestamp: now,
+		DedupeKey: dedupe, User: &engagement.User{ProviderUserID: userID, Login: userID, DisplayName: userID},
+		Quantity: &bits,
+	}
+	if _, _, err := b.Publish(evt); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+}
+
+// TestManagerRealEventsGroupEndToEnd proves the whole pipeline (real Bus
+// event -> Manager.handleEvent -> matcher -> grouping) end to end: two
+// Bits cheers from the same actor, inside the rule's own grouping
+// window, merge into one queued alert with a truthful summed quantity.
+func TestManagerRealEventsGroupEndToEnd(t *testing.T) {
+	fc := newFakeClock()
+	mgr, b := newTestManager(t, fc)
+	p, err := mgr.CreateProfile(context.Background(), "Main")
+	if err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+	if _, err := mgr.CreateRule(context.Background(), p.ID, domain.RuleInput{
+		Name: "Bits", Enabled: true, EventType: domain.EventBits, Priority: 50, DurationMS: 5000,
+		RequiredRole: domain.RoleEveryone, ShowPlatform: true, ShowUsername: true, ShowQuantity: true,
+		TextTemplate:   "{username} cheered {quantity} bits (x{groupCount})",
+		EntryAnimation: domain.AnimationFade, ExitAnimation: domain.AnimationFade, AnimationDurationMS: 400,
+		AllowGrouping: true, GroupWindowMS: 5000, InterruptMode: domain.InterruptNever, Interruptible: true,
+	}); err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+
+	publishCheer(t, b, fc.Now(), "u1", 100, "dk_cheer_1")
+	waitUntil(t, 5*time.Second, func() bool {
+		st, err := mgr.ProfileStatus(p.ID)
+		return err == nil && st.TotalEnqueued == 1
+	})
+	publishCheer(t, b, fc.Now(), "u1", 50, "dk_cheer_2")
+	waitUntil(t, 5*time.Second, func() bool {
+		st, err := mgr.ProfileStatus(p.ID)
+		return err == nil && st.TotalGroupedMembers == 1
+	})
+
+	st, err := mgr.ProfileStatus(p.ID)
+	if err != nil {
+		t.Fatalf("ProfileStatus() error = %v", err)
+	}
+	if st.QueuedCount+boolToInt(st.Current != nil) != 1 {
+		t.Fatalf("status = %+v, want exactly one alert (grouped, not two)", st)
+	}
+	var quantity *int64
+	if st.Current != nil {
+		quantity = st.Current.Quantity
+	} else if len(st.NextQueued) == 1 {
+		quantity = st.NextQueued[0].Quantity
+	}
+	if quantity == nil || *quantity != 150 {
+		t.Errorf("grouped quantity = %v, want 150", quantity)
+	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// TestManagerRealEventPreemptsEndToEnd proves preemption end to end: a
+// real, eligible, strictly-higher-priority raid alert interrupts a
+// currently-playing, interruptible, lower-priority follow alert.
+func TestManagerRealEventPreemptsEndToEnd(t *testing.T) {
+	fc := newFakeClock()
+	mgr, b := newTestManager(t, fc)
+	p, err := mgr.CreateProfile(context.Background(), "Main")
+	if err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+	if _, err := mgr.CreateRule(context.Background(), p.ID, domain.RuleInput{
+		Name: "Follow", Enabled: true, EventType: domain.EventFollow, Priority: 10, DurationMS: 30000,
+		RequiredRole: domain.RoleEveryone, ShowPlatform: true, ShowUsername: true,
+		TextTemplate:   "{username} followed",
+		EntryAnimation: domain.AnimationFade, ExitAnimation: domain.AnimationFade, AnimationDurationMS: 400,
+		GroupWindowMS: domain.DefaultGroupWindowMS, InterruptMode: domain.InterruptNever, Interruptible: true,
+	}); err != nil {
+		t.Fatalf("CreateRule(follow) error = %v", err)
+	}
+	if _, err := mgr.CreateRule(context.Background(), p.ID, domain.RuleInput{
+		Name: "Raid", Enabled: true, EventType: domain.EventRaid, Priority: 100, DurationMS: 5000,
+		RequiredRole: domain.RoleEveryone, ShowPlatform: true, ShowUsername: true, ShowQuantity: true,
+		TextTemplate:   "{username} raided with {quantity} viewers",
+		EntryAnimation: domain.AnimationFade, ExitAnimation: domain.AnimationFade, AnimationDurationMS: 400,
+		GroupWindowMS: domain.DefaultGroupWindowMS, InterruptMode: domain.InterruptLowerPriority, Interruptible: true,
+	}); err != nil {
+		t.Fatalf("CreateRule(raid) error = %v", err)
+	}
+
+	publishFollow(t, b, fc.Now())
+	waitUntil(t, 5*time.Second, func() bool {
+		st, err := mgr.ProfileStatus(p.ID)
+		return err == nil && st.Current != nil && st.Current.EventType == domain.EventFollow
+	})
+
+	viewers := int64(42)
+	evt := engagement.Event{
+		SchemaVersion: engagement.CurrentSchemaVersion, ProviderID: engagement.ProviderTwitch,
+		ConnectedAccountID: "acct_1", Type: engagement.TypeRaid, PlatformTimestamp: fc.Now(),
+		DedupeKey: "dk_raid_1", User: &engagement.User{ProviderUserID: "raider", Login: "raider", DisplayName: "Raider"},
+		Quantity: &viewers,
+	}
+	if _, _, err := b.Publish(evt); err != nil {
+		t.Fatalf("Publish(raid) error = %v", err)
+	}
+	waitUntil(t, 5*time.Second, func() bool {
+		st, err := mgr.ProfileStatus(p.ID)
+		return err == nil && st.Current != nil && st.Current.EventType == domain.EventRaid
+	})
+
+	st, err := mgr.ProfileStatus(p.ID)
+	if err != nil {
+		t.Fatalf("ProfileStatus() error = %v", err)
+	}
+	if st.TotalPreempted != 1 {
+		t.Errorf("TotalPreempted = %d, want 1", st.TotalPreempted)
+	}
+	if !st.ReplayAvailable {
+		t.Error("ReplayAvailable = false, want true (the preempted follow alert is the safe replay snapshot)")
 	}
 }

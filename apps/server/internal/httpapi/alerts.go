@@ -127,21 +127,31 @@ type alertEventTypeCapabilityResponse struct {
 	HasRewardTitle        bool     `json:"hasRewardTitle"`
 	HasRoles              bool     `json:"hasRoles"`
 	AvailablePlaceholders []string `json:"availablePlaceholders"`
+
+	// Groupable: Stage 12B task Part 31 - "for unsupported event types,
+	// hide grouping controls or present a clear unsupported explanation."
+	// GroupingRequiresHiddenMessage: true only when this type also has a
+	// real message (Part 11) - the rule editor uses it to explain why
+	// enabling grouping will force "show message" off.
+	Groupable                     bool `json:"groupable"`
+	GroupingRequiresHiddenMessage bool `json:"groupingRequiresHiddenMessage"`
 }
 
 // handleListAlertEventTypes exposes the real, capability-derived
-// per-event-type table (Part 6/36) so the frontend never hand-maintains
-// its own copy of which conditions/placeholders apply to which event
-// type.
+// per-event-type table (Part 6/36, and Stage 12B's own grouping
+// capability) so the frontend never hand-maintains its own copy of which
+// conditions/placeholders/grouping behavior apply to which event type.
 func handleListAlertEventTypes(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out := make([]alertEventTypeCapabilityResponse, 0, len(domain.ValidEventTypes))
 		for _, t := range domain.ValidEventTypes {
 			capability := domain.CapabilityFor(t)
+			grouping := domain.GroupingCapabilityFor(t)
 			out = append(out, alertEventTypeCapabilityResponse{
 				EventType: string(t), HasUser: capability.HasUser, HasMessage: capability.HasMessage,
 				HasQuantity: capability.HasQuantity, HasAnonymity: capability.HasAnonymity, HasRewardTitle: capability.HasRewardTitle,
 				HasRoles: capability.HasRoles, AvailablePlaceholders: alerts.AvailablePlaceholders(t),
+				Groupable: grouping.Groupable, GroupingRequiresHiddenMessage: grouping.RequiresNoMessage,
 			})
 		}
 		writeJSON(w, logger, http.StatusOK, out)
@@ -218,6 +228,12 @@ type alertRuleRequest struct {
 	AnimationDurationMS int      `json:"animationDurationMs"`
 	Providers           []string `json:"providers"`
 	Accounts            []string `json:"accounts"`
+
+	AllowGrouping bool `json:"allowGrouping"`
+	GroupWindowMS int  `json:"groupWindowMs"`
+
+	InterruptMode string `json:"interruptMode"`
+	Interruptible bool   `json:"interruptible"`
 }
 
 func (r alertRuleRequest) toInput() domain.RuleInput {
@@ -235,6 +251,8 @@ func (r alertRuleRequest) toInput() domain.RuleInput {
 		ShowPlatform: r.ShowPlatform, ShowUsername: r.ShowUsername, ShowMessage: r.ShowMessage, ShowQuantity: r.ShowQuantity,
 		TextTemplate: r.TextTemplate, EntryAnimation: domain.Animation(r.EntryAnimation), ExitAnimation: domain.Animation(r.ExitAnimation),
 		AnimationDurationMS: r.AnimationDurationMS, Providers: providers, Accounts: accounts,
+		AllowGrouping: r.AllowGrouping, GroupWindowMS: r.GroupWindowMS,
+		InterruptMode: domain.InterruptMode(r.InterruptMode), Interruptible: r.Interruptible,
 	}
 }
 
@@ -259,8 +277,15 @@ type alertRuleResponse struct {
 	AnimationDurationMS int      `json:"animationDurationMs"`
 	Providers           []string `json:"providers"`
 	Accounts            []string `json:"accounts"`
-	CreatedAt           string   `json:"createdAt"`
-	UpdatedAt           string   `json:"updatedAt"`
+
+	AllowGrouping bool `json:"allowGrouping"`
+	GroupWindowMS int  `json:"groupWindowMs"`
+
+	InterruptMode string `json:"interruptMode"`
+	Interruptible bool   `json:"interruptible"`
+
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 func toAlertRuleResponse(r domain.Rule) alertRuleResponse {
@@ -277,6 +302,8 @@ func toAlertRuleResponse(r domain.Rule) alertRuleResponse {
 		ShowMessage: r.ShowMessage, ShowQuantity: r.ShowQuantity, TextTemplate: r.TextTemplate,
 		EntryAnimation: string(r.EntryAnimation), ExitAnimation: string(r.ExitAnimation), AnimationDurationMS: r.AnimationDurationMS,
 		Providers: providers, Accounts: accounts,
+		AllowGrouping: r.AllowGrouping, GroupWindowMS: r.GroupWindowMS,
+		InterruptMode: string(r.InterruptMode), Interruptible: r.Interruptible,
 		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
@@ -295,17 +322,19 @@ type listAlertRulesResponse struct {
 // --- queue DTOs -----------------------------------------------------
 
 type alertSummaryDTO struct {
-	AlertID      string `json:"alertId"`
-	RuleID       string `json:"ruleId"`
-	EventType    string `json:"eventType"`
-	QueuedAt     string `json:"queuedAt"`
-	Priority     int    `json:"priority"`
-	Username     string `json:"username,omitempty"`
-	Message      string `json:"message,omitempty"`
-	Quantity     *int64 `json:"quantity,omitempty"`
-	RenderedText string `json:"renderedText"`
-	Synthetic    bool   `json:"synthetic"`
-	Replayed     bool   `json:"replayed"`
+	AlertID       string `json:"alertId"`
+	RuleID        string `json:"ruleId"`
+	EventType     string `json:"eventType"`
+	QueuedAt      string `json:"queuedAt"`
+	Priority      int    `json:"priority"`
+	Username      string `json:"username,omitempty"`
+	Message       string `json:"message,omitempty"`
+	Quantity      *int64 `json:"quantity,omitempty"`
+	RenderedText  string `json:"renderedText"`
+	Synthetic     bool   `json:"synthetic"`
+	Replayed      bool   `json:"replayed"`
+	GroupCount    int    `json:"groupCount"`
+	Interruptible bool   `json:"interruptible"`
 }
 
 func toAlertSummaryDTO(s alerts.AlertSummary) alertSummaryDTO {
@@ -313,6 +342,7 @@ func toAlertSummaryDTO(s alerts.AlertSummary) alertSummaryDTO {
 		AlertID: s.AlertID, RuleID: s.RuleID, EventType: string(s.EventType), QueuedAt: s.QueuedAt.UTC().Format(time.RFC3339Nano),
 		Priority: s.Priority, Username: s.Username, Message: s.Message, Quantity: s.Quantity,
 		RenderedText: s.RenderedText, Synthetic: s.Synthetic, Replayed: s.Replayed,
+		GroupCount: s.GroupCount, Interruptible: s.Interruptible,
 	}
 }
 
@@ -331,6 +361,9 @@ type alertQueueStatusResponse struct {
 	TotalCapacityDropped int64 `json:"totalCapacityDropped"`
 	TotalManuallySkipped int64 `json:"totalManuallySkipped"`
 	TotalSynthetic       int64 `json:"totalSynthetic"`
+	TotalGroupedMembers  int64 `json:"totalGroupedMembers"`
+	TotalGroupsCreated   int64 `json:"totalGroupsCreated"`
+	TotalPreempted       int64 `json:"totalPreempted"`
 
 	ReplayAvailable   bool   `json:"replayAvailable"`
 	ActiveSubscribers int    `json:"activeSubscribers"`
@@ -345,6 +378,7 @@ func toAlertQueueStatusResponse(st alerts.ProfileStatus) alertQueueStatusRespons
 		QueuedCount: st.QueuedCount, QueueCapacity: st.QueueCapacity, NextQueued: make([]alertSummaryDTO, 0, len(st.NextQueued)),
 		TotalEnqueued: st.TotalEnqueued, TotalPlayed: st.TotalPlayed, TotalExpired: st.TotalExpired,
 		TotalCapacityDropped: st.TotalCapacityDropped, TotalManuallySkipped: st.TotalManuallySkipped, TotalSynthetic: st.TotalSynthetic,
+		TotalGroupedMembers: st.TotalGroupedMembers, TotalGroupsCreated: st.TotalGroupsCreated, TotalPreempted: st.TotalPreempted,
 		ReplayAvailable: st.ReplayAvailable, ActiveSubscribers: st.ActiveSubscribers, LastSkipReason: string(st.LastSkipReason),
 		InputGap: st.InputGap,
 	}
@@ -485,6 +519,10 @@ func handleCreateAlertRule(logger *slog.Logger, svc AlertsService) http.HandlerF
 			writeAlertsError(w, logger, err)
 			return
 		}
+		if err := alerts.ValidateGroupingTemplate(body.TextTemplate, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
+			writeAlertsError(w, logger, err)
+			return
+		}
 		ru, err := svc.CreateRule(r.Context(), profileID, body.toInput())
 		if err != nil {
 			writeAlertsError(w, logger, err)
@@ -515,6 +553,10 @@ func handleUpdateAlertRule(logger *slog.Logger, svc AlertsService) http.HandlerF
 			return
 		}
 		if err := alerts.ValidateTemplateForEventType(body.TextTemplate, domain.EventType(body.EventType)); err != nil {
+			writeAlertsError(w, logger, err)
+			return
+		}
+		if err := alerts.ValidateGroupingTemplate(body.TextTemplate, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
 			writeAlertsError(w, logger, err)
 			return
 		}
@@ -795,14 +837,24 @@ func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
 	return map[string]any{
 		"schemaVersion": a.SchemaVersion, "alertId": a.AlertID, "eventType": a.EventType, "providerId": a.ProviderID,
 		"synthetic": a.Synthetic, "replayed": a.Replayed, "username": a.Username, "message": a.Message,
-		"quantity": a.Quantity, "renderedText": a.RenderedText, "durationMs": a.DurationMS,
+		"quantity": a.Quantity, "groupCount": a.GroupCount, "renderedText": a.RenderedText, "durationMs": a.DurationMS,
 		"entryAnimation": a.EntryAnimation, "exitAnimation": a.ExitAnimation, "animationDurationMs": a.AnimationDurationMS,
 	}
 }
 
+// writeAlertRevision serializes rev over SSE. An OpHide revision
+// deliberately never carries "alert" (Stage 12B task Part 20/36: "the
+// public hide operation should contain only operation, revision, alert
+// ID, stable reason" - no prior rendered content) - only its own
+// hiddenAlertId/reason fields.
 func writeAlertRevision(w http.ResponseWriter, rev alerts.Revision) error {
 	eventName := "alert." + string(rev.Operation)
-	data := map[string]any{"paused": rev.Paused, "alert": toPublicAlertDTO(rev.Alert)}
+	var data map[string]any
+	if rev.Operation == alerts.OpHide {
+		data = map[string]any{"paused": rev.Paused, "alertId": rev.HiddenAlertID, "reason": string(rev.Reason)}
+	} else {
+		data = map[string]any{"paused": rev.Paused, "alert": toPublicAlertDTO(rev.Alert)}
+	}
 	return writeSSEEvent(w, eventName, rev.Sequence, data)
 }
 

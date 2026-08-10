@@ -14,6 +14,19 @@ const (
 	OpGap    Operation = "gap"
 )
 
+// HideReason is the closed, stable public reason an OpHide revision
+// carries (Stage 12B task Part 20) - never the hidden alert's own
+// rendered text or username, only why it stopped showing.
+type HideReason string
+
+const (
+	HideReasonCompleted       HideReason = "completed"
+	HideReasonSkipped         HideReason = "skipped"
+	HideReasonPreempted       HideReason = "preempted"
+	HideReasonProfileDisabled HideReason = "profile_disabled"
+	HideReasonReset           HideReason = "reset"
+)
+
 // PublicAlert is the versioned, presentation-only public alert model
 // (Part 22) - deliberately excludes every field that section forbids:
 // no rule internals, no account health, no OAuth scopes, no
@@ -36,6 +49,12 @@ type PublicAlert struct {
 	Message  *string
 	Quantity *int64
 
+	// GroupCount is always present (never omitted/optional) - 1 for a
+	// single, ungrouped alert, and the true, bounded member count once
+	// merged (Stage 12B task Part 9: "At minimum: groupCount"). Never a
+	// list of grouped usernames or source event ids.
+	GroupCount int
+
 	RenderedText string
 
 	DurationMS          int
@@ -48,12 +67,17 @@ type PublicAlert struct {
 // delivered over SSE. Alert is nil for OpHide/OpGap and for an OpReset
 // with no current alert; Paused always reflects the profile's pause
 // state at the time this revision was published, so a client never
-// needs a second round trip to learn it.
+// needs a second round trip to learn it. HiddenAlertID/Reason are only
+// ever populated for OpHide (Stage 12B task Part 20) - deliberately
+// never the hidden alert's own PublicAlert, so no prior rendered content
+// is ever repeated in a hide payload.
 type Revision struct {
-	Sequence  uint64
-	Operation Operation
-	Alert     *PublicAlert
-	Paused    bool
+	Sequence      uint64
+	Operation     Operation
+	Alert         *PublicAlert
+	Paused        bool
+	HiddenAlertID string
+	Reason        HideReason
 }
 
 // DefaultRevisionCapacity mirrors chatoverlay's own retained-revision
@@ -187,6 +211,34 @@ func (p *projection) publish(op Operation, alert *PublicAlert, paused bool) Revi
 	}
 	p.seq++
 	rev := Revision{Sequence: p.seq, Operation: op, Alert: alert, Paused: paused}
+	p.ring.push(rev)
+	subs := make([]*Subscription, 0, len(p.subs))
+	for _, s := range p.subs {
+		subs = append(subs, s)
+	}
+	p.mu.Unlock()
+
+	for _, s := range subs {
+		select {
+		case s.revisions <- rev:
+		default:
+			p.unsubscribe(s.id, ReasonSlowConsumer)
+		}
+	}
+	return rev
+}
+
+// publishHide is publish's own OpHide-specific counterpart: carries only
+// the hidden alert's id and a stable reason, never its rendered content
+// (Stage 12B task Part 20/36).
+func (p *projection) publishHide(alertID string, reason HideReason, paused bool) Revision {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return Revision{}
+	}
+	p.seq++
+	rev := Revision{Sequence: p.seq, Operation: OpHide, HiddenAlertID: alertID, Reason: reason, Paused: paused}
 	p.ring.push(rev)
 	subs := make([]*Subscription, 0, len(p.subs))
 	for _, s := range p.subs {

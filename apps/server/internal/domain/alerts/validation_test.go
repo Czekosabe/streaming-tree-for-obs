@@ -110,6 +110,95 @@ func TestValidateRuleConditionsRaidRejectsMessage(t *testing.T) {
 	}
 }
 
+func TestValidateRuleFieldsGroupWindowBounds(t *testing.T) {
+	r := baseValidRule()
+	r.GroupWindowMS = MinGroupWindowMS - 1
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
+		t.Errorf("GroupWindowMS below minimum error = %v, want ErrValidation", err)
+	}
+	r.GroupWindowMS = MaxGroupWindowMS + 1
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
+		t.Errorf("GroupWindowMS above maximum error = %v, want ErrValidation", err)
+	}
+	r.GroupWindowMS = MinGroupWindowMS
+	if err := ValidateRuleFields(r); err != nil {
+		t.Errorf("GroupWindowMS at the minimum boundary error = %v, want nil", err)
+	}
+	r.GroupWindowMS = MaxGroupWindowMS
+	if err := ValidateRuleFields(r); err != nil {
+		t.Errorf("GroupWindowMS at the maximum boundary error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleFieldsGroupWindowBoundsEnforcedEvenWhenGroupingDisabled(t *testing.T) {
+	r := baseValidRule()
+	r.AllowGrouping = false
+	r.GroupWindowMS = 0
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
+		t.Errorf("GroupWindowMS=0 with grouping disabled error = %v, want ErrValidation (bounds are unconditional)", err)
+	}
+}
+
+func TestValidateRuleFieldsUnknownInterruptMode(t *testing.T) {
+	r := baseValidRule()
+	r.InterruptMode = InterruptMode("sometimes")
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
+		t.Errorf("unknown interrupt mode error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleConditionsGroupingRejectedForUngroupableType(t *testing.T) {
+	r := baseValidRule()
+	r.EventType = EventFollow
+	r.AllowGrouping = true
+	if !errors.Is(ValidateRuleConditions(r), ErrConditionUnsupported) {
+		t.Error("AllowGrouping=true on a follow rule should be rejected as unsupported")
+	}
+}
+
+func TestValidateRuleConditionsGroupingAllowedForBitsWithoutMessage(t *testing.T) {
+	r := baseValidRule()
+	r.EventType = EventBits
+	r.ShowQuantity = true
+	r.ShowMessage = false
+	r.AllowGrouping = true
+	if err := ValidateRuleConditions(r); err != nil {
+		t.Errorf("groupable bits rule with ShowMessage=false error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleConditionsGroupingRejectedForBitsWithMessage(t *testing.T) {
+	r := baseValidRule()
+	r.EventType = EventBits
+	r.ShowMessage = true
+	r.AllowGrouping = true
+	if !errors.Is(ValidateRuleConditions(r), ErrConditionUnsupported) {
+		t.Error("AllowGrouping=true with ShowMessage=true on Bits should be rejected (Part 11)")
+	}
+}
+
+func TestValidateRuleConditionsGroupingAllowedForGiftBatchAndRedemption(t *testing.T) {
+	giftBatch := baseValidRule()
+	giftBatch.EventType = EventSubscriptionGiftBatch
+	giftBatch.ShowQuantity = true
+	giftBatch.AllowGrouping = true
+	if err := ValidateRuleConditions(giftBatch); err != nil {
+		t.Errorf("groupable gift-batch rule error = %v, want nil", err)
+	}
+
+	redemption := baseValidRule()
+	redemption.EventType = EventChannelPointRedemption
+	redemption.ShowMessage = false
+	redemption.AllowGrouping = true
+	if err := ValidateRuleConditions(redemption); err != nil {
+		t.Errorf("groupable redemption rule (ShowMessage=false) error = %v, want nil", err)
+	}
+	redemption.ShowMessage = true
+	if !errors.Is(ValidateRuleConditions(redemption), ErrConditionUnsupported) {
+		t.Error("groupable redemption rule with ShowMessage=true should be rejected")
+	}
+}
+
 func TestValidateProviders(t *testing.T) {
 	if err := ValidateProviders(nil); err != nil {
 		t.Errorf("ValidateProviders(nil) error = %v, want nil (means 'any')", err)
@@ -132,5 +221,6 @@ func baseValidRule() Rule {
 		ShowPlatform: true, ShowUsername: true,
 		TextTemplate:   "{username} just followed!",
 		EntryAnimation: AnimationFade, ExitAnimation: AnimationFade, AnimationDurationMS: DefaultAnimationDurationMS,
+		GroupWindowMS: DefaultGroupWindowMS, InterruptMode: InterruptNever, Interruptible: true,
 	}
 }

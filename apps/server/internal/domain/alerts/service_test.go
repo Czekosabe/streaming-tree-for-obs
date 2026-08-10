@@ -126,6 +126,7 @@ func baseRuleInput() RuleInput {
 		ShowPlatform: true, ShowUsername: true,
 		TextTemplate:   "{username} just followed!",
 		EntryAnimation: AnimationFade, ExitAnimation: AnimationFade, AnimationDurationMS: 400,
+		GroupWindowMS: DefaultGroupWindowMS, InterruptMode: InterruptNever, Interruptible: true,
 	}
 }
 

@@ -156,6 +156,30 @@ const (
 
 func (l Language) valid() bool { return l == LanguageEnglish || l == LanguagePolish }
 
+// InterruptMode is the closed, fixed enum for Stage 12B mid-alert
+// preemption (Stage 12B task Part 16): whether THIS rule's own newly
+// matched alert may interrupt whatever is currently playing. Deliberately
+// not a priority formula or a condition expression - only ever "never" or
+// "a strictly higher priority may interrupt." Default InterruptNever
+// preserves every Stage 12A rule's non-preempting behavior exactly.
+type InterruptMode string
+
+const (
+	InterruptNever         InterruptMode = "never"
+	InterruptLowerPriority InterruptMode = "lower_priority"
+)
+
+var validInterruptModes = []InterruptMode{InterruptNever, InterruptLowerPriority}
+
+func (m InterruptMode) valid() bool {
+	for _, v := range validInterruptModes {
+		if m == v {
+			return true
+		}
+	}
+	return false
+}
+
 var validThemes = []Theme{ThemeMinimal, ThemeCompact, ThemeLarge}
 var validPositions = []Position{PositionTop, PositionCenter, PositionBottom}
 var validTextAligns = []TextAlign{AlignLeft, AlignCenter, AlignRight}
@@ -243,6 +267,26 @@ type Rule struct {
 	// ValidateRuleConditions and the Stage 12A task's own Part 5.
 	Providers []ProviderID
 	Accounts  []string
+
+	// AllowGrouping/GroupWindowMS: Stage 12B bounded alert grouping
+	// (Stage 12B task Part 3-13). AllowGrouping may only be true when
+	// GroupingCapabilityFor(EventType).Groupable is true - see
+	// ValidateRuleConditions. GroupWindowMS is always validated within
+	// [MinGroupWindowMS, MaxGroupWindowMS] regardless of AllowGrouping
+	// (a single unconditional bound is simpler and safer than a
+	// cross-column SQLite CHECK - the value is simply inert while
+	// grouping is disabled).
+	AllowGrouping bool
+	GroupWindowMS int
+
+	// InterruptMode/Interruptible: Stage 12B deterministic mid-alert
+	// preemption (Stage 12B task Part 16-17). InterruptMode governs this
+	// rule's own alert when it is the *incoming* candidate; Interruptible
+	// governs this rule's own alert when it is the one *currently
+	// playing*. Both are independent - a rule may be interruptible
+	// without itself ever interrupting anything, and vice versa.
+	InterruptMode InterruptMode
+	Interruptible bool
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

@@ -175,6 +175,15 @@ func ValidateRuleConditions(r Rule) error {
 	if !r.RequiredRole.valid() {
 		return validationErr("required role %q is not a recognized role", string(r.RequiredRole))
 	}
+	if r.AllowGrouping {
+		groupCapability := GroupingCapabilityFor(r.EventType)
+		if !groupCapability.Groupable {
+			return fmt.Errorf("%w: event type %q has no safe grouping strategy", ErrConditionUnsupported, string(r.EventType))
+		}
+		if groupCapability.RequiresNoMessage && r.ShowMessage {
+			return fmt.Errorf("%w: grouping requires showMessage=false for event type %q (never concatenate arbitrary messages)", ErrConditionUnsupported, string(r.EventType))
+		}
+	}
 	return nil
 }
 
@@ -199,6 +208,12 @@ func ValidateRuleFields(r Rule) error {
 	}
 	if !r.ExitAnimation.valid() {
 		return validationErr("exit animation %q is not recognized", string(r.ExitAnimation))
+	}
+	if r.GroupWindowMS < MinGroupWindowMS || r.GroupWindowMS > MaxGroupWindowMS {
+		return validationErr("group window must be between %d and %d milliseconds", MinGroupWindowMS, MaxGroupWindowMS)
+	}
+	if !r.InterruptMode.valid() {
+		return validationErr("interrupt mode %q is not recognized", string(r.InterruptMode))
 	}
 	if err := ValidateTemplate(r.TextTemplate); err != nil {
 		return err

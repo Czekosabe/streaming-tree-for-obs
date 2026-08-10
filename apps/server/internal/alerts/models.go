@@ -51,10 +51,11 @@ type Instance struct {
 	ExitAnimation       domain.Animation
 	AnimationDurationMS int
 
-	// GroupCount is always 1 in Stage 12A (grouping is deferred to Stage
-	// 12B - see docs/progress.md's Stage 12A persistence entry). Kept as
-	// a field now so Stage 12B's grouping does not need a new field on
-	// this struct, only new logic that increments it.
+	// GroupCount was always 1 in Stage 12A (grouping was deferred to
+	// Stage 12B). Stage 12B increments it in place when a later
+	// compatible event merges into this still-queued instance - see
+	// grouping.go. Never a list of members; only the bounded aggregate
+	// count/quantity are ever retained (Stage 12B task Part 6).
 	GroupCount int
 
 	// Synthetic marks a locally generated test alert (Part 11/27) -
@@ -63,4 +64,50 @@ type Instance struct {
 	// Replayed marks an alert re-shown via Replay Previous (Part 19) -
 	// never a fresh match against the Event Bus.
 	Replayed bool
+
+	// --- Stage 12B: fields needed for grouping/preemption, all copied
+	// from the rule's own snapshot or the source event at match time
+	// (Policy A - never re-read live state later) and never exposed on
+	// any public/management DTO directly. ---
+
+	// ActorProviderUserID is the source event's stable provider user id
+	// (never the display name, which is presentation, not identity) -
+	// the true "same actor" comparison key for grouping. Empty for an
+	// anonymous or user-less event, which makes it permanently
+	// ineligible to start or join a group (see groupingEligible).
+	ActorProviderUserID string
+	// ActorDisplayName is the resolved display name used to re-render
+	// {username} after a grouping merge, independent of the rule's own
+	// ShowUsername toggle (matching buildInstance's existing "template
+	// resolution ignores the show* toggle" behavior for the first
+	// render).
+	ActorDisplayName string
+	// RewardID is the redemption event's own stable reward id (never
+	// its user-editable title) - the grouping subject for
+	// GroupingSameActorSameSubjectCount. Empty for every other event
+	// type.
+	RewardID string
+
+	// TextTemplate and Language are the rule snapshot's own values,
+	// stored so a grouping merge can deterministically re-render
+	// RenderedText from this instance alone - never by re-reading a
+	// possibly-since-edited domain.Rule.
+	TextTemplate string
+	Language     domain.Language
+
+	// AllowGrouping/GroupWindowMS/RuleUpdatedAt are the rule snapshot's
+	// own grouping configuration and version identity. RuleUpdatedAt is
+	// part of the grouping key (see grouping.go's groupKey) so two
+	// instances from two different saved versions of the same rule id
+	// never merge, even mid-edit.
+	AllowGrouping bool
+	GroupWindowMS int
+	RuleUpdatedAt time.Time
+
+	// InterruptMode/Interruptible are the rule snapshot's own
+	// preemption configuration - InterruptMode governs this instance
+	// when it is the incoming candidate, Interruptible when it is the
+	// one currently playing.
+	InterruptMode domain.InterruptMode
+	Interruptible bool
 }
