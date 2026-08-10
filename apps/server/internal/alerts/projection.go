@@ -52,6 +52,11 @@ type PublicAlert struct {
 	Username *string
 	Message  *string
 	Quantity *int64
+	// AvatarURL is the alert's own already-safe normalized avatar URL
+	// (nil when the source event never populated one - true for every
+	// Stage 12A/12B event type today) - the only data source Stage 13A's
+	// `avatar` visual-design layer kind ever uses (Part 46).
+	AvatarURL *string
 
 	// GroupCount is always present (never omitted/optional) - 1 for a
 	// single, ungrouped alert, and the true, bounded member count once

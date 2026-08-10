@@ -546,7 +546,7 @@ function EditorPreview({
           current={{
             schemaVersion: 1, alertId: 'preview', eventType, providerId: 'twitch', synthetic: true, replayed: false,
             renderedText: mutation.data.renderedText, durationMs: 999999, entryAnimation: 'none', exitAnimation: 'none',
-            animationDurationMs: 0, groupCount: 1,
+            animationDurationMs: 0, groupCount: 1, renderingMode: 'legacy',
           }}
         />
       </div>

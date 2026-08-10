@@ -1,0 +1,154 @@
+{
+  "page": {
+    "title": "Kreator nakładki alertu",
+    "backToRules": "Wstecz"
+  },
+  "topbar": {
+    "unsaved": "Niezapisane zmiany",
+    "saved": "Zapisano",
+    "undo": "Cofnij",
+    "redo": "Ponów",
+    "fit": "Dopasuj",
+    "zoom": "Powiększenie",
+    "save": "Zapisz",
+    "saving": "Zapisywanie…",
+    "resetToLegacy": "Przywróć starszą prezentację"
+  },
+  "layers": {
+    "title": "Warstwy",
+    "addLayer": "Dodaj warstwę",
+    "addShape": "Prostokąt",
+    "addText": "Tekst",
+    "addPlatformIcon": "Ikona platformy",
+    "addAvatar": "Awatar",
+    "empty": "Brak warstw. Dodaj pierwszą, aby zacząć.",
+    "kind": {
+      "shape": "Prostokąt",
+      "text": "Tekst",
+      "platform_icon": "Ikona platformy",
+      "avatar": "Awatar"
+    },
+    "textVariant": {
+      "static": "Tekst statyczny",
+      "alert_rendered_text": "Tekst alertu",
+      "username": "Nazwa użytkownika",
+      "platform": "Platforma",
+      "event_type": "Typ zdarzenia",
+      "message": "Wiadomość",
+      "quantity": "Ilość",
+      "group_count": "Liczba w grupie"
+    },
+    "moveUp": "Przesuń wyżej",
+    "moveDown": "Przesuń niżej",
+    "moveToFront": "Przenieś na wierzch",
+    "moveToBack": "Przenieś na spód",
+    "show": "Pokaż warstwę",
+    "hide": "Ukryj warstwę",
+    "lock": "Zablokuj warstwę",
+    "unlock": "Odblokuj warstwę",
+    "duplicate": "Powiel warstwę",
+    "delete": "Usuń warstwę",
+    "unavailableBindingWarning": "Ta wartość jest niedostępna dla wybranego typu zdarzenia i nigdy nie pojawi się na prawdziwym alercie."
+  },
+  "properties": {
+    "title": "Właściwości",
+    "canvasTitle": "Płótno",
+    "noSelection": "Wybierz warstwę, aby edytować jej właściwości, albo skorzystaj z ustawień płótna poniżej.",
+    "layerName": "Nazwa warstwy",
+    "position": "Pozycja",
+    "size": "Rozmiar",
+    "x": "X",
+    "y": "Y",
+    "width": "Szerokość",
+    "height": "Wysokość",
+    "opacity": "Przezroczystość",
+    "fill": "Wypełnienie",
+    "borderColor": "Kolor obramowania",
+    "borderWidth": "Grubość obramowania",
+    "cornerRadius": "Zaokrąglenie rogów",
+    "textBinding": "Zawartość",
+    "staticText": "Tekst",
+    "missingValueBehavior": "Gdy brakuje danych",
+    "missingHide": "Ukryj warstwę",
+    "missingPlaceholder": "Pokaż zastępnik tylko w podglądzie",
+    "fontFamily": "Czcionka",
+    "fontSize": "Rozmiar czcionki",
+    "fontWeight": "Grubość czcionki",
+    "lineHeight": "Interlinia",
+    "letterSpacing": "Odstępy między literami",
+    "textColor": "Kolor tekstu",
+    "horizontalAlign": "Wyrównanie poziome",
+    "verticalAlign": "Wyrównanie pionowe",
+    "alignLeft": "Do lewej",
+    "alignCenter": "Do środka",
+    "alignRight": "Do prawej",
+    "alignTop": "Do góry",
+    "alignMiddle": "Do środka",
+    "alignBottom": "Do dołu",
+    "outlineWidth": "Grubość konturu",
+    "outlineColor": "Kolor konturu",
+    "shadowEnabled": "Cień",
+    "shadowOffsetX": "Przesunięcie cienia X",
+    "shadowOffsetY": "Przesunięcie cienia Y",
+    "shadowBlur": "Rozmycie cienia",
+    "shadowColor": "Kolor cienia",
+    "entryAnimation": "Animacja wejścia",
+    "exitAnimation": "Animacja wyjścia",
+    "animationDuration": "Czas trwania animacji",
+    "canvasWidth": "Szerokość",
+    "canvasHeight": "Wysokość",
+    "canvasPreset": "Ustawienie",
+    "presetLandscape": "Poziomo (1920×1080)",
+    "presetVertical": "Pionowo (1080×1920)",
+    "presetCustom": "Niestandardowe"
+  },
+  "canvasResize": {
+    "confirmTitle": "Zmienić rozmiar płótna?",
+    "confirmMessage": "Niektóre warstwy mogą nie mieścić się w nowym rozmiarze płótna i zostaną przesunięte, aby pozostać w jego obrębie.",
+    "confirmAction": "Zmień rozmiar"
+  },
+  "resetToLegacy": {
+    "confirmTitle": "Przywrócić starszą prezentację?",
+    "confirmMessage": "Spowoduje to usunięcie zapisanego projektu wizualnego i przywrócenie tej reguły do stałej prezentacji (motyw, pozycja, wyrównanie). Tej operacji nie można cofnąć z tego miejsca.",
+    "confirmAction": "Przywróć starszą prezentację"
+  },
+  "discard": {
+    "confirmTitle": "Odrzucić niezapisane zmiany?",
+    "confirmMessage": "Masz niezapisane zmiany w tym projekcie. Opuszczenie tej strony teraz je odrzuci.",
+    "confirmAction": "Odrzuć zmiany"
+  },
+  "revisionConflict": {
+    "title": "Ktoś inny zapisał ten projekt",
+    "message": "Ten projekt został zmieniony i zapisany gdzie indziej od czasu jego otwarcia. Twoje własne niezapisane zmiany pozostają tutaj, ale nie zostały zapisane.",
+    "reload": "Wczytaj wersję z serwera"
+  },
+  "preview": {
+    "title": "Scenariusz podglądu",
+    "scenario": {
+      "follow": "Obserwacja",
+      "subscription": "Subskrypcja",
+      "resubscription": "Przedłużona subskrypcja",
+      "gifted_subscription": "Podarowana subskrypcja",
+      "subscription_gift_batch": "Pakiet podarowanych subskrypcji",
+      "bits": "Bits",
+      "raid": "Najazd",
+      "channel_point_redemption": "Wymiana punktów kanału",
+      "grouped_bits": "Zgrupowane Bits",
+      "grouped_gift_batch": "Zgrupowany pakiet subskrypcji",
+      "anonymous": "Anonimowy",
+      "missing_avatar": "Brak awatara",
+      "very_long_username": "Bardzo długa nazwa użytkownika",
+      "very_long_message": "Bardzo długa wiadomość",
+      "missing_message": "Brak wiadomości"
+    },
+    "explanation": "Lokalna, syntetyczna próbka - nigdy nie dotyka prawdziwej kolejki ani Twitcha. Użyj przycisku „Testuj regułę” na stronie Alertów, aby zobaczyć ten projekt w prawdziwym publicznym źródle przeglądarki."
+  },
+  "renderer": {
+    "missingValuePlaceholder": "(brak danych)"
+  },
+  "designerLink": {
+    "openDesigner": "Otwórz kreator",
+    "controlledByDesigner": "Prezentacją zarządza kreator",
+    "legacyDescription": "Ta reguła używa stałej prezentacji (motyw, pozycja, wyrównanie) poniżej."
+  }
+}

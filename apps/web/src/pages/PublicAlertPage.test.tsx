@@ -223,4 +223,56 @@ describe('PublicAlertPage', () => {
     expect(await screen.findByText('Urgent raid alert')).toBeInTheDocument();
     expect(screen.queryByText('Low priority alert')).not.toBeInTheDocument();
   });
+
+  // --- Stage 13A: visual-design-driven alerts ---------------------------
+
+  function visualDesignPayload() {
+    return {
+      schemaVersion: 1,
+      canvas: { width: 1920, height: 1080, transparent: true },
+      layers: [{
+        id: 'layer_1', kind: 'text',
+        frame: { x: 10, y: 10, width: 400, height: 100 }, opacity: 1,
+        text: {
+          binding: 'alert_rendered_text', missingValueBehavior: 'hide',
+          fontFamily: 'system-ui', fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: 0,
+          textColor: '#FFFFFF', horizontalAlign: 'center', verticalAlign: 'middle',
+          outlineWidth: 0, outlineColor: '#000000',
+          shadowEnabled: false, shadowOffsetX: 0, shadowOffsetY: 0, shadowBlur: 0, shadowColor: '#000000',
+        },
+        entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+      }],
+    };
+  }
+
+  it('renders a design-driven alert (renderingMode="visual_design") through the shared VisualDesignRenderer', async () => {
+    vi.mocked(alertsApi).fetchPublicAlertProfileConfig.mockResolvedValue(baseConfig);
+    renderPage();
+    await screen.findByTestId('alert-root');
+
+    FakeEventSource.instances[0]!.emit('alert.show', {
+      paused: false,
+      alert: alertPayload({ renderingMode: 'visual_design', visualDesign: visualDesignPayload(), renderedText: 'Ann just followed!' }),
+    });
+
+    const item = await screen.findByTestId('alert-item');
+    expect(item).toHaveAttribute('data-rendering-mode', 'visual_design');
+    expect(screen.getByTestId('visual-design-renderer')).toBeInTheDocument();
+    expect(screen.getByText('Ann just followed!')).toBeInTheDocument();
+    // The legacy fixed theme box is never rendered for a design-driven alert.
+    expect(screen.queryByTestId('alert-text')).not.toBeInTheDocument();
+  });
+
+  it('a legacy alert (no renderingMode, or renderingMode omitted) still renders through the fixed theme renderer', async () => {
+    vi.mocked(alertsApi).fetchPublicAlertProfileConfig.mockResolvedValue(baseConfig);
+    renderPage();
+    await screen.findByTestId('alert-root');
+
+    FakeEventSource.instances[0]!.emit('alert.show', { paused: false, alert: alertPayload() });
+
+    const item = await screen.findByTestId('alert-item');
+    expect(item).toHaveAttribute('data-rendering-mode', 'legacy');
+    expect(screen.getByTestId('alert-text')).toHaveTextContent('Ann just followed!');
+    expect(screen.queryByTestId('visual-design-renderer')).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,5 @@
 import enAccounts from './resources/en/accounts.json';
+import enAlertDesigner from './resources/en/alertDesigner.json';
 import enAlerts from './resources/en/alerts.json';
 import enAutomation from './resources/en/automation.json';
 import enChat from './resources/en/chat.json';
@@ -13,6 +14,7 @@ import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
 import plAccounts from './resources/pl/accounts.json';
+import plAlertDesigner from './resources/pl/alertDesigner.json';
 import plAlerts from './resources/pl/alerts.json';
 import plAutomation from './resources/pl/automation.json';
 import plChat from './resources/pl/chat.json';
@@ -52,6 +54,7 @@ export const enResources = {
   overlays: enOverlays,
   automation: enAutomation,
   alerts: enAlerts,
+  alertDesigner: enAlertDesigner,
 } as const;
 
 const plResources = {
@@ -69,6 +72,7 @@ const plResources = {
   overlays: plOverlays,
   automation: plAutomation,
   alerts: plAlerts,
+  alertDesigner: plAlertDesigner,
 } as const;
 
 export const resources = {

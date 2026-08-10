@@ -1,0 +1,154 @@
+{
+  "page": {
+    "title": "Alert Overlay Designer",
+    "backToRules": "Back"
+  },
+  "topbar": {
+    "unsaved": "Unsaved changes",
+    "saved": "Saved",
+    "undo": "Undo",
+    "redo": "Redo",
+    "fit": "Fit",
+    "zoom": "Zoom",
+    "save": "Save",
+    "saving": "Saving…",
+    "resetToLegacy": "Reset to legacy presentation"
+  },
+  "layers": {
+    "title": "Layers",
+    "addLayer": "Add layer",
+    "addShape": "Rectangle",
+    "addText": "Text",
+    "addPlatformIcon": "Platform icon",
+    "addAvatar": "Avatar",
+    "empty": "No layers yet. Add one to get started.",
+    "kind": {
+      "shape": "Rectangle",
+      "text": "Text",
+      "platform_icon": "Platform icon",
+      "avatar": "Avatar"
+    },
+    "textVariant": {
+      "static": "Static text",
+      "alert_rendered_text": "Alert text",
+      "username": "Username",
+      "platform": "Platform",
+      "event_type": "Event type",
+      "message": "Message",
+      "quantity": "Quantity",
+      "group_count": "Group count"
+    },
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveToFront": "Move to front",
+    "moveToBack": "Move to back",
+    "show": "Show layer",
+    "hide": "Hide layer",
+    "lock": "Lock layer",
+    "unlock": "Unlock layer",
+    "duplicate": "Duplicate layer",
+    "delete": "Delete layer",
+    "unavailableBindingWarning": "This value is not available for the selected event type and will never appear on a real alert."
+  },
+  "properties": {
+    "title": "Properties",
+    "canvasTitle": "Canvas",
+    "noSelection": "Select a layer to edit its properties, or use the canvas settings below.",
+    "layerName": "Layer name",
+    "position": "Position",
+    "size": "Size",
+    "x": "X",
+    "y": "Y",
+    "width": "Width",
+    "height": "Height",
+    "opacity": "Opacity",
+    "fill": "Fill",
+    "borderColor": "Border color",
+    "borderWidth": "Border width",
+    "cornerRadius": "Corner radius",
+    "textBinding": "Content",
+    "staticText": "Text",
+    "missingValueBehavior": "When data is missing",
+    "missingHide": "Hide the layer",
+    "missingPlaceholder": "Show a placeholder in preview only",
+    "fontFamily": "Font",
+    "fontSize": "Font size",
+    "fontWeight": "Font weight",
+    "lineHeight": "Line height",
+    "letterSpacing": "Letter spacing",
+    "textColor": "Text color",
+    "horizontalAlign": "Horizontal align",
+    "verticalAlign": "Vertical align",
+    "alignLeft": "Left",
+    "alignCenter": "Center",
+    "alignRight": "Right",
+    "alignTop": "Top",
+    "alignMiddle": "Middle",
+    "alignBottom": "Bottom",
+    "outlineWidth": "Outline width",
+    "outlineColor": "Outline color",
+    "shadowEnabled": "Shadow",
+    "shadowOffsetX": "Shadow offset X",
+    "shadowOffsetY": "Shadow offset Y",
+    "shadowBlur": "Shadow blur",
+    "shadowColor": "Shadow color",
+    "entryAnimation": "Entry animation",
+    "exitAnimation": "Exit animation",
+    "animationDuration": "Animation duration",
+    "canvasWidth": "Width",
+    "canvasHeight": "Height",
+    "canvasPreset": "Preset",
+    "presetLandscape": "Landscape (1920×1080)",
+    "presetVertical": "Vertical (1080×1920)",
+    "presetCustom": "Custom"
+  },
+  "canvasResize": {
+    "confirmTitle": "Change canvas size?",
+    "confirmMessage": "Some layers may no longer fit inside the new canvas size and will be repositioned to stay on canvas.",
+    "confirmAction": "Change size"
+  },
+  "resetToLegacy": {
+    "confirmTitle": "Reset to legacy presentation?",
+    "confirmMessage": "This removes the saved visual design and returns this rule to its fixed presentation (theme, position, alignment). This cannot be undone from here.",
+    "confirmAction": "Reset to legacy"
+  },
+  "discard": {
+    "confirmTitle": "Discard unsaved changes?",
+    "confirmMessage": "You have unsaved changes to this design. Leaving now discards them.",
+    "confirmAction": "Discard changes"
+  },
+  "revisionConflict": {
+    "title": "Someone else saved this design",
+    "message": "This design was changed and saved elsewhere since you opened it. Your own unsaved changes are kept here, but they were not saved.",
+    "reload": "Reload server version"
+  },
+  "preview": {
+    "title": "Preview scenario",
+    "scenario": {
+      "follow": "Follow",
+      "subscription": "Subscription",
+      "resubscription": "Resubscription",
+      "gifted_subscription": "Gifted subscription",
+      "subscription_gift_batch": "Gift sub batch",
+      "bits": "Bits",
+      "raid": "Raid",
+      "channel_point_redemption": "Channel point redemption",
+      "grouped_bits": "Grouped Bits",
+      "grouped_gift_batch": "Grouped gift sub batch",
+      "anonymous": "Anonymous",
+      "missing_avatar": "Missing avatar",
+      "very_long_username": "Very long username",
+      "very_long_message": "Very long message",
+      "missing_message": "Missing message"
+    },
+    "explanation": "A local, synthetic fixture - never touches the real queue or Twitch. Use Test Rule on the Alerts page to see this design go through the real public Browser Source."
+  },
+  "renderer": {
+    "missingValuePlaceholder": "(no data)"
+  },
+  "designerLink": {
+    "openDesigner": "Open Designer",
+    "controlledByDesigner": "Presentation controlled by Designer",
+    "legacyDescription": "This rule uses the fixed presentation (theme, position, alignment) below."
+  }
+}

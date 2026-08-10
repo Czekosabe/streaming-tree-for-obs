@@ -9,6 +9,7 @@ function makeAlert(overrides: Partial<PublicAlert> = {}): PublicAlert {
     schemaVersion: 1, alertId: 'alinst_1', eventType: 'follow', providerId: 'twitch',
     synthetic: false, replayed: false, renderedText: 'Ann followed!', groupCount: 1,
     durationMs: 5000, entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
+    renderingMode: 'legacy',
     ...overrides,
   };
 }

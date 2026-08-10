@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { PublicAlert, PublicAlertProfileConfig } from '@/api/alerts-schemas';
+import { VisualDesignRenderer } from '@/components/visual-design/VisualDesignRenderer';
 import { cn } from '@/lib/cn';
 import { providerGlyphClass } from '@/models/provider-labels';
 
@@ -101,43 +102,74 @@ export function AlertRenderer({
     ? exitClass
     : alertEntryAnimationClassName(alert.entryAnimation, prefersReducedMotion);
 
+  const isVisualDesign = alert.renderingMode === 'visual_design' && alert.visualDesign !== null && alert.visualDesign !== undefined;
+
   return (
     <div
       className="h-full w-full"
       style={alertContainerStyle(config.position, alert.animationDurationMs)}
       data-testid="alert-root"
     >
-      <div
-        className={cn('max-w-[90%]', alertThemeClassName(config.theme), animationClass)}
-        style={alertTextAlignStyle(config.textAlign)}
-        data-testid="alert-item"
-        data-alert-id={alert.alertId}
-        data-synthetic={alert.synthetic}
-        onAnimationEnd={leaving ? () => setDisplayed(null) : undefined}
-      >
-        <div data-testid="alert-text">{alert.renderedText}</div>
-        {(alert.quantity !== null && alert.quantity !== undefined) || alert.providerId !== '' || alert.groupCount > 1 ? (
-          <div className="mt-1 flex items-center justify-center gap-2 text-xs opacity-80" data-testid="alert-meta">
-            {alert.providerId !== '' ? (
-              <span className={providerGlyphClass(alert.providerId)} data-testid="alert-provider-glyph">
-                {alert.providerId}
-              </span>
-            ) : null}
-            {alert.quantity !== null && alert.quantity !== undefined ? (
-              <span data-testid="alert-quantity">{alert.quantity}</span>
-            ) : null}
-            {alert.groupCount > 1 ? (
-              <span
-                className="rounded-full border border-current/40 px-1.5 py-0.5 font-mono tabular-nums"
-                data-testid="alert-group-count"
-                aria-label={t('renderer.groupCountLabel', { count: alert.groupCount })}
-              >
-                {`×${alert.groupCount}`}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      {isVisualDesign && alert.visualDesign ? (
+        <div
+          className={cn('h-full w-full', animationClass)}
+          data-testid="alert-item"
+          data-rendering-mode="visual_design"
+          data-alert-id={alert.alertId}
+          data-synthetic={alert.synthetic}
+          onAnimationEnd={leaving ? () => setDisplayed(null) : undefined}
+        >
+          <VisualDesignRenderer
+            canvas={alert.visualDesign.canvas}
+            layers={alert.visualDesign.layers}
+            alert={{
+              eventType: alert.eventType,
+              providerId: alert.providerId,
+              username: alert.username ?? null,
+              message: alert.message ?? null,
+              quantity: alert.quantity ?? null,
+              groupCount: alert.groupCount,
+              renderedText: alert.renderedText,
+              avatarUrl: alert.avatarUrl ?? null,
+            }}
+            mode="public"
+            prefersReducedMotion={prefersReducedMotion}
+          />
+        </div>
+      ) : (
+        <div
+          className={cn('max-w-[90%]', alertThemeClassName(config.theme), animationClass)}
+          style={alertTextAlignStyle(config.textAlign)}
+          data-testid="alert-item"
+          data-rendering-mode="legacy"
+          data-alert-id={alert.alertId}
+          data-synthetic={alert.synthetic}
+          onAnimationEnd={leaving ? () => setDisplayed(null) : undefined}
+        >
+          <div data-testid="alert-text">{alert.renderedText}</div>
+          {(alert.quantity !== null && alert.quantity !== undefined) || alert.providerId !== '' || alert.groupCount > 1 ? (
+            <div className="mt-1 flex items-center justify-center gap-2 text-xs opacity-80" data-testid="alert-meta">
+              {alert.providerId !== '' ? (
+                <span className={providerGlyphClass(alert.providerId)} data-testid="alert-provider-glyph">
+                  {alert.providerId}
+                </span>
+              ) : null}
+              {alert.quantity !== null && alert.quantity !== undefined ? (
+                <span data-testid="alert-quantity">{alert.quantity}</span>
+              ) : null}
+              {alert.groupCount > 1 ? (
+                <span
+                  className="rounded-full border border-current/40 px-1.5 py-0.5 font-mono tabular-nums"
+                  data-testid="alert-group-count"
+                  aria-label={t('renderer.groupCountLabel', { count: alert.groupCount })}
+                >
+                  {`×${alert.groupCount}`}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

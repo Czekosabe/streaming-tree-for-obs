@@ -13530,3 +13530,167 @@ none performed, none needed for this backend-only commit.
 The shared React visual-design renderer
 (`feat(web): render visual design documents`), then the Alert Overlay
 Designer itself (`feat(web): add alert overlay designer`).
+
+## 2026-08-10 22:44 — feat(web): render visual design documents
+
+### What
+The one shared React visual-design renderer (Stage 13A task Part
+24/25): Zod contracts for the management/public document shapes,
+bounds-mirroring pure helpers (layer factories, frame/canvas geometry,
+snapping, ordering, bounded undo/redo), the renderer component tree
+itself, and `AlertRenderer.tsx`'s own new branch on
+`renderingMode`. Used identically by the real public Browser Source
+route today; the Alert Designer (next commit) adds its own editing
+chrome around this exact same component, never a second
+implementation.
+
+### A necessary small backend addition discovered while building this
+The `avatar` layer kind (Stage 13A task Part 10) has no data source
+without an avatar URL on the public alert payload, and none existed -
+`internal/alerts.PublicAlert` never carried one (Stage 12A's own doc
+comment explains why: no alert event type populates it yet). Since
+`engagement.User.AvatarURL` already exists as a real, already-safe,
+already-normalized field (populated for some chat-adjacent event
+paths, reused as-is by `internal/chatoverlay` for exactly this
+purpose), threading it through was the honest fix rather than
+inventing a substitute: `Instance.AvatarURL` (copied in `buildInstance`
+exactly like `Username`), `PublicAlert.AvatarURL`, and
+`toPublicAlertDTO`'s new `avatarUrl` field. It is `null` for every one
+of the 8 real Stage 12A/12B alert event types today - an honest,
+expected, non-fabricated absence, not a bug; an `avatar` layer simply
+never renders anything for a real alert today until a future Twitch
+normalization change populates this field for one of them. Backend
+tests re-run clean after this addition (`go test ./...`).
+
+### Frontend: contracts and models
+- `api/visualdesign-schemas.ts` (new): Zod schemas mirroring
+  `internal/httpapi/visualdesign.go`'s wire DTOs exactly - the
+  management document shape (with `name`/`locked`) and the smaller
+  public shape (without them). Deliberately does **not** import
+  anything from `alerts-schemas.ts`, even though the animation enum
+  values are identical - a two-way import between those two files (the
+  public alert payload needs the visual-design shape; this file
+  originally imported `alertAnimationSchema` back) is a real ESM
+  circular-import hazard, caught the hard way by this very file's own
+  test suite failing with `visualDesignRenderingModeSchema` being
+  `undefined` at import time. Fixed by duplicating one small, stable,
+  closed enum here instead of untangling a cycle - documented in the
+  file's own header so it is never "fixed" back into a cycle later.
+- `api/alerts-schemas.ts`: `publicAlertSchema` gained `renderingMode`
+  (defaulting to `"legacy"` if somehow absent - defensive, never
+  expected from this project's own backend) and `visualDesign`.
+- `api/visualdesign.ts`: `fetchVisualDesign`/`saveVisualDesign`/
+  `deleteVisualDesign` transport functions.
+- `models/visualdesign.ts`: every bound mirrored from
+  `internal/domain/visualdesign`'s own Go constants, canvas presets,
+  layer factories (`createShapeLayer`/`createTextLayer`/
+  `createPlatformIconLayer`/`createAvatarLayer`, each minting a fresh
+  client-side `layer_...` id), `duplicateLayer`, frame clamp/
+  within-canvas checks, `containScale` (the exact same policy the
+  renderer applies - shared, not duplicated), `snapFramePosition`
+  (center/edge snapping within a threshold), layer-order
+  normalization/move helpers, and a small, generic bounded
+  undo/redo `History<T>` (`createHistory`/`pushHistory`/`undoHistory`/
+  `redoHistory`, capped at `MAX_UNDO_HISTORY=50`).
+
+### Frontend: the shared renderer (`components/visual-design/`)
+- `VisualDesignRenderer.tsx`: top-level - measures its own live wrapper
+  size (`design-scale.ts`'s `useContainScale`, ResizeObserver-driven)
+  and applies the deterministic contain-style scale/center transform,
+  resolves each text layer's binding via i18n-provided platform/
+  event-type labels, filters to visible layers only (identical
+  behavior for the already-server-filtered public shape and the
+  Designer's own management shape, via one shared `RenderableLayer`
+  type both structurally satisfy), and accepts an optional `chrome`
+  render-prop so the future Designer can add selection/drag chrome
+  around each layer without a second rendering implementation.
+- `VisualLayer.tsx`: per-layer frame positioning + own entry-animation
+  class + kind dispatch.
+- `ShapeLayer.tsx`/`TextLayer.tsx`/`PlatformIconLayer.tsx`/
+  `AvatarLayer.tsx`: the four Stage 13A primitives.
+  `PlatformIconLayer` reuses the existing `providerGlyphClass` mapping
+  (never a copyrighted logo asset). `AvatarLayer` re-checks HTTPS-only
+  client-side (defense in depth beyond backend validation) and falls
+  back to rendering nothing on a missing/non-HTTPS/broken URL
+  (`onError`).
+- `design-style.ts`: bounded style-object builders - every value
+  already passed backend validation before reaching this module;
+  never a raw string from the backend goes into `style` unvalidated.
+  Reuses the exact same `animate-chat-overlay-*` utility classes
+  alerts/chat-overlay already define, never new keyframes.
+- `text-binding.ts`: pure, framework-free `resolveTextBindingValue` -
+  returns `null` (never a fabricated fallback) for a genuinely absent
+  bound value; the caller (`TextLayer.tsx`) decides hide-vs-placeholder
+  from that.
+- `TextLayer.tsx`'s missing-value handling: `mode="public"` always
+  hides an absent-value layer regardless of its own saved
+  `missingValueBehavior`; `mode="preview"` (editor-only, used by the
+  next commit's Designer) may show a translated, obviously-synthetic
+  placeholder string instead - enforced once, here, the one place both
+  routes' rendering logic actually lives.
+
+### AlertRenderer.tsx integration
+Branches on `alert.renderingMode`: `"visual_design"` renders
+`VisualDesignRenderer` full-bleed inside the same outer container/
+mount-unmount-animation lifecycle that already existed (unchanged);
+`"legacy"` (or an unrecognized/absent value) renders the exact same
+Stage 12A fixed-theme box as before, byte-for-byte unchanged. Both
+branches now carry `data-rendering-mode` for test/debugging
+observability. `PublicAlertPage.tsx` needed **no changes at all** -
+it already just passes `current` through to `AlertRenderer`, which
+does 100% of the new branching internally.
+
+### Tests
+- `api/visualdesign-schemas.test.ts`: every layer kind, every text
+  binding, the management-vs-public shape difference, an unpersisted-
+  draft and a persisted response.
+- `models/visualdesign.test.ts`: bounds validators, layer factories,
+  frame clamp/within-canvas, `containScale` (uniform scaling, the
+  more-constraining-axis case), snapping (within/outside threshold),
+  order normalization, `moveLayerOrder` for all 4 directions, and the
+  full bounded undo/redo history contract (round-trip, redo-branch
+  discarded by a new push, the 50-entry bound, no-op on empty). Caught
+  a real bug while writing this: `moveLayerOrder`'s own
+  `normalizeLayerOrder` call at the end was re-sorting by each layer's
+  now-stale `.order` field instead of the just-constructed array
+  position, silently undoing every reorder - fixed to re-derive order
+  directly from array index instead.
+- `components/visual-design/text-binding.test.ts`: every binding
+  resolves correctly, including every "absent value resolves to null,
+  never a fabricated fallback" case.
+- `components/visual-design/VisualDesignRenderer.test.tsx`: renders
+  each of the 4 layer kinds, hides a `visible=false` layer even in
+  preview mode, hides an absent-value text layer in public mode,
+  shows the translated placeholder in preview mode, never renders an
+  avatar for an absent/non-HTTPS URL, renders one for a real HTTPS
+  URL, and preserves layer order.
+- `pages/PublicAlertPage.test.tsx`: two new cases - a `renderingMode:
+  "visual_design"` alert.show renders through `VisualDesignRenderer`
+  (never the legacy theme box); an ordinary legacy alert still renders
+  through the fixed theme box exactly as before.
+- Every existing Stage 12A/12B frontend test still passes unchanged
+  (1018 total, up from 942).
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 15 namespaces (the new
+  `alertDesigner` one added, already fully translated for the strings
+  this commit uses), no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - **1018 tests pass, 72 test files**.
+- `npm run build` - clean production build.
+- Backend: `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test
+  ./...` all clean after the `AvatarURL` addition.
+
+### Known limitations
+No Designer UI yet (next commit) - a design can currently only be
+created/edited via direct API calls or (once the next commit lands)
+the Designer itself. No real Twitch/OBS testing - none performed, none
+needed for this rendering-only commit.
+
+### Next step
+The Alert Overlay Designer itself: the `/alerts/rules/{ruleId}/
+designer` route, drag/resize/numeric editing, the layers list and
+property panel, undo/redo wiring, zoom/snapping, deterministic preview
+scenarios, and the Preview-vs-Test-Rule/Save/revision-conflict/
+Reset-to-legacy flows.

@@ -44,6 +44,16 @@ type Instance struct {
 	Message     string
 	Quantity    *int64
 	RewardTitle string
+	// AvatarURL is the event's own normalized, already-safe avatar URL
+	// (engagement.User.AvatarURL) - Stage 13A's own `avatar` visual-
+	// design layer kind's only data source (Part 46: "no arbitrary URL
+	// input in the designer"). Empty whenever the source event's own
+	// normalization never populated it - true for every one of the 8
+	// Stage 12A/12B event types today (see engagement.User.AvatarURL's
+	// own doc comment: only chat.message-adjacent code paths populate
+	// this field so far) - never fabricated, exactly like Username is
+	// empty for an anonymous actor.
+	AvatarURL string
 
 	PlatformLabel string
 	RenderedText  string

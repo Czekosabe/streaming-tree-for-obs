@@ -869,7 +869,8 @@ func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
 	out := map[string]any{
 		"schemaVersion": a.SchemaVersion, "alertId": a.AlertID, "eventType": a.EventType, "providerId": a.ProviderID,
 		"synthetic": a.Synthetic, "replayed": a.Replayed, "username": a.Username, "message": a.Message,
-		"quantity": a.Quantity, "groupCount": a.GroupCount, "renderedText": a.RenderedText, "durationMs": a.DurationMS,
+		"avatarUrl": a.AvatarURL,
+		"quantity":  a.Quantity, "groupCount": a.GroupCount, "renderedText": a.RenderedText, "durationMs": a.DurationMS,
 		"entryAnimation": a.EntryAnimation, "exitAnimation": a.ExitAnimation, "animationDurationMs": a.AnimationDurationMS,
 		// renderingMode/visualDesign: Stage 13A task Part 23's own
 		// additive discriminator - "legacy" (visualDesign omitted/null)

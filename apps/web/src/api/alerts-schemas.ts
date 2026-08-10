@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { publicVisualDesignDocumentSchema, visualDesignRenderingModeSchema } from './visualdesign-schemas';
+
 /**
  * Zod contracts for the Stage 12A alert API
  * (`internal/httpapi/alerts.go`): alert profiles, alert rules, the
@@ -246,6 +248,10 @@ export const publicAlertSchema = z.object({
   replayed: z.boolean(),
   username: z.string().nullable().optional(),
   message: z.string().nullable().optional(),
+  /** Stage 13A: the alert's own already-safe normalized avatar URL -
+   * see internal/alerts.PublicAlert.AvatarURL's own doc comment for
+   * why this is null for every real event today, not a bug. */
+  avatarUrl: z.string().nullable().optional(),
   quantity: z.number().nullable().optional(),
   groupCount: z.number(),
   renderedText: z.string(),
@@ -253,6 +259,12 @@ export const publicAlertSchema = z.object({
   entryAnimation: alertAnimationSchema,
   exitAnimation: alertAnimationSchema,
   animationDurationMs: z.number(),
+  /** Stage 13A: additive, closed discriminator - "legacy" (the Stage
+   * 12 fixed renderer above) or "visual_design" (visualDesign below is
+   * present and authoritative for layout). See
+   * docs/visual-designs.md's own §12. */
+  renderingMode: visualDesignRenderingModeSchema.default('legacy'),
+  visualDesign: publicVisualDesignDocumentSchema.nullable().optional(),
 });
 export type PublicAlert = z.infer<typeof publicAlertSchema>;
 

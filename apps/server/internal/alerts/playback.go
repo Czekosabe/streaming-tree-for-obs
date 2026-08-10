@@ -58,6 +58,10 @@ func toPublicAlert(inst Instance) *PublicAlert {
 		m := inst.Message
 		pa.Message = &m
 	}
+	if inst.AvatarURL != "" {
+		a := inst.AvatarURL
+		pa.AvatarURL = &a
+	}
 	if inst.Quantity != nil {
 		q := *inst.Quantity
 		pa.Quantity = &q

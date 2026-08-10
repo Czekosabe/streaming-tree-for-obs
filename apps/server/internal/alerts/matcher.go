@@ -161,6 +161,7 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 			username = &name
 			inst.ActorDisplayName = name
 			inst.ActorProviderUserID = evt.User.ProviderUserID
+			inst.AvatarURL = evt.User.AvatarURL
 		}
 	}
 
