@@ -47,7 +47,7 @@ func TestMatchEventEveryRealEventType(t *testing.T) {
 		t.Run(string(c.engagementType), func(t *testing.T) {
 			evt := baseEvent(c.engagementType)
 			rule := baseRule("r1", c.domainType)
-			out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+			out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 			if len(out) != 1 {
 				t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
 			}
@@ -64,7 +64,7 @@ func TestMatchEventEveryRealEventType(t *testing.T) {
 func TestMatchEventIgnoresUnsupportedType(t *testing.T) {
 	evt := baseEvent(engagement.TypeChatMessage)
 	rule := baseRule("r1", domain.EventFollow)
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Errorf("MatchEvent() for chat.message = %d instances, want 0", len(out))
 	}
 }
@@ -73,7 +73,7 @@ func TestMatchEventIgnoresSyntheticRealBusEvent(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	evt.Synthetic = true
 	rule := baseRule("r1", domain.EventFollow)
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Errorf("MatchEvent() for a synthetic event = %d instances, want 0 (must use the separate test-alert path)", len(out))
 	}
 }
@@ -82,7 +82,7 @@ func TestMatchEventDisabledRuleNeverMatches(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	rule := baseRule("r1", domain.EventFollow)
 	rule.Enabled = false
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Errorf("MatchEvent() for a disabled rule = %d instances, want 0", len(out))
 	}
 }
@@ -91,11 +91,11 @@ func TestMatchEventProviderFilter(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	rule := baseRule("r1", domain.EventFollow)
 	rule.Providers = []domain.ProviderID{"kick"}
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Errorf("MatchEvent() with a mismatched provider filter = %d instances, want 0", len(out))
 	}
 	rule.Providers = []domain.ProviderID{domain.ProviderTwitch}
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
 		t.Errorf("MatchEvent() with a matching provider filter = %d instances, want 1", len(out))
 	}
 }
@@ -104,11 +104,11 @@ func TestMatchEventAccountFilter(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	rule := baseRule("r1", domain.EventFollow)
 	rule.Accounts = []string{"acct_other"}
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Errorf("MatchEvent() with a mismatched account filter = %d instances, want 0", len(out))
 	}
 	rule.Accounts = []string{"acct_1"}
-	if out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
 		t.Errorf("MatchEvent() with a matching account filter = %d instances, want 1", len(out))
 	}
 }
@@ -140,7 +140,7 @@ func TestMatchEventQuantityTiersNonOverlapping(t *testing.T) {
 		{5000, "high"},
 	}
 	for _, c := range cases {
-		out := MatchEvent(quantityEvent(c.quantity), rules, fixedNow, domain.LanguageEnglish)
+		out := MatchEvent(quantityEvent(c.quantity), rules, nil, fixedNow, domain.LanguageEnglish)
 		if len(out) != 1 {
 			t.Fatalf("quantity=%d: MatchEvent() = %d instances, want exactly 1 (no overlap)", c.quantity, len(out))
 		}
@@ -155,16 +155,16 @@ func TestMatchEventQuantityBoundsInclusive(t *testing.T) {
 	rule := baseRule("r1", domain.EventBits)
 	rule.MinimumQuantity, rule.MaximumQuantity = i(100), i(200)
 
-	if out := MatchEvent(quantityEvent(99), []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(quantityEvent(99), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Error("quantity=99 (below inclusive minimum) matched, want no match")
 	}
-	if out := MatchEvent(quantityEvent(100), []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+	if out := MatchEvent(quantityEvent(100), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
 		t.Error("quantity=100 (inclusive minimum) did not match")
 	}
-	if out := MatchEvent(quantityEvent(200), []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+	if out := MatchEvent(quantityEvent(200), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
 		t.Error("quantity=200 (inclusive maximum) did not match")
 	}
-	if out := MatchEvent(quantityEvent(201), []domain.Rule{rule}, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+	if out := MatchEvent(quantityEvent(201), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
 		t.Error("quantity=201 (above inclusive maximum) matched, want no match")
 	}
 }
@@ -173,7 +173,7 @@ func TestMatchEventMultipleMatchingRulesAllEnqueue(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	r1 := baseRule("r1", domain.EventFollow)
 	r2 := baseRule("r2", domain.EventFollow)
-	out := MatchEvent(evt, []domain.Rule{r1, r2}, fixedNow, domain.LanguageEnglish)
+	out := MatchEvent(evt, []domain.Rule{r1, r2}, nil, fixedNow, domain.LanguageEnglish)
 	if len(out) != 2 {
 		t.Fatalf("MatchEvent() with two independently-matching rules = %d instances, want 2", len(out))
 	}
@@ -186,7 +186,7 @@ func TestMatchEventAnonymousEventNeverFabricatesIdentity(t *testing.T) {
 	evt.User = &engagement.User{Anonymous: true}
 	rule := baseRule("r1", domain.EventBits)
 	rule.TextTemplate = "{username} cheered {quantity} bits"
-	out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 	if len(out) != 1 {
 		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
 	}
@@ -202,7 +202,7 @@ func TestMatchEventMissingOptionalFieldNeverPanics(t *testing.T) {
 	evt := baseEvent(engagement.TypeFollow)
 	evt.User = nil
 	rule := baseRule("r1", domain.EventFollow)
-	out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 	if len(out) != 1 {
 		t.Fatalf("MatchEvent() with a nil User = %d instances, want 1", len(out))
 	}
@@ -217,7 +217,7 @@ func TestMatchEventShowFlagsControlInstanceFields(t *testing.T) {
 	rule.ShowUsername = false
 	rule.ShowMessage = false
 	rule.ShowQuantity = false
-	out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 	if len(out) != 1 {
 		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
 	}
@@ -232,7 +232,7 @@ func TestMatchEventRewardTitleFromProviderExtra(t *testing.T) {
 	evt.ProviderExtra = map[string]string{"rewardTitle": "Hydrate!"}
 	rule := baseRule("r1", domain.EventChannelPointRedemption)
 	rule.TextTemplate = "{username} redeemed {rewardTitle}"
-	out := MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 	if len(out) != 1 {
 		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
 	}
@@ -251,5 +251,5 @@ func TestMatchEventNoProviderHTTPCallEverPossible(t *testing.T) {
 	// documenting the Stage 12A task's own Part 32 requirement.
 	evt := baseEvent(engagement.TypeFollow)
 	rule := baseRule("r1", domain.EventFollow)
-	_ = MatchEvent(evt, []domain.Rule{rule}, fixedNow, domain.LanguageEnglish)
+	_ = MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 }

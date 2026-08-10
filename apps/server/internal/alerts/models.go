@@ -4,6 +4,7 @@ import (
 	"time"
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // clock returns the current time; injected everywhere in this package so
@@ -110,4 +111,15 @@ type Instance struct {
 	// one currently playing.
 	InterruptMode domain.InterruptMode
 	Interruptible bool
+
+	// VisualDesign is Stage 13A's own immutable presentation snapshot:
+	// the owning rule's currently-saved visual design, already reduced
+	// to its safe PublicDocument form and copied in at buildInstance
+	// time - nil means "no design saved, use the Stage 12 legacy fixed
+	// renderer" (Part 18/19). Exactly like every other snapshot field on
+	// this struct, editing or deleting the design later never mutates
+	// an already-created Instance (current, queued, or the one replay
+	// slot) - see internal/alerts.Manager's own rule/design cache and
+	// Part 22's own "snapshot semantics for queued/current alerts".
+	VisualDesign *visualdesign.PublicDocument
 }

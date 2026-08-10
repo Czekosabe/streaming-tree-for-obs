@@ -5,6 +5,7 @@ import (
 	"time"
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // AlertSummary is one management-only, bounded view of an Instance -
@@ -43,6 +44,11 @@ func toPublicAlert(inst Instance) *PublicAlert {
 		Synthetic: inst.Synthetic, Replayed: inst.Replayed, RenderedText: inst.RenderedText,
 		DurationMS: inst.DurationMS, EntryAnimation: string(inst.EntryAnimation), ExitAnimation: string(inst.ExitAnimation),
 		AnimationDurationMS: inst.AnimationDurationMS, GroupCount: inst.GroupCount,
+		RenderingMode: RenderingLegacy,
+	}
+	if inst.VisualDesign != nil {
+		pa.RenderingMode = RenderingVisualDesign
+		pa.VisualDesign = inst.VisualDesign
 	}
 	if inst.Username != "" {
 		u := inst.Username
@@ -116,7 +122,15 @@ type profileRuntime struct {
 	enabled   bool
 	language  domain.Language
 	rules     []domain.Rule
-	maxAge    time.Duration
+	// designs is Stage 13A's own rule-id -> saved-visual-design cache,
+	// refreshed by the Manager alongside rules (Start, every rule CRUD
+	// call) and additionally on every visual-design save/delete - see
+	// internal/alerts.Manager's own design CRUD façade. A rule id with
+	// no entry (or a nil value) has no saved design; buildInstance
+	// copies whatever is here at match time, never re-reading it later
+	// (Part 22).
+	designs map[string]*visualdesign.PublicDocument
+	maxAge  time.Duration
 
 	queue           *queue
 	current         *Instance
@@ -181,6 +195,52 @@ func (pr *profileRuntime) setRules(rules []domain.Rule) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 	pr.rules = rules
+}
+
+// setDesigns replaces the entire rule-id -> visual-design cache -
+// called by the Manager whenever rules are reloaded (a rule's own
+// design is unaffected by a rule edit, but designs are cheap enough to
+// recompute in full alongside rules) and whenever a single rule's
+// design is saved/deleted (setRuleDesign below, the narrower update).
+func (pr *profileRuntime) setDesigns(designs map[string]*visualdesign.PublicDocument) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	pr.designs = designs
+}
+
+// setRuleDesign updates exactly one rule's cached design snapshot -
+// used after a visual-design Save/Delete, which never touches the
+// rule's own row (so a full setDesigns recompute is unnecessary
+// overhead, though also correct).
+func (pr *profileRuntime) setRuleDesign(ruleID string, design *visualdesign.PublicDocument) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	if pr.designs == nil {
+		pr.designs = make(map[string]*visualdesign.PublicDocument)
+	}
+	if design == nil {
+		delete(pr.designs, ruleID)
+		return
+	}
+	pr.designs[ruleID] = design
+}
+
+func (pr *profileRuntime) designsSnapshot() map[string]*visualdesign.PublicDocument {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	out := make(map[string]*visualdesign.PublicDocument, len(pr.designs))
+	for k, v := range pr.designs {
+		out[k] = v
+	}
+	return out
+}
+
+// designForRule returns ruleID's own cached visual-design snapshot, or
+// nil if it has none saved.
+func (pr *profileRuntime) designForRule(ruleID string) *visualdesign.PublicDocument {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	return pr.designs[ruleID]
 }
 
 func (pr *profileRuntime) rulesSnapshot() []domain.Rule {

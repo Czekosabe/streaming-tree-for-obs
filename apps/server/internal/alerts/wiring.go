@@ -6,6 +6,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/domain/account"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // AccountLookupAdapter adapts *account.Service to
@@ -32,4 +33,12 @@ func (a AccountLookupAdapter) AccountExists(ctx context.Context, accountID strin
 // together, mirroring internal/chatautomation.NewDomainService.
 func NewDomainService(repo domain.Repository, accounts *account.Service) *domain.Service {
 	return domain.NewService(repo, AccountLookupAdapter{Accounts: accounts}, nil)
+}
+
+// NewVisualDesignService builds the Stage 13A shared visualdesign
+// Service over a sqlite repository - the analogous one-liner to
+// NewDomainService above, kept here so cmd/server/main.go's own wiring
+// stays a flat, uniform list of `alerts.NewXService(...)` calls.
+func NewVisualDesignService(repo visualdesign.Repository) *visualdesign.Service {
+	return visualdesign.NewService(repo, nil)
 }

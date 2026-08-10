@@ -1,6 +1,10 @@
 package alerts
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
+)
 
 // Operation is one playback revision's kind - the Stage 12A task's own
 // Part 23 protocol.
@@ -61,7 +65,35 @@ type PublicAlert struct {
 	EntryAnimation      string
 	ExitAnimation       string
 	AnimationDurationMS int
+
+	// RenderingMode is Stage 13A's closed, explicit discriminator (task
+	// Part 23): RenderingLegacy means the Stage 12 fixed theme/
+	// position/template renderer applies (VisualDesign is always nil);
+	// RenderingVisualDesign means VisualDesign below is non-nil and
+	// authoritative for layout. Always one of the two - never absent,
+	// so an older frontend build simply never recognizes the newer
+	// value rather than needing to infer legacy-ness from a missing
+	// field (Stage 13A task Part 43: "an additive versioned field/
+	// discriminator... do not silently change meanings of existing
+	// properties").
+	RenderingMode string
+
+	// VisualDesign is the immutable, safe visual-design snapshot this
+	// alert instance captured at match/replay/test time (Stage 13A task
+	// Part 22/23) - the complete public design document, sent inline in
+	// the show operation rather than a revision reference, so a
+	// reconnecting Browser Source or a queued/replayed alert can always
+	// reproduce exactly what was captured, with no design-fetch race
+	// (Part 23's own "Prefer A" policy). Nil whenever RenderingMode is
+	// RenderingLegacy.
+	VisualDesign *visualdesign.PublicDocument
 }
+
+// RenderingMode values (Stage 13A task Part 23).
+const (
+	RenderingLegacy       = "legacy"
+	RenderingVisualDesign = "visual_design"
+)
 
 // Revision is one entry in a profile's playback stream - the unit
 // delivered over SSE. Alert is nil for OpHide/OpGap and for an OpReset

@@ -13362,3 +13362,171 @@ None.
 Implement the shared `visualdesign` domain package, its SQLite
 persistence, the alert-rule visual-design HTTP API, and the immutable
 per-alert-instance snapshot integration into `internal/alerts`.
+
+## 2026-08-10 22:22 — feat(server): implement alert visual designs
+
+### Status
+Backend half of Stage 13A complete: the shared visual-design domain,
+its SQLite persistence, the alert-rule management/public HTTP API, and
+the immutable per-alert-instance snapshot integration.
+
+### Why one commit, not the suggested two ("persist" / "snapshot")
+The task's own suggested split names `feat(server): persist alert
+visual designs` and `feat(server): snapshot alert visual designs` as
+separate commits. In practice these are not cleanly separable at a
+commit boundary that still builds and passes tests on its own:
+`internal/alerts.Manager.SaveVisualDesign` is simultaneously "persist
+the document" (calls `visualDesignSvc.Save`) and "activate it for
+future matches" (refreshes the owning `profileRuntime`'s design
+cache) in one atomic-feeling method in one file (`manager.go`), and
+`internal/httpapi.AlertsService` cannot compile without `Manager`
+already implementing the full CRUD surface. Splitting `manager.go`'s
+own diff mid-file into two commits would mean staging a commit that
+does not build. Following the same precedent already established in
+this repository's own history (Stage 12B's `feat(server): group and
+preempt queued alerts` combined two suggested commits for an
+analogous reason - see that entry above), this is one commit instead,
+with the reasoning recorded here rather than silently deviating.
+
+### Persistence (§10/§1/§4/§5 of docs/visual-designs.md)
+- `apps/server/internal/domain/visualdesign/` (new package):
+  `document.go` (`Document`/`Canvas`/`OwnerKind`, version/canvas
+  bounds), `layer.go` (`Layer`/`Frame`/every closed enum and
+  kind-specific payload struct, every style bound), `validation.go`
+  (`Validate`, structural + semantic checks), `errors.go` (sentinel
+  errors), `ids.go` (`NewDesignID`/`NewLayerID`), `repository.go`
+  (`Repository` interface, `Record`), `service.go` (`Service` -
+  owner-kind validation, layer-order normalization, delegates to
+  `Repository`), `public.go` (`PublicDocument`/`ToPublic` - excludes
+  layer names/locked state, drops hidden layers entirely).
+- `apps/server/internal/storage/sqlite/migrations/0015_visual_designs.sql`
+  (new migration - next free version after 0014): one `visual_designs`
+  table, `owner_kind`/`owner_id` polymorphic pair (CHECK-constrained to
+  `'alert_rule'` for now), `document_json`, `revision`, timestamps,
+  `UNIQUE(owner_kind, owner_id)`.
+- `apps/server/internal/storage/sqlite/visualdesign_repository.go`:
+  `VisualDesignRepository` - a private `jsonDocument` wire-shape
+  mirror (never the domain struct's own Go field names leaking into
+  storage), atomic revision-checked `Save` (a single transaction:
+  read current revision, compare, insert-or-update, commit),
+  idempotent `Delete`.
+
+### Alert-specific adapter (kept beside the alert domain, never inside
+the shared package - docs/visual-designs.md §7/§12)
+- `apps/server/internal/domain/alerts/visualdesign_binding.go`:
+  `AvailableTextBindings`/`ValidateDesignBindingsForEventType`, reusing
+  the *same* `CapabilityFor`/`GroupingCapabilityFor` tables Stage 12's
+  own template placeholders already use.
+- `apps/server/internal/domain/alerts/visualdesign_draft.go`:
+  `GenerateLegacyDraft(profile, rule)` - a deterministic, never-
+  persisted-by-itself one-text-layer document approximating a rule's
+  current fixed presentation (profile position/text-align/theme, the
+  rule's own duration/animations) as closely as practical.
+
+### Snapshot integration (docs/visual-designs.md §12; Stage 13A task
+Part 22 - the critical guarantee)
+- `internal/alerts.Instance` gains `VisualDesign
+  *visualdesign.PublicDocument` (nil = legacy).
+- `MatchEvent`/`buildInstance`/`BuildTestInstance` all gain a
+  `design`/`designs` parameter - already-resolved, pure input, never a
+  live fetch (preserving `MatchEvent`'s own "no network/DB I/O during
+  matching" contract).
+- `profileRuntime` gains its own `designs map[string]*visualdesign.
+  PublicDocument` cache (`setDesigns`/`setRuleDesign`/`designsSnapshot`/
+  `designForRule`), refreshed by the `Manager` exactly when `rules` is
+  refreshed (`Start`, every rule CRUD call) - the exact same "Policy A"
+  precedent Stage 12A already established for every other rule-snapshot
+  field, extended to designs.
+- `Manager` gained `VisualDesignService` (optional - nil degrades to
+  "every rule renders legacy" rather than panicking, so no existing
+  test/caller needed to change) and a design CRUD façade
+  (`GetVisualDesign`/`SaveVisualDesign`/`DeleteVisualDesign`), each
+  refreshing the runtime cache after a successful write - and
+  `DeleteRule` now also deletes the rule's own design (Part 52's "rule
+  cascade", necessarily an application-level call since `owner_id` is
+  polymorphic and cannot be a SQL foreign key - see
+  docs/visual-designs.md §10).
+- `PublicAlert` (projection.go) gains an explicit, additive
+  `RenderingMode` discriminator (`"legacy"`/`"visual_design"`, never
+  inferred from an absent field) and `VisualDesign` - `toPublicAlert`
+  sets both from the Instance's own already-copied snapshot.
+- Because grouping/preemption/replay all already copy an `Instance` by
+  value (Stage 12B's own established pattern), `VisualDesign` is
+  correctly carried through every one of those paths automatically -
+  no additional code was needed in `grouping.go`/`preemptCurrentLocked`/
+  `replayPrevious` for this to be true, only tests to prove it (see
+  below).
+
+### HTTP API (docs/visual-designs.md §9; Stage 13A task Part 42)
+- `GET/PUT/DELETE /api/alert-rules/{id}/visual-design`
+  (`internal/httpapi/visualdesign.go`): GET returns the saved design or
+  a freshly generated, never-persisted `GenerateLegacyDraft` (with
+  `persisted: false`, `revision: 0`); PUT is a strict full replacement
+  requiring `expectedRevision` (409 `visual_design_revision_conflict`
+  on a stale value); DELETE is idempotent, 204, and never deletes the
+  rule. A private wire DTO (`visualDesignDocumentDTO` etc.) mirrors the
+  domain struct field-for-field but stays its own type, exactly like
+  every other `alertRuleRequest`-style DTO in this file. The public
+  embed (`toPublicVisualDesignDTO`, used inside `toPublicAlertDTO`) is
+  a separate, smaller conversion using `visualdesign.PublicDocument`
+  only - the two DTOs can never accidentally share a code path that
+  would leak a management-only field publicly.
+- `internal/httpapi.AlertsService` extended with the 3 new methods;
+  `writeAlertsError` extended for `visualdesign.ErrRevisionConflict`/
+  `ErrTooLarge`/`ErrValidation` and the (production-unreachable)
+  `alerts.ErrVisualDesignUnavailable`.
+- `cmd/server/main.go`: `sqlite.NewVisualDesignRepository`/
+  `alerts.NewVisualDesignService` wired into `alerts.ManagerOptions`.
+
+### Tests
+- `internal/domain/visualdesign`: `validation_test.go` (version,
+  canvas bounds, layer count at/over max, duplicate id, every layer
+  kind incl. mismatched-payload rejection, frame bounds incl.
+  off-canvas, opacity/font/shadow/animation bounds, color validation),
+  `service_test.go` (create-at-revision-1, conflict on stale/non-zero
+  create revision, increment-on-replace, layer-order normalization,
+  idempotent delete, owner isolation) against a fake in-memory
+  `Repository`, `public_test.go` (`ToPublic` excludes hidden layers,
+  orders by `order`, never exposes name/locked - the last with a
+  compile-time-shaped guard since `PublicLayer` simply has no such
+  field to leak).
+- `internal/storage/sqlite`: `visualdesign_repository_test.go` against
+  a real migrated SQLite database - round-trip, revision increment,
+  stale-revision conflict, owner uniqueness, idempotent delete, and a
+  genuine process-restart survival test (close and reopen the same
+  database file).
+- `internal/httpapi`: `visualdesign_test.go` - draft-not-persisted (and
+  deterministic across repeated GETs), save/get round-trip, revision
+  increment/conflict, off-canvas-frame rejection, binding-capability
+  rejection (`quantity` on a `follow` rule), oversized-document
+  rejection, delete-returns-to-legacy, idempotent delete, rule-deletion
+  cascade, 404 for an unknown rule, and a "no forbidden top-level
+  field" scan of the response body.
+- `internal/alerts`: `visualdesign_snapshot_test.go` (a second, local
+  fake `visualdesign.Repository` and `newTestManagerWithVisualDesigns`
+  constructor, kept separate from the existing `newTestManager` so no
+  existing call site needed to change) - a rule with no saved design
+  produces a legacy (`VisualDesign == nil`) instance; opening the draft
+  (`GetVisualDesign`) persists nothing; saving activates
+  `VisualDesign` for the *next* real-event instance; Test Rule uses the
+  saved design; **the already-current alert is provably unaffected by
+  a design saved after it started playing** (Part 22's central
+  guarantee); deleting a design leaves the current alert's own
+  snapshot untouched while a brand-new instance created afterward
+  correctly falls back to legacy.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` - every package passes, including all of the above.
+- `go build ./...` and `go build -tags integration ./cmd/testserver/...`
+  - both clean.
+
+### Known limitations
+No frontend yet (next commits). No real Twitch/YouTube/OBS testing -
+none performed, none needed for this backend-only commit.
+
+### Next step
+The shared React visual-design renderer
+(`feat(web): render visual design documents`), then the Alert Overlay
+Designer itself (`feat(web): add alert overlay designer`).

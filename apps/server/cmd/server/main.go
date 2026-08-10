@@ -322,9 +322,17 @@ func run() error {
 	// in their own migration; every queue/playback runtime value stays
 	// in memory only.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
+	// Stage 13A: the shared, provider-independent visual-design domain -
+	// one design per alert rule, persisted in its own migration
+	// (0015_visual_designs.sql). A nil VisualDesignService would degrade
+	// every rule to the Stage 12 legacy fixed renderer rather than
+	// panicking (see ManagerOptions's own doc comment), but production
+	// always wires a real one.
+	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
-		DomainService: alertsDomainService,
-		Bus:           eventBus,
+		DomainService:       alertsDomainService,
+		VisualDesignService: visualDesignService,
+		Bus:                 eventBus,
 	})
 	if err := alertsManager.Start(ctx); err != nil {
 		return err

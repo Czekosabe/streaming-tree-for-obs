@@ -11,6 +11,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/alerts"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // maxAlertsBodyBytes caps profile/rule/preview request bodies - generous
@@ -47,6 +48,13 @@ type AlertsService interface {
 	SubscribeProfile(profileID string, after uint64) (*alerts.Subscription, bool, error)
 	CurrentReset(profileID string) (alerts.Revision, error)
 	LatestSequence(profileID string) uint64
+
+	// GetVisualDesign/SaveVisualDesign/DeleteVisualDesign are Stage 13A's
+	// own visual-design management façade - see internal/alerts.Manager's
+	// own doc comments for the snapshot/cache semantics.
+	GetVisualDesign(ctx context.Context, ruleID string) (visualdesign.Record, bool, error)
+	SaveVisualDesign(ctx context.Context, ruleID string, doc visualdesign.Document, expectedRevision int) (visualdesign.Record, error)
+	DeleteVisualDesign(ctx context.Context, ruleID string) error
 }
 
 const (
@@ -858,12 +866,21 @@ func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
 	if a == nil {
 		return nil
 	}
-	return map[string]any{
+	out := map[string]any{
 		"schemaVersion": a.SchemaVersion, "alertId": a.AlertID, "eventType": a.EventType, "providerId": a.ProviderID,
 		"synthetic": a.Synthetic, "replayed": a.Replayed, "username": a.Username, "message": a.Message,
 		"quantity": a.Quantity, "groupCount": a.GroupCount, "renderedText": a.RenderedText, "durationMs": a.DurationMS,
 		"entryAnimation": a.EntryAnimation, "exitAnimation": a.ExitAnimation, "animationDurationMs": a.AnimationDurationMS,
+		// renderingMode/visualDesign: Stage 13A task Part 23's own
+		// additive discriminator - "legacy" (visualDesign omitted/null)
+		// or "visual_design" (the complete safe snapshot this instance
+		// captured at match/test/replay time).
+		"renderingMode": a.RenderingMode,
 	}
+	if a.VisualDesign != nil {
+		out["visualDesign"] = toPublicVisualDesignDTO(a.VisualDesign)
+	}
+	return out
 }
 
 // writeAlertRevision serializes rev over SSE. An OpHide revision
@@ -1033,6 +1050,14 @@ func writeAlertsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusTooManyRequests, "alert_queue_full", "The alert queue is currently full.")
 	case errors.Is(err, alerts.ErrNoReplaySnapshot):
 		writeError(w, logger, http.StatusConflict, "alert_queue_empty", "There is no previous alert to replay yet.")
+	case errors.Is(err, visualdesign.ErrRevisionConflict):
+		writeError(w, logger, http.StatusConflict, "visual_design_revision_conflict", "Another save already changed this design - reload and try again.")
+	case errors.Is(err, visualdesign.ErrTooLarge):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_too_large", "The design document is too large.")
+	case errors.Is(err, visualdesign.ErrValidation):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_invalid", "The design failed validation.")
+	case errors.Is(err, alerts.ErrVisualDesignUnavailable):
+		writeError(w, logger, http.StatusServiceUnavailable, "visual_design_unavailable", "The visual design service is not available.")
 	default:
 		writeError(w, logger, http.StatusInternalServerError, "internal_error", "An unexpected error occurred.")
 	}

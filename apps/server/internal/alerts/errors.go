@@ -56,6 +56,11 @@ var (
 	// profile's runtime was shut down (profile deleted, or backend
 	// shutting down).
 	ErrProjectionClosed = errors.New("alert profile playback stream is closed")
+
+	// ErrVisualDesignUnavailable means the Manager was constructed with
+	// no VisualDesignService (never expected in production - only a
+	// test double that predates Stage 13A and does not exercise it).
+	ErrVisualDesignUnavailable = errors.New("visual design service is not available")
 )
 
 // SkipReason is a stable, loggable reason a queued item never played -

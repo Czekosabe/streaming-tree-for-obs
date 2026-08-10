@@ -5,6 +5,7 @@ import (
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	"github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // mapEventType converts a normalized engagement.Type to this
@@ -73,8 +74,13 @@ func quantityInRange(q int64, min, max *int64) bool {
 //
 // Pure and side-effect free (Part 32: "do not perform network I/O
 // during matching") - now is injected so callers can build a
-// deterministic QueuedAt.
-func MatchEvent(evt engagement.Event, rules []domain.Rule, now time.Time, lang domain.Language) []Instance {
+// deterministic QueuedAt. designs is Stage 13A's own already-resolved
+// rule-id -> saved-design snapshot cache (see internal/alerts.Manager's
+// own profileRuntime.designs), passed in rather than fetched here so
+// this function stays pure - a nil/missing entry for a rule simply
+// means that rule has no saved design (Instance.VisualDesign stays
+// nil, the legacy renderer applies).
+func MatchEvent(evt engagement.Event, rules []domain.Rule, designs map[string]*visualdesign.PublicDocument, now time.Time, lang domain.Language) []Instance {
 	// Part 11/32 step 1: a synthetic event must never enter the real
 	// alert rule path as if genuine.
 	if evt.Synthetic {
@@ -113,15 +119,18 @@ func MatchEvent(evt engagement.Event, rules []domain.Rule, now time.Time, lang d
 				continue
 			}
 		}
-		out = append(out, buildInstance(rule, evt, eventType, now, lang, false, false))
+		out = append(out, buildInstance(rule, evt, eventType, now, lang, false, false, designs[rule.ID]))
 	}
 	return out
 }
 
 // buildInstance renders one Instance from rule's own snapshot and evt's
 // data - Part 9's "Policy A" (a queued alert never observes a later
-// rule edit).
-func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.EventType, now time.Time, lang domain.Language, synthetic, replayed bool) Instance {
+// rule edit). design is rule's own already-resolved visual-design
+// snapshot (nil if none saved) - copied onto the Instance verbatim,
+// never re-fetched, so a later design save/delete can never mutate an
+// already-built Instance (Stage 13A task Part 22).
+func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.EventType, now time.Time, lang domain.Language, synthetic, replayed bool, design *visualdesign.PublicDocument) Instance {
 	capability := domain.CapabilityFor(eventType)
 
 	inst := Instance{
@@ -135,6 +144,7 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 		TextTemplate: rule.TextTemplate, Language: lang, RuleUpdatedAt: rule.UpdatedAt,
 		AllowGrouping: rule.AllowGrouping, GroupWindowMS: rule.GroupWindowMS,
 		InterruptMode: rule.InterruptMode, Interruptible: rule.Interruptible,
+		VisualDesign: design,
 	}
 
 	var username *string

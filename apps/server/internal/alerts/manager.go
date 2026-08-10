@@ -11,6 +11,7 @@ import (
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	bus "github.com/streaming-tree/server/internal/engagement"
 )
 
@@ -37,6 +38,12 @@ func newInstanceID() (string, error) {
 type ManagerOptions struct {
 	DomainService *domain.Service
 	Bus           *bus.Bus
+	// VisualDesignService is Stage 13A's own design service - optional
+	// in the sense that a nil value degrades gracefully to "every rule
+	// renders via the Stage 12 legacy fixed presentation" rather than
+	// panicking, so existing tests/callers that predate Stage 13A never
+	// need to change.
+	VisualDesignService *visualdesign.Service
 	// Now is a test-only fake-clock override; production code leaves it
 	// nil.
 	Now clock
@@ -50,9 +57,10 @@ type ManagerOptions struct {
 // matcher reads from - never a second EventSub connection, never a
 // direct call into internal/provider/twitch anywhere in this package.
 type Manager struct {
-	domainSvc *domain.Service
-	source    *bus.Bus
-	now       clock
+	domainSvc       *domain.Service
+	visualDesignSvc *visualdesign.Service
+	source          *bus.Bus
+	now             clock
 
 	mu       sync.Mutex
 	profiles map[string]*profileRuntime
@@ -75,7 +83,7 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		domainSvc: opts.DomainService, source: opts.Bus, now: now,
+		domainSvc: opts.DomainService, visualDesignSvc: opts.VisualDesignService, source: opts.Bus, now: now,
 		profiles: make(map[string]*profileRuntime), ctx: ctx, cancel: cancel,
 	}
 }
@@ -99,6 +107,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		}
 		if pr, ok := m.getRuntime(p.ID); ok {
 			pr.setRules(rules)
+			pr.setDesigns(m.resolveDesignsForRules(ctx, rules))
 		}
 	}
 
@@ -238,8 +247,9 @@ func (m *Manager) handleEvent(evt engagement.Event) {
 	now := m.now()
 	for _, pr := range m.runtimesSnapshot() {
 		rules := pr.rulesSnapshot()
+		designs := pr.designsSnapshot()
 		lang := pr.languageSnapshot()
-		matches := MatchEvent(evt, rules, now, lang)
+		matches := MatchEvent(evt, rules, designs, now, lang)
 		if len(matches) > 0 {
 			pr.enqueueMatched(matches, now, newInstanceID)
 		}
@@ -352,6 +362,13 @@ func (m *Manager) DeleteRule(ctx context.Context, id string) error {
 	if err := m.domainSvc.DeleteRule(ctx, id); err != nil {
 		return err
 	}
+	// Stage 13A task Part 52 "rule cascade": a deleted rule's own saved
+	// visual design (if any) is removed too - see visualdesign.
+	// Repository.Delete's own doc comment for why this is an explicit
+	// application-level call rather than a SQL foreign key cascade.
+	if m.visualDesignSvc != nil {
+		_ = m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindAlertRule, id)
+	}
 	m.reloadRules(ctx, existing.ProfileID)
 	return nil
 }
@@ -363,7 +380,96 @@ func (m *Manager) reloadRules(ctx context.Context, profileID string) {
 	}
 	if rules, err := m.domainSvc.ListRules(ctx, profileID); err == nil {
 		pr.setRules(rules)
+		pr.setDesigns(m.resolveDesignsForRules(ctx, rules))
 	}
+}
+
+// resolveDesignsForRules resolves every rule's own currently-saved
+// visual design (if any) into the rule-id -> PublicDocument map
+// profileRuntime caches alongside its own rules snapshot (Part 22's
+// "Policy A" extended to designs: resolved once when rules are
+// (re)loaded, then copied verbatim into every Instance built from that
+// snapshot - never re-fetched per event). Returns an empty map
+// (never nil) when no visual-design service is configured.
+func (m *Manager) resolveDesignsForRules(ctx context.Context, rules []domain.Rule) map[string]*visualdesign.PublicDocument {
+	designs := make(map[string]*visualdesign.PublicDocument, len(rules))
+	if m.visualDesignSvc == nil {
+		return designs
+	}
+	for _, r := range rules {
+		rec, found, err := m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindAlertRule, r.ID)
+		if err != nil || !found {
+			continue
+		}
+		pub := visualdesign.ToPublic(rec.Document)
+		designs[r.ID] = &pub
+	}
+	return designs
+}
+
+// --- visual design CRUD façade (Stage 13A) -------------------------------
+
+// GetVisualDesign returns ruleID's own currently-saved visual design,
+// or found=false if none has ever been saved for it - a normal state,
+// never an error (Stage 13A task Part 19).
+func (m *Manager) GetVisualDesign(ctx context.Context, ruleID string) (visualdesign.Record, bool, error) {
+	if m.visualDesignSvc == nil {
+		return visualdesign.Record{}, false, nil
+	}
+	return m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindAlertRule, ruleID)
+}
+
+// SaveVisualDesign validates and persists doc as ruleID's own visual
+// design (Stage 13A task Part 41), then refreshes the owning profile's
+// runtime cache so the NEXT newly matched/tested alert uses it - never
+// the currently-playing or already-queued ones (Part 22).
+func (m *Manager) SaveVisualDesign(ctx context.Context, ruleID string, doc visualdesign.Document, expectedRevision int) (visualdesign.Record, error) {
+	if m.visualDesignSvc == nil {
+		return visualdesign.Record{}, ErrVisualDesignUnavailable
+	}
+	rule, err := m.domainSvc.GetRule(ctx, ruleID)
+	if err != nil {
+		return visualdesign.Record{}, err
+	}
+	if err := domain.ValidateDesignBindingsForEventType(doc, rule.EventType); err != nil {
+		return visualdesign.Record{}, err
+	}
+	rec, err := m.visualDesignSvc.Save(ctx, visualdesign.OwnerKindAlertRule, ruleID, doc, expectedRevision)
+	if err != nil {
+		return visualdesign.Record{}, err
+	}
+	m.reloadRuleDesign(rule.ProfileID, ruleID, rec.Document)
+	return rec, nil
+}
+
+// DeleteVisualDesign removes ruleID's own saved visual design, if any
+// (Stage 13A task Part 19's "Reset to legacy presentation"), and
+// refreshes the runtime cache so the next newly matched/tested alert
+// falls back to the Stage 12 legacy renderer.
+func (m *Manager) DeleteVisualDesign(ctx context.Context, ruleID string) error {
+	if m.visualDesignSvc == nil {
+		return nil
+	}
+	rule, err := m.domainSvc.GetRule(ctx, ruleID)
+	if err != nil {
+		return err
+	}
+	if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindAlertRule, ruleID); err != nil {
+		return err
+	}
+	if pr, ok := m.getRuntime(rule.ProfileID); ok {
+		pr.setRuleDesign(ruleID, nil)
+	}
+	return nil
+}
+
+func (m *Manager) reloadRuleDesign(profileID, ruleID string, doc visualdesign.Document) {
+	pr, ok := m.getRuntime(profileID)
+	if !ok {
+		return
+	}
+	pub := visualdesign.ToPublic(doc)
+	pr.setRuleDesign(ruleID, &pub)
 }
 
 func (m *Manager) OverlapWarnings(ctx context.Context, profileID string) ([]domain.OverlapWarning, error) {
@@ -489,7 +595,7 @@ func (m *Manager) TestRule(ctx context.Context, ruleID, edgeScenario string) (Al
 	}
 
 	now := m.now()
-	inst := BuildTestInstance(rule, edgeScenario, now, profile.Language)
+	inst := BuildTestInstance(rule, edgeScenario, now, profile.Language, pr.designForRule(rule.ID))
 
 	stored, accepted := pr.enqueueTest(inst, now, newInstanceID)
 	if !accepted {

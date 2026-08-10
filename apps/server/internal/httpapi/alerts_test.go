@@ -54,7 +54,8 @@ func newAlertsTestServer(t *testing.T) *alertsTestServer {
 	t.Cleanup(eventBus.Shutdown)
 
 	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts)
-	manager := alerts.NewManager(alerts.ManagerOptions{DomainService: domainSvc, Bus: eventBus})
+	visualDesignSvc := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
+	manager := alerts.NewManager(alerts.ManagerOptions{DomainService: domainSvc, VisualDesignService: visualDesignSvc, Bus: eventBus})
 	if err := manager.Start(context.Background()); err != nil {
 		t.Fatalf("manager.Start() error = %v", err)
 	}

@@ -180,6 +180,7 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Alerts != nil {
 		registerAlertRoutes(mux, logger, opts.Alerts)
+		registerVisualDesignRoutes(mux, logger, opts.Alerts)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

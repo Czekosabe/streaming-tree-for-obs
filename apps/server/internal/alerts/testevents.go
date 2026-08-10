@@ -6,6 +6,7 @@ import (
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	"github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // Scenario is a synthetic test-alert fixture name (Part 27). The 8
@@ -123,8 +124,11 @@ func reverseMapEventType(t domain.EventType) engagement.Type {
 // edgeScenario (may be empty for the plain representative fixture of
 // rule's own event type). Always marked Synthetic - never mistaken for
 // a real match, and never itself published to the Engagement Event Bus
-// (Part 27: "prefer a direct Alert Manager test path instead").
-func BuildTestInstance(rule domain.Rule, edgeScenario string, now time.Time, lang domain.Language) Instance {
+// (Part 27: "prefer a direct Alert Manager test path instead"). design
+// is rule's own already-resolved visual-design snapshot (nil if none
+// saved) - Test Rule always uses the rule's last SAVED design, never an
+// unsaved frontend draft (Stage 13A task Part 40).
+func BuildTestInstance(rule domain.Rule, edgeScenario string, now time.Time, lang domain.Language, design *visualdesign.PublicDocument) Instance {
 	evt := buildFixtureEvent(rule.EventType, edgeScenario, now)
-	return buildInstance(rule, evt, rule.EventType, now, lang, true, false)
+	return buildInstance(rule, evt, rule.EventType, now, lang, true, false, design)
 }
