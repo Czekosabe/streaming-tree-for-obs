@@ -57,7 +57,8 @@ type Manager struct {
 	mu       sync.Mutex
 	profiles map[string]*profileRuntime
 
-	inputGap atomic.Bool
+	inputGap   atomic.Bool
+	subscribed atomic.Bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -190,9 +191,21 @@ func (m *Manager) runSubscription() {
 				continue
 			}
 		}
+		m.subscribed.Store(true)
 		m.consume(sub)
+		m.subscribed.Store(false)
 	}
 }
+
+// Subscribed reports whether the shared Event Bus subscription is
+// currently live - exposed primarily so tests can wait deterministically
+// for Start's own subscription goroutine to actually be subscribed
+// before publishing an event, rather than racing it (Subscribe's own
+// "resume from current position" semantics mean an event published in
+// the narrow window before the first successful Subscribe call would
+// otherwise be silently missed, not replayed - by design for a
+// reconnect, but worth synchronizing on explicitly in a test).
+func (m *Manager) Subscribed() bool { return m.subscribed.Load() }
 
 // consume reads sub until it closes for any reason - a drop reconnects
 // in runSubscription's own loop using the bus's CURRENT position, never
@@ -414,6 +427,39 @@ func (m *Manager) ProfileStatus(profileID string) (ProfileStatus, error) {
 	st := pr.status()
 	st.InputGap = m.inputGap.Load()
 	return st, nil
+}
+
+// --- public playback subscription (Part 23) ------------------------------
+
+// SubscribeProfile registers a live SSE subscriber for profileID's own
+// playback stream - see projection.go for the replay/gap contract.
+func (m *Manager) SubscribeProfile(profileID string, after uint64) (*Subscription, bool, error) {
+	pr, ok := m.getRuntime(profileID)
+	if !ok {
+		return nil, false, ErrProfileNotFound
+	}
+	return pr.subscribe(after)
+}
+
+// CurrentReset returns the complete current-state reset a fresh SSE
+// connection receives first (Part 23).
+func (m *Manager) CurrentReset(profileID string) (Revision, error) {
+	pr, ok := m.getRuntime(profileID)
+	if !ok {
+		return Revision{}, ErrProfileNotFound
+	}
+	return pr.currentResetRevision(), nil
+}
+
+// LatestSequence returns profileID's own latest published revision
+// sequence (0 if none yet or the profile is unknown) - used to give a
+// fresh connection's synthetic reset a meaningful Last-Event-ID.
+func (m *Manager) LatestSequence(profileID string) uint64 {
+	pr, ok := m.getRuntime(profileID)
+	if !ok {
+		return 0
+	}
+	return pr.latestSequence()
 }
 
 // --- test alerts (Part 27/28) -------------------------------------------

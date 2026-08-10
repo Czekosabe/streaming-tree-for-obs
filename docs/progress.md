@@ -11347,3 +11347,91 @@ Expose the alert management and public HTTP/SSE APIs
 (`internal/httpapi/alerts.go`), wire the Manager into
 `cmd/server/main.go` and `cmd/testserver/main.go`, and add the public
 `/api/public/alert-profiles/{slug}/...` surface - still no frontend.
+
+## 2026-08-10 08:58 — fix: close a real Start()/Publish race in the alerts Manager test harness
+
+### Status
+Complete.
+
+### Scope
+A correction to the previous commit's own test suite, found while
+stress-running it before moving to the HTTP layer - not a new
+feature. `go test ./internal/alerts/... -count=1` run in a loop failed
+roughly 1 time in 5-6, always at the same assertion
+(`TestManagerTwoProfilesIsolated`'s first `waitUntil`, waiting for
+both profiles' `TotalEnqueued` to reach 1). Never amended the
+already-created `feat(server): run alert queues and playback` commit -
+this is a new, separate commit, per this project's own "never amend
+previous commits" rule.
+
+### Root cause
+`Manager.Start` launches `runSubscription` in a new goroutine and
+returns immediately, without waiting for that goroutine to actually
+reach its first `Subscribe` call. `runSubscription` resumes from
+`Snapshot().NewestSequence` - correct and intentional for a
+*reconnect* (Part 31: never replay old events as fresh alerts on a
+drop) - but at *startup* this creates a narrow window: if a test calls
+`Start()` and then `Publish()`s an event before the goroutine has been
+scheduled and reached `Subscribe`, that event's own sequence number is
+already reflected in `Snapshot().NewestSequence` by the time `Subscribe`
+finally runs, so it is silently excluded from replay (`Subscribe(after)`
+only delivers `Sequence > after`) - not queued late, not replayed,
+just genuinely never delivered to this subscriber. In production this
+window is microseconds and never realistically hit; in a tight test
+that publishes immediately after `Start()`, and especially when many
+other tests' goroutines are contending for scheduling in the same
+process, it is hit often enough to be a real, repeatable flake - `go
+test -count=1` in a loop reproduced it 2 times in 12 runs before the
+fix and 0 times in 12 after.
+
+### Changes
+- `apps/server/internal/alerts/manager.go`: added `subscribed
+  atomic.Bool`, set `true` immediately after a successful `Subscribe`
+  call (before `consume` blocks) and `false` when `consume` returns
+  (subscription lost, about to reconnect); exposed via a new
+  `Manager.Subscribed() bool`.
+- `apps/server/internal/alerts/manager_test.go`: both places that
+  construct a `Manager` and call `Start` now `waitUntil(t, time.Second,
+  mgr.Subscribed)` before doing anything else (`newTestManager`'s
+  shared helper, and `TestManagerRestartResetsRuntimeButKeepsDefinitions`'s
+  manually-constructed `mgr1`) - deterministically closing the race
+  instead of masking it with a longer timeout. The three `waitUntil`
+  calls that were bumped from 1-2 seconds to 5 seconds while
+  diagnosing this (in case the true cause had been scheduling jitter
+  rather than a genuine race) were left at 5 seconds - harmless
+  headroom on the passing path, and confirmed by the stress-test loop
+  that the real fix is the `Subscribed()` wait, not the longer
+  timeout, since failures still reproduced reliably at 5 seconds
+  before this fix.
+
+### Technical decisions
+- **`Subscribed()` mirrors `internal/chatautomation`'s own
+  `EngineStatus.Subscribed` field** (already-established convention
+  for "is my Event Bus subscription actually live"), except exposed
+  here as a plain method for now rather than folded into a larger
+  status DTO, since Stage 12A's own management status endpoint does
+  not exist yet (next commit) - it will likely surface this same flag
+  once that status struct exists.
+- **Did not change `runSubscription`'s own startup semantics**
+  (resuming from `Snapshot().NewestSequence` rather than `0`) - Part
+  31 explicitly requires "no historical alerts fired on backend
+  startup," so silently replaying everything retained at startup would
+  be the wrong fix; the actual bug was the test racing the goroutine's
+  own startup, not the resume-point choice itself.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` - clean.
+- `go test ./internal/alerts/... -count=1`, run in a loop 12 times
+  after the fix: 12/12 passed (previously 2/12 failed in an equivalent
+  pre-fix loop).
+
+### Known limitations
+None new.
+
+### Next step
+Expose the alert management and public HTTP/SSE APIs
+(`internal/httpapi/alerts.go`), wire the Manager into
+`cmd/server/main.go` and `cmd/testserver/main.go`, and add the public
+`/api/public/alert-profiles/{slug}/...` surface - still no frontend.

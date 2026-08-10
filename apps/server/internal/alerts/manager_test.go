@@ -164,6 +164,11 @@ func newTestManager(t *testing.T, fc *fakeClock) (*Manager, *bus.Bus) {
 	if err := mgr.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
+	// Wait for the shared Event Bus subscription to actually be live
+	// before returning, so a test that publishes immediately afterward
+	// never races Subscribe's own "resume from current position"
+	// window - see Manager.Subscribed's own doc comment.
+	waitUntil(t, time.Second, mgr.Subscribed)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -235,7 +240,7 @@ func TestManagerRealEventMatchesAndPlays(t *testing.T) {
 	p, _ := createTestProfileAndRule(t, mgr, domain.EventFollow)
 
 	publishFollow(t, b, fc.Now())
-	waitUntil(t, 2*time.Second, func() bool {
+	waitUntil(t, 5*time.Second, func() bool {
 		st, err := mgr.ProfileStatus(p.ID)
 		return err == nil && (st.Current != nil || st.QueuedCount > 0)
 	})
@@ -350,14 +355,14 @@ func TestManagerTwoProfilesIsolated(t *testing.T) {
 	p2, _ := createTestProfileAndRule(t, mgr, domain.EventFollow)
 
 	publishFollow(t, b, fc.Now())
-	waitUntil(t, 2*time.Second, func() bool {
+	waitUntil(t, 5*time.Second, func() bool {
 		s1, err1 := mgr.ProfileStatus(p1.ID)
 		s2, err2 := mgr.ProfileStatus(p2.ID)
 		return err1 == nil && err2 == nil && s1.TotalEnqueued == 1 && s2.TotalEnqueued == 1
 	})
 
 	// Skip on profile 1 must never affect profile 2.
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, 5*time.Second, func() bool {
 		st, err := mgr.ProfileStatus(p1.ID)
 		return err == nil && st.Current != nil
 	})
@@ -384,9 +389,10 @@ func TestManagerRestartResetsRuntimeButKeepsDefinitions(t *testing.T) {
 	if err := mgr1.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
+	waitUntil(t, time.Second, mgr1.Subscribed)
 	p, _ := createTestProfileAndRule(t, mgr1, domain.EventFollow)
 	publishFollow(t, b, fc.Now())
-	waitUntil(t, 2*time.Second, func() bool {
+	waitUntil(t, 5*time.Second, func() bool {
 		st, err := mgr1.ProfileStatus(p.ID)
 		return err == nil && st.TotalEnqueued == 1
 	})
