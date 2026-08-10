@@ -235,3 +235,15 @@ with no transcoding, is this stage's deliberate scope.
     integration` test binary - the alert engine talks only to the
     already-normalized Engagement Event Bus, never to Twitch directly,
     so it needed no fake-server address of its own.
+13. Stage 12B (bounded alert grouping and mid-alert preemption) follows
+    the exact same split: four further **persisted** rule columns -
+    `allow_grouping`, `group_window_ms`, `interrupt_mode`,
+    `interruptible` (migration `0014_alert_grouping_and_
+    interruption.sql`) - alongside the rest of `alert_rules`, still not
+    a file in this directory. Every new **runtime** counter Stage 12B
+    added (`totalGroupedMembers`, `totalGroupsCreated`,
+    `totalPreempted`) is in-memory only, the same category as every
+    other alert-engine counter in rule 12 above - reset on every
+    backend restart, never persisted. No grouped-alert member list, no
+    per-event grouping/preemption log, and no new environment variable
+    were added either.

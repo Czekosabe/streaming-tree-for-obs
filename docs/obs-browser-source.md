@@ -18,6 +18,15 @@ guaranteed to stay accurate forever.
 > near the end of this document for what is specific to it. **No real
 > OBS installation was used for Stage 12A's own verification either** -
 > see "What was not tested" at the end of this document.
+>
+> **Factual status update (stage 12B, completed):** bounded alert
+> grouping and mid-alert preemption changed nothing about the OBS-level
+> contract this document researched - only the alert route's own SSE
+> payload shape gained a `groupCount` field and a dedicated
+> `alert.hide` event. See the note at the end of
+> [Stage 12A: the alert Browser Source route](#stage-12a-the-alert-browser-source-route)
+> for the detail. Still **no real OBS installation was used** for Stage
+> 12B's own verification either.
 
 ## Sources inspected
 
@@ -288,17 +297,31 @@ management page's own local, instant, queue-free editor preview, so
 what an operator previews while editing a rule is exactly what OBS
 will show.
 
+**Stage 12B (bounded grouping and mid-alert preemption)** changed
+nothing about this OBS-level contract either - still the same single
+Browser Source, transparent background, no custom CSS, no new
+permission. It only added two **application-level** SSE additions on
+top of the same `alert.reset`/`alert.show`/`alert.gap` shape above: a
+grouped alert's `alert.show` payload carries a `groupCount` (1 for an
+ungrouped alert), and a preempted alert now sends a dedicated
+`alert.hide` event - carrying only the outgoing alert's id and a
+stable reason, never its prior rendered content - immediately followed
+by the interrupting alert's own `alert.show`, with no artificial delay
+for an exit animation. Since OBS's Browser Source composites whatever
+the page renders each frame, this is invisible to OBS itself; it is
+purely how the React renderer decides what to show next.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's own verification.** Every finding above
-comes from reading the official pages listed, not from observing a live
-Browser Source. The local integration scripts
-(`scripts/verify-chat-overlay.mjs`, `scripts/verify-alerts.mjs`)
-exercise the same HTTP/SSE contract a real Browser Source would
-consume, from a plain Node.js HTTP client - they prove the backend's
-contract is correct, not that OBS's own CEF renders either overlay
-identically. Re-verify this document's recommendations manually the
-first time either feature is actually used inside real OBS, and
-re-check it entirely if OBS changes Browser Source's documented
-behavior in a future release.
+verification, or for Stage 12A's or 12B's own verification.** Every
+finding above comes from reading the official pages listed, not from
+observing a live Browser Source. The local integration scripts
+(`scripts/verify-chat-overlay.mjs`, `scripts/verify-alerts.mjs`,
+`scripts/verify-alert-advanced-queue.mjs`) exercise the same HTTP/SSE
+contract a real Browser Source would consume, from a plain Node.js
+HTTP client - they prove the backend's contract is correct, not that
+OBS's own CEF renders either overlay identically. Re-verify this
+document's recommendations manually the first time either feature is
+actually used inside real OBS, and re-check it entirely if OBS changes
+Browser Source's documented behavior in a future release.

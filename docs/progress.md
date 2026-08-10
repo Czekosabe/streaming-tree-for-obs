@@ -13066,3 +13066,105 @@ policy and Part 43's explicit "document every omission" allowance)
 ### Automated validation
 - `node scripts/verify-alert-advanced-queue.mjs` - run twice, both
   clean, all steps passed.
+
+### Next step
+The Stage 12B documentation pass (`docs: complete Stage 12 alert
+queue`), then the full closing regression across all twelve
+integration scripts plus frontend/backend checks, then push.
+
+## 2026-08-10 21:03 — docs: complete Stage 12 alert queue
+
+### What
+Updated every user-facing/architecture document to reflect that Stage
+12B (bounded alert grouping, deterministic mid-alert preemption) is
+now complete, closing Stage 12 as a whole - following the same
+"append a new factual-status callout, never rewrite an old one"
+pattern this document's own stage 7A/7B and 8A callouts already
+established (`docs/engagement-architecture.md`), and treating every
+"Planned"/"deferred to 12B" table row and prose sentence as **living
+status**, not historical journal content - unlike this progress log
+itself and the `## ...` entries above, which are never rewritten.
+
+- `README.md`: the opening long-term-vision paragraph, the "Project
+  state" callout's supporting text, the roadmap table's 12B row, the
+  "Alerts" architecture-overview paragraph, the Alerts section's own
+  "what this stage does not implement" paragraph, a new "Group similar
+  alerts"/"Interruption" paragraph under **Alert rules**, a new
+  grouping/preemption paragraph under **The alert queue**, a new
+  paragraph under **Verifying it for real** describing
+  `scripts/verify-alert-advanced-queue.mjs`, and removal of the now-
+  stale "Mid-alert preemption and bounded alert grouping" bullet from
+  **What will be added later** (it belongs there no longer).
+- `docs/project-overview.md`: the roadmap table's 12B row now reads
+  **Completed**; the "Key dependencies" paragraph for stage 12A gained
+  a sentence on 12B's own real capability/preemption-condition tables;
+  §16's status paragraph now separately calls out 12B's completion and
+  explicitly says stage 13 (designers) has not been started (Part 72's
+  own explicit closing-report requirement, stated here in the doc
+  itself, not only in this log).
+- `docs/engagement-architecture.md`: three new "Factual status update
+  (stage 12B, completed)" callouts appended immediately after the
+  existing stage 12A callouts in §9 (Alerts: the closed 3-of-8
+  groupable-type table) and §10 (Alert queue: the full grouping/
+  preemption behavior, explicitly superseding §10's own stage-12A
+  callout's now-stale closing sentence "Stage 12 as a whole is not
+  complete until 12B lands") and §11 (Preview/test events: synthetic-
+  may-preempt-synthetic, never real). The roadmap table's own 12B row
+  (§18) now reads **Completed**. The stage 12A callouts themselves
+  were left completely unedited, exactly like this document's existing
+  stage 7A/8A precedent (7A's own "the Event Bus... still does not
+  exist" line was never rewritten either - 8A's later callout
+  corrected the record by appending, not editing).
+- `docs/obs-browser-source.md`: a new top-of-document "stage 12B,
+  completed" callout and a new paragraph under "Stage 12A: the alert
+  Browser Source route" record that grouping/preemption changed
+  nothing about the actual OBS/CEF contract - only the alert route's
+  own SSE payload shape gained `groupCount` and a dedicated
+  `alert.hide` event, invisible to OBS itself since it is purely an
+  application-level rendering decision. "What was not tested" now
+  names `scripts/verify-alert-advanced-queue.mjs` alongside the other
+  two local scripts and confirms no real OBS installation was used for
+  12B's verification either.
+- `config/README.md`: a new rule 13 documents Stage 12B's four new
+  **persisted** `alert_rules` columns (migration
+  `0014_alert_grouping_and_interruption.sql`) and three new
+  **runtime-only** counters, following rule 12's own established
+  persisted-vs-runtime split - confirming no new file in this
+  directory and no new environment variable.
+- `THIRD_PARTY_NOTICES.md`: audited, not edited -
+  `git diff --stat` across every Stage 12B commit (`7be55ca`, `c860be8`,
+  `57c85d6`, `2f8f247`) against `go.mod`/`go.sum`/`package.json`/
+  `package-lock.json` shows zero changes to any dependency manifest;
+  no new third-party dependency was introduced by grouping,
+  preemption, the frontend UI, or the new integration script (Node
+  built-ins only, exactly like `verify-alerts.mjs`).
+
+### Stage 12 completion decision
+Every originally-planned Stage 12 queue requirement (§10 of
+`docs/engagement-architecture.md`) is now either implemented or
+explicitly resolved as out of scope for a documented, real reason - not
+merely postponed:
+- sequential playback, priority/FIFO ordering, expiration, pause/
+  resume/skip/replay/clear, the deterministic capacity policy (12A);
+- bounded grouping and deterministic mid-alert preemption (12B, this
+  entry);
+- a maximum total queue duration - already real as each profile's own
+  `maximumQueueAgeSeconds` bound (12A), not a separate mechanism;
+- an "exceptional donation may jump the queue" style rule - donation
+  events do not exist as a real source yet (no donation provider is
+  integrated), so no rule can reference one; the underlying mechanism
+  (opt-in preemption by priority) is real and provider-agnostic, and
+  will apply to a donation event automatically once a real donation
+  source exists, needing no further alert-queue work itself.
+
+**Stage 12 is marked fully completed.** Stage 13 (the visual overlay/
+alert designer) remains entirely unstarted and planned, as does every
+capability layered on top of it (templates, TTS, goal/counter widgets,
+additional donation/engagement providers) - none of that work was
+begun in this session.
+
+### Next step
+The full closing regression: frontend (`i18n:check`, `typecheck`,
+`lint`, `test -- --run`, `build`), backend (`gofmt`, `go vet`,
+`go test`, `go build`, the `-tags integration` build), then all twelve
+integration scripts by name, then push and verify sync.

@@ -746,6 +746,23 @@ arbitrary code execution and no plan to add one (§2).
 > (stage 17, unimplemented). See
 > [`docs/progress.md`](progress.md)'s Stage 12A entries for the exact
 > capability table and how it was derived.
+>
+> **Factual status update (stage 12B, completed):** every alert rule now
+> carries two further, opt-in fields beyond the stage 12A list above:
+> `allowGrouping` (§10's bounded grouping, gated by a closed, real
+> capability table — never a generic "group everything" default) and
+> `interruptMode`/the target rule's own `interruptible` flag (§10's
+> preemption). Of the 8 real event categories, exactly 3 have a safe
+> grouping strategy today: Bits and `subscription_gift_batch` (same
+> actor, truthfully summed quantity), and channel-point redemption
+> (same actor, same reward id, count only, no quantity to sum) — the
+> other 5 (follow, subscription, resubscription, gifted subscription,
+> raid) have none, each for a real, documented reason (a genuine
+> "the same actor did this again in a burst" scenario does not exist
+> for them, or grouping would misrepresent several distinct actors as
+> one). See [`docs/progress.md`](progress.md)'s Stage 12B `feat(server):
+> group and preempt queued alerts` entry for the full per-type
+> reasoning table.
 
 ### 9.1 Alert rules
 
@@ -808,6 +825,33 @@ constant this document fixes.
 > See [`docs/progress.md`](progress.md)'s Stage 12A queue/playback entry
 > for the exact pause/replay policy chosen among the options this
 > document leaves open.
+>
+> **Factual status update (stage 12B, completed):** both capabilities
+> the stage 12A note above named as deferred are now real
+> (`internal/alerts/grouping.go`, and `playback.go`'s
+> `canPreemptLocked`/`preemptCurrentLocked`), superseding that note's
+> closing sentence — **Stage 12 as a whole is now complete.** Grouping
+> merges a newly matched, still-queued-eligible real event into an
+> existing compatible queued alert (never the currently-playing one) if
+> one exists within a fixed, non-extending window anchored to the first
+> member, up to a bounded member count; the merged alert's own
+> `{groupCount}` placeholder and (where the type's capability allows)
+> summed `{quantity}` re-render live, and the public stream only ever
+> exposes the resulting `groupCount`/`quantity` aggregate, never a list
+> of the source events or actors. Preemption is opt-in on both sides —
+> the incoming rule's `interruptMode=lower_priority` and the current
+> rule's own `interruptible=true` — and only ever a strictly
+> higher-priority real (or, for a synthetic incoming candidate, another
+> synthetic current) alert may trigger it; a preempted alert is hidden
+> immediately (reason `preempted`, its own duration cancelled, never
+> resumed later) and becomes the one safe replay snapshot, while the
+> incoming alert shows immediately with its own fresh duration — a
+> replayed alert can never itself preempt anything, and a paused queue
+> never preempts. See [`docs/progress.md`](progress.md)'s Stage 12B
+> `feat(server): group and preempt queued alerts` entry for the full
+> grouping-capability and preemption-condition tables, and
+> `scripts/verify-alert-advanced-queue.mjs` for the local, no-real-
+> Twitch verification of both end to end.
 
 Alerts do not render immediately on arrival; they enter a queue. Planned
 behaviour:
@@ -845,6 +889,15 @@ behaviour:
 > real and tested: a synthetic alert is marked `Synthetic` end to end,
 > a genuine `Synthetic` Engagement Event is ignored by real rule matching,
 > and a test alert never touches a real counter.
+>
+> **Factual status update (stage 12B, completed):** a synthetic test
+> alert never joins a group (grouping is restricted to genuine,
+> newly matched real events only) and can never preempt a real
+> currently-playing alert — but it may preempt another *synthetic*
+> current alert, exactly like two real alerts would, so an operator can
+> verify a rule's own preemption configuration safely from the Test
+> Rule button without ever risking a real alert being interrupted by a
+> preview.
 
 ### 11.1 Purpose
 
@@ -1095,7 +1148,7 @@ that table.
 | 11A | Manual outbound Twitch chat sending and replying (§8.0) — **Completed** |
 | 11B | Scheduled bot messages and chat commands (§8.1–8.3) — **Completed** |
 | 12A | Alert engine and alert queue (§9–10), scoped to the 8 real Twitch event types, no monetary threshold, no per-rule TTS — **Completed** |
-| 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A |
+| 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A — **Completed** |
 | 13 | Visual overlay designers (§13.1) |
 | 14 | Built-in templates and template import/export (§13.3) |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |

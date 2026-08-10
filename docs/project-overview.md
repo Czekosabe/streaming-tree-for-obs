@@ -953,7 +953,7 @@ it is architected; this table only tracks status and dependencies.
 | 11A | Manual outbound Twitch chat: a third, independent send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, and manual sending/replying from the Chat page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced: interval/jitter/streaming/activity/rate gating, message groups, command roles/aliases/cooldowns, a closed placeholder language, and the Automation page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12A | Alert engine and alert queue: persisted alert profiles/rules, a provider-independent matcher over the same Event Bus, a bounded in-memory queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) presentation, and a public OBS Browser Source alert route, plus the Alerts management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
-| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | Planned — stage 12 as a whole is not complete without it |
+| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — stage 12 as a whole is now complete |
 | 13 | Visual overlay/alert designers | Planned |
 | 14 | Built-in templates and template import/export | Planned |
 | 15 | YouTube and Kick engagement connectors | Planned |
@@ -1015,7 +1015,13 @@ Key dependencies:
   Twitch normalization code, not the aspirational event list in §16 - see
   [`docs/progress.md`](progress.md)'s Stage 12A persistence entry. Mid-alert
   preemption and bounded alert grouping were deliberately deferred to stage
-  12B rather than widening 12A's own scope further.
+  12B rather than widening 12A's own scope further, and are now complete
+  too: grouping reuses `internal/domain/alerts`' own closed capability
+  table (3 of the 8 event types are safely groupable, each for a
+  documented reason) and preemption is opt-in on both the incoming and
+  current rule, strictly-higher-priority-only, with no resume of an
+  interrupted alert - see [`docs/progress.md`](progress.md)'s Stage 12B
+  `feat(server): group and preempt queued alerts` entry.
 - Stage 13 (designers) needs a stable overlay shape, which only exists once
   stages 9/10 (chat) and 12A (alerts) establish what an overlay renders.
 - Stage 14 (templates) needs stage 13's designer output format.
@@ -1212,10 +1218,11 @@ bot messages plus safe chat commands built on that same dispatcher
 (stage 11B), and a real alert engine plus alert queue consuming that
 same Event Bus (stage 12A) - persisted alert rules, matching, a bounded
 queue, and a fixed (not yet designer-driven) public alert presentation.
-Everything else described below (the full visual designer, TTS,
-goal/counter widgets, and - within alerts specifically - mid-alert
-preemption and bounded grouping, deferred to stage 12B) remains
-planned.**
+Stage 12B (completed) closed out the alert queue itself: bounded
+grouping of compatible queued alerts and opt-in, deterministic
+mid-alert preemption. Everything else described below (the full visual
+designer, TTS, and goal/counter widgets) remains planned - stage 13
+(visual designers) has not been started.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay

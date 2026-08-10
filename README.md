@@ -23,16 +23,17 @@ same Event Bus (stage 12A) — persisted alert profiles/rules, a
 provider-independent matching engine, a bounded in-memory queue with
 priority/expiration/pause/resume/skip/replay/clear, local synthetic test
 alerts, and a fixed (not yet a designer) alert presented on its own public
-OBS Browser Source route. **Still planned**: the full visual overlay/alert
-designer and templates, text-to-speech, goal/counter widgets, additional
-engagement providers (YouTube, Kick chat/events), external donation-service
-connectors, and — within the alert engine itself — mid-alert preemption and
-bounded alert grouping (stage 12B) — detailed in
+OBS Browser Source route — plus, closing out the alert queue itself, real
+**bounded alert grouping** and real, opt-in **mid-alert preemption** (stage
+12B). **Still planned**: the full visual overlay/alert designer and
+templates, text-to-speech, goal/counter widgets, additional engagement
+providers (YouTube, Kick chat/events), and external donation-service
+connectors — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 12A).
+engagement piece above in order (stages 8A through 12B).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending, real scheduled messages/chat commands, and a real alert engine all work
 >
@@ -113,8 +114,7 @@ engagement piece above in order (stages 8A through 12A).
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
 > everything else still built **on top of** the operator chat, outbound
 > chat and alert engine — TTS, goal widgets, a free-form visual designer,
-> donation connectors, and (within alerts specifically) mid-alert
-> preemption and bounded grouping — are still **planned**. Whatever remains
+> and donation connectors — are still **planned**. Whatever remains
 > a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -170,7 +170,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 11A | Manual outbound Twitch chat: additive send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, manual sending and replies from the Chat page | **Completed** — see [progress.md](docs/progress.md) |
 | 11B | Scheduled messages and safe chat commands, built on the same dispatcher: interval/jitter/activity/rate gating, message groups, aliases, roles, cooldowns, a closed placeholder language, and the Automation page | **Completed** — see [progress.md](docs/progress.md) |
 | 12A | Alert rules and queue: persisted alert profiles/rules, a provider-independent matching engine, a bounded in-memory alert queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) alert presentation, and a public OBS Browser Source alert route | **Completed** — see [progress.md](docs/progress.md) |
-| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | Planned — Stage 12 as a whole is **not** complete until this lands |
+| 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — see [progress.md](docs/progress.md); Stage 12 as a whole is now complete |
 | 13–19 | The visual overlay/alert designer, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
@@ -892,7 +892,8 @@ real Twitch chat messages — stage 11B added real **scheduled
 messages and safe chat commands** on top of that same profile and
 dispatcher, and stage 12A added a real **alert engine** consuming the
 same Event Bus (persisted alert rules, a matcher, a bounded queue, and a
-public Browser Source alert route) — see
+public Browser Source alert route), which stage 12B then closed out with
+real bounded alert grouping and mid-alert preemption — see
 [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
 [Unified operator chat](#unified-operator-chat),
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
@@ -901,8 +902,7 @@ public Browser Source alert route) — see
 and [Alerts](#alerts).
 What remains planned, unaffected by any of that: the full visual
 alert/overlay designer, text-to-speech, donations from external
-services, viewer counts, analytics, and (within alerts specifically)
-mid-alert preemption and bounded grouping — see
+services, viewer counts, and analytics — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Registering a Twitch application and configuring a Client ID
@@ -1937,23 +1937,25 @@ Stage 12A adds a real **alert engine** on top of the same normalized
 Engagement Event Bus stage 8A built: persisted alert profiles and rules, a
 provider-independent matching engine, a bounded in-memory alert queue, and
 a fixed (not yet a free-form designer) alert presentation, served on its
-own public OBS Browser Source route. Managed from a new **Alerts** page,
-separate from Chat, Overlays and Automation.
+own public OBS Browser Source route. Stage 12B then closed out the queue
+itself with real **bounded alert grouping** (collapsing a burst of
+compatible near-simultaneous alerts into one, with a truthfully aggregated
+count/quantity) and real, opt-in **mid-alert preemption** (a
+strictly-higher-priority alert immediately replacing one already playing,
+with no resume of the interrupted one). Managed from a new **Alerts**
+page, separate from Chat, Overlays and Automation.
 
 **What this stage does not implement.** A free-form visual designer —
 arbitrary positioning, drag-and-drop, uploaded images/GIFs/video/sounds/
 fonts, custom CSS or arbitrary HTML/JS, template import/export — remains
-Stage 13's job. **Mid-alert preemption** (a higher-priority alert
-interrupting one already playing) and **bounded alert grouping**
-(collapsing several near-simultaneous alerts of the same kind into one) are
-deliberately deferred to **Stage 12B** — Stage 12 as a whole is not
-complete without them. No new Twitch scope and no new EventSub
-subscription type were added for this stage: alerts only ever match events
-already reaching the Event Bus, and the alert engine never talks to Twitch
-directly. Text-to-speech, goal/counter widgets, and any donation-service
-connector remain unimplemented. Real alert-event history, queue contents,
-and every counter are **runtime-only** — never persisted — exactly like
-the automation runtime above.
+Stage 13's job, not started. No new Twitch scope and no new EventSub
+subscription type were added for either 12A or 12B: alerts only ever match
+events already reaching the Event Bus, and the alert engine never talks to
+Twitch directly. Text-to-speech, goal/counter widgets, and any
+donation-service connector remain unimplemented. Real alert-event history,
+queue contents, and every counter (including the grouping/preemption ones)
+are **runtime-only** — never persisted — exactly like the automation
+runtime above.
 
 ### Genuinely supported alert events
 
@@ -1986,14 +1988,29 @@ same profile *do* overlap), a priority (0–100), a duration (1–30 seconds),
 which fields to show (platform/username/message/quantity — only the ones
 that field genuinely exist for that event type), a closed placeholder
 template (`{username}`, `{platform}`, `{eventType}`, `{quantity}`,
-`{message}`, `{rewardTitle}` — only where the event type actually
-supports it), and bounded entry/exit animations reusing this
+`{message}`, `{rewardTitle}`, `{groupCount}` — only where the event type
+actually supports it), and bounded entry/exit animations reusing this
 application's own existing overlay animation classes — never an
 arbitrary CSS class, never a backend-supplied stylesheet. Every field the
 rule editor shows is capability-driven: a condition that does not make
 sense for the selected event type (a quantity threshold on a follow rule,
 for instance) is not just hidden — the backend rejects it outright if
 sent anyway.
+
+A rule may also opt in to two independent behaviors. **Group similar
+alerts**, shown only for the 3 event types with a genuinely safe grouping
+strategy (Bits and gift-sub batch, by same actor and truthfully summed
+quantity; channel-point redemption, by same actor and the same specific
+reward), with a configurable window (1–30 seconds, fixed once the first
+member arrives — a later member never extends it) — unavailable
+elsewhere, and rejected by the backend if forced on anyway. Enabling it
+forces "show message" off and forbids a `{message}` placeholder, since a
+truthful grouped alert can never show one arbitrary member's own message.
+**Interruption** is always available and is two separate, independent
+toggles: whether *this* rule's own alert may be interrupted by a later,
+higher-priority one (default: yes), and whether *this* rule's alerts may
+themselves interrupt a lower-priority one already playing (default: no).
+Both default to Stage 12A's own original non-interrupting behavior.
 
 ### The alert queue
 
@@ -2014,6 +2031,23 @@ not-yet-played items — the currently playing alert is untouched, and it is
 a separate, distinct action from Skip Current. Disabling a profile hides
 its current alert and empties its queue immediately; re-enabling never
 replays whatever arrived while it was disabled.
+
+**Grouping** (Stage 12B) only ever merges *still-queued* alerts — the
+currently playing one is never touched. A newly matched event from the
+same rule (the exact same saved rule version — editing a rule starts a
+fresh group), the same connected account, and the same actor merges into
+an existing compatible group if one is open and not yet at its bounded
+member limit, incrementing its `groupCount` and, where the event type
+allows it, truthfully summing its quantity — a merge never creates a new
+queue entry or takes a new capacity slot. **Preemption** (Stage 12B) only
+ever fires for a strictly higher-priority incoming candidate whose own
+rule opts in to interrupting, against a current alert whose own rule
+allows being interrupted — equal priority never preempts, a paused queue
+never preempts, a replayed alert never preempts, and a synthetic Test
+Rule preview may only ever preempt another synthetic preview, never a
+real alert. A preempted alert is hidden immediately with no resume of its
+remaining duration and becomes the one available replay snapshot; the
+incoming alert shows immediately with its own full, fresh duration.
 
 ### Local synthetic test alerts
 
@@ -2079,6 +2113,19 @@ no replay — entirely on loopback, with **no real Twitch account or OBS
 Browser Source involved**. See [`docs/progress.md`](docs/progress.md) for
 exactly what it covers, including the scenarios covered instead by named
 Go tests.
+
+`scripts/verify-alert-advanced-queue.mjs` does the same for Stage 12B
+specifically: the grouping/interruption rejection matrix, real Bits and
+channel-point-redemption events merging correctly (and never merging
+across a different actor or a different reward), real-event preemption
+with the public stream's hide-then-show sequence asserted directly (hide
+carries only the outgoing alert's id and reason, never its rendered
+content), equal-priority and non-interruptible protection, paused-queue/
+synthetic/replay preemption guards, and a full backend restart that
+preserves every new rule field while resetting the new counters — run at
+least twice per change. See [`docs/progress.md`](docs/progress.md) for
+exactly which scenarios this covers versus a specific named Go/frontend
+test instead.
 
 ---
 
@@ -2919,9 +2966,6 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Mid-alert preemption and bounded alert grouping** — deliberately
-  deferred out of the alert engine above into stage 12B; Stage 12 as a
-  whole is not complete until they land.
 - **The full visual overlay/alert designer, overlay templates, TTS, goal
   widgets, and any donation-service connector** — architecture only so
   far, see
