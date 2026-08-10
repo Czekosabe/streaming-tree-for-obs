@@ -213,9 +213,16 @@ continuity there.
   [`twitch-outbound-chat.md`](twitch-outbound-chat.md) for the full
   contract, and the addendum at the end of this document for how the two
   stay independent.
-- **Stage 11B (scheduled bot messages, chat commands):** still planned,
-  building on stage 11A's own dispatcher rather than this inbound
-  connector.
+- **Stage 11B (scheduled bot messages, chat commands, now implemented):**
+  built on stage 11A's own dispatcher, not this inbound connector.
+  This document's own connector is **unchanged** by stage 11B: the
+  command engine (`internal/chatautomation`) subscribes to the
+  already-normalized Engagement Event Bus this stage produces - the
+  same bus stage 9's operator chat and stage 10's overlay already
+  consume - never to this connector's WebSocket directly, and never a
+  second EventSub connection. See the README's own
+  [Scheduled messages and chat commands](../../README.md#scheduled-messages-and-chat-commands)
+  section for the full design.
 - **Stage 12 (alerts):** rule matching against these events. Not implemented.
 - **Badge image resolution, per-message avatar fetching:** stage 8A carries
   badge/emote **IDs** in the normalized model but does not resolve them to

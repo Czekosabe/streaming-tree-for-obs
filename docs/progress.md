@@ -10719,3 +10719,133 @@ exercise, and which named Go test covers each instead.
 Complete the Stage 11B documentation pass (README, project overview,
 engagement architecture, the twitch-outbound-chat cross-reference, and
 a config/README audit), then run the full closing regression.
+
+## 2026-08-10 06:23 — docs: document Stage 11B automation
+
+### Status
+Complete.
+
+### Scope
+The Stage 11B documentation pass: bring every cross-referencing
+document up to date with the now-completed scheduled-messages/chat-
+commands automation layer, mark Stage 11 as a whole complete, and
+confirm Stage 12 remains untouched - without rewriting any prior
+stage's historical callouts.
+
+### Changes
+- **README.md**: the project-state banner's "What is real" list gained
+  a bullet for real scheduled messages and chat commands, and the
+  matching "Scheduled bot messages and chat commands (stage 11B)"
+  bullet was removed from "What will be added later"; the Roadmap
+  table now marks both 11A and 11B **Completed** and drops "bot
+  automation" from the 12-19 summary row; a new
+  [Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
+  section (scheduled messages, chat commands, the placeholder
+  language, the automation runtime/API, "Verifying it for real") was
+  added between "Sending Twitch chat manually" and the REST API
+  reference, and that earlier section's own stale "does not implement"
+  paragraph was corrected to point at it instead of calling it
+  unimplemented; the REST API table gained the twelve
+  `/api/chat-automation/*` rows plus a new stable-error-code paragraph;
+  the integration-checks section gained the tenth script's own
+  description and command line, the frontend test line now mentions
+  the Automation page, and the directory-structure tree gained every
+  new package/component path. Corrected two pre-existing, unrelated
+  omissions noticed while editing the same tree and translation-
+  namespace list (the `overlays.json` i18n namespace and the
+  `components/overlays/` tree entry were both already real as of stage
+  10 but had never been added to those two lists) - a small drive-by
+  accuracy fix, not new stage 11B scope.
+- **docs/project-overview.md**: §13's roadmap table marks stage 11B
+  **Completed** with a short feature summary; the stage-11A/11B
+  dependency bullet's future tense ("will build," "will implement")
+  was corrected to past tense now that it has happened; §16's status
+  line now says "five pieces... are real as of stage 11B," its
+  provider-support-honesty bullet drops the "scheduled/automatic
+  sending remains stage 11B" caveat, and its closing paragraph gained
+  a Stage 11B implementation summary matching the existing stage
+  9/10/11A ones, without touching their text.
+- **docs/engagement-architecture.md**: a new "Update (stage 11B,
+  implemented)" blockquote was appended after §8.0's existing "Not yet
+  real, deliberately deferred to stage 11B" paragraph (never editing
+  it); §8.1 and §8.2 each gained their own appended "Update (stage
+  11B, implemented)" note stating what actually shipped and naming the
+  three deliberate simplifications from the original plan (no
+  time-of-day window, no per-platform cooldown, "suspend when the
+  stream ends" expressed as a per-due-time skip rather than a distinct
+  state) rather than silently matching the plan exactly; §8.3 gained
+  an implemented-placeholder-vocabulary note; §18's table marks stage
+  11B **Completed** and its dependency bullet was corrected from
+  future to past tense.
+- **docs/provider-integrations/twitch-outbound-chat.md**: a new "Stage
+  11B: scheduled messages and chat commands reuse this same contract"
+  section states plainly that no new Twitch scope, endpoint, or second
+  outbound pipeline was added - every automated send still goes
+  through the exact dispatcher and adapter this document already
+  describes, with the scheduler/cooldown limits sitting above it as an
+  automation-behavior control, never a replacement for it.
+- **docs/provider-integrations/twitch-engagement.md**: the "Areas
+  reserved for later stages" bullet for stage 11B was updated from
+  "still planned" to "now implemented," stating explicitly that this
+  document's own inbound connector is unchanged - the command engine
+  subscribes to the already-normalized Engagement Event Bus, not this
+  connector's WebSocket directly, and opens no second EventSub
+  connection.
+- **config/README.md**: a new rule 11 - the first in this file's
+  per-stage list to actually describe new persisted configuration
+  content rather than another "nothing new here" entry - documents the
+  six new `chat_*` SQLite tables (names, targets, templates, aliases,
+  intervals, cooldown bounds), restates that a template may never
+  contain a credential, and separately confirms every runtime value
+  (next-run times, activity counters, rolling send counts, cooldowns)
+  and every content-shaped fact (inbound chat text, triggering
+  usernames, command-use history, delivery history) stays out of both
+  SQLite and this directory; states plainly that no new environment
+  variable was added.
+- **THIRD_PARTY_NOTICES.md**: audited, not edited - `git diff --stat`
+  across the full stage 11B commit range confirms no commit touched
+  `go.mod`/`go.sum`/`package.json`/`package-lock.json`, so no new
+  dependency exists to document.
+
+### Files changed
+- `README.md`, `config/README.md`, `docs/project-overview.md`,
+  `docs/engagement-architecture.md`,
+  `docs/provider-integrations/twitch-outbound-chat.md`,
+  `docs/provider-integrations/twitch-engagement.md`.
+
+### Technical decisions
+- Followed this project's own established pattern exactly, the same
+  one the Stage 11A documentation entry above already recorded: a
+  completed stage's documentation update is a **new**, clearly-dated
+  blockquote or paragraph appended after the old planning text, never
+  an edit to what an earlier stage's callout said - including the
+  stage-11A-era "still planned (stage 11B)" markers in
+  `engagement-architecture.md` §8.1/§8.2, which were left in place with
+  a new note appended immediately after rather than rewritten, exactly
+  like the stage 9 callout was left untouched when stage 10 completed.
+- Recorded the plan-vs-shipped deviations honestly in
+  `engagement-architecture.md` §8.1 (no streaming-hour time window, no
+  per-platform cooldown, suspend-as-skip rather than a distinct
+  suspended state) instead of silently describing the implementation
+  as matching the original plan exactly - each was a deliberate,
+  documented simplification appropriate to a single-provider (Twitch-
+  only) implementation, not an oversight.
+- Confirmed no dependency-manifest file changed anywhere in this
+  stage's full commit range (`8757c43`..`8cda627`) with `git diff
+  --stat` before writing the THIRD_PARTY_NOTICES.md audit conclusion,
+  rather than assuming.
+
+### Automated validation
+Documentation only - no build/test/lint run for this commit
+specifically; the full closing regression (frontend, backend, and all
+ten integration scripts) runs as its own, final step before Stage 11B
+- and Stage 11 as a whole - is considered complete.
+
+### Known limitations
+None beyond what earlier Stage 11B entries already recorded.
+
+### Next step
+Run the full closing regression (frontend checks, backend checks, and
+all ten integration scripts by exact name), then push and produce the
+final report. Stage 12 (alerts) remains planned; nothing beyond Stage
+11B was implemented in this stage.

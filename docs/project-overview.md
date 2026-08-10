@@ -951,7 +951,7 @@ it is architected; this table only tracks status and dependencies.
 | 9 | Unified operator chat: a real, merged Twitch chat page consuming the Engagement Event Bus, provider-independent projection, persisted preferences, Twitch badge/emote resolution (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 10 | OBS chat overlay: persisted overlay profiles, a public per-overlay projection over the operator-chat projection, a public HTTP/SSE API and a management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 11A | Manual outbound Twitch chat: a third, independent send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, and manual sending/replying from the Chat page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
-| 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced | Planned |
+| 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced: interval/jitter/streaming/activity/rate gating, message groups, command roles/aliases/cooldowns, a closed placeholder language, and the Automation page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12 | Alert engine and alert queue | Planned |
 | 13 | Visual overlay designers | Planned |
 | 14 | Built-in templates and template import/export | Planned |
@@ -996,12 +996,14 @@ Key dependencies:
   capability, declared as its own independent capability profile
   (`AssessOutboundChatCapability`) reusing stage 8A's own
   capability-assessment pattern rather than widening the inbound
-  profile. Stage 11B (scheduled bot messages, chat commands) will build
+  profile. Stage 11B (scheduled bot messages, chat commands) built
   directly on stage 11A's own in-memory dispatcher and provider-
   independent sending abstraction (`internal/outboundchat`) rather than
-  replacing them - the dispatcher's `Source` type already reserves
-  `command`/`scheduled` values stage 11B will implement, unused by
-  stage 11A itself.
+  replacing them - the dispatcher's `Source` type had already reserved
+  the `command`/`scheduled` values stage 11B went on to use, unused by
+  stage 11A itself. Stage 11B's own runtime
+  (`internal/chatautomation`) never calls the Twitch client directly;
+  every send still goes through that same dispatcher.
 - Stage 12 (alerts) needs stage 8's normalized events.
 - Stage 13 (designers) needs a stable overlay shape, which only exists once
   stages 9/10 (chat) and 12 (alerts) establish what an overlay renders.
@@ -1190,12 +1192,13 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: four pieces of this section are real as of stage 11A - the
+**Status: five pieces of this section are real as of stage 11B - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
-operator-chat projection (stage 10), and manual outbound chat
-sending/replying as the connected account itself (stage 11A). Everything
-else described below (scheduled bot messages, chat commands, alerts,
+operator-chat projection (stage 10), manual outbound chat
+sending/replying as the connected account itself (stage 11A), and
+scheduled bot messages plus safe chat commands built on that same
+dispatcher (stage 11B). Everything else described below (alerts,
 visual designers, TTS, goal/counter widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
@@ -1239,8 +1242,10 @@ made from stage 5 onward:
    account and metadata only, extended in stage 8A with a real inbound
    engagement connector requesting additional, separately-tracked scopes on
    the same account, then in stage 11A with a real, independently-scoped
-   **manual** outbound-sending capability on that same account - scheduled/
-   automatic sending remains stage 11B), then YouTube (stage 7B,
+   **manual** outbound-sending capability on that same account, then in
+   stage 11B with real **scheduled and command-triggered** sending built
+   on that same capability and dispatcher - no further scope, no second
+   bot identity), then YouTube (stage 7B,
    account, broadcast selection and metadata only - no live chat, no Super
    Chat, no membership events, no outbound chat). Kick and TikTok account
    integration (stage
@@ -1287,8 +1292,22 @@ own EventSub delivers it back - see the README's own
 [Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
 section and
 [docs/provider-integrations/twitch-outbound-chat.md](provider-integrations/twitch-outbound-chat.md)
-for the full design, contract and user-facing behavior. Everything else
-this section describes (scheduled bot messages, chat commands, alerts,
-TTS, goal widgets, further providers, a visual overlay designer, overlay
-templates) remains planned, unaffected by stage 9's, stage 10's or stage
-11A's own completion.
+for the full design, contract and user-facing behavior. Stage 11B
+implemented real scheduled bot messages and safe chat commands on top
+of that same dispatcher and capability profile: persisted schedule and
+command definitions (`apps/server/internal/domain/chatautomation`), a
+single centralized in-memory runtime (`apps/server/internal/chatautomation`)
+combining a drift-free interval/jitter scheduler, a command matcher
+subscribed once to the Event Bus, and a closed, declarative placeholder
+language — with every actual send still going through stage 11A's own
+`internal/outboundchat` dispatcher, never a second pipeline and never a
+direct call into the Twitch client from scheduler or command code. All
+of this runtime's own state (next-run times, cooldowns, activity
+counters, rolling send counts) stays in memory only, resetting cleanly
+on every backend restart with no missed-run catch-up, exactly like the
+Event Bus and the dispatcher it builds on. See the README's own
+[Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
+section for the full design and user-facing behavior. Everything else
+this section describes (alerts, TTS, goal widgets, further providers, a
+visual overlay designer, overlay templates) remains planned, unaffected
+by stage 9's, stage 10's, stage 11A's or stage 11B's own completion.

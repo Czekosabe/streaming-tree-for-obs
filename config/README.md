@@ -177,3 +177,26 @@ with no transcoding, is this stage's deliberate scope.
     (`user:write:chat`) is an additive Twitch OAuth scope, stored in the
     OS credential store exactly like every other scope on the account's
     existing token bundle - not a new secret type, and not a file here.
+11. Stage 11B is the first stage in this list to actually add real
+    configuration content, not just another "nothing new here" entry:
+    persisted schedule and command definitions - names, targets,
+    message/response templates, aliases, intervals, delays, jitter,
+    thresholds and cooldown bounds (`internal/domain/chatautomation`,
+    migration `0012_chat_automation.sql`) - are a small set of ordinary
+    SQLite tables (`chat_schedules` and friends) alongside the rest of
+    this application's configuration - not a file in this directory,
+    and this project's usual rule still holds: **no schedule or command
+    definition may contain a credential**, and a message/response
+    template is plain, user-authored, declarative text (a closed
+    placeholder language, never a script or an expression) - see rule 4
+    above and `docs/engagement-architecture.md` §8.3. **Everything this
+    stage computes at runtime stays out of SQLite and out of this
+    directory**: next-run times, per-schedule/per-account activity
+    counters, rolling hourly send counts, and command cooldowns are all
+    in-memory only (`internal/chatautomation`), the same category as
+    the outbound-chat dispatcher's own runtime state in rule 10 above -
+    reset on every backend restart, with no missed-run catch-up. Also
+    never persisted anywhere: inbound chat message text, triggering
+    usernames, command-use history, or outbound delivery history - see
+    `docs/engagement-architecture.md` §17.2. Stage 11B added **no new
+    environment variable**.

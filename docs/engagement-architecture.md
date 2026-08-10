@@ -595,6 +595,14 @@ section for the full design and user-facing behavior of what stage 11A
 actually implemented, and [progress.md](progress.md) for the design
 decisions.
 
+> **Update (stage 11B, implemented):** §8.1 and §8.2 below are no
+> longer planned - both are real, built directly on this same
+> dispatcher exactly as anticipated above, with no second outbound
+> pipeline and no new Twitch scope. See each subsection's own appended
+> status note for what actually shipped, any deliberate deviation from
+> what was planned here, and where the real design and Twitch-only
+> local integration script are documented.
+
 ### 8.1 Scheduled bot messages
 
 **Status: still planned (stage 11B)**, building on stage 11A's
@@ -622,6 +630,31 @@ per scheduled message:
 - manual "Send now",
 - automatic suspension when the stream ends.
 
+> **Update (stage 11B, implemented):** real per-account-target
+> schedules, message groups (random selection avoiding an immediate
+> repeat), interval + first-send delay + optional randomized jitter
+> (added only on top of the interval, never subtracted from it), "only
+> while ingest is receiving" gating tied to the *local* MediaMTX state
+> exactly as anticipated above, a minimum-real-chat-activity gate
+> counted per target account, a maximum-sends-per-hour ceiling, a
+> manual **Send now** override, and a live next-run/state/skip-reason
+> preview are all real - see
+> [`apps/server/internal/chatautomation/scheduler.go`](../apps/server/internal/chatautomation/scheduler.go)
+> and the README's own
+> [Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
+> section. Three deliberate simplifications from the plan above: there
+> is no "allowed streaming hours" time-of-day window (only the
+> ingest-receiving gate), no per-platform cooldown separate from the
+> hourly cap (Twitch is still the only outbound provider), and "suspend
+> when the stream ends" is expressed as a per-due-time skip
+> (`waiting_for_stream`) that resumes at the next normal interval
+> rather than a distinct suspend/resume state - each was judged
+> sufficient for a single-provider implementation and can be revisited
+> if a future provider needs otherwise. All runtime state (next-run
+> time, activity counters, rolling send counts) is in-memory only,
+> resetting cleanly on every backend restart with no missed-run
+> catch-up.
+
 ### 8.2 Chat commands
 
 **Status: still planned (stage 11B).** Planned example commands:
@@ -646,6 +679,25 @@ Planned settings per command:
 - "reply on the same platform the command was issued on" as the default
   behaviour.
 
+> **Update (stage 11B, implemented):** a fixed `!` prefix (never
+> configurable), globally unique canonical names and aliases, per-target
+> commands, response-template rendering through the placeholder system
+> (§8.3), a per-user cooldown and a global cooldown (both in-memory
+> only, reset on restart), and the required-role gate (`everyone` /
+> `subscriber` / `vip` / `moderator` / `broadcaster`, matched
+> semantically against what the normalized chat event itself reports,
+> never inferred from a username) are all real - see
+> [`apps/server/internal/chatautomation/commands.go`](../apps/server/internal/chatautomation/commands.go).
+> The self-message design requirement recorded above is implemented
+> exactly as specified: `commandEngine.handleEvent` compares the
+> triggering message's provider user id against the connected sending
+> account's own provider user id, never by tracking outbound message
+> ids, so a command's own response can safely start with `!` without
+> ever re-triggering itself. "Reply on the same platform the command
+> was issued on" is the only behavior a command has, since Twitch
+> remains the only outbound provider; there is no separate
+> per-platform reply-routing decision to make yet.
+
 ### 8.3 Placeholder system
 
 Bot messages and command responses use a **fixed, safe placeholder
@@ -653,6 +705,20 @@ vocabulary**, not a scripting or templating language. Planned placeholders
 include `{channelName}`, `{platform}`, `{streamTitle}`, `{streamUptime}`,
 `{channelUrl}`. Substitution is a bounded, whitelisted lookup — there is no
 arbitrary code execution and no plan to add one (§2).
+
+> **Update (stage 11B, implemented):** exactly this closed vocabulary
+> is real - `{channelName}`, `{platform}`, `{channelUrl}` always
+> resolvable; `{streamTitle}` and `{streamUptime}` resolvable only when
+> the target has enough local context (a linked destination's saved
+> metadata, this application's own local ingest start time), never
+> fetched from Twitch at render time. `{{`/`}}` escape a literal brace;
+> an unknown placeholder name is rejected at save time (`422`); a
+> known-but-currently-unresolvable placeholder is skipped rather than
+> sent literally. A stateless `POST /api/chat-automation/preview`
+> endpoint renders a template locally, with no network request and
+> nothing sent, so an operator can check a message's real appearance
+> and character count before it is ever scheduled or triggered. See
+> [`apps/server/internal/chatautomation/placeholders.go`](../apps/server/internal/chatautomation/placeholders.go).
 
 ## 9. Alerts
 
@@ -961,7 +1027,7 @@ that table.
 | 9 | Unified operator chat (§7.2) — **Completed** |
 | 10 | OBS chat overlay (§7.3) — **Completed** |
 | 11A | Manual outbound Twitch chat sending and replying (§8.0) — **Completed** |
-| 11B | Scheduled bot messages and chat commands (§8.1–8.3) |
+| 11B | Scheduled bot messages and chat commands (§8.1–8.3) — **Completed** |
 | 12 | Alert engine and alert queue (§9–10) |
 | 13 | Visual overlay designers (§13.1) |
 | 14 | Built-in templates and template import/export (§13.3) |
@@ -995,9 +1061,9 @@ Dependencies that constrain this order:
 - Stage 11A (manual outbound) needed connector send-message capability
   (§6.3), declared as its own independent capability profile (§6.4),
   never merged into the stage 8A connector's own inbound capability.
-  Stage 11B (scheduled/bot) is expected to build directly on stage
-  11A's own dispatcher and sending abstraction (§8.0) rather than
-  replacing them.
+  Stage 11B (scheduled/bot) built directly on stage 11A's own
+  dispatcher and sending abstraction (§8.0) rather than replacing
+  them, exactly as planned here.
 - Stage 12 (alerts) needs stage 8's normalized events; the alert queue (§10)
   is not useful without the rule engine that feeds it, so they are one stage.
 - Stage 13 (designers) needs a stable overlay data shape to design against,

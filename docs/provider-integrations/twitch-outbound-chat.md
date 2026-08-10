@@ -268,6 +268,29 @@ broadcaster's own chat. This application's policy:
   surfaces `reconnect_required`-shaped failure, exactly like every other
   Twitch adapter call in this application already does.
 
+## Stage 11B: scheduled messages and chat commands reuse this same contract
+
+Stage 11B (scheduled bot messages, safe chat commands, placeholders,
+cooldowns) added **no new Twitch scope, no new endpoint, and no second
+outbound pipeline**. Every automated send - scheduled or
+command-triggered - is rendered locally (the closed placeholder
+language in `internal/chatautomation/placeholders.go`) and then handed
+to the exact same `internal/outboundchat` dispatcher and Send Chat
+Message adapter this document already describes; `internal/chatautomation`
+never calls the Twitch client directly. Concretely, that means every
+constraint recorded above still applies unchanged to an automated send:
+the same `user:write:chat` scope (still no `user:bot`/`channel:bot`),
+the same one-send-in-flight-per-account queue and local rate limiter,
+the same no-automatic-retry-on-uncertain-outcome policy, and the same
+Shared Chat disclosure. Stage 11B's own scheduler and command-cooldown
+limits (interval, jitter, activity gating, hourly cap, per-user/global
+cooldowns) sit **above** this contract as an automation-behavior
+control, not a replacement for it - the dispatcher's local rate limiter
+and Twitch's own `429` response remain the authoritative safety ceiling
+either way. See the README's own
+[Scheduled messages and chat commands](../../README.md#scheduled-messages-and-chat-commands)
+section for the full design.
+
 ## Exact non-goals for this document/stage
 
 - No IRC connection of any kind.

@@ -22,13 +22,14 @@ of the engagement platform itself — a normalized Engagement Event Bus and
 a real Twitch inbound connector reading chat and channel events (stage
 8A) — a real, unified operator chat consuming that bus (stage 9) — a
 real, public OBS Browser Source chat overlay consuming that same
-operator-chat projection (stage 10) — and a real, manual outbound-chat
+operator-chat projection (stage 10) — a real, manual outbound-chat
 foundation letting an operator send and reply as their own connected
-Twitch account from the Chat page (stage 11A) — are all completed.
-Scheduled bot messages and chat commands (stage 11B), alerts, and TTS
-remain planned.
+Twitch account from the Chat page (stage 11A) — and now real scheduled
+bot messages and safe chat commands built on that same outbound
+foundation (stage 11B) — are all completed, completing stage 11 as a
+whole. Alerts and TTS remain planned.
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay and real manual Twitch chat sending all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending and real scheduled messages/chat commands all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -60,14 +61,23 @@ remain planned.
 > separate bot identity, no optimistic local echo (the sent message
 > appears the same way any other message does, once Twitch's own EventSub
 > delivers it back), and honest rate-limited/dropped/delivery-unknown
-> states rather than a false "sent" claim. See
+> states rather than a false "sent" claim. That same dispatcher now also
+> drives real **scheduled messages** (interval, first delay, randomized
+> jitter, message-group alternatives, only-while-streaming and
+> minimum-chat-activity gating, a per-schedule hourly cap, and a manual
+> Send Now override) and real **safe chat commands** (a fixed `!` prefix,
+> aliases, per-role gating, global/per-user cooldowns, and a closed,
+> declarative placeholder language) — managed from a new **Automation**
+> page, with a hard rule that the account's own sent messages can never
+> re-trigger a command. See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
 > [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
 > [Unified operator chat](#unified-operator-chat),
 > [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
-> [Sending Twitch chat manually](#sending-twitch-chat-manually)
+> [Sending Twitch chat manually](#sending-twitch-chat-manually),
+> [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
 > and [Stream key security](#stream-key-security).
 >
 > Starting a real broadcast is always an **explicit action** — a destination
@@ -77,14 +87,17 @@ remain planned.
 > both Twitch and YouTube. Enabling the Twitch engagement connector, and
 > upgrading an account's permission to send chat, are equally explicit —
 > restoring an enabled connector automatically on the next backend start
-> only ever applies to one you already enabled yourself, and sending is
-> always an operator-initiated action, never scheduled or automatic.
+> only ever applies to one you already enabled yourself. Manual sending is
+> always operator-initiated; a schedule or command only ever runs once you
+> have explicitly created and enabled it, and no missed run is ever
+> replayed after a restart.
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything else still built **on top of** the operator chat — scheduled
-> bot messages, chat commands, alerts, TTS — are still **planned**. Whatever
-> remains a placeholder is marked with a **Demo** badge — the full list is
-> in [What is currently demo-only](#what-is-currently-demo-only).
+> everything else still built **on top of** the operator chat and outbound
+> chat — alerts, TTS, goal widgets, visual designers — are still
+> **planned**. Whatever remains a placeholder is marked with a **Demo**
+> badge — the full list is in
+> [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
 Work journal: [`docs/progress.md`](docs/progress.md)
@@ -108,6 +121,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Unified operator chat](#unified-operator-chat)
 - [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
 - [Sending Twitch chat manually](#sending-twitch-chat-manually)
+- [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -133,9 +147,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
 | 10 | OBS Browser Source chat overlay: persisted overlay profiles, a public per-overlay projection, a public HTTP/SSE API, a frontend renderer and the Overlays management page | **Completed** — see [progress.md](docs/progress.md) |
-| 11A | Manual outbound Twitch chat: additive send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, manual sending and replies from the Chat page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
-| 11B | Scheduled bot messages and chat commands, built on the same dispatcher | Planned |
-| 12–19 | Alerts, bot automation, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 11A | Manual outbound Twitch chat: additive send-permission profile, a real Send Chat Message adapter, an in-memory per-account dispatcher, manual sending and replies from the Chat page | **Completed** — see [progress.md](docs/progress.md) |
+| 11B | Scheduled messages and safe chat commands, built on the same dispatcher: interval/jitter/activity/rate gating, message groups, aliases, roles, cooldowns, a closed placeholder language, and the Automation page (this stage) | **Completed** — see [progress.md](docs/progress.md) |
+| 12–19 | Alerts, visual designers, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -852,14 +866,17 @@ consumes it, stage 10 added a real, public **OBS Browser Source chat
 overlay** that in turn consumes that same operator-chat projection, and
 stage 11A added **manual outbound chat sending** — a third, independent
 capability profile letting the same connected account send and reply to
-real Twitch chat messages — see
+real Twitch chat messages — and stage 11B added real **scheduled
+messages and safe chat commands** on top of that same profile and
+dispatcher — see
 [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
 [Unified operator chat](#unified-operator-chat),
-[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) and
-[Sending Twitch chat manually](#sending-twitch-chat-manually). What
-remains planned, unaffected by any of that: scheduled bot messages, chat
-commands, the alert engine, text-to-speech, donations from external
-services, viewer counts, and analytics — see
+[OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
+[Sending Twitch chat manually](#sending-twitch-chat-manually) and
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
+What remains planned, unaffected by any of that: the alert engine,
+text-to-speech, donations from external services, viewer counts, and
+analytics — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Registering a Twitch application and configuring a Client ID
@@ -1238,24 +1255,27 @@ the full target design and
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** This stage is *inbound* only:
-reading chat and events, never sending anything to Twitch. Chat
-commands, scheduled bot messages, alert rules or rendering, TTS,
-YouTube live chat, and Kick/TikTok engagement are all still
-unimplemented — see
+reading chat and events, never sending anything to Twitch. Alert rules
+or rendering, TTS, YouTube live chat, and Kick/TikTok engagement are
+all still unimplemented — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
 real, unified operator chat consuming this Event Bus is implemented —
 see [Unified operator chat](#unified-operator-chat) below — a real,
 public OBS Browser Source overlay consuming that chat's own projection
 in turn is also implemented — see
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) —
-and manually sending/replying as the connected account is implemented
-too, as its own independent capability profile — see
-[Sending Twitch chat manually](#sending-twitch-chat-manually). The
-diagnostic Engagement page added in this stage is explicitly **not**
-the operator chat, an overlay, or the outbound-chat composer — it
-exists to make the Event Bus and the Twitch connector's state
-genuinely observable, and stays a separate page from Chat, Overlays
-and the composer built into the Chat page.
+manually sending/replying as the connected account is implemented too,
+as its own independent capability profile — see
+[Sending Twitch chat manually](#sending-twitch-chat-manually) — and
+real scheduled messages and safe chat commands are now implemented on
+top of that same profile — see
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
+The diagnostic Engagement page added in this stage is explicitly
+**not** the operator chat, an overlay, the outbound-chat composer, or
+the Automation page — it exists to make the Event Bus and the Twitch
+connector's state genuinely observable, and stays a separate page from
+Chat, Overlays, and the composer/Automation page built on top of
+outbound chat.
 
 ### The Engagement Event Bus
 
@@ -1398,12 +1418,14 @@ healthy." Neither replaces the other.
 At stage 9, sending chat, chat commands, scheduled bot messages,
 alerts, TTS, remote moderation actions (bans/timeouts/message deletion
 sent *to* Twitch), and YouTube/Kick/TikTok chat all remained exactly as
-planned. That is still true for chat commands, scheduled bot messages,
-alerts, TTS, remote moderation actions and YouTube/Kick/TikTok chat —
-but stage 11A added real **manual** sending and replying, from a
-composer built into this same Chat page — see
-[Sending Twitch chat manually](#sending-twitch-chat-manually). A
-message appearing in operator chat is never proof this application's
+planned. That is still true for alerts, TTS, remote moderation actions
+and YouTube/Kick/TikTok chat — but stage 11A added real **manual**
+sending and replying, from a composer built into this same Chat page,
+and stage 11B added real **scheduled messages and chat commands** on
+top of that same foundation, managed from a separate Automation page —
+see [Sending Twitch chat manually](#sending-twitch-chat-manually) and
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
+A message appearing in operator chat is never proof this application's
 own outgoing FFmpeg branch works; that is an unrelated, separately
 verified fact. The public OBS Browser Source overlay built on top of
 this same projection **is** implemented (stage 10) — see
@@ -1623,14 +1645,17 @@ API — never IRC, never a scraped or automated browser session. See
 [`docs/provider-integrations/twitch-outbound-chat.md`](docs/provider-integrations/twitch-outbound-chat.md)
 for the fully researched contract this is built on.
 
-**What this stage does not implement.** Scheduled/randomized messages,
-message groups, streaming-hour windows, chat commands, cooldowns,
-placeholder substitution, a separate bot account, announcements,
-whispers, pinned messages, and remote moderation actions sent *to*
-Twitch are all still unimplemented — that is stage 11B and later, see
+**What this stage does not implement.** A separate bot account,
+announcements, whispers, pinned messages, and remote moderation
+actions sent *to* Twitch remain unimplemented — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
-This stage is deliberately scoped to **manual, operator-initiated**
-sending only.
+Scheduled/randomized messages, message groups, chat commands,
+cooldowns and placeholder substitution — planned as stage 11B when
+this section was first written — are now real, built directly on top
+of this same dispatcher; see
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
+below. This stage itself is deliberately scoped to **manual,
+operator-initiated** sending only.
 
 ### A third, independent capability profile
 
@@ -1732,6 +1757,150 @@ echo appearing exactly once with no optimistic duplicate — entirely on
 loopback, with **no real Twitch account or network request to Twitch
 involved**. See [`docs/progress.md`](docs/progress.md) for exactly
 what it covers.
+
+---
+
+## Scheduled messages and chat commands
+
+Stage 11B adds the automation layer on top of stage 11A's outbound-chat
+foundation: **scheduled bot messages** sent on a timer, and **safe chat
+commands** that reply to a `!command` typed by a real viewer. Both
+reuse the exact same per-account dispatcher, permission profile and
+Twitch Send Chat Message call stage 11A introduced — there is no
+second outbound pipeline, no separate bot identity, and no new Twitch
+scope. Everything here is managed from its own **Automation** page,
+separate from Chat and Overlays.
+
+**What this stage does not implement.** Alerts, donations, Bits/sub
+alert rendering, sounds, TTS, goals/counters, a visual overlay
+designer, YouTube/Kick/TikTok outbound chat, a separate bot account,
+IRC, whispers, announcements, pinned messages, and any remote
+moderation action (bans, timeouts, message deletion) remain exactly as
+planned — see
+[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+Nothing in this stage can execute arbitrary code: there is no
+scripting language, no regular expressions, no arbitrary HTTP
+webhooks, and no shell/filesystem/SQL access anywhere in a schedule or
+command definition — only a closed set of fixed behaviors and a closed
+placeholder language, described below.
+
+### Scheduled messages
+
+A schedule has one or more target accounts (each with an optional
+destination-metadata context, used only for placeholders like
+`{streamTitle}`), one or more message alternatives (chosen at random
+each send, deliberately avoiding an immediate repeat when there is
+more than one), a fixed interval (60 seconds to 24 hours), an optional
+first-send delay, and an optional extra random jitter added on top of
+the interval — never subtracted from it, so a schedule never fires
+early. Two independent, optional gates can suppress an otherwise-due
+send without ever queuing it for later: **only while this
+application's own local ingest is actively receiving** (MediaMTX's
+local publish state — never Twitch's `stream.online`, never the
+outgoing FFmpeg branches, never a viewer count) and a **minimum number
+of real human chat messages** seen since that schedule's own previous
+successful send, counted per target account and reset to zero after
+each successful send. A **maximum sends per hour** ceiling additionally
+caps actual successful automated sends, independently of Twitch's own
+rate limit, which still applies on top of it. All scheduling state —
+next-run time, per-account activity counters, rolling send counts — is
+kept **in memory only, exactly like the outbound-chat dispatcher
+itself**: a backend restart resets it cleanly, never replays a missed
+run, and never sends a backlog of "catch-up" messages; every enabled
+schedule simply gets a fresh next-run time after its configured first
+delay. A **Send now** action bypasses the interval, first delay and
+chat-activity gate for one explicit, confirmed, one-off send to
+explicitly chosen targets — it still honors the streaming-only gate by
+default, still goes through the same placeholder rendering and
+dispatcher/provider limits as every other send, and is never described
+as a test or a preview, because it sends a real message.
+
+### Chat commands
+
+A command matches a single, fixed `!` prefix — never configurable,
+never a slash command — followed by its canonical name or one of its
+aliases, case-insensitively, as the *first* token of an otherwise
+plain chat message; anything typed after it is ignored, and a `!`
+appearing mid-message or doubled (`!!name`) never matches. Command
+names and aliases are short, plain, lowercase, ASCII-only, and must be
+**globally unique** across every command in this application, so a
+match is never ambiguous. Each command can require a minimum viewer
+role (everyone, subscriber, VIP, moderator or broadcaster — matched
+against what the normalized chat event itself reports, never inferred
+from a username), and can enforce a global cooldown and a separate
+per-user cooldown, both reset on every backend restart just like
+schedule state. **A message from the same connected account that would
+send the reply can never trigger that command itself** — matched by
+comparing Twitch provider user IDs, never by trying to recognize the
+application's own previously-sent message IDs — which is what makes it
+safe for a command's own response to legitimately start with `!`
+without ever causing a reply loop. A command response is never
+retried; if it cannot enter the dispatcher within a few seconds of the
+triggering message (queue full, permission not ready, etc.), it is
+dropped rather than sent late.
+
+### The placeholder language
+
+Both schedules and commands render their message template through the
+same small, closed placeholder language: `{channelName}`, `{platform}`
+and `{channelUrl}` are always available; `{streamTitle}` and
+`{streamUptime}` are available only when the target has enough local
+context to resolve them (a linked destination's saved metadata for the
+title, this application's own local ingest start time for the uptime —
+never a value fetched from Twitch at send time). There are no
+conditionals, functions, loops or custom formats — just literal text
+and `{name}` substitutions, with `{{` and `}}` as the only way to write
+a literal brace. An unknown placeholder name is rejected when the
+schedule or command is saved; a known placeholder that simply cannot
+be resolved for a particular send (no destination context configured,
+for example) is skipped rather than sent with a literal `{streamTitle}`
+in it. A **Preview** action renders a template locally against a
+chosen account, with no network request to Twitch and nothing sent —
+it exists purely to show the operator what a message will actually
+look like, including its live character count against the same
+500-code-point provider limit every other send already respects.
+
+### The automation runtime and its API
+
+`internal/chatautomation` owns one centralized, concurrency-safe
+runtime (a poll-based scheduler plus a single Engagement Event Bus
+subscription shared between the command matcher and the schedule
+activity counters — never a dedicated goroutine per schedule or per
+command, and never a second, redundant EventSub connection) sitting on
+top of the same `internal/outboundchat` dispatcher stage 11A built;
+persisted schedule and command *definitions* live in SQLite, exactly
+like every other configuration in this application, while all runtime
+state (next-run times, cooldowns, activity counters, rolling send
+counts) stays in memory only. A create, edit, enable/disable or delete
+takes effect immediately, without a backend restart. The
+`/api/chat-automation` REST API (see [REST API](#rest-api) below)
+exposes schedules, commands, a stateless preview, manual send-now and
+a combined status snapshot — the snapshot and every log line describe
+*what* is happening (states, counts, skip reasons) but never persist
+or log an actual message body, template or triggering username.
+
+### Verifying it for real
+
+`scripts/verify-chat-automation.mjs` exercises the whole feature
+end to end against the real backend, the real Engagement Event Bus and
+the real outbound-chat dispatcher, using the same kind of fake Twitch
+OAuth/Helix/EventSub servers the other engagement scripts use — a
+schedule and its targets/messages persisting, a command and its
+aliases persisting, preview resolving `{channelName}`/`{platform}`/
+`{channelUrl}` and rejecting an unknown placeholder, a scheduled send
+waiting while local ingest is not receiving and never sending a
+backlog once it is, a minimum-chat-activity gate blocking until enough
+real messages arrive and resetting after a successful send, Send Now
+working with a per-target result, a command matching its canonical
+name and an alias while ignoring arguments and a mid-message `!`, the
+self-message rule preventing a reply loop, role and cooldown gating,
+disabling a schedule or command stopping it immediately, and a backend
+restart preserving definitions while resetting all runtime state with
+no missed-run catch-up — entirely on loopback, with **no real Twitch
+account or network request to Twitch involved**. See
+[`docs/progress.md`](docs/progress.md) for exactly what it covers,
+including the deeper timing/role/cooldown scenarios covered instead by
+named Go tests.
 
 ---
 
@@ -1838,6 +2007,19 @@ All endpoints live under `/api` and return `application/json`.
 | `GET` | `/api/public/chat-overlays/{publicSlug}/config` | **Unauthenticated.** Public, presentation-only overlay configuration — no management id, no filter values, no blocked-term text. |
 | `GET` | `/api/public/chat-overlays/{publicSlug}/items` | **Unauthenticated.** A bounded snapshot of the overlay's currently visible items, already filtered and presentation-shaped. |
 | `GET` | `/api/public/chat-overlays/{publicSlug}/stream` | **Unauthenticated.** Server-Sent Events: `chat-overlay.reset`/`.upsert`/`.remove` as the overlay's visible content changes. An unknown or disabled slug still opens a normal connection and renders an empty overlay, never a hard HTTP error. Bounded concurrent clients per overlay. |
+| `GET` | `/api/chat-automation/status` | A combined snapshot: every schedule's and command's runtime state (next-run, last attempt/success, skip reason, sends this hour / match and response counts), plus overall engine status. Never a message body or username. |
+| `GET` | `/api/chat-automation/schedules` | Every persisted schedule with its targets, message alternatives and current runtime snapshot. |
+| `POST` | `/api/chat-automation/schedules` | Create a schedule. Responds 201 with a `Location` header. `422` on an invalid name/timing/target/template/placeholder. |
+| `GET` | `/api/chat-automation/schedules/{id}` | One schedule. |
+| `PUT` | `/api/chat-automation/schedules/{id}` | Full replacement of a schedule's definition. Resets its runtime state (next-run, activity counters, rolling send count) cleanly. |
+| `DELETE` | `/api/chat-automation/schedules/{id}` | Delete a schedule and its targets/messages. Responds 204. |
+| `POST` | `/api/chat-automation/schedules/{id}/send-now` | Send this schedule's template immediately to explicitly selected (or, if omitted, every eligible) targets. Body `{accountIds?}`. One result per target; one failure never blocks another. Never a preview — this sends real messages. |
+| `GET` | `/api/chat-automation/commands` | Every persisted command with its aliases, targets and current runtime snapshot. |
+| `POST` | `/api/chat-automation/commands` | Create a command. Responds 201 with a `Location` header. `409` on a name/alias already used by another command. |
+| `GET` | `/api/chat-automation/commands/{id}` | One command. |
+| `PUT` | `/api/chat-automation/commands/{id}` | Full replacement of a command's definition. Aliases update atomically; takes effect immediately. |
+| `DELETE` | `/api/chat-automation/commands/{id}` | Delete a command and its aliases/targets. Responds 204. |
+| `POST` | `/api/chat-automation/preview` | Render a template locally against one account (and optional platform context). Body `{template, accountId, platformId?}`. Never sends, never persists, never contacts Twitch. |
 
 The `POST` runtime and branch-command endpoints take **no request body**;
 sending one is a `400`. They are commands, not resources. `GET /api/health`
@@ -1943,6 +2125,28 @@ own drop-reason prose is never included), `outbound_chat_delivery_unknown`
 responses, nor the send endpoint's own success response, ever echoes the
 sent message text.
 
+**Stable error codes for the chat-automation endpoints:**
+`chat_automation_not_found` (404, an unknown schedule or command id),
+`chat_automation_account_not_found` (404), `chat_automation_target_required`
+(422, a schedule or command saved with no targets), `chat_automation_target_invalid`
+(422, an unknown, provider-mismatched or unlinked platform context),
+`chat_automation_command_conflict` (409, a command name or alias already
+used elsewhere), `chat_automation_invalid` (422, a general validation
+failure - name/timing/message-count/cooldown bounds), `chat_automation_placeholder_invalid`
+(422, an unknown or malformed `{placeholder}`), `chat_automation_provider_unsupported`
+(503, a non-Twitch target), `chat_automation_permission_required` (422,
+outbound-chat permission not yet granted for a target account),
+`chat_automation_queue_full` (429, the automation quota on the shared
+outbound queue is exhausted), `chat_automation_rate_limited` (429),
+and `account_reconnect_required` (409, reusing the same code the
+outbound-chat endpoints already use for a second consecutive `401`).
+None of these responses ever echoes a template, a rendered message, or
+a triggering username. A scheduled skip (waiting for the stream, waiting
+for chat activity, an unresolved placeholder, an over-length render) is
+not an HTTP error at all — it only ever shows up as a `lastSkipReason`
+in the status/schedule snapshot, since no HTTP request exists at the
+moment a timer decides to skip.
+
 ---
 
 ## Production build
@@ -1983,7 +2187,7 @@ is the final stage — see `docs/project-overview.md`, section 14.
 npm run i18n:check  # translation resource consistency
 npm run typecheck   # TypeScript type checking (tsc -b)
 npm run lint        # ESLint
-npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, the Chat page/message/activity/moderation rows, the outbound-chat composer, and the chat-overlay renderer/Overlays management page
+npm run test        # unit tests (Vitest), plus a set of rendered-component tests (React Testing Library) covering the Twitch device-flow and YouTube OAuth modals, disconnect/publish confirmations, the Engagement page/connector card/event feed, the Chat page/message/activity/moderation rows, the outbound-chat composer, the chat-overlay renderer/Overlays management page, and the Automation page's schedule/command lists, editors, Send Now confirmation and preview
 npm run build       # production build
 ```
 
@@ -2011,6 +2215,7 @@ node scripts/verify-twitch-engagement.mjs         # Event Bus + EventSub connect
 node scripts/verify-operator-chat.mjs             # unified operator chat: projection, preferences, badges/emotes - fake Twitch only
 node scripts/verify-chat-overlay.mjs              # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
 node scripts/verify-twitch-outbound-chat.mjs      # manual outbound chat: capability, dispatcher, sending/replies - fake Twitch only
+node scripts/verify-chat-automation.mjs           # scheduled messages + chat commands: persistence, gating, placeholders, self-loop protection - fake Twitch only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -2112,6 +2317,29 @@ with no optimistic duplicate. See
 [Sending Twitch chat manually](#sending-twitch-chat-manually) for the
 full list of what it covers.
 
+The chat-automation script reuses the same fake OAuth/Helix/EventSub
+servers and the real outbound-chat dispatcher underneath. It covers a
+schedule and a command (with aliases) persisting, preview resolving
+`{channelName}`/`{platform}`/`{channelUrl}` and rejecting an unknown
+placeholder, a scheduled send waiting while local ingest is not
+receiving and never sending a backlog once it starts, the
+minimum-chat-activity gate blocking until enough real messages arrive
+and resetting after a successful send, Send Now with a per-target
+result, a command matching its canonical name and an alias while
+ignoring extra arguments and a mid-message `!`, the self-message rule
+preventing a reply loop, role and cooldown gating, disabling a
+schedule or command stopping it immediately, and a backend restart
+preserving definitions while resetting all runtime state with no
+missed-run catch-up. A representative subset of the full scenario list
+in the task's own specification is covered here; every scenario this
+script does not itself exercise (jitter bounds, exhaustive per-role
+matching, per-user cooldown independence under concurrency, and the
+full HTTP status-code mapping) is instead covered by named Go tests in
+`internal/chatautomation` and `internal/httpapi` — see
+[`docs/progress.md`](docs/progress.md) for the exact mapping. See
+[Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
+for the full list of what it covers.
+
 **None of these scripts touch your real database, your managed MediaMTX
 installation, your real OS credential store, or a real Twitch/Google
 account**, and all remove their temporary directories afterwards.
@@ -2172,7 +2400,9 @@ apps/web/src/i18n/
     │   ├── runtime.json      # MediaMTX/ingest state, dependency status
     │   ├── accounts.json     # Twitch integration, device flow, account link, publish
     │   ├── engagement.json   # Event Bus status, connector state, diagnostic event feed
-    │   └── chat.json         # unified operator chat: kinds, activity/moderation labels, filters, settings, autoscroll
+    │   ├── chat.json         # unified operator chat, manual sending/replying and outbound-chat status
+    │   ├── overlays.json     # OBS Browser Source overlay management and live preview
+    │   └── automation.json   # scheduled messages, chat commands, placeholders, runtime status
     └── pl/                   # Polish translation, same structure
 ```
 
@@ -2268,9 +2498,10 @@ rest of the repository.
 │   ├── web/                    # Operator panel (React + TypeScript + Vite)
 │   │   ├── scripts/            # check-i18n.mjs — translation consistency check
 │   │   ├── src/
-│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement, operator-chat, chat-overlay and outbound-chat API
+│   │   │   ├── api/            # Zod contracts + transport for the platform, account, engagement, operator-chat, chat-overlay, outbound-chat and chat-automation API
 │   │   │   ├── app/            # TanStack Query configuration
 │   │   │   ├── components/
+│   │   │   │   ├── automation/ # Automation page panels: schedule/command lists, editors, Send Now confirmation, placeholder helper, preview (Stage 11B)
 │   │   │   │   ├── chat/       # Message/activity/moderation rows, filter bar, settings panel, badge/emote images, the outbound-chat composer (Stage 11A)
 │   │   │   │   ├── chat-overlay/ # The public overlay renderer tree (Stage 10) - shared by the public route and the Overlays preview panel
 │   │   │   │   ├── engagement/ # Twitch connector card, bounded recent-events feed
@@ -2283,11 +2514,11 @@ rest of the repository.
 │   │   │   │   ├── system/     # System and backend status panels
 │   │   │   │   └── ui/         # Base elements (buttons, inputs, panels, modal)
 │   │   │   ├── data/           # DEMO DATA (host metrics only)
-│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement, operator-chat and chat-overlay SSE client hooks, outbound-chat status/send/authorize hooks
+│   │   │   ├── hooks/          # Queries, mutations, cache helpers, the engagement, operator-chat and chat-overlay SSE client hooks, outbound-chat status/send/authorize hooks, chat-automation status/schedule/command/preview hooks
 │   │   │   ├── i18n/           # Localization: config, resources, tests
 │   │   │   ├── lib/            # API client, error mapping, helpers
-│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat and chat-overlay reducers, autoscroll state machine, overlay preview fixtures
-│   │   │   ├── pages/          # Route views, including EngagementPage, ChatPage, OverlaysPage and the public OverlayChatPage (no application shell)
+│   │   │   ├── models/         # UI types, validation, identifier/state-to-label mappings, the operator-chat and chat-overlay reducers, autoscroll state machine, overlay preview fixtures, chat-automation placeholder/bounds helpers
+│   │   │   ├── pages/          # Route views, including EngagementPage, ChatPage, OverlaysPage, AutomationPage and the public OverlayChatPage (no application shell)
 │   │   │   └── test/           # Rendered-component test harness (Testing Library provider wrapper)
 │   │   └── ...                 # Vite, TypeScript, ESLint, Vitest configuration
 │   │
@@ -2302,6 +2533,7 @@ rest of the repository.
 │           ├── domain/engagementsettings/ # Per-account engagement-connector enable/disable preference
 │           ├── domain/operatorchatprefs/ # Persisted operator-chat preferences, account visibility, hidden/bot-user lists (Stage 9)
 │           ├── domain/chatoverlay/ # Persisted chat-overlay profiles: settings, accounts, hidden users, blocked terms, activity types (Stage 10)
+│           ├── domain/chatautomation/ # Persisted schedule and command definitions: targets, messages/aliases, validation (Stage 11B)
 │           ├── domain/platform/# Provider registry, models, validation, service
 │           ├── domain/credential/# Destination stream-key service (OS credential store)
 │           ├── domain/output/  # Destination output-settings model, validation, service
@@ -2310,6 +2542,7 @@ rest of the repository.
 │           ├── operatorchat/   # The unified operator-chat projection (Stage 9) - provider-independent, in-memory only
 │           ├── chatoverlay/    # The public per-overlay chat projection (Stage 10) - consumes operatorchat's own revision stream, not the Event Bus directly
 │           ├── outboundchat/   # Provider-independent send model, validation, in-memory per-account dispatcher (Stage 11A) - never imports the Twitch provider package
+│           ├── chatautomation/ # Scheduler + command engine runtime, placeholders, dispatch quota, wiring (Stage 11B) - only ever calls outboundchat, never the Twitch client directly
 │           ├── httpapi/        # Router, handlers, middleware, JSON responses
 │           ├── provider/twitch/# Twitch OAuth + Helix + EventSub client, adapter, metadata/engagement services, the Send Chat Message adapter (Stage 11A)
 │           │   └── chatassets/ # Twitch chat badge (cached) and emote (pure URL) resolution (Stage 9)
@@ -2326,12 +2559,12 @@ rest of the repository.
 ├── config/                     # No FFmpeg/MediaMTX templates live here - see config/README.md
 ├── docs/
 │   ├── project-overview.md     # Full project description
-│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10, manual outbound chat as of stage 11A)
+│   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10, manual outbound chat as of stage 11A, scheduled messages and chat commands as of stage 11B)
 │   ├── obs-browser-source.md   # Researched OBS Browser Source contract and Stage 10 recommendations
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
-│   │   ├── twitch-outbound-chat.md # Researched Twitch Send Chat Message API contract (Stage 11A)
+│   │   ├── twitch-outbound-chat.md # Researched Twitch Send Chat Message API contract (Stage 11A) + the Stage 11B automation layer built on top of it
 │   │   └── youtube.md          # Researched Google/YouTube API contract
 │   └── progress.md             # Work journal
 ├── scripts/
@@ -2343,7 +2576,8 @@ rest of the repository.
 │   ├── verify-twitch-engagement.mjs # Event Bus + EventSub connector - fake Twitch only
 │   ├── verify-operator-chat.mjs    # Unified operator chat: projection, preferences, badges/emotes - fake Twitch only
 │   ├── verify-chat-overlay.mjs     # OBS Browser Source chat overlay: profiles, public projection, public API - fake Twitch only
-│   └── verify-twitch-outbound-chat.mjs # Manual outbound chat: capability, dispatcher, sending/replies - fake Twitch only
+│   ├── verify-twitch-outbound-chat.mjs # Manual outbound chat: capability, dispatcher, sending/replies - fake Twitch only
+│   └── verify-chat-automation.mjs  # Scheduled messages + chat commands: persistence, gating, placeholders, self-loop protection - fake Twitch only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -2362,7 +2596,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Scheduled bot messages, chat commands, alerts, TTS, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, and real *manual* outbound chat sending/replying as of stage 11A (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) and [Sending Twitch chat manually](#sending-twitch-chat-manually)) — everything still built on top of *those* (scheduled/automatic sending, alerts, TTS) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Alerts, TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, and real *scheduled messages and chat commands* as of stage 11B (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually) and [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)) — everything still built on top of *those* (alerts, TTS, goal widgets) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -2439,6 +2673,16 @@ directly next to the control.
   handling; a Chat page composer with no optimistic local echo; and a
   Reply action locked to the message's own connected account - see
   [Sending Twitch chat manually](#sending-twitch-chat-manually).
+- **Real scheduled messages and safe chat commands**, built on that
+  same dispatcher - a centralized in-memory scheduler with drift-free
+  interval/jitter timing, only-while-streaming and minimum-chat-
+  activity gating, message-group alternatives, and a manual Send Now
+  override; a command engine matching a fixed `!` prefix with aliases,
+  per-role gating, global/per-user cooldowns, and a hard rule that the
+  sending account's own messages can never re-trigger a command; a
+  closed, declarative placeholder language shared by both; and an
+  Automation page to manage them - see
+  [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -2450,8 +2694,6 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Scheduled bot messages and chat commands** (stage 11B), built on the
-  same in-memory dispatcher stage 11A introduced.
 - **The alert engine, TTS, goal widgets, a visual overlay designer and
   overlay templates** and the rest of the engagement and overlay
   platform - architecture only so far, see
