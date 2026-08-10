@@ -30,8 +30,11 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
 
-    /* Path aliases (kept in sync with vite.config.ts) */
-    "baseUrl": ".",
+    /* Path aliases (kept in sync with vite.config.ts). No "baseUrl" - as of
+       TypeScript 6.0, "baseUrl" is deprecated and removed entirely in 7.0.
+       "paths" entries resolve relative to this tsconfig file when "baseUrl"
+       is absent, which is exactly what "baseUrl": "." already meant here -
+       so this is a pure no-op migration, not a behavior change. */
     "paths": {
       "@/*": ["./src/*"]
     }

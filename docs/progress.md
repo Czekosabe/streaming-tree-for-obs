@@ -12229,3 +12229,139 @@ reports `0 0` ahead/behind and a clean tree, and produce the final
 report. Stage 12A is complete; Stage 12 as a whole remains **not**
 complete until Stage 12B (mid-alert preemption, bounded alert grouping)
 lands; Stage 13 (the full visual designer) remains planned.
+
+## 2026-08-10 13:50 — fix(web): remove deprecated TypeScript baseUrl
+
+### Status
+Complete.
+
+### Scope
+Stage 12B's own mandatory Part 1: a VS Code diagnostic had flagged
+`apps/web/tsconfig.app.json`'s `"baseUrl": "."` as deprecated ahead of
+the TypeScript 6.0 → 7.0 transition. Migrated structurally rather than
+suppressed.
+
+### Official TypeScript sources inspected
+- TypeScript 6.0 release notes
+  (typescriptlang.org/docs/handbook/release-notes/typescript-6-0.html):
+  confirms `baseUrl` is deprecated in 6.0 and will be **removed
+  entirely** in 7.0 - not merely discouraged. The stated reason: it
+  serves two conflicting purposes (a prefix for `paths` entries, and a
+  bare-specifier module-resolution lookup root), and the lookup-root
+  behavior can produce resolutions that never actually work at
+  runtime. The documented, recommended fix for the common case
+  ("`baseUrl` used only as a `paths` prefix") is exactly: remove
+  `baseUrl`, keep `paths` unchanged if its entries are already
+  effectively relative to the tsconfig file, or prefix them explicitly
+  otherwise.
+- TSConfig reference, `paths`
+  (typescriptlang.org/tsconfig/#paths): confirms explicitly - "paths"
+  entries resolve **relative to `baseUrl` if set, or to the tsconfig
+  file itself otherwise.**
+- TSConfig reference, `baseUrl`: a base directory for resolving bare
+  specifiers; when absent, `paths` alone (relative to the tsconfig
+  file) is sufficient for a project that never relied on the
+  lookup-root behavior.
+- Confirmed via `WebSearch`/`WebFetch` rather than from memory, per
+  this task's own explicit instruction.
+
+### Installed TypeScript version
+- `package.json`/`package-lock.json`: `"typescript": "^5.9.3"`.
+- `npm exec tsc -- --version` (from `apps/web`): **Version 5.9.3**.
+- TypeScript 5.9.3 predates the 6.0 release that actually *enforces*
+  the `baseUrl` deprecation warning in `tsc` itself - so this
+  repository's own `npm run typecheck`/`build` never showed the
+  warning before this fix, and would not have regressed by leaving it.
+  The diagnostic the user saw came from **VS Code's own bundled
+  TypeScript language service, which can be (and here evidently was)
+  newer than the workspace's pinned compiler version** - VS Code
+  surfaces `tsserver`-side deprecation hints ahead of what the
+  project's own `tsc` binary enforces. This is exactly the scenario
+  the task asked to confirm rather than assume.
+
+### Inspection before deciding
+- `moduleResolution`: `"bundler"` (`tsconfig.app.json`), unaffected by
+  this change - `paths`/`baseUrl` resolution is orthogonal to which
+  module-resolution algorithm TypeScript uses for package lookups.
+- Current `paths`: `{"@/*": ["./src/*"]}` - unchanged by this fix.
+- Current `baseUrl`: `"."` - the *same directory as the tsconfig file
+  itself*. This is the load-bearing fact: per the official `paths`
+  semantics above, removing `baseUrl` makes `paths` resolve "relative
+  to the tsconfig file" - which for a repo where `baseUrl` was already
+  `"."` is **identical** to what `baseUrl: "."` + `paths` already
+  resolved to. This is therefore a provably pure no-op migration for
+  this specific repository, not merely "probably fine."
+- Vite alias (`vite.config.ts`): `'@': fileURLToPath(new URL('./src',
+  import.meta.url))` - an absolute path, defined independently of
+  `tsconfig.json` (Vite/esbuild do not read `tsconfig.json`'s
+  `paths`/`baseUrl` at all without a dedicated plugin, which this
+  project does not use). Untouched by this change, by construction.
+- Vitest alias (`vitest.config.ts`): the identical `'@': ...'./src'`
+  mapping, independently declared, same reasoning.
+- Searched every non-relative, non-`@/` import in `apps/web/src`
+  (`Grep` for `^import .* from ['"][^./@]`): every match is a real npm
+  package (`react`, `react-router-dom`, `i18next`, `zod`,
+  `lucide-react`, `clsx`, `vitest`) or a Node builtin
+  (`node:fs`/`node:os`/`node:path` in one test file) - **no import
+  anywhere in the frontend relies on `baseUrl`'s bare-specifier
+  lookup-root behavior**. Every internal import uses either `@/...`
+  (path-mapped) or an explicit relative path. This rules out the "rare
+  case" the TypeScript 6.0 notes describe (a project that needs an
+  explicit `"*": ["./src/*"]` catch-all to preserve lookup-root
+  behavior) - not applicable here.
+- `eslint.config.js`: no `eslint-plugin-import` and no
+  `import/resolver` configuration exists, so ESLint performs no
+  module-resolution-aware linting and is entirely unaffected either
+  way.
+
+### Why `ignoreDeprecations` was rejected
+`"ignoreDeprecations": "6.0"` would only suppress the warning
+temporarily - the TypeScript 6.0 notes state plainly that TypeScript
+7.0 **will not support** any deprecated option at all, so
+`ignoreDeprecations` is explicitly a bridge to a future forced
+migration, not a fix. Since this repository's actual usage falls
+squarely into the simple, fully-migratable case (confirmed above), and
+removing `baseUrl` here changes nothing observable, there was no
+reason to defer the real fix.
+
+### The exact change
+`apps/web/tsconfig.app.json`: removed `"baseUrl": "."`; kept `"paths":
+{"@/*": ["./src/*"]}"` unchanged, with a comment recording why this is
+a no-op. No other file changed - `vite.config.ts`, `vitest.config.ts`
+and `eslint.config.js` already used `baseUrl`-independent alias
+definitions, confirmed above.
+
+### Alias verification
+- **TypeScript**: `npm run typecheck` (`tsc -b`) - clean, no errors,
+  no deprecation warning. Every `@/...` import across the entire
+  `src/` tree (hundreds of files) still resolves under the type
+  checker with `baseUrl` removed.
+- **Vite**: `npm run build` - clean production build, byte-identical
+  output filenames/hashes (`index-D5YAIObs.css`, `index-BemDaQcL.js`)
+  to the pre-change build, confirming zero behavior change at the
+  bundler level (Vite never read `tsconfig.json`'s `baseUrl` to begin
+  with).
+- **Vitest**: `npm run test -- --run` - **918 tests pass, 68 test
+  files**, unchanged from before this fix. Since the overwhelming
+  majority of source files import via `@/...`, this full suite run
+  *is* the end-to-end alias-resolution validation across the type
+  checker and the test runner simultaneously - a dedicated, separate
+  targeted alias test was judged redundant given how pervasively the
+  existing suite already exercises exactly this path, and was not
+  added.
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 14 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - 918 tests pass, 68 test files.
+- `npm run build` - clean, byte-identical output to before this
+  change.
+
+### Known limitations
+None. This was a provably behavior-preserving structural migration for
+this specific repository's exact configuration shape.
+
+### Next step
+Part 2: audit the Stage 12A closing record from Git itself before
+starting Stage 12B feature work.
