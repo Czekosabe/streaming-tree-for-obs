@@ -13230,3 +13230,81 @@ additive - explicit values are never overridden.
 Re-run all twelve integration scripts from a clean state (the failure
 above happened mid-run, after ten had already passed); once all twelve
 pass, push every commit and verify sync.
+
+## 2026-08-10 22:19 — fix(docs): record Stage 12 closing regression
+
+### What
+The Stage 12 closing regression that followed the previous entry's own
+"Next step" - re-running all twelve integration scripts, the frontend
+and backend closing checks, and the push - was actually carried out
+(and reported to the operator directly at the time), but the result
+was never appended here as its own journal entry. This entry corrects
+that gap without editing or removing any prior entry, per this
+project's own standing rule that the journal is append-only.
+
+### What was verified, and how
+Re-checked against Git and a fresh local run before writing this entry
+(never copied blindly from the earlier chat-only report):
+
+- `git log --oneline -5` confirms the exact commit chain ending at
+  `94d822b fix(server): default omitted Stage 12B rule fields safely`.
+- `git rev-list --left-right --count origin/main...HEAD` reports `0 0`
+  and `git status` reports a clean tree, both confirmed fresh in this
+  session's own preflight.
+- `git remote get-url origin` is `https://github.com/Czekosabe/
+  streaming-tree-for-obs.git` - the canonical, renamed account.
+
+### The actual closing regression that ran after the bugfix commit
+- Frontend: `npm run i18n:check` (2 languages/14 namespaces, no
+  differences), `npm run typecheck` (clean), `npm run lint` (clean),
+  `npm run test -- --run` (**942/942 tests, 68 files**), `npm run
+  build` (clean production build).
+- Backend: `gofmt -l .` (clean), `go vet ./...` (clean), `go test
+  ./...` (every package passes, including the new
+  `TestCreateAlertRuleDefaultsGroupingAndInterruptFieldsWhenOmitted`
+  regression test), `go build ./...` and `go build -tags integration
+  ./cmd/testserver/...` (both clean).
+- All twelve local integration scripts, re-run from a clean state after
+  the backward-compatibility fix, all passed cleanly in one pass:
+  `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs` (a real local
+  MediaMTX install and supervision - never a real Twitch/YouTube/OBS
+  endpoint), `verify-ffmpeg-branches.mjs` (real local FFmpeg + MediaMTX
+  destination branches, same caveat), `verify-twitch-account-
+  integration.mjs`, `verify-youtube-account-integration.mjs`, `verify-
+  twitch-engagement.mjs`, `verify-operator-chat.mjs`, `verify-chat-
+  overlay.mjs`, `verify-twitch-outbound-chat.mjs`, `verify-chat-
+  automation.mjs`, `verify-alerts.mjs` (the specific script the
+  backward-compatibility bug was originally caught by - now passing),
+  `verify-alert-advanced-queue.mjs`. No real Twitch account, YouTube
+  account, or OBS installation was used by any of the twelve.
+- `git push origin main` succeeded: `97400f4..94d822b`. Verified
+  afterward: `git status` clean, `git rev-list --left-right --count
+  origin/main...HEAD` = `0 0`, local `HEAD` and `origin/main` both at
+  `94d822b8ca6f4f2fb2b4d3fb70d1ee8d2591c246`.
+
+### Git identity audit (carried forward, no action needed)
+This session's own preflight re-confirmed: repo-local `user.name` is
+already `Czekosabe` (set during the prior Stage 12B session), so every
+new commit's author NAME resolves correctly without any config change
+here. Repo-local `user.email` is unset and therefore falls through to
+the global email, which still contains `kacper2280` (`kacper2280@tlen.pl`).
+Per this task's own explicit instruction: no replacement email was
+invented, no config was changed automatically, and this finding is
+simply recorded - new commits are still correctly attributed to
+`Czekosabe` by author name, only the email's local part still reads
+`kacper2280`. No global Git config was touched. No historical commit
+(several of Stage 12A/most of 12B's own earlier commits still show
+author `kacper2280 <kacper2280@tlen.pl>`, before the local `user.name`
+override was set) was rewritten, amended, or force-pushed.
+
+### Automated validation
+None beyond re-confirming the facts above against Git and the current
+repository state (no code changed in this entry).
+
+### Known limitations
+None - this is a documentation-only correction.
+
+### Next step
+Part 3 of Stage 13A: write and commit `docs/visual-designs.md`, the
+canonical visual-design document-format contract, before continuing
+implementation.
