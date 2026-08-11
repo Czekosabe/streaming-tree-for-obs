@@ -17241,3 +17241,86 @@ integration pass, since the exhaustive malicious-ZIP matrix is already
 covered by the Go-level `visualpackage` tests (docs/visual-template-
 packages.md §76 explicitly allows this split). Then the final
 documentation pass, then the full closing regression and push.
+
+## 2026-08-12 01:55 — test: verify visual template packages locally
+
+### What
+The 16th integration script, `scripts/verify-visual-template-
+packages.mjs` - a real-backend (`go build -tags integration ./cmd/
+testserver`), real-filesystem, no-real-Twitch, no-real-OBS end-to-end
+pass over the entire Stage 14B surface: upload → public serving (full
+request, byte-range, unknown-token 404) → reference from a real saved
+alert-rule design and a real saved chat-overlay design → public URL
+resolution on both → delete-while-referenced guard → save as template →
+JSON-export rejection → package export → package re-import (fresh
+local ids, semantic round trip) → package import preview (persists
+nothing, preview-scoped asset serving, cancel-then-independent-reimport
+never trusts the preview) → a representative three-item archive-
+security matrix through the real HTTP API (path traversal, missing
+manifest, asset hash mismatch) → restart persistence → the existing
+no-local-path-leak secret scan, extended to also check for a raw blob
+filename. 26 steps, run twice, both clean.
+
+### Files changed
+- `scripts/verify-visual-template-packages.mjs` (new) - includes two
+  small dependency-free helpers this script needed and no other script
+  so far did: `buildPNG` (a real, valid, minimal 4x4 RGBA PNG encoder
+  using only `node:zlib`'s `deflateSync`, for a genuine signature/
+  container fixture rather than a hand-rolled byte literal - mirrors
+  `apps/server/internal/domain/visualpackage/testfixtures_test.go`'s
+  own `validPNGBytes` reasoning) and `buildZip` (a real ZIP writer -
+  local headers, central directory, EOCD, Deflate via `deflateRawSync`,
+  CRC-32 via a standard from-scratch table implementation since Node's
+  own `zlib.crc32` is not available in every supported Node version) -
+  no new npm dependency for either, matching the project's own "no
+  dependency without a real stdlib insufficiency" discipline already
+  applied on the Go side.
+
+### Technical decisions
+- **Why this script's own security-matrix coverage is intentionally a
+  three-item representative subset (path traversal, missing manifest,
+  hash mismatch) rather than the full matrix docs/visual-template-
+  packages.md §66-68 names.** That exhaustive matrix (path-grammar
+  variants, decompression bounds, every accepted/rejected signature)
+  is already covered directly and completely at the Go level
+  (`visualpackage/reader_test.go`'s ~20 cases,
+  `visualasset/validation_test.go`'s signature matrix) - re-deriving
+  every one of those through a hand-built ZIP writer in a second
+  language would duplicate coverage without adding confidence beyond
+  what "the real HTTP endpoint correctly delegates to the same Go
+  validation code" already proves with three representative
+  cross-cutting cases (one path-grammar violation, one structural
+  violation, one content-integrity violation). Every omission is named
+  here and in this script's own header comment, per the task's own
+  explicit §76 allowance for a representative subset "mapped to named
+  Go tests."
+- **Why `buildZip` implements a real CRC-32 table rather than skipping
+  the checksum (many permissive ZIP readers ignore it).** Go's
+  `archive/zip` reader does validate CRC-32 on read in some code paths,
+  and a script whose entire purpose is proving the real backend accepts
+  a *genuinely well-formed* package (not merely "a backend that happens
+  to be lenient") should not rely on the target being lenient about a
+  detail real-world ZIP tools never get wrong.
+
+### Automated validation
+Ran twice in a row, both clean, 26 steps each:
+```
+node scripts/verify-visual-template-packages.mjs
+```
+First run: 46,961 bytes of HTTP bodies + 888 bytes of backend output
+scanned for local-path/blob-filename leakage, none found. Second run:
+46,960 / 891 bytes respectively, same result. No flakiness observed.
+
+### Known limitations
+None new - see this entry's own "Technical decisions" for the
+deliberately-scoped security-matrix subset, already fully covered
+elsewhere and named accordingly.
+
+### Next step
+The final Stage 14B documentation pass (an honest OBS Browser Source
+note now that the feature is implemented, confirmation that the CSP
+audit either lands or is explicitly deferred with a stated reason, a
+roadmap/status update marking Stage 14B and Stage 14 as a whole
+Completed once every remaining check below genuinely passes), then the
+full closing regression across both apps and all 16 integration
+scripts, then push.
