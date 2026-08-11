@@ -1,11 +1,11 @@
 package visualdesign
 
-// LayerKind is the closed, bounded set of Stage 13A layer primitives
-// (Stage 13A task Part 10). Deliberately small and shared enough to be
-// reused unchanged by the future Stage 13B Chat Overlay Designer -
-// never an arbitrary/custom-media kind (uploaded image/video/audio/
-// font layers are explicitly out of Stage 13A's scope; see this
-// package's own doc comment and docs/visual-designs.md).
+// LayerKind is the closed, bounded set of layer primitives (Stage 13A
+// task Part 10; message_fragments/badge_list added in Stage 13B, see
+// docs/visual-designs.md §21). Deliberately small and shared - never an
+// arbitrary/custom-media kind (uploaded image/video/audio/font layers
+// remain explicitly out of scope; see this package's own doc comment
+// and docs/visual-designs.md).
 type LayerKind string
 
 const (
@@ -13,9 +13,19 @@ const (
 	LayerText         LayerKind = "text"
 	LayerPlatformIcon LayerKind = "platform_icon"
 	LayerAvatar       LayerKind = "avatar"
+	// LayerMessageFragments renders an item's own already-normalized,
+	// already-ordered message fragments (text/emote/mention) - Version2
+	// only (Stage 13B, docs/visual-designs.md §21).
+	LayerMessageFragments LayerKind = "message_fragments"
+	// LayerBadgeList renders an item's own already-resolved public badge
+	// image DTOs - Version2 only (Stage 13B, docs/visual-designs.md §21).
+	LayerBadgeList LayerKind = "badge_list"
 )
 
-var validLayerKinds = []LayerKind{LayerShape, LayerText, LayerPlatformIcon, LayerAvatar}
+var validLayerKinds = []LayerKind{
+	LayerShape, LayerText, LayerPlatformIcon, LayerAvatar,
+	LayerMessageFragments, LayerBadgeList,
+}
 
 func (k LayerKind) valid() bool {
 	for _, v := range validLayerKinds {
@@ -56,11 +66,14 @@ func (a Animation) valid() bool {
 }
 
 // TextBinding is the closed, fixed vocabulary a text layer's content
-// may be bound to (Stage 13A task Part 10/21) - deliberately never an
-// arbitrary object path ("event.user.name", "payload.foo.bar") or an
-// expression language. Every value except Static/AlertRenderedText
-// mirrors one of internal/alerts's own KnownPlaceholders one-to-one, on
-// purpose, so both systems describe the same underlying alert data.
+// may be bound to (Stage 13A task Part 10/21; timestamp/account_label
+// added in Stage 13B, docs/visual-designs.md §20) - deliberately never
+// an arbitrary object path ("event.user.name", "payload.foo.bar") or an
+// expression language. This is one shared enum reused by both owners
+// (see docs/visual-designs.md §20's own binding-meaning table) - never
+// duplicated per owner; which values are actually *available* for a
+// given owner/event-type/item-kind is a capability check that lives
+// beside that owner's own domain package, never here.
 type TextBinding string
 
 const (
@@ -70,19 +83,41 @@ const (
 	// BindingAlertRenderedText: the rule's own Stage 12 text template,
 	// already rendered - Stage 13A task Part 21's "a text layer can bind
 	// to alert_rendered_text to display its rendered result," reusing
-	// the Stage 12 template parser rather than replacing it.
+	// the Stage 12 template parser rather than replacing it. Alert-only:
+	// never legal for a chat-overlay design (docs/visual-designs.md §20).
 	BindingAlertRenderedText TextBinding = "alert_rendered_text"
-	BindingUsername          TextBinding = "username"
-	BindingPlatform          TextBinding = "platform"
-	BindingEventType         TextBinding = "event_type"
-	BindingMessage           TextBinding = "message"
-	BindingQuantity          TextBinding = "quantity"
-	BindingGroupCount        TextBinding = "group_count"
+	// BindingUsername: an alert's actor, or a chat item's own user
+	// display name.
+	BindingUsername TextBinding = "username"
+	// BindingPlatform: the alert's or chat item's own provider.
+	BindingPlatform TextBinding = "platform"
+	// BindingEventType: an alert rule's own event type, or - reusing the
+	// identical vocabulary - a chat activity item's own activityType
+	// (docs/visual-designs.md §20's own table).
+	BindingEventType TextBinding = "event_type"
+	// BindingMessage: an alert's rendered message placeholder, or a chat
+	// message item's own plain message text.
+	BindingMessage TextBinding = "message"
+	// BindingQuantity: bits/gift-count/redemption quantity for an alert,
+	// or a chat activity item's own Activity.Quantity.
+	BindingQuantity TextBinding = "quantity"
+	// BindingGroupCount: an alert's own grouped-alert count. Not
+	// available to chat (chat items are never grouped).
+	BindingGroupCount TextBinding = "group_count"
+	// BindingTimestamp: a chat item's own OccurredAt, formatted by the
+	// shared renderer using a fixed, safe format - never a user-suppliable
+	// format string. Chat-only (Stage 13B, docs/visual-designs.md §20).
+	BindingTimestamp TextBinding = "timestamp"
+	// BindingAccountLabel: a chat item's own AccountLabel, when the
+	// owning profile's account-label setting resolved one. Chat-only
+	// (Stage 13B, docs/visual-designs.md §20).
+	BindingAccountLabel TextBinding = "account_label"
 )
 
 var validTextBindings = []TextBinding{
 	BindingStatic, BindingAlertRenderedText, BindingUsername, BindingPlatform,
 	BindingEventType, BindingMessage, BindingQuantity, BindingGroupCount,
+	BindingTimestamp, BindingAccountLabel,
 }
 
 func (b TextBinding) valid() bool {
@@ -323,9 +358,62 @@ type AvatarProps struct {
 	BorderWidth  int
 }
 
+// MessageFragmentsProps is LayerMessageFragments's own bounded payload
+// (Stage 13B, docs/visual-designs.md §21) - renders an item's own
+// already-normalized, already-ordered message fragments (plain text,
+// resolved emote image, mention). No binding field: there is exactly
+// one thing this kind can ever show. Never re-parses raw provider
+// payload, never a provider request at render time, never
+// dangerouslySetInnerHTML.
+type MessageFragmentsProps struct {
+	FontFamily      FontFamily
+	FontSize        int
+	FontWeight      int
+	LineHeight      float64
+	LetterSpacing   float64
+	TextColor       Color
+	HorizontalAlign HorizontalAlign
+	VerticalAlign   VerticalAlign
+	// EmoteSize is the bounded rendered size (in design units) of a
+	// resolved emote image fragment.
+	EmoteSize int
+}
+
+// Bounds for MessageFragmentsProps (Stage 13B).
+const (
+	MinEmoteSize = 8
+	MaxEmoteSize = 128
+)
+
+// BadgeListProps is LayerBadgeList's own bounded payload (Stage 13B,
+// docs/visual-designs.md §21) - renders an item's own already-resolved
+// public badge image DTOs. No binding field, and never an arbitrary URL
+// stored in the design itself.
+type BadgeListProps struct {
+	// MaxCount bounds how many badges are ever rendered, even if the
+	// item itself carries more.
+	MaxCount int
+	// BadgeSize is the bounded rendered size (in design units) of one
+	// badge image.
+	BadgeSize int
+	// Gap is the bounded spacing (in design units) between badges.
+	Gap int
+}
+
+// Bounds for BadgeListProps (Stage 13B).
+const (
+	MinBadgeCount = 1
+	MaxBadgeCount = 20
+	MinBadgeSize  = 8
+	MaxBadgeSize  = 128
+	MinBadgeGap   = 0
+	MaxBadgeGap   = 32
+)
+
 // Layer is one bounded, ordered element of a Document (Stage 13A task
-// Part 5/10). Exactly one of Shape/Text/PlatformIcon/Avatar is non-nil,
-// matching Kind - see validation.go.
+// Part 5/10; message_fragments/badge_list added in Stage 13B). Exactly
+// one of Shape/Text/PlatformIcon/Avatar/MessageFragments/BadgeList is
+// non-nil, matching Kind - see validation.go.
 type Layer struct {
 	ID   string
 	Name string
@@ -343,10 +431,12 @@ type Layer struct {
 	Frame   Frame
 	Opacity float64
 
-	Shape        *ShapeProps
-	Text         *TextProps
-	PlatformIcon *PlatformIconProps
-	Avatar       *AvatarProps
+	Shape            *ShapeProps
+	Text             *TextProps
+	PlatformIcon     *PlatformIconProps
+	Avatar           *AvatarProps
+	MessageFragments *MessageFragmentsProps
+	BadgeList        *BadgeListProps
 
 	EntryAnimation      Animation
 	ExitAnimation       Animation

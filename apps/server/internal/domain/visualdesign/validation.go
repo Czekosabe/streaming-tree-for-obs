@@ -110,6 +110,12 @@ func validateLayer(l Layer, canvas Canvas) error {
 	if l.Avatar != nil {
 		present++
 	}
+	if l.MessageFragments != nil {
+		present++
+	}
+	if l.BadgeList != nil {
+		present++
+	}
 	if present != 1 {
 		return validationErr("exactly one kind-specific payload must be present, got %d", present)
 	}
@@ -135,9 +141,63 @@ func validateLayer(l Layer, canvas Canvas) error {
 			return validationErr("kind %q requires an avatar payload", l.Kind)
 		}
 		return validateAvatar(*l.Avatar)
+	case LayerMessageFragments:
+		if l.MessageFragments == nil {
+			return validationErr("kind %q requires a message_fragments payload", l.Kind)
+		}
+		return validateMessageFragments(*l.MessageFragments)
+	case LayerBadgeList:
+		if l.BadgeList == nil {
+			return validationErr("kind %q requires a badge_list payload", l.Kind)
+		}
+		return validateBadgeList(*l.BadgeList)
 	default:
 		return validationErr("kind %q is not a recognized layer kind", string(l.Kind))
 	}
+}
+
+func validateMessageFragments(m MessageFragmentsProps) error {
+	if !m.FontFamily.valid() {
+		return validationErr("font family %q is not in the allowed system-font list", string(m.FontFamily))
+	}
+	if m.FontSize < MinFontSize || m.FontSize > MaxFontSize {
+		return validationErr("font size must be between %d and %d", MinFontSize, MaxFontSize)
+	}
+	if m.FontWeight < MinFontWeight || m.FontWeight > MaxFontWeight || m.FontWeight%FontWeightStep != 0 {
+		return validationErr("font weight must be between %d and %d in steps of %d", MinFontWeight, MaxFontWeight, FontWeightStep)
+	}
+	if m.LineHeight < MinLineHeight || m.LineHeight > MaxLineHeight {
+		return validationErr("line height must be between %v and %v", MinLineHeight, MaxLineHeight)
+	}
+	if m.LetterSpacing < MinLetterSpacing || m.LetterSpacing > MaxLetterSpacing {
+		return validationErr("letter spacing must be between %v and %v", MinLetterSpacing, MaxLetterSpacing)
+	}
+	if !IsValidColor(m.TextColor) {
+		return validationErr("text color %q is not a valid color", m.TextColor)
+	}
+	if !m.HorizontalAlign.valid() {
+		return validationErr("horizontal align %q is not recognized", string(m.HorizontalAlign))
+	}
+	if !m.VerticalAlign.valid() {
+		return validationErr("vertical align %q is not recognized", string(m.VerticalAlign))
+	}
+	if m.EmoteSize < MinEmoteSize || m.EmoteSize > MaxEmoteSize {
+		return validationErr("emote size must be between %d and %d", MinEmoteSize, MaxEmoteSize)
+	}
+	return nil
+}
+
+func validateBadgeList(b BadgeListProps) error {
+	if b.MaxCount < MinBadgeCount || b.MaxCount > MaxBadgeCount {
+		return validationErr("badge max count must be between %d and %d", MinBadgeCount, MaxBadgeCount)
+	}
+	if b.BadgeSize < MinBadgeSize || b.BadgeSize > MaxBadgeSize {
+		return validationErr("badge size must be between %d and %d", MinBadgeSize, MaxBadgeSize)
+	}
+	if b.Gap < MinBadgeGap || b.Gap > MaxBadgeGap {
+		return validationErr("badge gap must be between %d and %d", MinBadgeGap, MaxBadgeGap)
+	}
+	return nil
 }
 
 func validateFrame(f Frame, canvas Canvas) error {

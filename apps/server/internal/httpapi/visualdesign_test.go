@@ -18,7 +18,7 @@ func createTestVisualDesignRule(t *testing.T, ts *alertsTestServer, profileID st
 
 func validDesignDocumentDTO() map[string]any {
 	return map[string]any{
-		"version": 1,
+		"version": 2,
 		"canvas":  map[string]any{"width": 1920, "height": 1080, "transparent": true},
 		"layers": []map[string]any{
 			{

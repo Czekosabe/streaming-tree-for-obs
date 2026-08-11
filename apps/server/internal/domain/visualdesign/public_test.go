@@ -46,6 +46,39 @@ func TestToPublicNeverExposesLayerNamesOrLockState(t *testing.T) {
 	_ = pub.Layers[0]
 }
 
+func TestToPublicCarriesMessageFragmentsAndBadgeListPayloads(t *testing.T) {
+	doc := Document{
+		Version: CurrentVersion, Canvas: CanvasLandscape,
+		Layers: []Layer{
+			{
+				ID: "layer_fragments", Kind: LayerMessageFragments, Visible: true, Order: 0,
+				Frame: Frame{X: 0, Y: 0, Width: 400, Height: 100}, Opacity: 1,
+				MessageFragments: &MessageFragmentsProps{
+					FontFamily: FontSystemUI, FontSize: 16, FontWeight: 400, LineHeight: 1.2,
+					TextColor: "#FFFFFF", HorizontalAlign: HAlignLeft, VerticalAlign: VAlignTop, EmoteSize: 24,
+				},
+				EntryAnimation: AnimationNone, ExitAnimation: AnimationNone,
+			},
+			{
+				ID: "layer_badges", Kind: LayerBadgeList, Visible: true, Order: 1,
+				Frame: Frame{X: 0, Y: 100, Width: 200, Height: 32}, Opacity: 1,
+				BadgeList:      &BadgeListProps{MaxCount: 5, BadgeSize: 24, Gap: 4},
+				EntryAnimation: AnimationNone, ExitAnimation: AnimationNone,
+			},
+		},
+	}
+	pub := ToPublic(doc)
+	if len(pub.Layers) != 2 {
+		t.Fatalf("len(pub.Layers) = %d, want 2", len(pub.Layers))
+	}
+	if pub.Layers[0].MessageFragments == nil || pub.Layers[0].MessageFragments.EmoteSize != 24 {
+		t.Errorf("MessageFragments = %+v, want EmoteSize=24", pub.Layers[0].MessageFragments)
+	}
+	if pub.Layers[1].BadgeList == nil || pub.Layers[1].BadgeList.MaxCount != 5 {
+		t.Errorf("BadgeList = %+v, want MaxCount=5", pub.Layers[1].BadgeList)
+	}
+}
+
 func TestToPublicCarriesSchemaVersionAndCanvas(t *testing.T) {
 	doc := validDoc()
 	pub := ToPublic(doc)

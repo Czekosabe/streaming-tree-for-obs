@@ -41,10 +41,12 @@ type PublicLayer struct {
 	Frame   Frame
 	Opacity float64
 
-	Shape        *ShapeProps
-	Text         *TextProps
-	PlatformIcon *PlatformIconProps
-	Avatar       *AvatarProps
+	Shape            *ShapeProps
+	Text             *TextProps
+	PlatformIcon     *PlatformIconProps
+	Avatar           *AvatarProps
+	MessageFragments *MessageFragmentsProps
+	BadgeList        *BadgeListProps
 
 	EntryAnimation      Animation
 	ExitAnimation       Animation
@@ -69,6 +71,7 @@ func ToPublic(doc Document) PublicDocument {
 		layers = append(layers, PublicLayer{
 			ID: l.ID, Kind: l.Kind, Frame: l.Frame, Opacity: l.Opacity,
 			Shape: l.Shape, Text: l.Text, PlatformIcon: l.PlatformIcon, Avatar: l.Avatar,
+			MessageFragments: l.MessageFragments, BadgeList: l.BadgeList,
 			EntryAnimation: l.EntryAnimation, ExitAnimation: l.ExitAnimation, AnimationDurationMS: l.AnimationDurationMS,
 		})
 	}

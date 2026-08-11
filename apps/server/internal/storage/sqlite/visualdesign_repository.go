@@ -88,6 +88,26 @@ type jsonAvatarProps struct {
 	BorderWidth  int    `json:"borderWidth"`
 }
 
+// jsonMessageFragmentsProps and jsonBadgeListProps are Version2's own
+// wire shapes (Stage 13B, docs/visual-designs.md §21).
+type jsonMessageFragmentsProps struct {
+	FontFamily      string  `json:"fontFamily"`
+	FontSize        int     `json:"fontSize"`
+	FontWeight      int     `json:"fontWeight"`
+	LineHeight      float64 `json:"lineHeight"`
+	LetterSpacing   float64 `json:"letterSpacing"`
+	TextColor       string  `json:"textColor"`
+	HorizontalAlign string  `json:"horizontalAlign"`
+	VerticalAlign   string  `json:"verticalAlign"`
+	EmoteSize       int     `json:"emoteSize"`
+}
+
+type jsonBadgeListProps struct {
+	MaxCount  int `json:"maxCount"`
+	BadgeSize int `json:"badgeSize"`
+	Gap       int `json:"gap"`
+}
+
 type jsonLayer struct {
 	ID      string    `json:"id"`
 	Name    string    `json:"name"`
@@ -98,10 +118,12 @@ type jsonLayer struct {
 	Frame   jsonFrame `json:"frame"`
 	Opacity float64   `json:"opacity"`
 
-	Shape        *jsonShapeProps  `json:"shape,omitempty"`
-	Text         *jsonTextProps   `json:"text,omitempty"`
-	PlatformIcon *struct{}        `json:"platformIcon,omitempty"`
-	Avatar       *jsonAvatarProps `json:"avatar,omitempty"`
+	Shape            *jsonShapeProps            `json:"shape,omitempty"`
+	Text             *jsonTextProps             `json:"text,omitempty"`
+	PlatformIcon     *struct{}                  `json:"platformIcon,omitempty"`
+	Avatar           *jsonAvatarProps           `json:"avatar,omitempty"`
+	MessageFragments *jsonMessageFragmentsProps `json:"messageFragments,omitempty"`
+	BadgeList        *jsonBadgeListProps        `json:"badgeList,omitempty"`
 
 	EntryAnimation      string `json:"entryAnimation"`
 	ExitAnimation       string `json:"exitAnimation"`
@@ -139,6 +161,17 @@ func toJSONDocument(doc visualdesign.Document) jsonDocument {
 		}
 		if l.Avatar != nil {
 			jl.Avatar = &jsonAvatarProps{CornerRadius: l.Avatar.CornerRadius, BorderColor: l.Avatar.BorderColor, BorderWidth: l.Avatar.BorderWidth}
+		}
+		if l.MessageFragments != nil {
+			jl.MessageFragments = &jsonMessageFragmentsProps{
+				FontFamily: string(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
+				HorizontalAlign: string(l.MessageFragments.HorizontalAlign), VerticalAlign: string(l.MessageFragments.VerticalAlign),
+				EmoteSize: l.MessageFragments.EmoteSize,
+			}
+		}
+		if l.BadgeList != nil {
+			jl.BadgeList = &jsonBadgeListProps{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
 		}
 		layers = append(layers, jl)
 	}
@@ -183,6 +216,17 @@ func fromJSONDocument(jd jsonDocument) visualdesign.Document {
 		if jl.Avatar != nil {
 			l.Avatar = &visualdesign.AvatarProps{CornerRadius: jl.Avatar.CornerRadius, BorderColor: jl.Avatar.BorderColor, BorderWidth: jl.Avatar.BorderWidth}
 		}
+		if jl.MessageFragments != nil {
+			l.MessageFragments = &visualdesign.MessageFragmentsProps{
+				FontFamily: visualdesign.FontFamily(jl.MessageFragments.FontFamily), FontSize: jl.MessageFragments.FontSize, FontWeight: jl.MessageFragments.FontWeight,
+				LineHeight: jl.MessageFragments.LineHeight, LetterSpacing: jl.MessageFragments.LetterSpacing, TextColor: jl.MessageFragments.TextColor,
+				HorizontalAlign: visualdesign.HorizontalAlign(jl.MessageFragments.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(jl.MessageFragments.VerticalAlign),
+				EmoteSize: jl.MessageFragments.EmoteSize,
+			}
+		}
+		if jl.BadgeList != nil {
+			l.BadgeList = &visualdesign.BadgeListProps{MaxCount: jl.BadgeList.MaxCount, BadgeSize: jl.BadgeList.BadgeSize, Gap: jl.BadgeList.Gap}
+		}
 		layers = append(layers, l)
 	}
 	return visualdesign.Document{
@@ -209,7 +253,12 @@ func scanVisualDesign(scanner interface{ Scan(...any) error }) (visualdesign.Rec
 	if err := json.Unmarshal([]byte(documentJSON), &jd); err != nil {
 		return visualdesign.Record{}, fmt.Errorf("%w: parse stored document_json: %v", visualdesign.ErrStorage, err)
 	}
-	rec.Document = fromJSONDocument(jd)
+	// MigrateToCurrentVersion upgrades an older stored row (Version1) to
+	// CurrentVersion (Version2) transparently on read - see that
+	// function's own doc comment and docs/visual-designs.md §19 for why
+	// this is lossless (a Version1 document's wire shape is already a
+	// valid Version2 one; only the JSON-level Version field changes).
+	rec.Document = visualdesign.MigrateToCurrentVersion(fromJSONDocument(jd))
 
 	var err error
 	if rec.CreatedAt, err = platform.ParseTimestamp(createdAt); err != nil {

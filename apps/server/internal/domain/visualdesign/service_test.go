@@ -79,10 +79,25 @@ func TestServiceGetReturnsNotFoundForAnUnsavedOwner(t *testing.T) {
 }
 
 func TestServiceRejectsAnUnacceptedOwnerKind(t *testing.T) {
+	// "chat_overlay" was this test's own example of an unaccepted owner
+	// kind in Stage 13A; Stage 13B made it a genuinely accepted one (see
+	// TestServiceAcceptsChatOverlayOwnerKind below), so this test now
+	// uses a still-genuinely-unknown owner kind instead.
 	svc, _ := newTestService()
-	_, _, err := svc.Get(context.Background(), OwnerKind("chat_overlay"), "co_1")
+	_, _, err := svc.Get(context.Background(), OwnerKind("widget"), "widget_1")
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("Get() error = %v, want ErrValidation for an unaccepted owner kind", err)
+	}
+}
+
+func TestServiceAcceptsChatOverlayOwnerKind(t *testing.T) {
+	svc, _ := newTestService()
+	rec, err := svc.Save(context.Background(), OwnerKindChatOverlay, "co_1", validDoc(), 0)
+	if err != nil {
+		t.Fatalf("Save() error = %v, want chat_overlay to be an accepted owner kind", err)
+	}
+	if rec.OwnerKind != OwnerKindChatOverlay {
+		t.Errorf("OwnerKind = %q, want %q", rec.OwnerKind, OwnerKindChatOverlay)
 	}
 }
 

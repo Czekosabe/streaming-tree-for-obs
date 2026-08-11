@@ -1,17 +1,22 @@
-// Package visualdesign holds the Stage 13A shared, provider-independent
-// declarative visual-design document: a versioned, bounded tree of
-// typed layers (shape/text/platform_icon/avatar) an operator builds in
-// the Alert Overlay Designer, meant to be reused unchanged by the
-// future Stage 13B Chat Overlay Designer.
+// Package visualdesign holds the shared, provider-independent
+// declarative visual-design document introduced in Stage 13A and
+// extended in Stage 13B: a versioned, bounded tree of typed layers
+// (shape/text/platform_icon/avatar/message_fragments/badge_list) an
+// operator builds in either the Alert Overlay Designer or the Chat
+// Overlay Designer, both of which reuse this exact same document/layer
+// model and the one shared React renderer.
 //
-// Deliberately excludes anything alert-specific (an alert's own
-// capability-driven text-binding availability, the "generate a legacy-
-// compatible draft from a Stage 12 rule" logic) - that lives beside the
-// alert domain in internal/domain/alerts (see its own
-// visualdesign_binding.go and visualdesign_draft.go), which is free to
-// import this package one-directionally. This package never imports
-// internal/domain/alerts, internal/domain/engagement,
-// internal/provider/twitch, internal/alerts, or internal/operatorchat -
+// Deliberately excludes anything owner-specific (an alert's or a chat
+// overlay's own capability-driven text-binding availability, "generate
+// a legacy-compatible draft from the current fixed presentation" logic,
+// a chat design's own data-needs derivation) - all of that lives beside
+// the owning domain (internal/domain/alerts's own visualdesign_binding.go
+// / visualdesign_draft.go; internal/domain/chatoverlay's own
+// visualdesign_binding.go / visualdesign_draft.go / visualdesign_dataneeds.go),
+// which are each free to import this package one-directionally. This
+// package never imports internal/domain/alerts, internal/domain/
+// chatoverlay, internal/domain/engagement, internal/provider/twitch,
+// internal/alerts, internal/chatoverlay, or internal/operatorchat -
 // exactly like every other domain package in this project (see
 // internal/domain/alerts/model.go's own doc comment for the same
 // one-directional-dependency rule).
@@ -20,34 +25,48 @@
 // this package implements.
 package visualdesign
 
+// Version1 was Stage 13A's own original, and so far only, document
+// schema version - four layer kinds (shape/text/platform_icon/avatar),
+// eight text bindings. Version2 (Stage 13B) adds two shared layer kinds
+// (message_fragments/badge_list, see layer.go) and two text bindings
+// (timestamp/account_label) the Chat Overlay Designer needs - a
+// version-1 document's own wire shape is unchanged in version 2 (see
+// MigrateToCurrentVersion in migration.go), so every Stage 13A design
+// loads and renders identically after migration.
+const (
+	Version1 = 1
+	Version2 = 2
+)
+
 // CurrentVersion is the visual-design document schema version this
 // package currently reads and writes. A document is rejected outright
-// if its own Version does not equal CurrentVersion - Stage 13A defines
-// no migration path yet (there is only ever one version so far); a
-// future version bump gets its own explicit migration function here,
-// never a silent best-effort reinterpretation of an older shape.
-const CurrentVersion = 1
+// if its own Version does not equal CurrentVersion at the point it is
+// validated - see MigrateToCurrentVersion (migration.go) for how an
+// older *stored* row is transparently upgraded on read before it ever
+// reaches Validate; a stale-version *write* is still always rejected.
+const CurrentVersion = Version2
 
 // OwnerKind is the closed, fixed set of entity kinds a visual design
-// may belong to. Stage 13A accepts only OwnerKindAlertRule - see this
-// package's own doc comment for why a second (chat-overlay) kind is
-// deliberately NOT defined yet: exposing an unimplemented owner kind
-// merely because Stage 13B is planned would be presenting unfinished
-// work as real. Adding OwnerKindChatOverlay in Stage 13B is expected to
-// require no change to this package beyond adding the new constant and
-// extending AcceptedOwnerKinds.
+// may belong to.
 type OwnerKind string
 
-// OwnerKindAlertRule is the only accepted OwnerKind in Stage 13A: one
-// visual design belongs to exactly one alert rule (Stage 13A task Part
-// 18 - "in Stage 13A one saved visual design belongs to one alert
-// rule," never many rules sharing one mutable design object).
+// OwnerKindAlertRule: one visual design belongs to exactly one alert
+// rule (Stage 13A task Part 18 - "in Stage 13A one saved visual design
+// belongs to one alert rule," never many rules sharing one mutable
+// design object).
 const OwnerKindAlertRule OwnerKind = "alert_rule"
 
+// OwnerKindChatOverlay: one visual design belongs to exactly one
+// chat-overlay profile (Stage 13B, docs/visual-designs.md §18) - added
+// alongside OwnerKindAlertRule in migration 0016, which widens
+// visual_designs.owner_kind's own CHECK constraint (see that
+// migration's own doc comment for why SQLite needs an explicit
+// migration for this rather than accepting the value implicitly).
+const OwnerKindChatOverlay OwnerKind = "chat_overlay"
+
 // AcceptedOwnerKinds lists every OwnerKind this build of the service
-// will actually persist a design for - deliberately just the one, for
-// now.
-var AcceptedOwnerKinds = []OwnerKind{OwnerKindAlertRule}
+// will actually persist a design for.
+var AcceptedOwnerKinds = []OwnerKind{OwnerKindAlertRule, OwnerKindChatOverlay}
 
 func (k OwnerKind) valid() bool {
 	for _, v := range AcceptedOwnerKinds {
@@ -91,6 +110,23 @@ var (
 	CanvasLandscape = Canvas{Width: 1920, Height: 1080, Transparent: true}
 	CanvasVertical  = Canvas{Width: 1080, Height: 1920, Transparent: true}
 )
+
+// CanvasChatItem is the Chat Overlay Designer's own canvas preset
+// (Stage 13B, docs/visual-designs.md §17) - a chat visual design
+// describes one repeated overlay item/card, never a full-screen
+// presentation, so its own canvas is deliberately small and roughly
+// horizontal: wide enough for a comfortable username+message
+// combination at a normal font size, tall enough for a short wrapped
+// message plus padding, chosen as the same order of magnitude as a
+// real chat bubble's own today (see internal/chatoverlay's own
+// intrinsically-sized item today - a Chat Overlay Designer card fixes
+// that same rough shape into an absolute design-space size). Not
+// owner-specific in the type system - a generic preset, like
+// CanvasLandscape/CanvasVertical, that any owner could in principle
+// use; it is simply the one the Chat Overlay Designer offers by
+// default. Still governed by the same MinCanvasWidth/MaxCanvasWidth/
+// MinCanvasHeight/MaxCanvasHeight bounds as every other canvas size.
+var CanvasChatItem = Canvas{Width: 960, Height: 280, Transparent: true}
 
 // Document is one complete, versioned visual design: a canvas plus a
 // bounded, ordered list of layers. This is the typed shape every

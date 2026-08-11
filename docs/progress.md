@@ -14252,3 +14252,122 @@ subsequent commits, not by this document alone.
 The SQLite migration widening `visual_designs.owner_kind`'s CHECK
 constraint, the `internal/domain/visualdesign` version-2/layer-kind/
 binding changes, and their tests.
+
+## 2026-08-11 10:35 — feat(server): persist chat overlay visual designs
+
+### Status
+Backend, persistence half of Stage 13B - the shared document/schema
+changes plus the chat-side domain helpers that only need the shared
+package, not yet wired into the chat-overlay runtime/HTTP layer itself
+(that follows in the next commit).
+
+### What
+- `apps/server/internal/storage/sqlite/migrations/0016_visual_design_chat_overlay_owner.sql`
+  (new): the safe table-rebuild pattern (§10/§18 of visual-designs.md) -
+  create `visual_designs_new` with `CHECK (owner_kind IN ('alert_rule',
+  'chat_overlay'))`, copy every column of every existing row across
+  unchanged, drop the old table, rename the new one into place. Migration
+  0015 itself was never touched.
+- `internal/domain/visualdesign`:
+  - `document.go`: `Version1`/`Version2` constants, `CurrentVersion =
+    Version2`, `OwnerKindChatOverlay`, `AcceptedOwnerKinds` now lists
+    both kinds, and a new `CanvasChatItem` preset (960x280 - a
+    horizontal card-shaped canvas, the same order of magnitude as a real
+    chat bubble's own current intrinsic sizing, still governed by the
+    same canvas bounds as Landscape/Vertical).
+  - `layer.go`: two new closed `LayerKind` values
+    (`message_fragments`/`badge_list`) with their own bounded payload
+    structs (`MessageFragmentsProps`/`BadgeListProps` - font/color/
+    alignment subset plus bounded emote/badge size and gap), and two new
+    closed `TextBinding` values (`timestamp`/`account_label`).
+  - `validation.go`/`public.go`: extended to validate and pass through
+    the two new layer kinds, following the exact same present-exactly-
+    one-payload/bounds-checked pattern every existing kind already uses.
+  - `migration.go` (new): `MigrateToCurrentVersion`, the lossless
+    Version1->Version2 upgrade (relabel only - see docs/visual-designs.md
+    §19 for why no field needs to change).
+  - `internal/storage/sqlite/visualdesign_repository.go`: wired
+    `MigrateToCurrentVersion` into `scanVisualDesign`'s read path (every
+    `Get` transparently upgrades an old stored row before it ever
+    reaches `Validate` or a caller), and extended the JSON wire-shape
+    mirrors for the two new layer kinds.
+- `internal/domain/chatoverlay` (new files, pure domain logic, no
+  runtime/HTTP wiring yet):
+  - `visualdesign_binding.go`: `ItemKind` (message/activity, mirroring
+    `internal/chatoverlay.Kind` without importing that runtime package),
+    `AvailableTextBindings(itemKind)` and
+    `ValidateDesignBindingsForChatOverlay(doc)` - rejects
+    `alert_rendered_text`/`group_count` outright, item-kind-aware for
+    `event_type`/`quantity`/`message`.
+  - `visualdesign_dataneeds.go`: `ChatDataNeeds` struct and
+    `DeriveDataNeeds(doc)`, walking the document's own layers once.
+  - `visualdesign_draft.go`: `GenerateLegacyDraft(profile)` - background
+    shape, username text, a `message_fragments` layer (rich by default,
+    matching what Stage 10 already renders when emotes/badges are
+    enabled), plus avatar/badge_list/timestamp/account_label layers only
+    when the profile's own matching legacy toggle is already on.
+
+### Technical decisions
+- **Why the migration touches every column, not just `owner_kind`**:
+  SQLite has no `ALTER TABLE ... ALTER CONSTRAINT`, so a `CHECK`
+  constraint can only be widened by rebuilding the table - the
+  migration's own `INSERT ... SELECT` is a plain column copy, never a
+  re-parse of `document_json`, so every existing row's id/owner/
+  revision/timestamps/document survive byte-for-byte (proven by
+  `TestVisualDesignRepositoryMigratesStoredVersion1Document`, which
+  inserts a raw pre-migration-shaped row directly via SQL - bypassing
+  the Go API entirely, exactly like a real on-disk row would look -
+  and asserts the read-back result is both migrated and semantically
+  identical).
+- **Why `CanvasChatItem` lives in the shared `visualdesign` package,
+  not `chatoverlay`**: it is a plain geometry preset, exactly like
+  `CanvasLandscape`/`CanvasVertical` - nothing about it is chat-specific
+  in the type system, it is simply the default the Chat Overlay Designer
+  offers.
+- **Why `ItemKind` is redeclared in `chatoverlay` rather than importing
+  `internal/chatoverlay.Kind`**: `internal/domain/chatoverlay` (this
+  package) must never import the runtime `internal/chatoverlay` package
+  (the domain/runtime one-directional-dependency rule every other domain
+  package in this project already follows) - a tiny two-value mirror
+  type costs far less than inverting that dependency.
+- **Why `GenerateLegacyDraft` defaults to `message_fragments`, not a
+  plain `text` layer bound to `message`**: Stage 10's real renderer
+  already shows resolved emotes/mentions when fragments are present -
+  a draft using plain text would understate what the legacy renderer
+  already does, failing Part 30's "approximate the existing renderer as
+  closely as practical."
+
+### Files changed
+`apps/server/internal/storage/sqlite/migrations/0016_visual_design_chat_overlay_owner.sql`
+(new), `internal/domain/visualdesign/{document,layer,validation,public}.go`,
+`internal/domain/visualdesign/migration.go` (new),
+`internal/storage/sqlite/visualdesign_repository.go`,
+`internal/domain/chatoverlay/visualdesign_{binding,dataneeds,draft}.go`
+(new), plus their own `_test.go` files, plus
+`internal/storage/sqlite/visualdesign_repository_test.go` (chat_overlay
+owner-kind acceptance, cross-owner-kind independence, unknown-owner
+rejection, version-1-fixture migration) and two Stage 13A test fixtures
+updated for the version bump (`internal/domain/visualdesign/service_test.go`'s
+own "unaccepted owner kind" example, which used `chat_overlay` and is
+now genuinely accepted; `internal/httpapi/visualdesign_test.go`'s
+`validDesignDocumentDTO` fixture, hardcoded at `"version": 1`).
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go build ./...`, `go build -tags
+integration ./cmd/testserver/...`, `go test ./...` - all packages pass,
+including the full existing alerts/httpapi suite (proving the version-2
+bump and the two Stage 13A test-fixture updates above did not regress
+any Stage 13A behavior).
+
+### Known limitations
+None of this is reachable yet from any HTTP route or the chat-overlay
+runtime - `chatoverlay.Manager` does not yet know about
+`visualdesign.Service` at all. That integration, plus the public
+presentation-change SSE protocol, is the next commit.
+
+### Next step
+`feat(server): integrate visual designs with chat overlays` -
+`chatoverlay.Manager` wiring (visual-design CRUD, cascade-delete on
+profile deletion, `NotifyPresentationChanged`), `resolvedSettings`
+threading the new data-needs assessment, the management/public HTTP
+API, and their tests.

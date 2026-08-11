@@ -225,6 +225,93 @@ func TestValidateAvatarLayer(t *testing.T) {
 	}
 }
 
+func TestValidateMessageFragmentsLayer(t *testing.T) {
+	doc := Document{
+		Version: CurrentVersion, Canvas: CanvasLandscape,
+		Layers: []Layer{{
+			ID: "layer_fragments", Name: "Message", Kind: LayerMessageFragments, Visible: true, Order: 0,
+			Frame: Frame{X: 0, Y: 0, Width: 400, Height: 100}, Opacity: 1,
+			MessageFragments: &MessageFragmentsProps{
+				FontFamily: FontSystemUI, FontSize: 16, FontWeight: 400, LineHeight: 1.2, LetterSpacing: 0,
+				TextColor: "#FFFFFF", HorizontalAlign: HAlignLeft, VerticalAlign: VAlignTop, EmoteSize: 24,
+			},
+			EntryAnimation: AnimationNone, ExitAnimation: AnimationNone,
+		}},
+	}
+	if err := Validate(doc); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+
+	badEmote := doc
+	badEmote.Layers = []Layer{doc.Layers[0]}
+	fragCopy := *doc.Layers[0].MessageFragments
+	fragCopy.EmoteSize = MaxEmoteSize + 1
+	badEmote.Layers[0].MessageFragments = &fragCopy
+	if err := Validate(badEmote); err == nil {
+		t.Error("emote size over max: Validate() = nil, want an error")
+	}
+
+	badColor := doc
+	badColor.Layers = []Layer{doc.Layers[0]}
+	fragCopy2 := *doc.Layers[0].MessageFragments
+	fragCopy2.TextColor = "not-a-color"
+	badColor.Layers[0].MessageFragments = &fragCopy2
+	if err := Validate(badColor); err == nil {
+		t.Error("invalid text color: Validate() = nil, want an error")
+	}
+}
+
+func TestValidateBadgeListLayer(t *testing.T) {
+	doc := Document{
+		Version: CurrentVersion, Canvas: CanvasLandscape,
+		Layers: []Layer{{
+			ID: "layer_badges", Name: "Badges", Kind: LayerBadgeList, Visible: true, Order: 0,
+			Frame: Frame{X: 0, Y: 0, Width: 200, Height: 32}, Opacity: 1,
+			BadgeList:      &BadgeListProps{MaxCount: 5, BadgeSize: 24, Gap: 4},
+			EntryAnimation: AnimationNone, ExitAnimation: AnimationNone,
+		}},
+	}
+	if err := Validate(doc); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name  string
+		apply func(*BadgeListProps)
+	}{
+		{"max count too low", func(b *BadgeListProps) { b.MaxCount = MinBadgeCount - 1 }},
+		{"max count too high", func(b *BadgeListProps) { b.MaxCount = MaxBadgeCount + 1 }},
+		{"badge size too small", func(b *BadgeListProps) { b.BadgeSize = MinBadgeSize - 1 }},
+		{"badge size too large", func(b *BadgeListProps) { b.BadgeSize = MaxBadgeSize + 1 }},
+		{"gap negative", func(b *BadgeListProps) { b.Gap = MinBadgeGap - 1 }},
+		{"gap too large", func(b *BadgeListProps) { b.Gap = MaxBadgeGap + 1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bad := doc
+			bad.Layers = []Layer{doc.Layers[0]}
+			badgeCopy := *doc.Layers[0].BadgeList
+			tt.apply(&badgeCopy)
+			bad.Layers[0].BadgeList = &badgeCopy
+			if err := Validate(bad); err == nil {
+				t.Error("Validate() = nil, want an error")
+			}
+		})
+	}
+}
+
+func TestValidateNewStage13BTextBindings(t *testing.T) {
+	for _, binding := range []TextBinding{BindingTimestamp, BindingAccountLabel} {
+		t.Run(string(binding), func(t *testing.T) {
+			doc := validDoc()
+			doc.Layers[1].Text.Binding = binding
+			if err := Validate(doc); err != nil {
+				t.Errorf("binding %q: Validate() error = %v, want nil", binding, err)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsUnrecognizedLayerKind(t *testing.T) {
 	doc := validDoc()
 	doc.Layers[0].Kind = LayerKind("video")
