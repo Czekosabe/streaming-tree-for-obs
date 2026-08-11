@@ -16319,3 +16319,81 @@ None.
 archive/managed-asset contract, written before any package or asset code
 is implemented, exactly as `docs/visual-templates.md` preceded Stage 14A's
 own template code.
+
+## 2026-08-11 20:05 — docs: define secure visual template packages
+
+### What
+The canonical Stage 14B contract, committed before any package or asset
+code, exactly as `docs/visual-templates.md` preceded Stage 14A's own
+template code. New file `docs/visual-template-packages.md` covers: the
+four independently versioned schemas now in play (visual-design document,
+Stage 14A JSON template interchange, the new Stage 14B package manifest,
+and the local-only SQLite asset persistence schema), the sound/audio
+out-of-scope decision (Stage 17 owns TTS/audio, package video is always
+rendered muted), the `.streaming-tree-template` ZIP-only archive format
+and its strict manifest schema, archive-local logical asset IDs, the
+narrow ASCII archive path grammar, the explicit "never blind extraction"
+validation pipeline, symlink/special-file rejection, size/count/
+decompression-ratio bounds, the allowed asset type list with triple
+signature validation, image/video/font/reduced-motion policy, visual-
+design document version 3 (image/video layers, optional font reference),
+the managed-asset SQLite model (content-addressed immutable blobs, never
+deduplicated-by-content metadata, delayed blob garbage collection for
+runtime snapshot safety), manual asset upload, public asset serving via
+unguessable per-blob tokens, the two-step package import preview pattern,
+import/export persistence semantics, Stage 14A JSON asset-free
+compatibility, the OBS contract, privacy/logging rules, and the stable
+error-code list.
+
+### Files changed
+- `docs/visual-template-packages.md` (new) - the full contract, 25
+  numbered sections, described above.
+
+### Technical decisions
+- **Why one merged asset/package contract document rather than two.** The
+  package format, the managed asset store, and the two new visual
+  primitives (image/video layers, font reference) are inseparable in
+  practice - a package exists to transport assets, an asset exists to back
+  a layer, and a layer's validation rules depend on what a package/upload
+  is allowed to contain. Splitting them into separate documents would have
+  meant constant cross-referencing for what is really one coherent
+  security boundary; `docs/visual-templates.md` stays the Stage 14A
+  template-library/compatibility contract and is not duplicated here.
+- **Why the "never blind extraction" anti-pattern is spelled out
+  verbatim.** The task explicitly named the conventional
+  `filepath.Join(destination, entry.Name)` extraction pattern as something
+  this stage must never do, even though a working precedent
+  (`internal/runtime/mediamtx/archive.go`) already exists elsewhere in the
+  codebase using a variant of exactly that shape (guarded by its own
+  `safeEntryPath` check). Writing the anti-pattern into the contract
+  itself, rather than only into a future code comment, makes the
+  requirement checkable independently of whichever engineer eventually
+  implements the reader.
+- **Why WebP is always treated as potentially animated for reduced-motion
+  purposes.** A correct WebP animation-flag check needs a real WebP
+  container parser; adding one merely to distinguish animated from static
+  WebP was judged not worth a new dependency for this stage. Treating every
+  WebP as animated is the conservative direction (fewer motion surprises
+  under `prefers-reduced-motion`, at the cost of occasionally hiding a
+  static WebP layer under reduced motion) rather than the version that
+  could silently violate the accessibility requirement.
+- **Why blob garbage collection is deferred to the next clean startup
+  rather than running immediately on last-reference-loss.** Stage 12/13
+  alert/chat snapshots can outlive the persisted reference that created
+  them for the remainder of one server process's lifetime - deleting a
+  blob's bytes the instant its last logical reference disappears could
+  break an alert that is still mid-playback. This mirrors the existing
+  in-memory snapshot-lifetime reasoning already in the codebase, applied
+  here to on-disk bytes.
+
+### Automated validation
+Documentation only - no code changed.
+
+### Known limitations
+None.
+
+### Next step
+Backend: the `visualasset` domain package (model, validation, blob-store
+abstractions), followed by visual-design document version 3, the new
+SQLite migrations, the `visualpackage` archive/manifest domain, and the
+HTTP APIs - in that order, per this contract.
