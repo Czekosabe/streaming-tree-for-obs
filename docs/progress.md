@@ -15835,3 +15835,171 @@ None.
 The full, final closing regression across frontend, backend, and all
 fifteen integration scripts, run once more immediately before push,
 then the dedicated Stage 14A closing-regression journal entry.
+
+## 2026-08-11 22:55 — docs: record Stage 14A closing regression
+
+### Status
+**Stage 14A: Completed. Stage 14B: Planned, not started. Stage 14 (as a
+whole): not yet complete.**
+
+### What
+This entry records the literal, final, unmodified closing regression
+run immediately before push - no code or documentation changed between
+running these checks and writing this entry, so this is proof, not a
+promise, exactly matching the discipline the Stage 13 closing-
+regression entry (`d1eaec9`) already established and this stage's own
+first commit explicitly set out not to repeat Stage 13A's own original
+mistake of.
+
+### Automated validation (run in this exact order, this exact pass)
+**Frontend** (`apps/web`): `npm run i18n:check` - 2 languages (en, pl),
+**17 namespaces**, no differences. `npm run typecheck` - clean. `npm run
+lint` - clean. `npm run test -- --run` - **1122 tests pass, 82 test
+files**, zero failures. `npm run build` - clean (one pre-existing,
+non-blocking chunk-size advisory, unrelated to this stage).
+
+**Backend** (`apps/server`): `gofmt -l .` - no files listed, clean.
+`go vet ./...` - clean. `go test ./...` - every package with tests
+reports `ok`, including the two new/touched packages
+(`internal/domain/visualtemplate`, `internal/storage/sqlite`) and
+`internal/httpapi`. `go build ./...` - clean. `go build -tags
+integration ./cmd/testserver/...` - clean.
+
+**All fifteen local integration scripts, run once each in this exact
+pass, from the repository root, every one against a freshly built
+`-tags integration` binary on dynamically chosen loopback ports, no
+real Twitch/YouTube/OBS involved anywhere:**
+
+1. `verify-persistence.mjs` - PASSED
+2. `verify-mediamtx-runtime.mjs` - PASSED (real local MediaMTX binary)
+3. `verify-ffmpeg-branches.mjs` - PASSED (real local FFmpeg binary)
+4. `verify-twitch-account-integration.mjs` - PASSED
+5. `verify-youtube-account-integration.mjs` - PASSED
+6. `verify-twitch-engagement.mjs` - PASSED
+7. `verify-operator-chat.mjs` - PASSED
+8. `verify-chat-overlay.mjs` - PASSED (unchanged since Stage 10 -
+   proves every existing legacy chat-overlay client keeps working
+   exactly as before, completely unaffected by Stage 14A)
+9. `verify-twitch-outbound-chat.mjs` - PASSED
+10. `verify-chat-automation.mjs` - PASSED
+11. `verify-alerts.mjs` - PASSED
+12. `verify-alert-advanced-queue.mjs` - PASSED
+13. `verify-alert-designer.mjs` - PASSED (unchanged since Stage 13B -
+    proves the Alert Overlay Designer/visual-design HTTP API is
+    unaffected by the new template library sharing its own HTTP file)
+14. `verify-chat-overlay-designer.mjs` - PASSED (unchanged since Stage
+    13B - proves the Chat Overlay Designer is likewise unaffected)
+15. `verify-visual-templates.mjs` - PASSED (its **third** clean run
+    this stage - twice when first written, once here)
+
+None weakened, none skipped, none run against stale fixtures.
+
+### What this proves, mapped to the task's own completion criteria
+- The canonical `docs/visual-designs.md` now correctly states
+  `CurrentVersion = 2`, lists all six current layer kinds, and
+  describes the shared-binding/owner-specific-capability architecture
+  accurately - verified directly against
+  `internal/domain/visualdesign/{document,layer}.go` in this stage's
+  own first commit, not assumed.
+- The Stage 13B git-history audit found exactly 9 commits (not the
+  prior chat report's claimed 6), confirmed no tracked document
+  contained that error, and recorded the audit itself rather than
+  fabricating a correction nothing required.
+- The Stage 20 Windows packaging target is documented
+  (`docs/project-overview.md` §12.1) with an explicit "nothing here is
+  implemented" statement, and the current two-process development
+  Quick Start is unchanged.
+- `docs/visual-templates.md` defines the template schema (format
+  discriminator, its own `schemaVersion` starting at 1) as genuinely
+  independent from the embedded visual-design document's own
+  `version` - proven by `TestServiceCreateMigratesV1Document`/
+  `TestImportMigratesEmbeddedV1Document` (Go/integration) exercising a
+  template-schema-v1 file embedding a document at both v1 and v2.
+- An imported v1 document is migrated explicitly via the same
+  `visualdesign.MigrateToCurrentVersion` every other read path uses; an
+  unknown/future/malformed version is rejected via
+  `ErrUnsupportedDesignVersion`, proven by
+  `TestNormalizeAndValidateDocumentRejectsVersionZero`/
+  `RejectsFutureVersion` and this stage's own 15th script.
+- The `target` enum is closed (`alert`/`chat`), metadata is bounded in
+  Unicode code points (name 1-80, description <=400, author <=100,
+  license <=120), template files contain no asset and no arbitrary URL
+  field at all (structurally - the schema simply has no such field).
+- User templates always receive a server-generated `tpl_` id
+  (`visualtemplate.NewTemplateID`); an imported file's own JSON has no
+  id field to smuggle one through, and
+  `TestImportCannotChooseLocalID`/this stage's own script both prove a
+  client-supplied `id` is rejected outright (unknown field).
+- Built-ins are immutable (`ErrImmutable`, mapped to 409
+  `visual_template_immutable`) and are never a SQLite row
+  (`ValidateBuiltins` runs only over in-memory `Template` values); at
+  least 3 alert and at least 3 chat built-ins exist and every one
+  passes the identical validation a user template does
+  (`TestDefaultBuiltinsPassValidation`).
+- Owner compatibility is backend-authoritative
+  (`internal/domain/visualtemplate.AssessCompatibility`, never
+  re-derived by the frontend) and alert event-type compatibility is
+  genuinely respected (a `quantity`-binding template reports
+  `alert_binding_unavailable` against a real `follow` rule, proven live
+  by this stage's own 15th script); an incompatible template's own "Use
+  as draft" button stays disabled in the frontend
+  (`TemplateGallery.test.tsx`).
+- Opening Templates, previewing, and import-preview all cause zero
+  persistence (`TestServiceImportPreviewDoesNotPersist`,
+  `TemplateGallery.test.tsx`'s own "opening the gallery never calls any
+  save/delete API" test, and the 15th script's own before/after list-
+  count assertion around import preview); explicit import confirmation
+  is required; "Use as draft" only ever changes the Designer's own
+  local draft (one undo step, via the pre-existing `commitDraft`) and
+  never the owner's own saved design - proven directly by both
+  Designer workspace tests and the 15th script's own "Save as
+  template never touches the owner's own saved visual design" step
+  (the same underlying guarantee, exercised from the opposite
+  direction).
+- Deleting a template never changes an already-created design (no
+  foreign key exists at all - structurally guaranteed, and directly
+  exercised by the 15th script).
+- Export contains no local identifiers and a safe, injection-proof
+  filename (`safeTemplateExportFilename`, tested on both the Go and TS
+  sides); a full export/delete/re-import round trip preserves semantic
+  metadata/content with a guaranteed-different local id.
+- No ZIP/archive code, no custom-media layer, no template asset
+  directory, no asset download path, and no remote template registry
+  exist anywhere in this stage's own diff - confirmed by the explicit
+  scope list in `docs/visual-templates.md` §12 and by this being true
+  of every file this stage actually added.
+- One shared `TemplateGallery` component serves both Designers (no
+  parallel Alert/Chat implementation exists), reusing the real
+  `VisualDesignRenderer` for every preview.
+- EN/PL localization passes (`npm run i18n:check`, 17 namespaces); no
+  new Twitch scope, no new third-party dependency, and no real
+  provider/OBS/manual-browser verification was used anywhere in Stage
+  14A - confirmed by the `THIRD_PARTY_NOTICES.md` audit in the
+  documentation-pass entry and by `verify-visual-templates.mjs` itself
+  making zero network calls beyond its own loopback backend.
+
+### Known limitations (carried forward, not resolved by this entry)
+No drag-and-drop import (a normal labelled file input only). The
+template gallery does not let an operator pick a specific preview
+scenario per template - one representative scenario per target is
+shown. `OverlaySettingsForm`'s own "legacy presentation" labeling
+limitation (recorded in Stage 13B's own `feat(web): add chat overlay
+designer` entry) is unchanged by this stage. No real Twitch account,
+real YouTube account, real OBS installation, or manual browser session
+was used at any point in Stage 14A - every scenario above is either a
+real local process (the Go backend, and MediaMTX/FFmpeg where those
+specific scripts already used real local binaries) or, for
+`verify-visual-templates.mjs` specifically, no external process at all
+beyond the backend itself.
+
+### Push
+`git push origin main` next, then `git status`, `git rev-list
+--left-right --count origin/main...HEAD`, and `git rev-parse HEAD` /
+`git rev-parse origin/main` will be verified to confirm the remote and
+local HEAD match and the tree is clean.
+
+### Next step
+None for Stage 14A - it is complete. Stage 14B (portable archive
+template packages, managed template assets) remains planned and was
+not started, per this task's own explicit instruction. Stage 15 and
+later remain untouched.
