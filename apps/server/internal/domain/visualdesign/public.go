@@ -18,6 +18,16 @@ import "sort"
 // validated Document, so a caller can never accidentally leak an
 // editor-only field by adding one to Document without also updating
 // ToPublic.
+//
+// PublicLayer.Image/Video (Stage 14B) still carry the same opaque local
+// managed-asset ID Document itself does - ToPublic performs no I/O and
+// cannot resolve that ID into a public content URL by itself. The
+// httpapi/service bridge that turns a PublicDocument into the actual
+// public JSON wire payload owns that resolution step (see
+// docs/visual-template-packages.md §18: "the public presentation
+// resolution step converts a managed asset reference into the safe,
+// app-owned public URL") and is the one place a local asset ID must never
+// be allowed to leak past unresolved.
 type PublicDocument struct {
 	SchemaVersion int
 	Canvas        PublicCanvas
@@ -47,6 +57,8 @@ type PublicLayer struct {
 	Avatar           *AvatarProps
 	MessageFragments *MessageFragmentsProps
 	BadgeList        *BadgeListProps
+	Image            *ImageProps
+	Video            *VideoProps
 
 	EntryAnimation      Animation
 	ExitAnimation       Animation
@@ -72,6 +84,7 @@ func ToPublic(doc Document) PublicDocument {
 			ID: l.ID, Kind: l.Kind, Frame: l.Frame, Opacity: l.Opacity,
 			Shape: l.Shape, Text: l.Text, PlatformIcon: l.PlatformIcon, Avatar: l.Avatar,
 			MessageFragments: l.MessageFragments, BadgeList: l.BadgeList,
+			Image: l.Image, Video: l.Video,
 			EntryAnimation: l.EntryAnimation, ExitAnimation: l.ExitAnimation, AnimationDurationMS: l.AnimationDurationMS,
 		})
 	}

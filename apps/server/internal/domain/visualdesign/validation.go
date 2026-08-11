@@ -15,6 +15,25 @@ func IsValidColor(c string) bool {
 	return hexColorPattern.MatchString(c)
 }
 
+// assetRefPattern matches the local managed-asset ID shape this package
+// expects a caller to have already resolved a package-local reference
+// into (Stage 14B, docs/visual-template-packages.md §6/§13:
+// "asset_<random>", server-generated only). This is a structural,
+// format-only check - it never confirms the asset actually exists or is
+// the right kind; that is the owning service's own job (see
+// docs/visual-template-packages.md §12's "two validation layers"), kept
+// out of this package the same way alert-rule/chat-overlay binding
+// availability is kept out of it.
+var assetRefPattern = regexp.MustCompile(`^asset_[A-Za-z0-9]{1,64}$`)
+
+// validAssetRef reports whether id is a well-formed local managed asset
+// reference. An empty string is never valid here - callers that treat a
+// field as "optional" (FontAssetID) must check for emptiness themselves
+// before calling this.
+func validAssetRef(id string) bool {
+	return assetRefPattern.MatchString(id)
+}
+
 func codePointLen(s string) int {
 	n := 0
 	for range s {
@@ -116,6 +135,12 @@ func validateLayer(l Layer, canvas Canvas) error {
 	if l.BadgeList != nil {
 		present++
 	}
+	if l.Image != nil {
+		present++
+	}
+	if l.Video != nil {
+		present++
+	}
 	if present != 1 {
 		return validationErr("exactly one kind-specific payload must be present, got %d", present)
 	}
@@ -151,14 +176,55 @@ func validateLayer(l Layer, canvas Canvas) error {
 			return validationErr("kind %q requires a badge_list payload", l.Kind)
 		}
 		return validateBadgeList(*l.BadgeList)
+	case LayerImage:
+		if l.Image == nil {
+			return validationErr("kind %q requires an image payload", l.Kind)
+		}
+		return validateImage(*l.Image)
+	case LayerVideo:
+		if l.Video == nil {
+			return validationErr("kind %q requires a video payload", l.Kind)
+		}
+		return validateVideo(*l.Video)
 	default:
 		return validationErr("kind %q is not a recognized layer kind", string(l.Kind))
 	}
 }
 
+// validateImage checks ImageProps (Stage 14B, docs/visual-template-
+// packages.md §12) - only the reference's own format and the closed fit
+// enum; asset existence/kind-match is validated by the owning service.
+func validateImage(p ImageProps) error {
+	if !validAssetRef(p.AssetID) {
+		return validationErr("image asset reference %q is not a valid managed asset id", p.AssetID)
+	}
+	if !p.Fit.valid() {
+		return validationErr("image fit %q is not recognized", string(p.Fit))
+	}
+	if n := codePointLen(p.Alt); n > MaxAltCodePoints {
+		return validationErr("image alt text must be at most %d characters", MaxAltCodePoints)
+	}
+	return nil
+}
+
+// validateVideo checks VideoProps (Stage 14B, docs/visual-template-
+// packages.md §12/§20) - Loop is a plain bool, so it needs no bound.
+func validateVideo(p VideoProps) error {
+	if !validAssetRef(p.AssetID) {
+		return validationErr("video asset reference %q is not a valid managed asset id", p.AssetID)
+	}
+	if !p.Fit.valid() {
+		return validationErr("video fit %q is not recognized", string(p.Fit))
+	}
+	return nil
+}
+
 func validateMessageFragments(m MessageFragmentsProps) error {
 	if !m.FontFamily.valid() {
 		return validationErr("font family %q is not in the allowed system-font list", string(m.FontFamily))
+	}
+	if m.FontAssetID != "" && !validAssetRef(m.FontAssetID) {
+		return validationErr("font asset reference %q is not a valid managed asset id", m.FontAssetID)
 	}
 	if m.FontSize < MinFontSize || m.FontSize > MaxFontSize {
 		return validationErr("font size must be between %d and %d", MinFontSize, MaxFontSize)
@@ -263,6 +329,9 @@ func validateText(t TextProps) error {
 	}
 	if !t.FontFamily.valid() {
 		return validationErr("font family %q is not in the allowed system-font list", string(t.FontFamily))
+	}
+	if t.FontAssetID != "" && !validAssetRef(t.FontAssetID) {
+		return validationErr("font asset reference %q is not a valid managed asset id", t.FontAssetID)
 	}
 	if t.FontSize < MinFontSize || t.FontSize > MaxFontSize {
 		return validationErr("font size must be between %d and %d", MinFontSize, MaxFontSize)

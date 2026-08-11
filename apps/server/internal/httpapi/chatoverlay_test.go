@@ -705,7 +705,7 @@ func TestPublicChatOverlayStreamUnknownSlugRendersEmptyNotError(t *testing.T) {
 
 func validChatDesignDocumentDTO() map[string]any {
 	return map[string]any{
-		"version": 2,
+		"version": 3,
 		"canvas":  map[string]any{"width": 960, "height": 280, "transparent": true},
 		"layers": []map[string]any{
 			{

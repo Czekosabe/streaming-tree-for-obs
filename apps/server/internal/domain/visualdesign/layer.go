@@ -20,11 +20,25 @@ const (
 	// LayerBadgeList renders an item's own already-resolved public badge
 	// image DTOs - Version2 only (Stage 13B, docs/visual-designs.md §21).
 	LayerBadgeList LayerKind = "badge_list"
+	// LayerImage renders a managed, operator-uploaded or package-imported
+	// image asset - Version3 only (Stage 14B,
+	// docs/visual-template-packages.md §12). Always an opaque managed
+	// asset reference (ImageProps.AssetID), never a filesystem path or
+	// URL of any kind - see validation.go's validAssetRef.
+	LayerImage LayerKind = "image"
+	// LayerVideo renders a managed, operator-uploaded or package-imported
+	// video asset - Version3 only (Stage 14B,
+	// docs/visual-template-packages.md §12). Always rendered muted, with
+	// no controls and no audio output, regardless of what the underlying
+	// container holds - sound/audio playback is explicitly out of scope
+	// for this package (Stage 17 owns the application's one audio
+	// subsystem).
+	LayerVideo LayerKind = "video"
 )
 
 var validLayerKinds = []LayerKind{
 	LayerShape, LayerText, LayerPlatformIcon, LayerAvatar,
-	LayerMessageFragments, LayerBadgeList,
+	LayerMessageFragments, LayerBadgeList, LayerImage, LayerVideo,
 }
 
 func (k LayerKind) valid() bool {
@@ -296,7 +310,16 @@ type TextProps struct {
 	StaticText           string
 	MissingValueBehavior MissingValueBehavior
 
-	FontFamily      FontFamily
+	FontFamily FontFamily
+	// FontAssetID is an optional managed WOFF2 font asset reference
+	// (Stage 14B, docs/visual-template-packages.md §11/§12) - empty means
+	// "use FontFamily's own system fallback only", exactly Stage 13A's
+	// existing behavior. When non-empty, the renderer still keeps
+	// FontFamily as the safe fallback used the moment the custom font
+	// asset fails to load - never persisted as, and never accepting,
+	// arbitrary CSS `font-family` text (see validation.go's
+	// validAssetRef).
+	FontAssetID     string
 	FontSize        int
 	FontWeight      int
 	LineHeight      float64
@@ -366,7 +389,10 @@ type AvatarProps struct {
 // payload, never a provider request at render time, never
 // dangerouslySetInnerHTML.
 type MessageFragmentsProps struct {
-	FontFamily      FontFamily
+	FontFamily FontFamily
+	// FontAssetID: see TextProps.FontAssetID - identical optional managed
+	// WOFF2 font asset reference, same fallback behavior.
+	FontAssetID     string
 	FontSize        int
 	FontWeight      int
 	LineHeight      float64
@@ -410,9 +436,60 @@ const (
 	MaxBadgeGap   = 32
 )
 
+// ImageFit is the closed fit enum shared by LayerImage and LayerVideo
+// (Stage 14B, docs/visual-template-packages.md §12) - deliberately never
+// an arbitrary CSS `object-fit` string.
+type ImageFit string
+
+const (
+	FitContain ImageFit = "contain"
+	FitCover   ImageFit = "cover"
+)
+
+var validImageFits = []ImageFit{FitContain, FitCover}
+
+func (f ImageFit) valid() bool {
+	for _, v := range validImageFits {
+		if f == v {
+			return true
+		}
+	}
+	return false
+}
+
+// ImageProps is LayerImage's own bounded payload (Stage 14B,
+// docs/visual-template-packages.md §12). AssetID is an opaque managed
+// asset reference - never a filesystem path, http(s)/file/blob/data URL
+// (see validation.go's validAssetRef). Alt is a short, plain-text
+// accessibility label - never markup.
+type ImageProps struct {
+	AssetID string
+	Fit     ImageFit
+	Alt     string
+}
+
+// VideoProps is LayerVideo's own bounded payload (Stage 14B,
+// docs/visual-template-packages.md §12/§20). AssetID is an opaque managed
+// asset reference, exactly like ImageProps.AssetID. Loop is the only
+// playback field an operator controls - the renderer otherwise always
+// fixes autoplay-subject-to-reduced-motion/muted/no-controls/no-volume,
+// regardless of what this struct contains; there is deliberately no
+// volume, poster URL, track URL, or subtitle field.
+type VideoProps struct {
+	AssetID string
+	Fit     ImageFit
+	Loop    bool
+}
+
+// Bounds for ImageProps/VideoProps (Stage 14B).
+const (
+	MaxAltCodePoints = 200
+)
+
 // Layer is one bounded, ordered element of a Document (Stage 13A task
-// Part 5/10; message_fragments/badge_list added in Stage 13B). Exactly
-// one of Shape/Text/PlatformIcon/Avatar/MessageFragments/BadgeList is
+// Part 5/10; message_fragments/badge_list added in Stage 13B; image/video
+// added in Stage 14B). Exactly one of
+// Shape/Text/PlatformIcon/Avatar/MessageFragments/BadgeList/Image/Video is
 // non-nil, matching Kind - see validation.go.
 type Layer struct {
 	ID   string
@@ -437,6 +514,8 @@ type Layer struct {
 	Avatar           *AvatarProps
 	MessageFragments *MessageFragmentsProps
 	BadgeList        *BadgeListProps
+	Image            *ImageProps
+	Video            *VideoProps
 
 	EntryAnimation      Animation
 	ExitAnimation       Animation

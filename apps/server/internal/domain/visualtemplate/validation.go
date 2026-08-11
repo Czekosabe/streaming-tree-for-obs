@@ -14,11 +14,18 @@ func validationErr(format string, args ...any) error {
 // NormalizeAndValidateDocument migrates doc to visualdesign.CurrentVersion
 // (a no-op if it is already there) and validates the result - the one
 // shared entry point every template creation/import path uses (Stage
-// 14A task Part 8): a supported older v1 document is transparently
-// upgraded; a document at an unknown/future/malformed version is
-// rejected outright, never silently reinterpreted.
+// 14A task Part 8): any supported older document (Version1 through
+// visualdesign.CurrentVersion) is transparently upgraded; a document at
+// an unknown/future/malformed version is rejected outright, never
+// silently reinterpreted. Accepting the full Version1..CurrentVersion
+// range (rather than only Version1 and CurrentVersion) matters once a
+// third schema version exists (Stage 14B added Version3,
+// docs/visual-template-packages.md §12): a document already stored at
+// the *previous* CurrentVersion (Version2) must still migrate cleanly
+// the next time the schema grows, exactly like a Version1 document
+// always could.
 func NormalizeAndValidateDocument(doc visualdesign.Document) (visualdesign.Document, error) {
-	if doc.Version != visualdesign.Version1 && doc.Version != visualdesign.CurrentVersion {
+	if doc.Version < visualdesign.Version1 || doc.Version > visualdesign.CurrentVersion {
 		return visualdesign.Document{}, fmt.Errorf("%w: version %d", ErrUnsupportedDesignVersion, doc.Version)
 	}
 	migrated := visualdesign.MigrateToCurrentVersion(doc)

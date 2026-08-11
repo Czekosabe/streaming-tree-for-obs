@@ -164,7 +164,7 @@ func createTemplateTestChatOverlay(t *testing.T, ts *templateTestServer) string 
 
 func minimalChatDocumentDTO() map[string]any {
 	return map[string]any{
-		"version": 2,
+		"version": 3,
 		"canvas":  map[string]any{"width": 960, "height": 280, "transparent": true},
 		"layers": []map[string]any{
 			{
@@ -356,8 +356,8 @@ func TestImportMigratesEmbeddedV1Document(t *testing.T) {
 	}
 	body := decodeTemplateBody(t, resp)
 	doc := body["document"].(map[string]any)
-	if doc["version"] != float64(2) {
-		t.Errorf("document version = %v, want migrated to 2", doc["version"])
+	if doc["version"] != float64(3) {
+		t.Errorf("document version = %v, want migrated to 3", doc["version"])
 	}
 }
 

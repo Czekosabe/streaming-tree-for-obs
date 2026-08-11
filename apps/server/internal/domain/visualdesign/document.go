@@ -32,10 +32,16 @@ package visualdesign
 // (timestamp/account_label) the Chat Overlay Designer needs - a
 // version-1 document's own wire shape is unchanged in version 2 (see
 // MigrateToCurrentVersion in migration.go), so every Stage 13A design
-// loads and renders identically after migration.
+// loads and renders identically after migration. Version3 (Stage 14B,
+// docs/visual-template-packages.md §12) adds two more shared layer kinds
+// (image/video) and an optional managed custom-font asset reference on
+// TextProps/MessageFragmentsProps - again a lossless, relabel-only
+// migration from Version2, since no Version2 document could ever have
+// populated a field that did not exist yet.
 const (
 	Version1 = 1
 	Version2 = 2
+	Version3 = 3
 )
 
 // CurrentVersion is the visual-design document schema version this
@@ -44,7 +50,7 @@ const (
 // validated - see MigrateToCurrentVersion (migration.go) for how an
 // older *stored* row is transparently upgraded on read before it ever
 // reaches Validate; a stale-version *write* is still always rejected.
-const CurrentVersion = Version2
+const CurrentVersion = Version3
 
 // OwnerKind is the closed, fixed set of entity kinds a visual design
 // may belong to.

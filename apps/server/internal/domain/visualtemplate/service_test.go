@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 type fakeRepository struct {
@@ -91,8 +93,8 @@ func TestServiceCreateMigratesV1Document(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.Document.Version != 2 {
-		t.Errorf("Document.Version = %d, want 2", created.Document.Version)
+	if created.Document.Version != visualdesign.CurrentVersion {
+		t.Errorf("Document.Version = %d, want %d", created.Document.Version, visualdesign.CurrentVersion)
 	}
 }
 

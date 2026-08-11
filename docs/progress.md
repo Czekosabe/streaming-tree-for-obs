@@ -16397,3 +16397,178 @@ Backend: the `visualasset` domain package (model, validation, blob-store
 abstractions), followed by visual-design document version 3, the new
 SQLite migrations, the `visualpackage` archive/manifest domain, and the
 HTTP APIs - in that order, per this contract.
+
+## 2026-08-11 21:40 — feat(server): add managed visual assets and secure template packages
+
+### What
+The Stage 14B backend security core: visual-design document version 3
+(image/video layer kinds, optional custom-font asset reference on
+text-capable layers), the new `visualasset` managed-asset domain
+(content-addressed blob store, signature/dimension validation, upload/
+delete/reference-tracking service, startup reconciliation), the new
+`visualpackage` domain (ZIP-only `.streaming-tree-template` archive
+reader/writer implementing the "never blind extraction" validation
+pipeline, package import/preview/export), and the SQLite persistence
+layer (migration 0018, two new repositories) backing all of it. No HTTP
+routes are wired yet - that is the next step. No frontend changes yet.
+
+### Files changed
+- `apps/server/internal/domain/visualdesign/{layer,validation,document,
+  migration,public,json}.go` - `Version3`/`CurrentVersion=3`; new closed
+  layer kinds `image`/`video` (`ImageProps`/`VideoProps`, closed
+  `contain`/`cover` fit enum, video `loop` bool); optional
+  `FontAssetID` on `TextProps`/`MessageFragmentsProps`; a new
+  `validAssetRef` format check (`^asset_[A-Za-z0-9]{1,64}$`) used by the
+  four new validators; an explicit, chained Version2→Version3 migration
+  step (lossless/relabel-only, exactly like Version1→Version2); the
+  public/JSON wire mirrors extended to carry the new fields (an asset
+  reference stays the opaque local id at this layer - resolving it to a
+  public URL is the httpapi bridge's own job, documented on
+  `PublicDocument` but not yet implemented).
+- `apps/server/internal/domain/visualasset/{asset,errors,validation,
+  blobstore,repository,service}.go` (new package) - `Kind`/`MediaType`
+  closed enums (image/video/font only, no audio); `DetectSignature`
+  (independent PNG/JPEG/GIF/WebP/WebM/MP4/WOFF2 magic-byte detection)
+  and `VerifyTypeAgreement` (extension/declared-type/detected-signature
+  triple check); `ValidateImageDimensions` using stdlib
+  `DecodeConfig` for PNG/JPEG/GIF and a small hand-written WebP
+  VP8/VP8L/VP8X header reader for WebP (no new image dependency);
+  `FileStore` (content-addressed blob writes with a "files first,
+  database second" atomic install, plus preview-staging read/write/
+  cleanup); `Repository` interface; `Service` (`Upload`, `Get`, `List`,
+  `UpdateMetadata`, `Delete` with an in-use guard, `PublicURLForAsset`,
+  `Reconcile` for startup orphan cleanup) plus `validation_test.go`/
+  `service_test.go`.
+- `apps/server/internal/domain/visualpackage/{errors,manifest,
+  pathgrammar,reader,writer,template_file,service}.go` (new package) -
+  manifest schema C (`streaming-tree-template-package`, schemaVersion
+  1); the narrow ASCII archive path grammar (rejects absolute/drive/
+  UNC/backslash/`.`/`..`/empty segments, trailing dot/space, reserved
+  Windows device names, case-insensitive duplicates); `ReadArchive`
+  (the full "validate everything before extracting anything" pipeline -
+  bounds, path/mode checks per entry, manifest structural validation,
+  archive/manifest cross-reference in both directions, per-asset hash/
+  size/signature/kind agreement, image dimension bounds); `WriteArchive`
+  (deterministic entry ordering/timestamps); `Service.Import`/
+  `ImportPreview`/`ExportTemplate` (preview stages verified bytes under
+  a random token without persisting anything; import never trusts a
+  prior preview and re-validates from scratch; package-local
+  `pkgasset_` references are rewritten to freshly generated local
+  `asset_` ids on import, and back to deterministic `pkgasset_NNNN` ids
+  on export) plus `reader_test.go`/`service_test.go`/
+  `testfixtures_test.go`.
+- `apps/server/internal/storage/sqlite/migrations/0018_visual_assets.sql`
+  (new) - `visual_asset_blobs`/`visual_assets`/
+  `visual_design_asset_refs`/`visual_template_asset_refs`, exactly the
+  four-table model docs/visual-template-packages.md §13 specifies,
+  `ON DELETE CASCADE` from each ref table to its own owner row.
+- `apps/server/internal/storage/sqlite/visualasset_repository.go` (new)
+  plus `visualasset_repository_test.go` - the `visualasset.Repository`
+  SQLite implementation.
+- `apps/server/internal/domain/visualtemplate/validation.go` - a real
+  latent bug this stage's version bump exposed: `
+  NormalizeAndValidateDocument` only ever accepted a document at
+  exactly `Version1` or exactly `CurrentVersion`, so the moment
+  `CurrentVersion` moved from 2 to 3, a document legitimately stored at
+  the *previous* current version (2) would have been rejected outright
+  as "unsupported" instead of migrating - fixed to accept the full
+  `Version1..CurrentVersion` range, which is also correct for the next
+  time this schema grows.
+- `apps/server/internal/httpapi/{visualdesign_test.go,
+  chatoverlay_test.go, visualtemplate_test.go}`,
+  `apps/server/internal/domain/visualtemplate/service_test.go` - four
+  pre-existing tests updated from a hardcoded literal document version
+  `2` to `3` (or, for the one Go-level test, `visualdesign.
+  CurrentVersion`) - expected fallout from the version bump, not new
+  behavior.
+
+### Technical decisions
+- **Why the boundedReader bug (`asset is too large` on an exact-size
+  upload) mattered and how it was fixed.** The original `visualasset.
+  FileStore` streaming-bound helper returned `ErrTooLarge` the instant
+  its internal counter reached zero, even when the underlying reader's
+  own next `Read` would have returned a clean `io.EOF` with zero bytes -
+  a real off-by-one that only a tight bound (upload byte count exactly
+  equal to the declared max) exposed, caught by `TestService_
+  Import_NeverTrustsPreview`'s own preview-staging call (which stages
+  exactly `len(data)` bytes). Replaced with the same `io.LimitReader(r,
+  maxBytes+1)` + "did we actually read more than maxBytes" pattern
+  `internal/runtime/mediamtx/archive.go`'s `copyBounded` and this
+  stage's own `visualpackage.readEntryBounded` already use - one
+  consistent bounded-read idiom project-wide now, not two.
+  `TestReadArchive_OversizedPackageRejected` and the visualasset upload
+  tests both continue to pass at the boundary.
+- **Why `visualdesign.Validate` itself was left untouched (still exactly
+  `doc.Version != CurrentVersion`).** `Validate` is the strict, no-
+  migration check every Save path uses for a document a live Designer
+  is actively editing - it is deliberately never asked to accept an
+  older version; only `visualtemplate.NormalizeAndValidateDocument`
+  (used for template creation/import, where an *older stored* document
+  legitimately needs to migrate) needed the range fix.
+- **Why the preview-mode document validation uses a placeholder-id
+  rewrite (`visualpackage.placeholderValidate`) instead of skipping
+  validation.** Preview must not create any real local asset row (docs/
+  visual-template-packages.md §43), yet the embedded document still
+  needs every real structural rule (frame bounds, color, font size, enum
+  values) enforced before showing a renderer preview - the placeholder
+  rewrite (`pkgasset_X` → `asset_X`, run only inside `visualdesign.
+  Validate`, never returned to a caller) satisfies the asset-reference
+  *format* check without needing a real asset to exist yet, while every
+  other rule still runs for real.
+- **Why package-local IDs and local database IDs use disjoint prefixes
+  (`pkgasset_` vs `asset_`).** Beyond the contract's own stated reason
+  (never confusing a package-supplied id for a trusted local one), it
+  gives `visualdesign.Validate` a free, structural safety net: if
+  `visualpackage`'s own reference-rewrite ever missed a reference (a
+  bug), the leftover `pkgasset_` string fails the local-id format check
+  automatically, rather than silently being accepted as if it were a
+  real local asset id.
+- **Why `ExportTemplate` reads blob bytes back from disk via `OpenBlob`
+  rather than keeping bytes in memory from Import.** Export is a
+  separate, later call (often a different process lifetime) - the only
+  correct source of truth for "what bytes does asset X actually have
+  right now" is the content-addressed blob store itself, never
+  whatever bytes a long-past Import call happened to have on hand.
+
+### Automated validation
+- `go build ./...` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` (full backend suite, every package) - all pass,
+  including the four now-updated Stage 13/14A tests and every new test
+  in `visualdesign`, `visualasset`, `visualpackage`, and
+  `storage/sqlite`. Representative new-code coverage: the archive
+  security matrix (`reader_test.go` - path grammar x10, case-
+  insensitive duplicate, symlink, explicit directory entry, nested
+  archive, missing/duplicate manifest fields, too-many-entries/assets,
+  oversized package, hash/signature/kind mismatch), the asset-signature
+  matrix (`validation_test.go` in `visualasset` - every accepted
+  format plus SVG/HTML/JS/PE/ZIP rejection, dimension bounds, a real
+  hand-built WebP VP8X header), managed-asset persistence (`service_
+  test.go`/`visualasset_repository_test.go` - upload, dedup-with-
+  distinct-metadata, in-use delete guard, public-token resolution,
+  orphan reconciliation, cross-process restart persistence, cascade
+  deletion of reference rows), and the full package import/export round
+  trip (`visualpackage/service_test.go` - import creates exactly one
+  template plus one asset with a rewritten local id, preview persists
+  nothing and is never trusted by a later independent import, export→
+  re-import produces a fresh local id with byte-identical content by
+  SHA-256, an asset-free template exports with zero assets).
+
+### Known limitations
+No HTTP route exists yet for any of this - `internal/httpapi` has no
+`visual-assets` or package import/preview/export endpoints, main.go/
+testserver do not construct a `visualasset.Service`/`visualpackage.
+Service` yet, and no startup reconciliation call is wired in. The
+public-URL asset resolution step `PublicDocument`'s own doc comment
+describes (turning a local asset id into `/api/public/visual-assets/
+{token}` inside the actual public JSON payload) is not implemented
+yet either - that is httpapi-layer work, next. No frontend code has
+been touched. This is an intentional mid-stage checkpoint, not a
+completion claim - Stage 14B remains far from "Completed".
+
+### Next step
+HTTP APIs: `visual-assets` management routes (list/get/upload/update-
+metadata/delete), package import/import-preview/export routes, and the
+public `/api/public/visual-assets/{token}` serving route with Range
+support - then wire every new service into `cmd/server/main.go` and
+`cmd/testserver/main.go`, including the startup reconciliation call.
