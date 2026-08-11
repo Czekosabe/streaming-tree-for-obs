@@ -15647,3 +15647,104 @@ scenario per target is shown.
 ### Next step
 The 15th integration script, `scripts/verify-visual-templates.mjs`, run
 at least twice.
+
+## 2026-08-11 21:55 — test: verify visual templates locally
+
+### What
+`scripts/verify-visual-templates.mjs`, the fifteenth and final local
+integration script - the reusable visual-template library's own real
+integration-tagged-backend, temporary-SQLite/data-directory verification.
+
+### A real, useful simplification found while writing it
+Unlike every other engagement-era `verify-*.mjs` script, this one needs
+**no fake Twitch OAuth/Helix/EventSub server at all**: creating an alert
+profile/rule and a chat-overlay profile, and every visual-template
+operation, are real backend calls that never require a connected
+account. The script therefore makes zero network calls beyond its own
+loopback backend for the entire run - a stronger, simpler form of "no
+real provider contacted" than any prior script needed to prove, and a
+meaningfully smaller/faster script (23 steps, no WebSocket/EventSub
+harness, no device-flow polling loop).
+
+### Scenario coverage (23 steps)
+Backend startup with built-in registry validation (a malformed built-in
+would abort startup, per contract §8); the list endpoint reporting
+>=3 alert and >=3 chat built-ins with zero user-sourced rows before
+anything is created; a real alert profile/follow-rule and a real chat
+overlay created directly; compatibility scoped to the real follow rule
+(every alert built-in compatible, every chat built-in reporting
+`template_target_mismatch`); compatibility scoped to the real chat
+overlay (every chat built-in compatible); a user-created alert template
+using `quantity` reported `alert_binding_unavailable` against the
+follow rule; "Save as template" (a direct create) never touching the
+rule's own still-unsaved visual design; import-preview migrating an
+embedded v1 document to v2 while persisting nothing; a real import
+receiving a `tpl_`-prefixed id; a client-supplied `id` field rejected
+outright; an unknown top-level field, an unsupported template
+`schemaVersion`, an unsupported future embedded design version, and an
+oversized body all rejected with their correct stable codes/statuses;
+export carrying a safe `Content-Disposition`/filename and no local
+id/timestamps; a full delete → re-import → semantic-equality round
+trip with a guaranteed-different local id; deleting a user template
+leaving the rule's own design state untouched; a built-in rejecting
+both update and delete with `visual_template_immutable`; the alert's
+own public config still resolving normally throughout; full backend
+restart survival for the one surviving user template (and continued
+built-in presence, since built-ins are code, not rows); and a closing
+scan confirming neither the temporary root path nor the data directory
+path ever leaks into a captured HTTP body or the backend's own log
+output.
+
+### Deliberately omitted scenarios (representative subset, per this
+task's own "acceptable only when every omission is mapped to a
+specific covering test" allowance)
+- Saving a **chat** design as a user template specifically (only the
+  alert side is exercised live here) - the code path is identical
+  regardless of target; covered by `TestServiceCreateMigratesV1Document`/
+  `TestCreateVisualTemplateGeneratesTplID` (Go) and by
+  `TemplateGallery.test.tsx`'s own "Save as template persists the
+  current draft, not the owner design" test, which uses a chat
+  target/document.
+- A template operation emitting a `chat-overlay.presentation` event
+  (it must never) - structurally impossible rather than merely
+  untested: `internal/httpapi/visualtemplate.go` never calls
+  `chatoverlay.Manager.SaveVisualDesign`/`DeleteVisualDesign` at all,
+  and `TemplateGallery.test.tsx`'s own "opening the gallery never calls
+  any save/delete API on its own" test proves the frontend side of the
+  same guarantee.
+- Real existing alert/chat visual-design public rendering remaining
+  unaffected by this stage - proven by the unmodified, unchanged
+  `verify-alert-designer.mjs`/`verify-chat-overlay-designer.mjs`
+  continuing to pass in the same final regression this script's own
+  entry is part of.
+- An owner-scoped compatibility query for a nonexistent owner id
+  silently defaulting to "compatible" - covered directly by
+  `TestCompatibilityForUnknownOwnerReturns404OnListQuery` (Go).
+- The full metadata-bounds/target-enum validation rejection matrix
+  beyond the cases exercised live here - exhaustively covered by
+  `internal/domain/visualtemplate/validation_test.go`'s own 12 test
+  functions.
+- Any token/secret leak scan - this script never handles a Twitch
+  token or any other secret at all (no OAuth flow is exercised), so
+  there is nothing of that class to scan for; the existing token-leak
+  scans in every other `verify-*.mjs` script remain unchanged and
+  continue to run in the same final regression.
+
+### Runs
+Two consecutive clean runs (all 23 steps passing both times), per this
+task's own explicit requirement.
+
+### Automated validation
+`node scripts/verify-visual-templates.mjs` x2 (pass).
+
+### Known limitations
+Same as recorded in the backend/frontend commits' own entries - this
+commit only adds the integration script, no code changed.
+
+### Next step
+The Stage 14A documentation completion pass (README, project-overview,
+engagement-architecture, visual-designs.md/visual-templates.md final
+consolidation, config/README, THIRD_PARTY_NOTICES audit), then the full
+closing regression across frontend, backend, and all fifteen
+integration scripts, then the final Stage 14A closing-regression
+journal entry, then push.
