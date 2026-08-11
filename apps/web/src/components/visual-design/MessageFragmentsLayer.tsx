@@ -1,4 +1,5 @@
 import type { VisualDesignMessageFragmentsProps } from '@/api/visualdesign-schemas';
+import { useManagedFont } from '@/hooks/use-managed-font';
 
 import { messageFragmentsContainerStyle, messageFragmentsEmoteStyle, messageFragmentsTextStyle } from './design-style';
 
@@ -22,11 +23,14 @@ export function MessageFragmentsLayer({
   props,
   fragments,
   scale,
+  fontUrl,
 }: {
   props: VisualDesignMessageFragmentsProps;
   fragments: readonly RenderableFragment[] | undefined;
   scale: number;
+  fontUrl?: string | undefined;
 }) {
+  const customFontFamily = useManagedFont(props.fontAssetId, fontUrl) ?? undefined;
   if (fragments === undefined || fragments.length === 0) return null;
 
   return (
@@ -45,7 +49,7 @@ export function MessageFragmentsLayer({
           );
         }
         return (
-          <span key={key} style={messageFragmentsTextStyle(props, scale)} data-testid="visual-design-fragment-text">
+          <span key={key} style={messageFragmentsTextStyle(props, scale, customFontFamily)} data-testid="visual-design-fragment-text">
             {fragment.text}
           </span>
         );

@@ -16889,3 +16889,174 @@ Frontend: Stage 14B TypeScript schemas (document v3, managed-asset API/
 hooks), the image/video/font layer renderer components wired into the
 one shared `VisualDesignRenderer`, the asset upload/picker UI, and the
 TemplateGallery's package import/export UX - in that order.
+
+## 2026-08-12 00:15 — feat(web): render Stage 14B image/video/font layers
+
+### What
+The frontend foundation for Stage 14B: document v3 Zod schemas (image/
+video layer kinds, optional custom-font reference), the managed-asset
+and package transport/hooks layers, and the actual image/video/custom-
+font rendering wired into the one shared `VisualDesignRenderer` - used
+identically by both Designers and (once the public route is exercised
+manually) the real public overlay pages, never a forked renderer (Stage
+14B task Part 42). Both Designers' own "Add Layer" menu now offers
+Image/Video, backed by a new shared `VisualAssetPicker` modal with a
+real upload flow. `npm run typecheck`, `npm run lint`, `npm run
+i18n:check`, and the full existing Vitest suite (1122 tests) all stay
+green throughout - this commit is additive only, nothing existing was
+behaviorally changed.
+
+### Files changed
+- `apps/web/src/api/visualdesign-schemas.ts` - `image`/`video` added to
+  `visualDesignLayerKindSchema`; new `visualDesignImageFitSchema`
+  (`contain`/`cover`); `visualDesignImagePropsSchema`/
+  `visualDesignVideoPropsSchema` (management shape: `assetId`, no
+  `url`); `publicVisualDesignImagePropsSchema`/
+  `publicVisualDesignVideoPropsSchema` (public shape: `url`, no
+  `assetId` - `url` nullable for a broken/unresolvable reference);
+  `fontAssetId`/`fontUrl` added to the text/message-fragments prop
+  schemas (`fontUrl` public-only).
+- `apps/web/src/api/visualasset-schemas.ts`/`visualasset.ts` (new) -
+  `VisualAsset` Zod contract and transport (list/get/update/delete via
+  the shared JSON `apiGet`/`apiPut`/`apiDelete`; `uploadVisualAsset`
+  via a real `multipart/form-data` `fetch` call, since the shared
+  `lib/api-client.ts` helper is JSON-only).
+- `apps/web/src/api/visualpackage-schemas.ts`/`visualpackage.ts` (new) -
+  `VisualTemplatePackagePreview` Zod contract and transport
+  (import-preview/cancel-preview/import/export-package), all raw-binary
+  request/response bodies via direct `fetch` calls reusing `lib/
+  api-client.ts`'s error-envelope/status-classification logic.
+- `apps/web/src/lib/api-client.ts` - `readErrorEnvelope`/
+  `kindForStatus`/`resolveUrl` exported (previously module-private) so
+  the two new non-JSON transport files above can reuse this project's
+  one error-handling convention instead of duplicating it.
+- `apps/web/src/hooks/use-visual-assets.ts` (new) - `useVisualAssetsQuery`/
+  `useUploadVisualAssetMutation`/`useUpdateVisualAssetMetadataMutation`/
+  `useDeleteVisualAssetMutation`, plus `useVisualAssetMap` (builds the
+  `{ <localAssetId>: { url, mediaType } }` lookup a Designer's own
+  preview needs, docs/visual-template-packages.md §42, from the same
+  query the asset picker uses).
+- `apps/web/src/hooks/use-managed-font.ts` (new) - loads a managed
+  WOFF2 font via the browser `FontFace` API under an app-generated
+  internal family name (never the font's own internal name as CSS
+  input, docs/visual-template-packages.md §22/§41), one in-memory cache
+  per asset id for the page's lifetime, `null` while loading/on
+  failure/when unused so every caller's own safe system-font fallback
+  always applies.
+- `apps/web/src/components/visual-design/ImageLayer.tsx`/`VideoLayer.tsx`
+  (new) - `RenderableImageProps`/`RenderableVideoProps` (a superset
+  shape covering both the management `assetId` payload and the public
+  `url` payload, so one component serves both routes); image renders a
+  plain `<img>` from an already-resolved app-owned URL only, hidden
+  under `prefers-reduced-motion` for a GIF/WebP media type (docs/
+  visual-template-packages.md §21's conservative "treat every WebP as
+  animated" rule) or on load failure; video renders a fixed muted/
+  `playsInline`/no-controls `<video>`, autoplay suppressed under
+  reduced motion, never any volume/poster/track/subtitle prop.
+- `apps/web/src/components/visual-design/VisualLayer.tsx` - new
+  `VisualAssetMap` type; `RenderableLayer` gained `image`/`video`
+  fields; dispatches to the two new components; resolves a text/
+  message-fragments layer's font URL (`text.fontUrl` when already
+  public-resolved, else an `assetMap` lookup by `fontAssetId`) before
+  handing it to `TextLayer`/`MessageFragmentsLayer`.
+- `apps/web/src/components/visual-design/VisualDesignRenderer.tsx` -
+  new optional `assetMap` prop, threaded straight through to every
+  `VisualLayer` (management-only; the public route's layers already
+  arrive pre-resolved, so it stays `undefined` there).
+- `apps/web/src/components/visual-design/TextLayer.tsx`/
+  `MessageFragmentsLayer.tsx` - accept an optional resolved `fontUrl`,
+  call `useManagedFont`, pass the loaded internal family name (or
+  `undefined` on failure/absence) into `textLayerStyle`/
+  `messageFragmentsTextStyle`.
+- `apps/web/src/components/visual-design/design-style.ts` -
+  `textLayerStyle`/`messageFragmentsTextStyle` gained an optional
+  `customFontFamily` parameter, prepended ahead of (never replacing)
+  the existing safe system-font stack.
+- `apps/web/src/components/visual-design/VisualAssetPicker.tsx` (new) -
+  the one shared asset picker (Stage 14B task Part 32/54: "reuse ONE
+  shared asset-picker/library component for both Designers"): lists
+  existing assets filtered by kind, a real file-picker upload button
+  (never a URL-import affordance), used both for "Add Image"/"Add
+  Video" and (once wired into the properties panel, next commit) a
+  custom-font chooser.
+- `apps/web/src/models/visualdesign.ts` - `VISUAL_DESIGN_LAYER_KINDS`
+  widened from 4 to 6 (`image`/`video` added - Stage 14B task Part 55:
+  "presentation primitives valid for both alert/chat", so they belong
+  in the shared list, not the chat-only extension); new
+  `VISUAL_DESIGN_IMAGE_FITS`/`MAX_ALT_CODE_POINTS`; new
+  `createImageLayer`/`createVideoLayer` factories (both require a real
+  `assetId` up front, unlike every other layer kind, since an image/
+  video layer is meaningless without one).
+- `apps/web/src/components/alert-designer/AlertDesignerWorkspace.tsx`/
+  `DesignerCanvas.tsx`, `apps/web/src/components/chat-overlay-designer/
+  ChatOverlayDesignerWorkspace.tsx` - `handleAddLayer('image'|'video')`
+  now opens `VisualAssetPicker` instead of creating a layer directly;
+  the chosen asset creates the layer once selected
+  (`handleAssetChosenForNewLayer`); `useVisualAssetMap()` built once per
+  Workspace and threaded through `DesignerCanvas` into
+  `VisualDesignRenderer`.
+- `apps/web/src/i18n/resources/{en,pl}/alertDesigner.json` -
+  `layers.kind.image`/`.video`; a full `assetPicker.*` section; new
+  `properties.*` keys reserved for the next commit's properties-panel
+  work (`imageFit`/`videoFit`/`fitContain`/`fitCover`/`imageAlt`/
+  `videoLoop`/`changeAsset`/`changeVideoAsset`/`customFont`/
+  `customFontNone`/`chooseCustomFont`/`removeCustomFont`).
+
+### Technical decisions
+- **Why image/video creation is deferred until a real asset is chosen,
+  unlike every other layer kind's "click to add, edit properties
+  after" pattern.** A shape/text/avatar layer is meaningful with its
+  own generated defaults; an image/video layer with no asset reference
+  is not - there is nothing useful to preview, and Validate would
+  reject an empty `assetId` immediately anyway (docs/visual-template-
+  packages.md §12). Opening the picker first, then creating the layer
+  only on selection, avoids a broken/placeholder layer ever existing
+  even transiently in the undo history.
+- **Why `RenderableImageProps`/`RenderableVideoProps` are a loose
+  superset type rather than a strict union of the management/public
+  shapes.** `DesignerCanvas.tsx` already casts its own management
+  `VisualDesignLayer[]` straight to `RenderableLayer[]` (a pre-existing
+  pattern, not introduced here) and the public route passes its own
+  `PublicVisualDesignLayer[]` the same way - a strict union would force
+  every existing call site to add its own explicit mapping step for a
+  distinction `ImageLayer`/`VideoLayer` already resolve internally
+  (`image.url ?? assetMap?.[image.assetId]?.url`) via one small runtme
+  check, matching this codebase's established looser-casting boundary
+  at this exact seam rather than introducing a new, stricter one only
+  for the two new kinds.
+- **Why font loading uses the raw `FontFace` API directly instead of a
+  dependency (e.g. a webfont loader library).** The requirement is
+  narrow and fully specified by the contract: load exactly one WOFF2
+  URL, register it under an app-chosen name, fail closed to the system
+  fallback - `FontFace` already does exactly that in three lines, and
+  Stage 14B task Part 64's own "no new dependency without a real
+  stdlib/existing-tool insufficiency" reasoning (written for the Go
+  backend) applies here by the same logic.
+
+### Automated validation
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run i18n:check` - clean (en/pl stay in sync).
+- `npx vitest run` - full existing suite, 82 files / 1122 tests, all
+  pass. No new test files in this commit - the new rendering components
+  and hooks are exercised by the existing Designer/renderer test suites
+  only incidentally (through the widened `VisualDesignLayerKind` union
+  they already type-check against); dedicated new tests for image/
+  video/font rendering and the asset picker are the next commit's own
+  scope, alongside the properties-panel UI those tests actually need to
+  exist first.
+
+### Known limitations
+No way yet to edit an existing image/video layer's own properties (fit/
+alt/loop) or to attach/remove a custom font on a text layer - the
+properties panel has not been touched yet. No standalone asset-
+management page (upload/rename/delete outside the picker's own inline
+upload). `TemplateGallery` does not yet offer package import/export.
+No dedicated tests for anything built in this commit. This is still a
+mid-stage checkpoint, not a completion claim.
+
+### Next step
+`DesignerPropertiesPanel` additions for image/video/font layers, a
+standalone asset-management surface, then `TemplateGallery`'s package
+import/export UX - in that order, then dedicated frontend tests for all
+of it.

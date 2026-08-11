@@ -72,10 +72,19 @@ export const MAX_BADGE_SIZE = 128;
 export const MIN_BADGE_GAP = 0;
 export const MAX_BADGE_GAP = 32;
 
-export const VISUAL_DESIGN_LAYER_KINDS = ['shape', 'text', 'platform_icon', 'avatar'] as const;
+/** `image`/`video` are Stage 14B additions (docs/visual-template-
+ * packages.md §12) - presentation primitives valid for both Designers,
+ * exactly like shape/text/platform_icon/avatar (Stage 14B task Part
+ * 55: "Image/video are presentation primitives valid for both alert/
+ * chat"), so they belong in this shared list, not the chat-only
+ * extension below. */
+export const VISUAL_DESIGN_LAYER_KINDS = ['shape', 'text', 'platform_icon', 'avatar', 'image', 'video'] as const;
 /** The two Stage 13B layer kinds, offered by the Chat Overlay Designer's
- * own add-layer menu in addition to the four shared ones above. */
+ * own add-layer menu in addition to the six shared ones above. */
 export const CHAT_VISUAL_DESIGN_LAYER_KINDS = ['message_fragments', 'badge_list'] as const;
+
+export const VISUAL_DESIGN_IMAGE_FITS = ['contain', 'cover'] as const;
+export const MAX_ALT_CODE_POINTS = 200;
 
 export const VISUAL_DESIGN_TEXT_BINDINGS = [
   'static',
@@ -182,7 +191,7 @@ export function newLayerId(): string {
 
 function baseLayer(kind: VisualDesignLayerKind, name: string, frame: VisualDesignFrame, order: number): Omit<
   VisualDesignLayer,
-  'shape' | 'text' | 'platformIcon' | 'avatar' | 'messageFragments' | 'badgeList'
+  'shape' | 'text' | 'platformIcon' | 'avatar' | 'messageFragments' | 'badgeList' | 'image' | 'video'
 > {
   return {
     id: newLayerId(), name, kind, visible: true, locked: false, order, frame, opacity: 1,
@@ -235,6 +244,24 @@ export function createBadgeListLayer(frame: VisualDesignFrame, order: number): V
   return {
     ...baseLayer('badge_list', 'Badges', frame, order),
     badgeList: { maxCount: 5, badgeSize: 18, gap: 4 },
+  };
+}
+
+/** assetId is required up front (Stage 14B) - unlike every other layer
+ * kind, an image/video layer is meaningless without a real managed
+ * asset reference, so the caller (the "Add Image"/"Add Video" flow)
+ * must have the operator pick one before the layer is created at all. */
+export function createImageLayer(frame: VisualDesignFrame, order: number, assetId: string): VisualDesignLayer {
+  return {
+    ...baseLayer('image', 'Image', frame, order),
+    image: { assetId, fit: 'contain', alt: '' },
+  };
+}
+
+export function createVideoLayer(frame: VisualDesignFrame, order: number, assetId: string): VisualDesignLayer {
+  return {
+    ...baseLayer('video', 'Video', frame, order),
+    video: { assetId, fit: 'contain', loop: false },
   };
 }
 

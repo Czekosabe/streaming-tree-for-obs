@@ -3,20 +3,25 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import type { AlertEventTypeCapability, AlertProfile, AlertRule } from '@/api/alerts-schemas';
+import type { VisualAsset } from '@/api/visualasset-schemas';
 import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { platformDisplayName } from '@/components/visual-design/text-binding';
+import { VisualAssetPicker } from '@/components/visual-design/VisualAssetPicker';
 import { TemplateGallery } from '@/components/visual-templates/TemplateGallery';
 import { useAlertPreviewMutation, useTestAlertRuleMutation } from '@/hooks/use-alerts';
+import { useVisualAssetMap } from '@/hooks/use-visual-assets';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
   availableTextBindings,
   createHistory,
   createAvatarLayer,
+  createImageLayer,
   createPlatformIconLayer,
   createShapeLayer,
   createTextLayer,
+  createVideoLayer,
   duplicateLayer,
   moveLayerOrder,
   normalizeLayerOrder,
@@ -72,10 +77,12 @@ export function AlertDesignerWorkspace({
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [pendingAssetLayerKind, setPendingAssetLayerKind] = useState<'image' | 'video' | null>(null);
 
   const document_ = history.present;
   const dirty = !documentsEqual(document_, savedDocument);
   const selectedLayer = document_.layers.find((l) => l.id === selectedLayerId) ?? null;
+  const assetMap = useVisualAssetMap();
 
   const saveMutation = useSaveVisualDesignMutation('alert-rules', rule.id);
   const deleteMutation = useDeleteVisualDesignMutation('alert-rules', rule.id);
@@ -114,12 +121,19 @@ export function AlertDesignerWorkspace({
 
   function handleAddLayer(kind: VisualDesignLayerKind) {
     // The Alert Designer's own DesignerLayersPanel only ever offers the
-    // four shared kinds (VISUAL_DESIGN_LAYER_KINDS, its default
+    // six shared kinds (VISUAL_DESIGN_LAYER_KINDS, its default
     // layerKinds) - message_fragments/badge_list are structurally
     // unreachable from this UI, kept here only so this handler's own
     // parameter type matches the shared, owner-agnostic
     // DesignerLayersPanel prop exactly (Stage 13B task Part 25).
     if (kind === 'message_fragments' || kind === 'badge_list') return;
+    // image/video need a real managed asset chosen first (Stage 14B) -
+    // the layer itself is only created once the picker reports a
+    // selection, see handleAssetChosenForNewLayer.
+    if (kind === 'image' || kind === 'video') {
+      setPendingAssetLayerKind(kind);
+      return;
+    }
     const order = document_.layers.length;
     const frame = { x: 100, y: 100, width: 400, height: 200 };
     const textFrame = { x: 100, y: 100, width: 400, height: 100 };
@@ -134,6 +148,17 @@ export function AlertDesignerWorkspace({
             : createAvatarLayer(smallFrame, order);
     withLayers((layers) => [...layers, layer]);
     setSelectedLayerId(layer.id);
+  }
+
+  function handleAssetChosenForNewLayer(asset: VisualAsset) {
+    if (pendingAssetLayerKind === null) return;
+    const order = document_.layers.length;
+    const frame = { x: 100, y: 100, width: 400, height: 200 };
+    const layer =
+      pendingAssetLayerKind === 'image' ? createImageLayer(frame, order, asset.id) : createVideoLayer(frame, order, asset.id);
+    withLayers((layers) => [...layers, layer]);
+    setSelectedLayerId(layer.id);
+    setPendingAssetLayerKind(null);
   }
 
   function handleUpdateLayer(id: string, patch: Partial<VisualDesignLayer>) {
@@ -263,6 +288,7 @@ export function AlertDesignerWorkspace({
           zoom={zoom}
           snapping={snapping}
           fixture={fixture}
+          assetMap={assetMap}
           onSelect={setSelectedLayerId}
           onLayerDraftChange={handleUpdateLayerDraft}
           onLayerCommit={() => commitDraft(document_)}
@@ -328,6 +354,15 @@ export function AlertDesignerWorkspace({
         currentDraftDocument={document_}
         onUseAsDraft={(doc) => commitDraft(doc)}
       />
+
+      {pendingAssetLayerKind !== null && (
+        <VisualAssetPicker
+          open
+          onClose={() => setPendingAssetLayerKind(null)}
+          kind={pendingAssetLayerKind}
+          onSelect={handleAssetChosenForNewLayer}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import type { VisualDesignCanvas, VisualDesignFrame, VisualDesignLayer } from '@/api/visualdesign-schemas';
-import type { RenderableLayer } from '@/components/visual-design/VisualLayer';
+import type { RenderableLayer, VisualAssetMap } from '@/components/visual-design/VisualLayer';
 import { VisualDesignRenderer, type VisualDesignDataContext } from '@/components/visual-design/VisualDesignRenderer';
 import { useDragResize } from '@/hooks/use-drag-resize';
 import { clampFrameToCanvas } from '@/models/visualdesign';
@@ -37,6 +37,7 @@ export function DesignerCanvas({
   zoom,
   snapping,
   fixture,
+  assetMap,
   onSelect,
   onLayerDraftChange,
   onLayerCommit,
@@ -47,6 +48,10 @@ export function DesignerCanvas({
   zoom: number;
   snapping: boolean;
   fixture: VisualDesignDataContext;
+  /** Resolves an image/video layer's or a custom-font reference's local
+   * managed-asset id into a safe URL for the editor's own preview
+   * (Stage 14B task Part 42). */
+  assetMap?: VisualAssetMap | undefined;
   onSelect: (id: string | null) => void;
   onLayerDraftChange: (id: string, patch: Partial<VisualDesignLayer>) => void;
   onLayerCommit: () => void;
@@ -97,6 +102,7 @@ export function DesignerCanvas({
           dataContext={fixture}
           mode="preview"
           prefersReducedMotion={false}
+          assetMap={assetMap}
           chrome={(layer, scale, children) => (
             <SelectableLayer
               key={layer.id}

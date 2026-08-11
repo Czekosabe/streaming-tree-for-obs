@@ -117,7 +117,7 @@ const EMPTY_ENVELOPE: ErrorEnvelope = {
  * Returns empty values for any response that does not follow it - an error path
  * must never throw while reporting another error.
  */
-async function readErrorEnvelope(response: Response): Promise<ErrorEnvelope> {
+export async function readErrorEnvelope(response: Response): Promise<ErrorEnvelope> {
   let payload: unknown;
   try {
     payload = await response.json();
@@ -144,7 +144,7 @@ async function readErrorEnvelope(response: Response): Promise<ErrorEnvelope> {
 }
 
 /** Classifies an HTTP failure so the UI can react to it appropriately. */
-function kindForStatus(status: number, code: string | null): ApiErrorKind {
+export function kindForStatus(status: number, code: string | null): ApiErrorKind {
   if (status === 404) return 'not-found';
   if (status === 422 || code === 'validation_failed' || code === 'unknown_provider') {
     return 'validation';
@@ -153,7 +153,7 @@ function kindForStatus(status: number, code: string | null): ApiErrorKind {
   return 'http';
 }
 
-function resolveUrl(path: string): string {
+export function resolveUrl(path: string): string {
   const base = import.meta.env.VITE_API_BASE_URL ?? '';
   if (base === '') return path;
   return `${base.replace(/\/$/, '')}${path}`;

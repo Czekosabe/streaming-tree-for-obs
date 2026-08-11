@@ -4,10 +4,10 @@ import type { VisualDesignCanvas } from '@/api/visualdesign-schemas';
 
 import { useContainScale } from './design-scale';
 import type { VisualBindingContext } from './text-binding';
-import type { RenderableBadge, RenderableFragment, RenderableLayer } from './VisualLayer';
+import type { RenderableBadge, RenderableFragment, RenderableLayer, VisualAssetMap } from './VisualLayer';
 import { VisualLayer } from './VisualLayer';
 
-export type { RenderableFragment, RenderableBadge } from './VisualLayer';
+export type { RenderableFragment, RenderableBadge, VisualAssetMap } from './VisualLayer';
 
 /**
  * The normalized, owner-independent data a visual design renders
@@ -53,6 +53,7 @@ export function VisualDesignRenderer({
   mode,
   prefersReducedMotion,
   chrome,
+  assetMap,
 }: {
   canvas: VisualDesignCanvas;
   layers: RenderableLayer[];
@@ -60,6 +61,11 @@ export function VisualDesignRenderer({
   mode: 'public' | 'preview';
   prefersReducedMotion: boolean;
   chrome?: ((layer: RenderableLayer, scale: number, children: ReactNode) => ReactNode) | undefined;
+  /** Management-only (Stage 14B task Part 42) - resolves an `image`/
+   * `video` layer's or a custom-font reference's local managed-asset id
+   * into a safe URL. Never needed on the public route, where every
+   * reference already arrives pre-resolved from the backend. */
+  assetMap?: VisualAssetMap | undefined;
 }) {
   const [wrapperRef, transform] = useContainScale(canvas);
 
@@ -93,6 +99,7 @@ export function VisualDesignRenderer({
             mode={mode}
             prefersReducedMotion={prefersReducedMotion}
             chrome={chrome}
+            assetMap={assetMap}
           />
         ))}
       </div>

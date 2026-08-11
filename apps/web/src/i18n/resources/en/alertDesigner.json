@@ -28,7 +28,9 @@
       "platform_icon": "Platform icon",
       "avatar": "Avatar",
       "message_fragments": "Message",
-      "badge_list": "Badges"
+      "badge_list": "Badges",
+      "image": "Image",
+      "video": "Video"
     },
     "textVariant": {
       "static": "Static text",
@@ -109,7 +111,35 @@
     "emoteSize": "Emote size",
     "badgeMaxCount": "Max badges",
     "badgeSize": "Badge size",
-    "badgeGap": "Badge gap"
+    "badgeGap": "Badge gap",
+    "imageFit": "Fit",
+    "videoFit": "Fit",
+    "fitContain": "Contain",
+    "fitCover": "Cover",
+    "imageAlt": "Alt text",
+    "videoLoop": "Loop",
+    "changeAsset": "Change image…",
+    "changeVideoAsset": "Change video…",
+    "customFont": "Custom font",
+    "customFontNone": "System font only",
+    "chooseCustomFont": "Choose custom font…",
+    "removeCustomFont": "Remove custom font"
+  },
+  "assetPicker": {
+    "title": {
+      "image": "Choose an image",
+      "video": "Choose a video",
+      "font": "Choose a font"
+    },
+    "uploadNew": "Upload new…",
+    "uploading": "Uploading…",
+    "uploadLabel": {
+      "image": "Upload a new image",
+      "video": "Upload a new video",
+      "font": "Upload a new font"
+    },
+    "loading": "Loading assets…",
+    "empty": "No assets yet. Upload one to get started."
   },
   "canvasResize": {
     "confirmTitle": "Change canvas size?",

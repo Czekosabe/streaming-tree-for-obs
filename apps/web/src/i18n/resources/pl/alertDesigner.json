@@ -28,7 +28,9 @@
       "platform_icon": "Ikona platformy",
       "avatar": "Awatar",
       "message_fragments": "Wiadomość",
-      "badge_list": "Odznaki"
+      "badge_list": "Odznaki",
+      "image": "Obraz",
+      "video": "Wideo"
     },
     "textVariant": {
       "static": "Tekst statyczny",
@@ -109,7 +111,35 @@
     "emoteSize": "Rozmiar emotki",
     "badgeMaxCount": "Maks. liczba odznak",
     "badgeSize": "Rozmiar odznaki",
-    "badgeGap": "Odstęp między odznakami"
+    "badgeGap": "Odstęp między odznakami",
+    "imageFit": "Dopasowanie",
+    "videoFit": "Dopasowanie",
+    "fitContain": "Mieszczenie",
+    "fitCover": "Wypełnienie",
+    "imageAlt": "Tekst alternatywny",
+    "videoLoop": "Zapętlenie",
+    "changeAsset": "Zmień obraz…",
+    "changeVideoAsset": "Zmień wideo…",
+    "customFont": "Niestandardowa czcionka",
+    "customFontNone": "Tylko czcionka systemowa",
+    "chooseCustomFont": "Wybierz niestandardową czcionkę…",
+    "removeCustomFont": "Usuń niestandardową czcionkę"
+  },
+  "assetPicker": {
+    "title": {
+      "image": "Wybierz obraz",
+      "video": "Wybierz wideo",
+      "font": "Wybierz czcionkę"
+    },
+    "uploadNew": "Prześlij nowy…",
+    "uploading": "Przesyłanie…",
+    "uploadLabel": {
+      "image": "Prześlij nowy obraz",
+      "video": "Prześlij nowe wideo",
+      "font": "Prześlij nową czcionkę"
+    },
+    "loading": "Wczytywanie zasobów…",
+    "empty": "Brak zasobów. Prześlij jeden, aby zacząć."
   },
   "canvasResize": {
     "confirmTitle": "Zmienić rozmiar płótna?",

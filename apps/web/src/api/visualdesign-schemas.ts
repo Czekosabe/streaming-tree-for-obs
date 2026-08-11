@@ -30,7 +30,9 @@ export type VisualDesignAnimation = z.infer<typeof visualDesignAnimationSchema>;
 /** `message_fragments`/`badge_list` are Stage 13B additions (document
  * version 2, docs/visual-designs.md §19/§21) - shared, owner-agnostic
  * layer kinds, not chat-specific in the type system, even though no
- * alert item has fragments/badges to bind today. */
+ * alert item has fragments/badges to bind today. `image`/`video` are
+ * Stage 14B additions (document version 3, docs/visual-template-
+ * packages.md §12) - a managed-asset reference only, never a URL. */
 export const visualDesignLayerKindSchema = z.enum([
   'shape',
   'text',
@@ -38,8 +40,16 @@ export const visualDesignLayerKindSchema = z.enum([
   'avatar',
   'message_fragments',
   'badge_list',
+  'image',
+  'video',
 ]);
 export type VisualDesignLayerKind = z.infer<typeof visualDesignLayerKindSchema>;
+
+/** The closed fit enum shared by image/video layers (Stage 14B,
+ * docs/visual-template-packages.md §12) - never an arbitrary CSS
+ * `object-fit` string. */
+export const visualDesignImageFitSchema = z.enum(['contain', 'cover']);
+export type VisualDesignImageFit = z.infer<typeof visualDesignImageFitSchema>;
 
 export const visualDesignShapeKindSchema = z.enum(['rectangle']);
 export type VisualDesignShapeKind = z.infer<typeof visualDesignShapeKindSchema>;
@@ -104,6 +114,16 @@ export const visualDesignTextPropsSchema = z.object({
   staticText: z.string().optional(),
   missingValueBehavior: visualDesignMissingValueBehaviorSchema,
   fontFamily: visualDesignFontFamilySchema,
+  /** Optional managed WOFF2 font asset reference (Stage 14B) - empty/
+   * absent means "use fontFamily's own system fallback only". */
+  fontAssetId: z.string().optional(),
+  /** Public-payload-only: the backend-resolved, safe app-owned font URL
+   * for `fontAssetId` (Stage 14B, docs/visual-template-packages.md
+   * §18) - never present on a management response, since a management
+   * surface resolves fonts through the shared asset map instead
+   * (docs/visual-template-packages.md §42). Absent/undefined when
+   * `fontAssetId` is empty or could not be resolved. */
+  fontUrl: z.string().optional(),
   fontSize: z.number(),
   fontWeight: z.number(),
   lineHeight: z.number(),
@@ -134,6 +154,8 @@ export type VisualDesignAvatarProps = z.infer<typeof visualDesignAvatarPropsSche
  * own badges). */
 export const visualDesignMessageFragmentsPropsSchema = z.object({
   fontFamily: visualDesignFontFamilySchema,
+  fontAssetId: z.string().optional(),
+  fontUrl: z.string().optional(),
   fontSize: z.number(),
   fontWeight: z.number(),
   lineHeight: z.number(),
@@ -152,6 +174,47 @@ export const visualDesignBadgeListPropsSchema = z.object({
 });
 export type VisualDesignBadgeListProps = z.infer<typeof visualDesignBadgeListPropsSchema>;
 
+/** Stage 14B addition (document version 3, docs/visual-template-
+ * packages.md §12). `assetId` is an opaque managed-asset reference on
+ * the management shape - never a filesystem path or URL. */
+export const visualDesignImagePropsSchema = z.object({
+  assetId: z.string(),
+  fit: visualDesignImageFitSchema,
+  alt: z.string().optional(),
+});
+export type VisualDesignImageProps = z.infer<typeof visualDesignImagePropsSchema>;
+
+export const visualDesignVideoPropsSchema = z.object({
+  assetId: z.string(),
+  fit: visualDesignImageFitSchema,
+  loop: z.boolean(),
+});
+export type VisualDesignVideoProps = z.infer<typeof visualDesignVideoPropsSchema>;
+
+/** The public projection of an image/video layer (Stage 14B, docs/
+ * visual-template-packages.md §18/§38) - the backend resolves the
+ * managed-asset reference into a safe, app-owned `url` before this ever
+ * reaches a public payload; a management surface never sees this shape,
+ * only `visualDesignImagePropsSchema`/`visualDesignVideoPropsSchema`
+ * above (opaque `assetId`, no `url`). `url` is `null` when the
+ * reference could not be resolved (deleted/broken asset) - the renderer
+ * must fail safe, never crash, in that case. */
+export const publicVisualDesignImagePropsSchema = z.object({
+  fit: visualDesignImageFitSchema,
+  alt: z.string().optional(),
+  url: z.string().nullable(),
+  mediaType: z.string().optional(),
+});
+export type PublicVisualDesignImageProps = z.infer<typeof publicVisualDesignImagePropsSchema>;
+
+export const publicVisualDesignVideoPropsSchema = z.object({
+  fit: visualDesignImageFitSchema,
+  loop: z.boolean(),
+  url: z.string().nullable(),
+  mediaType: z.string().optional(),
+});
+export type PublicVisualDesignVideoProps = z.infer<typeof publicVisualDesignVideoPropsSchema>;
+
 /** The management layer shape - includes `name`/`locked`, which the
  * public shape below deliberately never carries. */
 export const visualDesignLayerSchema = z.object({
@@ -169,6 +232,8 @@ export const visualDesignLayerSchema = z.object({
   avatar: visualDesignAvatarPropsSchema.optional(),
   messageFragments: visualDesignMessageFragmentsPropsSchema.optional(),
   badgeList: visualDesignBadgeListPropsSchema.optional(),
+  image: visualDesignImagePropsSchema.optional(),
+  video: visualDesignVideoPropsSchema.optional(),
   entryAnimation: visualDesignAnimationSchema,
   exitAnimation: visualDesignAnimationSchema,
   animationDurationMs: z.number(),
@@ -205,6 +270,8 @@ export const publicVisualDesignLayerSchema = z.object({
   avatar: visualDesignAvatarPropsSchema.optional(),
   messageFragments: visualDesignMessageFragmentsPropsSchema.optional(),
   badgeList: visualDesignBadgeListPropsSchema.optional(),
+  image: publicVisualDesignImagePropsSchema.optional(),
+  video: publicVisualDesignVideoPropsSchema.optional(),
   entryAnimation: visualDesignAnimationSchema,
   exitAnimation: visualDesignAnimationSchema,
   animationDurationMs: z.number(),

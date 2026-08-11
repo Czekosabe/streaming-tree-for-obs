@@ -82,13 +82,19 @@ export function textLayerContainerStyle(text: VisualDesignTextProps): CSSPropert
   };
 }
 
-export function textLayerStyle(text: VisualDesignTextProps, scale: number): CSSProperties {
+/** customFontFamily, when given, is a Stage 14B managed WOFF2 font's own
+ * already-loaded internal family name (see hooks/use-managed-font.ts) -
+ * prepended ahead of the safe system fallback stack, never replacing it,
+ * so a load failure still renders readable text (docs/visual-template-
+ * packages.md §41). */
+export function textLayerStyle(text: VisualDesignTextProps, scale: number, customFontFamily?: string): CSSProperties {
   const shadow = text.shadowEnabled
     ? `${text.shadowOffsetX * scale}px ${text.shadowOffsetY * scale}px ${text.shadowBlur * scale}px ${text.shadowColor}`
     : undefined;
   const outline = text.outlineWidth > 0 ? `${text.outlineColor} ${text.outlineWidth * scale}px` : undefined;
+  const systemStack = FONT_FAMILY_STACKS[text.fontFamily] ?? 'sans-serif';
   return {
-    fontFamily: FONT_FAMILY_STACKS[text.fontFamily] ?? 'sans-serif',
+    fontFamily: customFontFamily !== undefined ? `"${customFontFamily}", ${systemStack}` : systemStack,
     fontSize: text.fontSize * scale,
     fontWeight: text.fontWeight,
     lineHeight: text.lineHeight,
@@ -118,9 +124,14 @@ export function messageFragmentsContainerStyle(props: VisualDesignMessageFragmen
   };
 }
 
-export function messageFragmentsTextStyle(props: VisualDesignMessageFragmentsProps, scale: number): CSSProperties {
+export function messageFragmentsTextStyle(
+  props: VisualDesignMessageFragmentsProps,
+  scale: number,
+  customFontFamily?: string,
+): CSSProperties {
+  const systemStack = FONT_FAMILY_STACKS[props.fontFamily] ?? 'sans-serif';
   return {
-    fontFamily: FONT_FAMILY_STACKS[props.fontFamily] ?? 'sans-serif',
+    fontFamily: customFontFamily !== undefined ? `"${customFontFamily}", ${systemStack}` : systemStack,
     fontSize: props.fontSize * scale,
     fontWeight: props.fontWeight,
     lineHeight: props.lineHeight,

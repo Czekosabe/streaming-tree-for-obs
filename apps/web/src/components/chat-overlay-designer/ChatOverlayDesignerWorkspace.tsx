@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import type { ChatOverlayProfile } from '@/api/chat-overlay-schemas';
+import type { VisualAsset } from '@/api/visualasset-schemas';
 import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 // Reused unchanged from the Alert Designer (Stage 13B task Part 25:
@@ -13,7 +14,9 @@ import { DesignerLayersPanel } from '@/components/alert-designer/DesignerLayersP
 import { DesignerPropertiesPanel } from '@/components/alert-designer/DesignerPropertiesPanel';
 import { DesignerTopBar } from '@/components/alert-designer/DesignerTopBar';
 import { chatItemDataContext } from '@/components/chat-overlay/chat-item-data-context';
+import { VisualAssetPicker } from '@/components/visual-design/VisualAssetPicker';
 import { TemplateGallery } from '@/components/visual-templates/TemplateGallery';
+import { useVisualAssetMap } from '@/hooks/use-visual-assets';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
@@ -23,10 +26,12 @@ import {
   createAvatarLayer,
   createBadgeListLayer,
   createHistory,
+  createImageLayer,
   createMessageFragmentsLayer,
   createPlatformIconLayer,
   createShapeLayer,
   createTextLayer,
+  createVideoLayer,
   duplicateLayer,
   moveLayerOrder,
   normalizeLayerOrder,
@@ -80,10 +85,12 @@ export function ChatOverlayDesignerWorkspace({
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [pendingAssetLayerKind, setPendingAssetLayerKind] = useState<'image' | 'video' | null>(null);
 
   const document_ = history.present;
   const dirty = !documentsEqual(document_, savedDocument);
   const selectedLayer = document_.layers.find((l) => l.id === selectedLayerId) ?? null;
+  const assetMap = useVisualAssetMap();
 
   const saveMutation = useSaveVisualDesignMutation('chat-overlays', overlay.id);
   const deleteMutation = useDeleteVisualDesignMutation('chat-overlays', overlay.id);
@@ -108,6 +115,13 @@ export function ChatOverlayDesignerWorkspace({
   }
 
   function handleAddLayer(kind: VisualDesignLayerKind) {
+    // image/video need a real managed asset chosen first (Stage 14B) -
+    // the layer itself is only created once the picker reports a
+    // selection, see handleAssetChosenForNewLayer.
+    if (kind === 'image' || kind === 'video') {
+      setPendingAssetLayerKind(kind);
+      return;
+    }
     const order = document_.layers.length;
     const frame = { x: 40, y: 40, width: document_.canvas.width - 80, height: 120 };
     const textFrame = { x: 40, y: 40, width: document_.canvas.width - 80, height: 60 };
@@ -136,6 +150,17 @@ export function ChatOverlayDesignerWorkspace({
     }
     withLayers((layers) => [...layers, layer]);
     setSelectedLayerId(layer.id);
+  }
+
+  function handleAssetChosenForNewLayer(asset: VisualAsset) {
+    if (pendingAssetLayerKind === null) return;
+    const order = document_.layers.length;
+    const frame = { x: 40, y: 40, width: document_.canvas.width - 80, height: 120 };
+    const layer =
+      pendingAssetLayerKind === 'image' ? createImageLayer(frame, order, asset.id) : createVideoLayer(frame, order, asset.id);
+    withLayers((layers) => [...layers, layer]);
+    setSelectedLayerId(layer.id);
+    setPendingAssetLayerKind(null);
   }
 
   function handleUpdateLayer(id: string, patch: Partial<VisualDesignLayer>) {
@@ -249,6 +274,7 @@ export function ChatOverlayDesignerWorkspace({
           zoom={zoom}
           snapping={snapping}
           fixture={fixture}
+          assetMap={assetMap}
           onSelect={setSelectedLayerId}
           onLayerDraftChange={handleUpdateLayerDraft}
           onLayerCommit={() => commitDraft(document_)}
@@ -314,6 +340,15 @@ export function ChatOverlayDesignerWorkspace({
         currentDraftDocument={document_}
         onUseAsDraft={(doc) => commitDraft(doc)}
       />
+
+      {pendingAssetLayerKind !== null && (
+        <VisualAssetPicker
+          open
+          onClose={() => setPendingAssetLayerKind(null)}
+          kind={pendingAssetLayerKind}
+          onSelect={handleAssetChosenForNewLayer}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import type { VisualDesignTextProps } from '@/api/visualdesign-schemas';
+import { useManagedFont } from '@/hooks/use-managed-font';
 
 import { textLayerContainerStyle, textLayerStyle } from './design-style';
 import { resolveTextBindingValue, type VisualBindingContext } from './text-binding';
@@ -20,20 +21,27 @@ export function TextLayer({
   scale,
   context,
   mode,
+  fontUrl,
 }: {
   text: VisualDesignTextProps;
   scale: number;
   context: VisualBindingContext;
   mode: 'public' | 'preview';
+  /** The already-resolved URL for `text.fontAssetId`, if any - see
+   * VisualLayer's own resolution of `text.fontUrl` (public) or an
+   * `assetMap` lookup (management). undefined when no custom font is
+   * referenced or it could not be resolved. */
+  fontUrl?: string | undefined;
 }) {
   const { t } = useTranslation('alertDesigner');
   const value = resolveTextBindingValue(text, context);
+  const customFontFamily = useManagedFont(text.fontAssetId, fontUrl) ?? undefined;
 
   if (value === null) {
     if (mode === 'public' || text.missingValueBehavior === 'hide') return null;
     return (
       <div style={textLayerContainerStyle(text)} data-testid="visual-design-text-missing">
-        <span style={{ ...textLayerStyle(text, scale), opacity: 0.5, fontStyle: 'italic' }}>
+        <span style={{ ...textLayerStyle(text, scale, customFontFamily), opacity: 0.5, fontStyle: 'italic' }}>
           {t('renderer.missingValuePlaceholder')}
         </span>
       </div>
@@ -42,7 +50,7 @@ export function TextLayer({
 
   return (
     <div style={textLayerContainerStyle(text)} data-testid="visual-design-text">
-      <span style={textLayerStyle(text, scale)}>{value}</span>
+      <span style={textLayerStyle(text, scale, customFontFamily)}>{value}</span>
     </div>
   );
 }
