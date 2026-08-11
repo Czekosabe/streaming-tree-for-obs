@@ -247,3 +247,31 @@ with no transcoding, is this stage's deliberate scope.
     backend restart, never persisted. No grouped-alert member list, no
     per-event grouping/preemption log, and no new environment variable
     were added either.
+14. Stage 13A's shared visual-design engine adds exactly one new
+    **persisted** table, `visual_designs` (migration
+    `0015_visual_designs.sql`): a versioned JSON document plus an
+    integer revision, owner kind/id (only `alert_rule` is an accepted
+    owner kind in Stage 13A), and timestamps - one row per alert rule
+    that has ever been explicitly saved through the Alert Overlay
+    Designer, alongside the rest of `alert_rules` in the same SQLite
+    database, still not a file in this directory. A rule with no saved
+    design has no row here at all and keeps rendering through Stage
+    12A's original fixed presentation. **Everything the Designer's own
+    editing session touches stays out of SQLite and out of this
+    directory**: the in-memory draft an operator is currently editing,
+    its bounded undo/redo history, canvas zoom, and selection state are
+    frontend memory only and are discarded on navigating away without
+    an explicit Save - opening the Designer never writes a row here by
+    itself. At runtime, each alert instance's resolved visual-design
+    snapshot (`internal/alerts.Instance.VisualDesign`) is in-memory
+    only, the same category as every other alert-engine runtime value
+    in rule 12 above, copied once at match time so editing or deleting
+    the saved design later never mutates an already-created alert's
+    snapshot. There is still no design *asset* file for this directory
+    to hold - no uploaded image/GIF/video/sound/font, no design-asset
+    directory, and no exported template package or archive - Stage 13A's
+    layer kinds (rectangle shape, closed-binding text, platform icon,
+    avatar) reference only bounded style values and this application's
+    own already-normalized data, never an uploaded or arbitrary-URL
+    asset (`docs/visual-designs.md`). Stage 13A added **no new
+    environment variable**.

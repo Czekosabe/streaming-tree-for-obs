@@ -13959,3 +13959,72 @@ The Stage 13A documentation pass (README, project-overview,
 engagement-architecture, obs-browser-source, config/README,
 THIRD_PARTY_NOTICES audit), then the full closing regression across
 frontend, backend, and all thirteen integration scripts, then push.
+
+## 2026-08-11 07:20 — docs: document Stage 13A alert designer
+
+### What
+The Stage 13A documentation pass (task Parts 59-64), across every
+document the task named:
+
+- `README.md`: the roadmap table row for stage 13 split into **13A
+  (Completed)** and **13B (Planned, not started)**, with 14 now
+  explicitly noted as depending on stage 13 *as a whole*; the "Alerts"
+  section gained a new paragraph describing the shared visual-design
+  document, the shared renderer, and the Designer route, and its "what
+  this stage does not implement" paragraph was rewritten to name 13B/14
+  by number instead of a generic "Stage 13"; a new "Verifying it for
+  real" paragraph for `scripts/verify-alert-designer.mjs` was added
+  alongside the existing Stage 12A/12B script paragraphs.
+- `docs/project-overview.md`: the §13 roadmap table split the same way;
+  the dependency-reasoning bullet list gained a Stage 13A entry
+  explaining the domain/runtime split reuse and pointing at
+  `visual-designs.md`, and the Stage 14 bullet now states explicitly
+  that the document already exists but no template packaging does yet.
+- `docs/engagement-architecture.md`: a new **Factual status update
+  (stage 13A, completed, partial)** notice block at the top of §13
+  ("Visual designers and templates") stating plainly which half of
+  §13.1's "two designers" is now real (Alert Overlay Designer) and
+  which remains entirely unimplemented (Chat Overlay Designer, stage
+  13B), and that none of §13.2/§13.3's template-package machinery
+  exists yet even though the underlying document does. The §18
+  dependency-order list gained the same 13A/13B split as the other two
+  documents.
+- `docs/obs-browser-source.md`: a new **Factual status update (stage
+  13A, completed)** notice alongside the existing 12A/12B ones, stating
+  that the OBS-level Browser Source contract is completely unchanged -
+  only the `alert.show` payload gained a `renderingMode` field and,
+  for design-driven alerts, a complete safe visual-design snapshot. A
+  new paragraph at the end of the "Stage 12A: the alert Browser Source
+  route" section describes the same thing plus the renderer's
+  contain-style viewport scaling policy. "What was not tested" now
+  names stage 13A and `scripts/verify-alert-designer.mjs` alongside the
+  existing entries - still no real OBS installation used.
+- `config/README.md`: a new numbered item 14 (matching the existing
+  per-stage-numbered-list format items 12/13 use) describing the new
+  `visual_designs` SQLite table, that a rule with no saved design has
+  no row at all, that the Designer's own in-editor draft/undo history/
+  zoom/selection are frontend memory only and never written merely by
+  opening the page, that each alert instance's resolved design snapshot
+  is runtime memory only (copied once at match time, same immutability
+  guarantee as every other alert-engine runtime value), and that there
+  is still no design *asset* directory, uploaded media, or template
+  archive - Stage 13A's closed layer kinds reference only this
+  application's own already-normalized data.
+- `THIRD_PARTY_NOTICES.md`: audited, left unchanged - `git diff --stat`
+  across the entire Stage 13A commit range
+  (`0f4b919..HEAD` at the time of this entry) touches neither
+  `apps/web/package.json` nor `apps/server/go.mod`/`go.sum`, confirming
+  no new runtime dependency was added at any point in this stage (the
+  shared renderer used ordinary React/DOM/pointer events throughout,
+  exactly as planned).
+
+None of these edits mark Stage 13 as a whole complete - every one of
+them explicitly names 13B as planned and not started, per the task's
+own explicit instruction.
+
+### Next step
+The full closing regression: frontend (`i18n:check`, `typecheck`,
+`lint`, `test -- --run`, `build`), backend (`gofmt -l .`, `go vet
+./...`, `go test ./...`, `go build ./...`, `go build -tags integration
+./cmd/testserver/...`), and all thirteen integration scripts by name -
+then push and the final Stage 13A report.

@@ -171,7 +171,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 11B | Scheduled messages and safe chat commands, built on the same dispatcher: interval/jitter/activity/rate gating, message groups, aliases, roles, cooldowns, a closed placeholder language, and the Automation page | **Completed** — see [progress.md](docs/progress.md) |
 | 12A | Alert rules and queue: persisted alert profiles/rules, a provider-independent matching engine, a bounded in-memory alert queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) alert presentation, and a public OBS Browser Source alert route | **Completed** — see [progress.md](docs/progress.md) |
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — see [progress.md](docs/progress.md); Stage 12 as a whole is now complete |
-| 13–19 | The visual overlay/alert designer, templates, TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 13A | Shared, provider-independent visual-design document, its persistence/HTTP API, immutable per-alert snapshotting, and the Alert Overlay Designer editor UI | **Completed** — see [progress.md](docs/progress.md); Stage 13 as a whole is **not** complete until 13B lands |
+| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for chat overlays | Planned, not started |
+| 14 | Built-in templates and template import/export, built on Stage 13's own document format | Planned, depends on Stage 13 as a whole |
+| 15–19 | TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -1945,17 +1948,38 @@ strictly-higher-priority alert immediately replacing one already playing,
 with no resume of the interrupted one). Managed from a new **Alerts**
 page, separate from Chat, Overlays and Automation.
 
-**What this stage does not implement.** A free-form visual designer —
-arbitrary positioning, drag-and-drop, uploaded images/GIFs/video/sounds/
-fonts, custom CSS or arbitrary HTML/JS, template import/export — remains
-Stage 13's job, not started. No new Twitch scope and no new EventSub
-subscription type were added for either 12A or 12B: alerts only ever match
-events already reaching the Event Bus, and the alert engine never talks to
-Twitch directly. Text-to-speech, goal/counter widgets, and any
-donation-service connector remain unimplemented. Real alert-event history,
-queue contents, and every counter (including the grouping/preemption ones)
-are **runtime-only** — never persisted — exactly like the automation
-runtime above.
+Stage 13A then added a real, bounded **visual designer** on top of that
+same fixed-presentation alert engine: a shared, provider-independent
+visual-design document (`internal/domain/visualdesign`, schema version
+1), persisted one-per-rule with optimistic-concurrency revisions, a
+shared React renderer used identically by the Designer's own canvas and
+the public Browser Source route, and a new **Alert Overlay Designer**
+page (`/alerts/rules/{ruleId}/designer`) for drag/resize/property-panel
+editing of a bounded set of layer kinds (rectangle shape, closed-binding
+text, platform icon, avatar). Every existing Stage 12 rule keeps
+rendering through the original fixed renderer unless and until an
+operator explicitly opens the Designer and saves — opening the page
+alone persists nothing. See
+[`docs/visual-designs.md`](docs/visual-designs.md) for the full document
+contract.
+
+**What this stage does not implement.** Chat Overlay Designer support
+(Stage 13B), template import/export and a built-in template gallery
+(Stage 14), uploaded/remote images, GIFs, video, sounds, fonts, custom
+CSS, or arbitrary HTML/JS remain unimplemented — Stage 13A's own layer
+kinds and typography/animation options are closed, bounded enums, never
+free-form CSS or markup. No new Twitch scope and no new EventSub
+subscription type were added for 12A, 12B or 13A: alerts only ever match
+events already reaching the Event Bus, and the alert engine never talks
+to Twitch directly. Text-to-speech, goal/counter widgets, and any
+donation-service connector remain unimplemented. Real alert-event
+history, queue contents, and every counter (including the
+grouping/preemption ones) are **runtime-only** — never persisted —
+exactly like the automation runtime above. Saved visual designs and
+their revisions **are** persisted (SQLite, migration
+`0015_visual_designs.sql`); the Designer's own undo/redo history and
+any unsaved draft are frontend memory only, never sent to the backend
+until Save.
 
 ### Genuinely supported alert events
 
@@ -2126,6 +2150,18 @@ preserves every new rule field while resetting the new counters — run at
 least twice per change. See [`docs/progress.md`](docs/progress.md) for
 exactly which scenarios this covers versus a specific named Go/frontend
 test instead.
+
+`scripts/verify-alert-designer.mjs` does the same for Stage 13A: the
+visual-design draft/save/revision-conflict/delete HTTP API, a
+representative validation-rejection matrix, a real fake-Twitch event
+rendering the saved design end to end on the public stream with no
+editor-only field ever leaking, snapshot immutability when a design is
+saved while an alert is current/queued/replayed, Test Rule and grouped/
+preempted alerts each keeping their own correct design, Reset to
+legacy, rule-deletion cascade, and design survival across a backend
+restart — run at least twice per change. See
+[`docs/progress.md`](docs/progress.md) for exactly which scenarios this
+covers versus a specific named Go/frontend test instead.
 
 ---
 

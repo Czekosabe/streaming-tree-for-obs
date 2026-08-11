@@ -27,6 +27,22 @@ guaranteed to stay accurate forever.
 > [Stage 12A: the alert Browser Source route](#stage-12a-the-alert-browser-source-route)
 > for the detail. Still **no real OBS installation was used** for Stage
 > 12B's own verification either.
+>
+> **Factual status update (stage 13A, completed):** the shared visual-
+> design engine and Alert Overlay Designer changed nothing about the
+> OBS-level Browser Source contract either - the alert route's URL,
+> transparent background, and lack of any OBS-specific permission are
+> all unchanged. OBS itself does not know or care whether an alert is
+> legacy-rendered or design-driven. The only change is that a
+> design-driven alert's `alert.show` payload additionally carries a
+> `renderingMode` discriminator (`"legacy"` or `"visual_design"`) and,
+> when design-driven, a complete safe public visual-design snapshot
+> (never a mere revision reference, so a reconnecting Browser Source can
+> always reproduce the exact alert it missed without a design-fetch
+> race). See the note at the end of
+> [Stage 12A: the alert Browser Source route](#stage-12a-the-alert-browser-source-route)
+> for the detail. Still **no real OBS installation was used** for Stage
+> 13A's own verification either.
 
 ## Sources inspected
 
@@ -311,14 +327,35 @@ for an exit animation. Since OBS's Browser Source composites whatever
 the page renders each frame, this is invisible to OBS itself; it is
 purely how the React renderer decides what to show next.
 
+**Stage 13A (shared visual-design engine and Alert Overlay Designer)**
+changed nothing about this OBS-level contract either - still the same
+single Browser Source, transparent background, no new permission. The
+only application-level addition is the `renderingMode` discriminator
+and, for a design-driven alert, a complete safe public visual-design
+snapshot embedded directly in that alert's own `alert.show` payload
+(canvas dimensions, ordered layers, bounded style/typography/animation
+values - never layer names, lock state, or any editor-only field). The
+existing `AlertRenderer` component still renders both the public route
+and the Alerts management page's own local editor preview identically,
+branching internally on `renderingMode` rather than becoming two
+components - what an operator sees in the Designer's own preview or the
+rule editor's preview is exactly what OBS will show. The renderer
+scales the persisted design to whatever viewport OBS's Browser Source
+actually reports (contain-style, aspect-preserving, centered - see
+[visual-designs.md](visual-designs.md)'s coordinate-system section) so
+a saved 1920x1080 design still renders correctly at other configured
+Browser Source dimensions; this was verified with automated viewport-
+size assertions in the frontend test suite, not inside real OBS.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's or 12B's own verification.** Every
-finding above comes from reading the official pages listed, not from
-observing a live Browser Source. The local integration scripts
+verification, or for Stage 12A's, 12B's or 13A's own verification.**
+Every finding above comes from reading the official pages listed, not
+from observing a live Browser Source. The local integration scripts
 (`scripts/verify-chat-overlay.mjs`, `scripts/verify-alerts.mjs`,
-`scripts/verify-alert-advanced-queue.mjs`) exercise the same HTTP/SSE
+`scripts/verify-alert-advanced-queue.mjs`,
+`scripts/verify-alert-designer.mjs`) exercise the same HTTP/SSE
 contract a real Browser Source would consume, from a plain Node.js
 HTTP client - they prove the backend's contract is correct, not that
 OBS's own CEF renders either overlay identically. Re-verify this

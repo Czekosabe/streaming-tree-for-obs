@@ -960,6 +960,26 @@ bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 
 ## 13. Visual designers and templates
 
+> **Factual status update (stage 13A, completed, partial):** the **Alert
+> Overlay Designer** described in §13.1 is real - a shared,
+> provider-independent visual-design document
+> (`internal/domain/visualdesign`, schema version 1), persisted one per
+> alert rule with optimistic-concurrency revisions, a shared React
+> renderer used identically by the Designer's own canvas and the public
+> alert Browser Source route, and the editor itself at
+> `/alerts/rules/{ruleId}/designer`. The **Chat Overlay Designer** (§13.1's
+> other half) remains unimplemented - stage 13B, not started. Stage 13A's
+> own layer kinds are a deliberately narrower, closed set than §13.1's
+> planned list: rectangle shape, closed-binding text, platform icon (app-
+> owned glyphs, not an arbitrary URL), and avatar (the alert's own already-
+> normalized avatar URL, not a per-render provider request or an arbitrary
+> URL field) - **no image/GIF/video/sound layer exists yet**, and none of
+> §13.2/§13.3's template package, import/export, or built-in-template-
+> gallery machinery has been implemented; the document stage 13A defines
+> is intended to become that future template payload, not a template
+> itself. See [progress.md](progress.md)'s Stage 13A entries and
+> [visual-designs.md](visual-designs.md) for exactly what exists.
+
 ### 13.1 Two designers, one underlying model
 
 Two planned visual editors: the **Chat Overlay Designer** and the **Alert
@@ -1188,12 +1208,23 @@ Dependencies that constrain this order:
   is not useful without the rule engine that feeds it, so they are one stage.
 - Stage 13 (designers) needs a stable overlay data shape to design against,
   which only exists meaningfully once stage 9/10 (chat) and stage 12 (alerts)
-  establish what an overlay actually renders.
-- Stage 14 (templates) needs stage 13's designer output format to serialize.
+  establish what an overlay actually renders. Stage 13 was split into **13A
+  (alert designer)**, built on stage 12's fixed alert presentation, and
+  **13B (chat overlay designer)**, planned to build on stage 9/10's chat
+  overlay the same way. Stage 13A reuses one shared, provider-independent
+  visual-design document and React renderer that 13B is planned to reuse
+  too, rather than each designer inventing its own format.
+- Stage 14 (templates) needs stage 13's designer output format to serialize
+  - specifically, the document stage 13A already defines is intended to
+  become stage 14's template payload once stage 13 as a whole (13A and
+  13B) is complete; stage 13A itself implements no template packaging.
 - Stage 17 (TTS) and stage 18 (goals/widgets) both consume the stage 8 bus
   directly and do not depend on the designers, so they can in principle move
   earlier if priorities change — they are ordered late here only because they
   are lower-impact than chat and alerts, not because of a hard dependency.
 
-No stage in this table is implemented by the current task. See
+**Stage 13A is now completed** (see [progress.md](progress.md)'s Stage 13A
+entries and [visual-designs.md](visual-designs.md) for its document
+contract) - stage 13 as a whole remains incomplete until stage 13B lands.
+Every other stage in this table remains as planned; see
 [progress.md](progress.md) for what actually exists today.

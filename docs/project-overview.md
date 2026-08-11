@@ -954,8 +954,9 @@ it is architected; this table only tracks status and dependencies.
 | 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced: interval/jitter/streaming/activity/rate gating, message groups, command roles/aliases/cooldowns, a closed placeholder language, and the Automation page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12A | Alert engine and alert queue: persisted alert profiles/rules, a provider-independent matcher over the same Event Bus, a bounded in-memory queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) presentation, and a public OBS Browser Source alert route, plus the Alerts management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — stage 12 as a whole is now complete |
-| 13 | Visual overlay/alert designers | Planned |
-| 14 | Built-in templates and template import/export | Planned |
+| 13A | Shared, provider-independent visual-design document, persistence/HTTP API, immutable per-alert snapshotting, shared React renderer, and the Alert Overlay Designer editor (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** — stage 13 as a whole is **not** complete until 13B lands |
+| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer | Planned, not started |
+| 14 | Built-in templates and template import/export, built on stage 13's document format | Planned, depends on stage 13 as a whole |
 | 15 | YouTube and Kick engagement connectors | Planned |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
@@ -1022,9 +1023,23 @@ Key dependencies:
   current rule, strictly-higher-priority-only, with no resume of an
   interrupted alert - see [`docs/progress.md`](progress.md)'s Stage 12B
   `feat(server): group and preempt queued alerts` entry.
-- Stage 13 (designers) needs a stable overlay shape, which only exists once
-  stages 9/10 (chat) and 12A (alerts) establish what an overlay renders.
-- Stage 14 (templates) needs stage 13's designer output format.
+- Stage 13A (alert designer) needed a stable overlay shape, which only
+  existed once stages 9/10 (chat) and 12A (alerts) established what an
+  overlay renders - it reuses stage 12A/12B's own domain/runtime split
+  pattern again: `internal/domain/visualdesign` is the shared, generic,
+  persisted document (never importing Twitch/EventSub/alerts internals),
+  while alert-specific binding-capability and legacy-draft logic lives
+  in `internal/domain/alerts` beside it rather than inside it. Stage 13B
+  (chat overlay designer) is planned to reuse the same shared document
+  and React renderer for chat overlays; stage 13 as a whole is not
+  complete until it lands too - see
+  [`docs/progress.md`](progress.md)'s Stage 13A entries and
+  [`docs/visual-designs.md`](visual-designs.md) for the document
+  contract itself.
+- Stage 14 (templates) needs stage 13's designer output format - the
+  document stage 13A already defines is intended to become stage 14's
+  template payload later, but stage 13A deliberately does not implement
+  any template packaging, import/export, or gallery itself.
 - Stage 17 (TTS) and stage 18 (goals/widgets) consume stage 8's bus directly
   and do not depend on the designers.
 
