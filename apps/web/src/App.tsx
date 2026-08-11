@@ -7,6 +7,7 @@ import { i18n } from '@/i18n';
 import { AlertDesignerPage } from '@/pages/AlertDesignerPage';
 import { AlertsPage } from '@/pages/AlertsPage';
 import { AutomationPage } from '@/pages/AutomationPage';
+import { ChatOverlayDesignerPage } from '@/pages/ChatOverlayDesignerPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
@@ -37,6 +38,9 @@ export function App() {
                 viewport for its own canvas/panel layout and top bar -
                 see AlertDesignerPage's own doc comment. */}
             <Route path="/alerts/rules/:ruleId/designer" element={<AlertDesignerPage />} />
+            {/* No AppShell here either - see ChatOverlayDesignerPage's own
+                doc comment. */}
+            <Route path="/overlays/:overlayId/designer" element={<ChatOverlayDesignerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             {/* No AppShell: a standalone Browser Source page, never the

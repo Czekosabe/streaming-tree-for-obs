@@ -1,0 +1,36 @@
+{
+  "page": {
+    "title": "Kreator nakładki czatu",
+    "backToOverlays": "Wstecz"
+  },
+  "preview": {
+    "scenario": {
+      "message": "Wiadomość",
+      "long_message": "Długa wiadomość",
+      "very_long_username": "Bardzo długa nazwa użytkownika",
+      "missing_avatar": "Brak awatara",
+      "no_badges": "Brak odznak",
+      "subscriber_badge": "Odznaka subskrybenta",
+      "moderator_badge": "Odznaka moderatora",
+      "vip_broadcaster": "VIP + nadawca",
+      "message_with_emote": "Wiadomość z emotikoną",
+      "message_with_mention": "Wiadomość ze wzmianką",
+      "multiple_badges": "Wiele odznak",
+      "account_label_present": "Etykieta konta obecna",
+      "account_label_absent": "Etykieta konta nieobecna",
+      "follow": "Obserwacja",
+      "subscription": "Subskrypcja",
+      "gifted_subscription": "Podarowana subskrypcja",
+      "subscription_gift_batch": "Pakiet podarowanych subskrypcji",
+      "bits": "Bits",
+      "raid": "Najazd",
+      "channel_point_redemption": "Wymiana punktów kanału",
+      "deleted_placeholder": "Zastępnik usuniętej wiadomości"
+    }
+  },
+  "designerLink": {
+    "openDesigner": "Otwórz kreator",
+    "controlledByDesigner": "Prezentacją zarządza kreator",
+    "legacyDescription": "Ta nakładka używa stałej prezentacji (czcionka, kolory, dymek) poniżej."
+  }
+}

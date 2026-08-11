@@ -4,10 +4,9 @@ import type { PublicChatOverlayConfig, PublicChatOverlayItem } from '@/api/chat-
 import { cn } from '@/lib/cn';
 import type { ChatOverlayLeavingItem as LeavingItemEntry } from '@/models/chat-overlay-reducer';
 
-import { OverlayActivity } from './OverlayActivity';
+import { OverlayItemContent } from './OverlayItemContent';
 import { OverlayLeavingItem } from './OverlayLeavingItem';
-import { OverlayMessage } from './OverlayMessage';
-import { entryAnimationClassName, overlayContainerStyle, overlayItemStyle } from './overlay-style';
+import { entryAnimationClassName, overlayContainerStyle } from './overlay-style';
 
 function supportsMatchMedia(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function';
@@ -112,14 +111,10 @@ export function ChatOverlayRenderer({
           <div
             key={entry.id}
             className={cn('w-full max-w-full', entryClass)}
-            style={overlayItemStyle(config)}
             data-testid="chat-overlay-item"
+            data-rendering-mode={config.renderingMode}
           >
-            {entry.item.kind === 'message' ? (
-              <OverlayMessage item={entry.item} config={config} />
-            ) : (
-              <OverlayActivity item={entry.item} config={config} />
-            )}
+            <OverlayItemContent item={entry.item} config={config} prefersReducedMotion={prefersReducedMotion} />
           </div>
         );
       })}

@@ -15,6 +15,7 @@ import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
+  CANVAS_CHAT_ITEM,
   CANVAS_LANDSCAPE,
   CANVAS_VERTICAL,
   MAX_BADGE_COUNT,
@@ -140,14 +141,20 @@ export function DesignerPropertiesPanel({
   );
 }
 
+/** Every built-in canvas preset both designers offer (Stage 13B task
+ * Part 25) - Landscape/Vertical from Stage 13A, Chat item added in
+ * Stage 13B. Available in both designers rather than gated per owner:
+ * a preset is just a starting size, never itself owner-specific. */
+const CANVAS_PRESETS = [
+  { value: 'landscape', size: CANVAS_LANDSCAPE, labelKey: 'properties.presetLandscape' },
+  { value: 'vertical', size: CANVAS_VERTICAL, labelKey: 'properties.presetVertical' },
+  { value: 'chat_item', size: CANVAS_CHAT_ITEM, labelKey: 'properties.presetChatItem' },
+] as const;
+
 function CanvasProperties({ canvas, onChange }: { canvas: VisualDesignCanvas; onChange: (canvas: VisualDesignCanvas) => void }) {
   const { t } = useTranslation('alertDesigner');
-  const preset =
-    canvas.width === CANVAS_LANDSCAPE.width && canvas.height === CANVAS_LANDSCAPE.height
-      ? 'landscape'
-      : canvas.width === CANVAS_VERTICAL.width && canvas.height === CANVAS_VERTICAL.height
-        ? 'vertical'
-        : 'custom';
+  const matched = CANVAS_PRESETS.find((p) => p.size.width === canvas.width && p.size.height === canvas.height);
+  const preset = matched?.value ?? 'custom';
 
   return (
     <div className="mt-3 space-y-3">
@@ -159,13 +166,12 @@ function CanvasProperties({ canvas, onChange }: { canvas: VisualDesignCanvas; on
             value={preset}
             data-testid="designer-canvas-preset"
             options={[
-              { value: 'landscape', label: t('properties.presetLandscape') },
-              { value: 'vertical', label: t('properties.presetVertical') },
+              ...CANVAS_PRESETS.map((p) => ({ value: p.value, label: t(p.labelKey) })),
               { value: 'custom', label: t('properties.presetCustom') },
             ]}
             onChange={(e) => {
-              if (e.target.value === 'landscape') onChange({ ...canvas, ...CANVAS_LANDSCAPE });
-              else if (e.target.value === 'vertical') onChange({ ...canvas, ...CANVAS_VERTICAL });
+              const found = CANVAS_PRESETS.find((p) => p.value === e.target.value);
+              if (found !== undefined) onChange({ ...canvas, width: found.size.width, height: found.size.height });
             }}
           />
         )}

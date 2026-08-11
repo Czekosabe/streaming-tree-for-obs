@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import type { ChatOverlayEditableFields } from '@/api/chat-overlay-schemas';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +9,7 @@ import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { TextInput } from '@/components/ui/TextInput';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useChatOverlayQuery, useReplaceChatOverlayMutation } from '@/hooks/use-chat-overlay';
+import { useVisualDesignQuery } from '@/hooks/use-visual-design';
 import { editableFieldsEqual, toEditableFields } from '@/models/chat-overlay-config';
 
 import { OverlayAccountsPanel } from './OverlayAccountsPanel';
@@ -33,6 +35,8 @@ export function OverlayEditor({ overlayId }: { overlayId: string }) {
   const { t } = useTranslation('overlays');
   const profileQuery = useChatOverlayQuery(overlayId);
   const replace = useReplaceChatOverlayMutation(overlayId);
+  const designQuery = useVisualDesignQuery('chat-overlays', overlayId);
+  const designActive = designQuery.data?.persisted === true;
 
   const [draft, setDraft] = useState<ChatOverlayEditableFields | null>(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
@@ -111,12 +115,13 @@ export function OverlayEditor({ overlayId }: { overlayId: string }) {
       </Panel>
 
       <OverlayUrlPanel overlayId={overlayId} publicSlug={profileQuery.data.publicSlug} />
+      <DesignerLinkBanner overlayId={overlayId} />
       <OverlayPreviewPanel draft={draft} />
 
       <Panel>
         <PanelHeader title={t('settings.title')} />
         <PanelBody>
-          <OverlaySettingsForm draft={draft} onChange={setDraft} />
+          <OverlaySettingsForm draft={draft} onChange={setDraft} designActive={designActive} />
         </PanelBody>
       </Panel>
 
@@ -135,6 +140,36 @@ export function OverlayEditor({ overlayId }: { overlayId: string }) {
         onCancel={() => setConfirmingDiscard(false)}
         onConfirm={discardChanges}
       />
+    </div>
+  );
+}
+
+/** Stage 13B task Part 20/31 (mirrors alerts' own RuleManager.tsx
+ * DesignerLinkBanner exactly): the overlay editor must clearly state
+ * whether presentation is controlled by the Designer, and always offer
+ * a link to it - never two independently-editable panels that appear
+ * to control the same real output. Every field in `OverlaySettingsForm`
+ * below (behavior/filter/lifecycle settings: account selection, hidden
+ * users, blocked terms, bot/command filtering, activity-type selection,
+ * maxVisibleItems, message lifetime, stack direction) remains real,
+ * always-editable overlay behavior regardless of design mode - only the
+ * *visual* fields there (font, colors, bubble, animations) become
+ * legacy-fallback-only once a design is saved, per docs/visual-designs.md
+ * §23. */
+function DesignerLinkBanner({ overlayId }: { overlayId: string }) {
+  const { t } = useTranslation('chatOverlayDesigner');
+  const navigate = useNavigate();
+  const designQuery = useVisualDesignQuery('chat-overlays', overlayId);
+  const persisted = designQuery.data?.persisted === true;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-sunken p-3">
+      <p className="text-sm font-medium text-ink">
+        {persisted ? t('designerLink.controlledByDesigner') : t('designerLink.legacyDescription')}
+      </p>
+      <Button variant="secondary" onClick={() => navigate(`/overlays/${overlayId}/designer`)}>
+        {t('designerLink.openDesigner')}
+      </Button>
     </div>
   );
 }

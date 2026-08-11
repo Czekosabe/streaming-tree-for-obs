@@ -3,9 +3,8 @@ import { useEffect } from 'react';
 import type { PublicChatOverlayConfig } from '@/api/chat-overlay-schemas';
 import type { ChatOverlayLeavingItem as LeavingItemEntry } from '@/models/chat-overlay-reducer';
 
-import { OverlayActivity } from './OverlayActivity';
-import { OverlayMessage } from './OverlayMessage';
-import { exitAnimationClassName, exitAnimationFallbackMs, overlayItemStyle } from './overlay-style';
+import { OverlayItemContent } from './OverlayItemContent';
+import { exitAnimationClassName, exitAnimationFallbackMs } from './overlay-style';
 
 type OverlayLeavingItemProps = {
   entry: LeavingItemEntry;
@@ -46,16 +45,11 @@ export function OverlayLeavingItem({ entry, config, prefersReducedMotion, onComp
   return (
     <div
       className={exitClass}
-      style={overlayItemStyle(config)}
       data-testid="chat-overlay-leaving-item"
       data-remove-reason={entry.reason}
       onAnimationEnd={() => onComplete(itemId)}
     >
-      {entry.item.kind === 'message' ? (
-        <OverlayMessage item={entry.item} config={config} />
-      ) : (
-        <OverlayActivity item={entry.item} config={config} />
-      )}
+      <OverlayItemContent item={entry.item} config={config} prefersReducedMotion={prefersReducedMotion} />
     </div>
   );
 }

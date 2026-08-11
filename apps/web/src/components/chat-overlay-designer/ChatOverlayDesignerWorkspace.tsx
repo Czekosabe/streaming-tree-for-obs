@@ -2,17 +2,27 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import type { AlertEventTypeCapability, AlertProfile, AlertRule } from '@/api/alerts-schemas';
+import type { ChatOverlayProfile } from '@/api/chat-overlay-schemas';
 import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { platformDisplayName } from '@/components/visual-design/text-binding';
-import { useAlertPreviewMutation, useTestAlertRuleMutation } from '@/hooks/use-alerts';
+// Reused unchanged from the Alert Designer (Stage 13B task Part 25:
+// "avoid parallel AlertFoo / ChatFoo implementations for generic editor
+// mechanics") - every one of these is already owner-agnostic.
+import { DesignerCanvas } from '@/components/alert-designer/DesignerCanvas';
+import { DesignerLayersPanel } from '@/components/alert-designer/DesignerLayersPanel';
+import { DesignerPropertiesPanel } from '@/components/alert-designer/DesignerPropertiesPanel';
+import { DesignerTopBar } from '@/components/alert-designer/DesignerTopBar';
+import { chatItemDataContext } from '@/components/chat-overlay/chat-item-data-context';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
-  availableTextBindings,
-  createHistory,
+  CHAT_VISUAL_DESIGN_LAYER_KINDS,
+  CHAT_VISUAL_DESIGN_TEXT_BINDINGS,
+  VISUAL_DESIGN_LAYER_KINDS,
   createAvatarLayer,
+  createBadgeListLayer,
+  createHistory,
+  createMessageFragmentsLayer,
   createPlatformIconLayer,
   createShapeLayer,
   createTextLayer,
@@ -25,38 +35,36 @@ import {
   type History,
 } from '@/models/visualdesign';
 
-import { DesignerCanvas } from './DesignerCanvas';
-import { DesignerLayersPanel } from './DesignerLayersPanel';
-import { DesignerPropertiesPanel } from './DesignerPropertiesPanel';
-import { DesignerTopBar } from './DesignerTopBar';
-import { baseEventTypeForScenario, PREVIEW_SCENARIOS, previewScenarioFixture, type PreviewScenario } from './preview-scenarios';
+import { CHAT_PREVIEW_SCENARIOS, chatPreviewScenarioItem, type ChatPreviewScenario } from './preview-scenarios';
+
+const ALL_CHAT_LAYER_KINDS: readonly VisualDesignLayerKind[] = [...VISUAL_DESIGN_LAYER_KINDS, ...CHAT_VISUAL_DESIGN_LAYER_KINDS];
 
 function documentsEqual(a: VisualDesignDocument, b: VisualDesignDocument): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
- * The Alert Overlay Designer's own stateful editor (Stage 13A task
- * Part 26 onward). Owns the bounded undo/redo history, selection,
- * zoom/snapping, the deterministic local preview scenario, and the
- * save/delete/Test-Rule mutations. Every layer mutation goes through
- * `commitDraft` (one undo step) except live pointer-drag/numeric-typing
- * updates, which go through `updateDraft` (no history entry) until the
- * gesture completes (Stage 13A task Part 35).
+ * The Chat Overlay Designer's own stateful editor (Stage 13B), a
+ * structural mirror of AlertDesignerWorkspace.tsx reusing every generic
+ * editor mechanic unchanged - selection, bounded undo/redo, zoom/
+ * snapping, save/delete-with-revision-conflict, discard confirmation.
+ * The only genuinely chat-specific pieces are: the fixed (not event-
+ * type-driven) `availableBindings`, the two extra layer kinds, no
+ * "Test Rule"-equivalent action (chat has no real-queue synthetic test
+ * path the way alerts do), and preview scenarios built from ordinary
+ * `PublicChatOverlayItem` fixtures reusing the exact same
+ * `chatItemDataContext` mapping the real public overlay route uses.
  */
-export function AlertDesignerWorkspace({
-  rule,
-  profile,
-  eventTypeCapability,
+export function ChatOverlayDesignerWorkspace({
+  overlay,
   initialResponse,
 }: {
-  rule: AlertRule;
-  profile: AlertProfile;
-  eventTypeCapability: AlertEventTypeCapability | undefined;
+  overlay: ChatOverlayProfile;
   initialResponse: VisualDesignResponse;
 }) {
   const { t } = useTranslation('alertDesigner');
-  const { t: tAlerts } = useTranslation('alerts');
+  const { t: tChat } = useTranslation('chatOverlayDesigner');
+  const { t: tOverlays } = useTranslation('overlays');
   const navigate = useNavigate();
 
   const [history, setHistory] = useState<History<VisualDesignDocument>>(() => createHistory(initialResponse.document));
@@ -66,7 +74,7 @@ export function AlertDesignerWorkspace({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [snapping, setSnapping] = useState(true);
-  const [scenario, setScenario] = useState<PreviewScenario>('follow');
+  const [scenario, setScenario] = useState<ChatPreviewScenario>('message');
   const [conflict, setConflict] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
@@ -75,22 +83,9 @@ export function AlertDesignerWorkspace({
   const dirty = !documentsEqual(document_, savedDocument);
   const selectedLayer = document_.layers.find((l) => l.id === selectedLayerId) ?? null;
 
-  const saveMutation = useSaveVisualDesignMutation('alert-rules', rule.id);
-  const deleteMutation = useDeleteVisualDesignMutation('alert-rules', rule.id);
-  const testRuleMutation = useTestAlertRuleMutation();
-  const previewMutation = useAlertPreviewMutation();
+  const saveMutation = useSaveVisualDesignMutation('chat-overlays', overlay.id);
+  const deleteMutation = useDeleteVisualDesignMutation('chat-overlays', overlay.id);
 
-  const baseEventType = baseEventTypeForScenario(scenario);
-  useEffect(() => {
-    previewMutation.mutate({ template: rule.textTemplate, eventType: baseEventType, language: profile.language });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-render the fixture only when the scenario's own base event type or the rule's saved template changes
-  }, [baseEventType, rule.textTemplate]);
-
-  // A real browser tab close/refresh with unsaved changes gets the
-  // native confirmation prompt; the in-app "Back" button below shows
-  // its own ConfirmDialog for the normal in-app navigation case (Stage
-  // 13A task Part 35: "navigating away with unsaved changes requires
-  // confirmation").
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -111,25 +106,32 @@ export function AlertDesignerWorkspace({
   }
 
   function handleAddLayer(kind: VisualDesignLayerKind) {
-    // The Alert Designer's own DesignerLayersPanel only ever offers the
-    // four shared kinds (VISUAL_DESIGN_LAYER_KINDS, its default
-    // layerKinds) - message_fragments/badge_list are structurally
-    // unreachable from this UI, kept here only so this handler's own
-    // parameter type matches the shared, owner-agnostic
-    // DesignerLayersPanel prop exactly (Stage 13B task Part 25).
-    if (kind === 'message_fragments' || kind === 'badge_list') return;
     const order = document_.layers.length;
-    const frame = { x: 100, y: 100, width: 400, height: 200 };
-    const textFrame = { x: 100, y: 100, width: 400, height: 100 };
-    const smallFrame = { x: 100, y: 100, width: 96, height: 96 };
-    const layer: VisualDesignLayer =
-      kind === 'shape'
-        ? createShapeLayer(frame, order)
-        : kind === 'text'
-          ? createTextLayer(textFrame, order)
-          : kind === 'platform_icon'
-            ? createPlatformIconLayer(smallFrame, order)
-            : createAvatarLayer(smallFrame, order);
+    const frame = { x: 40, y: 40, width: document_.canvas.width - 80, height: 120 };
+    const textFrame = { x: 40, y: 40, width: document_.canvas.width - 80, height: 60 };
+    const smallFrame = { x: 40, y: 40, width: 64, height: 64 };
+    const badgeFrame = { x: 40, y: 40, width: 160, height: 24 };
+    let layer: VisualDesignLayer;
+    switch (kind) {
+      case 'shape':
+        layer = createShapeLayer(frame, order);
+        break;
+      case 'text':
+        layer = createTextLayer(textFrame, order, 'username');
+        break;
+      case 'platform_icon':
+        layer = createPlatformIconLayer(smallFrame, order);
+        break;
+      case 'avatar':
+        layer = createAvatarLayer(smallFrame, order);
+        break;
+      case 'message_fragments':
+        layer = createMessageFragmentsLayer(textFrame, order);
+        break;
+      case 'badge_list':
+        layer = createBadgeListLayer(badgeFrame, order);
+        break;
+    }
     withLayers((layers) => [...layers, layer]);
     setSelectedLayerId(layer.id);
   }
@@ -178,8 +180,6 @@ export function AlertDesignerWorkspace({
   }
 
   function handleReloadServerVersion() {
-    // A fresh reload is the simplest correct way to reload the server's
-    // own current version - never a silent client-side merge (Part 41).
     navigate(0);
   }
 
@@ -187,7 +187,7 @@ export function AlertDesignerWorkspace({
     deleteMutation.mutate(undefined, {
       onSuccess: () => {
         setResetConfirmOpen(false);
-        navigate('/alerts');
+        navigate('/overlays');
       },
     });
   }
@@ -197,28 +197,19 @@ export function AlertDesignerWorkspace({
       setDiscardConfirmOpen(true);
       return;
     }
-    navigate('/alerts');
+    navigate('/overlays');
   }
 
-  const fixture = useMemo(() => {
-    const base = previewScenarioFixture(scenario);
-    const baseEventType = baseEventTypeForScenario(scenario);
-    return {
-      ...base,
-      bindings: {
-        ...base.bindings,
-        renderedText: previewMutation.data?.renderedText ?? rule.textTemplate,
-        platform: platformDisplayName(base.providerId),
-        eventType: tAlerts(`rules.eventType.${baseEventType}`, { defaultValue: baseEventType }),
-      },
-    };
-  }, [scenario, previewMutation.data, rule.textTemplate, tAlerts]);
+  const fixture = useMemo(
+    () => chatItemDataContext(chatPreviewScenarioItem(scenario), tOverlays),
+    [scenario, tOverlays],
+  );
 
   return (
-    <div className="flex h-dvh flex-col bg-canvas" data-testid="alert-designer-workspace">
+    <div className="flex h-dvh flex-col bg-canvas" data-testid="chat-overlay-designer-workspace">
       <DesignerTopBar
-        itemName={rule.name}
-        backLabel={t('page.backToRules')}
+        itemName={overlay.name}
+        backLabel={tChat('page.backToOverlays')}
         dirty={dirty}
         saving={saveMutation.isPending}
         canUndo={history.past.length > 0}
@@ -227,23 +218,18 @@ export function AlertDesignerWorkspace({
         onZoomChange={setZoom}
         scenario={scenario}
         onScenarioChange={setScenario}
-        scenarios={PREVIEW_SCENARIOS}
-        scenarioLabel={(s) => t(`preview.scenario.${s}`)}
+        scenarios={CHAT_PREVIEW_SCENARIOS}
+        scenarioLabel={(s) => tChat(`preview.scenario.${s}`)}
         onBack={handleBack}
         onUndo={() => setHistory(undoHistory)}
         onRedo={() => setHistory(redoHistory)}
         onSave={handleSave}
         onResetToLegacy={() => setResetConfirmOpen(true)}
-        testAction={{
-          label: 'Test Rule',
-          onClick: () => testRuleMutation.mutate({ id: rule.id }),
-          pending: testRuleMutation.isPending,
-          succeeded: testRuleMutation.isSuccess,
-        }}
       />
       <div className="flex min-h-0 flex-1">
         <DesignerLayersPanel
           layers={document_.layers}
+          layerKinds={ALL_CHAT_LAYER_KINDS}
           selectedLayerId={selectedLayerId}
           onSelect={setSelectedLayerId}
           onAddLayer={handleAddLayer}
@@ -268,7 +254,7 @@ export function AlertDesignerWorkspace({
           canvas={document_.canvas}
           onCanvasChange={(canvas) => commitDraft({ ...document_, canvas })}
           layer={selectedLayer}
-          availableBindings={availableTextBindings(eventTypeCapability)}
+          availableBindings={CHAT_VISUAL_DESIGN_TEXT_BINDINGS}
           onLayerChange={(patch) => selectedLayerId !== null && handleUpdateLayer(selectedLayerId, patch)}
           snapping={snapping}
           onSnappingChange={setSnapping}
@@ -311,7 +297,7 @@ export function AlertDesignerWorkspace({
         title={t('discard.confirmTitle')}
         message={t('discard.confirmMessage')}
         confirmLabel={t('discard.confirmAction')}
-        onConfirm={() => navigate('/alerts')}
+        onConfirm={() => navigate('/overlays')}
         onCancel={() => setDiscardConfirmOpen(false)}
         destructive
       />

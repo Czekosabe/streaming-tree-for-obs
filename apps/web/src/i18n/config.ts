@@ -58,6 +58,7 @@ export const NAMESPACES = [
   'automation',
   'alerts',
   'alertDesigner',
+  'chatOverlayDesigner',
 ] as const;
 
 /** Namespace assumed when a component calls `t()` without naming one. */

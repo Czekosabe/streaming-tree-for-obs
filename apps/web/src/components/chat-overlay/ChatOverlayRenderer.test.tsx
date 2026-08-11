@@ -318,4 +318,55 @@ describe('ChatOverlayRenderer - exit animation', () => {
     expect(children[0]).toHaveAttribute('data-testid', 'chat-overlay-leaving-item');
     expect(children[1]).toHaveAttribute('data-testid', 'chat-overlay-item');
   });
+
+  // --- Stage 13B: design-driven rendering --------------------------------
+
+  function designDrivenConfig(): PublicChatOverlayConfig {
+    return baseConfig({
+      renderingMode: 'visual_design',
+      visualDesign: {
+        schemaVersion: 2,
+        canvas: { width: 960, height: 280, transparent: true },
+        layers: [
+          {
+            id: 'layer_username', kind: 'text',
+            frame: { x: 10, y: 10, width: 400, height: 60 }, opacity: 1,
+            text: {
+              binding: 'username', missingValueBehavior: 'hide',
+              fontFamily: 'system-ui', fontSize: 20, fontWeight: 700, lineHeight: 1.2, letterSpacing: 0,
+              textColor: '#FFFFFF', horizontalAlign: 'left', verticalAlign: 'middle',
+              outlineWidth: 0, outlineColor: '#000000',
+              shadowEnabled: false, shadowOffsetX: 0, shadowOffsetY: 0, shadowBlur: 0, shadowColor: '#000000',
+            },
+            entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+          },
+        ],
+      },
+    });
+  }
+
+  it('renders a design-driven item through the shared VisualDesignRenderer, using the item\'s own username binding', () => {
+    renderWithProviders(
+      <ChatOverlayRenderer config={designDrivenConfig()} items={[messageItem('a', 1)]} />,
+    );
+    expect(screen.getByTestId('visual-design-renderer')).toBeInTheDocument();
+    expect(screen.getByText('User a')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-overlay-item')).toHaveAttribute('data-rendering-mode', 'visual_design');
+  });
+
+  it('a design-driven overlay never renders the legacy bubble content for the same item', () => {
+    renderWithProviders(
+      <ChatOverlayRenderer config={designDrivenConfig()} items={[messageItem('a', 1)]} />,
+    );
+    expect(screen.queryByText('hello from a')).not.toBeInTheDocument();
+  });
+
+  it('falls back to legacy rendering when renderingMode is legacy, even with items present', () => {
+    renderWithProviders(
+      <ChatOverlayRenderer config={baseConfig()} items={[messageItem('a', 1)]} />,
+    );
+    expect(screen.queryByTestId('visual-design-renderer')).not.toBeInTheDocument();
+    expect(screen.getByText('hello from a')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-overlay-item')).toHaveAttribute('data-rendering-mode', 'legacy');
+  });
 });

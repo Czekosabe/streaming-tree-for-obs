@@ -10,6 +10,17 @@ import type { SelectOption } from '@/models/platform';
 type OverlaySettingsFormProps = {
   draft: ChatOverlayEditableFields;
   onChange: (next: ChatOverlayEditableFields) => void;
+  /** True once a visual design is saved for this overlay - the layout/
+   * alignment and font/color/animation/highlight sections below become
+   * legacy-fallback-only in that case (Stage 13B task Part 10/23: "the
+   * legacy controls remain stored so Reset to legacy restores the
+   * previous presentation... never two panels appearing to control the
+   * same output"). Filtering/lifecycle fields (account/hidden-user/
+   * blocked-term selection above this form, maxVisibleItems, message
+   * lifetime, and the bot/command/activity-type toggles below) remain
+   * fully authoritative regardless - only sections that are genuinely
+   * visual-presentation-only get the "legacy" framing. */
+  designActive?: boolean;
 };
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/;
@@ -36,8 +47,9 @@ const RANGES = {
  * draft-then-explicit-save state machine, Part 19). Never saves on its
  * own; every change flows back through `onChange`.
  */
-export function OverlaySettingsForm({ draft, onChange }: OverlaySettingsFormProps) {
+export function OverlaySettingsForm({ draft, onChange, designActive = false }: OverlaySettingsFormProps) {
   const { t } = useTranslation('overlays');
+  const { t: tChat } = useTranslation('chatOverlayDesigner');
 
   function set<K extends keyof ChatOverlayEditableFields>(key: K, value: ChatOverlayEditableFields[K]) {
     onChange({ ...draft, [key]: value });
@@ -107,42 +119,53 @@ export function OverlaySettingsForm({ draft, onChange }: OverlaySettingsFormProp
     );
   }
 
+  const legacySectionClassName = designActive
+    ? 'space-y-1 rounded-lg border border-line-strong/60 bg-surface-sunken/60 p-3'
+    : undefined;
+
   return (
     <div className="space-y-6">
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <FormField label={t('settings.layout')}>
-          {({ inputId }) => (
-            <SelectInput
-              id={inputId}
-              options={layoutOptions}
-              value={draft.layoutMode}
-              onChange={(e) => set('layoutMode', e.target.value as ChatOverlayEditableFields['layoutMode'])}
-            />
-          )}
-        </FormField>
-        <FormField label={t('settings.stackDirection')}>
-          {({ inputId }) => (
-            <SelectInput
-              id={inputId}
-              options={stackOptions}
-              value={draft.stackDirection}
-              onChange={(e) => set('stackDirection', e.target.value as ChatOverlayEditableFields['stackDirection'])}
-            />
-          )}
-        </FormField>
-        <FormField label={t('settings.horizontalAlignment')}>
-          {({ inputId }) => (
-            <SelectInput
-              id={inputId}
-              options={alignOptions}
-              value={draft.horizontalAlignment}
-              onChange={(e) =>
-                set('horizontalAlignment', e.target.value as ChatOverlayEditableFields['horizontalAlignment'])
-              }
-            />
-          )}
-        </FormField>
-      </section>
+      {designActive ? (
+        <p className="text-xs font-medium text-ink-muted" data-testid="overlay-legacy-presentation-label">
+          {tChat('designerLink.legacyDescription')}
+        </p>
+      ) : null}
+      <div className={legacySectionClassName}>
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <FormField label={t('settings.layout')}>
+            {({ inputId }) => (
+              <SelectInput
+                id={inputId}
+                options={layoutOptions}
+                value={draft.layoutMode}
+                onChange={(e) => set('layoutMode', e.target.value as ChatOverlayEditableFields['layoutMode'])}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.stackDirection')}>
+            {({ inputId }) => (
+              <SelectInput
+                id={inputId}
+                options={stackOptions}
+                value={draft.stackDirection}
+                onChange={(e) => set('stackDirection', e.target.value as ChatOverlayEditableFields['stackDirection'])}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.horizontalAlignment')}>
+            {({ inputId }) => (
+              <SelectInput
+                id={inputId}
+                options={alignOptions}
+                value={draft.horizontalAlignment}
+                onChange={(e) =>
+                  set('horizontalAlignment', e.target.value as ChatOverlayEditableFields['horizontalAlignment'])
+                }
+              />
+            )}
+          </FormField>
+        </section>
+      </div>
 
       <section className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         <ToggleSwitch label={t('settings.showPlatformIcon')} checked={draft.showPlatformIcon} onCheckedChange={(v) => set('showPlatformIcon', v)} />
@@ -184,6 +207,7 @@ export function OverlaySettingsForm({ draft, onChange }: OverlaySettingsFormProp
         </FormField>
       </section>
 
+      <div className={legacySectionClassName}>
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <FormField label={t('settings.fontFamily')}>
           {({ inputId }) => (
@@ -281,6 +305,7 @@ export function OverlaySettingsForm({ draft, onChange }: OverlaySettingsFormProp
         <ToggleSwitch label={t('settings.highlightSubscribers')} checked={draft.highlightSubscribers} onCheckedChange={(v) => set('highlightSubscribers', v)} />
         <ToggleSwitch label={t('settings.highlightVips')} checked={draft.highlightVips} onCheckedChange={(v) => set('highlightVips', v)} />
       </section>
+      </div>
 
       <section className="max-w-xs">
         <FormField label={t('settings.language')}>

@@ -4,17 +4,17 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { ZOOM_LEVELS_ARRAY } from '@/models/visualdesign';
 
-import { PREVIEW_SCENARIOS, type PreviewScenario } from './preview-scenarios';
-
 /**
  * The Designer's own top bar (Stage 13A task Part 26; shared by both
  * designers as of Stage 13B task Part 25): Back, name, unsaved
  * indicator, Undo/Redo, Fit/zoom, preview scenario, Save, Reset to
  * legacy, and an owner-specific "test" action (Test Rule for alerts;
  * chat has no equivalent live-queue action, so the Chat Overlay
- * Designer omits it by passing no `onTestAction`).
+ * Designer omits it by passing no `onTestAction`). `scenarios`/
+ * `scenarioLabel` are owner-supplied so this component never imports
+ * either designer's own preview-scenarios.ts module.
  */
-export function DesignerTopBar({
+export function DesignerTopBar<TScenario extends string>({
   itemName,
   backLabel,
   dirty,
@@ -25,6 +25,8 @@ export function DesignerTopBar({
   onZoomChange,
   scenario,
   onScenarioChange,
+  scenarios,
+  scenarioLabel,
   onBack,
   onUndo,
   onRedo,
@@ -40,8 +42,10 @@ export function DesignerTopBar({
   canRedo: boolean;
   zoom: number;
   onZoomChange: (zoom: number) => void;
-  scenario: PreviewScenario;
-  onScenarioChange: (scenario: PreviewScenario) => void;
+  scenario: TScenario;
+  onScenarioChange: (scenario: TScenario) => void;
+  scenarios: readonly TScenario[];
+  scenarioLabel: (scenario: TScenario) => string;
   onBack: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -101,8 +105,8 @@ export function DesignerTopBar({
         {t('preview.title')}
         <SelectInput
           value={scenario}
-          onChange={(e) => onScenarioChange(e.target.value as PreviewScenario)}
-          options={PREVIEW_SCENARIOS.map((s) => ({ value: s, label: t(`preview.scenario.${s}`) }))}
+          onChange={(e) => onScenarioChange(e.target.value as TScenario)}
+          options={scenarios.map((s) => ({ value: s, label: scenarioLabel(s) }))}
           data-testid="designer-scenario-select"
         />
       </label>

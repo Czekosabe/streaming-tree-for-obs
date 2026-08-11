@@ -14598,3 +14598,140 @@ the next commit.
 `feat(web): add chat overlay designer` - the new route, workspace,
 preview scenarios, and the public `ChatOverlayRenderer.tsx`'s own
 design-driven branch.
+
+## 2026-08-11 14:05 — feat(web): add chat overlay designer
+
+### Status
+The Chat Overlay Designer itself, on top of the previous two commits'
+shared foundations and backend API - Stage 13B's frontend is now
+functionally complete.
+
+### What
+- `components/chat-overlay/chat-item-data-context.ts` (new):
+  `chatItemDataContext(item, t)` builds a `VisualDesignDataContext` from
+  an ordinary `PublicChatOverlayItem` - the one mapping both the real
+  public route and every preview fixture share, so there is exactly one
+  place "how a chat item becomes renderer input" is defined. Reuses
+  `OverlayActivity.tsx`'s own `ACTIVITY_TYPE_KEYS` so a design-driven
+  `event_type` binding shows the identical label the legacy renderer
+  already would.
+- `components/chat-overlay/OverlayItemContent.tsx` (new): the
+  legacy-vs-design-driven branch point, shared by both
+  `ChatOverlayRenderer.tsx`'s own active-item render and
+  `OverlayLeavingItem.tsx` - a design-driven item is wrapped in a fixed-
+  aspect-ratio box (`aspectRatio: canvas.width/canvas.height`) so the
+  shared renderer's own contain-scale exactly fills it; the item's own
+  entry/exit animation wrapper (the profile's legacy
+  entryAnimation/exitAnimation/animationDurationMs) stays owned by the
+  caller regardless of mode - mirroring how `AlertRenderer.tsx`'s own
+  outer wrapper also stays uniform across legacy/design-driven content.
+- `ChatOverlayRenderer.tsx`/`OverlayLeavingItem.tsx`: both now delegate
+  to `OverlayItemContent`, deleting their own former direct
+  `OverlayMessage`/`OverlayActivity` dispatch.
+- `hooks/use-chat-overlay-stream.ts`/`pages/OverlayChatPage.tsx` (from
+  the previous commit): the public route already refetches its config
+  on `chat-overlay.presentation` - this commit is what actually makes
+  that refetch produce a visibly different render.
+- `components/chat-overlay-designer/preview-scenarios.ts` (new): 21
+  deterministic local fixtures (Stage 13B task Part 27) as ordinary
+  `PublicChatOverlayItem` values, so `chatItemDataContext` needs no
+  second, duplicated mapping for preview vs. real data.
+- `components/chat-overlay-designer/ChatOverlayDesignerWorkspace.tsx`
+  (new): a structural mirror of `AlertDesignerWorkspace.tsx`, reusing
+  `DesignerCanvas`/`DesignerLayersPanel`/`DesignerPropertiesPanel`/
+  `DesignerTopBar` completely unchanged (Stage 13B task Part 25) - the
+  only genuinely chat-specific pieces are the fixed
+  `CHAT_VISUAL_DESIGN_TEXT_BINDINGS` availability (not event-type-
+  driven), the two extra layer kinds in its own `layerKinds` list, no
+  `testAction` (chat has no real-queue synthetic-test equivalent the
+  way alerts do), and preview scenarios built from
+  `chatItemDataContext`.
+- `pages/ChatOverlayDesignerPage.tsx` (new) + `/overlays/{id}/designer`
+  route in `App.tsx` - a structural mirror of `AlertDesignerPage.tsx`.
+- `components/overlays/OverlayEditor.tsx`: new `DesignerLinkBanner`
+  (mirrors `RuleManager.tsx`'s own exactly) linking to the Designer and
+  stating whether presentation is design-controlled.
+- `components/overlays/OverlaySettingsForm.tsx`: new optional
+  `designActive` prop - when true, the layout/alignment section and the
+  font/color/animation/highlight sections (the parts of this form that
+  are genuinely visual-presentation-only) are wrapped in a labeled
+  "legacy presentation" box; the filtering/lifecycle sections
+  (show/hide toggles mixing behavior and visual concerns,
+  maxVisibleItems, message lifetime) are left in their existing,
+  always-fully-editable form - see this commit's own "Known
+  limitations" below for why that split is not more granular.
+- Generalized two more Alert Designer components to be genuinely
+  shared: `DesignerTopBar` now takes `scenarios`/`scenarioLabel` as
+  props instead of importing the alert-specific preview-scenarios.ts
+  module directly (generic over `TScenario extends string`);
+  `DesignerPropertiesPanel`'s `CanvasProperties` now offers all three
+  canvas presets (Landscape/Vertical/Chat item) to both designers
+  rather than hardcoding two.
+- `i18n/resources/{en,pl}/chatOverlayDesigner.json` (new namespace):
+  page title/back label, the 21 preview-scenario labels, and the
+  designer-link banner strings. Every other Designer chrome string
+  (Undo/Redo/layer properties/typography/Reset to legacy/discard/
+  revision-conflict) is reused directly from the existing
+  `alertDesigner` namespace, deliberately not duplicated into a second
+  namespace - it was already generic UI text, not alert-specific
+  wording.
+
+### Tests
+`preview-scenarios.test.ts` (chat), `chat-item-data-context.test.ts`,
+`ChatOverlayDesignerWorkspace.test.tsx` (17 tests - load/no-autosave,
+Save disabled until dirty, adding both new layer kinds, no Test-Rule-
+equivalent action present, the binding selector marking
+`alert_rendered_text` unavailable rather than removing it, duplicate/
+delete, undo/redo, Save/409/Reset-to-legacy/discard, changing the
+preview scenario never saves, the preview canvas actually reflecting
+the selected scenario), `ChatOverlayDesignerPage.test.tsx` (loading/
+error/happy path), and three new tests in `ChatOverlayRenderer.test.tsx`
+(a design-driven item renders through the shared renderer using its
+own username binding, never the legacy bubble content for the same
+item, and a legacy-mode overlay never renders `VisualDesignRenderer`
+even with items present).
+
+### Technical decisions
+- **Why item sizing uses CSS `aspect-ratio` rather than a fixed pixel
+  box**: the overlay column's own width is already responsive (the
+  existing `max-w-[720px]`/`max-w-full` classes, unchanged by this
+  commit); `aspect-ratio: canvas.width / canvas.height` lets each
+  design-driven item's box scale with that existing responsive width
+  while staying locked to the saved design's own proportions, so
+  `VisualDesignRenderer`'s own contain-scale (which centers/letterboxes
+  for a *mismatched* aspect ratio) never actually needs to letterbox in
+  the normal case - the box IS the design's own shape.
+- **Why `OverlayItemContent` is a new shared component rather than a
+  branch duplicated in both `ChatOverlayRenderer.tsx` and
+  `OverlayLeavingItem.tsx`**: those two call sites already existed
+  before this stage and both needed the identical legacy-vs-design
+  branch; a shared component is the only way to guarantee they can
+  never drift apart on which fields are safe to show.
+
+### Known limitations
+`OverlaySettingsForm`'s "legacy presentation" labeling covers the two
+sections that are unambiguously visual-only (layout/alignment,
+font/color/animation/highlight) but does not re-classify every
+individual show/hide toggle field-by-field - several of those toggles
+(`showAvatar`, `showBadges`, `showTimestamp`, `showAccountLabel`,
+`showPlatformIcon`, `showPlatformName`, `showDeletedPlaceholder`) are
+visual-presentation settings that become legacy-fallback-only once a
+design is active, while others in the same section
+(`showActivityEvents`, `hideCommands`, `hideBots`) are genuine content
+filters that must remain authoritative regardless - this commit did not
+split that one mixed section field-by-field. The `DesignerLinkBanner`'s
+own top-level "Presentation controlled by Designer" statement remains
+the authoritative signal for an operator either way. No dedicated test
+file exists yet for `OverlaySettingsForm.tsx`/`OverlayEditor.tsx`
+(neither did before this stage); the new `designActive` behavior is
+exercised only indirectly.
+
+### Automated validation
+`npm run i18n:check` (2 languages, 16 namespaces, no diff), `npm run
+typecheck`, `npm run lint`, `npm run test -- --run` (**1104 tests
+pass, 80 test files** - 42 new tests added, zero regressions), `npm
+run build` - all clean.
+
+### Next step
+The 14th integration script, `scripts/verify-chat-overlay-designer.mjs`,
+run at least twice.

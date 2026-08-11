@@ -1,0 +1,36 @@
+{
+  "page": {
+    "title": "Chat Overlay Designer",
+    "backToOverlays": "Back"
+  },
+  "preview": {
+    "scenario": {
+      "message": "Message",
+      "long_message": "Long message",
+      "very_long_username": "Very long username",
+      "missing_avatar": "Missing avatar",
+      "no_badges": "No badges",
+      "subscriber_badge": "Subscriber badge",
+      "moderator_badge": "Moderator badge",
+      "vip_broadcaster": "VIP + broadcaster",
+      "message_with_emote": "Message with emote",
+      "message_with_mention": "Message with mention",
+      "multiple_badges": "Multiple badges",
+      "account_label_present": "Account label present",
+      "account_label_absent": "Account label absent",
+      "follow": "Follow",
+      "subscription": "Subscription",
+      "gifted_subscription": "Gifted subscription",
+      "subscription_gift_batch": "Gift sub batch",
+      "bits": "Bits",
+      "raid": "Raid",
+      "channel_point_redemption": "Channel point redemption",
+      "deleted_placeholder": "Deleted message placeholder"
+    }
+  },
+  "designerLink": {
+    "openDesigner": "Open Designer",
+    "controlledByDesigner": "Presentation controlled by Designer",
+    "legacyDescription": "This overlay uses the fixed presentation (font, colors, bubble) below."
+  }
+}

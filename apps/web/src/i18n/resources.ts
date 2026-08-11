@@ -3,6 +3,7 @@ import enAlertDesigner from './resources/en/alertDesigner.json';
 import enAlerts from './resources/en/alerts.json';
 import enAutomation from './resources/en/automation.json';
 import enChat from './resources/en/chat.json';
+import enChatOverlayDesigner from './resources/en/chatOverlayDesigner.json';
 import enCommon from './resources/en/common.json';
 import enDashboard from './resources/en/dashboard.json';
 import enEngagement from './resources/en/engagement.json';
@@ -18,6 +19,7 @@ import plAlertDesigner from './resources/pl/alertDesigner.json';
 import plAlerts from './resources/pl/alerts.json';
 import plAutomation from './resources/pl/automation.json';
 import plChat from './resources/pl/chat.json';
+import plChatOverlayDesigner from './resources/pl/chatOverlayDesigner.json';
 import plCommon from './resources/pl/common.json';
 import plDashboard from './resources/pl/dashboard.json';
 import plEngagement from './resources/pl/engagement.json';
@@ -55,6 +57,7 @@ export const enResources = {
   automation: enAutomation,
   alerts: enAlerts,
   alertDesigner: enAlertDesigner,
+  chatOverlayDesigner: enChatOverlayDesigner,
 } as const;
 
 const plResources = {
@@ -73,6 +76,7 @@ const plResources = {
   automation: plAutomation,
   alerts: plAlerts,
   alertDesigner: plAlertDesigner,
+  chatOverlayDesigner: plChatOverlayDesigner,
 } as const;
 
 export const resources = {
