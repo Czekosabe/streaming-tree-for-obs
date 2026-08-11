@@ -15340,3 +15340,73 @@ None.
 ### Next step
 `docs/visual-templates.md` - the canonical Stage 14A template-format/library
 contract, written before any template code is implemented.
+
+## 2026-08-11 18:45 — docs: define safe visual template format
+
+### What
+`docs/visual-templates.md` (new), the canonical Stage 14A contract, written
+**before** any template code exists (this task's own explicit ordering
+requirement - the domain/backend implementation that follows was designed
+directly against this document, not the other way around).
+
+### Scope
+Defines, in order: the three-schema distinction (visual-design document A,
+template-interchange B, future archive C, never conflated); the exact §3
+JSON file shape (`format`/`schemaVersion`/`target`/`name`/`description`/
+`author`/`license`/`visualDesign`) and its bounded metadata; why template
+schema version and visual-design document version are two independent
+counters (§5, with a worked example); the explicit migrate-then-validate
+contract for an imported older embedded document, and what is rejected
+outright (§6); the `visual_templates` persistence shape and what it
+deliberately never stores (§7); the built-in registry model - immutable,
+never SQLite rows, never downloaded, id-namespace-separated from user
+templates (§8); the provider-independent compatibility engine and its five
+stable blocker codes (§9); the hard "draft-first, never automatic" template-
+application rule, mirrored exactly from Stage 13's own explicit-Save
+discipline (§10); the "no provenance link back to a template" rule and why
+deleting a template can never affect an already-created design (§11); the
+full, explicit list of what Stage 14A does not implement, split from what
+Stage 14B is left to decide later, including the not-yet-decided
+sound-asset-ownership question (§12); public/private field discipline,
+import limits/validation, the "static text is never markup" structural
+security argument, export/filename safety, and privacy/logging bounds
+(§13-§17); the full stable-error-code table (§18); the closed API surface,
+explicitly a management/editor surface never exposed publicly (§19); and an
+implementation map naming the exact files/packages the next commits build
+(§20).
+
+### Files changed
+`docs/visual-templates.md` (new).
+
+### Technical decisions
+- **Why template schema version and document version must never be
+  conflated, made concrete with a worked example** (§5) - this is the one
+  idea most likely to cause a real bug later (e.g. bumping one when only the
+  other changed), so the contract states it twice: once abstractly (§ intro)
+  and once as a literal worked example immediately after.
+- **Why compatibility is a read-only assessment, never a mutation** (§9) -
+  stated as its own explicit rule, matching this task's own instruction, so
+  a future change is never tempted to "fix" an incompatible template by
+  silently editing it.
+- **Why the implementation map (§20) names exact files before they exist** -
+  committing the contract first, then building exactly what it describes,
+  makes the contract the source of truth an implementation is checked
+  against, not a retrospective description written after the fact (unlike
+  the drift `fix(docs): correct current visual design contract` just
+  corrected for Stage 13A/13B's own docs).
+
+### Automated validation
+Documentation only - no code changed yet. The domain/backend implementation
+in the next commit was written directly against this contract and its own
+automated tests (see that commit's entry) are the executable proof this
+document's own claims hold.
+
+### Known limitations
+None - by design, §12 lists every deliberate omission explicitly rather than
+leaving any of them implicit.
+
+### Next step
+Implement the backend: `internal/domain/visualtemplate` (domain package),
+migration `0017_visual_templates.sql`, the SQLite repository, and the
+`/api/visual-templates/...` HTTP API - built directly against this
+contract.
