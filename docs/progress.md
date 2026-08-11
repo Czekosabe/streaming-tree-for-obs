@@ -16246,3 +16246,76 @@ local HEAD match and the tree is clean.
 ### Next step
 None for this corrective pass - it is complete. Stage 14B remains
 planned and not started.
+
+## 2026-08-11 19:45 — docs: define application update target
+
+### What
+Documentation only, written ahead of Stage 14B implementation, at the
+explicit request that accompanies the Stage 14B task: the required Windows
+application update system (GitHub Releases source, SemVer-like versioning,
+manual + automatic metadata-only checks, a non-blocking update-available
+banner, an active-stream install guard, HTTPS+SHA-256-verified downloads,
+an installer/updater handoff that a running executable cannot perform on
+itself, an explicit never-erase-data-on-failure model, and a privacy
+statement covering what the checker must never transmit) is captured now so
+Stage 14B's own asset-storage/package design never accidentally conflicts
+with it later. Nothing described here is implemented - no update checking,
+no GitHub networking, no release download, no installer launch, no restart
+logic. That remains Stage 20's own job.
+
+### Files changed
+- `docs/project-overview.md` - new §12.1.1 "Application update system
+  (Stage 20, documentation only)", appended directly inside §12.1 (the
+  existing Windows packaging target subsection) rather than as a new
+  top-level section, since an update system only makes sense once the
+  one-launch packaged application it updates already exists. Covers, in
+  order: release source (GitHub Releases only, never `main`/arbitrary
+  commits/arbitrary URLs/mirrors), versioning (SemVer-like, Stable channel
+  only for the first implementation), the manual "Check for updates"
+  surface, automatic periodic metadata-only checks with a persisted
+  opt-out toggle, the non-blocking update-available banner, the
+  active-stream install guard (checking allowed while streaming, installing
+  is not), download/verification (HTTPS, bounded size, SHA-256 against the
+  project's own release metadata, no arbitrary frontend-supplied URL,
+  Authenticode code signing named as a thing to investigate before public
+  distribution - not claimed to exist), the installer/updater handoff
+  (graceful shutdown of the HTTP server/FFmpeg children/MediaMTX/database,
+  data preservation, an external installer/updater process since a running
+  `.exe` cannot overwrite itself), the failure model (every failure mode
+  leaves the current installation running and usable), and the privacy
+  statement (explicit network feature, no telemetry implied, stream keys/
+  OAuth tokens/template contents/visual assets/chat/destination metadata
+  never transmitted to the release service).
+
+### Technical decisions
+- **Why a nested §12.1.1 rather than a new top-level §12.2 or a separate
+  document.** The update system only exists to keep the Stage 20 packaged
+  application (§12.1) current - nesting it under that same subsection keeps
+  the one coherent "what Stage 20 ships" narrative in one place, the same
+  judgment already used for Stage 8.1's own nested subsection.
+- **Why this is written now, before any Stage 14B code.** Stage 14B is the
+  first stage to introduce binary asset storage (`<app-data>/assets/
+  visual/`) and a temporary-file convention (`<app-data>/tmp/template-
+  previews/`) - both under the same per-user application-data root an
+  eventual updater must preserve across an install. Writing the update
+  target's data-preservation requirement first (rather than discovering it
+  retroactively in Stage 20) is the same "document before implementation
+  decisions get made first" discipline §12.1 itself and
+  `docs/visual-templates.md` already established for the two prior stages.
+- **Why the scope statement is explicit and repeated.** The task
+  requesting this note was explicit that Stage 14B must not implement any
+  part of the update system itself - restating that boundary directly in
+  the doc (not just in this journal) prevents a future stage from reading
+  §12.1.1 as already-built.
+
+### Automated validation
+Documentation only - no code changed.
+
+### Known limitations
+None.
+
+### Next step
+`docs/visual-template-packages.md` - the canonical Stage 14B package/
+archive/managed-asset contract, written before any package or asset code
+is implemented, exactly as `docs/visual-templates.md` preceded Stage 14A's
+own template code.

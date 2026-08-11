@@ -984,6 +984,94 @@ first need its own separate licensing/distribution audit (mirroring the one
 already done for MediaMTX, §7.4) - nothing here should be read as that
 decision having already been made.
 
+### 12.1.1 Application update system (Stage 20, documentation only)
+
+This subsection states the intended **end-user application update system**
+now, deliberately ahead of implementation, for the same reason as §12.1
+itself: so no interim stage (Stage 14B onward) accidentally builds something
+that would conflict with it. **Nothing described here is implemented. Stage
+14B explicitly does not implement update checking, GitHub networking,
+release downloads, installer launching, or restart logic** - this is an
+architecture target for Stage 20 only.
+
+**Release source.** Normal production releases are expected to be published
+through the canonical GitHub repository's GitHub Releases. The application
+must **never** update from: branch `main`, arbitrary commit artifacts,
+arbitrary user-supplied URLs, release-note links, or an untrusted mirror.
+Stage 20 must research the then-current official GitHub Releases API before
+implementation rather than hard-coding today's remembered API behavior.
+
+**Versioning.** Releases use a SemVer-like `major.minor.patch`. A dev/
+non-release build must not accidentally behave as an updateable production
+release. The installed version is read from the application's own build
+metadata, never from the frontend. The initial release channel is **Stable
+only** - beta/nightly channels are not planned into the first
+implementation unless a later requirement adds them.
+
+**Manual check.** Settings must eventually provide a "Check for updates"
+action showing: current version, latest stable version, last successful
+check time, whether an update is available, and a useful nonfatal offline/
+check-failed state.
+
+**Automatic update checks.** Default behavior: check shortly after startup,
+then periodically (roughly every 60 minutes) while running, gated by a
+persisted Settings toggle ("Automatically check for updates"). Automatic
+checking means **metadata checking only** - never automatic installation,
+restart, stream-stopping, or auto-download-and-launch. A failed check must
+never affect streaming or normal use.
+
+**Update-available UI.** A non-blocking banner shows the current version,
+the new version, and release notes/changelog in a safe, text-oriented
+presentation (never arbitrary HTML/JS), with "Later" and "Update now"
+actions.
+
+**Active-stream guard.** Checking for updates is allowed while streaming;
+**installing is not**. If ingest is receiving, or any destination is
+desired-running/live/restarting/starting (or an equivalent real runtime
+state Stage 20 discovers at implementation time), "Update now" must not
+silently terminate the stream - the UI must explain that streaming is
+active, keep the update available, and require the operator to stop
+streaming first. Stage 20 must not invent an automatic forced stop/update/
+restart path.
+
+**Download and verification.** A canonical GitHub Release identity and the
+exact expected app version, over HTTPS, with a bounded download size,
+verified by cryptographic SHA-256 against release metadata from the
+project's own release pipeline - never an arbitrary download URL supplied
+by the frontend. Downloads land in a safe temporary location; failed
+verification deletes or quarantines the candidate and leaves the current
+installation untouched. Stage 20 should additionally investigate Windows
+Authenticode code signing before public production distribution - this
+document does not claim code signing exists until it actually does.
+
+**Installation.** A running Windows executable cannot safely overwrite
+itself, so this requires a deliberate installer/updater handoff: verified
+package, graceful shutdown, an external installer/updater process, install/
+replace, restart. The exact implementation strategy is Stage 20's own
+decision. Requirements on the handoff: shut down the HTTP server cleanly,
+stop every owned FFmpeg child process, stop the owned MediaMTX process,
+close the database cleanly, and preserve application data, managed visual
+assets, templates, the managed MediaMTX installation where compatible, and
+OS credential-store entries - an update must never erase data because it
+failed.
+
+**Failure model.** A download failure leaves the current app running; a
+verification failure leaves the current app running; an installer-launch
+failure leaves the old installed app usable; an interrupted installation
+must not leave a half-written executable as the only runnable copy. Stage
+20 must select an installer/updater strategy with atomic/recoverable
+replacement semantics.
+
+**Privacy and network behavior.** The update checker is an explicit
+application network feature, to be documented clearly in Settings and the
+README once implemented, with no implied telemetry. It must never transmit
+stream keys, OAuth tokens, template contents, visual assets, chat, or
+destination metadata to the release service.
+
+**Scope statement.** The update system described in this subsection is
+**required** for the final packaged application, but it is **not**
+implemented in Stage 14B.
+
 ---
 
 ## 13. Roadmap
