@@ -216,4 +216,116 @@ describe('VisualDesignRenderer', () => {
     );
     expect(screen.getAllByTestId('visual-design-badge')).toHaveLength(1);
   });
+
+  // --- Stage 14B: image/video layers ------------------------------------
+
+  it('renders an image layer whose url is already resolved (public shape)', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_img', kind: 'image', frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+      image: { fit: 'contain', alt: 'Badge', url: '/api/public/visual-assets/tok1', mediaType: 'image/png' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion={false} />,
+    );
+    const img = screen.getByTestId('visual-design-image');
+    expect(img).toHaveAttribute('src', '/api/public/visual-assets/tok1');
+    expect(img).toHaveAttribute('alt', 'Badge');
+  });
+
+  it('resolves an image layer via assetMap when only a local assetId is present (management shape)', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_img', kind: 'image', frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+      image: { assetId: 'asset_1', fit: 'contain' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer
+        canvas={canvas}
+        layers={[layer]}
+        dataContext={baseDataContext()}
+        mode="preview"
+        prefersReducedMotion={false}
+        assetMap={{ asset_1: { url: '/api/public/visual-assets/tok-managed', mediaType: 'image/png' } }}
+      />,
+    );
+    expect(screen.getByTestId('visual-design-image')).toHaveAttribute('src', '/api/public/visual-assets/tok-managed');
+  });
+
+  it('renders nothing for an image layer whose reference cannot be resolved (fails safe)', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_img', kind: 'image', frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+      image: { assetId: 'asset_missing', fit: 'contain' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="preview" prefersReducedMotion={false} />,
+    );
+    expect(screen.queryByTestId('visual-design-image')).not.toBeInTheDocument();
+  });
+
+  it('hides a potentially-animated (GIF/WebP) image layer under prefers-reduced-motion', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_img', kind: 'image', frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+      image: { fit: 'contain', url: '/api/public/visual-assets/tok-gif', mediaType: 'image/gif' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion />,
+    );
+    expect(screen.queryByTestId('visual-design-image')).not.toBeInTheDocument();
+  });
+
+  it('still renders a static PNG image layer under prefers-reduced-motion', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_img', kind: 'image', frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+      image: { fit: 'contain', url: '/api/public/visual-assets/tok-png', mediaType: 'image/png' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion />,
+    );
+    expect(screen.getByTestId('visual-design-image')).toBeInTheDocument();
+  });
+
+  it('renders a video layer always muted, playsInline, with no controls', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_vid', kind: 'video', frame: { x: 0, y: 0, width: 200, height: 200 }, opacity: 1,
+      video: { fit: 'cover', loop: true, url: '/api/public/visual-assets/tok-vid' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion={false} />,
+    );
+    const video = screen.getByTestId('visual-design-video') as HTMLVideoElement;
+    expect(video.muted).toBe(true);
+    expect(video).toHaveAttribute('playsinline');
+    expect(video.controls).toBe(false);
+    expect(video.loop).toBe(true);
+  });
+
+  it('never autoplays a video layer under prefers-reduced-motion', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_vid', kind: 'video', frame: { x: 0, y: 0, width: 200, height: 200 }, opacity: 1,
+      video: { fit: 'cover', loop: false, url: '/api/public/visual-assets/tok-vid' },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion />,
+    );
+    const video = screen.getByTestId('visual-design-video') as HTMLVideoElement;
+    expect(video.autoplay).toBe(false);
+  });
+
+  it('renders nothing for a video layer whose reference cannot be resolved (fails safe)', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_vid', kind: 'video', frame: { x: 0, y: 0, width: 200, height: 200 }, opacity: 1,
+      video: { assetId: 'asset_missing', fit: 'cover', loop: false },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="preview" prefersReducedMotion={false} />,
+    );
+    expect(screen.queryByTestId('visual-design-video')).not.toBeInTheDocument();
+  });
 });

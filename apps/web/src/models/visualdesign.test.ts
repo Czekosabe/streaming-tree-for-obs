@@ -8,8 +8,10 @@ import {
   clampFrameToCanvas,
   containScale,
   createHistory,
+  createImageLayer,
   createShapeLayer,
   createTextLayer,
+  createVideoLayer,
   duplicateLayer,
   isFrameWithinCanvas,
   isValidCanvasSize,
@@ -26,6 +28,7 @@ import {
   redoHistory,
   snapFramePosition,
   undoHistory,
+  VISUAL_DESIGN_LAYER_KINDS,
 } from './visualdesign';
 
 describe('isValidCanvasSize', () => {
@@ -134,6 +137,27 @@ describe('layer factories', () => {
     const b = newLayerId();
     expect(a).not.toBe(b);
     expect(a.startsWith('layer_')).toBe(true);
+  });
+  it('createImageLayer requires and stores a real asset id, contain fit by default', () => {
+    const layer = createImageLayer({ x: 0, y: 0, width: 100, height: 100 }, 0, 'asset_abc123');
+    expect(layer.kind).toBe('image');
+    expect(layer.image?.assetId).toBe('asset_abc123');
+    expect(layer.image?.fit).toBe('contain');
+    expect(layer.video).toBeUndefined();
+  });
+  it('createVideoLayer requires and stores a real asset id, loop off by default', () => {
+    const layer = createVideoLayer({ x: 0, y: 0, width: 100, height: 100 }, 0, 'asset_def456');
+    expect(layer.kind).toBe('video');
+    expect(layer.video?.assetId).toBe('asset_def456');
+    expect(layer.video?.loop).toBe(false);
+    expect(layer.image).toBeUndefined();
+  });
+});
+
+describe('VISUAL_DESIGN_LAYER_KINDS', () => {
+  it('includes image/video as shared kinds, valid for both designers (Stage 14B task Part 55)', () => {
+    expect(VISUAL_DESIGN_LAYER_KINDS).toContain('image');
+    expect(VISUAL_DESIGN_LAYER_KINDS).toContain('video');
   });
 });
 

@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import * as visualPackageApi from '@/api/visualpackage';
+import type { VisualTemplatePackagePreview } from '@/api/visualpackage-schemas';
 import * as visualTemplateApi from '@/api/visualtemplate';
 import type { VisualTemplate, VisualTemplateFile } from '@/api/visualtemplate-schemas';
 import { renderWithProviders } from '@/test/render';
@@ -8,6 +10,7 @@ import { renderWithProviders } from '@/test/render';
 import { TemplateGallery } from './TemplateGallery';
 
 vi.mock('@/api/visualtemplate');
+vi.mock('@/api/visualpackage');
 
 function chatDocument() {
   return {
@@ -189,5 +192,95 @@ describe('TemplateGallery', () => {
     expect(vi.mocked(visualTemplateApi).createVisualTemplate).not.toHaveBeenCalled();
     expect(vi.mocked(visualTemplateApi).deleteVisualTemplate).not.toHaveBeenCalled();
     expect(vi.mocked(visualTemplateApi).importVisualTemplate).not.toHaveBeenCalled();
+  });
+
+  // --- Stage 14B: package import/export -----------------------------------
+
+  it('Export package downloads a blob without saving anything', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([userTemplate()]);
+    vi.mocked(visualPackageApi).exportVisualTemplatePackage.mockResolvedValue({
+      blob: new Blob(['fake zip bytes']),
+      filename: 'my-template.streaming-tree-template',
+    });
+    renderGallery();
+    await screen.findByText('My Template');
+    fireEvent.click(screen.getByTestId('template-export-package'));
+    await waitFor(() => expect(vi.mocked(visualPackageApi).exportVisualTemplatePackage).toHaveBeenCalledWith('tpl_1'));
+  });
+
+  it('JSON Export is disabled with an explanation for an asset-backed template', async () => {
+    const assetBackedDoc = {
+      ...chatDocument(),
+      layers: [
+        {
+          id: 'layer_img', name: 'Badge', kind: 'image' as const, visible: true, locked: false, order: 0,
+          frame: { x: 0, y: 0, width: 100, height: 100 }, opacity: 1,
+          image: { assetId: 'asset_1', fit: 'contain' as const, alt: '' },
+          entryAnimation: 'none' as const, exitAnimation: 'none' as const, animationDurationMs: 0,
+        },
+      ],
+    };
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([userTemplate({ document: assetBackedDoc })]);
+    renderGallery();
+    await screen.findByText('My Template');
+    const exportButton = screen.getByTestId('template-export');
+    expect(exportButton).toBeDisabled();
+    fireEvent.click(exportButton);
+    expect(vi.mocked(visualTemplateApi).exportVisualTemplate).not.toHaveBeenCalled();
+    // Export package remains available for the same template.
+    expect(screen.getByTestId('template-export-package')).not.toBeDisabled();
+  });
+
+  it('package import preview never persists until the operator explicitly confirms, and re-uploads the original bytes', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
+    const preview: VisualTemplatePackagePreview = {
+      token: 'preview_tok_1',
+      target: 'chat',
+      name: 'Imported Package',
+      description: '',
+      author: '',
+      license: '',
+      document: chatDocument(),
+      assets: [],
+      expiresAt: '2026-08-12T00:10:00.000Z',
+    };
+    vi.mocked(visualPackageApi).previewVisualTemplatePackageImport.mockResolvedValue(preview);
+    vi.mocked(visualPackageApi).importVisualTemplatePackage.mockResolvedValue(userTemplate({ name: 'Imported Package' }));
+    renderGallery();
+    await screen.findByTestId('template-gallery-list');
+
+    const file = new File(['fake zip bytes'], 'template.streaming-tree-template');
+    fireEvent.change(screen.getByTestId('template-import-package-file-input'), { target: { files: [file] } });
+    await screen.findByText('Imported Package');
+    expect(vi.mocked(visualPackageApi).importVisualTemplatePackage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('template-import-package-confirm'));
+    await waitFor(() => expect(vi.mocked(visualPackageApi).importVisualTemplatePackage).toHaveBeenCalledWith(file));
+  });
+
+  it('canceling a package import preview releases the staged preview session', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
+    const preview: VisualTemplatePackagePreview = {
+      token: 'preview_tok_2',
+      target: 'chat',
+      name: 'Imported Package',
+      description: '',
+      author: '',
+      license: '',
+      document: chatDocument(),
+      assets: [],
+      expiresAt: '2026-08-12T00:10:00.000Z',
+    };
+    vi.mocked(visualPackageApi).previewVisualTemplatePackageImport.mockResolvedValue(preview);
+    vi.mocked(visualPackageApi).cancelVisualTemplatePackagePreview.mockResolvedValue(undefined);
+    renderGallery();
+    await screen.findByTestId('template-gallery-list');
+
+    const file = new File(['fake zip bytes'], 'template.streaming-tree-template');
+    fireEvent.change(screen.getByTestId('template-import-package-file-input'), { target: { files: [file] } });
+    await screen.findByText('Imported Package');
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    await waitFor(() => expect(vi.mocked(visualPackageApi).cancelVisualTemplatePackagePreview).toHaveBeenCalledWith('preview_tok_2'));
+    expect(vi.mocked(visualPackageApi).importVisualTemplatePackage).not.toHaveBeenCalled();
   });
 });

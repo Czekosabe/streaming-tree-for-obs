@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { VisualDesignDocument } from '@/api/visualdesign-schemas';
 import type { VisualTemplate } from '@/api/visualtemplate-schemas';
 
-import { safeTemplateExportFilename, toVisualTemplateFile } from './visualtemplate';
+import { safeTemplateExportFilename, templateHasAssets, toVisualTemplateFile } from './visualtemplate';
 
 describe('safeTemplateExportFilename', () => {
   it('appends the fixed Stage 14A extension', () => {
@@ -48,5 +49,61 @@ describe('toVisualTemplateFile', () => {
     expect(file.visualDesign).toEqual(template.document);
     expect(file).not.toHaveProperty('id');
     expect(file).not.toHaveProperty('createdAt');
+  });
+});
+
+function baseDoc(): VisualDesignDocument {
+  return { version: 3, canvas: { width: 1920, height: 1080, transparent: true }, layers: [] };
+}
+
+describe('templateHasAssets', () => {
+  it('is false for a document with no asset-referencing layer', () => {
+    const doc: VisualDesignDocument = {
+      ...baseDoc(),
+      layers: [
+        {
+          id: 'l1', name: 'Rect', kind: 'shape', visible: true, locked: false, order: 0,
+          frame: { x: 0, y: 0, width: 10, height: 10 }, opacity: 1,
+          shape: { kind: 'rectangle', fill: '#000000', borderColor: '#000000', borderWidth: 0, cornerRadius: 0 },
+          entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+        },
+      ],
+    };
+    expect(templateHasAssets(doc)).toBe(false);
+  });
+
+  it('is true for an image layer', () => {
+    const doc: VisualDesignDocument = {
+      ...baseDoc(),
+      layers: [
+        {
+          id: 'l1', name: 'Img', kind: 'image', visible: true, locked: false, order: 0,
+          frame: { x: 0, y: 0, width: 10, height: 10 }, opacity: 1,
+          image: { assetId: 'asset_1', fit: 'contain' },
+          entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+        },
+      ],
+    };
+    expect(templateHasAssets(doc)).toBe(true);
+  });
+
+  it('is true for a text layer with a custom font reference', () => {
+    const doc: VisualDesignDocument = {
+      ...baseDoc(),
+      layers: [
+        {
+          id: 'l1', name: 'Text', kind: 'text', visible: true, locked: false, order: 0,
+          frame: { x: 0, y: 0, width: 10, height: 10 }, opacity: 1,
+          text: {
+            binding: 'static', staticText: 'hi', missingValueBehavior: 'hide', fontFamily: 'system-ui',
+            fontAssetId: 'asset_font1', fontSize: 16, fontWeight: 400, lineHeight: 1, letterSpacing: 0,
+            textColor: '#fff', horizontalAlign: 'center', verticalAlign: 'middle', outlineWidth: 0,
+            outlineColor: '#000', shadowEnabled: false, shadowOffsetX: 0, shadowOffsetY: 0, shadowBlur: 0, shadowColor: '#000',
+          },
+          entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+        },
+      ],
+    };
+    expect(templateHasAssets(doc)).toBe(true);
   });
 });

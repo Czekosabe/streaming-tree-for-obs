@@ -17158,3 +17158,86 @@ properties-panel/gallery work (pure schema/model tests plus a
 representative slice of rendered-component tests), then the 16th
 integration script `verify-visual-template-packages.mjs`, then the
 final documentation pass, then the full closing regression and push.
+
+## 2026-08-12 01:20 — test: add Stage 14B frontend tests
+
+### What
+Representative frontend test coverage for everything built across the
+three prior Stage 14B frontend commits: pure schema/model tests for the
+new document-v3/asset/package contracts, and rendered tests for image/
+video layer rendering (including the reduced-motion and unresolvable-
+reference fail-safe paths), the shared asset picker, and the template
+gallery's new package import/export flow. 45 new tests, all passing
+alongside the full pre-existing suite (1167 total, up from 1122).
+
+### Files changed
+- `apps/web/src/models/visualdesign.test.ts` - `createImageLayer`/
+  `createVideoLayer` factory tests (require a real asset id, correct
+  defaults); `VISUAL_DESIGN_LAYER_KINDS` includes `image`/`video`.
+- `apps/web/src/models/visualtemplate.test.ts` - `templateHasAssets`:
+  false for an asset-free document, true for an image layer, true for a
+  text layer's `fontAssetId` reference.
+- `apps/web/src/api/visualdesign-schemas.test.ts` - new `describe`
+  block covering the image/video layer kinds, the `contain`/`cover` fit
+  enum, the management (`assetId`, no `url`) vs. public (`url`
+  nullable, no `assetId`) prop-schema split, a full image/video layer
+  round trip through `visualDesignLayerSchema`, `fontAssetId`/`fontUrl`
+  on a text layer, and a mixed-kind document.
+- `apps/web/src/api/visualasset-schemas.test.ts` (new) -
+  `visualAssetSchema`/`visualAssetListSchema`: every kind/source value,
+  an unrecognized kind rejected, confirms no `path`/`sha256` field is
+  ever part of this contract (defense-in-depth against ever
+  accidentally widening the management DTO to leak one).
+- `apps/web/src/api/visualpackage-schemas.test.ts` (new) -
+  `visualTemplatePackagePreviewSchema`: a valid preview session (document
+  still carrying package-local `pkgasset_...` references, matching
+  `assets[].packageAssetId`), an asset-free package preview, a missing
+  required field rejected.
+- `apps/web/src/components/visual-design/VisualDesignRenderer.test.tsx` -
+  ten new cases: an image layer with an already-resolved public `url`;
+  one resolved via a management `assetMap` lookup; one whose reference
+  cannot be resolved renders nothing; a GIF/WebP image layer is hidden
+  under `prefers-reduced-motion` while a static PNG one still renders;
+  a video layer is always muted/`playsInline`/no-controls and honors
+  `loop`; a video layer never autoplays under reduced motion; an
+  unresolvable video layer renders nothing.
+- `apps/web/src/components/visual-design/VisualAssetPicker.test.tsx`
+  (new) - lists only assets of the requested kind, an empty state,
+  selecting an existing asset, a real upload calling the real upload
+  API and selecting its result, and an explicit assertion that no
+  URL-input affordance exists anywhere in the component (docs/visual-
+  template-packages.md §32: "no URL import... a normal file picker
+  must always exist").
+- `apps/web/src/components/visual-templates/TemplateGallery.test.tsx` -
+  five new cases: package export downloads without saving anything;
+  JSON export is `disabled` with an explanatory `title` for an asset-
+  backed template while package export stays enabled on the same card;
+  package import preview persists nothing until explicit confirm, and
+  confirm re-uploads the exact original `File` object (never trusts the
+  preview token); canceling a package import preview calls the cancel-
+  preview API with the right token.
+
+### Automated validation
+- `npm run typecheck`/`npm run lint`/`npm run i18n:check` - all clean.
+- `npx vitest run` - 85 test files / 1167 tests, all pass (up from 82
+  files / 1122 tests before this commit - +3 new files, +45 new tests,
+  zero regressions in any pre-existing test).
+
+### Known limitations
+Still no dedicated tests for `DesignerPropertiesPanel`'s new Image/
+Video/CustomFontField sections specifically (covered only indirectly,
+by type-checking against the widened `VisualDesignLayer` union and by
+the renderer-level tests above) - a real gap, named here rather than
+silently left uncovered. No accessibility-focused test pass (keyboard-
+only asset-picker operation, focus management on the package-import
+preview) - deferred, matching the project's own "representative subset,
+every omission named" discipline for Stage 14B's own test-coverage
+requirement.
+
+### Next step
+The 16th integration script, `scripts/verify-visual-template-
+packages.mjs` - a representative real-backend, real-filesystem
+integration pass, since the exhaustive malicious-ZIP matrix is already
+covered by the Go-level `visualpackage` tests (docs/visual-template-
+packages.md §76 explicitly allows this split). Then the final
+documentation pass, then the full closing regression and push.
