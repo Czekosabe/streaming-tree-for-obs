@@ -330,6 +330,30 @@ func (p *Projection) applyUpstreamItem(item operatorchat.Item, emit bool) {
 	}
 }
 
+// NotifyPresentationChanged emits an OpPresentationChanged revision -
+// Stage 13B's own public presentation-update protocol
+// (docs/visual-designs.md §25). Carries no item content and never
+// touches the visible-item set at all, so it can never duplicate,
+// resurrect, or reorder anything - it exists purely to tell an
+// already-connected public client "refetch GET .../config."
+func (p *Projection) NotifyPresentationChanged() {
+	rev, subs, closed := func() (rev Revision, subs []*Subscription, closed bool) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.closed {
+			return Revision{}, nil, true
+		}
+		p.seq++
+		rev = Revision{Sequence: p.seq, Operation: OpPresentationChanged}
+		p.ring.push(rev)
+		return rev, p.subsSliceLocked(), false
+	}()
+	if closed {
+		return
+	}
+	p.fanOut(rev, subs)
+}
+
 func (p *Projection) currentSettings() resolvedSettings {
 	p.mu.Lock()
 	defer p.mu.Unlock()

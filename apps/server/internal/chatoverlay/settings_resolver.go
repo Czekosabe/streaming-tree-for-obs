@@ -6,6 +6,7 @@ import (
 
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	operatorchatprefs "github.com/streaming-tree/server/internal/domain/operatorchatprefs"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
 // SettingsResolver builds one overlay's resolvedSettings from durable
@@ -29,6 +30,12 @@ type DefaultSettingsResolver struct {
 	Profiles      *chatoverlaydomain.Service
 	OperatorPrefs *operatorchatprefs.Service
 	AccountLabel  AccountLabelLookup
+	// VisualDesigns is Stage 13B's own shared visual-design service -
+	// optional (nil degrades every overlay to legacy presentation,
+	// mirroring internal/alerts.ManagerOptions's own nil-safe pattern),
+	// used only to derive this overlay's own designDataNeeds
+	// (docs/visual-designs.md §22) - never to decide filtering.
+	VisualDesigns *visualdesign.Service
 }
 
 func (r *DefaultSettingsResolver) Resolve(ctx context.Context, overlayID string) (resolvedSettings, error) {
@@ -73,13 +80,26 @@ func (r *DefaultSettingsResolver) Resolve(ctx context.Context, overlayID string)
 		return resolvedSettings{}, fmt.Errorf("resolve activity types: %w", err)
 	}
 
+	var designDataNeeds *chatoverlaydomain.ChatDataNeeds
+	if r.VisualDesigns != nil {
+		rec, found, err := r.VisualDesigns.Get(ctx, visualdesign.OwnerKindChatOverlay, overlayID)
+		if err != nil {
+			return resolvedSettings{}, fmt.Errorf("resolve visual design: %w", err)
+		}
+		if found {
+			needs := chatoverlaydomain.DeriveDataNeeds(rec.Document)
+			designDataNeeds = &needs
+		}
+	}
+
 	return resolvedSettings{
-		profile:       profile,
-		accountIDs:    toSet(accountIDs),
-		hiddenUsers:   hiddenSet,
-		botUsers:      botSet,
-		activityTypes: toSet(activityTypes),
-		blockedTerms:  terms,
-		accountLabel:  r.AccountLabel,
+		profile:         profile,
+		accountIDs:      toSet(accountIDs),
+		hiddenUsers:     hiddenSet,
+		botUsers:        botSet,
+		activityTypes:   toSet(activityTypes),
+		blockedTerms:    terms,
+		accountLabel:    r.AccountLabel,
+		designDataNeeds: designDataNeeds,
 	}, nil
 }

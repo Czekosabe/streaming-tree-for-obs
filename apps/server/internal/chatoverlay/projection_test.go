@@ -321,6 +321,62 @@ func TestProjectionSubscribeReplaysThenGoesLive(t *testing.T) {
 	}
 }
 
+// TestProjectionNotifyPresentationChangedReachesLiveSubscriber proves
+// Stage 13B's own public presentation-update protocol
+// (docs/visual-designs.md §25): the notification carries no item
+// content and reaches an already-connected subscriber as a distinct
+// operation.
+func TestProjectionNotifyPresentationChangedReachesLiveSubscriber(t *testing.T) {
+	p, _ := newTestProjection(t, testSettings(nil))
+	sub, _, err := p.Subscribe(0)
+	if err != nil {
+		t.Fatalf("Subscribe(0) error = %v", err)
+	}
+	defer sub.Cancel()
+
+	initial, ok := waitRevision(time.Second, sub.Revisions())
+	if !ok || initial.Operation != OpReset {
+		t.Fatalf("expected the initial reset first, got %+v, ok=%v", initial, ok)
+	}
+
+	p.NotifyPresentationChanged()
+
+	rev, ok := waitRevision(time.Second, sub.Revisions())
+	if !ok {
+		t.Fatal("timed out waiting for the presentation_changed revision")
+	}
+	if rev.Operation != OpPresentationChanged {
+		t.Errorf("Operation = %q, want %q", rev.Operation, OpPresentationChanged)
+	}
+	if rev.Item != nil || rev.RemovedID != "" || len(rev.ResetItems) != 0 {
+		t.Errorf("presentation_changed revision carries item content: %+v, want none", rev)
+	}
+}
+
+// TestProjectionNotifyPresentationChangedParticipatesInReplay proves a
+// reconnecting subscriber that missed a presentation change replays it,
+// exactly like any other revision - so a client can never end up with a
+// stale design paired against fresh item state after a reconnect.
+func TestProjectionNotifyPresentationChangedParticipatesInReplay(t *testing.T) {
+	p, _ := newTestProjection(t, testSettings(nil))
+	p.NotifyPresentationChanged()
+
+	sub, gap, err := p.Subscribe(0)
+	if err != nil || gap {
+		t.Fatalf("Subscribe(0) error = %v, gap = %v", err, gap)
+	}
+	defer sub.Cancel()
+
+	replayedReset, ok := waitRevision(time.Second, sub.Revisions())
+	if !ok || replayedReset.Operation != OpReset {
+		t.Fatalf("expected the retained initial reset first, got %+v, ok=%v", replayedReset, ok)
+	}
+	replayed, ok := waitRevision(time.Second, sub.Revisions())
+	if !ok || replayed.Operation != OpPresentationChanged {
+		t.Fatalf("expected the replayed presentation_changed revision, got %+v, ok=%v", replayed, ok)
+	}
+}
+
 func TestProjectionSubscribeReportsGapWhenAfterIsTooOld(t *testing.T) {
 	p, source := newTestProjectionWithRingCapacity(t, testSettings(nil), 3)
 	for _, id := range []string{"m1", "m2", "m3", "m4", "m5"} {

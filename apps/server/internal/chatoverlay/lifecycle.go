@@ -34,7 +34,8 @@ func buildItem(item operatorchat.Item, cfg resolvedSettings) Item {
 		Synthetic:       item.Synthetic,
 	}
 
-	if cfg.profile.ShowAccountLabel && cfg.accountLabel != nil {
+	needsAccountLabel := cfg.profile.ShowAccountLabel || (cfg.designDataNeeds != nil && cfg.designDataNeeds.AccountLabel)
+	if needsAccountLabel && cfg.accountLabel != nil {
 		if label, ok := cfg.accountLabel(item.ConnectedAccountID); ok {
 			out.AccountLabel = label
 		}
@@ -113,10 +114,12 @@ func buildUser(u *operatorchat.User, cfg resolvedSettings) *User {
 	}
 	out.Color = u.Color
 
-	if cfg.profile.ShowAvatar {
+	needsAvatar := cfg.profile.ShowAvatar || (cfg.designDataNeeds != nil && cfg.designDataNeeds.Avatar)
+	if needsAvatar {
 		out.AvatarURL = u.AvatarURL
 	}
-	if cfg.profile.ShowBadges {
+	needsBadges := cfg.profile.ShowBadges || (cfg.designDataNeeds != nil && cfg.designDataNeeds.Badges)
+	if needsBadges {
 		out.Badges = make([]Badge, 0, len(u.Badges))
 		for _, b := range u.Badges {
 			out.Badges = append(out.Badges, Badge{SetID: b.SetID, ID: b.ID, Info: b.Info})

@@ -74,7 +74,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeUpstream, *fakeResolver) {
 	t.Helper()
 	upstream := newFakeUpstream()
 	resolver := newFakeResolver()
-	m := NewManager(upstream, resolver, nil)
+	m := NewManager(upstream, resolver, nil, nil)
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -252,7 +252,7 @@ func TestManagerShutdownClosesUpstreamSubscriptionAndOverlays(t *testing.T) {
 	upstream := newFakeUpstream()
 	resolver := newFakeResolver()
 	resolver.set("ov_1", testSettings(func(p *chatoverlaydomain.Profile) { p.ID = "ov_1" }))
-	m := NewManager(upstream, resolver, nil)
+	m := NewManager(upstream, resolver, nil, nil)
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}

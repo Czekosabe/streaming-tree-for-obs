@@ -55,6 +55,17 @@ const (
 	// at once, and whenever a subscriber's gap cannot be satisfied by
 	// replay.
 	OpReset Operation = "reset"
+	// OpPresentationChanged carries no item content at all - just a
+	// sequence number, participating in the same monotonic revision
+	// stream/replay/gap mechanism every other Operation already uses
+	// (Stage 13B, docs/visual-designs.md §25). Emitted exactly once per
+	// successful chat visual-design Save or Delete
+	// (Manager.NotifyPresentationChanged); tells an already-connected
+	// client "your GET .../config response is now stale - refetch it
+	// before trusting it further." Never a substitute for an item
+	// revision, and the item reducer's own state is completely
+	// unaffected by it.
+	OpPresentationChanged Operation = "presentation_changed"
 )
 
 // RemoveReason is the stable, closed reason an OpRemove revision

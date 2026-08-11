@@ -11,6 +11,7 @@ import (
 
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 )
 
@@ -43,13 +44,20 @@ type ChatOverlayProfileService interface {
 
 // ChatOverlayRuntime is the subset of chatoverlay.Manager the HTTP layer
 // needs: looking up (and lazily creating) a profile's running Projection,
-// and telling the runtime a profile's settings changed or the profile was
-// deleted.
+// telling the runtime a profile's settings changed or the profile was
+// deleted, and Stage 13B's own visual-design CRUD (GetVisualDesign/
+// SaveVisualDesign/DeleteVisualDesign already trigger the runtime's own
+// rebuild/presentation-notify side effects internally - the HTTP layer
+// here never has to orchestrate that itself).
 type ChatOverlayRuntime interface {
 	EnsureOverlay(ctx context.Context, overlayID string) (*co.Projection, error)
 	Get(overlayID string) (*co.Projection, bool)
 	Rebuild(ctx context.Context, overlayID string) error
 	Remove(ctx context.Context, overlayID string)
+
+	GetVisualDesign(ctx context.Context, overlayID string) (visualdesign.Record, bool, error)
+	SaveVisualDesign(ctx context.Context, overlayID string, doc visualdesign.Document, expectedRevision int) (visualdesign.Record, error)
+	DeleteVisualDesign(ctx context.Context, overlayID string) error
 }
 
 const (
@@ -95,8 +103,21 @@ func registerChatOverlayRoutes(
 	mux.HandleFunc("PUT /api/chat-overlays/{id}/activity-types", handlePutChatOverlayActivityTypes(logger, profiles, runtime))
 	mux.HandleFunc("/api/chat-overlays/{id}/activity-types", methodNotAllowed(logger, http.MethodGet, http.MethodPut))
 
+	// Stage 13B: the chat-overlay visual-design management API - see
+	// registerVisualDesignRoutes's own doc comment (internal/httpapi/
+	// visualdesign.go) for why this is nested under /api/chat-overlays/
+	// rather than a generic /api/visual-designs/{ownerKind}/{ownerId}
+	// route. documentToDTO/documentFromDTO/visualDesignResponse/
+	// visualDesignSaveRequest are the exact same owner-agnostic types
+	// the alert-rule routes already use - genuinely shared, not
+	// duplicated.
+	mux.HandleFunc("GET /api/chat-overlays/{id}/visual-design", handleGetChatOverlayVisualDesign(logger, profiles, runtime))
+	mux.HandleFunc("PUT /api/chat-overlays/{id}/visual-design", handleSaveChatOverlayVisualDesign(logger, profiles, runtime))
+	mux.HandleFunc("DELETE /api/chat-overlays/{id}/visual-design", handleDeleteChatOverlayVisualDesign(logger, profiles, runtime))
+	mux.HandleFunc("/api/chat-overlays/{id}/visual-design", methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
+
 	streamLimiter := newChatOverlayStreamLimiter()
-	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles))
+	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles, runtime))
 	mux.HandleFunc("/api/public/chat-overlays/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
 	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/items", handleGetPublicChatOverlayItems(logger, profiles, runtime, assets))
@@ -642,6 +663,82 @@ func handlePutChatOverlayActivityTypes(logger *slog.Logger, profiles ChatOverlay
 	}
 }
 
+// --- visual design (Stage 13B) ----------------------------------------------
+
+// handleGetChatOverlayVisualDesign returns overlayID's own saved design,
+// or a freshly generated (never persisted by this call) legacy-
+// compatible draft when none has been saved yet (docs/visual-designs.md
+// §23) - mirrors handleGetVisualDesign (internal/httpapi/visualdesign.go)
+// for alert rules, reusing the exact same visualDesignResponse/
+// documentToDTO wire shapes.
+func handleGetChatOverlayVisualDesign(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		overlayID := r.PathValue("id")
+		profile, err := profiles.GetProfile(r.Context(), overlayID)
+		if err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+
+		rec, found, err := runtime.GetVisualDesign(r.Context(), overlayID)
+		if err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+		if !found {
+			draft := chatoverlaydomain.GenerateLegacyDraft(profile)
+			writeJSON(w, logger, http.StatusOK, visualDesignResponse{Persisted: false, Revision: 0, Document: documentToDTO(draft)})
+			return
+		}
+		writeJSON(w, logger, http.StatusOK, visualDesignResponse{Persisted: true, Revision: rec.Revision, Document: documentToDTO(rec.Document)})
+	}
+}
+
+// handleSaveChatOverlayVisualDesign validates and persists a full-
+// replacement save of overlayID's own visual design - 409 on a stale
+// expectedRevision, 422 on any structural/semantic/chat-binding-
+// capability validation failure.
+func handleSaveChatOverlayVisualDesign(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		overlayID := r.PathValue("id")
+		if _, err := profiles.GetProfile(r.Context(), overlayID); err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+
+		var body visualDesignSaveRequest
+		if err := decodeJSONWithLimit(w, r, &body, maxVisualDesignBodyBytes); err != nil {
+			writeDecodeError(w, logger, err)
+			return
+		}
+		doc := documentFromDTO(body.Document)
+		rec, err := runtime.SaveVisualDesign(r.Context(), overlayID, doc, body.ExpectedRevision)
+		if err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+		writeJSON(w, logger, http.StatusOK, visualDesignResponse{Persisted: true, Revision: rec.Revision, Document: documentToDTO(rec.Document)})
+	}
+}
+
+// handleDeleteChatOverlayVisualDesign implements "Reset to legacy
+// presentation" - idempotent, no request body, never deletes the
+// overlay profile itself.
+func handleDeleteChatOverlayVisualDesign(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		overlayID := r.PathValue("id")
+		if _, err := profiles.GetProfile(r.Context(), overlayID); err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+		if err := runtime.DeleteVisualDesign(r.Context(), overlayID); err != nil {
+			writeChatOverlayError(w, logger, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // --- public config -----------------------------------------------------------
 
 // publicChatOverlayConfigResponse carries only what the Browser Source
@@ -685,10 +782,30 @@ type publicChatOverlayConfigResponse struct {
 	HighlightVIPs        bool `json:"highlightVips"`
 
 	Language string `json:"language"`
+
+	// RenderingMode/VisualDesign are Stage 13B's own additive fields
+	// (docs/visual-designs.md §25) - a legacy overlay's response is
+	// otherwise byte-for-byte the same Stage 10 shape, with
+	// RenderingMode always "legacy" and VisualDesign always omitted, so
+	// no existing Stage 10 client or integration script can ever be
+	// broken by this addition.
+	RenderingMode string                  `json:"renderingMode"`
+	VisualDesign  visualDesignDocumentPub `json:"visualDesign,omitempty"`
 }
 
-func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile) publicChatOverlayConfigResponse {
-	return publicChatOverlayConfigResponse{
+// visualDesignDocumentPub is a thin alias so this file's own JSON tag
+// stays readable - toPublicVisualDesignDTO (internal/httpapi/
+// visualdesign.go) already returns the exact safe, owner-agnostic shape
+// this field needs; see that function's own doc comment.
+type visualDesignDocumentPub = map[string]any
+
+const (
+	chatOverlayRenderingModeLegacy       = "legacy"
+	chatOverlayRenderingModeVisualDesign = "visual_design"
+)
+
+func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile, design *visualdesign.Record) publicChatOverlayConfigResponse {
+	resp := publicChatOverlayConfigResponse{
 		SchemaVersion: co.CurrentVersion,
 		LayoutMode:    string(p.LayoutMode), StackDirection: string(p.StackDirection), HorizontalAlignment: string(p.HorizontalAlignment),
 
@@ -707,7 +824,15 @@ func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile) publicChatOv
 		HighlightSubscribers: p.HighlightSubscribers, HighlightVIPs: p.HighlightVIPs,
 
 		Language: string(p.Language),
+
+		RenderingMode: chatOverlayRenderingModeLegacy,
 	}
+	if design != nil {
+		resp.RenderingMode = chatOverlayRenderingModeVisualDesign
+		pub := visualdesign.ToPublic(design.Document)
+		resp.VisualDesign = visualDesignDocumentPub(toPublicVisualDesignDTO(&pub))
+	}
+	return resp
 }
 
 // resolvePublicChatOverlayProfile looks a profile up by its public slug
@@ -724,7 +849,7 @@ func resolvePublicChatOverlayProfile(ctx context.Context, profiles ChatOverlayPr
 	return p, p.Enabled, nil
 }
 
-func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService) http.HandlerFunc {
+func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, r.PathValue("slug"))
 		if err != nil {
@@ -735,7 +860,11 @@ func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayP
 			writeError(w, logger, http.StatusConflict, "chat_overlay_disabled", "This overlay is currently disabled.")
 			return
 		}
-		writeJSON(w, logger, http.StatusOK, toPublicChatOverlayConfigResponse(p))
+		var design *visualdesign.Record
+		if rec, found, err := runtime.GetVisualDesign(r.Context(), p.ID); err == nil && found {
+			design = &rec
+		}
+		writeJSON(w, logger, http.StatusOK, toPublicChatOverlayConfigResponse(p, design))
 	}
 }
 
@@ -1056,6 +1185,11 @@ func writeChatOverlayRevisionEvent(ctx context.Context, w http.ResponseWriter, r
 			resp = append(resp, toPublicChatOverlayItemResponse(ctx, item, assets))
 		}
 		return writeSSEEvent(w, "chat-overlay.reset", rev.Sequence, map[string]any{"items": resp})
+	case co.OpPresentationChanged:
+		// No item content at all (Stage 13B, docs/visual-designs.md
+		// §25) - just a sequence number, telling the client to refetch
+		// GET .../config before trusting its current presentation.
+		return writeSSEEvent(w, "chat-overlay.presentation", rev.Sequence, map[string]any{})
 	default:
 		return nil
 	}
@@ -1075,6 +1209,14 @@ func writeChatOverlayError(w http.ResponseWriter, logger *slog.Logger, r *http.R
 		writeError(w, logger, http.StatusNotFound, "chat_overlay_term_invalid", "No matching blocked-term entry exists.")
 	case errors.Is(err, co.ErrClosed), errors.Is(err, co.ErrNotFound):
 		writeError(w, logger, http.StatusServiceUnavailable, "chat_overlay_unavailable", "The overlay projection is unavailable.")
+	case errors.Is(err, visualdesign.ErrRevisionConflict):
+		writeError(w, logger, http.StatusConflict, "visual_design_revision_conflict", "Another save already changed this design - reload and try again.")
+	case errors.Is(err, visualdesign.ErrTooLarge):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_too_large", "The design document is too large.")
+	case errors.Is(err, visualdesign.ErrValidation):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_invalid", "The design failed validation.")
+	case errors.Is(err, co.ErrVisualDesignUnavailable):
+		writeError(w, logger, http.StatusServiceUnavailable, "visual_design_unavailable", "The visual design service is not available.")
 	default:
 		writeDomainError(w, logger, r, err)
 	}

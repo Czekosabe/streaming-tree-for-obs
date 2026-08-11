@@ -82,6 +82,50 @@ func TestBuildItemAccountLabelOnlyWhenSettingOnAndResolvable(t *testing.T) {
 	}
 }
 
+// TestBuildItemDesignDataNeedsOverridesLegacyToggles proves Stage 13B's
+// central data-needs guarantee (docs/visual-designs.md §22): an active
+// design's own avatar/badge/account-label layers are never silently
+// starved by an unrelated legacy show/hide toggle being off.
+func TestBuildItemDesignDataNeedsOverridesLegacyToggles(t *testing.T) {
+	badges := []operatorchat.Badge{{SetID: "moderator", ID: "1"}}
+	item := messageItemWithBadges("m1", "acct_1", "u1", "viewer", "hi", badges)
+	item.User.AvatarURL = "https://static-cdn.jtvnw.net/avatar.png"
+
+	cfg := testSettings(func(p *chatoverlaydomain.Profile) {
+		p.ShowAvatar, p.ShowBadges, p.ShowAccountLabel = false, false, false
+	})
+	cfg.accountLabel = func(string) (string, bool) { return "Main Channel", true }
+	cfg.designDataNeeds = &chatoverlaydomain.ChatDataNeeds{Avatar: true, Badges: true, AccountLabel: true}
+
+	out := buildItem(item, cfg)
+	if out.User.AvatarURL == "" {
+		t.Error("expected AvatarURL populated when the active design needs it, even with ShowAvatar off")
+	}
+	if len(out.User.Badges) != 1 {
+		t.Error("expected Badges populated when the active design needs them, even with ShowBadges off")
+	}
+	if out.AccountLabel != "Main Channel" {
+		t.Errorf("expected AccountLabel populated when the active design needs it, even with ShowAccountLabel off, got %q", out.AccountLabel)
+	}
+}
+
+// TestBuildItemNoDesignDataNeedsPreservesLegacyBehaviorExactly proves a
+// nil designDataNeeds (no saved design) behaves exactly like Stage 10
+// always did - no regression from adding the new field.
+func TestBuildItemNoDesignDataNeedsPreservesLegacyBehaviorExactly(t *testing.T) {
+	item := messageItemWithBadges("m1", "acct_1", "u1", "viewer", "hi", []operatorchat.Badge{{SetID: "moderator", ID: "1"}})
+	item.User.AvatarURL = "https://static-cdn.jtvnw.net/avatar.png"
+
+	cfg := testSettings(func(p *chatoverlaydomain.Profile) { p.ShowAvatar, p.ShowBadges = false, false })
+	if cfg.designDataNeeds != nil {
+		t.Fatal("testSettings should never set designDataNeeds by default")
+	}
+	out := buildItem(item, cfg)
+	if out.User.AvatarURL != "" || len(out.User.Badges) != 0 {
+		t.Error("with no saved design, legacy toggles alone must still control visibility")
+	}
+}
+
 func TestBuildUserAnonymousOmitsIdentity(t *testing.T) {
 	item := anonymousActivityItem("a1", "acct_1", "sub_gift")
 	item.User = &operatorchat.User{Anonymous: true}

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
+	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	operatorchat "github.com/streaming-tree/server/internal/operatorchat"
 )
 
@@ -39,6 +41,13 @@ type Manager struct {
 	resolver SettingsResolver
 	logger   *slog.Logger
 
+	// visualDesignSvc is Stage 13B's own shared visual-design service -
+	// optional, mirroring internal/alerts.Manager's own nil-safe
+	// visualDesignSvc pattern. A nil value degrades every overlay to
+	// legacy presentation rather than panicking; production always
+	// wires a real one.
+	visualDesignSvc *visualdesign.Service
+
 	mu          sync.Mutex
 	projections map[string]*Projection
 	started     bool
@@ -50,16 +59,18 @@ type Manager struct {
 }
 
 // NewManager builds a Manager. Call Start before registering any
-// overlay.
-func NewManager(upstream UpstreamSource, resolver SettingsResolver, logger *slog.Logger) *Manager {
+// overlay. visualDesignSvc may be nil (see the Manager field's own doc
+// comment).
+func NewManager(upstream UpstreamSource, resolver SettingsResolver, visualDesignSvc *visualdesign.Service, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Manager{
-		upstream:    upstream,
-		resolver:    resolver,
-		logger:      logger,
-		projections: make(map[string]*Projection),
+		upstream:        upstream,
+		resolver:        resolver,
+		visualDesignSvc: visualDesignSvc,
+		logger:          logger,
+		projections:     make(map[string]*Projection),
 	}
 }
 
@@ -248,7 +259,15 @@ func (m *Manager) RebuildAll(ctx context.Context) {
 
 // Remove shuts down and forgets overlayID's Projection, closing any live
 // subscriber with ReasonOverlayDeleted - called when a profile is
-// deleted. Safe to call for an overlay with no running Projection.
+// deleted. Safe to call for an overlay with no running Projection. Also
+// deletes overlayID's own saved visual design, if any - explicit
+// application-level cleanup mirroring internal/alerts.Manager.
+// DeleteRule's own cascade exactly (docs/visual-designs.md §18): a
+// polymorphic owner_id cannot be a SQL foreign key, so this is always an
+// explicit call, never implicit. A failure here is logged, not returned -
+// the profile itself is already gone by the time Remove is called (see
+// httpapi's own handleDeleteChatOverlay), so there is nothing left to
+// roll back.
 func (m *Manager) Remove(ctx context.Context, overlayID string) {
 	m.mu.Lock()
 	p, ok := m.projections[overlayID]
@@ -259,5 +278,80 @@ func (m *Manager) Remove(ctx context.Context, overlayID string) {
 
 	if ok {
 		p.closeWithReason(ctx, ReasonOverlayDeleted)
+	}
+
+	if m.visualDesignSvc != nil {
+		if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindChatOverlay, overlayID); err != nil {
+			m.logger.Error("failed to delete a chat overlay's own visual design during profile deletion",
+				"overlay_id", overlayID, "error", err)
+		}
+	}
+}
+
+// GetVisualDesign returns overlayID's own saved visual design, if any.
+func (m *Manager) GetVisualDesign(ctx context.Context, overlayID string) (visualdesign.Record, bool, error) {
+	if m.visualDesignSvc == nil {
+		return visualdesign.Record{}, false, ErrVisualDesignUnavailable
+	}
+	return m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindChatOverlay, overlayID)
+}
+
+// SaveVisualDesign validates doc against chat-overlay-specific binding
+// capability (chatoverlaydomain.ValidateDesignBindingsForChatOverlay,
+// beyond the shared package's own owner-agnostic Validate the Service
+// itself already runs) and persists it as overlayID's full-replacement
+// design, then triggers the Stage 13B public presentation-update
+// protocol (docs/visual-designs.md §24/§25): Rebuild re-derives every
+// currently-visible item against the newly saved design's own
+// data-needs (so an avatar/badge/account-label layer is never silently
+// starved by an unrelated legacy toggle), immediately followed by
+// NotifyPresentationChanged so an already-connected public client knows
+// to refetch its presentation config. Both are best-effort after a
+// successful save - the save itself already succeeded, and a failure to
+// immediately refresh the live runtime is logged, not returned, since
+// the runtime will catch up on its own next rebuild regardless.
+func (m *Manager) SaveVisualDesign(ctx context.Context, overlayID string, doc visualdesign.Document, expectedRevision int) (visualdesign.Record, error) {
+	if m.visualDesignSvc == nil {
+		return visualdesign.Record{}, ErrVisualDesignUnavailable
+	}
+	if err := chatoverlaydomain.ValidateDesignBindingsForChatOverlay(doc); err != nil {
+		return visualdesign.Record{}, err
+	}
+	rec, err := m.visualDesignSvc.Save(ctx, visualdesign.OwnerKindChatOverlay, overlayID, doc, expectedRevision)
+	if err != nil {
+		return visualdesign.Record{}, err
+	}
+	m.refreshPresentation(ctx, overlayID)
+	return rec, nil
+}
+
+// DeleteVisualDesign implements "Reset to legacy presentation" (Stage
+// 13B, docs/visual-designs.md §23) - idempotent, never deletes the
+// profile itself, and triggers the same refresh/notify sequence
+// SaveVisualDesign does.
+func (m *Manager) DeleteVisualDesign(ctx context.Context, overlayID string) error {
+	if m.visualDesignSvc == nil {
+		return ErrVisualDesignUnavailable
+	}
+	if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindChatOverlay, overlayID); err != nil {
+		return err
+	}
+	m.refreshPresentation(ctx, overlayID)
+	return nil
+}
+
+// refreshPresentation re-resolves overlayID's settings (picking up the
+// design/data-needs change that just happened) and applies them to its
+// running Projection, then emits a presentation-change notification -
+// see SaveVisualDesign's own doc comment for why both steps run and why
+// failures here are logged rather than surfaced.
+func (m *Manager) refreshPresentation(ctx context.Context, overlayID string) {
+	if err := m.Rebuild(ctx, overlayID); err != nil {
+		m.logger.Error("failed to rebuild the live chat overlay projection after a visual-design change",
+			"overlay_id", overlayID, "error", err)
+		return
+	}
+	if p, ok := m.Get(overlayID); ok {
+		p.NotifyPresentationChanged()
 	}
 }

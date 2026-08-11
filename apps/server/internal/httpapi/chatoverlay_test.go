@@ -15,6 +15,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/account"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
@@ -61,8 +62,11 @@ func newChatOverlayTestServer(t *testing.T) *chatOverlayTestServer {
 	})
 
 	profiles := chatoverlaydomain.NewService(sqlite.NewChatOverlayRepository(db.DB), nil)
-	resolver := &co.DefaultSettingsResolver{Profiles: profiles, AccountLabel: func(string) (string, bool) { return "", false }}
-	runtime := co.NewManager(co.WrapOperatorChatSource(projection), resolver, logger)
+	visualDesigns := visualdesign.NewService(sqlite.NewVisualDesignRepository(db.DB), nil)
+	resolver := &co.DefaultSettingsResolver{
+		Profiles: profiles, AccountLabel: func(string) (string, bool) { return "", false }, VisualDesigns: visualDesigns,
+	}
+	runtime := co.NewManager(co.WrapOperatorChatSource(projection), resolver, visualDesigns, logger)
 	if err := runtime.Start(context.Background()); err != nil {
 		t.Fatalf("chat overlay runtime.Start() error = %v", err)
 	}
@@ -694,5 +698,231 @@ func TestPublicChatOverlayStreamUnknownSlugRendersEmptyNotError(t *testing.T) {
 	chunk := string(buf[:n])
 	if !strings.Contains(chunk, "event: chat-overlay.reset") {
 		t.Errorf("expected an empty reset event, got: %q", chunk)
+	}
+}
+
+// --- Stage 13B: chat-overlay visual design -----------------------------
+
+func validChatDesignDocumentDTO() map[string]any {
+	return map[string]any{
+		"version": 2,
+		"canvas":  map[string]any{"width": 960, "height": 280, "transparent": true},
+		"layers": []map[string]any{
+			{
+				"id": "layer_1", "name": "Username", "kind": "text", "visible": true, "locked": false, "order": 0,
+				"frame": map[string]any{"x": 10, "y": 10, "width": 400, "height": 60}, "opacity": 1,
+				"text": map[string]any{
+					"binding": "username", "missingValueBehavior": "hide",
+					"fontFamily": "system-ui", "fontSize": 20, "fontWeight": 700, "lineHeight": 1.2, "letterSpacing": 0,
+					"textColor": "#FFFFFF", "horizontalAlign": "left", "verticalAlign": "middle",
+					"outlineWidth": 0, "outlineColor": "#000000",
+					"shadowEnabled": false, "shadowOffsetX": 0, "shadowOffsetY": 0, "shadowBlur": 0, "shadowColor": "#000000",
+				},
+				"entryAnimation": "none", "exitAnimation": "none", "animationDurationMs": 0,
+			},
+		},
+	}
+}
+
+func TestChatOverlayVisualDesignGetReturnsUnpersistedDraftWhenNoneSaved(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	recorder := do(t, ts.handler, http.MethodGet, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	decodeBody(t, recorder, &body)
+	if body["persisted"] != false {
+		t.Errorf("persisted = %v, want false", body["persisted"])
+	}
+	if body["revision"] != float64(0) {
+		t.Errorf("revision = %v, want 0", body["revision"])
+	}
+	doc, _ := body["document"].(map[string]any)
+	if doc == nil {
+		t.Fatal("document missing from draft response")
+	}
+	layers, _ := doc["layers"].([]any)
+	if len(layers) == 0 {
+		t.Fatal("expected the generated legacy draft to contain at least one layer")
+	}
+}
+
+func TestChatOverlayVisualDesignDraftIsDeterministic(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	first := do(t, ts.handler, http.MethodGet, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	second := do(t, ts.handler, http.MethodGet, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	if first.Body.String() != second.Body.String() {
+		t.Errorf("two GETs of the unsaved draft produced different bodies:\n%s\nvs\n%s", first.Body.String(), second.Body.String())
+	}
+}
+
+func TestChatOverlayVisualDesignSaveThenGetRoundTrips(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	saveBody := map[string]any{"expectedRevision": 0, "document": validChatDesignDocumentDTO()}
+	recorder := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var saved map[string]any
+	decodeBody(t, recorder, &saved)
+	if saved["persisted"] != true || saved["revision"] != float64(1) {
+		t.Errorf("save response = %+v, want persisted=true revision=1", saved)
+	}
+
+	get := do(t, ts.handler, http.MethodGet, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	var got map[string]any
+	decodeBody(t, get, &got)
+	if got["persisted"] != true || got["revision"] != float64(1) {
+		t.Errorf("GET after save = %+v, want persisted=true revision=1", got)
+	}
+}
+
+func TestChatOverlayVisualDesignSaveReturnsConflictOnStaleRevision(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	saveBody := map[string]any{"expectedRevision": 0, "document": validChatDesignDocumentDTO()}
+	if r := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody); r.Code != http.StatusOK {
+		t.Fatalf("first save status = %d, want 200, body = %s", r.Code, r.Body.String())
+	}
+	recorder := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("stale-revision save status = %d, want 409, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestChatOverlayVisualDesignSaveRejectsAlertOnlyBinding(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	doc := validChatDesignDocumentDTO()
+	layers := doc["layers"].([]map[string]any)
+	layers[0]["text"].(map[string]any)["binding"] = "alert_rendered_text"
+	saveBody := map[string]any{"expectedRevision": 0, "document": doc}
+	recorder := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 for an alert-only binding on a chat design, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestChatOverlayVisualDesignDeleteReturnsToLegacy(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Designed")
+
+	saveBody := map[string]any{"expectedRevision": 0, "document": validChatDesignDocumentDTO()}
+	if r := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody); r.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200, body = %s", r.Code, r.Body.String())
+	}
+
+	del := do(t, ts.handler, http.MethodDelete, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", del.Code, del.Body.String())
+	}
+	// Idempotent.
+	del2 := do(t, ts.handler, http.MethodDelete, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	if del2.Code != http.StatusNoContent {
+		t.Fatalf("second delete status = %d, want 204 (idempotent), body = %s", del2.Code, del2.Body.String())
+	}
+
+	get := do(t, ts.handler, http.MethodGet, "/api/chat-overlays/"+overlay.ID+"/visual-design", nil)
+	var got map[string]any
+	decodeBody(t, get, &got)
+	if got["persisted"] != false {
+		t.Errorf("persisted = %v after delete, want false", got["persisted"])
+	}
+}
+
+func TestPublicChatOverlayConfigReportsLegacyRenderingModeByDefault(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Public")
+
+	recorder := do(t, ts.handler, http.MethodGet, "/api/public/chat-overlays/"+overlay.PublicSlug+"/config", nil)
+	var body publicChatOverlayConfigResponse
+	decodeBody(t, recorder, &body)
+	if body.RenderingMode != "legacy" {
+		t.Errorf("renderingMode = %q, want legacy", body.RenderingMode)
+	}
+	if body.VisualDesign != nil {
+		t.Errorf("visualDesign = %+v, want nil/omitted for a legacy overlay", body.VisualDesign)
+	}
+}
+
+func TestPublicChatOverlayConfigReportsVisualDesignModeAfterSave(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Public")
+
+	saveBody := map[string]any{"expectedRevision": 0, "document": validChatDesignDocumentDTO()}
+	if r := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody); r.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200, body = %s", r.Code, r.Body.String())
+	}
+
+	recorder := do(t, ts.handler, http.MethodGet, "/api/public/chat-overlays/"+overlay.PublicSlug+"/config", nil)
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"renderingMode":"visual_design"`) {
+		t.Fatalf("expected renderingMode=visual_design in the public config, got: %s", body)
+	}
+	if !strings.Contains(body, `"visualDesign"`) {
+		t.Fatalf("expected a visualDesign field in the public config, got: %s", body)
+	}
+	// The public design must never carry the editor-only layer name.
+	if strings.Contains(body, "Username") {
+		t.Errorf("public config must never expose a layer's editor-only name: %s", body)
+	}
+	if strings.Contains(body, `"locked"`) {
+		t.Errorf("public config must never expose layer lock state: %s", body)
+	}
+}
+
+func TestPublicChatOverlayStreamSendsPresentationChangedAfterSave(t *testing.T) {
+	ts := newChatOverlayTestServer(t)
+	overlay := ts.createOverlay(t, "Streamed")
+
+	srv := httptest.NewServer(ts.handler)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/public/chat-overlays/"+overlay.PublicSlug+"/stream", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET .../stream error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, 4096)
+	if _, err := resp.Body.Read(buf); err != nil { // initial reset
+		t.Fatalf("reading the initial reset failed: %v", err)
+	}
+
+	saveBody := map[string]any{"expectedRevision": 0, "document": validChatDesignDocumentDTO()}
+	if r := do(t, ts.handler, http.MethodPut, "/api/chat-overlays/"+overlay.ID+"/visual-design", saveBody); r.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200, body = %s", r.Code, r.Body.String())
+	}
+
+	// The save triggers a reset (rebuild) immediately followed by a
+	// presentation_changed event - read until we see the latter, bounded
+	// by the request's own context timeout.
+	found := false
+	for i := 0; i < 5 && !found; i++ {
+		n, err := resp.Body.Read(buf)
+		if err != nil && n == 0 {
+			break
+		}
+		if strings.Contains(string(buf[:n]), "event: chat-overlay.presentation") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a chat-overlay.presentation SSE event after saving a visual design")
 	}
 }

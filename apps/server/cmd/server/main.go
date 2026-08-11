@@ -229,6 +229,18 @@ func run() error {
 	operatorChatPrefsService := operatorchatprefs.NewService(sqlite.NewOperatorChatPrefsRepository(db.DB), nil, nil)
 	operatorChatAssets := chatassets.NewResolver(twitchClient, accountService, nil)
 
+	// Stage 13A/13B: the shared, provider-independent visual-design
+	// service - one design per (owner_kind, owner_id), persisted in its
+	// own migration (0015_visual_designs.sql, widened by
+	// 0016_visual_design_chat_overlay_owner.sql). Constructed once, here,
+	// and reused unchanged by both the chat-overlay wiring below and the
+	// alert wiring further down - the same shared table serves both
+	// owner kinds through this one generic Service. A nil
+	// VisualDesignService anywhere below would degrade that owner to its
+	// legacy fixed renderer rather than panicking; production always
+	// wires a real one.
+	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
+
 	// Stage 10: the chat-overlay profile store and its live public
 	// projection. The projection's own bounded revision buffer is
 	// independent from both the Event Bus's and operator-chat's own -
@@ -244,8 +256,9 @@ func run() error {
 	}
 	chatOverlayResolver := &co.DefaultSettingsResolver{
 		Profiles: chatOverlayProfileService, OperatorPrefs: operatorChatPrefsService, AccountLabel: chatOverlayAccountLabel,
+		VisualDesigns: visualDesignService,
 	}
-	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, logger)
+	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, visualDesignService, logger)
 	if err := chatOverlayManager.Start(ctx); err != nil {
 		return err
 	}
@@ -322,13 +335,9 @@ func run() error {
 	// in their own migration; every queue/playback runtime value stays
 	// in memory only.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
-	// Stage 13A: the shared, provider-independent visual-design domain -
-	// one design per alert rule, persisted in its own migration
-	// (0015_visual_designs.sql). A nil VisualDesignService would degrade
-	// every rule to the Stage 12 legacy fixed renderer rather than
-	// panicking (see ManagerOptions's own doc comment), but production
-	// always wires a real one.
-	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
+	// visualDesignService (the same shared instance the chat-overlay
+	// wiring above already received) is reused here unchanged - one
+	// design per alert rule, in the same shared visual_designs table.
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,

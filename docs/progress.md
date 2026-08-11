@@ -14371,3 +14371,119 @@ presentation-change SSE protocol, is the next commit.
 profile deletion, `NotifyPresentationChanged`), `resolvedSettings`
 threading the new data-needs assessment, the management/public HTTP
 API, and their tests.
+
+## 2026-08-11 11:50 — feat(server): integrate visual designs with chat overlays
+
+### Status
+Backend, runtime/HTTP half of Stage 13B - everything from the previous
+commit is now actually reachable: `chatoverlay.Manager` owns visual-
+design CRUD, the public config/SSE protocol carries the new
+presentation fields/event, and every guarantee docs/visual-designs.md
+§17-§25 promised is now backed by a passing test.
+
+### What
+- `internal/chatoverlay/public_model.go`: new `OpPresentationChanged`
+  Operation - no item content, just a sequence number, participating in
+  the same ring/replay/gap mechanism every other Operation already uses.
+- `internal/chatoverlay/projection.go`: `Projection.NotifyPresentationChanged()`
+  emits it.
+- `internal/chatoverlay/filtering.go`: `resolvedSettings` gained
+  `designDataNeeds *chatoverlaydomain.ChatDataNeeds`.
+- `internal/chatoverlay/settings_resolver.go`: `DefaultSettingsResolver`
+  gained an optional `VisualDesigns *visualdesign.Service` field;
+  `Resolve` fetches the overlay's saved design (if any) and derives
+  `designDataNeeds` from it.
+- `internal/chatoverlay/lifecycle.go`: `buildUser`/`buildItem` populate
+  avatar/badges/account-label whenever *either* the legacy toggle *or*
+  `designDataNeeds` says to - proven directly by
+  `TestBuildItemDesignDataNeedsOverridesLegacyToggles` (every optional
+  field populates with every legacy toggle off, driven purely by the
+  active design) and `TestBuildItemNoDesignDataNeedsPreservesLegacyBehaviorExactly`
+  (nil `designDataNeeds` behaves byte-for-byte like Stage 10 always did).
+- `internal/chatoverlay/manager.go`: `Manager` gained an optional
+  `visualDesignSvc *visualdesign.Service` (via `NewManager`'s new
+  parameter - updated at both call sites, `cmd/server/main.go` and
+  `cmd/testserver/main.go`, both now constructing the shared
+  `visualDesignService` once and reusing it for both the chat-overlay
+  and alert wiring, since it is the same underlying table); `Remove` now
+  cascades the overlay's own saved design delete (mirroring
+  `internal/alerts.Manager.DeleteRule`'s own cascade exactly);
+  `GetVisualDesign`/`SaveVisualDesign`/`DeleteVisualDesign` - `Save`
+  additionally validates chat-specific binding capability
+  (`chatoverlaydomain.ValidateDesignBindingsForChatOverlay`) beyond the
+  shared package's own owner-agnostic `Validate`, then calls the new
+  `refreshPresentation` (an ordinary `Rebuild` - a safe, full,
+  id-keyed re-derivation from whatever operator-chat still retains, see
+  docs/visual-designs.md §24 - immediately followed by
+  `NotifyPresentationChanged`).
+- `internal/httpapi/chatoverlay.go`: `ChatOverlayRuntime` interface
+  extended with the three new methods; new routes GET/PUT/DELETE
+  `/api/chat-overlays/{id}/visual-design`, reusing `documentToDTO`/
+  `documentFromDTO`/`visualDesignResponse`/`visualDesignSaveRequest`/
+  `toPublicVisualDesignDTO` from `internal/httpapi/visualdesign.go`
+  completely unchanged (already owner-agnostic); `publicChatOverlayConfigResponse`
+  gained additive `renderingMode`/`visualDesign` fields; `writeChatOverlayRevisionEvent`
+  handles `OpPresentationChanged` as a new `chat-overlay.presentation`
+  SSE event; error mapping extended for the visual-design sentinel
+  errors, mirroring the alert-rule route's own mapping exactly.
+
+### Tests
+`internal/chatoverlay`: `visualdesign_manager_test.go` (new - a small
+in-memory `fakeVisualDesignRepository` mirroring the shared package's
+own test fake, save/get/delete round-trip, revision conflict, alert-
+only-binding rejection, cascade-delete on `Remove`, cross-overlay
+independence, both the reset-then-presentation-changed revision pair a
+save produces reaching a live subscriber); `projection_test.go` (two
+new tests: a live subscriber receives `OpPresentationChanged` with no
+item content, and a reconnecting subscriber replays one it missed);
+`lifecycle_test.go` (the two data-needs tests named above).
+`internal/httpapi`: twelve new tests in `chatoverlay_test.go` covering
+the full GET-draft/save/409/reject-alert-binding/delete-idempotent
+cycle, both `renderingMode` states in the public config, the public
+design never carrying a layer's editor-only name or lock state, and the
+live SSE stream actually emitting `chat-overlay.presentation` after a
+save.
+
+### Technical decisions
+- **Why `refreshPresentation` calls `Rebuild` (a full settings re-
+  resolve) rather than a narrower "just refresh data-needs" path**:
+  `Rebuild` already exists, is already proven safe (it is the same path
+  every blocked-term/hidden-user/account-selection change already uses),
+  and re-deriving `designDataNeeds` requires re-running the exact same
+  `SettingsResolver.Resolve` a narrower path would have needed to
+  duplicate. Reusing it is also what makes the "no duplication/
+  resurrection" guarantee free - `Configure`'s own rebuild-from-upstream
+  semantics were never touched.
+- **Why `visualDesignService` moved earlier in both `main.go` files**:
+  it has no dependency on either the chat-overlay or alert wiring below
+  it, and both now need the same instance - constructing it once, first,
+  and reusing it is simpler and more honest than building two separate
+  `*visualdesign.Service` values over the same SQLite table.
+- **Why the HTTP layer never orchestrates the rebuild/notify sequence
+  itself**: `chatoverlay.Manager.SaveVisualDesign`/`DeleteVisualDesign`
+  already do it internally (mirroring how `SaveVisualDesign` on the
+  alerts side is also a single call) - `internal/httpapi/chatoverlay.go`'s
+  new handlers are exactly as thin as the existing profile/settings ones.
+
+### Files changed
+`internal/chatoverlay/{public_model,projection,filtering,settings_resolver,lifecycle,manager,errors}.go`,
+`internal/chatoverlay/visualdesign_manager_test.go` (new),
+`internal/chatoverlay/{manager,projection,lifecycle}_test.go`,
+`internal/httpapi/chatoverlay.go`, `internal/httpapi/chatoverlay_test.go`,
+`cmd/server/main.go`, `cmd/testserver/main.go`.
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go build ./...`, `go build -tags
+integration ./cmd/testserver/...`, `go test ./...` - every package
+passes.
+
+### Known limitations
+No frontend yet - the Chat Overlay Designer UI, the shared-renderer
+reuse on the web side, and the 14th integration script are the
+remaining Stage 13B work.
+
+### Next step
+`feat(web): share visual designer foundations` - refactor the existing
+`VisualDesignRenderer`/Alert Designer components to a genuinely owner-
+independent shape (a normalized `dataContext` rather than an alert-
+specific one) before building the Chat Overlay Designer on top of them.

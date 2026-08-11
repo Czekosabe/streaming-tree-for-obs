@@ -212,6 +212,12 @@ func run() error {
 	operatorChatPrefsService := operatorchatprefs.NewService(sqlite.NewOperatorChatPrefsRepository(db.DB), nil, nil)
 	operatorChatAssets := chatassets.NewResolver(twitchClient, accountService, nil)
 
+	// Stage 13A/13B: the shared visual-design service, constructed once
+	// and reused by both the chat-overlay wiring below and the alert
+	// wiring further down - see cmd/server/main.go's own copy of this
+	// wiring for the full rationale.
+	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
+
 	// Stage 10: the chat-overlay profile store and its live public
 	// projection - see cmd/server/main.go's own copy of this wiring for
 	// the full rationale.
@@ -225,8 +231,9 @@ func run() error {
 	}
 	chatOverlayResolver := &co.DefaultSettingsResolver{
 		Profiles: chatOverlayProfileService, OperatorPrefs: operatorChatPrefsService, AccountLabel: chatOverlayAccountLabel,
+		VisualDesigns: visualDesignService,
 	}
-	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, logger)
+	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, visualDesignService, logger)
 	if err := chatOverlayManager.Start(ctx); err != nil {
 		return err
 	}
@@ -275,10 +282,10 @@ func run() error {
 		return err
 	}
 
-	// Stage 12A/13A: the alert runtime and its visual-design service -
-	// identical wiring to cmd/server, see its own comment.
+	// Stage 12A/13A: the alert runtime, reusing the same shared
+	// visualDesignService constructed above - identical wiring to
+	// cmd/server, see its own comment.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
-	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,

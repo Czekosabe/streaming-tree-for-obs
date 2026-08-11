@@ -51,6 +51,16 @@ type resolvedSettings struct {
 	blockedTerms  []chatoverlaydomain.BlockedTerm
 
 	accountLabel AccountLabelLookup
+
+	// designDataNeeds is non-nil only when this overlay currently has a
+	// saved visual design (Stage 13B, docs/visual-designs.md §22) -
+	// derived once per rebuild from that design's own layers, never
+	// from a legacy show/hide toggle. buildUser/buildItem in
+	// lifecycle.go populate an optional field whenever *either* the
+	// legacy toggle *or* this assessment says to, so an active design's
+	// layers are never silently starved of data. Never used to bypass
+	// filtering - passesStaticFilters above always runs first.
+	designDataNeeds *chatoverlaydomain.ChatDataNeeds
 }
 
 func toSet(values []string) map[string]struct{} {
