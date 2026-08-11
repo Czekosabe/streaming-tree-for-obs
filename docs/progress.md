@@ -15280,3 +15280,63 @@ None.
 `docs/visual-templates.md` - the canonical Stage 14A template-format/library
 contract, written before any template code is implemented, per this task's
 own explicit ordering requirement.
+
+## 2026-08-11 18:25 — docs: define final packaging target
+
+### What
+Documentation only, written ahead of any implementation, so Stage 14A's own
+architecture decisions (a JSON-file-based import/export, no archive, no
+bundled process model) never accidentally fight the eventual Stage 20
+packaging target. States, explicitly, that the current two-process
+development workflow (`go run ./cmd/server` in one terminal, `npm run dev`
+in another) remains the only supported way to run this project today, and
+that a single-launch Windows product is Stage 20's own future job - not
+started, not scheduled beyond being on the roadmap.
+
+### Files changed
+- `docs/project-overview.md` - new §12.1 "Windows packaging target (Stage
+  20, documentation only)", placed directly after §12 "Future server
+  version" (a different, remote-server-hosting concern, not conflated with
+  this one). States the seven-step intended end-user launch flow, the
+  target distribution shape (Windows-first, installer preferred, portable
+  `.exe` optionally), the preferred "one Go process serves a once-built
+  static frontend, opens the system browser" architecture, an explicit
+  non-decision to avoid Electron unless a genuinely new documented need for
+  a bundled browser engine appears, the upgrade/data-preservation
+  expectations (SQLite, managed MediaMTX install, OS credential-store
+  entries all survive an upgrade; uninstall/data-removal behavior is
+  Stage 20's own future decision), and an explicit statement that FFmpeg
+  bundling is **not** decided by this note - it stays operator-provided
+  today, and any future redistribution would need its own licensing audit
+  first (mirroring the one already done for MediaMTX).
+- `README.md` - a short paragraph appended directly after the Quick Start's
+  own two-terminal instructions, stating plainly that this workflow is
+  permanent for local development and linking to the new
+  `project-overview.md` §12.1 for the future one-launch target, with an
+  explicit "nothing about it is implemented yet."
+
+### Technical decisions
+- **Why §12.1 rather than rewriting §12 or the Stage 20 roadmap row.** §12
+  ("Future server version") is about a different axis entirely - hosting the
+  *backend* remotely for a multi-operator server deployment - and conflating
+  it with "package the whole thing as one local Windows app for a single
+  operator" would make both concerns harder to read. The roadmap table's own
+  Stage 20 row was left as its existing one-line summary; the new
+  subsection is where the actual target detail belongs, exactly like how
+  Stage 8.1's own four-concept clarification lives in its own numbered
+  subsection rather than being crammed into a table cell.
+- **Why this note explicitly refuses to decide the FFmpeg question.** The
+  task that requested this note was explicit that Stage 20 must make that
+  call later, with its own licensing/distribution audit - writing anything
+  more specific here would misrepresent a real decision as already made
+  when it has not been.
+
+### Automated validation
+Documentation only - no code changed.
+
+### Known limitations
+None.
+
+### Next step
+`docs/visual-templates.md` - the canonical Stage 14A template-format/library
+contract, written before any template code is implemented.

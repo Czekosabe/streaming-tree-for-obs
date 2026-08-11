@@ -253,6 +253,15 @@ The panel also works **without the backend running** — the system status secti
 then shows a clear "Backend unavailable" message and the rest of the interface
 keeps working.
 
+**This two-process workflow is today's only supported way to run the
+project**, and stays that way for the foreseeable future. A single-launch
+Windows packaging is the intended **Stage 20** target (one application,
+one click, no Node/npm/Go install required, no separate frontend process) —
+documented ahead of implementation in
+[`docs/project-overview.md` §12.1](docs/project-overview.md#121-windows-packaging-target-stage-20-documentation-only)
+so later decisions do not accidentally fight it, but **nothing about it is
+implemented yet**.
+
 ---
 
 ## Frontend — install and run

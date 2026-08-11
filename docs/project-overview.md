@@ -926,6 +926,64 @@ The server version will additionally require panel authentication, TLS
 transport and a considered model for storing secrets server-side. None of these
 is implemented yet.
 
+## 12.1 Windows packaging target (Stage 20, documentation only)
+
+This subsection states the intended **end-user** distribution target now,
+deliberately ahead of implementation, so architecture decisions made in the
+meantime (Stage 14A onward) never accidentally fight it. **Nothing described
+here is implemented.** Today's only supported way to run this project is the
+two-process development workflow described in the README's own Quick Start
+(a Go backend process and a separate Vite dev-server process) - that remains
+true and unchanged until Stage 20 actually lands.
+
+**Intended normal end-user workflow**, once Stage 20 ships:
+
+1. install or run Streaming Tree,
+2. launch **one** normal Windows application,
+3. that application starts its own local Go backend,
+4. the production React frontend is served by that same application - no
+   separate frontend process,
+5. the system browser opens the local operator UI automatically,
+6. every managed child process (MediaMTX, per-destination FFmpeg) is
+   supervised by that same application, exactly as today,
+7. closing the application cleanly stops every process it owns.
+
+**Target distribution:**
+
+- Windows-first; a normal installer is preferred, a portable executable may
+  additionally be offered,
+- no Node.js, no npm, and no Go installation required for an end user,
+- no Vite development server involved in the shipped product.
+
+**Preferred production architecture** (not yet built): build the React
+frontend once at release time, embed or package that static production
+bundle alongside the Go application, and have the Go process serve both the
+frontend and the API from one loopback origin, opening the system browser
+automatically on launch. Electron (or any other bundled-browser-engine
+approach) is deliberately **not** planned merely to obtain a native `.exe`
+window - it would only be reconsidered if a genuinely new, documented
+requirement needed a bundled browser engine for its own sake.
+
+**Application data across an upgrade:** the existing per-user application
+data location (see "Data storage" in the README) continues to be used
+unchanged; an upgrade must preserve the SQLite database/configuration and the
+managed MediaMTX installation where the new version remains compatible with
+it, and must never delete an OS credential-store entry a prior version wrote.
+Exact uninstall/data-removal behavior (what a Windows uninstaller does or does
+not remove) is Stage 20's own decision, not made here.
+
+**MediaMTX** keeps its existing managed-installation model (downloaded on
+explicit user request, checksum-verified, supervised as a child process) -
+Stage 20 changes nothing about it.
+
+**FFmpeg is explicitly not planned to be bundled** by this note - it remains
+operator-provided/resolved/probed exactly as today. Whether Stage 20
+ultimately bundles, downloads, or continues to require an operator-provided
+FFmpeg is its own future decision, and redistributing FFmpeg at all would
+first need its own separate licensing/distribution audit (mirroring the one
+already done for MediaMTX, §7.4) - nothing here should be read as that
+decision having already been made.
+
 ---
 
 ## 13. Roadmap
