@@ -29,10 +29,12 @@ provider-independent **visual-design engine** with a real **Alert Overlay
 Designer** editor for that same alert presentation (stage 13A), and a
 matching real **Chat Overlay Designer** reusing that same engine for the
 chat overlay (stage 13B) — the visual designers are now complete as a
-whole. **Still planned**: built-in templates and template import/export
-(stage 14), text-to-speech, goal/counter widgets, additional engagement
-providers (YouTube, Kick chat/events), and external donation-service
-connectors —
+whole — and a real **reusable visual-template library** (built-ins, a
+persisted user template gallery, and asset-free JSON import/export;
+stage 14A) shared by both Designers. **Still planned**: portable
+archive template packages with bundled assets (stage 14B), text-to-
+speech, goal/counter widgets, additional engagement providers
+(YouTube, Kick chat/events), and external donation-service connectors —
 detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
@@ -95,7 +97,11 @@ engagement piece above in order (stages 8A through 12B).
 > (drag/resize/property-panel editing, saved per rule) and a matching
 > **Chat Overlay Designer** (saved per overlay, one repeated item card
 > reusing Stage 10's own filtering/lifecycle unchanged) — both closed,
-> bounded editors, never free-form CSS or markup. See
+> bounded editors, never free-form CSS or markup — sharing a real
+> **reusable visual-template library** (built-in templates, a persisted
+> user template gallery, backend-authoritative compatibility, and
+> asset-free JSON import/export, never automatically saving an owner's
+> design). See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
@@ -123,9 +129,9 @@ engagement piece above in order (stages 8A through 12B).
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
 > everything else still built **on top of** the operator chat, outbound
-> chat, alert engine and visual-design engine — built-in templates and
-> template import/export, TTS, goal widgets, and donation connectors —
-> are still **planned**. Whatever remains
+> chat, alert engine and visual-design/template engine — portable
+> archive template packages with bundled assets, TTS, goal widgets, and
+> donation connectors — are still **planned**. Whatever remains
 > a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -184,7 +190,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — see [progress.md](docs/progress.md); Stage 12 as a whole is now complete |
 | 13A | Shared, provider-independent visual-design document, its persistence/HTTP API, immutable per-alert snapshotting, and the Alert Overlay Designer editor UI | **Completed** — see [progress.md](docs/progress.md) |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for chat overlays | **Completed** — see [progress.md](docs/progress.md); Stage 13 as a whole is now complete |
-| 14 | Built-in templates and template import/export, built on Stage 13's own document format | Planned, not started |
+| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner compatibility, and asset-free JSON import/export, built on Stage 13's own document format | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is **not** complete until 14B lands |
+| 14B | Portable archive template packages, managed template assets, and any safe custom-media/font primitives those packages need | Planned, not started |
 | 15–19 | TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
@@ -1579,10 +1586,13 @@ overlay's own public URL points at `/overlay/chat/{publicSlug}`. See
 underlying OBS Browser Source research (setup, recommended dimensions,
 the shutdown/refresh checkbox trade-off) this feature is built on.
 
-**What this stage does not implement.** Exportable/importable overlay
-templates (Stage 14), alerts, TTS, and YouTube/Kick/TikTok overlay
-support are all still unimplemented — only Twitch chat reaches any
-overlay, exactly like the operator Chat page above. See
+**What this stage does not implement.** TTS and YouTube/Kick/TikTok
+overlay support are still unimplemented — only Twitch chat reaches any
+overlay, exactly like the operator Chat page above. Asset-free JSON
+template import/export for a chat visual design now exists (Stage 14A,
+via the Chat Overlay Designer's own Templates gallery — see below); a
+portable *archive* template package (bundled assets, its own file
+extension) remains Stage 14B's own future job. See
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Chat Overlay Designer (Stage 13B)
@@ -1628,6 +1638,54 @@ resurrecting, or reordering anything; the public overlay learns about
 this over the same SSE stream via an additive `chat-overlay.presentation`
 event that never changes the meaning of any existing Stage 10 event or
 endpoint.
+
+### Visual Template Library (Stage 14A)
+
+Both the Alert Overlay Designer and the Chat Overlay Designer share a
+**Templates** button opening the same reusable template gallery
+(`components/visual-templates/TemplateGallery.tsx`) — never two
+separate gallery implementations. A template wraps a complete visual
+design document with portable metadata (name, description, author,
+license) and belongs to exactly one target, `alert` or `chat`.
+**Built-in templates** (three per target — Minimal Dark, Clean
+Modern/Compact, Neon Accent) are application-owned, immutable, reviewed
+Go constructors, never downloaded and never a database row; **My
+templates** are operator-owned, persisted in a new `visual_templates`
+SQLite table (migration `0017`), and may be renamed or deleted.
+
+Using a template **never saves the owner's design automatically** —
+choosing "Use as draft" loads it into the Designer's own existing
+unsaved-draft state (one undo step), exactly preserving Stage 13's own
+explicit-Save rule; only the Designer's pre-existing Save button ever
+writes a `visual_designs` row. **Save as template** does the reverse:
+it persists the *current draft* as a new reusable template without
+touching the owner's own saved design, so the two operations stay
+fully independent. Deleting a template can never affect any design
+already created from it — there is no foreign key or live reference
+from a saved design back to a template it may once have come from.
+
+**Compatibility** is assessed by the backend, never the frontend: a
+template scoped to the current owner (a specific alert rule's own
+event type, or a specific chat overlay) reports whether it can
+genuinely be used, with a stable reason code (e.g. "designed for a
+different target," "uses a binding unavailable for this alert rule") —
+an incompatible template's own "Use as draft" stays disabled rather
+than silently producing a design that can never render anything for
+that owner.
+
+**JSON import/export, asset-free.** A template exports as a single,
+closed, portable JSON file (`.streaming-tree-template.json`) containing
+only the fields above plus the embedded document — no image, video,
+audio, font, or archive of any kind. Import is a two-step flow: select
+a file, see a backend-validated preview (name/description/target/a
+real rendered preview/compatibility), then explicitly confirm — nothing
+is persisted merely by selecting a file. An older exported document
+(schema version 1, from before Stage 13B) is transparently migrated to
+the current version on import; an unknown/future/malformed version is
+rejected outright, never silently reinterpreted. See
+[`docs/visual-templates.md`](docs/visual-templates.md) for the full
+contract, including the explicit split from Stage 14B's own future
+portable archive/asset format.
 
 ### Persisted overlay profiles
 
@@ -1738,6 +1796,10 @@ fake-Twitch message resolving a saved design's own bindings, filtering
 and moderation staying authoritative and immediate under a design, a
 live save updating visible items with no duplication, reconnect replay
 of the presentation change, and design survival across a restart.
+`scripts/verify-visual-templates.mjs` covers Stage 14A's own template
+library - unlike every other engagement script, it needs no fake
+Twitch server at all, since template management and alert-rule/chat-
+overlay creation never require a connected account.
 
 ---
 
@@ -2045,11 +2107,13 @@ alone persists nothing. See
 [`docs/visual-designs.md`](docs/visual-designs.md) for the full document
 contract.
 
-**What this stage does not implement.** Template import/export and a
-built-in template gallery (Stage 14), uploaded/remote images, GIFs,
+**What this stage does not implement.** Uploaded/remote images, GIFs,
 video, sounds, fonts, custom CSS, or arbitrary HTML/JS remain
 unimplemented — Stage 13A's own layer kinds and typography/animation
-options are closed, bounded enums, never free-form CSS or markup. No
+options are closed, bounded enums, never free-form CSS or markup, and
+Stage 14A's own template library (below) adds no new primitive either.
+A portable *archive* template package remains Stage 14B's own future
+job. No
 new Twitch scope and no new EventSub subscription type were added for
 12A, 12B or 13A: alerts only ever match events already reaching the
 Event Bus, and the alert engine never talks to Twitch directly.
@@ -2263,6 +2327,22 @@ followed by a `chat-overlay.presentation` event; reconnect replay of
 that event via a real `Last-Event-ID`; Reset to legacy and overlay-
 deletion cascade; and design survival across a backend restart — run at
 least twice per change. See [`docs/progress.md`](docs/progress.md) for
+exactly which scenarios this covers versus a specific named Go/frontend
+test instead.
+
+`scripts/verify-visual-templates.mjs` does the same for Stage 14A: the
+built-in registry (at least 3 alert, at least 3 chat, none ever a
+SQLite row) validated at real backend startup; compatibility scoped to
+a real alert rule and a real chat overlay, including a target-mismatch
+blocker and an event-type-unavailable blocker; "Save as template"
+never touching the owner's own saved design; import-preview migrating
+an embedded version-1 document to the current version while persisting
+nothing; a client-supplied local id, an unknown field, an unsupported
+template version, an unsupported future design version, and an
+oversized body all rejected; a full export → delete → re-import
+semantic round trip; built-in immutability; and survival across a
+backend restart — run at least twice per change, needing no fake
+Twitch server at all. See [`docs/progress.md`](docs/progress.md) for
 exactly which scenarios this covers versus a specific named Go/frontend
 test instead.
 
@@ -2620,6 +2700,7 @@ node scripts/verify-alerts.mjs                    # alert rules/queue: matching,
 node scripts/verify-alert-advanced-queue.mjs      # Stage 12B grouping and mid-alert preemption - fake Twitch only
 node scripts/verify-alert-designer.mjs            # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
 node scripts/verify-chat-overlay-designer.mjs     # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
+node scripts/verify-visual-templates.mjs          # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -2985,7 +3066,8 @@ rest of the repository.
 │   ├── verify-alerts.mjs           # Alert rules/queue: matching, priority, expiration, pause/skip/replay/clear - fake Twitch only
 │   ├── verify-alert-advanced-queue.mjs # Stage 12B grouping and mid-alert preemption - fake Twitch only
 │   ├── verify-alert-designer.mjs   # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
-│   └── verify-chat-overlay-designer.mjs # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
+│   ├── verify-chat-overlay-designer.mjs # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
+│   └── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -3004,7 +3086,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, and a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is now complete (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands) and [Alerts](#alerts)). Everything built on top of that engine (built-in templates/import-export, TTS, goal widgets) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, portable archive template packages | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — and a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands) and [Alerts](#alerts)). Everything built on top of that engine (portable archive template packages, TTS, goal widgets) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3115,6 +3197,19 @@ directly next to the control.
   authoritative regardless of rendering mode — see
   [Alerts](#alerts), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay)
   and [`docs/visual-designs.md`](docs/visual-designs.md).
+- **A real, shared, reusable visual-template library** (stage 14A,
+  built on the same document from the bullet above) — built-in,
+  immutable templates (three per target) alongside a persisted,
+  operator-owned template gallery; backend-authoritative
+  target/owner-instance compatibility with stable reason codes; a
+  strict draft-first application model (using a template only ever
+  updates the Designer's own unsaved draft - the owner's saved design
+  changes only through the Designer's own pre-existing Save); "Save as
+  template" from the current draft, independent of the owner's own
+  save state; and closed, asset-free JSON import (backend-validated
+  preview, then explicit confirm) and export, with an older exported
+  document version migrated transparently - see
+  [`docs/visual-templates.md`](docs/visual-templates.md).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3126,8 +3221,9 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Built-in templates, template import/export, TTS, goal widgets, and
-  any donation-service connector** — architecture only so far, see
+- **Portable archive template packages, bundled template assets, TTS,
+  goal widgets, and any donation-service connector** — architecture
+  only so far (stage 14B onward), see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 

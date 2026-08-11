@@ -1014,7 +1014,8 @@ it is architected; this table only tracks status and dependencies.
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — stage 12 as a whole is now complete |
 | 13A | Shared, provider-independent visual-design document, persistence/HTTP API, immutable per-alert snapshotting, shared React renderer, and the Alert Overlay Designer editor (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for one repeated chat item card, with Stage 10's own filtering/lifecycle staying authoritative | **Completed** — stage 13 as a whole is now complete |
-| 14 | Built-in templates and template import/export, built on stage 13's document format | Planned, not started |
+| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner-instance compatibility, and asset-free JSON import/export, built on stage 13's document format (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** — stage 14 as a whole is **not** complete until 14B lands |
+| 14B | Portable archive template packages, managed template assets, and any safe custom-media/font primitives those packages need | Planned, not started |
 | 15 | YouTube and Kick engagement connectors | Planned |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
@@ -1099,10 +1100,23 @@ Key dependencies:
   whole is now complete - see [`docs/progress.md`](progress.md)'s
   Stage 13A and 13B entries and [`docs/visual-designs.md`](visual-designs.md)
   for the document contract itself.
-- Stage 14 (templates) needs stage 13's designer output format - the
-  document stage 13A already defines is intended to become stage 14's
-  template payload later, but stage 13A deliberately does not implement
-  any template packaging, import/export, or gallery itself.
+- Stage 14A (the reusable template library) needed stage 13's own
+  document format as its embedded payload - the visual-design document
+  itself is unchanged by stage 14A, wrapped in an independently
+  versioned template-interchange schema (its own `schemaVersion`
+  counter, distinct from the document's own `version`; see
+  `docs/visual-templates.md`). Templates are strictly **draft-first**:
+  "Use as draft" only ever changes the Designer's own unsaved draft,
+  and there is no foreign key or live reference from a saved
+  `visual_designs` row back to whatever template it may once have come
+  from - deleting a template can never change an already-created
+  design. Stage 14B (portable archive packages, bundled assets) remains
+  planned; stage 14A deliberately implements no archive format, no
+  asset storage, and no new visual-design primitive.
+- Stage 20's own future one-launch Windows packaging target is now
+  documented (§12.1) ahead of implementation, specifically so stage
+  14A's own asset-free, single-JSON-file design (no archive, no bundled
+  process model) was chosen with that eventual target already in mind.
 - Stage 17 (TTS) and stage 18 (goals/widgets) consume stage 8's bus directly
   and do not depend on the designers.
 
@@ -1287,7 +1301,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: eight pieces of this section are real as of stage 13B - the
+**Status: nine pieces of this section are real as of stage 14A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1296,17 +1310,25 @@ bot messages plus safe chat commands built on that same dispatcher
 (stage 11B), a real alert engine plus alert queue consuming that same
 Event Bus (stage 12A/12B) - persisted alert rules, matching, a bounded
 queue, bounded grouping of compatible queued alerts, and opt-in,
-deterministic mid-alert preemption - and a real, shared,
+deterministic mid-alert preemption - a real, shared,
 provider-independent visual-design engine with a real Alert Overlay
 Designer editor for that same alert presentation (stage 13A) and a real
 Chat Overlay Designer reusing that same shared document/renderer for
-the chat overlay (stage 13B). Every existing alert rule or chat overlay
-with no saved design still renders through its original fixed/legacy
-presentation unchanged; a chat overlay's own filtering, lifecycle,
-moderation and stack ownership (stage 10) stays entirely authoritative
-in both rendering modes. Stage 13 as a whole is now complete. Everything
-else described below (built-in templates, TTS, and goal/counter widgets)
-remains planned.**
+the chat overlay (stage 13B, stage 13 as a whole complete), and a real,
+shared, reusable visual-template library on top of that same document
+(stage 14A) - built-in immutable templates, a persisted user template
+gallery, backend-authoritative target/owner-instance compatibility, and
+closed, asset-free JSON import/export, with a strict draft-first
+application model (using a template only ever changes a Designer's own
+unsaved draft; the owner's saved design changes only through the
+Designer's own pre-existing Save). Every existing alert rule or chat
+overlay with no saved design still renders through its original
+fixed/legacy presentation unchanged; a chat overlay's own filtering,
+lifecycle, moderation and stack ownership (stage 10) stays entirely
+authoritative in both rendering modes. Stage 14 as a whole is **not**
+complete until stage 14B (portable archive template packages, bundled
+assets) lands. Everything else described below (TTS and goal/counter
+widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay

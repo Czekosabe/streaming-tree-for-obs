@@ -15748,3 +15748,90 @@ consolidation, config/README, THIRD_PARTY_NOTICES audit), then the full
 closing regression across frontend, backend, and all fifteen
 integration scripts, then the final Stage 14A closing-regression
 journal entry, then push.
+
+## 2026-08-11 22:20 — docs: document Stage 14A template library
+
+### What
+The Stage 14A documentation completion pass: mark Stage 14A Completed
+(Stage 14 as a whole still incomplete until 14B), and correct every
+stale "not yet implemented"/"planned" reference to the template library
+that this stage's own commits made false, across every tracked
+document except the append-only journal and the historical `>`
+blockquotes those journals/architecture docs already promise never to
+rewrite.
+
+### Files changed
+- `README.md` - roadmap table split into 14A (Completed)/14B (Planned);
+  a new "Visual Template Library (Stage 14A)" subsection under OBS
+  Browser Source chat overlay; the top project-state blockquote (three
+  separate paragraphs) corrected; the "What is currently demo-only"
+  table row, the "what is currently implemented"/"what will be added
+  later" bullet lists, and the Alerts section's own "what this stage
+  does not implement" paragraph all updated; the 15th script added to
+  both the prose description, the bash command block, and the
+  directory-tree listing.
+- `docs/project-overview.md` - roadmap table split; the Stage 14
+  dependency-reasoning bullet rewritten to describe the real template-
+  vs-document version independence and the draft-first/no-provenance
+  rules; a new bullet noting Stage 20's own packaging-target note
+  (added in an earlier commit this stage) directly informed Stage 14A's
+  asset-free, single-JSON-file design choice; §16's own "Status"
+  summary paragraph (a plain living paragraph, not the never-rewrite
+  blockquote kind) updated from "eight pieces...Stage 14 not yet
+  started" to "nine pieces...Stage 14A complete, Stage 14 as a whole
+  not yet complete."
+- `docs/engagement-architecture.md` - §18's roadmap table (14 row split
+  into 14A/14B) and its own dependency-reasoning bullet/closing status
+  line updated; **a new Stage 14A factual-status blockquote appended
+  directly after the existing Stage 13B one in §13 - every existing
+  Stage 13A/13B blockquote was left completely untouched**, covering
+  the built-in/user template split, the independent template-vs-
+  document version counters, the draft-first application model and
+  "Save as template," the no-provenance rule, asset-free JSON import/
+  export, and the explicit Stage 14B boundary; §7.3's own stale
+  "exportable/importable overlay template" line (which predated even
+  Stage 13B) corrected to distinguish this stage's own settings-vs-
+  design-export split accurately.
+- `docs/visual-designs.md` - the opening paragraph's forward reference
+  to "Stage 14 ... expected to package this document" corrected to
+  describe the real, independent template-schema-version relationship
+  now that it exists; the security-model bullet's "Stage 13B or Stage
+  14" hedge narrowed to name Stage 14B specifically, now that Stage 14A
+  is known to add no asset primitive.
+- `config/README.md` - a new item 16 (after item 15, Stage 13B's own
+  entry, left unchanged) describing the new `visual_templates` table,
+  explicitly confirming built-ins are never persisted, raw imported
+  file bytes are never persisted, no asset directory exists, and no
+  export-history table exists.
+- `THIRD_PARTY_NOTICES.md` - audited, not modified: `git log`
+  against `apps/server/go.mod`/`go.sum` and `apps/web/package.json`/
+  `package-lock.json` across every commit since Stage 13's own closing
+  regression (`d1eaec9`) shows no dependency-manifest change, confirming
+  Stage 14A added zero new third-party dependencies.
+
+### Technical decisions
+Same append-only-vs-living-reference rule this stage's own first commit
+(`fix(docs): correct current visual design contract`) already
+established: a `> **Factual status update**` blockquote is dated
+history and is only ever appended after, never edited; a roadmap table,
+a plain status paragraph, or a numbered "what this directory holds"
+list is a living reference and was corrected in place once it became
+false. One genuinely stale line predating even Stage 13B (§7.3's own
+"exportable/importable overlay template" note) was found and corrected
+during this same audit pass, consistent with the rule that verifying
+against real state applies to any drift found, not only drift this
+stage introduced.
+
+### Automated validation
+Documentation only - no code changed. The full frontend/backend/
+integration-script regression proving every claim in these documents
+is real happens in the next (closing-regression) entry, run before
+that entry is written, not assumed here.
+
+### Known limitations
+None.
+
+### Next step
+The full, final closing regression across frontend, backend, and all
+fifteen integration scripts, run once more immediately before push,
+then the dedicated Stage 14A closing-regression journal entry.

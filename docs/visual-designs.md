@@ -11,9 +11,11 @@ Stage 13A implemented this contract for its first owner: an **alert rule**
 document/primitive model for the Chat Overlay Designer, adding the two
 shared primitives that reuse required (§21) and widening the document
 schema from version 1 to version 2 (§19) - Stage 13 as a whole is now
-complete. Stage 14 (built-in templates, import/export) is expected to
-package this same document as its payload format, plus an archive format
-this document does not define.
+complete. Stage 14A packages this same document, unchanged, as the
+embedded payload inside its own independently versioned template-
+interchange schema (`docs/visual-templates.md`); Stage 14B is expected
+to define a portable archive format on top of that, which neither this
+document nor Stage 14A defines.
 
 The implementation lives at `apps/server/internal/domain/visualdesign` (the
 shared, provider-independent domain), with owner-specific binding-capability
@@ -358,8 +360,10 @@ existing rule's public appearance changes merely because Stage 13A shipped.
   hosts, no `data:`/`javascript:` URL, bounded dimensions, safe fallback) -
   the design itself never stores a URL of any kind.
 - **No uploaded/remote assets**: no image, video, audio, or font upload path
-  exists in Stage 13A. Custom media remains explicitly out of scope until its
-  own storage/security model is designed (Stage 13B or Stage 14).
+  exists in Stage 13A, Stage 13B, or Stage 14A. Custom media remains
+  explicitly out of scope until its own storage/security model is
+  designed - Stage 14B at the earliest, deliberately (see
+  `docs/visual-templates.md`).
 - **Bounded everything**: layer count, document byte size, static text
   length, layer name length, and every numeric style field are all closed,
   validated bounds (§8) - no unbounded array or string anywhere in the

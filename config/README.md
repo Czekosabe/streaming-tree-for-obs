@@ -300,3 +300,22 @@ with no transcoding, is this stage's deliberate scope.
     trusted before Stage 13B, never an uploaded or arbitrary-URL asset
     (`docs/visual-designs.md` §21). Stage 13B added **no new environment
     variable**.
+16. Stage 14A (the reusable visual-template library) adds exactly one
+    new **persisted** table, `visual_templates` (migration
+    `0017_visual_templates.sql`): a portable metadata set
+    (name/description/author/license), a template-format schema
+    version, and a versioned JSON document column - one row per
+    **user-created** template only. **Built-in templates are never
+    persisted at all** - they are reviewed Go constructors
+    (`internal/domain/visualtemplate/builtin.go`), validated once at
+    application startup, and are never a row in this table, never
+    downloaded, and never written to this directory either. Also never
+    stored: a raw imported template file's own original bytes (only the
+    parsed, validated, normalized document is persisted), a file path,
+    export history, or a preview/thumbnail image. There is still no
+    template *asset* directory anywhere - Stage 14A adds no new layer
+    kind and no asset primitive to the embedded visual-design document,
+    and no ZIP/archive format exists yet; see `docs/visual-templates.md`
+    for the explicit split from Stage 14B's own future portable
+    archive/asset format, which this application does not implement.
+    Stage 14A added **no new environment variable**.

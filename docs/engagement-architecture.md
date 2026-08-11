@@ -532,9 +532,13 @@ today, of the settings originally planned here:
   tags for moderators/subscribers/VIPs (from Twitch's own badge set-ids,
   never inferred).
 
-**Not yet real, deliberately deferred:** an exportable/importable
-overlay template (§13.2/§13.3, stage 14) - this stage's settings remain
-per-profile SQLite columns, not a shareable package. A visual designer
+**Not yet real, deliberately deferred:** a portable, asset-bundling
+overlay template *package* (§13.2/§13.3, stage 14B) - this stage's own
+settings remain per-profile SQLite columns, never a shareable package.
+A closed, asset-free JSON export/import of a chat visual *design* (not
+this stage's own settings) is real as of stage 14A, reached through the
+Chat Overlay Designer's own Templates gallery - see
+[visual-templates.md](visual-templates.md). A visual designer
 for the above **is** now real (stage 13B, §13) as an additive layer on
 top of these same settings: when an overlay has no saved design, this
 stage's plain-form settings remain the entire presentation unchanged;
@@ -1038,6 +1042,55 @@ bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 > itself. See [progress.md](progress.md)'s Stage 13B entries and
 > [visual-designs.md](visual-designs.md) for exactly what exists.
 
+> **Factual status update (stage 14A, completed, partial): stage 14 is
+> now split into 14A (completed) and 14B (planned, not started).** A
+> real, reusable **visual-template library** is implemented, shared
+> unchanged by both Designers via a "Templates" button on the common
+> `DesignerTopBar`: three built-in, immutable, application-owned
+> templates per target (never a database row, never downloaded), a
+> persisted user template library (`visual_templates`, migration
+> `0017_visual_templates.sql`, `tpl_`-prefixed server-generated ids
+> only - an imported file can never choose its own local id), and a
+> backend-authoritative compatibility assessment (`internal/domain/
+> visualtemplate.AssessCompatibility`) returning a stable blocker code
+> (`template_target_mismatch`, `alert_binding_unavailable`,
+> `chat_binding_unavailable`, `unsupported_visual_document`,
+> `visual_document_invalid`) rather than a boolean the frontend would
+> have to reinterpret. §13.2/§13.3's own "template package" concept is
+> now understood as **two** independent schemas, not one: a
+> template-interchange wrapper (this stage, its own `schemaVersion`
+> counter starting at 1) embedding a complete visual-design document
+> (stage 13's own, currently version 2) - the two version counters are
+> deliberately independent, so a template-schema-v1 file may legally
+> embed either document version, and an older embedded document is
+> transparently migrated on import via the exact same
+> `MigrateToCurrentVersion` a stored `visual_designs` row already uses,
+> never silently reinterpreted if it is genuinely unsupported. Using a
+> template is strictly **draft-first**, mirroring stage 13's own
+> explicit-Save rule exactly: "Use as draft" only ever changes a
+> Designer's own local unsaved draft (one undo step, reusing the exact
+> `commitDraft` every other layer mutation already uses) - the owner's
+> saved `visual_designs` row changes only through the Designer's own
+> pre-existing Save, never automatically. "Save as template" is the
+> independent reverse operation: it persists the *current draft*
+> without ever touching the owner's own saved design. There is no
+> foreign key and no live reference from a saved design back to
+> whatever template it may once have come from, so deleting a template
+> can never change an already-created design. Import is asset-free
+> JSON only (no ZIP/archive, no image/video/audio/font, no arbitrary
+> URL) - a two-step flow (backend-validated preview, then explicit
+> confirm) that persists nothing until confirmed; export produces the
+> same closed JSON shape with a safe, injection-proof filename and no
+> local database identifiers. §13.2/§13.3's own portable **archive**
+> package (bundled assets, its own manifest/extension) remains entirely
+> unimplemented - that is now explicitly stage 14B's job, deliberately
+> kept separate because a real archive-extraction/asset-storage
+> security boundary (path traversal, decompression limits, asset
+> lifecycle) is substantially larger than a first template
+> implementation should absorb at once. See
+> [progress.md](progress.md)'s Stage 14A entries and
+> [visual-templates.md](visual-templates.md) for the full contract.
+
 ### 13.1 Two designers, one underlying model
 
 Two planned visual editors: the **Chat Overlay Designer** and the **Alert
@@ -1229,7 +1282,8 @@ that table.
 | 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A — **Completed** |
 | 13A | Alert Overlay Designer and the shared visual-design engine (§13.1) — **Completed** |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — **Completed**, stage 13 as a whole is now complete |
-| 14 | Built-in templates and template import/export (§13.3) |
+| 14A | Reusable visual-template library: built-ins, a persisted user template library, compatibility, asset-free JSON import/export (§13.2/§13.3) — **Completed** |
+| 14B | Portable archive template packages, bundled template assets (§13.2/§13.3) — stage 14 as a whole is not complete until this lands |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
 | 16 | External donation-service connectors (§15) |
 | 17 | TTS and audio queue (§12) |
@@ -1273,10 +1327,17 @@ Dependencies that constrain this order:
   same way. Stage 13A built one shared, provider-independent visual-design
   document and React renderer that 13B then reused directly, rather than
   each designer inventing its own format.
-- Stage 14 (templates) needs stage 13's designer output format to serialize
-  - specifically, the document stage 13A already defines is intended to
-  become stage 14's template payload once stage 13 as a whole (13A and
-  13B) is complete; stage 13A itself implements no template packaging.
+- Stage 14A (the reusable template library) needed stage 13's own
+  document format as its embedded payload, once stage 13 as a whole
+  (13A and 13B) was complete - the document itself is unchanged by
+  stage 14A, wrapped in its own independently versioned
+  template-interchange schema. Stage 14B (portable archive packages,
+  bundled assets) is planned to need stage 14A's own template as its
+  payload the same way, deliberately kept a separate stage because
+  archive extraction/asset storage is a substantially larger untrusted-
+  input security boundary than a first template implementation should
+  absorb at once (see [visual-templates.md](visual-templates.md) for
+  the full reasoning).
 - Stage 17 (TTS) and stage 18 (goals/widgets) both consume the stage 8 bus
   directly and do not depend on the designers, so they can in principle move
   earlier if priorities change — they are ordered late here only because they
@@ -1285,5 +1346,8 @@ Dependencies that constrain this order:
 **Stage 13A and stage 13B are now both completed - stage 13 as a whole
 is complete** (see [progress.md](progress.md)'s Stage 13A/13B entries
 and [visual-designs.md](visual-designs.md) for the document contract).
-Every other stage in this table remains as planned; see
-[progress.md](progress.md) for what actually exists today.
+**Stage 14A is now completed - stage 14 as a whole remains incomplete
+until stage 14B lands** (see [progress.md](progress.md)'s Stage 14A
+entries and [visual-templates.md](visual-templates.md) for the
+template-library contract). Every other stage in this table remains as
+planned; see [progress.md](progress.md) for what actually exists today.
