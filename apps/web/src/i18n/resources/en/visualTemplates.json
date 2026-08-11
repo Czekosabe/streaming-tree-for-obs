@@ -29,12 +29,18 @@
     "preview": "Preview",
     "useAsDraft": "Use as draft",
     "export": "Export",
+    "exportRequiresPackage": "This template contains assets. Export it as a package instead.",
+    "exportPackage": "Export package",
     "delete": "Delete",
     "import": "Import",
+    "importPackage": "Import package",
     "saveAsTemplate": "Save as template",
     "back": "Back",
     "cancel": "Cancel",
     "save": "Save"
+  },
+  "packageImport": {
+    "assetsTitle": "Assets in this package"
   },
   "import": {
     "tooLarge": "This file is too large to be a valid template.",

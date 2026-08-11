@@ -29,12 +29,18 @@
     "preview": "Podgląd",
     "useAsDraft": "Użyj jako szkicu",
     "export": "Eksportuj",
+    "exportRequiresPackage": "Ten szablon zawiera zasoby. Wyeksportuj go jako pakiet.",
+    "exportPackage": "Eksportuj pakiet",
     "delete": "Usuń",
     "import": "Importuj",
+    "importPackage": "Importuj pakiet",
     "saveAsTemplate": "Zapisz jako szablon",
     "back": "Wstecz",
     "cancel": "Anuluj",
     "save": "Zapisz"
+  },
+  "packageImport": {
+    "assetsTitle": "Zasoby w tym pakiecie"
   },
   "import": {
     "tooLarge": "Ten plik jest zbyt duży, aby był prawidłowym szablonem.",

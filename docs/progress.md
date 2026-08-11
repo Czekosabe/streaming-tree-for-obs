@@ -17060,3 +17060,101 @@ mid-stage checkpoint, not a completion claim.
 standalone asset-management surface, then `TemplateGallery`'s package
 import/export UX - in that order, then dedicated frontend tests for all
 of it.
+
+## 2026-08-12 00:55 — feat(web): edit image/video/font properties and import/export packages
+
+### What
+Closes the two UI gaps the previous commit's own "known limitations"
+named: `DesignerPropertiesPanel` can now edit an image/video layer's
+own fit/alt/loop and change its asset, and every text-capable layer can
+attach/remove an optional custom WOFF2 font - all through the one
+shared `VisualAssetPicker`, never a second picker implementation.
+`TemplateGallery` now offers real package import (with the same two-
+step preview-then-confirm pattern Stage 14A's own JSON import already
+established) and package export for every template, alongside the
+existing JSON path, which is now correctly disabled with an explanation
+for an asset-backed template (docs/visual-template-packages.md §21).
+`npm run typecheck`/`lint`/`i18n:check` and the full 1122-test Vitest
+suite stay green.
+
+### Files changed
+- `apps/web/src/components/alert-designer/DesignerPropertiesPanel.tsx` -
+  new `ImageProperties`/`VideoProperties` (change-asset button, fit
+  select, alt text / loop toggle) and a shared `CustomFontField` used by
+  both `TextProperties` and `MessageFragmentsProperties`; one
+  `assetRequest` state + a single `VisualAssetPicker` instance in the
+  panel root handles every "choose an asset" request from any child
+  section via a small `onRequestAsset(kind, onSelect)` callback threaded
+  down through `LayerProperties`.
+- `apps/web/src/models/visualtemplate.ts` - `downloadBlob` (mirrors
+  `downloadVisualTemplateFile`'s own pattern for a binary package
+  download) and `templateHasAssets` (walks a document's layers for any
+  image/video layer or `fontAssetId` reference - determines whether the
+  JSON export/import path is even offered).
+- `apps/web/src/hooks/use-visual-templates.ts` - four new mutations:
+  `useImportVisualTemplatePackagePreviewMutation`,
+  `useCancelVisualTemplatePackagePreviewMutation`,
+  `useImportVisualTemplatePackageMutation`,
+  `useExportVisualTemplatePackageMutation`.
+- `apps/web/src/components/visual-templates/TemplateGallery.tsx` - new
+  `importPackage` gallery mode, mirroring the existing `import` mode's
+  own preview-then-confirm structure exactly: select a
+  `.streaming-tree-template` file → `POST .../import/preview` (persists
+  nothing) → show name/target/description/author/license, the real
+  `VisualDesignRenderer` preview (built with an asset map from the
+  preview's own package-local asset URLs, reusing the same `assetMap`
+  plumbing the Designer's own preview uses), and each asset's kind/
+  author/license attribution → explicit confirm re-uploads the original
+  `File` object's own bytes (never trusts the preview token, docs/
+  visual-template-packages.md §19 step 6) → `POST .../import`. Cancel
+  (including closing the modal or picking a different file) best-effort
+  releases the staged preview session. Every template card gained an
+  "Export package" button (always enabled); the existing "Export"
+  (JSON) button is now `disabled` with an explanatory `title` whenever
+  `templateHasAssets(tpl.document)` is true.
+- `apps/web/src/i18n/resources/{en,pl}/visualTemplates.json` - new
+  `actions.exportRequiresPackage`/`exportPackage`/`importPackage`, new
+  `packageImport.assetsTitle` section.
+
+### Technical decisions
+- **Why one `assetRequest` state in the properties-panel root instead of
+  each of `ImageProperties`/`VideoProperties`/`CustomFontField` owning
+  its own picker instance.** Only one asset request can be in flight at
+  a time from one properties panel, and lifting the state up means
+  exactly one `VisualAssetPicker`/one modal ever mounts, matching how
+  the Add-Layer flow in the Workspace components already lifts its own
+  `pendingAssetLayerKind` state to the same level rather than letting
+  `DesignerLayersPanel` own it.
+- **Why the package-import preview's own asset map is built from
+  `preview.assets[].packageAssetId` rather than resolving through the
+  normal `useVisualAssetMap()` hook.** Nothing from a preview session
+  exists in the managed-asset library yet (docs/visual-template-
+  packages.md §43 - preview persists nothing) - the document being
+  previewed still references package-local `pkgasset_...` ids, which
+  only resolve against the preview response's own `assets[].url`
+  (server-staged, preview-token-scoped), never against a real local
+  asset id.
+
+### Automated validation
+- `npm run typecheck`/`npm run lint`/`npm run i18n:check` - all clean.
+- `npx vitest run` - full existing suite, 82 files / 1122 tests, all
+  pass. No new dedicated tests in this commit either - see "Known
+  limitations".
+
+### Known limitations
+Still no standalone asset-management page (upload/rename/delete outside
+a picker's own inline upload) - deferred; the picker's own upload flow
+already covers the core "get a custom asset into the library" need, and
+existing assets can still be deleted via `DELETE /api/visual-assets/
+{id}` (backend-verified, docs/visual-template-packages.md §15's guard
+included) even without a dedicated UI surface for it yet. No dedicated
+frontend tests exist yet for anything built across this commit or the
+previous one - that is genuinely still pending, not merely deferred
+inline; it is the very next step, before the 16th integration script.
+
+### Next step
+Representative frontend tests for the Stage 14B rendering/picker/
+properties-panel/gallery work (pure schema/model tests plus a
+representative slice of rendered-component tests), then the 16th
+integration script `verify-visual-template-packages.mjs`, then the
+final documentation pass, then the full closing regression and push.

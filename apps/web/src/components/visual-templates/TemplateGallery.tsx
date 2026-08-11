@@ -8,25 +8,35 @@ import {
   type VisualTemplate,
   type VisualTemplateTarget,
 } from '@/api/visualtemplate-schemas';
+import type { VisualTemplatePackagePreview } from '@/api/visualpackage-schemas';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Modal } from '@/components/ui/Modal';
 import { TextArea, TextInput } from '@/components/ui/TextInput';
-import type { RenderableLayer } from '@/components/visual-design/VisualLayer';
+import type { RenderableLayer, VisualAssetMap } from '@/components/visual-design/VisualLayer';
 import { VisualDesignRenderer } from '@/components/visual-design/VisualDesignRenderer';
 import {
+  useCancelVisualTemplatePackagePreviewMutation,
   useCreateVisualTemplateMutation,
   useDeleteVisualTemplateMutation,
   useExportVisualTemplateMutation,
+  useExportVisualTemplatePackageMutation,
   useImportVisualTemplateMutation,
+  useImportVisualTemplatePackageMutation,
+  useImportVisualTemplatePackagePreviewMutation,
   useImportVisualTemplatePreviewMutation,
   useVisualTemplatesQuery,
 } from '@/hooks/use-visual-templates';
-import { downloadVisualTemplateFile } from '@/models/visualtemplate';
+import { downloadBlob, downloadVisualTemplateFile, templateHasAssets } from '@/models/visualtemplate';
 
 import { templatePreviewDataContext } from './template-preview-context';
 
-type GalleryMode = { kind: 'list' } | { kind: 'preview'; template: VisualTemplate } | { kind: 'import' } | { kind: 'saveAsTemplate' };
+type GalleryMode =
+  | { kind: 'list' }
+  | { kind: 'preview'; template: VisualTemplate }
+  | { kind: 'import' }
+  | { kind: 'importPackage' }
+  | { kind: 'saveAsTemplate' };
 
 /** `Blob.prototype.text()` is not implemented in every test/older
  * browser environment this project's own jsdom test setup runs under -
@@ -76,7 +86,10 @@ export function TemplateGallery({
   const [importFile, setImportFile] = useState<{ raw: unknown; preview: VisualTemplate } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [saveMeta, setSaveMeta] = useState({ name: '', description: '', author: '', license: '' });
+  const [packageFile, setPackageFile] = useState<{ file: File; preview: VisualTemplatePackagePreview } | null>(null);
+  const [packageError, setPackageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const packageFileInputRef = useRef<HTMLInputElement>(null);
 
   const listQuery = useVisualTemplatesQuery({ target, ownerId }, { enabled: open });
   const createMutation = useCreateVisualTemplateMutation();
@@ -84,6 +97,10 @@ export function TemplateGallery({
   const importPreviewMutation = useImportVisualTemplatePreviewMutation();
   const importMutation = useImportVisualTemplateMutation();
   const exportMutation = useExportVisualTemplateMutation();
+  const importPackagePreviewMutation = useImportVisualTemplatePackagePreviewMutation();
+  const cancelPackagePreviewMutation = useCancelVisualTemplatePackagePreviewMutation();
+  const importPackageMutation = useImportVisualTemplatePackageMutation();
+  const exportPackageMutation = useExportVisualTemplatePackageMutation();
 
   const builtins = (listQuery.data ?? []).filter((tpl) => tpl.source === 'builtin');
   const userTemplates = (listQuery.data ?? []).filter((tpl) => tpl.source === 'user');
@@ -109,6 +126,55 @@ export function TemplateGallery({
     exportMutation.mutate(tpl.id, {
       onSuccess: (file) => downloadVisualTemplateFile(file, tpl.name),
     });
+  }
+
+  function handleExportPackage(tpl: VisualTemplate) {
+    exportPackageMutation.mutate(tpl.id, {
+      onSuccess: ({ blob, filename }) => downloadBlob(blob, filename),
+    });
+  }
+
+  function handlePackageFileSelected(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (file === undefined) return;
+    setPackageError(null);
+    importPackagePreviewMutation.mutate(file, {
+      onSuccess: (preview) => setPackageFile({ file, preview }),
+      onError: (error) => setPackageError(error.message),
+    });
+  }
+
+  function closePackageImport() {
+    if (packageFile !== null) {
+      cancelPackagePreviewMutation.mutate(packageFile.preview.token);
+    }
+    setPackageFile(null);
+    setPackageError(null);
+    setMode({ kind: 'list' });
+    if (packageFileInputRef.current) packageFileInputRef.current.value = '';
+  }
+
+  function confirmImportPackage() {
+    if (packageFile === null) return;
+    // Re-uploads and fully re-validates the original file's own bytes -
+    // never trusts the preview token as proof (docs/visual-template-
+    // packages.md §19 step 6).
+    importPackageMutation.mutate(packageFile.file, {
+      onSuccess: () => {
+        setPackageFile(null);
+        setMode({ kind: 'list' });
+        if (packageFileInputRef.current) packageFileInputRef.current.value = '';
+      },
+      onError: (error) => setPackageError(error.message),
+    });
+  }
+
+  function packagePreviewAssetMap(preview: VisualTemplatePackagePreview): VisualAssetMap {
+    const map: VisualAssetMap = {};
+    for (const asset of preview.assets) {
+      map[asset.packageAssetId] = { url: asset.url, mediaType: asset.mediaType };
+    }
+    return map;
   }
 
   function handleFileSelected(fileList: FileList | null) {
@@ -219,8 +285,17 @@ export function TemplateGallery({
           >
             {t('actions.useAsDraft')}
           </Button>
-          <Button type="button" onClick={() => handleExport(tpl)} data-testid="template-export">
+          <Button
+            type="button"
+            onClick={() => handleExport(tpl)}
+            disabled={templateHasAssets(tpl.document)}
+            title={templateHasAssets(tpl.document) ? t('actions.exportRequiresPackage') : undefined}
+            data-testid="template-export"
+          >
             {t('actions.export')}
+          </Button>
+          <Button type="button" onClick={() => handleExportPackage(tpl)} data-testid="template-export-package">
+            {t('actions.exportPackage')}
           </Button>
           {tpl.source === 'user' ? (
             <Button type="button" variant="danger" onClick={() => setDeleteTarget(tpl)} data-testid="template-delete">
@@ -263,6 +338,21 @@ export function TemplateGallery({
               >
                 {t('actions.saveAsTemplate')}
               </Button>
+              <Button type="button" onClick={() => packageFileInputRef.current?.click()} data-testid="template-import-package-button">
+                {t('actions.importPackage')}
+              </Button>
+              <input
+                ref={packageFileInputRef}
+                type="file"
+                accept=".streaming-tree-template"
+                className="hidden"
+                aria-label={t('actions.importPackage')}
+                data-testid="template-import-package-file-input"
+                onChange={(e) => {
+                  handlePackageFileSelected(e.target.files);
+                  setMode({ kind: 'importPackage' });
+                }}
+              />
             </div>
 
             <section>
@@ -361,6 +451,66 @@ export function TemplateGallery({
                 disabled={importFile === null || importMutation.isPending}
                 onClick={confirmImport}
                 data-testid="template-import-confirm"
+              >
+                {t('actions.import')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {mode.kind === 'importPackage' ? (
+          <div className="flex flex-col gap-3" data-testid="template-import-package-preview">
+            {packageError !== null ? <p className="text-sm text-danger">{packageError}</p> : null}
+            {packageFile !== null ? (
+              <>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
+                  <dt className="text-ink-muted">{t('import.field.name')}</dt>
+                  <dd>{packageFile.preview.name}</dd>
+                  <dt className="text-ink-muted">{t('import.field.target')}</dt>
+                  <dd>{packageFile.preview.target}</dd>
+                  <dt className="text-ink-muted">{t('import.field.description')}</dt>
+                  <dd>{packageFile.preview.description}</dd>
+                  <dt className="text-ink-muted">{t('import.field.author')}</dt>
+                  <dd>{packageFile.preview.author}</dd>
+                  <dt className="text-ink-muted">{t('import.field.license')}</dt>
+                  <dd>{packageFile.preview.license}</dd>
+                </dl>
+                <div className="h-40 w-full overflow-hidden rounded bg-canvas-muted">
+                  <VisualDesignRenderer
+                    canvas={packageFile.preview.document.canvas}
+                    layers={packageFile.preview.document.layers as RenderableLayer[]}
+                    dataContext={templatePreviewDataContext(packageFile.preview.target, tOverlays)}
+                    mode="preview"
+                    prefersReducedMotion
+                    assetMap={packagePreviewAssetMap(packageFile.preview)}
+                  />
+                </div>
+                {packageFile.preview.assets.length > 0 ? (
+                  <div data-testid="template-package-assets">
+                    <p className="mb-1 text-xs font-semibold uppercase text-ink-muted">{t('packageImport.assetsTitle')}</p>
+                    <ul className="space-y-1 text-xs text-ink-muted">
+                      {packageFile.preview.assets.map((asset) => (
+                        <li key={asset.packageAssetId} data-testid="template-package-asset">
+                          {asset.displayName || asset.packageAssetId} · {asset.kind}
+                          {asset.author !== '' ? ` · ${asset.author}` : ''}
+                          {asset.license !== '' ? ` · ${asset.license}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={closePackageImport}>
+                {t('actions.cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={packageFile === null || importPackageMutation.isPending}
+                onClick={confirmImportPackage}
+                data-testid="template-import-package-confirm"
               >
                 {t('actions.import')}
               </Button>

@@ -1,19 +1,25 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
   VisualDesignAvatarProps,
   VisualDesignBadgeListProps,
   VisualDesignCanvas,
+  VisualDesignImageProps,
   VisualDesignLayer,
   VisualDesignMessageFragmentsProps,
   VisualDesignShapeProps,
   VisualDesignTextBinding,
   VisualDesignTextProps,
+  VisualDesignVideoProps,
 } from '@/api/visualdesign-schemas';
+import type { VisualAsset } from '@/api/visualasset-schemas';
+import { Button } from '@/components/ui/Button';
 import { FormField } from '@/components/ui/FormField';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { VisualAssetPicker } from '@/components/visual-design/VisualAssetPicker';
 import {
   CANVAS_CHAT_ITEM,
   CANVAS_LANDSCAPE,
@@ -126,6 +132,9 @@ export function DesignerPropertiesPanel({
   onSnappingChange: (snapping: boolean) => void;
 }) {
   const { t } = useTranslation('alertDesigner');
+  const [assetRequest, setAssetRequest] = useState<{ kind: 'image' | 'video' | 'font'; onSelect: (asset: VisualAsset) => void } | null>(
+    null,
+  );
 
   return (
     <div className="w-72 shrink-0 overflow-y-auto border-l border-line bg-surface p-3" data-testid="designer-properties-panel">
@@ -134,12 +143,35 @@ export function DesignerPropertiesPanel({
       {layer === null ? (
         <CanvasProperties canvas={canvas} onChange={onCanvasChange} />
       ) : (
-        <LayerProperties layer={layer} availableBindings={availableBindings} onChange={onLayerChange} />
+        <LayerProperties
+          layer={layer}
+          availableBindings={availableBindings}
+          onChange={onLayerChange}
+          onRequestAsset={(kind, onSelect) => setAssetRequest({ kind, onSelect })}
+        />
       )}
       {layer === null ? <p className="mt-3 text-xs text-ink-muted">{t('properties.noSelection')}</p> : null}
+
+      {assetRequest !== null && (
+        <VisualAssetPicker
+          open
+          onClose={() => setAssetRequest(null)}
+          kind={assetRequest.kind}
+          onSelect={(asset) => {
+            assetRequest.onSelect(asset);
+            setAssetRequest(null);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+/** Requests a real managed asset from the operator before applying
+ * `onSelect` - shared by image/video "change asset" and every text-
+ * capable layer's own "choose custom font" (Stage 14B task Part 32/54:
+ * one shared picker, never a second implementation per field). */
+type RequestAsset = (kind: 'image' | 'video' | 'font', onSelect: (asset: VisualAsset) => void) => void;
 
 /** Every built-in canvas preset both designers offer (Stage 13B task
  * Part 25) - Landscape/Vertical from Stage 13A, Chat item added in
@@ -186,10 +218,12 @@ function LayerProperties({
   layer,
   availableBindings,
   onChange,
+  onRequestAsset,
 }: {
   layer: VisualDesignLayer;
   availableBindings: readonly VisualDesignTextBinding[];
   onChange: (patch: Partial<VisualDesignLayer>) => void;
+  onRequestAsset: RequestAsset;
 }) {
   const { t } = useTranslation('alertDesigner');
   const available = availableBindings;
@@ -217,16 +251,26 @@ function LayerProperties({
         <ShapeProperties shape={layer.shape} onChange={(shape) => onChange({ shape })} />
       ) : null}
       {layer.kind === 'text' && layer.text !== undefined ? (
-        <TextProperties text={layer.text} available={available} onChange={(text) => onChange({ text })} />
+        <TextProperties text={layer.text} available={available} onChange={(text) => onChange({ text })} onRequestAsset={onRequestAsset} />
       ) : null}
       {layer.kind === 'avatar' && layer.avatar !== undefined ? (
         <AvatarProperties avatar={layer.avatar} onChange={(avatar) => onChange({ avatar })} />
       ) : null}
       {layer.kind === 'message_fragments' && layer.messageFragments !== undefined ? (
-        <MessageFragmentsProperties messageFragments={layer.messageFragments} onChange={(messageFragments) => onChange({ messageFragments })} />
+        <MessageFragmentsProperties
+          messageFragments={layer.messageFragments}
+          onChange={(messageFragments) => onChange({ messageFragments })}
+          onRequestAsset={onRequestAsset}
+        />
       ) : null}
       {layer.kind === 'badge_list' && layer.badgeList !== undefined ? (
         <BadgeListProperties badgeList={layer.badgeList} onChange={(badgeList) => onChange({ badgeList })} />
+      ) : null}
+      {layer.kind === 'image' && layer.image !== undefined ? (
+        <ImageProperties image={layer.image} onChange={(image) => onChange({ image })} onRequestAsset={onRequestAsset} />
+      ) : null}
+      {layer.kind === 'video' && layer.video !== undefined ? (
+        <VideoProperties video={layer.video} onChange={(video) => onChange({ video })} onRequestAsset={onRequestAsset} />
       ) : null}
 
       <FormField label={t('properties.entryAnimation')}>
@@ -287,12 +331,124 @@ function AvatarProperties({ avatar, onChange }: { avatar: VisualDesignAvatarProp
   );
 }
 
+function ImageProperties({
+  image,
+  onChange,
+  onRequestAsset,
+}: {
+  image: VisualDesignImageProps;
+  onChange: (value: VisualDesignImageProps) => void;
+  onRequestAsset: RequestAsset;
+}) {
+  const { t } = useTranslation('alertDesigner');
+  return (
+    <>
+      <Button
+        variant="secondary"
+        onClick={() => onRequestAsset('image', (asset) => onChange({ ...image, assetId: asset.id }))}
+        data-testid="designer-image-change-asset"
+      >
+        {t('properties.changeAsset')}
+      </Button>
+      <FormField label={t('properties.imageFit')}>
+        {({ inputId }) => (
+          <SelectInput
+            id={inputId}
+            value={image.fit}
+            onChange={(e) => onChange({ ...image, fit: e.target.value as VisualDesignImageProps['fit'] })}
+            options={[
+              { value: 'contain', label: t('properties.fitContain') },
+              { value: 'cover', label: t('properties.fitCover') },
+            ]}
+            data-testid="designer-image-fit"
+          />
+        )}
+      </FormField>
+      <FormField label={t('properties.imageAlt')}>
+        {({ inputId }) => (
+          <TextInput id={inputId} value={image.alt ?? ''} onChange={(e) => onChange({ ...image, alt: e.target.value })} data-testid="designer-image-alt" />
+        )}
+      </FormField>
+    </>
+  );
+}
+
+function VideoProperties({
+  video,
+  onChange,
+  onRequestAsset,
+}: {
+  video: VisualDesignVideoProps;
+  onChange: (value: VisualDesignVideoProps) => void;
+  onRequestAsset: RequestAsset;
+}) {
+  const { t } = useTranslation('alertDesigner');
+  return (
+    <>
+      <Button
+        variant="secondary"
+        onClick={() => onRequestAsset('video', (asset) => onChange({ ...video, assetId: asset.id }))}
+        data-testid="designer-video-change-asset"
+      >
+        {t('properties.changeVideoAsset')}
+      </Button>
+      <FormField label={t('properties.videoFit')}>
+        {({ inputId }) => (
+          <SelectInput
+            id={inputId}
+            value={video.fit}
+            onChange={(e) => onChange({ ...video, fit: e.target.value as VisualDesignVideoProps['fit'] })}
+            options={[
+              { value: 'contain', label: t('properties.fitContain') },
+              { value: 'cover', label: t('properties.fitCover') },
+            ]}
+            data-testid="designer-video-fit"
+          />
+        )}
+      </FormField>
+      <ToggleSwitch label={t('properties.videoLoop')} checked={video.loop} onCheckedChange={(loop) => onChange({ ...video, loop })} />
+    </>
+  );
+}
+
+/** Shared by TextProperties/MessageFragmentsProperties - the optional
+ * custom-WOFF2-font control every text-capable layer offers (Stage 14B
+ * task Part 41/54). */
+function CustomFontField({
+  fontAssetId,
+  onChange,
+  onRequestAsset,
+}: {
+  fontAssetId: string | undefined;
+  onChange: (fontAssetId: string | undefined) => void;
+  onRequestAsset: RequestAsset;
+}) {
+  const { t } = useTranslation('alertDesigner');
+  return (
+    <FormField label={t('properties.customFont')}>
+      {() =>
+        fontAssetId === undefined || fontAssetId === '' ? (
+          <Button variant="secondary" onClick={() => onRequestAsset('font', (asset) => onChange(asset.id))} data-testid="designer-choose-custom-font">
+            {t('properties.chooseCustomFont')}
+          </Button>
+        ) : (
+          <Button variant="secondary" onClick={() => onChange(undefined)} data-testid="designer-remove-custom-font">
+            {t('properties.removeCustomFont')}
+          </Button>
+        )
+      }
+    </FormField>
+  );
+}
+
 function MessageFragmentsProperties({
   messageFragments,
   onChange,
+  onRequestAsset,
 }: {
   messageFragments: VisualDesignMessageFragmentsProps;
   onChange: (value: VisualDesignMessageFragmentsProps) => void;
+  onRequestAsset: RequestAsset;
 }) {
   const { t } = useTranslation('alertDesigner');
   return (
@@ -329,6 +485,11 @@ function MessageFragmentsProperties({
         )}
       </FormField>
       <NumberField label={t('properties.emoteSize')} value={messageFragments.emoteSize} min={MIN_EMOTE_SIZE} max={MAX_EMOTE_SIZE} onChange={(emoteSize) => onChange({ ...messageFragments, emoteSize })} testId="designer-fragments-emote-size" />
+      <CustomFontField
+        fontAssetId={messageFragments.fontAssetId}
+        onChange={(fontAssetId) => onChange({ ...messageFragments, fontAssetId })}
+        onRequestAsset={onRequestAsset}
+      />
     </>
   );
 }
@@ -354,10 +515,12 @@ function TextProperties({
   text,
   available,
   onChange,
+  onRequestAsset,
 }: {
   text: VisualDesignTextProps;
   available: readonly string[];
   onChange: (text: VisualDesignTextProps) => void;
+  onRequestAsset: RequestAsset;
 }) {
   const { t } = useTranslation('alertDesigner');
   const unavailable = !available.includes(text.binding);
@@ -473,6 +636,8 @@ function TextProperties({
           <ColorField label={t('properties.shadowColor')} value={text.shadowColor} onChange={(shadowColor) => onChange({ ...text, shadowColor })} testId="designer-text-shadow-color" />
         </>
       ) : null}
+
+      <CustomFontField fontAssetId={text.fontAssetId} onChange={(fontAssetId) => onChange({ ...text, fontAssetId })} onRequestAsset={onRequestAsset} />
     </>
   );
 }

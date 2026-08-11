@@ -1,3 +1,4 @@
+import type { VisualDesignDocument } from '@/api/visualdesign-schemas';
 import { VISUAL_TEMPLATE_FORMAT, type VisualTemplate, type VisualTemplateFile } from '@/api/visualtemplate-schemas';
 
 /**
@@ -42,6 +43,38 @@ export function downloadVisualTemplateFile(file: VisualTemplateFile, suggestedNa
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** Triggers a real browser download of an already-fetched Blob (Stage
+ * 14B package export) - mirrors downloadVisualTemplateFile's own
+ * pattern for the JSON case, the one place this file touches the DOM
+ * directly for a binary download. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Reports whether doc references at least one Stage 14B managed asset
+ * (an image/video layer, or a custom-font reference on a text-capable
+ * layer) - determines whether the JSON export/import path is even
+ * offered (docs/visual-template-packages.md §21: a standalone JSON file
+ * cannot carry asset bytes, so an asset-backed template must be
+ * exported/imported as a package instead). */
+export function templateHasAssets(doc: VisualDesignDocument): boolean {
+  return doc.layers.some(
+    (l) =>
+      l.image !== undefined ||
+      l.video !== undefined ||
+      (l.text?.fontAssetId ?? '') !== '' ||
+      (l.messageFragments?.fontAssetId ?? '') !== '',
+  );
 }
 
 /** Converts a management-shape VisualTemplate into the portable file
