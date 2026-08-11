@@ -50,6 +50,7 @@ function baseConfig(overrides: Partial<PublicChatOverlayConfig> = {}): PublicCha
     highlightSubscribers: true,
     highlightVips: true,
     language: 'en',
+    renderingMode: 'legacy',
     ...overrides,
   };
 }

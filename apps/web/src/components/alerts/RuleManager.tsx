@@ -534,7 +534,7 @@ function RuleFormModal({
 function DesignerLinkBanner({ ruleId }: { ruleId: string }) {
   const { t } = useTranslation('alertDesigner');
   const navigate = useNavigate();
-  const designQuery = useVisualDesignQuery(ruleId);
+  const designQuery = useVisualDesignQuery('alert-rules', ruleId);
   const persisted = designQuery.data?.persisted === true;
 
   return (

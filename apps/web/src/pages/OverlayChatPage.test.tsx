@@ -67,6 +67,7 @@ const baseConfig = {
   highlightSubscribers: false,
   highlightVips: false,
   language: 'en' as const,
+  renderingMode: 'legacy' as const,
 };
 
 beforeEach(() => {

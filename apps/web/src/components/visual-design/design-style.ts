@@ -3,7 +3,9 @@ import type { CSSProperties } from 'react';
 import type {
   VisualDesignAnimation,
   VisualDesignAvatarProps,
+  VisualDesignBadgeListProps,
   VisualDesignFrame,
+  VisualDesignMessageFragmentsProps,
   VisualDesignShapeProps,
   VisualDesignTextProps,
 } from '@/api/visualdesign-schemas';
@@ -99,6 +101,55 @@ export function textLayerStyle(text: VisualDesignTextProps, scale: number): CSSP
     wordBreak: 'break-word',
     maxWidth: '100%',
   };
+}
+
+/** Stage 13B additions (docs/visual-designs.md §21). */
+export function messageFragmentsContainerStyle(props: VisualDesignMessageFragmentsProps): CSSProperties {
+  return {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: V_ALIGN[props.verticalAlign] ?? 'center',
+    justifyContent: H_ALIGN[props.horizontalAlign] ?? 'flex-start',
+    overflow: 'hidden',
+    columnGap: '0.25em',
+    rowGap: '0.15em',
+  };
+}
+
+export function messageFragmentsTextStyle(props: VisualDesignMessageFragmentsProps, scale: number): CSSProperties {
+  return {
+    fontFamily: FONT_FAMILY_STACKS[props.fontFamily] ?? 'sans-serif',
+    fontSize: props.fontSize * scale,
+    fontWeight: props.fontWeight,
+    lineHeight: props.lineHeight,
+    letterSpacing: props.letterSpacing * scale,
+    color: props.textColor,
+    textAlign: TEXT_ALIGN[props.horizontalAlign] ?? 'left',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  };
+}
+
+export function messageFragmentsEmoteStyle(props: VisualDesignMessageFragmentsProps, scale: number): CSSProperties {
+  const size = props.emoteSize * scale;
+  return { width: size, height: size, display: 'inline-block', verticalAlign: 'middle' };
+}
+
+export function badgeListContainerStyle(props: VisualDesignBadgeListProps): CSSProperties {
+  return {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: props.gap,
+    overflow: 'hidden',
+  };
+}
+
+export function badgeListImageStyle(props: VisualDesignBadgeListProps): CSSProperties {
+  return { width: props.badgeSize, height: props.badgeSize, display: 'block', flexShrink: 0 };
 }
 
 const ENTRY_ANIMATION_CLASSES: Record<VisualDesignAnimation, string> = {

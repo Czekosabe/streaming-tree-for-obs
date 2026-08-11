@@ -22,7 +22,7 @@ export function AlertDesignerPage() {
   const ruleQuery = useAlertRuleQuery(id);
   const profileQuery = useAlertProfileQuery(ruleQuery.data?.profileId ?? null);
   const eventTypesQuery = useAlertEventTypesQuery();
-  const designQuery = useVisualDesignQuery(id);
+  const designQuery = useVisualDesignQuery('alert-rules', id);
 
   if (id === null) {
     return <div className="flex h-dvh items-center justify-center text-sm text-ink-muted" data-testid="alert-designer-error">Missing rule id.</div>;

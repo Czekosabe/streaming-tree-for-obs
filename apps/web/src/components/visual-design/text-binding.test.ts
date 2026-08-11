@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { VisualDesignTextProps } from '@/api/visualdesign-schemas';
 
-import { platformDisplayName, resolveTextBindingValue, type AlertBindingContext } from './text-binding';
+import { platformDisplayName, resolveTextBindingValue, type VisualBindingContext } from './text-binding';
 
 function textProps(overrides: Partial<VisualDesignTextProps> = {}): VisualDesignTextProps {
   return {
@@ -15,14 +15,16 @@ function textProps(overrides: Partial<VisualDesignTextProps> = {}): VisualDesign
   };
 }
 
-const baseContext: AlertBindingContext = {
+const baseContext: VisualBindingContext = {
   renderedText: 'Ann followed!',
   username: 'Ann',
-  platformLabel: 'Twitch',
-  eventTypeLabel: 'Follow',
+  platform: 'Twitch',
+  eventType: 'Follow',
   message: null,
   quantity: null,
   groupCount: 1,
+  timestamp: null,
+  accountLabel: null,
 };
 
 describe('resolveTextBindingValue', () => {
@@ -60,6 +62,14 @@ describe('resolveTextBindingValue', () => {
   });
   it('never fabricates a value - an empty static text resolves to null', () => {
     expect(resolveTextBindingValue(textProps({ binding: 'static', staticText: '' }), baseContext)).toBeNull();
+  });
+  it('resolves timestamp from the pre-formatted string, or null when absent', () => {
+    expect(resolveTextBindingValue(textProps({ binding: 'timestamp' }), baseContext)).toBeNull();
+    expect(resolveTextBindingValue(textProps({ binding: 'timestamp' }), { ...baseContext, timestamp: '12:34' })).toBe('12:34');
+  });
+  it('resolves account_label, or null when absent', () => {
+    expect(resolveTextBindingValue(textProps({ binding: 'account_label' }), baseContext)).toBeNull();
+    expect(resolveTextBindingValue(textProps({ binding: 'account_label' }), { ...baseContext, accountLabel: 'Main' })).toBe('Main');
   });
 });
 

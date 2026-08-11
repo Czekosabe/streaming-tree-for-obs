@@ -50,6 +50,13 @@ export type UseChatOverlayStreamResult = {
   /** Set once when the server signals a gap - never cleared, since a past
    * gap stays a past gap regardless of current stream health. */
   gapDetected: boolean;
+  /** Increments once per `chat-overlay.presentation` event received
+   * (Stage 13B, docs/visual-designs.md §25) - a "your presentation
+   * config is now stale" signal carrying no item content at all. The
+   * caller (OverlayChatPage.tsx) refetches its own public config query
+   * whenever this value changes; the item reducer's own state above is
+   * completely unaffected by it. */
+  presentationRevision: number;
 };
 
 function resolveStreamUrl(publicSlug: string): string {
@@ -62,6 +69,7 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
   const [state, dispatch] = useReducer(chatOverlayReducer, undefined, createChatOverlayState);
   const [status, setStatus] = useState<ChatOverlayStreamStatus>('connecting');
   const [gapDetected, setGapDetected] = useState(false);
+  const [presentationRevision, setPresentationRevision] = useState(0);
 
   useEffect(() => {
     if (publicSlug === undefined || publicSlug === '') {
@@ -71,6 +79,7 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
 
     setStatus('connecting');
     setGapDetected(false);
+    setPresentationRevision(0);
     dispatch({ type: 'reset', items: [] });
 
     const source = new EventSource(resolveStreamUrl(publicSlug));
@@ -118,6 +127,10 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
       setGapDetected(true);
     });
 
+    source.addEventListener('chat-overlay.presentation', () => {
+      setPresentationRevision((n) => n + 1);
+    });
+
     return () => {
       source.close();
       setStatus('closed');
@@ -135,5 +148,6 @@ export function useChatOverlayStream(publicSlug: string | undefined): UseChatOve
     completeLeaving,
     status,
     gapDetected,
+    presentationRevision,
   };
 }

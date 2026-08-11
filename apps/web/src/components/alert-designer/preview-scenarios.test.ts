@@ -22,8 +22,8 @@ describe('baseEventTypeForScenario', () => {
 describe('previewScenarioFixture', () => {
   it('anonymous has a null username but a real quantity', () => {
     const fixture = previewScenarioFixture('anonymous');
-    expect(fixture.username).toBeNull();
-    expect(fixture.quantity).not.toBeNull();
+    expect(fixture.bindings.username).toBeNull();
+    expect(fixture.bindings.quantity).not.toBeNull();
   });
 
   it('missing_avatar/very_long_username/very_long_message/missing_message all have no avatar', () => {
@@ -34,25 +34,25 @@ describe('previewScenarioFixture', () => {
 
   it('very_long_username produces a genuinely long username', () => {
     const fixture = previewScenarioFixture('very_long_username');
-    expect(fixture.username?.length).toBeGreaterThan(100);
+    expect(fixture.bindings.username?.length).toBeGreaterThan(100);
   });
 
   it('very_long_message produces a genuinely long message', () => {
     const fixture = previewScenarioFixture('very_long_message');
-    expect(fixture.message?.length).toBeGreaterThan(200);
+    expect(fixture.bindings.message?.length).toBeGreaterThan(200);
   });
 
   it('missing_message has a null message', () => {
-    expect(previewScenarioFixture('missing_message').message).toBeNull();
+    expect(previewScenarioFixture('missing_message').bindings.message).toBeNull();
   });
 
   it('grouped scenarios report a groupCount greater than 1', () => {
-    expect(previewScenarioFixture('grouped_bits').groupCount).toBeGreaterThan(1);
-    expect(previewScenarioFixture('grouped_gift_batch').groupCount).toBeGreaterThan(1);
+    expect(previewScenarioFixture('grouped_bits').bindings.groupCount).toBeGreaterThan(1);
+    expect(previewScenarioFixture('grouped_gift_batch').bindings.groupCount).toBeGreaterThan(1);
   });
 
   it('every non-grouped scenario reports groupCount 1', () => {
-    expect(previewScenarioFixture('follow').groupCount).toBe(1);
+    expect(previewScenarioFixture('follow').bindings.groupCount).toBe(1);
   });
 
   it('never fabricates an avatar URL - every scenario has avatarUrl null', () => {

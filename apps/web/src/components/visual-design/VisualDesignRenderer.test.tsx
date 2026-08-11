@@ -4,14 +4,18 @@ import { describe, expect, it } from 'vitest';
 import { renderWithProviders } from '@/test/render';
 
 import type { RenderableLayer } from './VisualLayer';
-import { VisualDesignRenderer, type VisualDesignAlertData } from './VisualDesignRenderer';
+import { VisualDesignRenderer, type VisualDesignDataContext } from './VisualDesignRenderer';
 
 const canvas = { width: 1920, height: 1080, transparent: true };
 
-function baseAlert(overrides: Partial<VisualDesignAlertData> = {}): VisualDesignAlertData {
+function baseDataContext(overrides: Partial<VisualDesignDataContext> = {}): VisualDesignDataContext {
   return {
-    eventType: 'follow', providerId: 'twitch', username: 'Ann', message: null, quantity: null,
-    groupCount: 1, renderedText: 'Ann followed!', avatarUrl: null,
+    providerId: 'twitch',
+    avatarUrl: null,
+    bindings: {
+      renderedText: 'Ann followed!', username: 'Ann', platform: 'Twitch', eventType: 'Follow',
+      message: null, quantity: null, groupCount: 1, timestamp: null, accountLabel: null,
+    },
     ...overrides,
   };
 }
@@ -43,14 +47,14 @@ function shapeLayer(overrides: Partial<RenderableLayer> = {}): RenderableLayer {
 describe('VisualDesignRenderer', () => {
   it('renders a text layer bound to alert_rendered_text', () => {
     renderWithProviders(
-      <VisualDesignRenderer canvas={canvas} layers={[textLayer()]} alert={baseAlert()} mode="public" prefersReducedMotion={false} />,
+      <VisualDesignRenderer canvas={canvas} layers={[textLayer()]} dataContext={baseDataContext()} mode="public" prefersReducedMotion={false} />,
     );
     expect(screen.getByText('Ann followed!')).toBeInTheDocument();
   });
 
   it('renders a shape layer', () => {
     renderWithProviders(
-      <VisualDesignRenderer canvas={canvas} layers={[shapeLayer()]} alert={baseAlert()} mode="public" prefersReducedMotion={false} />,
+      <VisualDesignRenderer canvas={canvas} layers={[shapeLayer()]} dataContext={baseDataContext()} mode="public" prefersReducedMotion={false} />,
     );
     expect(screen.getByTestId('visual-design-shape')).toBeInTheDocument();
   });
@@ -61,7 +65,7 @@ describe('VisualDesignRenderer', () => {
       platformIcon: {}, entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
     };
     renderWithProviders(
-      <VisualDesignRenderer canvas={canvas} layers={[layer]} alert={baseAlert()} mode="public" prefersReducedMotion={false} />,
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext()} mode="public" prefersReducedMotion={false} />,
     );
     expect(screen.getByTestId('visual-design-platform-icon')).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
@@ -74,7 +78,7 @@ describe('VisualDesignRenderer', () => {
       entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
     };
     renderWithProviders(
-      <VisualDesignRenderer canvas={canvas} layers={[layer]} alert={baseAlert({ avatarUrl: null })} mode="public" prefersReducedMotion={false} />,
+      <VisualDesignRenderer canvas={canvas} layers={[layer]} dataContext={baseDataContext({ avatarUrl: null })} mode="public" prefersReducedMotion={false} />,
     );
     expect(screen.queryByTestId('visual-design-avatar')).not.toBeInTheDocument();
   });
@@ -89,7 +93,7 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[layer]}
-        alert={baseAlert({ avatarUrl: 'https://static-cdn.example/avatar.png' })}
+        dataContext={baseDataContext({ avatarUrl: 'https://static-cdn.example/avatar.png' })}
         mode="public"
         prefersReducedMotion={false}
       />,
@@ -107,7 +111,7 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[layer]}
-        alert={baseAlert({ avatarUrl: 'javascript:alert(1)' })}
+        dataContext={baseDataContext({ avatarUrl: 'javascript:alert(1)' })}
         mode="public"
         prefersReducedMotion={false}
       />,
@@ -120,7 +124,7 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[textLayer({ visible: false })]}
-        alert={baseAlert()}
+        dataContext={baseDataContext()}
         mode="preview"
         prefersReducedMotion={false}
       />,
@@ -133,7 +137,7 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[textLayer({ text: { ...textLayer().text!, binding: 'quantity' } })]}
-        alert={baseAlert({ quantity: null })}
+        dataContext={baseDataContext({ bindings: { ...baseDataContext().bindings, quantity: null } })}
         mode="public"
         prefersReducedMotion={false}
       />,
@@ -147,7 +151,7 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[textLayer({ text: { ...textLayer().text!, binding: 'quantity', missingValueBehavior: 'placeholder' } })]}
-        alert={baseAlert({ quantity: null })}
+        dataContext={baseDataContext({ bindings: { ...baseDataContext().bindings, quantity: null } })}
         mode="preview"
         prefersReducedMotion={false}
       />,
@@ -160,12 +164,56 @@ describe('VisualDesignRenderer', () => {
       <VisualDesignRenderer
         canvas={canvas}
         layers={[shapeLayer({ id: 'a' }), textLayer({ id: 'b' })]}
-        alert={baseAlert()}
+        dataContext={baseDataContext()}
         mode="public"
         prefersReducedMotion={false}
       />,
     );
     const layerEls = screen.getAllByTestId('visual-design-layer');
     expect(layerEls.map((el) => el.getAttribute('data-layer-id'))).toEqual(['a', 'b']);
+  });
+
+  it('renders a message_fragments layer from the data context', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_fragments', kind: 'message_fragments', frame: { x: 0, y: 0, width: 400, height: 100 }, opacity: 1,
+      messageFragments: {
+        fontFamily: 'system-ui', fontSize: 16, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0,
+        textColor: '#FFFFFF', horizontalAlign: 'left', verticalAlign: 'top', emoteSize: 24,
+      },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer
+        canvas={canvas}
+        layers={[layer]}
+        dataContext={baseDataContext({ messageFragments: [{ type: 'text', text: 'hello chat' }] })}
+        mode="public"
+        prefersReducedMotion={false}
+      />,
+    );
+    expect(screen.getByText('hello chat')).toBeInTheDocument();
+  });
+
+  it('renders a badge_list layer from the data context, bounded to maxCount', () => {
+    const layer: RenderableLayer = {
+      id: 'layer_badges', kind: 'badge_list', frame: { x: 0, y: 0, width: 200, height: 32 }, opacity: 1,
+      badgeList: { maxCount: 1, badgeSize: 18, gap: 4 },
+      entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+    };
+    renderWithProviders(
+      <VisualDesignRenderer
+        canvas={canvas}
+        layers={[layer]}
+        dataContext={baseDataContext({
+          badges: [
+            { setId: 'moderator', id: '1', imageUrl1x: 'https://static-cdn.example/mod.png' },
+            { setId: 'subscriber', id: '1', imageUrl1x: 'https://static-cdn.example/sub.png' },
+          ],
+        })}
+        mode="public"
+        prefersReducedMotion={false}
+      />,
+    );
+    expect(screen.getAllByTestId('visual-design-badge')).toHaveLength(1);
   });
 });

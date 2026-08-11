@@ -7,12 +7,16 @@ import { ZOOM_LEVELS_ARRAY } from '@/models/visualdesign';
 import { PREVIEW_SCENARIOS, type PreviewScenario } from './preview-scenarios';
 
 /**
- * The Designer's own top bar (Stage 13A task Part 26): Back, name,
- * unsaved indicator, Undo/Redo, Fit/zoom, preview scenario, Save,
- * Reset to legacy, and Test Rule.
+ * The Designer's own top bar (Stage 13A task Part 26; shared by both
+ * designers as of Stage 13B task Part 25): Back, name, unsaved
+ * indicator, Undo/Redo, Fit/zoom, preview scenario, Save, Reset to
+ * legacy, and an owner-specific "test" action (Test Rule for alerts;
+ * chat has no equivalent live-queue action, so the Chat Overlay
+ * Designer omits it by passing no `onTestAction`).
  */
 export function DesignerTopBar({
-  ruleName,
+  itemName,
+  backLabel,
   dirty,
   saving,
   canUndo,
@@ -26,11 +30,10 @@ export function DesignerTopBar({
   onRedo,
   onSave,
   onResetToLegacy,
-  onTestRule,
-  testRulePending,
-  testRuleSucceeded,
+  testAction,
 }: {
-  ruleName: string;
+  itemName: string;
+  backLabel: string;
   dirty: boolean;
   saving: boolean;
   canUndo: boolean;
@@ -44,18 +47,20 @@ export function DesignerTopBar({
   onRedo: () => void;
   onSave: () => void;
   onResetToLegacy: () => void;
-  onTestRule: () => void;
-  testRulePending: boolean;
-  testRuleSucceeded: boolean;
+  /** Owner-specific action (e.g. alerts' own "Test Rule", which goes
+   * through the real backend queue and always uses the last SAVED
+   * design). Omitted entirely (no button rendered) when the owner has
+   * no equivalent action. */
+  testAction?: { label: string; onClick: () => void; pending: boolean; succeeded: boolean } | undefined;
 }) {
   const { t } = useTranslation('alertDesigner');
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2" data-testid="designer-topbar">
       <Button variant="ghost" onClick={onBack} data-testid="designer-back">
-        {t('page.backToRules')}
+        {backLabel}
       </Button>
-      <span className="ml-1 text-sm font-medium text-ink" data-testid="designer-rule-name">{ruleName}</span>
+      <span className="ml-1 text-sm font-medium text-ink" data-testid="designer-rule-name">{itemName}</span>
       <span
         className="text-xs text-ink-muted"
         data-testid="designer-dirty-indicator"
@@ -103,9 +108,11 @@ export function DesignerTopBar({
       </label>
 
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="ghost" onClick={onTestRule} disabled={testRulePending} data-testid="designer-test-rule">
-          {testRuleSucceeded ? '✓' : null} Test Rule
-        </Button>
+        {testAction !== undefined ? (
+          <Button variant="ghost" onClick={testAction.onClick} disabled={testAction.pending} data-testid="designer-test-rule">
+            {testAction.succeeded ? '✓' : null} {testAction.label}
+          </Button>
+        ) : null}
         <Button variant="danger" onClick={onResetToLegacy} data-testid="designer-reset-to-legacy">
           {t('topbar.resetToLegacy')}
         </Button>

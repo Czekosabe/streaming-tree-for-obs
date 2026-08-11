@@ -27,12 +27,28 @@ import { z } from 'zod';
 export const visualDesignAnimationSchema = z.enum(['none', 'fade', 'slide_up', 'slide_left', 'scale']);
 export type VisualDesignAnimation = z.infer<typeof visualDesignAnimationSchema>;
 
-export const visualDesignLayerKindSchema = z.enum(['shape', 'text', 'platform_icon', 'avatar']);
+/** `message_fragments`/`badge_list` are Stage 13B additions (document
+ * version 2, docs/visual-designs.md §19/§21) - shared, owner-agnostic
+ * layer kinds, not chat-specific in the type system, even though no
+ * alert item has fragments/badges to bind today. */
+export const visualDesignLayerKindSchema = z.enum([
+  'shape',
+  'text',
+  'platform_icon',
+  'avatar',
+  'message_fragments',
+  'badge_list',
+]);
 export type VisualDesignLayerKind = z.infer<typeof visualDesignLayerKindSchema>;
 
 export const visualDesignShapeKindSchema = z.enum(['rectangle']);
 export type VisualDesignShapeKind = z.infer<typeof visualDesignShapeKindSchema>;
 
+/** `timestamp`/`account_label` are Stage 13B additions, chat-only in
+ * practice (docs/visual-designs.md §20) - `alert_rendered_text` is
+ * alert-only, `group_count` is alert-only; every other value is reused
+ * verbatim by both owners with the meaning documented in that same
+ * section's table. */
 export const visualDesignTextBindingSchema = z.enum([
   'static',
   'alert_rendered_text',
@@ -42,6 +58,8 @@ export const visualDesignTextBindingSchema = z.enum([
   'message',
   'quantity',
   'group_count',
+  'timestamp',
+  'account_label',
 ]);
 export type VisualDesignTextBinding = z.infer<typeof visualDesignTextBindingSchema>;
 
@@ -110,6 +128,30 @@ export const visualDesignAvatarPropsSchema = z.object({
 });
 export type VisualDesignAvatarProps = z.infer<typeof visualDesignAvatarPropsSchema>;
 
+/** Stage 13B additions (document version 2, docs/visual-designs.md
+ * §21) - no `binding` field on either: there is exactly one thing each
+ * kind can ever show (the item's own message fragments, or the item's
+ * own badges). */
+export const visualDesignMessageFragmentsPropsSchema = z.object({
+  fontFamily: visualDesignFontFamilySchema,
+  fontSize: z.number(),
+  fontWeight: z.number(),
+  lineHeight: z.number(),
+  letterSpacing: z.number(),
+  textColor: z.string(),
+  horizontalAlign: visualDesignHorizontalAlignSchema,
+  verticalAlign: visualDesignVerticalAlignSchema,
+  emoteSize: z.number(),
+});
+export type VisualDesignMessageFragmentsProps = z.infer<typeof visualDesignMessageFragmentsPropsSchema>;
+
+export const visualDesignBadgeListPropsSchema = z.object({
+  maxCount: z.number(),
+  badgeSize: z.number(),
+  gap: z.number(),
+});
+export type VisualDesignBadgeListProps = z.infer<typeof visualDesignBadgeListPropsSchema>;
+
 /** The management layer shape - includes `name`/`locked`, which the
  * public shape below deliberately never carries. */
 export const visualDesignLayerSchema = z.object({
@@ -125,6 +167,8 @@ export const visualDesignLayerSchema = z.object({
   text: visualDesignTextPropsSchema.optional(),
   platformIcon: z.object({}).optional(),
   avatar: visualDesignAvatarPropsSchema.optional(),
+  messageFragments: visualDesignMessageFragmentsPropsSchema.optional(),
+  badgeList: visualDesignBadgeListPropsSchema.optional(),
   entryAnimation: visualDesignAnimationSchema,
   exitAnimation: visualDesignAnimationSchema,
   animationDurationMs: z.number(),
@@ -159,6 +203,8 @@ export const publicVisualDesignLayerSchema = z.object({
   text: visualDesignTextPropsSchema.optional(),
   platformIcon: z.object({}).optional(),
   avatar: visualDesignAvatarPropsSchema.optional(),
+  messageFragments: visualDesignMessageFragmentsPropsSchema.optional(),
+  badgeList: visualDesignBadgeListPropsSchema.optional(),
   entryAnimation: visualDesignAnimationSchema,
   exitAnimation: visualDesignAnimationSchema,
   animationDurationMs: z.number(),

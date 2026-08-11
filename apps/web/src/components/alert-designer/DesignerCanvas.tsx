@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import type { VisualDesignCanvas, VisualDesignFrame, VisualDesignLayer } from '@/api/visualdesign-schemas';
 import type { RenderableLayer } from '@/components/visual-design/VisualLayer';
-import { VisualDesignRenderer, type VisualDesignAlertData } from '@/components/visual-design/VisualDesignRenderer';
+import { VisualDesignRenderer, type VisualDesignDataContext } from '@/components/visual-design/VisualDesignRenderer';
 import { useDragResize } from '@/hooks/use-drag-resize';
 import { clampFrameToCanvas } from '@/models/visualdesign';
 
@@ -46,7 +46,7 @@ export function DesignerCanvas({
   selectedLayerId: string | null;
   zoom: number;
   snapping: boolean;
-  fixture: VisualDesignAlertData;
+  fixture: VisualDesignDataContext;
   onSelect: (id: string | null) => void;
   onLayerDraftChange: (id: string, patch: Partial<VisualDesignLayer>) => void;
   onLayerCommit: () => void;
@@ -94,7 +94,7 @@ export function DesignerCanvas({
         <VisualDesignRenderer
           canvas={canvas}
           layers={layers as RenderableLayer[]}
-          alert={fixture}
+          dataContext={fixture}
           mode="preview"
           prefersReducedMotion={false}
           chrome={(layer, scale, children) => (

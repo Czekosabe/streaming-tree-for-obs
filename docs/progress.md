@@ -14487,3 +14487,114 @@ remaining Stage 13B work.
 `VisualDesignRenderer`/Alert Designer components to a genuinely owner-
 independent shape (a normalized `dataContext` rather than an alert-
 specific one) before building the Chat Overlay Designer on top of them.
+
+## 2026-08-11 12:40 — feat(web): share visual designer foundations
+
+### Status
+Frontend refactor - no new UI yet. Every existing Alert Designer
+component is now genuinely owner-independent, verified by the full
+existing test suite continuing to pass unchanged in behavior.
+
+### What
+- `components/visual-design/VisualDesignRenderer.tsx`: replaced the
+  alert-specific `alert: VisualDesignAlertData` prop with a generic
+  `dataContext: VisualDesignDataContext` (`{ providerId, avatarUrl,
+  bindings, messageFragments?, badges? }`) - `bindings.*` are already-
+  resolved display strings the *caller* produces (i18n labels resolved
+  before this component ever sees them); `VisualDesignRenderer` itself
+  no longer imports `react-i18next` at all (Stage 13B task Part 16).
+- `components/visual-design/text-binding.ts`: `AlertBindingContext` ->
+  `VisualBindingContext`, with `timestamp`/`account_label` cases added
+  to `resolveTextBindingValue`.
+- `components/visual-design/VisualLayer.tsx`: threads the new
+  `messageFragments`/`badges` props through and dispatches to two new
+  kind components.
+- `components/visual-design/MessageFragmentsLayer.tsx`,
+  `BadgeListLayer.tsx` (new): Stage 13B's two new shared layer kinds -
+  see the previous two backend commits' own reasoning, mirrored here on
+  the frontend (never `dangerouslySetInnerHTML`, HTTPS-only image URLs,
+  bounded badge count).
+- `components/visual-design/design-style.ts`: style helpers for both
+  new kinds.
+- `api/visualdesign-schemas.ts`: the two new layer kinds and two new
+  text bindings added to the closed Zod enums; new
+  `visualDesignMessageFragmentsPropsSchema`/`visualDesignBadgeListPropsSchema`.
+- `api/chat-overlay-schemas.ts`: `publicChatOverlayConfigSchema` gained
+  additive `renderingMode`/`visualDesign` fields, importing from
+  visualdesign-schemas.ts (one-directional, no circular-import hazard
+  unlike alerts-schemas.ts's own relationship with that file).
+- `models/visualdesign.ts`: bounds/factories for the two new kinds,
+  `CANVAS_CHAT_ITEM` preset (960x280, mirrors `visualdesign.CanvasChatItem`
+  on the backend), `CHAT_VISUAL_DESIGN_TEXT_BINDINGS` (the fixed union
+  available to a chat design, mirroring the backend's own
+  item-kind-union capability model).
+- `components/alert-designer/DesignerPropertiesPanel.tsx`: `layer`
+  property editing takes `availableBindings: readonly
+  VisualDesignTextBinding[]` instead of an alert-specific
+  `eventTypeCapability` - the caller (either designer) computes the
+  right set; added `MessageFragmentsProperties`/`BadgeListProperties`
+  sections.
+- `components/alert-designer/DesignerLayersPanel.tsx`: `layerKinds`
+  prop (defaults to the original 4 shared kinds) instead of a hardcoded
+  list, so the Chat Overlay Designer can offer its own two additional
+  kinds without forking this component.
+- `components/alert-designer/DesignerTopBar.tsx`: `ruleName`/`onTestRule`/
+  `testRulePending`/`testRuleSucceeded` generalized to `itemName`/
+  `backLabel`/an optional `testAction` object - a designer with no
+  equivalent "test" action (chat has none) simply omits the button
+  entirely rather than this component hardcoding "Test Rule".
+- `api/visualdesign.ts`/`hooks/use-visual-design.ts`: `fetchVisualDesign`/
+  `saveVisualDesign`/`deleteVisualDesign`/`useVisualDesignQuery`/
+  `useSaveVisualDesignMutation`/`useDeleteVisualDesignMutation` all take
+  a new `ownerKind: 'alert-rules' | 'chat-overlays'` first parameter
+  selecting the management-API path segment - the rest of the shape and
+  behavior (optimistic concurrency, 409 handling, query-cache keys) is
+  completely shared.
+- `hooks/use-chat-overlay-stream.ts`: new `presentationRevision` counter,
+  incrementing once per `chat-overlay.presentation` SSE event (Stage
+  13B, docs/visual-designs.md §25).
+- `pages/OverlayChatPage.tsx`: refetches its own public config query
+  whenever `presentationRevision` changes - the item stream itself is
+  untouched by this.
+- Every call site updated (`AlertRenderer.tsx`, `DesignerCanvas.tsx`,
+  `AlertDesignerWorkspace.tsx`, `preview-scenarios.ts`, `RuleManager.tsx`,
+  `AlertDesignerPage.tsx`) plus their own tests
+  (`VisualDesignRenderer.test.tsx`, `text-binding.test.ts`,
+  `preview-scenarios.test.ts`, `AlertDesignerWorkspace.test.tsx`,
+  `ChatOverlayRenderer.test.tsx`, `overlay-style.test.ts`,
+  `OverlayChatPage.test.tsx`).
+- `i18n/resources/{en,pl}/alertDesigner.json`: new keys for the two
+  layer kinds, two text bindings, and the new bounded properties
+  (emote size, badge max count/size/gap), plus a `presetChatItem` label
+  for the new canvas preset.
+
+### Technical decisions
+- **Why `bindings.*` are pre-resolved strings, not raw data +
+  i18n keys**: `VisualDesignRenderer` is meant to be usable from a
+  route that has no natural single i18n namespace of its own (the
+  public chat overlay route, for instance) - pushing resolution to the
+  caller keeps the shared renderer's own dependency surface at zero
+  i18n libraries, matching Part 16's "not an alert object and not a
+  Twitch object" literally: it is not aware of *either* domain's own
+  translation namespace.
+- **Why `DesignerTopBar`'s test action is an optional object, not a
+  boolean flag plus more props**: a single `testAction?: {label,
+  onClick, pending, succeeded}` keeps the "no equivalent action" case
+  (chat) a true no-render rather than a component internally guessing
+  which of several partially-supplied props means "hide the button."
+
+### Automated validation
+`npm run i18n:check` (2 languages, 15 namespaces, no diff), `npm run
+typecheck`, `npm run lint`, `npm run test -- --run` (**1062 tests
+pass, 76 files** - 4 new tests added, zero regressions), `npm run
+build` - all clean.
+
+### Known limitations
+No new UI yet - the Chat Overlay Designer route/workspace/panels and
+the public chat-overlay route's own design-driven rendering branch are
+the next commit.
+
+### Next step
+`feat(web): add chat overlay designer` - the new route, workspace,
+preview scenarios, and the public `ChatOverlayRenderer.tsx`'s own
+design-driven branch.

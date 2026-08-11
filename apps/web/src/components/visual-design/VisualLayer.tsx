@@ -3,19 +3,28 @@ import type { ReactNode } from 'react';
 import type {
   VisualDesignAnimation,
   VisualDesignAvatarProps,
+  VisualDesignBadgeListProps,
   VisualDesignFrame,
   VisualDesignLayerKind,
+  VisualDesignMessageFragmentsProps,
   VisualDesignShapeProps,
   VisualDesignTextProps,
 } from '@/api/visualdesign-schemas';
 import { cn } from '@/lib/cn';
 
 import { AvatarLayer } from './AvatarLayer';
+import type { RenderableBadge } from './BadgeListLayer';
+import { BadgeListLayer } from './BadgeListLayer';
 import { layerEntryAnimationClassName, layerFrameStyle } from './design-style';
+import type { RenderableFragment } from './MessageFragmentsLayer';
+import { MessageFragmentsLayer } from './MessageFragmentsLayer';
 import { PlatformIconLayer } from './PlatformIconLayer';
 import { ShapeLayer } from './ShapeLayer';
 import { TextLayer } from './TextLayer';
-import type { AlertBindingContext } from './text-binding';
+import type { VisualBindingContext } from './text-binding';
+
+export type { RenderableBadge } from './BadgeListLayer';
+export type { RenderableFragment } from './MessageFragmentsLayer';
 
 export type RenderableLayer = {
   id: string;
@@ -26,6 +35,8 @@ export type RenderableLayer = {
   text?: VisualDesignTextProps | undefined;
   platformIcon?: Record<string, never> | undefined;
   avatar?: VisualDesignAvatarProps | undefined;
+  messageFragments?: VisualDesignMessageFragmentsProps | undefined;
+  badgeList?: VisualDesignBadgeListProps | undefined;
   entryAnimation: VisualDesignAnimation;
   exitAnimation: VisualDesignAnimation;
   animationDurationMs: number;
@@ -48,15 +59,19 @@ export function VisualLayer({
   context,
   providerId,
   avatarUrl,
+  messageFragments,
+  badges,
   mode,
   prefersReducedMotion,
   chrome,
 }: {
   layer: RenderableLayer;
   scale: number;
-  context: AlertBindingContext;
+  context: VisualBindingContext;
   providerId: string;
   avatarUrl: string | null;
+  messageFragments?: readonly RenderableFragment[] | undefined;
+  badges?: readonly RenderableBadge[] | undefined;
   mode: 'public' | 'preview';
   prefersReducedMotion: boolean;
   chrome?: ((layer: RenderableLayer, scale: number, children: ReactNode) => ReactNode) | undefined;
@@ -72,6 +87,10 @@ export function VisualLayer({
     content = <PlatformIconLayer providerId={providerId} />;
   } else if (layer.kind === 'avatar' && layer.avatar !== undefined) {
     content = <AvatarLayer avatar={layer.avatar} avatarUrl={avatarUrl} scale={scale} />;
+  } else if (layer.kind === 'message_fragments' && layer.messageFragments !== undefined) {
+    content = <MessageFragmentsLayer props={layer.messageFragments} fragments={messageFragments} scale={scale} />;
+  } else if (layer.kind === 'badge_list' && layer.badgeList !== undefined) {
+    content = <BadgeListLayer props={layer.badgeList} badges={badges} />;
   }
 
   const positioned = (

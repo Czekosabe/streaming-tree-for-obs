@@ -62,7 +62,21 @@ export const MAX_LAYER_ANIMATION_DURATION_MS = 2000;
 
 export const MAX_UNDO_HISTORY = 50;
 
+/** Stage 13B additions (docs/visual-designs.md §21). */
+export const MIN_EMOTE_SIZE = 8;
+export const MAX_EMOTE_SIZE = 128;
+export const MIN_BADGE_COUNT = 1;
+export const MAX_BADGE_COUNT = 20;
+export const MIN_BADGE_SIZE = 8;
+export const MAX_BADGE_SIZE = 128;
+export const MIN_BADGE_GAP = 0;
+export const MAX_BADGE_GAP = 32;
+
 export const VISUAL_DESIGN_LAYER_KINDS = ['shape', 'text', 'platform_icon', 'avatar'] as const;
+/** The two Stage 13B layer kinds, offered by the Chat Overlay Designer's
+ * own add-layer menu in addition to the four shared ones above. */
+export const CHAT_VISUAL_DESIGN_LAYER_KINDS = ['message_fragments', 'badge_list'] as const;
+
 export const VISUAL_DESIGN_TEXT_BINDINGS = [
   'static',
   'alert_rendered_text',
@@ -72,11 +86,18 @@ export const VISUAL_DESIGN_TEXT_BINDINGS = [
   'message',
   'quantity',
   'group_count',
+  'timestamp',
+  'account_label',
 ] as const;
 export const VISUAL_DESIGN_FONT_FAMILIES = ['system-ui', 'sans-serif', 'serif', 'monospace'] as const;
 
 export const CANVAS_LANDSCAPE: VisualDesignCanvas = { width: 1920, height: 1080, transparent: true };
 export const CANVAS_VERTICAL: VisualDesignCanvas = { width: 1080, height: 1920, transparent: true };
+/** The Chat Overlay Designer's own canvas preset - a chat visual design
+ * describes one repeated overlay item/card, not a full-screen
+ * presentation (docs/visual-designs.md §17), mirroring
+ * visualdesign.CanvasChatItem on the backend exactly. */
+export const CANVAS_CHAT_ITEM: VisualDesignCanvas = { width: 960, height: 280, transparent: true };
 
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.5, 2] as const;
 export const ZOOM_LEVELS_ARRAY: readonly number[] = ZOOM_LEVELS;
@@ -136,6 +157,23 @@ export function availableTextBindings(capability: AlertEventTypeCapability | und
   return out;
 }
 
+/** The bindings available to a chat-overlay design (mirrors
+ * internal/domain/chatoverlay's own AvailableTextBindings union across
+ * both item kinds - docs/visual-designs.md §20.1: "Stage 13B does not
+ * create a separate persisted design per item kind"). Never includes
+ * `alert_rendered_text` (alert-only) or `group_count` (chat items are
+ * never grouped). */
+export const CHAT_VISUAL_DESIGN_TEXT_BINDINGS: readonly VisualDesignTextBinding[] = [
+  'static',
+  'username',
+  'platform',
+  'message',
+  'event_type',
+  'quantity',
+  'timestamp',
+  'account_label',
+];
+
 // --- layer id / factories -------------------------------------------------
 
 export function newLayerId(): string {
@@ -144,7 +182,7 @@ export function newLayerId(): string {
 
 function baseLayer(kind: VisualDesignLayerKind, name: string, frame: VisualDesignFrame, order: number): Omit<
   VisualDesignLayer,
-  'shape' | 'text' | 'platformIcon' | 'avatar'
+  'shape' | 'text' | 'platformIcon' | 'avatar' | 'messageFragments' | 'badgeList'
 > {
   return {
     id: newLayerId(), name, kind, visible: true, locked: false, order, frame, opacity: 1,
@@ -180,6 +218,23 @@ export function createAvatarLayer(frame: VisualDesignFrame, order: number): Visu
   return {
     ...baseLayer('avatar', 'Avatar', frame, order),
     avatar: { cornerRadius: 500, borderColor: '#FFFFFF', borderWidth: 0 },
+  };
+}
+
+export function createMessageFragmentsLayer(frame: VisualDesignFrame, order: number): VisualDesignLayer {
+  return {
+    ...baseLayer('message_fragments', 'Message', frame, order),
+    messageFragments: {
+      fontFamily: 'system-ui', fontSize: 16, fontWeight: 400, lineHeight: 1.3, letterSpacing: 0,
+      textColor: '#FFFFFF', horizontalAlign: 'left', verticalAlign: 'top', emoteSize: 24,
+    },
+  };
+}
+
+export function createBadgeListLayer(frame: VisualDesignFrame, order: number): VisualDesignLayer {
+  return {
+    ...baseLayer('badge_list', 'Badges', frame, order),
+    badgeList: { maxCount: 5, badgeSize: 18, gap: 4 },
   };
 }
 

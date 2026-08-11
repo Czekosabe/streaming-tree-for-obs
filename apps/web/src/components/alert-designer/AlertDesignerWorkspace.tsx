@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import type { AlertEventTypeCapability, AlertProfile, AlertRule } from '@/api/alerts-schemas';
-import type { VisualDesignDocument, VisualDesignLayer, VisualDesignResponse } from '@/api/visualdesign-schemas';
+import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { platformDisplayName } from '@/components/visual-design/text-binding';
 import { useAlertPreviewMutation, useTestAlertRuleMutation } from '@/hooks/use-alerts';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
+  availableTextBindings,
   createHistory,
   createAvatarLayer,
   createPlatformIconLayer,
@@ -54,6 +56,7 @@ export function AlertDesignerWorkspace({
   initialResponse: VisualDesignResponse;
 }) {
   const { t } = useTranslation('alertDesigner');
+  const { t: tAlerts } = useTranslation('alerts');
   const navigate = useNavigate();
 
   const [history, setHistory] = useState<History<VisualDesignDocument>>(() => createHistory(initialResponse.document));
@@ -72,8 +75,8 @@ export function AlertDesignerWorkspace({
   const dirty = !documentsEqual(document_, savedDocument);
   const selectedLayer = document_.layers.find((l) => l.id === selectedLayerId) ?? null;
 
-  const saveMutation = useSaveVisualDesignMutation(rule.id);
-  const deleteMutation = useDeleteVisualDesignMutation(rule.id);
+  const saveMutation = useSaveVisualDesignMutation('alert-rules', rule.id);
+  const deleteMutation = useDeleteVisualDesignMutation('alert-rules', rule.id);
   const testRuleMutation = useTestAlertRuleMutation();
   const previewMutation = useAlertPreviewMutation();
 
@@ -107,7 +110,14 @@ export function AlertDesignerWorkspace({
     commitDraft({ ...document_, layers: normalizeLayerOrder(mutator(document_.layers)) });
   }
 
-  function handleAddLayer(kind: 'shape' | 'text' | 'platform_icon' | 'avatar') {
+  function handleAddLayer(kind: VisualDesignLayerKind) {
+    // The Alert Designer's own DesignerLayersPanel only ever offers the
+    // four shared kinds (VISUAL_DESIGN_LAYER_KINDS, its default
+    // layerKinds) - message_fragments/badge_list are structurally
+    // unreachable from this UI, kept here only so this handler's own
+    // parameter type matches the shared, owner-agnostic
+    // DesignerLayersPanel prop exactly (Stage 13B task Part 25).
+    if (kind === 'message_fragments' || kind === 'badge_list') return;
     const order = document_.layers.length;
     const frame = { x: 100, y: 100, width: 400, height: 200 };
     const textFrame = { x: 100, y: 100, width: 400, height: 100 };
@@ -192,13 +202,23 @@ export function AlertDesignerWorkspace({
 
   const fixture = useMemo(() => {
     const base = previewScenarioFixture(scenario);
-    return { ...base, renderedText: previewMutation.data?.renderedText ?? rule.textTemplate };
-  }, [scenario, previewMutation.data, rule.textTemplate]);
+    const baseEventType = baseEventTypeForScenario(scenario);
+    return {
+      ...base,
+      bindings: {
+        ...base.bindings,
+        renderedText: previewMutation.data?.renderedText ?? rule.textTemplate,
+        platform: platformDisplayName(base.providerId),
+        eventType: tAlerts(`rules.eventType.${baseEventType}`, { defaultValue: baseEventType }),
+      },
+    };
+  }, [scenario, previewMutation.data, rule.textTemplate, tAlerts]);
 
   return (
     <div className="flex h-dvh flex-col bg-canvas" data-testid="alert-designer-workspace">
       <DesignerTopBar
-        ruleName={rule.name}
+        itemName={rule.name}
+        backLabel={t('page.backToRules')}
         dirty={dirty}
         saving={saveMutation.isPending}
         canUndo={history.past.length > 0}
@@ -212,9 +232,12 @@ export function AlertDesignerWorkspace({
         onRedo={() => setHistory(redoHistory)}
         onSave={handleSave}
         onResetToLegacy={() => setResetConfirmOpen(true)}
-        onTestRule={() => testRuleMutation.mutate({ id: rule.id })}
-        testRulePending={testRuleMutation.isPending}
-        testRuleSucceeded={testRuleMutation.isSuccess}
+        testAction={{
+          label: 'Test Rule',
+          onClick: () => testRuleMutation.mutate({ id: rule.id }),
+          pending: testRuleMutation.isPending,
+          succeeded: testRuleMutation.isSuccess,
+        }}
       />
       <div className="flex min-h-0 flex-1">
         <DesignerLayersPanel
@@ -243,7 +266,7 @@ export function AlertDesignerWorkspace({
           canvas={document_.canvas}
           onCanvasChange={(canvas) => commitDraft({ ...document_, canvas })}
           layer={selectedLayer}
-          eventTypeCapability={eventTypeCapability}
+          availableBindings={availableTextBindings(eventTypeCapability)}
           onLayerChange={(patch) => selectedLayerId !== null && handleUpdateLayer(selectedLayerId, patch)}
           snapping={snapping}
           onSnappingChange={setSnapping}

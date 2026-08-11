@@ -190,7 +190,7 @@ describe('AlertDesignerWorkspace', () => {
     fireEvent.click(screen.getByTestId('designer-add-shape'));
     fireEvent.click(screen.getByTestId('designer-save'));
 
-    await waitFor(() => expect(vi.mocked(visualDesignApi).saveVisualDesign).toHaveBeenCalledWith(rule.id, expect.anything(), 0));
+    await waitFor(() => expect(vi.mocked(visualDesignApi).saveVisualDesign).toHaveBeenCalledWith('alert-rules', rule.id, expect.anything(), 0));
     await waitFor(() => expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'false'));
   });
 
@@ -217,7 +217,7 @@ describe('AlertDesignerWorkspace', () => {
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /reset to legacy/i }));
-    await waitFor(() => expect(vi.mocked(visualDesignApi).deleteVisualDesign).toHaveBeenCalledWith(rule.id));
+    await waitFor(() => expect(vi.mocked(visualDesignApi).deleteVisualDesign).toHaveBeenCalledWith('alert-rules', rule.id));
   });
 
   it('Back with unsaved changes shows a discard confirmation instead of navigating immediately', async () => {

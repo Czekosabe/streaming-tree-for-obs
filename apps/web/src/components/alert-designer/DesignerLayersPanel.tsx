@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { VisualDesignLayer, VisualDesignLayerKind } from '@/api/visualdesign-schemas';
 import { Button, IconButton } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
-import { MAX_LAYERS } from '@/models/visualdesign';
-
-const LAYER_KINDS: VisualDesignLayerKind[] = ['shape', 'text', 'platform_icon', 'avatar'];
+import { MAX_LAYERS, VISUAL_DESIGN_LAYER_KINDS } from '@/models/visualdesign';
 
 /** Left panel: Add Layer and the ordered layers list (Stage 13A task
  * Part 27/32/33/34) - front-to-back visually, so the topmost list
@@ -13,9 +11,13 @@ const LAYER_KINDS: VisualDesignLayerKind[] = ['shape', 'text', 'platform_icon', 
  * duplicate/delete) is a labeled button, never drag-only, satisfying
  * Part 32's "keyboard/button reordering must exist even if drag
  * reorder exists" (this implementation offers only button reordering -
- * drag-to-reorder is explicitly optional per the same part). */
+ * drag-to-reorder is explicitly optional per the same part). Shared by
+ * both designers (Stage 13B task Part 25) - `layerKinds` is the only
+ * owner-specific input, so the Chat Overlay Designer can offer its own
+ * two additional kinds without forking this component. */
 export function DesignerLayersPanel({
   layers,
+  layerKinds = VISUAL_DESIGN_LAYER_KINDS,
   selectedLayerId,
   onSelect,
   onAddLayer,
@@ -26,6 +28,7 @@ export function DesignerLayersPanel({
   onMove,
 }: {
   layers: VisualDesignLayer[];
+  layerKinds?: readonly VisualDesignLayerKind[];
   selectedLayerId: string | null;
   onSelect: (id: string) => void;
   onAddLayer: (kind: VisualDesignLayerKind) => void;
@@ -43,7 +46,7 @@ export function DesignerLayersPanel({
       <div className="border-b border-line p-2">
         <p className="mb-2 text-xs font-semibold uppercase text-ink-muted">{t('layers.addLayer')}</p>
         <div className="grid grid-cols-2 gap-1">
-          {LAYER_KINDS.map((kind) => (
+          {layerKinds.map((kind) => (
             <Button
               key={kind}
               variant="secondary"

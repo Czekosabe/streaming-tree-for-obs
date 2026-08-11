@@ -1,38 +1,47 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 
-import { deleteVisualDesign, fetchVisualDesign, saveVisualDesign } from '@/api/visualdesign';
+import { deleteVisualDesign, fetchVisualDesign, saveVisualDesign, type VisualDesignOwnerKind } from '@/api/visualdesign';
 import type { VisualDesignDocument, VisualDesignResponse } from '@/api/visualdesign-schemas';
 
+/** Shared by both designers (Stage 13B task Part 16) - `ownerKind`
+ * selects the management-API path segment
+ * (`/api/alert-rules/{id}/visual-design` vs
+ * `/api/chat-overlays/{id}/visual-design`); everything else is
+ * identical. */
 export const visualDesignKeys = {
-  design: (ruleId: string) => ['visual-design', ruleId] as const,
+  design: (ownerKind: VisualDesignOwnerKind, ownerId: string) => ['visual-design', ownerKind, ownerId] as const,
 };
 
-export function useVisualDesignQuery(ruleId: string | null): UseQueryResult<VisualDesignResponse, Error> {
+export function useVisualDesignQuery(
+  ownerKind: VisualDesignOwnerKind,
+  ownerId: string | null,
+): UseQueryResult<VisualDesignResponse, Error> {
   return useQuery({
-    queryKey: visualDesignKeys.design(ruleId ?? ''),
-    queryFn: ({ signal }) => fetchVisualDesign(ruleId ?? '', signal),
-    enabled: ruleId !== null,
+    queryKey: visualDesignKeys.design(ownerKind, ownerId ?? ''),
+    queryFn: ({ signal }) => fetchVisualDesign(ownerKind, ownerId ?? '', signal),
+    enabled: ownerId !== null,
   });
 }
 
 export function useSaveVisualDesignMutation(
-  ruleId: string,
+  ownerKind: VisualDesignOwnerKind,
+  ownerId: string,
 ): UseMutationResult<VisualDesignResponse, Error, { document: VisualDesignDocument; expectedRevision: number }> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ document, expectedRevision }) => saveVisualDesign(ruleId, document, expectedRevision),
+    mutationFn: ({ document, expectedRevision }) => saveVisualDesign(ownerKind, ownerId, document, expectedRevision),
     onSuccess: (data) => {
-      queryClient.setQueryData(visualDesignKeys.design(ruleId), data);
+      queryClient.setQueryData(visualDesignKeys.design(ownerKind, ownerId), data);
     },
   });
 }
 
-export function useDeleteVisualDesignMutation(ruleId: string): UseMutationResult<void, Error, void> {
+export function useDeleteVisualDesignMutation(ownerKind: VisualDesignOwnerKind, ownerId: string): UseMutationResult<void, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => deleteVisualDesign(ruleId),
+    mutationFn: () => deleteVisualDesign(ownerKind, ownerId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: visualDesignKeys.design(ruleId) });
+      void queryClient.invalidateQueries({ queryKey: visualDesignKeys.design(ownerKind, ownerId) });
     },
   });
 }

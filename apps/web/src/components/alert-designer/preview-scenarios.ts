@@ -1,5 +1,5 @@
 import type { AlertEventType } from '@/api/alerts-schemas';
-import type { VisualDesignAlertData } from '@/components/visual-design/VisualDesignRenderer';
+import type { VisualDesignDataContext } from '@/components/visual-design/VisualDesignRenderer';
 
 /**
  * Deterministic, local, synthetic preview fixtures (Stage 13A task
@@ -58,43 +58,55 @@ export function baseEventTypeForScenario(scenario: PreviewScenario): AlertEventT
 const VERY_LONG_USERNAME = 'VeryLongTestViewerName'.repeat(6);
 const VERY_LONG_MESSAGE = 'This is a very long test alert message. '.repeat(8);
 
-/** Builds the scenario's own synthetic binding data - renderedText is
- * filled in separately by the caller (via the existing, already-local
- * `/api/alert-rule-preview` endpoint, reusing Stage 12A's own
- * established "local template preview" precedent) since it depends on
- * the rule's own saved template, not just the scenario. */
-export function previewScenarioFixture(scenario: PreviewScenario): Omit<VisualDesignAlertData, 'renderedText'> {
-  const providerId = 'twitch';
+/** The subset of an alert fixture this module can build on its own -
+ * `bindings.renderedText` (depends on the rule's own saved template,
+ * fetched separately via the existing `/api/alert-rule-preview`
+ * endpoint) and `bindings.eventType`/`bindings.platform` (resolved
+ * display labels - this module never imports react-i18next itself) are
+ * always filled in by the caller (AlertDesignerWorkspace.tsx). */
+export type AlertPreviewFixture = Omit<VisualDesignDataContext, 'bindings'> & {
+  bindings: Omit<VisualDesignDataContext['bindings'], 'renderedText' | 'eventType' | 'platform'>;
+};
+
+/** Builds the scenario's own synthetic binding data. */
+export function previewScenarioFixture(scenario: PreviewScenario): AlertPreviewFixture {
+  function fixture(username: string | null, message: string | null, quantity: number | null, groupCount: number): AlertPreviewFixture {
+    return {
+      providerId: 'twitch',
+      avatarUrl: null,
+      bindings: { username, message, quantity, groupCount, timestamp: null, accountLabel: null },
+    };
+  }
   switch (scenario) {
     case 'follow':
-      return { eventType: 'follow', providerId, username: 'TestViewer', message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, null, 1);
     case 'subscription':
-      return { eventType: 'subscription', providerId, username: 'TestViewer', message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, null, 1);
     case 'resubscription':
-      return { eventType: 'resubscription', providerId, username: 'TestViewer', message: 'This is a test alert message.', quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', 'This is a test alert message.', null, 1);
     case 'gifted_subscription':
-      return { eventType: 'gifted_subscription', providerId, username: 'TestViewer', message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, null, 1);
     case 'subscription_gift_batch':
-      return { eventType: 'subscription_gift_batch', providerId, username: 'TestViewer', message: null, quantity: 5, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, 5, 1);
     case 'bits':
-      return { eventType: 'bits', providerId, username: 'TestViewer', message: 'This is a test alert message.', quantity: 250, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', 'This is a test alert message.', 250, 1);
     case 'raid':
-      return { eventType: 'raid', providerId, username: 'TestViewer', message: null, quantity: 42, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, 42, 1);
     case 'channel_point_redemption':
-      return { eventType: 'channel_point_redemption', providerId, username: 'TestViewer', message: 'This is a test alert message.', quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', 'This is a test alert message.', null, 1);
     case 'grouped_bits':
-      return { eventType: 'bits', providerId, username: 'TestViewer', message: null, quantity: 750, groupCount: 3, avatarUrl: null };
+      return fixture('TestViewer', null, 750, 3);
     case 'grouped_gift_batch':
-      return { eventType: 'subscription_gift_batch', providerId, username: 'TestViewer', message: null, quantity: 12, groupCount: 4, avatarUrl: null };
+      return fixture('TestViewer', null, 12, 4);
     case 'anonymous':
-      return { eventType: 'bits', providerId, username: null, message: null, quantity: 250, groupCount: 1, avatarUrl: null };
+      return fixture(null, null, 250, 1);
     case 'missing_avatar':
-      return { eventType: 'follow', providerId, username: 'TestViewer', message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, null, 1);
     case 'very_long_username':
-      return { eventType: 'follow', providerId, username: VERY_LONG_USERNAME, message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture(VERY_LONG_USERNAME, null, null, 1);
     case 'very_long_message':
-      return { eventType: 'follow', providerId, username: 'TestViewer', message: VERY_LONG_MESSAGE, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', VERY_LONG_MESSAGE, null, 1);
     case 'missing_message':
-      return { eventType: 'follow', providerId, username: 'TestViewer', message: null, quantity: null, groupCount: 1, avatarUrl: null };
+      return fixture('TestViewer', null, null, 1);
   }
 }

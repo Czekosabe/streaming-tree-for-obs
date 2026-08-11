@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
+import { publicVisualDesignDocumentSchema, visualDesignRenderingModeSchema } from './visualdesign-schemas';
+
 /**
  * Zod contracts for the Stage 10 chat-overlay management and public APIs
- * (`internal/httpapi/chatoverlay.go`).
+ * (`internal/httpapi/chatoverlay.go`), extended in Stage 13B with the
+ * public config's own additive `renderingMode`/`visualDesign` fields
+ * (docs/visual-designs.md §25). No circular-import hazard here - unlike
+ * alerts-schemas.ts/visualdesign-schemas.ts's own two-way relationship,
+ * this import is strictly one-directional: visualdesign-schemas.ts never
+ * imports this module back.
  *
  * Mirrors operator-chat-schemas.ts's own reasoning: no field here carries a
  * token, a session id, a raw provider payload, or (for the public schemas)
@@ -181,6 +188,9 @@ export const publicChatOverlayConfigSchema = z.object({
   highlightVips: z.boolean(),
 
   language: chatOverlayLanguageSchema,
+
+  renderingMode: visualDesignRenderingModeSchema,
+  visualDesign: publicVisualDesignDocumentSchema.nullable().optional(),
 });
 export type PublicChatOverlayConfig = z.infer<typeof publicChatOverlayConfigSchema>;
 

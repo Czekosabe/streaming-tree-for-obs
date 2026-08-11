@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { PublicAlert, PublicAlertProfileConfig } from '@/api/alerts-schemas';
 import { VisualDesignRenderer } from '@/components/visual-design/VisualDesignRenderer';
+import { platformDisplayName } from '@/components/visual-design/text-binding';
 import { cn } from '@/lib/cn';
 import { providerGlyphClass } from '@/models/provider-labels';
 
@@ -122,15 +123,20 @@ export function AlertRenderer({
           <VisualDesignRenderer
             canvas={alert.visualDesign.canvas}
             layers={alert.visualDesign.layers}
-            alert={{
-              eventType: alert.eventType,
+            dataContext={{
               providerId: alert.providerId,
-              username: alert.username ?? null,
-              message: alert.message ?? null,
-              quantity: alert.quantity ?? null,
-              groupCount: alert.groupCount,
-              renderedText: alert.renderedText,
               avatarUrl: alert.avatarUrl ?? null,
+              bindings: {
+                renderedText: alert.renderedText,
+                username: alert.username ?? null,
+                platform: platformDisplayName(alert.providerId),
+                eventType: t(`rules.eventType.${alert.eventType}`, { defaultValue: alert.eventType }),
+                message: alert.message ?? null,
+                quantity: alert.quantity ?? null,
+                groupCount: alert.groupCount,
+                timestamp: null,
+                accountLabel: null,
+              },
             }}
             mode="public"
             prefersReducedMotion={prefersReducedMotion}

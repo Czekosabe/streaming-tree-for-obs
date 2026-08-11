@@ -26,7 +26,9 @@
       "shape": "Prostokąt",
       "text": "Tekst",
       "platform_icon": "Ikona platformy",
-      "avatar": "Awatar"
+      "avatar": "Awatar",
+      "message_fragments": "Wiadomość",
+      "badge_list": "Odznaki"
     },
     "textVariant": {
       "static": "Tekst statyczny",
@@ -36,7 +38,9 @@
       "event_type": "Typ zdarzenia",
       "message": "Wiadomość",
       "quantity": "Ilość",
-      "group_count": "Liczba w grupie"
+      "group_count": "Liczba w grupie",
+      "timestamp": "Znacznik czasu",
+      "account_label": "Etykieta konta"
     },
     "moveUp": "Przesuń wyżej",
     "moveDown": "Przesuń niżej",
@@ -100,7 +104,12 @@
     "canvasPreset": "Ustawienie",
     "presetLandscape": "Poziomo (1920×1080)",
     "presetVertical": "Pionowo (1080×1920)",
-    "presetCustom": "Niestandardowe"
+    "presetChatItem": "Element czatu (960×280)",
+    "presetCustom": "Niestandardowe",
+    "emoteSize": "Rozmiar emotki",
+    "badgeMaxCount": "Maks. liczba odznak",
+    "badgeSize": "Rozmiar odznaki",
+    "badgeGap": "Odstęp między odznakami"
   },
   "canvasResize": {
     "confirmTitle": "Zmienić rozmiar płótna?",

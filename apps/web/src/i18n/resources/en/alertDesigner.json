@@ -26,7 +26,9 @@
       "shape": "Rectangle",
       "text": "Text",
       "platform_icon": "Platform icon",
-      "avatar": "Avatar"
+      "avatar": "Avatar",
+      "message_fragments": "Message",
+      "badge_list": "Badges"
     },
     "textVariant": {
       "static": "Static text",
@@ -36,7 +38,9 @@
       "event_type": "Event type",
       "message": "Message",
       "quantity": "Quantity",
-      "group_count": "Group count"
+      "group_count": "Group count",
+      "timestamp": "Timestamp",
+      "account_label": "Account label"
     },
     "moveUp": "Move up",
     "moveDown": "Move down",
@@ -100,7 +104,12 @@
     "canvasPreset": "Preset",
     "presetLandscape": "Landscape (1920×1080)",
     "presetVertical": "Vertical (1080×1920)",
-    "presetCustom": "Custom"
+    "presetChatItem": "Chat item (960×280)",
+    "presetCustom": "Custom",
+    "emoteSize": "Emote size",
+    "badgeMaxCount": "Max badges",
+    "badgeSize": "Badge size",
+    "badgeGap": "Badge gap"
   },
   "canvasResize": {
     "confirmTitle": "Change canvas size?",

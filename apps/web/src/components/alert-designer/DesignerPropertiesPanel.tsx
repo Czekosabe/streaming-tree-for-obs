@@ -1,13 +1,13 @@
 import { useTranslation } from 'react-i18next';
 
 import type {
-  AlertEventTypeCapability,
-} from '@/api/alerts-schemas';
-import type {
   VisualDesignAvatarProps,
+  VisualDesignBadgeListProps,
   VisualDesignCanvas,
   VisualDesignLayer,
+  VisualDesignMessageFragmentsProps,
   VisualDesignShapeProps,
+  VisualDesignTextBinding,
   VisualDesignTextProps,
 } from '@/api/visualdesign-schemas';
 import { FormField } from '@/components/ui/FormField';
@@ -15,17 +15,24 @@ import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
-  availableTextBindings,
   CANVAS_LANDSCAPE,
   CANVAS_VERTICAL,
+  MAX_BADGE_COUNT,
+  MAX_BADGE_GAP,
+  MAX_BADGE_SIZE,
   MAX_BORDER_WIDTH,
   MAX_CORNER_RADIUS,
+  MAX_EMOTE_SIZE,
   MAX_FONT_SIZE,
   MAX_LAYER_NAME_CODE_POINTS,
   MAX_OUTLINE_WIDTH,
   MAX_SHADOW_BLUR,
+  MIN_BADGE_COUNT,
+  MIN_BADGE_GAP,
+  MIN_BADGE_SIZE,
   MIN_BORDER_WIDTH,
   MIN_CORNER_RADIUS,
+  MIN_EMOTE_SIZE,
   MIN_FONT_SIZE,
   MIN_OUTLINE_WIDTH,
   MIN_SHADOW_BLUR,
@@ -98,7 +105,7 @@ export function DesignerPropertiesPanel({
   canvas,
   onCanvasChange,
   layer,
-  eventTypeCapability,
+  availableBindings,
   onLayerChange,
   snapping,
   onSnappingChange,
@@ -106,7 +113,13 @@ export function DesignerPropertiesPanel({
   canvas: VisualDesignCanvas;
   onCanvasChange: (canvas: VisualDesignCanvas) => void;
   layer: VisualDesignLayer | null;
-  eventTypeCapability: AlertEventTypeCapability | undefined;
+  /** The subset of the closed text-binding vocabulary meaningful for
+   * the layer's own owner (an alert rule's event-type capability, or a
+   * chat overlay's own fixed item-kind union - see
+   * models/visualdesign.ts's own `availableTextBindings`/
+   * `CHAT_VISUAL_DESIGN_TEXT_BINDINGS`). Owner-agnostic here: this
+   * panel is shared by both designers (Stage 13B task Part 25). */
+  availableBindings: readonly VisualDesignTextBinding[];
   onLayerChange: (patch: Partial<VisualDesignLayer>) => void;
   snapping: boolean;
   onSnappingChange: (snapping: boolean) => void;
@@ -120,7 +133,7 @@ export function DesignerPropertiesPanel({
       {layer === null ? (
         <CanvasProperties canvas={canvas} onChange={onCanvasChange} />
       ) : (
-        <LayerProperties layer={layer} eventTypeCapability={eventTypeCapability} onChange={onLayerChange} />
+        <LayerProperties layer={layer} availableBindings={availableBindings} onChange={onLayerChange} />
       )}
       {layer === null ? <p className="mt-3 text-xs text-ink-muted">{t('properties.noSelection')}</p> : null}
     </div>
@@ -165,15 +178,15 @@ function CanvasProperties({ canvas, onChange }: { canvas: VisualDesignCanvas; on
 
 function LayerProperties({
   layer,
-  eventTypeCapability,
+  availableBindings,
   onChange,
 }: {
   layer: VisualDesignLayer;
-  eventTypeCapability: AlertEventTypeCapability | undefined;
+  availableBindings: readonly VisualDesignTextBinding[];
   onChange: (patch: Partial<VisualDesignLayer>) => void;
 }) {
   const { t } = useTranslation('alertDesigner');
-  const available = availableTextBindings(eventTypeCapability);
+  const available = availableBindings;
 
   return (
     <div className="mt-3 space-y-3">
@@ -202,6 +215,12 @@ function LayerProperties({
       ) : null}
       {layer.kind === 'avatar' && layer.avatar !== undefined ? (
         <AvatarProperties avatar={layer.avatar} onChange={(avatar) => onChange({ avatar })} />
+      ) : null}
+      {layer.kind === 'message_fragments' && layer.messageFragments !== undefined ? (
+        <MessageFragmentsProperties messageFragments={layer.messageFragments} onChange={(messageFragments) => onChange({ messageFragments })} />
+      ) : null}
+      {layer.kind === 'badge_list' && layer.badgeList !== undefined ? (
+        <BadgeListProperties badgeList={layer.badgeList} onChange={(badgeList) => onChange({ badgeList })} />
       ) : null}
 
       <FormField label={t('properties.entryAnimation')}>
@@ -258,6 +277,69 @@ function AvatarProperties({ avatar, onChange }: { avatar: VisualDesignAvatarProp
       <NumberField label={t('properties.cornerRadius')} value={avatar.cornerRadius} min={MIN_CORNER_RADIUS} max={MAX_CORNER_RADIUS} onChange={(cornerRadius) => onChange({ ...avatar, cornerRadius })} testId="designer-avatar-corner-radius" />
       <ColorField label={t('properties.borderColor')} value={avatar.borderColor} onChange={(borderColor) => onChange({ ...avatar, borderColor })} testId="designer-avatar-border-color" />
       <NumberField label={t('properties.borderWidth')} value={avatar.borderWidth} min={MIN_BORDER_WIDTH} max={MAX_BORDER_WIDTH} onChange={(borderWidth) => onChange({ ...avatar, borderWidth })} testId="designer-avatar-border-width" />
+    </>
+  );
+}
+
+function MessageFragmentsProperties({
+  messageFragments,
+  onChange,
+}: {
+  messageFragments: VisualDesignMessageFragmentsProps;
+  onChange: (value: VisualDesignMessageFragmentsProps) => void;
+}) {
+  const { t } = useTranslation('alertDesigner');
+  return (
+    <>
+      <FormField label={t('properties.fontFamily')}>
+        {({ inputId }) => (
+          <SelectInput
+            id={inputId}
+            value={messageFragments.fontFamily}
+            onChange={(e) => onChange({ ...messageFragments, fontFamily: e.target.value as VisualDesignMessageFragmentsProps['fontFamily'] })}
+            options={VISUAL_DESIGN_FONT_FAMILIES.map((f) => ({ value: f, label: f }))}
+            data-testid="designer-fragments-font-family"
+          />
+        )}
+      </FormField>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label={t('properties.fontSize')} value={messageFragments.fontSize} min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} onChange={(fontSize) => onChange({ ...messageFragments, fontSize })} testId="designer-fragments-font-size" />
+        <NumberField label={t('properties.fontWeight')} value={messageFragments.fontWeight} min={100} max={900} step={100} onChange={(fontWeight) => onChange({ ...messageFragments, fontWeight })} testId="designer-fragments-font-weight" />
+      </div>
+      <ColorField label={t('properties.textColor')} value={messageFragments.textColor} onChange={(textColor) => onChange({ ...messageFragments, textColor })} testId="designer-fragments-text-color" />
+      <FormField label={t('properties.horizontalAlign')}>
+        {({ inputId }) => (
+          <SelectInput
+            id={inputId}
+            value={messageFragments.horizontalAlign}
+            onChange={(e) => onChange({ ...messageFragments, horizontalAlign: e.target.value as VisualDesignMessageFragmentsProps['horizontalAlign'] })}
+            options={[
+              { value: 'left', label: t('properties.alignLeft') },
+              { value: 'center', label: t('properties.alignCenter') },
+              { value: 'right', label: t('properties.alignRight') },
+            ]}
+            data-testid="designer-fragments-halign"
+          />
+        )}
+      </FormField>
+      <NumberField label={t('properties.emoteSize')} value={messageFragments.emoteSize} min={MIN_EMOTE_SIZE} max={MAX_EMOTE_SIZE} onChange={(emoteSize) => onChange({ ...messageFragments, emoteSize })} testId="designer-fragments-emote-size" />
+    </>
+  );
+}
+
+function BadgeListProperties({
+  badgeList,
+  onChange,
+}: {
+  badgeList: VisualDesignBadgeListProps;
+  onChange: (value: VisualDesignBadgeListProps) => void;
+}) {
+  const { t } = useTranslation('alertDesigner');
+  return (
+    <>
+      <NumberField label={t('properties.badgeMaxCount')} value={badgeList.maxCount} min={MIN_BADGE_COUNT} max={MAX_BADGE_COUNT} onChange={(maxCount) => onChange({ ...badgeList, maxCount })} testId="designer-badges-max-count" />
+      <NumberField label={t('properties.badgeSize')} value={badgeList.badgeSize} min={MIN_BADGE_SIZE} max={MAX_BADGE_SIZE} onChange={(badgeSize) => onChange({ ...badgeList, badgeSize })} testId="designer-badges-size" />
+      <NumberField label={t('properties.badgeGap')} value={badgeList.gap} min={MIN_BADGE_GAP} max={MAX_BADGE_GAP} onChange={(gap) => onChange({ ...badgeList, gap })} testId="designer-badges-gap" />
     </>
   );
 }

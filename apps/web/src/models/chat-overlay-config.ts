@@ -40,6 +40,11 @@ export function toPreviewConfig(fields: ChatOverlayEditableFields): PublicChatOv
     highlightSubscribers: fields.highlightSubscribers,
     highlightVips: fields.highlightVips,
     language: fields.language,
+    // This local draft-fields preview never reflects a saved visual
+    // design (that lives in a separate DB row/route entirely) - always
+    // "legacy" is the honest value here, never a fabricated
+    // "visual_design" the panel could not actually render correctly.
+    renderingMode: 'legacy',
   };
 }
 

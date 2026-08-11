@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { ChatOverlayRenderer } from '@/components/chat-overlay/ChatOverlayRenderer';
@@ -24,6 +25,18 @@ export function OverlayChatPage() {
   const { publicSlug } = useParams<{ publicSlug: string }>();
   const configQuery = usePublicChatOverlayConfigQuery(publicSlug);
   const stream = useChatOverlayStream(publicSlug);
+
+  // Stage 13B (docs/visual-designs.md §25): a chat-overlay.presentation
+  // event means the saved design changed while this page stayed open -
+  // refetch the public config so the renderer picks up the new
+  // renderingMode/visualDesign. The item stream itself is untouched.
+  const lastPresentationRevision = useRef(stream.presentationRevision);
+  useEffect(() => {
+    if (stream.presentationRevision === lastPresentationRevision.current) return;
+    lastPresentationRevision.current = stream.presentationRevision;
+    void configQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable enough for this purpose; re-running on every configQuery identity change would defeat the point
+  }, [stream.presentationRevision]);
 
   if (configQuery.data === undefined) {
     // No visible loading UI - an OBS Browser Source with a transparent

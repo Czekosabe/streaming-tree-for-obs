@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { VisualDesignTextProps } from '@/api/visualdesign-schemas';
 
 import { textLayerContainerStyle, textLayerStyle } from './design-style';
-import { resolveTextBindingValue, type AlertBindingContext } from './text-binding';
+import { resolveTextBindingValue, type VisualBindingContext } from './text-binding';
 
 /**
  * Renders one text layer's resolved value as plain text - never
@@ -23,7 +23,7 @@ export function TextLayer({
 }: {
   text: VisualDesignTextProps;
   scale: number;
-  context: AlertBindingContext;
+  context: VisualBindingContext;
   mode: 'public' | 'preview';
 }) {
   const { t } = useTranslation('alertDesigner');
