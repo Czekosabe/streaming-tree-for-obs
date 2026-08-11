@@ -275,3 +275,28 @@ with no transcoding, is this stage's deliberate scope.
     own already-normalized data, never an uploaded or arbitrary-URL
     asset (`docs/visual-designs.md`). Stage 13A added **no new
     environment variable**.
+15. Stage 13B (Chat Overlay Designer, Stage 13 as a whole now complete)
+    adds no new table and no new file to this directory - it reuses the
+    exact same `visual_designs` table item 14 describes, widened by
+    migration `0016_visual_design_chat_overlay_owner.sql` (a standard
+    SQLite table-rebuild, since a `CHECK` constraint cannot be widened
+    in-place) to also accept `owner_kind = 'chat_overlay'` alongside the
+    existing `'alert_rule'` - one row per chat overlay that has ever
+    been explicitly saved through the Chat Overlay Designer, every
+    existing Stage 13A alert-design row surviving the migration with
+    its id/JSON/revision/timestamps unchanged. The document schema
+    itself moved from version 1 to version 2 in the same migration
+    (`internal/domain/visualdesign`'s own in-code, lossless upgrade on
+    read - not a second SQL migration) to add the two shared layer
+    kinds chat needed; this changes no column, table, or file. A chat
+    overlay with no saved design has no row here either and keeps
+    rendering through Stage 10's original settings/renderer. The same
+    "editing session state never touches SQLite" rule from item 14
+    applies identically to the Chat Overlay Designer's own draft/undo/
+    redo/selection state. There is still no design *asset* file for
+    this directory to hold for chat either - the two new layer kinds
+    (`message_fragments`, `badge_list`) reference only already-resolved,
+    already-normalized emote/badge image URLs this application already
+    trusted before Stage 13B, never an uploaded or arbitrary-URL asset
+    (`docs/visual-designs.md` §21). Stage 13B added **no new environment
+    variable**.

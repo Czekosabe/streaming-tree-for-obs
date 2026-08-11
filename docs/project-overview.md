@@ -954,9 +954,9 @@ it is architected; this table only tracks status and dependencies.
 | 11B | Scheduled bot messages and chat commands, built on the same dispatcher stage 11A introduced: interval/jitter/streaming/activity/rate gating, message groups, command roles/aliases/cooldowns, a closed placeholder language, and the Automation page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12A | Alert engine and alert queue: persisted alert profiles/rules, a provider-independent matcher over the same Event Bus, a bounded in-memory queue (priority, expiration, pause/resume/skip/replay/clear), local synthetic test alerts, a fixed (non-designer) presentation, and a public OBS Browser Source alert route, plus the Alerts management page (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — stage 12 as a whole is now complete |
-| 13A | Shared, provider-independent visual-design document, persistence/HTTP API, immutable per-alert snapshotting, shared React renderer, and the Alert Overlay Designer editor (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** — stage 13 as a whole is **not** complete until 13B lands |
-| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer | Planned, not started |
-| 14 | Built-in templates and template import/export, built on stage 13's document format | Planned, depends on stage 13 as a whole |
+| 13A | Shared, provider-independent visual-design document, persistence/HTTP API, immutable per-alert snapshotting, shared React renderer, and the Alert Overlay Designer editor (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
+| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for one repeated chat item card, with Stage 10's own filtering/lifecycle staying authoritative | **Completed** — stage 13 as a whole is now complete |
+| 14 | Built-in templates and template import/export, built on stage 13's document format | Planned, not started |
 | 15 | YouTube and Kick engagement connectors | Planned |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
@@ -1030,12 +1030,17 @@ Key dependencies:
   persisted document (never importing Twitch/EventSub/alerts internals),
   while alert-specific binding-capability and legacy-draft logic lives
   in `internal/domain/alerts` beside it rather than inside it. Stage 13B
-  (chat overlay designer) is planned to reuse the same shared document
-  and React renderer for chat overlays; stage 13 as a whole is not
-  complete until it lands too - see
-  [`docs/progress.md`](progress.md)'s Stage 13A entries and
-  [`docs/visual-designs.md`](visual-designs.md) for the document
-  contract itself.
+  reused that exact same pattern a second time for chat overlays
+  (`internal/domain/chatoverlay`'s own binding-capability/data-needs/
+  legacy-draft logic, beside the shared package rather than inside it) -
+  the document schema moved from version 1 to version 2 to add two
+  shared layer kinds chat needed (`message_fragments`, `badge_list`),
+  with a lossless, trivial migration proven by
+  `internal/domain/visualdesign/migration_test.go`; every Stage 13A
+  alert design keeps loading and rendering identically. Stage 13 as a
+  whole is now complete - see [`docs/progress.md`](progress.md)'s
+  Stage 13A and 13B entries and [`docs/visual-designs.md`](visual-designs.md)
+  for the document contract itself.
 - Stage 14 (templates) needs stage 13's designer output format - the
   document stage 13A already defines is intended to become stage 14's
   template payload later, but stage 13A deliberately does not implement
@@ -1224,7 +1229,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: seven pieces of this section are real as of stage 13A - the
+**Status: eight pieces of this section are real as of stage 13B - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1235,11 +1240,13 @@ Event Bus (stage 12A/12B) - persisted alert rules, matching, a bounded
 queue, bounded grouping of compatible queued alerts, and opt-in,
 deterministic mid-alert preemption - and a real, shared,
 provider-independent visual-design engine with a real Alert Overlay
-Designer editor for that same alert presentation (stage 13A). Every
-existing alert rule with no saved design still renders through the
-original fixed presentation unchanged. Stage 13 as a whole is not yet
-complete: stage 13B (a matching Chat Overlay Designer, reusing stage
-13A's own shared document/renderer) is now being implemented. Everything
+Designer editor for that same alert presentation (stage 13A) and a real
+Chat Overlay Designer reusing that same shared document/renderer for
+the chat overlay (stage 13B). Every existing alert rule or chat overlay
+with no saved design still renders through its original fixed/legacy
+presentation unchanged; a chat overlay's own filtering, lifecycle,
+moderation and stack ownership (stage 10) stays entirely authoritative
+in both rendering modes. Stage 13 as a whole is now complete. Everything
 else described below (built-in templates, TTS, and goal/counter widgets)
 remains planned.**
 

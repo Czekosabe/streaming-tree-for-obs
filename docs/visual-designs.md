@@ -1,4 +1,4 @@
-# Visual design document contract (Stage 13A)
+# Visual design document contract (Stage 13A + 13B)
 
 This document is the canonical contract for the shared, provider-independent
 **visual design document** introduced in Stage 13A: a versioned, bounded,
@@ -6,17 +6,20 @@ declarative layer tree an operator builds in a visual designer, persisted per
 owner, and rendered by one shared React component on both the management
 preview and the real public OBS Browser Source route.
 
-Stage 13A implements this contract for exactly one owner: an **alert rule**
-(the Alert Overlay Designer). Stage 13B is expected to reuse this exact same
-document/primitive model for the Chat Overlay Designer, adding only whatever
-shared primitives that reuse still requires. Stage 14 (built-in templates,
-import/export) is expected to package this same document as its payload
-format, plus an archive format this document does not define.
+Stage 13A implemented this contract for its first owner: an **alert rule**
+(the Alert Overlay Designer). Stage 13B reused this exact same
+document/primitive model for the Chat Overlay Designer, adding the two
+shared primitives that reuse required (§21) and widening the document
+schema from version 1 to version 2 (§19) - Stage 13 as a whole is now
+complete. Stage 14 (built-in templates, import/export) is expected to
+package this same document as its payload format, plus an archive format
+this document does not define.
 
 The implementation lives at `apps/server/internal/domain/visualdesign` (the
-shared, provider-independent domain), with alert-specific binding-capability
+shared, provider-independent domain), with owner-specific binding-capability
 and legacy-draft logic kept beside it in `apps/server/internal/domain/alerts`
-(never inside the shared package itself - see §12).
+and `apps/server/internal/domain/chatoverlay` respectively (never inside the
+shared package itself - see §12/§20).
 
 ## 1. Schema versioning
 
@@ -325,8 +328,10 @@ preview fixtures), immutable per-alert-instance design snapshots (§12's
 "Policy A" extended to designs - see `docs/engagement-architecture.md`'s own
 Stage 13A note), and the public/management HTTP API.
 
-Not implemented (see the Stage 13A task's own explicit non-goals):
-Chat Overlay Designer, template import/export, archive packaging, a built-in
+Not implemented (see the Stage 13A task's own explicit non-goals -
+the Chat Overlay Designer itself was Stage 13A's one deliberately
+deferred item, and was implemented next by Stage 13B, §15 below):
+template import/export, archive packaging, a built-in
 template gallery, AI generation of any kind, an asset marketplace, custom
 JS/HTML/CSS, executable expressions, arbitrary data paths/URLs, uploaded
 fonts/audio/images/GIFs/video, filesystem browsing, sound playback, TTS,
@@ -334,15 +339,17 @@ goals/counters, donation connectors, further engagement providers, arbitrary
 SVG/shaders/CSS filters, OBS WebSocket integration, or any form of browser
 automation/manual OBS testing.
 
-## 15. Stage 13B relationship
+## 15. Stage 13B relationship (Completed - Stage 13 as a whole is now complete)
 
-Stage 13B builds the **Chat Overlay Designer** directly on top of this exact
+Stage 13B built the **Chat Overlay Designer** directly on top of this exact
 same `visualdesign.Document`/layer model: a second owner kind (`chat_overlay`)
 added to `AcceptedOwnerKinds` plus its own migration widening the
 `visual_designs.owner_kind` `CHECK` constraint (§10/§18), the document version
 bumped from 1 to 2 to add the two new shared layer kinds and two new text
 bindings chat needs (§19), and chat-specific binding-capability/data-needs
 logic kept beside the chat domain, never inside this shared package (§20/§22).
+None of Stage 13A's own non-goals above changed - the same closed,
+bounded-primitive discipline applies to chat exactly as it does to alerts.
 See §17-§25 below for the full Stage 13B contract.
 
 ## 16. Stage 14 relationship

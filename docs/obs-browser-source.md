@@ -43,6 +43,28 @@ guaranteed to stay accurate forever.
 > [Stage 12A: the alert Browser Source route](#stage-12a-the-alert-browser-source-route)
 > for the detail. Still **no real OBS installation was used** for Stage
 > 13A's own verification either.
+>
+> **Factual status update (stage 13B, completed - Stage 13 as a whole is
+> now complete):** the Chat Overlay Designer changed nothing about this
+> document's own OBS-level research either - the chat overlay route's
+> URL (`/overlay/chat/{publicSlug}`), transparent background, and lack
+> of any OBS-specific permission are all unchanged, and OBS itself does
+> not know or care whether an overlay is legacy-rendered or
+> design-driven. Unlike an alert, whose entire presentation-plus-content
+> arrives in one `alert.show` event, a chat overlay page stays open
+> indefinitely while chat continues, so a saved design can change while
+> the Browser Source is already displaying it. `GET .../config`
+> additively gains `renderingMode` (`"legacy"` | `"visual_design"`) and,
+> when design-driven, the current safe public design; a new
+> `chat-overlay.presentation` SSE event (carrying no item content, only
+> a sequence number) tells an already-connected Browser Source its
+> config is stale and to refetch it, riding the exact same
+> ring-buffer/replay/`Last-Event-ID`/gap mechanism this document already
+> describes below for every other `chat-overlay.*` event - no new
+> reconnect behavior, no new gap-recovery path. See
+> [`docs/visual-designs.md`](visual-designs.md) §25 for the full
+> protocol. Still **no real OBS installation was used** for Stage 13B's
+> own verification either.
 
 ## Sources inspected
 
@@ -347,15 +369,37 @@ a saved 1920x1080 design still renders correctly at other configured
 Browser Source dimensions; this was verified with automated viewport-
 size assertions in the frontend test suite, not inside real OBS.
 
+**Stage 13B (Chat Overlay Designer, Stage 13 as a whole now complete)**
+changed nothing about this OBS-level contract either - still the same
+single chat Browser Source (`/overlay/chat/{publicSlug}`), transparent
+background, no new permission. The application-level additions are the
+same shape as 13A's, mapped onto the chat overlay's own SSE stream
+instead: an additive `renderingMode` field on `GET .../config`, a
+complete safe public visual-design snapshot when design-driven, and a
+new `chat-overlay.presentation` event (no item content, just a sequence
+number) telling an already-open Browser Source to refetch `.../config`
+because presentation changed - riding the same ring-buffer/replay/gap
+mechanism described above, never a new one. A chat design's own item
+canvas is deliberately much smaller than an alert's full-screen one (a
+960x280 design-unit "chat item" preset - see
+[visual-designs.md](visual-designs.md) §17), instantiated once per
+currently-visible item inside the same `ChatOverlayRenderer` that
+already owns stacking/lifecycle/entry-exit animation; OBS itself never
+sees more than one composited page either way. The existing chat
+overlay React components still render both the public route and the
+Overlays management page's own preview identically, branching
+internally on `renderingMode`.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's, 12B's or 13A's own verification.**
-Every finding above comes from reading the official pages listed, not
-from observing a live Browser Source. The local integration scripts
-(`scripts/verify-chat-overlay.mjs`, `scripts/verify-alerts.mjs`,
-`scripts/verify-alert-advanced-queue.mjs`,
-`scripts/verify-alert-designer.mjs`) exercise the same HTTP/SSE
+verification, or for Stage 12A's, 12B's, 13A's or 13B's own
+verification.** Every finding above comes from reading the official
+pages listed, not from observing a live Browser Source. The local
+integration scripts (`scripts/verify-chat-overlay.mjs`,
+`scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
+`scripts/verify-alert-designer.mjs`,
+`scripts/verify-chat-overlay-designer.mjs`) exercise the same HTTP/SSE
 contract a real Browser Source would consume, from a plain Node.js
 HTTP client - they prove the backend's contract is correct, not that
 OBS's own CEF renders either overlay identically. Re-verify this

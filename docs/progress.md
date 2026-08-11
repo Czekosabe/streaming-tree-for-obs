@@ -14902,3 +14902,144 @@ visual-designs.md final consolidation, obs-browser-source, config/README,
 THIRD_PARTY_NOTICES audit), then the full closing regression across
 frontend, backend, and all fourteen integration scripts, then the final
 Stage 13 closing-regression journal entry, then push.
+
+## 2026-08-11 16:05 — docs: complete Stage 13 visual designers
+
+### What
+Before writing any completion status, ran the full closing regression
+first (frontend: `i18n:check`/`typecheck`/`lint`/`test -- --run`/`build`;
+backend: `gofmt -l .`/`go vet ./...`/`go test ./...`/`go build ./...`/
+`go build -tags integration ./cmd/testserver/...`; all fourteen
+integration scripts by exact name) so that every "Completed" claim
+written below was already true at the time it was written, rather than
+promised ahead of proof - see "Automated validation" below for the full
+result. Only after every check passed did this commit update the
+living-status documentation across the repository to mark Stage 13B,
+and Stage 13 as a whole, **Completed** and Stage 14 **Planned, not
+started**.
+
+### Files changed
+- `README.md` - roadmap table (13B → Completed, 13 → complete, 14 →
+  "not started" instead of "depends on Stage 13 as a whole"); a new
+  "### Chat Overlay Designer (Stage 13B)" subsection under "OBS Browser
+  Source chat overlay" describing the one-repeated-item-card model,
+  owner-kind/version-2 migration, current-presentation-vs-alert-snapshot
+  semantics, and the additive `chat-overlay.presentation` protocol; the
+  "Hydration, live updates" subsection extended with the same protocol;
+  the Alerts section's own "what this stage does not implement" list
+  corrected to drop the now-false "Chat Overlay Designer" entry and
+  cross-reference the new subsection; the top project-state blockquote
+  (predated Stage 13A entirely and still falsely claimed "no free-form
+  designer yet" / listed "a free-form visual designer" as still
+  planned) corrected in three places; the "what is currently demo-only"
+  table entry and the "what is currently implemented"/"what will be
+  added later" bullet lists updated to move the Chat Overlay Designer
+  from planned to implemented; the integration-script prose,
+  bash-block list, and directory-tree listing all gained the four
+  scripts that were already committed in earlier Stage 12/13 commits
+  but never added to those two lists (`verify-alerts.mjs`,
+  `verify-alert-advanced-queue.mjs`, `verify-alert-designer.mjs`) plus
+  the new `verify-chat-overlay-designer.mjs` - a pre-existing gap from
+  Stage 12/13A, corrected here while already auditing this file.
+- `docs/project-overview.md` - roadmap table (same three-row change as
+  README); the Stage 13 dependency-reasoning bullet extended to
+  describe the version-2 migration and its own losslessness proof; §16's
+  "Status" blockquote (a plain summary paragraph, not the
+  never-rewrite kind) updated from "seven pieces...Stage 13 as a whole
+  is not yet complete" to "eight pieces...Stage 13 as a whole is now
+  complete," naming the Chat Overlay Designer and Stage 10's continued
+  authority over filtering/lifecycle/moderation explicitly.
+- `docs/engagement-architecture.md` - §18's roadmap table (13B row →
+  Completed) and its own closing status line updated; the Stage 13
+  dependency-reasoning bullet in §18 updated from future to past tense
+  now that 13B is real; a stale `(§14)` cross-reference in §11.1 (should
+  have read `§13`, unrelated pre-existing drift, fixed while already
+  editing this section) corrected; §7.3's "Not yet real, deliberately
+  deferred" line (falsely still claiming no chat visual designer exists)
+  corrected to describe the real additive relationship between Stage
+  10's legacy settings and the Designer; §9's alert-capability blockquote
+  corrected where it wrongly forward-referenced "Stage 13's job" for
+  image/GIF/video layers that neither 13A nor 13B ever added. **A new
+  Stage 13B factual-status blockquote was appended directly after the
+  existing Stage 13A one in §13 - the Stage 13A blockquote itself was
+  left completely untouched, exactly as instructed**, covering: the one-
+  repeated-item-card model and Stage 10's continued authority; the
+  `owner_kind` migration and its zero-impact on existing alert design
+  rows; the version 1→2 document migration and its losslessness proof;
+  current-presentation semantics contrasted implicitly via the
+  Rebuild-reuse mechanism; the additive SSE presentation protocol; the
+  reused Designer chrome; and the still-unimplemented §13.2/§13.3
+  template machinery.
+- `docs/visual-designs.md` - title and opening paragraph updated
+  (Stage 13A + 13B, both implemented); §14's "Not implemented" list
+  corrected to remove the Chat Overlay Designer (with a forward pointer
+  to §15) since it was Stage 13A's one deliberately deferred item and
+  is now real; §15 heading gained "(Completed - Stage 13 as a whole is
+  now complete)" and its body switched from future to past tense.
+- `docs/obs-browser-source.md` - a new Stage 13B factual-status
+  blockquote appended after the existing Stage 13A one (again, the
+  13A/12A/12B blockquotes above it were left untouched), covering the
+  chat route's own unchanged OBS-level contract, the additive
+  `renderingMode`/presentation-event mechanism riding the exact same
+  reconnect/gap machinery already documented, and the 960×280 chat-item
+  canvas preset; a matching prose paragraph appended to the "Stage 12A:
+  the alert Browser Source route" narrative section; "What was not
+  tested" extended to name Stage 13B and the new script.
+- `config/README.md` - a new item 15 appended after item 14 (Stage 13A's
+  own `visual_designs` table description, left unchanged) describing
+  the owner-kind migration, the in-migration version-2 upgrade, and
+  confirming no new file, table, or environment variable was added for
+  chat.
+- `THIRD_PARTY_NOTICES.md` - audited, not modified: `git log` against
+  `apps/server/go.mod`/`go.sum` and `apps/web/package.json`/
+  `package-lock.json` shows no commit since Stage 8A touched any of the
+  four files, confirming Stage 13A and 13B together added zero new
+  third-party dependencies (only existing React/CSS/pointer-event/Go-
+  standard-library mechanisms were used throughout).
+
+### Technical decisions
+- **Which prose gets corrected vs. which is append-only.** Applied the
+  task's own explicit rule literally: a `> **Factual status update
+  (stage N...)**` blockquote is a dated historical record and is never
+  edited, only appended after; a roadmap/status table, a plain summary
+  paragraph, or a numbered "what this directory holds" list is a living
+  reference and was corrected in place once it became false. Two
+  genuinely stale claims predating even Stage 13A itself (the README's
+  own top project-state blockquote, and one `docs/engagement-
+  architecture.md` §7.3 line) were found and corrected during this same
+  audit pass, since "verify against real Git/shell state, not assumed"
+  applies to every drift found, not only drift this stage introduced.
+
+### Automated validation
+Full closing regression, run before any status was written: `npm run
+i18n:check` (2 languages, 16 namespaces, no diff), `npm run typecheck`,
+`npm run lint`, `npm run test -- --run` (**1104 tests pass, 80 test
+files**, zero regressions), `npm run build` - all clean. `gofmt -l .`
+(clean), `go vet ./...` (clean), `go test ./...` (all packages pass),
+`go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean). All fourteen integration scripts, run
+once each in this pass, all passing: `verify-persistence.mjs`,
+`verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`,
+`verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`, `verify-twitch-engagement.mjs`,
+`verify-operator-chat.mjs`, `verify-chat-overlay.mjs`,
+`verify-twitch-outbound-chat.mjs`, `verify-chat-automation.mjs`,
+`verify-alerts.mjs`, `verify-alert-advanced-queue.mjs`,
+`verify-alert-designer.mjs`, `verify-chat-overlay-designer.mjs` - none
+weakened, none skipped. Working tree confirmed clean after the
+regression and before this commit.
+
+### Known limitations
+Same as recorded in each individual implementation commit's own entry -
+this commit only corrects documentation, no code changed. Not yet done:
+the dedicated final closing-regression journal entry itself (this
+commit's own regression results are recorded here, but the task's
+explicit final entry - run once more, immediately before push, with
+nothing else changing in between - is still the next step, to avoid
+repeating the Stage 13A mistake of a promised-but-unproven regression).
+
+### Next step
+One final, unmodified re-run of the complete regression (frontend,
+backend, all fourteen scripts) immediately before push, then the
+dedicated Stage 13 closing-regression journal entry, then `git push
+origin main`.

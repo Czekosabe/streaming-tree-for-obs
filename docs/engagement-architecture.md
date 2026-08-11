@@ -532,10 +532,16 @@ today, of the settings originally planned here:
   tags for moderators/subscribers/VIPs (from Twitch's own badge set-ids,
   never inferred).
 
-**Not yet real, deliberately deferred:** a visual designer for any of
-the above (settings are a plain form, not a canvas), and an
-exportable/importable overlay template (§13) - this stage's settings
-are per-profile SQLite columns, not a shareable package.
+**Not yet real, deliberately deferred:** an exportable/importable
+overlay template (§13.2/§13.3, stage 14) - this stage's settings remain
+per-profile SQLite columns, not a shareable package. A visual designer
+for the above **is** now real (stage 13B, §13) as an additive layer on
+top of these same settings: when an overlay has no saved design, this
+stage's plain-form settings remain the entire presentation unchanged;
+when a design is saved, it drives presentation and this stage's own
+visual settings become an inert "legacy presentation" fallback, while
+every filter/lifecycle/moderation control described above stays
+authoritative regardless.
 
 The overlay is a **rendering and filtering layer** over operator chat's
 own revision stream (§7.2), not the Event Bus directly - it holds no
@@ -741,8 +747,9 @@ arbitrary code execution and no plan to add one (§2).
 > threshold (no event type populates a real amount yet, so none is
 > fabricated), user-role filters (no event type populates real role
 > data either — reserved, not silently accepted), sound/volume, an
-> image/GIF/video asset (Stage 13's job — only this application's own
-> existing safe glyph/avatar assets are used), and per-rule TTS
+> image/GIF/video asset (never added by stage 13A or 13B either — only
+> this application's own existing safe glyph/avatar assets and
+> already-resolved emote/badge images are used), and per-rule TTS
 > (stage 17, unimplemented). See
 > [`docs/progress.md`](progress.md)'s Stage 12A entries for the exact
 > capability table and how it was derived.
@@ -901,7 +908,7 @@ behaviour:
 
 ### 11.1 Purpose
 
-The visual designers (§14) need realistic-looking data to design against
+The visual designers (§13) need realistic-looking data to design against
 before any real event has occurred, and need to exercise edge cases
 deliberately rather than by waiting for one to happen live. Planned generated
 scenarios: follow, subscription, resubscription, one gifted subscription, a
@@ -978,6 +985,57 @@ bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 > gallery machinery has been implemented; the document stage 13A defines
 > is intended to become that future template payload, not a template
 > itself. See [progress.md](progress.md)'s Stage 13A entries and
+> [visual-designs.md](visual-designs.md) for exactly what exists.
+
+> **Factual status update (stage 13B, completed): stage 13 as a whole is
+> now complete.** The **Chat Overlay Designer** described in §13.1 is
+> real - it reuses the exact same shared, provider-independent
+> visual-design document and React renderer stage 13A introduced, never
+> a second document format or a second renderer. A chat visual design
+> represents **one repeated item card** (a single message or activity
+> event), not a whole overlay: stage 10's own filtering, lifecycle,
+> moderation and stack ownership (`internal/chatoverlay`) stays entirely
+> authoritative in both legacy and design-driven rendering, and the same
+> saved design is instantiated once per currently-visible item with that
+> item's own safe data. One overlay may have at most one saved design,
+> persisted via the same `visual_designs` table stage 13A used, widened
+> by migration `0016_visual_design_chat_overlay_owner.sql` (a standard
+> SQLite table-rebuild, since a `CHECK` constraint cannot be widened
+> in-place) to accept `owner_kind = 'chat_overlay'` alongside the
+> existing `'alert_rule'`; every Stage 13A alert design keeps its own id,
+> JSON, revision and timestamps unchanged. The document schema itself
+> moved from version 1 to version 2 to add two shared layer kinds chat
+> genuinely needed (`message_fragments` for pre-normalized text/emote/
+> mention content, `badge_list` for a bounded list of already-resolved
+> badge images) - a lossless, trivial migration
+> (`internal/domain/visualdesign/migration.go`), proven by a test that
+> inserts a raw pre-migration row directly and confirms it reads back
+> migrated and byte-for-byte unchanged; every Stage 13A design loads and
+> renders identically after it. Unlike an alert (which snapshots its
+> design once per queued instance so a replay always looks the way it
+> did when it fired), a chat design is **current-profile presentation,
+> not per-item state**: saving a new design updates every currently-
+> visible item and every future item by reusing the runtime's own
+> existing `Manager.Rebuild`/`Projection.Configure` re-derivation path,
+> so nothing is ever duplicated, resurrected, or reordered. The public
+> overlay learns about a presentation change over the same SSE
+> stream/ring-buffer/replay mechanism every other overlay event already
+> uses, via an additive `chat-overlay.presentation` event and an
+> additive `renderingMode`/`visualDesign` pair on the existing public
+> `/config` response - both purely additive, so a pre-Stage-13B client
+> keeps working unchanged. The editor itself lives at
+> `/overlays/{overlayId}/designer`, reusing the Alert Overlay Designer's
+> own generic editing chrome (drag/resize/snap, numeric geometry, layer
+> ordering/lock/duplicate/delete, undo/redo, zoom/fit) unchanged - it
+> differs only in which layer kinds and text bindings are offered
+> (`internal/domain/chatoverlay/visualdesign_binding.go` rejects
+> `alert_rendered_text` for a chat design and vice versa, both owner-
+> specific capability checks living beside their own domain rather than
+> inside the shared package). §13.2/§13.3's template package, import/
+> export, and built-in-template-gallery machinery remains entirely
+> unimplemented - the version-2 document this stage defines is still
+> intended to become stage 14's future template payload, not a template
+> itself. See [progress.md](progress.md)'s Stage 13B entries and
 > [visual-designs.md](visual-designs.md) for exactly what exists.
 
 ### 13.1 Two designers, one underlying model
@@ -1170,7 +1228,7 @@ that table.
 | 12A | Alert engine and alert queue (§9–10), scoped to the 8 real Twitch event types, no monetary threshold, no per-rule TTS — **Completed** |
 | 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A — **Completed** |
 | 13A | Alert Overlay Designer and the shared visual-design engine (§13.1) — **Completed** |
-| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — current task |
+| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — **Completed**, stage 13 as a whole is now complete |
 | 14 | Built-in templates and template import/export (§13.3) |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
 | 16 | External donation-service connectors (§15) |
@@ -1211,10 +1269,10 @@ Dependencies that constrain this order:
   which only exists meaningfully once stage 9/10 (chat) and stage 12 (alerts)
   establish what an overlay actually renders. Stage 13 was split into **13A
   (alert designer)**, built on stage 12's fixed alert presentation, and
-  **13B (chat overlay designer)**, planned to build on stage 9/10's chat
-  overlay the same way. Stage 13A reuses one shared, provider-independent
-  visual-design document and React renderer that 13B is planned to reuse
-  too, rather than each designer inventing its own format.
+  **13B (chat overlay designer)**, built on stage 9/10's chat overlay the
+  same way. Stage 13A built one shared, provider-independent visual-design
+  document and React renderer that 13B then reused directly, rather than
+  each designer inventing its own format.
 - Stage 14 (templates) needs stage 13's designer output format to serialize
   - specifically, the document stage 13A already defines is intended to
   become stage 14's template payload once stage 13 as a whole (13A and
@@ -1224,8 +1282,8 @@ Dependencies that constrain this order:
   earlier if priorities change — they are ordered late here only because they
   are lower-impact than chat and alerts, not because of a hard dependency.
 
-**Stage 13A is now completed** (see [progress.md](progress.md)'s Stage 13A
-entries and [visual-designs.md](visual-designs.md) for its document
-contract) - stage 13 as a whole remains incomplete until stage 13B lands.
+**Stage 13A and stage 13B are now both completed - stage 13 as a whole
+is complete** (see [progress.md](progress.md)'s Stage 13A/13B entries
+and [visual-designs.md](visual-designs.md) for the document contract).
 Every other stage in this table remains as planned; see
 [progress.md](progress.md) for what actually exists today.
