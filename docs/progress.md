@@ -16141,3 +16141,108 @@ instructed.
 The full, unmodified product regression (frontend, backend, all fifteen
 integration scripts) immediately before push, then a dedicated closing-
 regression journal entry proving it.
+
+## 2026-08-11 19:35 — docs: record Stage 14A corrective regression
+
+### Status
+**Stage 14A: Completed (corrective pass verified). Stage 14B: Planned,
+not started. Stage 14 (as a whole): not yet complete.**
+
+### What
+This entry records the literal, final, unmodified regression run
+immediately after the `fix(server): restore visual template method
+semantics` commit (`10870fb`) and before push - no code or
+documentation changed between running these checks and writing this
+entry, so this is proof, not a promise, matching the exact discipline
+this project's own prior closing-regression entries (`d1eaec9`,
+`5aa9d63`) already established.
+
+### Automated validation (run in this exact order, this exact pass)
+**Frontend** (`apps/web`): `npm run i18n:check` - 2 languages (en, pl),
+17 namespaces, no differences. `npm run typecheck` - clean. `npm run
+lint` - clean. `npm run test -- --run` - **1122 tests pass, 82 test
+files**, zero failures (unchanged from before the corrective pass - it
+touched no frontend file). `npm run build` - clean (the same pre-
+existing, non-blocking chunk-size advisory as every prior regression).
+
+**Backend** (`apps/server`): `gofmt -l .` - clean. `go vet ./...` -
+clean. `go test ./...` - every package with tests reports `ok`,
+including `internal/httpapi` (now with the 11 new method-semantics
+tests) and `internal/domain/visualtemplate`. `go build ./...` - clean.
+`go build -tags integration ./cmd/testserver/...` - clean.
+
+**All fifteen local integration scripts, run once each in this exact
+pass, from the repository root, every one against a freshly built
+`-tags integration` binary on dynamically chosen loopback ports, no
+real Twitch/YouTube/OBS involved anywhere:**
+
+1. `verify-persistence.mjs` - PASSED
+2. `verify-mediamtx-runtime.mjs` - PASSED (real local MediaMTX binary)
+3. `verify-ffmpeg-branches.mjs` - PASSED (real local FFmpeg binary)
+4. `verify-twitch-account-integration.mjs` - PASSED
+5. `verify-youtube-account-integration.mjs` - PASSED
+6. `verify-twitch-engagement.mjs` - PASSED
+7. `verify-operator-chat.mjs` - PASSED
+8. `verify-chat-overlay.mjs` - PASSED (unchanged since Stage 10)
+9. `verify-twitch-outbound-chat.mjs` - PASSED
+10. `verify-chat-automation.mjs` - PASSED
+11. `verify-alerts.mjs` - PASSED
+12. `verify-alert-advanced-queue.mjs` - PASSED
+13. `verify-alert-designer.mjs` - PASSED (unchanged since Stage 13B)
+14. `verify-chat-overlay-designer.mjs` - PASSED (unchanged since Stage
+    13B)
+15. `verify-visual-templates.mjs` - PASSED (its own 4 new corrective-
+    pass steps included - this is the **fifth** clean run of this
+    script across Stage 14A and this corrective pass: twice when first
+    written, once in Stage 14A's own closing regression, twice more
+    here in this pass's own dedicated double-run plus this final
+    regression pass)
+
+None weakened, none skipped, none run against stale fixtures.
+
+### What this proves
+- The Stage 14A commit-count re-audit (8 commits, not the prior chat
+  report's "6") is recorded and stands - no code change was needed for
+  it, only the record itself.
+- `POST /api/visual-templates/import` and `POST
+  /api/visual-templates/import/preview` still work exactly as before
+  (`TestImportRouteAcceptsPost`/`TestImportPreviewRouteAcceptsPost`,
+  and this pass's own live integration steps 17-20).
+- Every wrong method on either route (`GET`/`PUT`/`DELETE`/`PATCH`/
+  `HEAD`) now returns `405` with `Allow: POST` and the project's own
+  shared `method_not_allowed` envelope - proven at both the Go unit
+  level and the real integration-backend level, closing the exact gap
+  the Stage 14A journal had explicitly flagged as a known compromise.
+- The literal path segment `"import"` is never mistaken for a template
+  id (no more silent 404) - `TestImportPathSegmentIsNeverTreatedAsA
+  TemplateID` and this pass's own corrective integration steps prove it
+  directly, not by inference.
+- A genuinely unknown template id still 404s normally
+  (`TestUnknownVisualTemplateResourceStays404` and integration step
+  19) - the fix did not overcorrect into "everything unknown is 405."
+  The wildcard routes (`GET`/`PUT`/`DELETE /{id}`, `GET /{id}/export`)
+  still work end to end against a real template
+  (`TestWildcardTemplateRoutesStillWorkAfterTheRoutingFix`).
+  A wrong-method request never parses its own body and never creates a
+  template or a preview as a side effect
+  (`TestImportRouteWrongMethodNeverParsesBodyOrCreatesATemplate`,
+  `TestImportPreviewRouteWrongMethodNeverPersistsOrPreviews`, and the
+  integration script's own before/after template-count assertion
+  spanning all four wrong-method calls).
+
+### Known limitations
+None new. Stage 14B (portable archive template packages, managed
+assets, custom-media/font primitives) remains entirely untouched by
+this corrective pass - no ZIP/archive code, no manifest, no asset
+storage, no image/font/GIF/video/audio layer, no CSP asset-serving
+concern, nothing from Stage 15 or later was implemented.
+
+### Push
+`git push origin main` next, then `git status`, `git rev-list
+--left-right --count origin/main...HEAD`, and `git rev-parse HEAD` /
+`git rev-parse origin/main` will be verified to confirm the remote and
+local HEAD match and the tree is clean.
+
+### Next step
+None for this corrective pass - it is complete. Stage 14B remains
+planned and not started.
