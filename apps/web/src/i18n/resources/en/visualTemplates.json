@@ -1,0 +1,67 @@
+{
+  "title": "Templates",
+  "source": {
+    "builtin": "Built-in",
+    "user": "My templates"
+  },
+  "section": {
+    "builtin": "Built-in",
+    "user": "My templates"
+  },
+  "loading": "Loading templates…",
+  "empty": {
+    "builtin": "No built-in templates for this target.",
+    "user": "You have not saved any templates yet."
+  },
+  "compatibility": {
+    "compatible": "Compatible",
+    "incompatible": "Not compatible",
+    "disabledReason": "This template is not compatible with the current owner.",
+    "blocker": {
+      "template_target_mismatch": "designed for a different target",
+      "alert_binding_unavailable": "uses a binding unavailable for this alert rule",
+      "chat_binding_unavailable": "uses a binding unavailable for this chat overlay",
+      "unsupported_visual_document": "uses an unsupported design version",
+      "visual_document_invalid": "the design failed validation"
+    }
+  },
+  "actions": {
+    "preview": "Preview",
+    "useAsDraft": "Use as draft",
+    "export": "Export",
+    "delete": "Delete",
+    "import": "Import",
+    "saveAsTemplate": "Save as template",
+    "back": "Back",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "import": {
+    "tooLarge": "This file is too large to be a valid template.",
+    "malformed": "This file could not be read as a template.",
+    "invalid": "This file failed template validation.",
+    "field": {
+      "name": "Name",
+      "target": "Target",
+      "description": "Description",
+      "author": "Author",
+      "license": "License"
+    }
+  },
+  "metadata": {
+    "name": "Name",
+    "description": "Description",
+    "author": "Author",
+    "license": "License"
+  },
+  "replaceDraft": {
+    "title": "Replace current draft?",
+    "message": "Your current unsaved draft will be replaced in the editor. This does not affect the saved design until you Save.",
+    "confirm": "Replace draft"
+  },
+  "deleteConfirm": {
+    "title": "Delete template?",
+    "message": "Delete \"{{name}}\"? This never affects any design already created from it.",
+    "confirm": "Delete"
+  }
+}

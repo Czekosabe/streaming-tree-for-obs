@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatOverlayProfile } from '@/api/chat-overlay-schemas';
 import type { VisualDesignResponse } from '@/api/visualdesign-schemas';
 import * as visualDesignApi from '@/api/visualdesign';
+import * as visualTemplateApi from '@/api/visualtemplate';
 import { renderWithProviders } from '@/test/render';
 
 import { ChatOverlayDesignerWorkspace } from './ChatOverlayDesignerWorkspace';
 
 vi.mock('@/api/visualdesign');
+vi.mock('@/api/visualtemplate');
 
 const overlay: ChatOverlayProfile = {
   id: 'co_1', publicSlug: 'slug', name: 'Main Overlay', enabled: true,
@@ -187,5 +189,20 @@ describe('ChatOverlayDesignerWorkspace', () => {
     expect(await screen.findByText('TestViewer')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('designer-scenario-select'), { target: { value: 'very_long_username' } });
     expect(screen.queryByText('TestViewer')).not.toBeInTheDocument();
+  });
+
+  it('the Templates button opens the shared gallery, scoped to this overlay as a chat owner', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
+    renderWorkspace();
+    await screen.findByTestId('chat-overlay-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-open-templates'));
+    await screen.findByTestId('template-gallery-list');
+    await waitFor(() =>
+      expect(vi.mocked(visualTemplateApi).fetchVisualTemplates).toHaveBeenCalledWith(
+        { target: 'chat', ownerId: overlay.id },
+        expect.anything(),
+      ),
+    );
+    expect(vi.mocked(visualDesignApi).saveVisualDesign).not.toHaveBeenCalled();
   });
 });

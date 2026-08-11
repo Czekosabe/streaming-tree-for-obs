@@ -32,6 +32,7 @@ export function DesignerTopBar<TScenario extends string>({
   onRedo,
   onSave,
   onResetToLegacy,
+  onOpenTemplates,
   testAction,
 }: {
   itemName: string;
@@ -51,6 +52,9 @@ export function DesignerTopBar<TScenario extends string>({
   onRedo: () => void;
   onSave: () => void;
   onResetToLegacy: () => void;
+  /** Opens the shared Stage 14A template gallery (Part 32) - shared by
+   * both Designers, so this component never imports it directly. */
+  onOpenTemplates: () => void;
   /** Owner-specific action (e.g. alerts' own "Test Rule", which goes
    * through the real backend queue and always uses the last SAVED
    * design). Omitted entirely (no button rendered) when the owner has
@@ -58,6 +62,7 @@ export function DesignerTopBar<TScenario extends string>({
   testAction?: { label: string; onClick: () => void; pending: boolean; succeeded: boolean } | undefined;
 }) {
   const { t } = useTranslation('alertDesigner');
+  const { t: tTemplates } = useTranslation('visualTemplates');
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2" data-testid="designer-topbar">
@@ -112,6 +117,9 @@ export function DesignerTopBar<TScenario extends string>({
       </label>
 
       <div className="ml-auto flex items-center gap-2">
+        <Button variant="ghost" onClick={onOpenTemplates} data-testid="designer-open-templates">
+          {tTemplates('title')}
+        </Button>
         {testAction !== undefined ? (
           <Button variant="ghost" onClick={testAction.onClick} disabled={testAction.pending} data-testid="designer-test-rule">
             {testAction.succeeded ? '✓' : null} {testAction.label}

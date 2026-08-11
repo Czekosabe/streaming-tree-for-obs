@@ -6,6 +6,7 @@ import type { AlertEventTypeCapability, AlertProfile, AlertRule } from '@/api/al
 import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { platformDisplayName } from '@/components/visual-design/text-binding';
+import { TemplateGallery } from '@/components/visual-templates/TemplateGallery';
 import { useAlertPreviewMutation, useTestAlertRuleMutation } from '@/hooks/use-alerts';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
@@ -70,6 +71,7 @@ export function AlertDesignerWorkspace({
   const [conflict, setConflict] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const document_ = history.present;
   const dirty = !documentsEqual(document_, savedDocument);
@@ -234,6 +236,7 @@ export function AlertDesignerWorkspace({
         onRedo={() => setHistory(redoHistory)}
         onSave={handleSave}
         onResetToLegacy={() => setResetConfirmOpen(true)}
+        onOpenTemplates={() => setTemplatesOpen(true)}
         testAction={{
           label: 'Test Rule',
           onClick: () => testRuleMutation.mutate({ id: rule.id }),
@@ -314,6 +317,16 @@ export function AlertDesignerWorkspace({
         onConfirm={() => navigate('/alerts')}
         onCancel={() => setDiscardConfirmOpen(false)}
         destructive
+      />
+
+      <TemplateGallery
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        target="alert"
+        ownerId={rule.id}
+        draftIsDirty={dirty}
+        currentDraftDocument={document_}
+        onUseAsDraft={(doc) => commitDraft(doc)}
       />
     </div>
   );

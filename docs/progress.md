@@ -15534,3 +15534,116 @@ suggested commit split (frontend is its own later commit).
 The frontend: template schemas, API client/hooks, a shared template gallery
 reused by both Designers, import/export UI, "Save as template," and EN/PL
 localization.
+
+## 2026-08-11 21:15 — feat(web): add visual template gallery
+
+### What
+The complete Stage 14A frontend: typed API client/hooks, one shared
+`TemplateGallery` component reused unchanged by both the Alert Overlay
+Designer and the Chat Overlay Designer, and the new `visualTemplates`
+EN/PL namespace.
+
+### Files changed
+- `api/visualtemplate-schemas.ts` (new) - `visualTemplateSchema`
+  (management shape) and `visualTemplateFileSchema` (portable file
+  shape, `docs/visual-templates.md` §3), kept genuinely distinct;
+  reuses the existing `visualDesignDocumentSchema` for the embedded
+  document rather than redefining it.
+- `api/visualtemplate.ts` (new) - transport functions:
+  `fetchVisualTemplates` (optional owner-context query params for
+  server-computed compatibility), `fetchVisualTemplate`,
+  `createVisualTemplate`, `updateVisualTemplateMetadata`,
+  `deleteVisualTemplate`, `previewVisualTemplateImport`,
+  `importVisualTemplate`, `exportVisualTemplate`.
+- `hooks/use-visual-templates.ts` (new) - React Query hooks over the
+  above, each mutation invalidating the shared `['visual-templates']`
+  key on success.
+- `models/visualtemplate.ts` (new) - `safeTemplateExportFilename`
+  (mirrors the backend's own algorithm for a consistent client-
+  suggested name), `downloadVisualTemplateFile` (the one place this
+  stage touches the DOM directly - `Blob`/`createObjectURL`), and
+  `toVisualTemplateFile`.
+- `components/visual-templates/template-preview-context.ts` (new) -
+  `templatePreviewDataContext(target, t)`: reuses the exact same
+  `chatItemDataContext`/`chatPreviewScenarioItem` pair the Chat Overlay
+  Designer's own 21 preview scenarios already use for chat, and a
+  small self-contained static fixture for alert (no saved rule exists
+  to render `alert_rendered_text` against in a gallery context).
+- `components/visual-templates/TemplateGallery.tsx` (new) - the one
+  shared gallery: Built-in/My templates sections, per-card
+  preview/compatibility/Use-as-draft/Export/Delete(user-only), plus
+  top-level Import (file-select → backend-validated preview → explicit
+  confirm) and Save-as-template (persists the *current draft*,
+  independent of the owner's saved design) flows, a dirty-draft-replace
+  `ConfirmDialog`, and a delete `ConfirmDialog`. Every preview reuses
+  the exact same `VisualDesignRenderer` the Designer canvas and the
+  real public routes already use - no screenshot, no second renderer.
+- `components/alert-designer/DesignerTopBar.tsx` - new required
+  `onOpenTemplates` prop and its own "Templates" button, so both
+  Designers (which already share this component unchanged) gain the
+  entry point identically.
+- `components/alert-designer/AlertDesignerWorkspace.tsx`,
+  `components/chat-overlay-designer/ChatOverlayDesignerWorkspace.tsx` -
+  wire `TemplateGallery` (`target: 'alert'`/`'chat'`, `ownerId`,
+  `currentDraftDocument: document_`, `onUseAsDraft: (doc) =>
+  commitDraft(doc)` - one undo step, exactly the existing
+  `commitDraft` every other layer-tree mutation already uses).
+- `i18n/resources/{en,pl}/visualTemplates.json` (new namespace),
+  registered in `i18n/config.ts`/`i18n/resources.ts`.
+- Test files: `models/visualtemplate.test.ts` (6 tests),
+  `components/visual-templates/TemplateGallery.test.tsx` (9 tests: list
+  sections, incompatible-disables-use, use-as-draft
+  applies-and-closes, dirty-draft shows a confirmation instead of
+  applying immediately, export triggers a download, delete requires
+  confirmation and is never offered for a built-in, save-as-template
+  persists the *draft* via `createVisualTemplate`, import-preview never
+  calls `importVisualTemplate` until explicit confirmation, and opening
+  the gallery alone never calls any write endpoint), plus 3 new tests
+  appended to the existing `AlertDesignerWorkspace.test.tsx`/
+  `ChatOverlayDesignerWorkspace.test.tsx` proving the Templates button
+  opens the gallery scoped to the real owner id and that using a
+  template dirties the draft without ever calling `saveVisualDesign`.
+
+### Technical decisions
+- **One shared `TemplateGallery`, not two.** Both Designers pass only
+  `target`/`ownerId`/`currentDraftDocument`/`onUseAsDraft` - the
+  component itself has no alert- or chat-specific branch beyond
+  `templatePreviewDataContext`'s own owner-aware preview fixture,
+  matching Stage 13B's already-established "no parallel Foo/ChatFoo
+  implementations" rule.
+- **A real jsdom incompatibility found and fixed while writing the
+  import test**: `Blob.prototype.text()` is not implemented in this
+  project's own jsdom test environment, so reading a selected `File`
+  via `file.text()` threw at test time (and would have on some real
+  older browser engines too). Fixed by reading through `FileReader`
+  instead (`readFileAsText`), which is universally supported and
+  behaves identically from the caller's own point of view.
+- **`useVisualTemplatesQuery` gained an `enabled` option** so the
+  gallery's own list query never fires while the modal is closed
+  (`enabled: open`) - avoids an unnecessary background fetch every time
+  a Designer workspace mounts, and keeps every existing workspace test
+  that never opens the gallery from needing to mock the templates API
+  at all.
+- **Client-side metadata-bound hints mirror the backend's own bounds**
+  (name/description/author/license) but the backend remains
+  authoritative either way - Zod's `safeParse` on the client only
+  short-circuits an obviously malformed imported file before spending a
+  round trip on it.
+
+### Automated validation
+`npm run i18n:check` (2 languages, **17 namespaces**, no diff), `npm run
+typecheck`, `npm run lint`, `npm run test -- --run` (**1122 tests pass,
+82 test files** - 18 new tests added, zero regressions), `npm run
+build` - all clean.
+
+### Known limitations
+No drag-and-drop for import (a normal labelled file input only, per the
+task's own "drag/drop may be added only if normal file selection
+remains available" - normal selection is what exists). The gallery
+does not yet let an operator pick a specific preview scenario per
+template (Part 33's own "when useful" qualifier) - one representative
+scenario per target is shown.
+
+### Next step
+The 15th integration script, `scripts/verify-visual-templates.mjs`, run
+at least twice.

@@ -13,6 +13,7 @@ import { DesignerLayersPanel } from '@/components/alert-designer/DesignerLayersP
 import { DesignerPropertiesPanel } from '@/components/alert-designer/DesignerPropertiesPanel';
 import { DesignerTopBar } from '@/components/alert-designer/DesignerTopBar';
 import { chatItemDataContext } from '@/components/chat-overlay/chat-item-data-context';
+import { TemplateGallery } from '@/components/visual-templates/TemplateGallery';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
@@ -78,6 +79,7 @@ export function ChatOverlayDesignerWorkspace({
   const [conflict, setConflict] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const document_ = history.present;
   const dirty = !documentsEqual(document_, savedDocument);
@@ -225,6 +227,7 @@ export function ChatOverlayDesignerWorkspace({
         onRedo={() => setHistory(redoHistory)}
         onSave={handleSave}
         onResetToLegacy={() => setResetConfirmOpen(true)}
+        onOpenTemplates={() => setTemplatesOpen(true)}
       />
       <div className="flex min-h-0 flex-1">
         <DesignerLayersPanel
@@ -300,6 +303,16 @@ export function ChatOverlayDesignerWorkspace({
         onConfirm={() => navigate('/overlays')}
         onCancel={() => setDiscardConfirmOpen(false)}
         destructive
+      />
+
+      <TemplateGallery
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        target="chat"
+        ownerId={overlay.id}
+        draftIsDirty={dirty}
+        currentDraftDocument={document_}
+        onUseAsDraft={(doc) => commitDraft(doc)}
       />
     </div>
   );

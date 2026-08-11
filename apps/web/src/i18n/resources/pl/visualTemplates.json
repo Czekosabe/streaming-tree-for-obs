@@ -1,0 +1,67 @@
+{
+  "title": "Szablony",
+  "source": {
+    "builtin": "Wbudowane",
+    "user": "Moje szablony"
+  },
+  "section": {
+    "builtin": "Wbudowane",
+    "user": "Moje szablony"
+  },
+  "loading": "Wczytywanie szablonów…",
+  "empty": {
+    "builtin": "Brak wbudowanych szablonów dla tego celu.",
+    "user": "Nie zapisano jeszcze żadnych szablonów."
+  },
+  "compatibility": {
+    "compatible": "Zgodny",
+    "incompatible": "Niezgodny",
+    "disabledReason": "Ten szablon nie jest zgodny z bieżącym właścicielem.",
+    "blocker": {
+      "template_target_mismatch": "przeznaczony dla innego celu",
+      "alert_binding_unavailable": "używa powiązania niedostępnego dla tej reguły alertu",
+      "chat_binding_unavailable": "używa powiązania niedostępnego dla tej nakładki czatu",
+      "unsupported_visual_document": "używa nieobsługiwanej wersji projektu",
+      "visual_document_invalid": "projekt nie przeszedł walidacji"
+    }
+  },
+  "actions": {
+    "preview": "Podgląd",
+    "useAsDraft": "Użyj jako szkicu",
+    "export": "Eksportuj",
+    "delete": "Usuń",
+    "import": "Importuj",
+    "saveAsTemplate": "Zapisz jako szablon",
+    "back": "Wstecz",
+    "cancel": "Anuluj",
+    "save": "Zapisz"
+  },
+  "import": {
+    "tooLarge": "Ten plik jest zbyt duży, aby był prawidłowym szablonem.",
+    "malformed": "Nie udało się odczytać tego pliku jako szablonu.",
+    "invalid": "Ten plik nie przeszedł walidacji szablonu.",
+    "field": {
+      "name": "Nazwa",
+      "target": "Cel",
+      "description": "Opis",
+      "author": "Autor",
+      "license": "Licencja"
+    }
+  },
+  "metadata": {
+    "name": "Nazwa",
+    "description": "Opis",
+    "author": "Autor",
+    "license": "Licencja"
+  },
+  "replaceDraft": {
+    "title": "Zastąpić bieżący szkic?",
+    "message": "Bieżący niezapisany szkic zostanie zastąpiony w edytorze. Nie wpływa to na zapisany projekt, dopóki nie klikniesz Zapisz.",
+    "confirm": "Zastąp szkic"
+  },
+  "deleteConfirm": {
+    "title": "Usunąć szablon?",
+    "message": "Usunąć „{{name}}”? Nigdy nie wpływa to na żaden projekt już z niego utworzony.",
+    "confirm": "Usuń"
+  }
+}

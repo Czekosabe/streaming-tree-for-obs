@@ -6,12 +6,14 @@ import * as alertsApi from '@/api/alerts';
 import type { AlertProfile, AlertRule } from '@/api/alerts-schemas';
 import type { VisualDesignResponse } from '@/api/visualdesign-schemas';
 import * as visualDesignApi from '@/api/visualdesign';
+import * as visualTemplateApi from '@/api/visualtemplate';
 import { renderWithProviders } from '@/test/render';
 
 import { AlertDesignerWorkspace } from './AlertDesignerWorkspace';
 
 vi.mock('@/api/alerts');
 vi.mock('@/api/visualdesign');
+vi.mock('@/api/visualtemplate');
 
 const rule: AlertRule = {
   id: 'alrule_1', profileId: 'alprof_1', name: 'Follow alert', enabled: true, eventType: 'follow',
@@ -69,6 +71,7 @@ beforeEach(() => {
     alertId: 'alinst_1', ruleId: rule.id, eventType: 'follow', queuedAt: '2026-01-01T00:00:00Z', priority: 50,
     renderedText: 'Ann followed!', synthetic: true, replayed: false, groupCount: 1, interruptible: true,
   });
+  vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -251,5 +254,53 @@ describe('AlertDesignerWorkspace', () => {
     await waitFor(() => expect(vi.mocked(alertsApi).previewAlertTemplate).toHaveBeenCalled());
     expect(vi.mocked(visualDesignApi).saveVisualDesign).not.toHaveBeenCalled();
     expect(vi.mocked(alertsApi).testAlertRule).not.toHaveBeenCalled();
+  });
+
+  it('the Templates button opens the shared gallery, scoped to this rule as an alert owner', async () => {
+    renderWorkspace();
+    await screen.findByTestId('alert-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-open-templates'));
+    await screen.findByTestId('template-gallery-list');
+    await waitFor(() =>
+      expect(vi.mocked(visualTemplateApi).fetchVisualTemplates).toHaveBeenCalledWith(
+        { target: 'alert', ownerId: rule.id },
+        expect.anything(),
+      ),
+    );
+    expect(vi.mocked(visualDesignApi).saveVisualDesign).not.toHaveBeenCalled();
+  });
+
+  it('using a template applies it as a dirty draft without saving the owner design', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([
+      {
+        id: 'tpl_1', target: 'alert', source: 'user', name: 'My Template', description: '', author: '', license: '',
+        templateSchemaVersion: 1,
+        document: {
+          version: 2, canvas: { width: 1920, height: 1080, transparent: true },
+          layers: [
+            {
+              id: 'layer_from_template', name: 'Text', kind: 'text', visible: true, locked: false, order: 0,
+              frame: { x: 0, y: 0, width: 400, height: 100 }, opacity: 1,
+              text: {
+                binding: 'username', missingValueBehavior: 'hide', fontFamily: 'system-ui', fontSize: 32, fontWeight: 700,
+                lineHeight: 1.2, letterSpacing: 0, textColor: '#FFFFFF', horizontalAlign: 'center', verticalAlign: 'middle',
+                outlineWidth: 0, outlineColor: '#000000',
+                shadowEnabled: false, shadowOffsetX: 0, shadowOffsetY: 0, shadowBlur: 0, shadowColor: '#000000',
+              },
+              entryAnimation: 'none', exitAnimation: 'none', animationDurationMs: 0,
+            },
+          ],
+        },
+        compatibility: { compatible: true },
+      },
+    ]);
+    renderWorkspace();
+    await screen.findByTestId('alert-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-open-templates'));
+    await screen.findByTestId('template-gallery-list');
+    fireEvent.click(await screen.findByTestId('template-use-as-draft'));
+    await waitFor(() => expect(screen.queryByTestId('template-gallery-list')).not.toBeInTheDocument());
+    expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'true');
+    expect(vi.mocked(visualDesignApi).saveVisualDesign).not.toHaveBeenCalled();
   });
 });

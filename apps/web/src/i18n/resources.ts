@@ -14,6 +14,7 @@ import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
+import enVisualTemplates from './resources/en/visualTemplates.json';
 import plAccounts from './resources/pl/accounts.json';
 import plAlertDesigner from './resources/pl/alertDesigner.json';
 import plAlerts from './resources/pl/alerts.json';
@@ -30,6 +31,7 @@ import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
 import plRuntime from './resources/pl/runtime.json';
+import plVisualTemplates from './resources/pl/visualTemplates.json';
 
 /**
  * Static translation bundle.
@@ -58,6 +60,7 @@ export const enResources = {
   alerts: enAlerts,
   alertDesigner: enAlertDesigner,
   chatOverlayDesigner: enChatOverlayDesigner,
+  visualTemplates: enVisualTemplates,
 } as const;
 
 const plResources = {
@@ -77,6 +80,7 @@ const plResources = {
   alerts: plAlerts,
   alertDesigner: plAlertDesigner,
   chatOverlayDesigner: plChatOverlayDesigner,
+  visualTemplates: plVisualTemplates,
 } as const;
 
 export const resources = {
