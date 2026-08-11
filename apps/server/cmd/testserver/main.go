@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -40,6 +41,8 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/visualasset"
+	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
@@ -219,6 +222,23 @@ func run() error {
 	// wiring for the full rationale.
 	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 
+	// Stage 14B: the managed visual asset store - see cmd/server/main.go's
+	// own copy of this wiring for the full rationale.
+	visualAssetStore := visualasset.NewFileStore(filepath.Join(cfg.DataDir, "assets", "visual"))
+	if err := visualAssetStore.EnsureDirs(); err != nil {
+		return err
+	}
+	visualAssetService := visualasset.NewService(sqlite.NewVisualAssetRepository(db.DB), visualAssetStore, nil)
+	if reconciled, err := visualAssetService.Reconcile(ctx); err != nil {
+		logger.Error("visual asset store reconciliation failed", slog.Any("error", err))
+	} else {
+		logger.Info("visual asset store reconciled",
+			slog.Int("orphan_blob_files_removed", reconciled.OrphanBlobFilesRemoved),
+			slog.Int("orphan_blob_rows_removed", reconciled.OrphanBlobRowsRemoved),
+			slog.Int("missing_blob_files", len(reconciled.MissingBlobFiles)),
+		)
+	}
+
 	// Stage 10: the chat-overlay profile store and its live public
 	// projection - see cmd/server/main.go's own copy of this wiring for
 	// the full rationale.
@@ -235,6 +255,7 @@ func run() error {
 		VisualDesigns: visualDesignService,
 	}
 	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, visualDesignService, logger)
+	chatOverlayManager.SetAssetService(visualAssetService)
 	if err := chatOverlayManager.Start(ctx); err != nil {
 		return err
 	}
@@ -290,6 +311,7 @@ func run() error {
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,
+		AssetService:        visualAssetService,
 		Bus:                 eventBus,
 	})
 	if err := alertsManager.Start(ctx); err != nil {
@@ -302,6 +324,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	visualTemplateService.SetAssetService(visualAssetService)
+
+	// Stage 14B: package import/preview/export - identical wiring to
+	// cmd/server, see its own comment.
+	visualPackageService := visualpackage.NewService(visualAssetService, visualTemplateService, nil)
 
 	branchManager := branch.NewManager(branch.Options{
 		Platforms:   platformService,
@@ -347,6 +374,8 @@ func run() error {
 		Alerts:         alertsManager,
 
 		VisualTemplates: visualTemplateService,
+		VisualAssets:    visualAssetService,
+		VisualPackages:  visualPackageService,
 	})
 
 	server := &http.Server{

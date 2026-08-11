@@ -16688,3 +16688,204 @@ exists that could produce one). That wiring is the next step.
 
 ### Next step
 HTTP APIs, as planned in the previous entry, unchanged.
+
+## 2026-08-11 23:20 — feat(server): add visual asset and package HTTP APIs
+
+### What
+The Stage 14B HTTP layer, wired into both `cmd/server` and
+`cmd/testserver`: managed-asset CRUD/upload (`/api/visual-assets/...`),
+public asset serving with HTTP Range support
+(`/api/public/visual-assets/{token}`), and package import/preview/
+cancel/export (`/api/visual-template-packages/...`,
+`/api/visual-templates/{id}/export-package`). Also closes the public-URL
+resolution gap `PublicDocument`'s own doc comment named as not-yet-done:
+an alert's/chat-overlay's public payload now resolves every image/video/
+font asset reference into a safe app-owned URL before it ever leaves the
+process, never the local asset id. Startup reconciliation
+(`visualasset.Service.Reconcile`) now runs once in both binaries before
+the router is even built.
+
+While building the first real end-to-end test for this layer (upload an
+asset, reference it from a saved alert-rule visual design, confirm the
+delete-guard), two real, previously-invisible bugs surfaced and are
+fixed in this same commit - see "Errors and fixes" below.
+
+### Files changed
+- `apps/server/internal/httpapi/visualasset.go` (new) - `VisualAssetService`
+  interface; `registerVisualAssetRoutes`; the strict streaming multipart
+  upload contract (`http.MaxBytesReader` → `multipart.Reader`, exactly
+  one `file` part, bounded metadata fields, unknown parts rejected);
+  list/get/update/delete handlers; `handlePublicVisualAsset` (via
+  `http.ServeContent` for correct Range/conditional-request handling
+  rather than a hand-rolled reimplementation); `writeVisualAssetError`.
+- `apps/server/internal/httpapi/visualpackage.go` (new) -
+  `VisualPackageService` interface; `registerVisualPackageRoutes`
+  (import/import-preview/cancel-preview/preview-asset-serving);
+  `handleExportVisualTemplatePackage`; `writeVisualPackageError`
+  (maps every `visualpackage.Err*` to its own stable
+  `visual_template_package_*` code); `safePackageExportFilename`.
+- `apps/server/internal/httpapi/visualtemplate.go` - `template.json`'s
+  asset-reference-shaped document now correctly participates in Stage
+  14A's own asset-free JSON contract: `templateFromFileDTO` rejects an
+  asset-referencing document with the stable `visual_template_
+  assets_missing` (docs/visual-template-packages.md §21), and
+  `handleExportVisualTemplate` rejects exporting an asset-backed
+  template as JSON with `visual_template_requires_package_export`;
+  `registerVisualTemplateRoutes` gained a `VisualPackageService`
+  parameter purely to register the sibling `export-package` route;
+  `safeTemplateExportFilename` now delegates to a new shared
+  `safeExportBaseName` (also used by `safePackageExportFilename`).
+- `apps/server/internal/httpapi/visualdesign.go` - **the management wire
+  DTO (`visualDesignLayerDTO`/`documentToDTO`/`documentFromDTO`) gained
+  `Image`/`Video`/`FontAssetID` fields** (see "Errors and fixes" - this
+  was silently missing until now); `toPublicVisualDesignDTO` gained a
+  `publicAssetURLResolver` parameter and now emits a resolved `url`/
+  `mediaType` for every image/video layer and a resolved `fontUrl` for
+  every custom-font reference, never a raw local asset id;
+  `publicAssetResolverFor` adapts an optional `VisualAssetService` into
+  that resolver, nil-safe.
+- `apps/server/internal/httpapi/alerts.go`/`chatoverlay.go` - the two
+  real public-payload call sites (`handlePublicAlertStream`'s SSE
+  `alert.show`/`alert.reset` events, `handleGetPublicChatOverlayConfig`)
+  now build and pass a real resolver; `writeAlertsError`/
+  `writeChatOverlayError` map the new `visualdesign.ErrAssetMissing`/
+  `ErrAssetKindMismatch` to `visual_asset_missing`/
+  `visual_asset_kind_mismatch`.
+- `apps/server/internal/httpapi/router.go` - new `Options.VisualAssets`/
+  `VisualPackages` fields and their registration.
+- `apps/server/internal/storage/sqlite/visualdesign_repository.go` -
+  **its own private `jsonLayer`/`jsonTextProps`/`jsonMessageFragmentsProps`
+  mirror gained `Image`/`Video`/`FontAssetID`** (see "Errors and fixes" -
+  the actual root cause of the round-trip bug; `internal/domain/
+  visualdesign/json.go`'s shared mirror, updated in an earlier commit,
+  was never the one this repository actually uses).
+- `apps/server/internal/domain/visualasset/validation.go` -
+  `VerifyTypeAgreement` now treats a declared media type of exactly
+  `"application/octet-stream"` as "no real claim made" rather than a
+  mismatch (see "Errors and fixes").
+- `apps/server/internal/domain/visualasset/{blobstore.go,service.go}` -
+  `FileStore.OpenPreviewAsset`/`Service.OpenPreviewAsset` (serves a
+  staged preview asset by token+logical name, rejecting any name that
+  is not already its own `filepath.Base`).
+- `apps/server/internal/domain/visualtemplate/errors.go` - new
+  `ErrRequiresPackageExport`/`ErrAssetsMissing` sentinels.
+- `apps/server/cmd/server/main.go`/`cmd/testserver/main.go` - construct
+  `visualasset.FileStore`/`Service` (rooted at `<DataDir>/assets/
+  visual`), run `Reconcile` once at startup (logged, never fatal), wire
+  `AssetService`/`SetAssetService` into the alerts/chat-overlay/
+  template services, construct `visualpackage.Service`, and add both to
+  the router `Options`.
+- `apps/server/internal/httpapi/visualasset_test.go` (new) - upload
+  (valid PNG, wrong Content-Type, SVG-as-PNG rejection), list/get/
+  update/delete, wrong-method 405, public serving (200, byte-range 206,
+  headers, unknown-token 404, wrong-method 405), and the full delete-
+  guard scenario (upload → reference from a real saved alert-rule
+  design → 409 → clear the reference → succeeds) that surfaced both
+  bugs below.
+- `apps/server/internal/storage/sqlite/visualdesign_repository_test.go` -
+  a new direct round-trip test for image/video layers and a custom-font
+  reference, guarding this exact class of "domain type updated, one of
+  two independent JSON mirrors was not" regression at the lowest level
+  it can be caught.
+
+### Errors and fixes
+- **`application/octet-stream` from `multipart.Writer.CreateFormFile`
+  was rejected as a type mismatch, failing every real multipart
+  upload.** Go's own `multipart.Writer.CreateFormFile` (and many real
+  browsers, whenever their own sniffing is inconclusive) hardcodes
+  `Content-Type: application/octet-stream` on a file part - `visualasset.
+  VerifyTypeAgreement` was comparing that literally against the
+  independently detected signature (`image/png`) and rejecting the
+  mismatch, meaning no multipart upload using the stdlib's own normal
+  helper could ever succeed. Fixed by treating `application/
+  octet-stream` as "no real claim made" (skipped, like an empty
+  declared type) rather than evidence for or against a type - the
+  signature detection remains the sole source of truth for what the
+  file actually is either way, so this loses no real security check.
+- **The management visual-design wire DTO
+  (`internal/httpapi/visualdesign.go`) never gained `Image`/`Video`/
+  `FontAssetID` fields when the domain model did.** `visualDesignLayerDTO`,
+  `documentToDTO`, and `documentFromDTO` were extended for every other
+  Stage 14B field earlier in this stage, but this one struct/pair of
+  functions was missed - an `image`/`video` layer or `fontAssetId` in a
+  save request was silently rejected as an "unknown field" (strict JSON
+  decoding), and reading one back would have silently dropped it.
+  Caught immediately by the first real save-with-an-asset-reference
+  request in `visualasset_test.go`.
+- **The real, deeper bug: `internal/storage/sqlite/
+  visualdesign_repository.go` has always had its OWN private JSON mirror
+  of `Document`/`Layer`, separate from `internal/domain/visualdesign/
+  json.go`'s later, shared, exported mirror.** That shared mirror was
+  correctly updated for Image/Video/FontAssetID in an earlier commit
+  this stage - but `alrule`/`chat_overlay` visual designs are persisted
+  through `VisualDesignRepository`'s own copy, which was never touched,
+  so every image/video layer or custom-font reference was silently
+  stripped on save (the round trip through SQLite lost it, even though
+  in-memory validation and the HTTP response for that one request looked
+  fine at a glance). Found only because `TestDeleteVisualAsset_
+  RejectsWhenReferencedByADesign` fetched the just-saved document back
+  over the API and found no `image` field in it at all. Fixed by adding
+  the same three fields to this repository's own `jsonLayer`/
+  `jsonTextProps`/`jsonMessageFragmentsProps`, and a new dedicated
+  `TestVisualDesignRepositoryRoundTripsImageVideoFontLayers` now pins
+  this exact class of regression at the repository level directly,
+  documented in its own doc comment as guarding "two independent JSON
+  mirrors, only one updated."
+- **A bounded-reader off-by-one** (`visualasset.FileStore`'s old
+  `boundedReader`, replaced by `boundedCopy`) was already fixed in the
+  previous commit but is worth restating here since this commit's own
+  `WritePreviewAsset`/upload paths are what would have hit it in
+  production traffic, not just the domain-level tests that first caught
+  it.
+
+### Technical decisions
+- **Why `http.ServeContent` for public asset serving rather than a
+  hand-written byte-range implementation.** Correct HTTP Range handling
+  (validation, `206`/`416`, `If-Range`, multi-range rejection) is easy
+  to get subtly wrong; the standard library's own implementation is
+  already correct and already the project's default choice wherever a
+  seekable resource is served. This function only sets the three headers
+  the contract requires (`Content-Type`, `nosniff`, `Cache-Control`)
+  before delegating.
+- **Why `registerVisualTemplateRoutes` took on a `VisualPackageService`
+  parameter instead of a fully separate route-registration function for
+  `export-package`.** The route is `GET /api/visual-templates/{id}/
+  export-package` - a sibling of the existing `.../export` route on the
+  exact same resource family already registered in that function.
+  Splitting it into a second registration call would have meant either
+  duplicating the `{id}` wildcard pattern's own conflict-avoidance
+  reasoning a second time, or accepting a subtly different registration
+  order dependency; keeping it beside `.../export` keeps that one file
+  the single source of truth for every route this resource has.
+- **Why preview asset serving is a distinct, separately-headered route
+  from public asset serving**, never reusing `/api/public/visual-assets/
+  {token}` even temporarily. A preview asset has no real blob row yet (no
+  content-addressed hash, no immutable guarantee - the bytes could still
+  be replaced by a new preview attempt under the same token before
+  expiry), so it explicitly sends `Cache-Control: no-store` and lives
+  under the management-only `/api/visual-template-packages/preview/...`
+  path rather than the public one - never reachable from an OBS Browser
+  Source, exactly as docs/visual-template-packages.md §44 requires.
+
+### Automated validation
+- `go build ./...` and `go build -tags integration ./...` - both clean.
+- `go vet ./...` - clean.
+- `go test ./...` (full backend suite, both build configurations
+  effectively exercised since `cmd/testserver` only compiles under the
+  integration tag) - all pass, including the two new test files above
+  and every pre-existing test with no further changes needed.
+
+### Known limitations
+No frontend code has been touched yet - the entire Stage 14B backend
+(domain, persistence, HTTP) is now real and tested, but there is no way
+for an operator to actually reach any of it through the UI. The 16th
+integration script (`verify-visual-template-packages.mjs`) does not
+exist yet. `docs/obs-browser-source.md`'s own Stage 14B note, the CSP
+audit (or documented deferral), and the final full-project documentation
+pass are all still pending. This is still a mid-stage checkpoint.
+
+### Next step
+Frontend: Stage 14B TypeScript schemas (document v3, managed-asset API/
+hooks), the image/video/font layer renderer components wired into the
+one shared `VisualDesignRenderer`, the asset upload/picker UI, and the
+TemplateGallery's package import/export UX - in that order.

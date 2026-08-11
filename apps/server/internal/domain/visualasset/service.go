@@ -262,6 +262,10 @@ func (s *Service) WritePreviewAsset(token, logicalName string, r io.Reader, maxB
 	return s.store.WritePreviewAsset(token, logicalName, r, maxBytes)
 }
 
+func (s *Service) OpenPreviewAsset(token, logicalName string) (*os.File, error) {
+	return s.store.OpenPreviewAsset(token, logicalName)
+}
+
 func (s *Service) RemovePreview(token string) error {
 	return s.store.RemovePreview(token)
 }

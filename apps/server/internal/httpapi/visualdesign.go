@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -52,6 +53,7 @@ type visualDesignTextDTO struct {
 	StaticText           string  `json:"staticText,omitempty"`
 	MissingValueBehavior string  `json:"missingValueBehavior"`
 	FontFamily           string  `json:"fontFamily"`
+	FontAssetID          string  `json:"fontAssetId,omitempty"`
 	FontSize             int     `json:"fontSize"`
 	FontWeight           int     `json:"fontWeight"`
 	LineHeight           float64 `json:"lineHeight"`
@@ -76,6 +78,7 @@ type visualDesignAvatarDTO struct {
 
 type visualDesignMessageFragmentsDTO struct {
 	FontFamily      string  `json:"fontFamily"`
+	FontAssetID     string  `json:"fontAssetId,omitempty"`
 	FontSize        int     `json:"fontSize"`
 	FontWeight      int     `json:"fontWeight"`
 	LineHeight      float64 `json:"lineHeight"`
@@ -90,6 +93,18 @@ type visualDesignBadgeListDTO struct {
 	MaxCount  int `json:"maxCount"`
 	BadgeSize int `json:"badgeSize"`
 	Gap       int `json:"gap"`
+}
+
+type visualDesignImageDTO struct {
+	AssetID string `json:"assetId"`
+	Fit     string `json:"fit"`
+	Alt     string `json:"alt,omitempty"`
+}
+
+type visualDesignVideoDTO struct {
+	AssetID string `json:"assetId"`
+	Fit     string `json:"fit"`
+	Loop    bool   `json:"loop"`
 }
 
 type visualDesignLayerDTO struct {
@@ -108,6 +123,8 @@ type visualDesignLayerDTO struct {
 	Avatar           *visualDesignAvatarDTO           `json:"avatar,omitempty"`
 	MessageFragments *visualDesignMessageFragmentsDTO `json:"messageFragments,omitempty"`
 	BadgeList        *visualDesignBadgeListDTO        `json:"badgeList,omitempty"`
+	Image            *visualDesignImageDTO            `json:"image,omitempty"`
+	Video            *visualDesignVideoDTO            `json:"video,omitempty"`
 
 	EntryAnimation      string `json:"entryAnimation"`
 	ExitAnimation       string `json:"exitAnimation"`
@@ -158,7 +175,7 @@ func documentToDTO(doc visualdesign.Document) visualDesignDocumentDTO {
 		if l.Text != nil {
 			dto.Text = &visualDesignTextDTO{
 				Binding: string(l.Text.Binding), StaticText: l.Text.StaticText, MissingValueBehavior: string(l.Text.MissingValueBehavior),
-				FontFamily: string(l.Text.FontFamily), FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
+				FontFamily: string(l.Text.FontFamily), FontAssetID: l.Text.FontAssetID, FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
 				LineHeight: l.Text.LineHeight, LetterSpacing: l.Text.LetterSpacing, TextColor: l.Text.TextColor,
 				HorizontalAlign: string(l.Text.HorizontalAlign), VerticalAlign: string(l.Text.VerticalAlign),
 				OutlineWidth: l.Text.OutlineWidth, OutlineColor: l.Text.OutlineColor,
@@ -174,7 +191,7 @@ func documentToDTO(doc visualdesign.Document) visualDesignDocumentDTO {
 		}
 		if l.MessageFragments != nil {
 			dto.MessageFragments = &visualDesignMessageFragmentsDTO{
-				FontFamily: string(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				FontFamily: string(l.MessageFragments.FontFamily), FontAssetID: l.MessageFragments.FontAssetID, FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
 				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
 				HorizontalAlign: string(l.MessageFragments.HorizontalAlign), VerticalAlign: string(l.MessageFragments.VerticalAlign),
 				EmoteSize: l.MessageFragments.EmoteSize,
@@ -182,6 +199,12 @@ func documentToDTO(doc visualdesign.Document) visualDesignDocumentDTO {
 		}
 		if l.BadgeList != nil {
 			dto.BadgeList = &visualDesignBadgeListDTO{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
+		}
+		if l.Image != nil {
+			dto.Image = &visualDesignImageDTO{AssetID: l.Image.AssetID, Fit: string(l.Image.Fit), Alt: l.Image.Alt}
+		}
+		if l.Video != nil {
+			dto.Video = &visualDesignVideoDTO{AssetID: l.Video.AssetID, Fit: string(l.Video.Fit), Loop: l.Video.Loop}
 		}
 		layers = append(layers, dto)
 	}
@@ -212,7 +235,7 @@ func documentFromDTO(dto visualDesignDocumentDTO) visualdesign.Document {
 			layer.Text = &visualdesign.TextProps{
 				Binding: visualdesign.TextBinding(l.Text.Binding), StaticText: l.Text.StaticText,
 				MissingValueBehavior: visualdesign.MissingValueBehavior(l.Text.MissingValueBehavior),
-				FontFamily:           visualdesign.FontFamily(l.Text.FontFamily), FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
+				FontFamily:           visualdesign.FontFamily(l.Text.FontFamily), FontAssetID: l.Text.FontAssetID, FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
 				LineHeight: l.Text.LineHeight, LetterSpacing: l.Text.LetterSpacing, TextColor: l.Text.TextColor,
 				HorizontalAlign: visualdesign.HorizontalAlign(l.Text.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(l.Text.VerticalAlign),
 				OutlineWidth: l.Text.OutlineWidth, OutlineColor: l.Text.OutlineColor,
@@ -228,7 +251,7 @@ func documentFromDTO(dto visualDesignDocumentDTO) visualdesign.Document {
 		}
 		if l.MessageFragments != nil {
 			layer.MessageFragments = &visualdesign.MessageFragmentsProps{
-				FontFamily: visualdesign.FontFamily(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				FontFamily: visualdesign.FontFamily(l.MessageFragments.FontFamily), FontAssetID: l.MessageFragments.FontAssetID, FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
 				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
 				HorizontalAlign: visualdesign.HorizontalAlign(l.MessageFragments.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(l.MessageFragments.VerticalAlign),
 				EmoteSize: l.MessageFragments.EmoteSize,
@@ -236,6 +259,12 @@ func documentFromDTO(dto visualDesignDocumentDTO) visualdesign.Document {
 		}
 		if l.BadgeList != nil {
 			layer.BadgeList = &visualdesign.BadgeListProps{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
+		}
+		if l.Image != nil {
+			layer.Image = &visualdesign.ImageProps{AssetID: l.Image.AssetID, Fit: visualdesign.ImageFit(l.Image.Fit), Alt: l.Image.Alt}
+		}
+		if l.Video != nil {
+			layer.Video = &visualdesign.VideoProps{AssetID: l.Video.AssetID, Fit: visualdesign.ImageFit(l.Video.Fit), Loop: l.Video.Loop}
 		}
 		layers = append(layers, layer)
 	}
@@ -246,11 +275,24 @@ func documentFromDTO(dto visualDesignDocumentDTO) visualdesign.Document {
 	}
 }
 
+// publicAssetURLResolver turns a local managed-asset id into the safe,
+// app-owned public content URL a public presentation may embed - never
+// the local id itself, never the blob hash, never a filesystem path
+// (Stage 14B, docs/visual-template-packages.md §18/§38). nil is a valid
+// "no asset service wired" resolver: every image/video/font reference
+// then resolves to ok=false, which toPublicVisualDesignDTO treats as
+// "omit this field" (a broken/unresolvable asset fails safe, never with
+// a leaked local id) - see also visualdesign.PublicDocument's own doc
+// comment on why this resolution cannot happen inside that package.
+type publicAssetURLResolver func(assetID string) (url string, mediaType string, ok bool)
+
 // toPublicVisualDesignDTO serializes doc (already the safe
 // visualdesign.PublicDocument shape - no names, no locked state) for
-// embedding inside a public alert.show payload (Stage 13A task Part
-// 17/23).
-func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
+// embedding inside a public alert.show/chat-overlay-config payload
+// (Stage 13A task Part 17/23; Stage 14B image/video/font asset
+// resolution added here, the one place a local asset id is exchanged
+// for its safe public URL before ever leaving the process boundary).
+func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument, resolve publicAssetURLResolver) map[string]any {
 	if doc == nil {
 		return nil
 	}
@@ -269,7 +311,7 @@ func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
 			}
 		}
 		if l.Text != nil {
-			layer["text"] = map[string]any{
+			text := map[string]any{
 				"binding": l.Text.Binding, "staticText": l.Text.StaticText, "missingValueBehavior": l.Text.MissingValueBehavior,
 				"fontFamily": l.Text.FontFamily, "fontSize": l.Text.FontSize, "fontWeight": l.Text.FontWeight,
 				"lineHeight": l.Text.LineHeight, "letterSpacing": l.Text.LetterSpacing, "textColor": l.Text.TextColor,
@@ -278,6 +320,10 @@ func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
 				"shadowEnabled": l.Text.ShadowEnabled, "shadowOffsetX": l.Text.ShadowOffsetX, "shadowOffsetY": l.Text.ShadowOffsetY,
 				"shadowBlur": l.Text.ShadowBlur, "shadowColor": l.Text.ShadowColor,
 			}
+			if fontURL, _, ok := resolvePublicAsset(resolve, l.Text.FontAssetID); ok {
+				text["fontUrl"] = fontURL
+			}
+			layer["text"] = text
 		}
 		if l.PlatformIcon != nil {
 			layer["platformIcon"] = map[string]any{}
@@ -286,14 +332,36 @@ func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
 			layer["avatar"] = map[string]any{"cornerRadius": l.Avatar.CornerRadius, "borderColor": l.Avatar.BorderColor, "borderWidth": l.Avatar.BorderWidth}
 		}
 		if l.MessageFragments != nil {
-			layer["messageFragments"] = map[string]any{
+			mf := map[string]any{
 				"fontFamily": l.MessageFragments.FontFamily, "fontSize": l.MessageFragments.FontSize, "fontWeight": l.MessageFragments.FontWeight,
 				"lineHeight": l.MessageFragments.LineHeight, "letterSpacing": l.MessageFragments.LetterSpacing, "textColor": l.MessageFragments.TextColor,
 				"horizontalAlign": l.MessageFragments.HorizontalAlign, "verticalAlign": l.MessageFragments.VerticalAlign, "emoteSize": l.MessageFragments.EmoteSize,
 			}
+			if fontURL, _, ok := resolvePublicAsset(resolve, l.MessageFragments.FontAssetID); ok {
+				mf["fontUrl"] = fontURL
+			}
+			layer["messageFragments"] = mf
 		}
 		if l.BadgeList != nil {
 			layer["badgeList"] = map[string]any{"maxCount": l.BadgeList.MaxCount, "badgeSize": l.BadgeList.BadgeSize, "gap": l.BadgeList.Gap}
+		}
+		if l.Image != nil {
+			image := map[string]any{"fit": l.Image.Fit, "alt": l.Image.Alt}
+			if url, mediaType, ok := resolvePublicAsset(resolve, l.Image.AssetID); ok {
+				image["url"], image["mediaType"] = url, mediaType
+			} else {
+				image["url"] = nil
+			}
+			layer["image"] = image
+		}
+		if l.Video != nil {
+			video := map[string]any{"fit": l.Video.Fit, "loop": l.Video.Loop}
+			if url, mediaType, ok := resolvePublicAsset(resolve, l.Video.AssetID); ok {
+				video["url"], video["mediaType"] = url, mediaType
+			} else {
+				video["url"] = nil
+			}
+			layer["video"] = video
 		}
 		layers = append(layers, layer)
 	}
@@ -301,6 +369,30 @@ func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
 		"schemaVersion": doc.SchemaVersion,
 		"canvas":        map[string]any{"width": doc.Canvas.Width, "height": doc.Canvas.Height, "transparent": doc.Canvas.Transparent},
 		"layers":        layers,
+	}
+}
+
+func resolvePublicAsset(resolve publicAssetURLResolver, assetID string) (url, mediaType string, ok bool) {
+	if resolve == nil || assetID == "" {
+		return "", "", false
+	}
+	return resolve(assetID)
+}
+
+// publicAssetResolverFor adapts an (optional) VisualAssetService into a
+// publicAssetURLResolver bound to ctx - nil-safe: a nil assets service
+// (no Stage 14B wiring) yields a resolver that always reports ok=false,
+// exactly like no resolver at all.
+func publicAssetResolverFor(ctx context.Context, assets VisualAssetService) publicAssetURLResolver {
+	if assets == nil {
+		return nil
+	}
+	return func(assetID string) (string, string, bool) {
+		asset, err := assets.Get(ctx, assetID)
+		if err != nil || asset.Blob == nil {
+			return "", "", false
+		}
+		return "/api/public/visual-assets/" + asset.Blob.PublicToken, string(asset.Blob.MediaType), true
 	}
 }
 

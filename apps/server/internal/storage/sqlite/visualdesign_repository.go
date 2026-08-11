@@ -66,6 +66,7 @@ type jsonTextProps struct {
 	StaticText           string  `json:"staticText"`
 	MissingValueBehavior string  `json:"missingValueBehavior"`
 	FontFamily           string  `json:"fontFamily"`
+	FontAssetID          string  `json:"fontAssetId,omitempty"`
 	FontSize             int     `json:"fontSize"`
 	FontWeight           int     `json:"fontWeight"`
 	LineHeight           float64 `json:"lineHeight"`
@@ -92,6 +93,7 @@ type jsonAvatarProps struct {
 // wire shapes (Stage 13B, docs/visual-designs.md §21).
 type jsonMessageFragmentsProps struct {
 	FontFamily      string  `json:"fontFamily"`
+	FontAssetID     string  `json:"fontAssetId,omitempty"`
 	FontSize        int     `json:"fontSize"`
 	FontWeight      int     `json:"fontWeight"`
 	LineHeight      float64 `json:"lineHeight"`
@@ -106,6 +108,20 @@ type jsonBadgeListProps struct {
 	MaxCount  int `json:"maxCount"`
 	BadgeSize int `json:"badgeSize"`
 	Gap       int `json:"gap"`
+}
+
+// jsonImageProps/jsonVideoProps are Version3's own wire shapes (Stage
+// 14B, docs/visual-template-packages.md §12).
+type jsonImageProps struct {
+	AssetID string `json:"assetId"`
+	Fit     string `json:"fit"`
+	Alt     string `json:"alt,omitempty"`
+}
+
+type jsonVideoProps struct {
+	AssetID string `json:"assetId"`
+	Fit     string `json:"fit"`
+	Loop    bool   `json:"loop"`
 }
 
 type jsonLayer struct {
@@ -124,6 +140,8 @@ type jsonLayer struct {
 	Avatar           *jsonAvatarProps           `json:"avatar,omitempty"`
 	MessageFragments *jsonMessageFragmentsProps `json:"messageFragments,omitempty"`
 	BadgeList        *jsonBadgeListProps        `json:"badgeList,omitempty"`
+	Image            *jsonImageProps            `json:"image,omitempty"`
+	Video            *jsonVideoProps            `json:"video,omitempty"`
 
 	EntryAnimation      string `json:"entryAnimation"`
 	ExitAnimation       string `json:"exitAnimation"`
@@ -148,7 +166,7 @@ func toJSONDocument(doc visualdesign.Document) jsonDocument {
 		if l.Text != nil {
 			jl.Text = &jsonTextProps{
 				Binding: string(l.Text.Binding), StaticText: l.Text.StaticText, MissingValueBehavior: string(l.Text.MissingValueBehavior),
-				FontFamily: string(l.Text.FontFamily), FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
+				FontFamily: string(l.Text.FontFamily), FontAssetID: l.Text.FontAssetID, FontSize: l.Text.FontSize, FontWeight: l.Text.FontWeight,
 				LineHeight: l.Text.LineHeight, LetterSpacing: l.Text.LetterSpacing, TextColor: l.Text.TextColor,
 				HorizontalAlign: string(l.Text.HorizontalAlign), VerticalAlign: string(l.Text.VerticalAlign),
 				OutlineWidth: l.Text.OutlineWidth, OutlineColor: l.Text.OutlineColor,
@@ -164,7 +182,7 @@ func toJSONDocument(doc visualdesign.Document) jsonDocument {
 		}
 		if l.MessageFragments != nil {
 			jl.MessageFragments = &jsonMessageFragmentsProps{
-				FontFamily: string(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				FontFamily: string(l.MessageFragments.FontFamily), FontAssetID: l.MessageFragments.FontAssetID, FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
 				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
 				HorizontalAlign: string(l.MessageFragments.HorizontalAlign), VerticalAlign: string(l.MessageFragments.VerticalAlign),
 				EmoteSize: l.MessageFragments.EmoteSize,
@@ -172,6 +190,12 @@ func toJSONDocument(doc visualdesign.Document) jsonDocument {
 		}
 		if l.BadgeList != nil {
 			jl.BadgeList = &jsonBadgeListProps{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
+		}
+		if l.Image != nil {
+			jl.Image = &jsonImageProps{AssetID: l.Image.AssetID, Fit: string(l.Image.Fit), Alt: l.Image.Alt}
+		}
+		if l.Video != nil {
+			jl.Video = &jsonVideoProps{AssetID: l.Video.AssetID, Fit: string(l.Video.Fit), Loop: l.Video.Loop}
 		}
 		layers = append(layers, jl)
 	}
@@ -202,7 +226,7 @@ func fromJSONDocument(jd jsonDocument) visualdesign.Document {
 			l.Text = &visualdesign.TextProps{
 				Binding: visualdesign.TextBinding(jl.Text.Binding), StaticText: jl.Text.StaticText,
 				MissingValueBehavior: visualdesign.MissingValueBehavior(jl.Text.MissingValueBehavior),
-				FontFamily:           visualdesign.FontFamily(jl.Text.FontFamily), FontSize: jl.Text.FontSize, FontWeight: jl.Text.FontWeight,
+				FontFamily:           visualdesign.FontFamily(jl.Text.FontFamily), FontAssetID: jl.Text.FontAssetID, FontSize: jl.Text.FontSize, FontWeight: jl.Text.FontWeight,
 				LineHeight: jl.Text.LineHeight, LetterSpacing: jl.Text.LetterSpacing, TextColor: jl.Text.TextColor,
 				HorizontalAlign: visualdesign.HorizontalAlign(jl.Text.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(jl.Text.VerticalAlign),
 				OutlineWidth: jl.Text.OutlineWidth, OutlineColor: jl.Text.OutlineColor,
@@ -218,7 +242,7 @@ func fromJSONDocument(jd jsonDocument) visualdesign.Document {
 		}
 		if jl.MessageFragments != nil {
 			l.MessageFragments = &visualdesign.MessageFragmentsProps{
-				FontFamily: visualdesign.FontFamily(jl.MessageFragments.FontFamily), FontSize: jl.MessageFragments.FontSize, FontWeight: jl.MessageFragments.FontWeight,
+				FontFamily: visualdesign.FontFamily(jl.MessageFragments.FontFamily), FontAssetID: jl.MessageFragments.FontAssetID, FontSize: jl.MessageFragments.FontSize, FontWeight: jl.MessageFragments.FontWeight,
 				LineHeight: jl.MessageFragments.LineHeight, LetterSpacing: jl.MessageFragments.LetterSpacing, TextColor: jl.MessageFragments.TextColor,
 				HorizontalAlign: visualdesign.HorizontalAlign(jl.MessageFragments.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(jl.MessageFragments.VerticalAlign),
 				EmoteSize: jl.MessageFragments.EmoteSize,
@@ -226,6 +250,12 @@ func fromJSONDocument(jd jsonDocument) visualdesign.Document {
 		}
 		if jl.BadgeList != nil {
 			l.BadgeList = &visualdesign.BadgeListProps{MaxCount: jl.BadgeList.MaxCount, BadgeSize: jl.BadgeList.BadgeSize, Gap: jl.BadgeList.Gap}
+		}
+		if jl.Image != nil {
+			l.Image = &visualdesign.ImageProps{AssetID: jl.Image.AssetID, Fit: visualdesign.ImageFit(jl.Image.Fit), Alt: jl.Image.Alt}
+		}
+		if jl.Video != nil {
+			l.Video = &visualdesign.VideoProps{AssetID: jl.Video.AssetID, Fit: visualdesign.ImageFit(jl.Video.Fit), Loop: jl.Video.Loop}
 		}
 		layers = append(layers, l)
 	}
@@ -253,11 +283,12 @@ func scanVisualDesign(scanner interface{ Scan(...any) error }) (visualdesign.Rec
 	if err := json.Unmarshal([]byte(documentJSON), &jd); err != nil {
 		return visualdesign.Record{}, fmt.Errorf("%w: parse stored document_json: %v", visualdesign.ErrStorage, err)
 	}
-	// MigrateToCurrentVersion upgrades an older stored row (Version1) to
-	// CurrentVersion (Version2) transparently on read - see that
-	// function's own doc comment and docs/visual-designs.md §19 for why
-	// this is lossless (a Version1 document's wire shape is already a
-	// valid Version2 one; only the JSON-level Version field changes).
+	// MigrateToCurrentVersion upgrades an older stored row (Version1 or
+	// Version2) to CurrentVersion (Version3) transparently on read - see
+	// that function's own doc comment and docs/visual-designs.md §19 /
+	// docs/visual-template-packages.md §12 for why every step is
+	// lossless (an older document's wire shape is already a valid newer
+	// one; only the JSON-level Version field changes).
 	rec.Document = visualdesign.MigrateToCurrentVersion(fromJSONDocument(jd))
 
 	var err error

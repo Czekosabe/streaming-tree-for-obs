@@ -83,7 +83,16 @@ func VerifyTypeAgreement(data []byte, ext, declared string) (MediaType, error) {
 	if ext != "" && extensionMediaType(ext) != detected {
 		return "", fmt.Errorf("%w: file extension %q does not match detected content %q", ErrUnsupported, ext, detected)
 	}
-	if declared != "" && MediaType(declared) != detected {
+	// "application/octet-stream" (and, defensively, its own bare
+	// "application/" prefix) is the generic browser/client fallback for
+	// "I do not actually know this file's type" - go's own
+	// multipart.Writer.CreateFormFile hardcodes it, and real browsers
+	// fall back to it whenever their own sniffing is inconclusive. It
+	// carries no real signal either way, so it is treated as "no claim
+	// made" (skipped) rather than compared - never trusted as evidence
+	// FOR a type, and never grounds for rejecting a real, correctly
+	// signed asset either.
+	if declared != "" && declared != "application/octet-stream" && MediaType(declared) != detected {
 		return "", fmt.Errorf("%w: declared media type %q does not match detected content %q", ErrUnsupported, declared, detected)
 	}
 	return detected, nil

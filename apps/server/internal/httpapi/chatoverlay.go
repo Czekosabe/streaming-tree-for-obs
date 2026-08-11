@@ -71,6 +71,7 @@ const (
 func registerChatOverlayRoutes(
 	mux *http.ServeMux, logger *slog.Logger,
 	accounts AccountService, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets OperatorChatAssetResolver,
+	visualAssets VisualAssetService,
 ) {
 	mux.HandleFunc("GET /api/chat-overlays", handleListChatOverlays(logger, profiles))
 	mux.HandleFunc("POST /api/chat-overlays", handleCreateChatOverlay(logger, profiles, runtime))
@@ -117,7 +118,7 @@ func registerChatOverlayRoutes(
 	mux.HandleFunc("/api/chat-overlays/{id}/visual-design", methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
 
 	streamLimiter := newChatOverlayStreamLimiter()
-	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles, runtime))
+	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles, runtime, visualAssets))
 	mux.HandleFunc("/api/public/chat-overlays/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
 	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/items", handleGetPublicChatOverlayItems(logger, profiles, runtime, assets))
@@ -804,7 +805,7 @@ const (
 	chatOverlayRenderingModeVisualDesign = "visual_design"
 )
 
-func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile, design *visualdesign.Record) publicChatOverlayConfigResponse {
+func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile, design *visualdesign.Record, resolve publicAssetURLResolver) publicChatOverlayConfigResponse {
 	resp := publicChatOverlayConfigResponse{
 		SchemaVersion: co.CurrentVersion,
 		LayoutMode:    string(p.LayoutMode), StackDirection: string(p.StackDirection), HorizontalAlignment: string(p.HorizontalAlignment),
@@ -830,7 +831,7 @@ func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile, design *visu
 	if design != nil {
 		resp.RenderingMode = chatOverlayRenderingModeVisualDesign
 		pub := visualdesign.ToPublic(design.Document)
-		resp.VisualDesign = visualDesignDocumentPub(toPublicVisualDesignDTO(&pub))
+		resp.VisualDesign = visualDesignDocumentPub(toPublicVisualDesignDTO(&pub, resolve))
 	}
 	return resp
 }
@@ -849,7 +850,7 @@ func resolvePublicChatOverlayProfile(ctx context.Context, profiles ChatOverlayPr
 	return p, p.Enabled, nil
 }
 
-func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime) http.HandlerFunc {
+func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets VisualAssetService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, r.PathValue("slug"))
 		if err != nil {
@@ -864,7 +865,8 @@ func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayP
 		if rec, found, err := runtime.GetVisualDesign(r.Context(), p.ID); err == nil && found {
 			design = &rec
 		}
-		writeJSON(w, logger, http.StatusOK, toPublicChatOverlayConfigResponse(p, design))
+		resolve := publicAssetResolverFor(r.Context(), assets)
+		writeJSON(w, logger, http.StatusOK, toPublicChatOverlayConfigResponse(p, design, resolve))
 	}
 }
 
@@ -1215,6 +1217,10 @@ func writeChatOverlayError(w http.ResponseWriter, logger *slog.Logger, r *http.R
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_too_large", "The design document is too large.")
 	case errors.Is(err, visualdesign.ErrValidation):
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_invalid", "The design failed validation.")
+	case errors.Is(err, visualdesign.ErrAssetMissing):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_missing", "This design references a managed asset that no longer exists.")
+	case errors.Is(err, visualdesign.ErrAssetKindMismatch):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_kind_mismatch", "This design references a managed asset of the wrong kind.")
 	case errors.Is(err, co.ErrVisualDesignUnavailable):
 		writeError(w, logger, http.StatusServiceUnavailable, "visual_design_unavailable", "The visual design service is not available.")
 	default:

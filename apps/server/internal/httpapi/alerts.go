@@ -66,7 +66,7 @@ const (
 // (/api/alert-profiles/..., /api/alert-rules/...) and the public,
 // unauthenticated alert API (/api/public/alert-profiles/...) an OBS
 // Browser Source actually loads.
-func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsService) {
+func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsService, assets VisualAssetService) {
 	mux.HandleFunc("GET /api/alert-event-types", handleListAlertEventTypes(logger))
 	mux.HandleFunc("/api/alert-event-types", methodNotAllowed(logger, http.MethodGet))
 
@@ -120,7 +120,7 @@ func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsServ
 	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/config", handleGetPublicAlertProfileConfig(logger, svc))
 	mux.HandleFunc("/api/public/alert-profiles/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/stream", handlePublicAlertStream(logger, svc, streamLimiter))
+	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/stream", handlePublicAlertStream(logger, svc, assets, streamLimiter))
 	mux.HandleFunc("/api/public/alert-profiles/{slug}/stream", methodNotAllowed(logger, http.MethodGet))
 }
 
@@ -862,7 +862,7 @@ func (l *alertStreamLimiter) release(profileID string) {
 	}
 }
 
-func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
+func toPublicAlertDTO(a *alerts.PublicAlert, resolve publicAssetURLResolver) map[string]any {
 	if a == nil {
 		return nil
 	}
@@ -879,7 +879,7 @@ func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
 		"renderingMode": a.RenderingMode,
 	}
 	if a.VisualDesign != nil {
-		out["visualDesign"] = toPublicVisualDesignDTO(a.VisualDesign)
+		out["visualDesign"] = toPublicVisualDesignDTO(a.VisualDesign, resolve)
 	}
 	return out
 }
@@ -889,13 +889,13 @@ func toPublicAlertDTO(a *alerts.PublicAlert) map[string]any {
 // public hide operation should contain only operation, revision, alert
 // ID, stable reason" - no prior rendered content) - only its own
 // hiddenAlertId/reason fields.
-func writeAlertRevision(w http.ResponseWriter, rev alerts.Revision) error {
+func writeAlertRevision(w http.ResponseWriter, rev alerts.Revision, resolve publicAssetURLResolver) error {
 	eventName := "alert." + string(rev.Operation)
 	var data map[string]any
 	if rev.Operation == alerts.OpHide {
 		data = map[string]any{"paused": rev.Paused, "alertId": rev.HiddenAlertID, "reason": string(rev.Reason)}
 	} else {
-		data = map[string]any{"paused": rev.Paused, "alert": toPublicAlertDTO(rev.Alert)}
+		data = map[string]any{"paused": rev.Paused, "alert": toPublicAlertDTO(rev.Alert, resolve)}
 	}
 	return writeSSEEvent(w, eventName, rev.Sequence, data)
 }
@@ -909,13 +909,14 @@ func writeAlertRevision(w http.ResponseWriter, rev alerts.Revision) error {
 // only. A fresh connection (no Last-Event-ID) never replays historical
 // show/hide revisions - only the current state, then live continuation
 // (Part 23: "no historical queue content").
-func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, limiter *alertStreamLimiter) http.HandlerFunc {
+func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, assets VisualAssetService, limiter *alertStreamLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeError(w, logger, http.StatusInternalServerError, "internal_error", "Streaming is not supported by this response writer.")
 			return
 		}
+		resolve := publicAssetResolverFor(r.Context(), assets)
 
 		p, available := resolvePublicAlertProfile(r.Context(), svc, r.PathValue("slug"))
 
@@ -968,7 +969,7 @@ func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, limiter *al
 				return
 			}
 			reset.Sequence = svc.LatestSequence(p.ID)
-			_ = writeAlertRevision(w, reset)
+			_ = writeAlertRevision(w, reset, resolve)
 			flusher.Flush()
 		}
 
@@ -994,7 +995,7 @@ func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, limiter *al
 			flusher.Flush()
 			if reset, err := svc.CurrentReset(p.ID); err == nil {
 				reset.Sequence = svc.LatestSequence(p.ID)
-				_ = writeAlertRevision(w, reset)
+				_ = writeAlertRevision(w, reset, resolve)
 				flusher.Flush()
 			}
 		}
@@ -1015,7 +1016,7 @@ func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, limiter *al
 					}
 					return
 				}
-				_ = writeAlertRevision(w, rev)
+				_ = writeAlertRevision(w, rev, resolve)
 				flusher.Flush()
 			case <-keepalive.C:
 				writeSSEComment(w, "keepalive")
@@ -1057,6 +1058,10 @@ func writeAlertsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_too_large", "The design document is too large.")
 	case errors.Is(err, visualdesign.ErrValidation):
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_design_invalid", "The design failed validation.")
+	case errors.Is(err, visualdesign.ErrAssetMissing):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_missing", "This design references a managed asset that no longer exists.")
+	case errors.Is(err, visualdesign.ErrAssetKindMismatch):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_kind_mismatch", "This design references a managed asset of the wrong kind.")
 	case errors.Is(err, alerts.ErrVisualDesignUnavailable):
 		writeError(w, logger, http.StatusServiceUnavailable, "visual_design_unavailable", "The visual design service is not available.")
 	default:

@@ -118,6 +118,17 @@ type Options struct {
 	// surface only, never exposed on any public API. When nil, none of
 	// those routes are registered.
 	VisualTemplates VisualTemplateService
+	// VisualAssets serves the Stage 14B managed-asset management API
+	// (/api/visual-assets/...) and the public asset-content route
+	// (/api/public/visual-assets/{token}). When nil, none of those
+	// routes are registered.
+	VisualAssets VisualAssetService
+	// VisualPackages serves the Stage 14B portable package import/
+	// preview/export API. Required alongside VisualAssets and
+	// VisualTemplates for those routes (including the package-export
+	// extension of /api/visual-templates/{id}/export-package) to
+	// register.
+	VisualPackages VisualPackageService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -172,7 +183,7 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.ChatOverlayProfiles != nil && opts.ChatOverlayRuntime != nil && opts.Accounts != nil {
-		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets)
+		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets, opts.VisualAssets)
 	}
 
 	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.OutboundChat != nil {
@@ -184,12 +195,20 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.Alerts != nil {
-		registerAlertRoutes(mux, logger, opts.Alerts)
+		registerAlertRoutes(mux, logger, opts.Alerts, opts.VisualAssets)
 		registerVisualDesignRoutes(mux, logger, opts.Alerts)
 	}
 
 	if opts.VisualTemplates != nil {
-		registerVisualTemplateRoutes(mux, logger, opts.VisualTemplates, opts.Alerts, opts.ChatOverlayProfiles)
+		registerVisualTemplateRoutes(mux, logger, opts.VisualTemplates, opts.Alerts, opts.ChatOverlayProfiles, opts.VisualPackages)
+	}
+
+	if opts.VisualAssets != nil {
+		registerVisualAssetRoutes(mux, logger, opts.VisualAssets)
+	}
+
+	if opts.VisualPackages != nil && opts.VisualAssets != nil {
+		registerVisualPackageRoutes(mux, logger, opts.VisualPackages, opts.VisualAssets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

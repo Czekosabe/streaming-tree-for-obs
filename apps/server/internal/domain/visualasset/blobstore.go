@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -176,6 +177,25 @@ func (s *FileStore) ListBlobFiles() ([]string, error) {
 
 func (s *FileStore) previewDir(token string) string {
 	return filepath.Join(s.previewsRoot(), token)
+}
+
+// OpenPreviewAsset opens a staged preview asset for reading - logicalName
+// must be exactly the same application-generated name WritePreviewAsset
+// was given (never an untrusted path); a name that does not equal its
+// own filepath.Base, or that contains a directory traversal segment, is
+// rejected as not-found rather than ever being joined onto previewDir.
+func (s *FileStore) OpenPreviewAsset(token, logicalName string) (*os.File, error) {
+	if logicalName == "" || logicalName != filepath.Base(logicalName) || strings.Contains(logicalName, "..") {
+		return nil, ErrNotFound
+	}
+	f, err := os.Open(filepath.Join(s.previewDir(token), logicalName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("%w: open preview asset: %v", ErrStorage, err)
+	}
+	return f, nil
 }
 
 // WritePreviewAsset stages one verified package asset's bytes under a

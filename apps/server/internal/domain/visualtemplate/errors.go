@@ -28,4 +28,16 @@ var (
 	// ErrTooLarge means a raw imported template file exceeded
 	// MaxImportBytes.
 	ErrTooLarge = errors.New("visual template import is too large")
+	// ErrRequiresPackageExport means a caller asked for the asset-free
+	// Stage 14A JSON export of a template whose document references at
+	// least one managed asset (docs/visual-template-packages.md §21,
+	// stable error visual_template_requires_package_export) - it must
+	// be exported as a package instead.
+	ErrRequiresPackageExport = errors.New("this template references managed assets and must be exported as a package")
+	// ErrAssetsMissing means a standalone Stage 14A JSON template file
+	// (import or create) embeds a document that references a managed
+	// asset - a JSON file has no channel to carry the asset bytes a
+	// reference depends on (docs/visual-template-packages.md §21,
+	// stable error visual_template_assets_missing).
+	ErrAssetsMissing = errors.New("this template document references managed assets, which a standalone JSON file cannot carry")
 )

@@ -45,7 +45,7 @@ type VisualTemplateService interface {
 // internal/domain/chatoverlay.ValidateDesignBindingsForChatOverlay) -
 // either may be nil, in which case compatibility falls back to
 // target-level only.
-func registerVisualTemplateRoutes(mux *http.ServeMux, logger *slog.Logger, svc VisualTemplateService, alerts AlertsService, chatOverlays ChatOverlayProfileService) {
+func registerVisualTemplateRoutes(mux *http.ServeMux, logger *slog.Logger, svc VisualTemplateService, alerts AlertsService, chatOverlays ChatOverlayProfileService, packages VisualPackageService) {
 	mux.HandleFunc("GET /api/visual-templates", handleListVisualTemplates(logger, svc, alerts, chatOverlays))
 	mux.HandleFunc("POST /api/visual-templates", handleCreateVisualTemplate(logger, svc))
 	mux.HandleFunc("/api/visual-templates", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
@@ -84,6 +84,16 @@ func registerVisualTemplateRoutes(mux *http.ServeMux, logger *slog.Logger, svc V
 
 	mux.HandleFunc("GET /api/visual-templates/{id}/export", handleExportVisualTemplate(logger, svc))
 	mux.HandleFunc("/api/visual-templates/{id}/export", methodNotAllowed(logger, http.MethodGet))
+
+	// Stage 14B: package export extends this same resource
+	// (docs/visual-template-packages.md §20) - registered here, only
+	// when a VisualPackageService is actually available, rather than in
+	// registerVisualPackageRoutes, since /api/visual-templates/{id}/...
+	// is this file's own route family.
+	if packages != nil {
+		mux.HandleFunc("GET /api/visual-templates/{id}/export-package", handleExportVisualTemplatePackage(logger, packages, svc))
+		mux.HandleFunc("/api/visual-templates/{id}/export-package", methodNotAllowed(logger, http.MethodGet))
+	}
 }
 
 // --- wire DTOs --------------------------------------------------------
@@ -156,11 +166,20 @@ func templateFromFileDTO(dto visualTemplateFileDTO) (visualtemplate.Template, er
 	if dto.Format != visualtemplate.Format {
 		return visualtemplate.Template{}, fmt.Errorf("%w: unrecognized format %q", visualtemplate.ErrValidation, dto.Format)
 	}
+	doc := documentFromDTO(dto.VisualDesign)
+	// Stage 14B, docs/visual-template-packages.md §21: a standalone
+	// Stage 14A JSON template file has no channel to carry asset bytes -
+	// a document that references one is rejected outright here, before
+	// migration/validation even runs, never resolved "by coincidence"
+	// against a same-id local asset that might happen to already exist.
+	if len(doc.AssetReferences()) > 0 {
+		return visualtemplate.Template{}, visualtemplate.ErrAssetsMissing
+	}
 	return visualtemplate.Template{
 		Target: visualtemplate.Target(dto.Target), Source: visualtemplate.SourceUser,
 		Name: dto.Name, Description: dto.Description, Author: dto.Author, License: dto.License,
 		TemplateSchemaVersion: dto.SchemaVersion,
-		Document:              documentFromDTO(dto.VisualDesign),
+		Document:              doc,
 	}, nil
 }
 
@@ -358,6 +377,10 @@ func handleExportVisualTemplate(logger *slog.Logger, svc VisualTemplateService) 
 			writeVisualTemplateError(w, logger, err)
 			return
 		}
+		if len(t.Document.AssetReferences()) > 0 {
+			writeVisualTemplateError(w, logger, visualtemplate.ErrRequiresPackageExport)
+			return
+		}
 		filename := safeTemplateExportFilename(t.Name)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -374,6 +397,18 @@ func handleExportVisualTemplate(logger *slog.Logger, svc VisualTemplateService) 
 // Never derived from any local path, and never a bare user string
 // passed into the header unescaped.
 func safeTemplateExportFilename(name string) string {
+	return safeExportBaseName(name) + ".streaming-tree-template.json"
+}
+
+// safeExportBaseName sanitizes an operator-authored name into a safe
+// download-filename base, shared by both the Stage 14A JSON export
+// (safeTemplateExportFilename) and the Stage 14B package export
+// (safePackageExportFilename, internal/httpapi/visualpackage.go): every
+// path separator and control character (including CR/LF, which could
+// otherwise inject extra response headers) is stripped, and the result
+// is bounded. Never derived from any local path, and never a bare user
+// string passed into a header unescaped.
+func safeExportBaseName(name string) string {
 	var b strings.Builder
 	for _, r := range name {
 		switch {
@@ -393,7 +428,7 @@ func safeTemplateExportFilename(name string) string {
 	if safe == "" {
 		safe = "template"
 	}
-	return safe + ".streaming-tree-template.json"
+	return safe
 }
 
 func writeVisualTemplateError(w http.ResponseWriter, logger *slog.Logger, err error) {
@@ -412,6 +447,14 @@ func writeVisualTemplateError(w http.ResponseWriter, logger *slog.Logger, err er
 		writeError(w, logger, http.StatusRequestEntityTooLarge, "visual_template_import_too_large", "The imported template file is too large.")
 	case errors.Is(err, visualtemplate.ErrValidation):
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_invalid", "The template failed validation.")
+	case errors.Is(err, visualtemplate.ErrRequiresPackageExport):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_requires_package_export", "This template contains assets. Export it as a package instead.")
+	case errors.Is(err, visualtemplate.ErrAssetsMissing):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_assets_missing", "This template document references managed assets, which a standalone JSON file cannot carry.")
+	case errors.Is(err, visualdesign.ErrAssetMissing):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_missing", "This design references a managed asset that no longer exists.")
+	case errors.Is(err, visualdesign.ErrAssetKindMismatch):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_asset_kind_mismatch", "This design references a managed asset of the wrong kind.")
 	case errors.Is(err, alertsdomain.ErrRuleNotFound):
 		writeError(w, logger, http.StatusNotFound, "alert_rule_not_found", "The requested alert rule does not exist.")
 	case errors.Is(err, chatoverlaydomain.ErrNotFound):

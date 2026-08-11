@@ -309,6 +309,79 @@ func TestVisualDesignRepositoryMigratesStoredVersion1Document(t *testing.T) {
 	}
 }
 
+// TestVisualDesignRepositoryRoundTripsImageVideoFontLayers guards
+// exactly the regression a Stage 14B httpapi-level test first caught:
+// this repository keeps its own private JSON mirror of Document/Layer
+// (predating internal/domain/visualdesign/json.go's later shared
+// mirror, see this file's own doc comment), so adding a new layer kind
+// or field to the domain package does not automatically reach storage -
+// each mirror must be updated by hand, and only a real round-trip
+// through this repository can prove it was.
+func TestVisualDesignRepositoryRoundTripsImageVideoFontLayers(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewVisualDesignRepository(db.DB)
+	ctx := context.Background()
+
+	doc := visualdesign.Document{
+		Version: visualdesign.CurrentVersion,
+		Canvas:  visualdesign.CanvasLandscape,
+		Layers: []visualdesign.Layer{
+			{
+				ID: "layer_image", Name: "Badge", Kind: visualdesign.LayerImage,
+				Visible: true, Order: 0,
+				Frame: visualdesign.Frame{X: 0, Y: 0, Width: 100, Height: 100}, Opacity: 1,
+				Image:          &visualdesign.ImageProps{AssetID: "asset_image1", Fit: visualdesign.FitContain, Alt: "Badge"},
+				EntryAnimation: visualdesign.AnimationNone, ExitAnimation: visualdesign.AnimationNone,
+			},
+			{
+				ID: "layer_video", Name: "Clip", Kind: visualdesign.LayerVideo,
+				Visible: true, Order: 1,
+				Frame: visualdesign.Frame{X: 100, Y: 100, Width: 200, Height: 200}, Opacity: 1,
+				Video:          &visualdesign.VideoProps{AssetID: "asset_video1", Fit: visualdesign.FitCover, Loop: true},
+				EntryAnimation: visualdesign.AnimationNone, ExitAnimation: visualdesign.AnimationNone,
+			},
+			{
+				ID: "layer_text", Name: "Custom font text", Kind: visualdesign.LayerText,
+				Visible: true, Order: 2,
+				Frame: visualdesign.Frame{X: 0, Y: 300, Width: 400, Height: 100}, Opacity: 1,
+				Text: &visualdesign.TextProps{
+					Binding: visualdesign.BindingStatic, StaticText: "hi", MissingValueBehavior: visualdesign.MissingHide,
+					FontFamily: visualdesign.FontSystemUI, FontAssetID: "asset_font1", FontSize: 32, FontWeight: 700, LineHeight: 1.2,
+					TextColor: "#FFFFFF", HorizontalAlign: visualdesign.HAlignCenter, VerticalAlign: visualdesign.VAlignMiddle,
+					OutlineColor: "#000000", ShadowColor: "#000000",
+				},
+				EntryAnimation: visualdesign.AnimationNone, ExitAnimation: visualdesign.AnimationNone,
+			},
+		},
+	}
+	if err := visualdesign.Validate(doc); err != nil {
+		t.Fatalf("fixture document fails Validate: %v", err)
+	}
+
+	if _, err := repo.Save(ctx, visualdesign.OwnerKindAlertRule, "alrule_assets", doc, 0, fixedTestID); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	got, found, err := repo.Get(ctx, visualdesign.OwnerKindAlertRule, "alrule_assets")
+	if err != nil || !found {
+		t.Fatalf("Get() found = %v, err = %v", found, err)
+	}
+	if len(got.Document.Layers) != 3 {
+		t.Fatalf("Layers = %+v, want 3", got.Document.Layers)
+	}
+	imgLayer := got.Document.Layers[0]
+	if imgLayer.Image == nil || imgLayer.Image.AssetID != "asset_image1" || imgLayer.Image.Fit != visualdesign.FitContain {
+		t.Errorf("image layer round-trip = %+v, want AssetID=asset_image1 Fit=contain", imgLayer.Image)
+	}
+	vidLayer := got.Document.Layers[1]
+	if vidLayer.Video == nil || vidLayer.Video.AssetID != "asset_video1" || !vidLayer.Video.Loop {
+		t.Errorf("video layer round-trip = %+v, want AssetID=asset_video1 Loop=true", vidLayer.Video)
+	}
+	textLayer := got.Document.Layers[2]
+	if textLayer.Text == nil || textLayer.Text.FontAssetID != "asset_font1" {
+		t.Errorf("text layer FontAssetID round-trip = %+v, want asset_font1", textLayer.Text)
+	}
+}
+
 func TestVisualDesignRepositorySurvivesRestart(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewVisualDesignRepository(db.DB)

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/visualasset"
+	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
@@ -242,6 +245,29 @@ func run() error {
 	// wires a real one.
 	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 
+	// Stage 14B: the managed visual asset store (docs/visual-template-
+	// packages.md §13/§14) - a sibling of internal/runtime/mediamtx's
+	// own "<DataDir>/runtime" convention. Reconcile runs once, here, on
+	// every clean startup, before any request can reach it: it removes
+	// every leftover package-import preview session (none from a
+	// previous process can still be legitimate) and any truly orphaned
+	// blob - never fatal, only logged, since a broken individual asset
+	// must never prevent the rest of the database from being read.
+	visualAssetStore := visualasset.NewFileStore(filepath.Join(cfg.DataDir, "assets", "visual"))
+	if err := visualAssetStore.EnsureDirs(); err != nil {
+		return err
+	}
+	visualAssetService := visualasset.NewService(sqlite.NewVisualAssetRepository(db.DB), visualAssetStore, nil)
+	if reconciled, err := visualAssetService.Reconcile(ctx); err != nil {
+		logger.Error("visual asset store reconciliation failed", slog.Any("error", err))
+	} else {
+		logger.Info("visual asset store reconciled",
+			slog.Int("orphan_blob_files_removed", reconciled.OrphanBlobFilesRemoved),
+			slog.Int("orphan_blob_rows_removed", reconciled.OrphanBlobRowsRemoved),
+			slog.Int("missing_blob_files", len(reconciled.MissingBlobFiles)),
+		)
+	}
+
 	// Stage 10: the chat-overlay profile store and its live public
 	// projection. The projection's own bounded revision buffer is
 	// independent from both the Event Bus's and operator-chat's own -
@@ -260,6 +286,7 @@ func run() error {
 		VisualDesigns: visualDesignService,
 	}
 	chatOverlayManager := co.NewManager(co.WrapOperatorChatSource(operatorChatProjection), chatOverlayResolver, visualDesignService, logger)
+	chatOverlayManager.SetAssetService(visualAssetService)
 	if err := chatOverlayManager.Start(ctx); err != nil {
 		return err
 	}
@@ -342,6 +369,7 @@ func run() error {
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,
+		AssetService:        visualAssetService,
 		Bus:                 eventBus,
 	})
 	if err := alertsManager.Start(ctx); err != nil {
@@ -358,6 +386,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	visualTemplateService.SetAssetService(visualAssetService)
+
+	// Stage 14B: the portable, secure `.streaming-tree-template` package
+	// import/preview/export domain - bridges visualAssetService and
+	// visualTemplateService (docs/visual-template-packages.md §20/§43).
+	visualPackageService := visualpackage.NewService(visualAssetService, visualTemplateService, nil)
 
 	// Every branch begins with desiredRunning false: a backend restart never
 	// resumes a broadcast on its own, so nothing is started here.
@@ -413,6 +447,8 @@ func run() error {
 		Alerts:         alertsManager,
 
 		VisualTemplates: visualTemplateService,
+		VisualAssets:    visualAssetService,
+		VisualPackages:  visualPackageService,
 	})
 
 	server := &http.Server{
