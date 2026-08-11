@@ -15043,3 +15043,130 @@ One final, unmodified re-run of the complete regression (frontend,
 backend, all fourteen scripts) immediately before push, then the
 dedicated Stage 13 closing-regression journal entry, then `git push
 origin main`.
+
+## 2026-08-11 17:10 — docs: record Stage 13 closing regression
+
+### Status
+**Stage 13A: Completed. Stage 13B: Completed. Stage 13 (as a whole):
+Completed. Stage 14: Planned, not started.**
+
+### What
+This entry records the literal, final, unmodified closing regression
+run immediately before push - no code or documentation changed between
+running these checks and writing this entry, so this is proof, not a
+promise. Explicitly avoiding the Stage 13A mistake this project's own
+`fix(docs): correct Stage 13A final status` entry had to correct: a
+"Next step" note promising a regression with no later entry proving it
+happened.
+
+### Automated validation (run in this exact order, this exact pass)
+**Frontend** (`apps/web`): `npm run i18n:check` - 2 languages (en, pl),
+16 namespaces, no differences. `npm run typecheck` - clean. `npm run
+lint` - clean. `npm run test -- --run` - **1104 tests pass, 80 test
+files**, zero failures. `npm run build` - clean (one pre-existing,
+non-blocking chunk-size advisory, unrelated to this stage).
+
+**Backend** (`apps/server`): `gofmt -l .` - no files listed, clean.
+`go vet ./...` - clean. `go test ./...` - every package with tests
+reports `ok`. `go build ./...` - clean. `go build -tags integration
+./cmd/testserver/...` - clean.
+
+**All fourteen local integration scripts, run once each in this exact
+pass, from the repository root, every one against a freshly built
+`-tags integration` binary on dynamically chosen loopback ports, real
+fake OAuth/Helix/EventSub servers only, no real Twitch/YouTube/OBS
+involved anywhere:**
+
+1. `verify-persistence.mjs` - PASSED
+2. `verify-mediamtx-runtime.mjs` - PASSED (real local MediaMTX binary)
+3. `verify-ffmpeg-branches.mjs` - PASSED (real local FFmpeg binary)
+4. `verify-twitch-account-integration.mjs` - PASSED
+5. `verify-youtube-account-integration.mjs` - PASSED
+6. `verify-twitch-engagement.mjs` - PASSED
+7. `verify-operator-chat.mjs` - PASSED
+8. `verify-chat-overlay.mjs` - PASSED (unchanged since Stage 10/13B -
+   proves every existing legacy chat-overlay client keeps working
+   exactly as before)
+9. `verify-twitch-outbound-chat.mjs` - PASSED
+10. `verify-chat-automation.mjs` - PASSED
+11. `verify-alerts.mjs` - PASSED
+12. `verify-alert-advanced-queue.mjs` - PASSED
+13. `verify-alert-designer.mjs` - PASSED (this is its **third** clean
+    run this stage, across two separate full-suite passes plus its own
+    dedicated fix-and-verify pass in the `test: verify chat overlay
+    designer locally` entry - zero regressions to Stage 13A throughout
+    Stage 13B)
+14. `verify-chat-overlay-designer.mjs` - PASSED (its **fourth** clean
+    run overall - twice when first written, once in the prior full
+    regression pass, once here)
+
+None weakened, none skipped, none run against stale fixtures.
+
+### What this proves, mapped to the task's own completion criteria
+- Stage 13A's own closing regression is accurately journaled (see the
+  `fix(docs): correct Stage 13A final status` entry) - no unproven
+  "Next step" promise remains anywhere in Stage 13's own commit
+  sequence, including this one, as this entry itself is the proof.
+- The `owner_kind` migration accepts `chat_overlay` alongside
+  `alert_rule`, with every existing Stage 13A alert design surviving
+  with an unchanged id/JSON/revision/timestamps
+  (`TestVisualDesignRepositoryOwnerKindIsIndependentPerKind`, and this
+  pass's own `verify-chat-overlay-designer.mjs` step "Saving a design
+  on a second overlay never disturbs the first overlay's own
+  design/revision").
+- One saved design per chat overlay; opening the Designer persists
+  nothing; explicit Save activates design-driven rendering; Reset to
+  legacy restores the original renderer; a chat overlay with no saved
+  design renders exactly as Stage 10 always did
+  (`verify-chat-overlay.mjs`, run completely unchanged, and
+  `verify-chat-overlay-designer.mjs`'s own legacy/draft/save/delete
+  steps).
+- Stage 10's filtering, lifecycle, moderation and stack ownership stay
+  authoritative in both rendering modes - immediate moderation removal,
+  blocked-term/hidden-user filtering, and capacity/expiry eviction were
+  all re-proven directly against a design-driven overlay in this
+  stage's own script, not merely assumed from Stage 10's prior
+  coverage.
+- `internal/domain/visualdesign` still imports neither Twitch nor
+  EventSub nor either owning domain; one shared `VisualDesignRenderer`
+  serves both the Alert Designer/public alert route and the Chat
+  Designer/public chat route; every generic Designer editing mechanic
+  (drag/resize/snap/undo/redo/zoom/lock/duplicate/keyboard) is reused,
+  not forked, verified by `ChatOverlayDesignerWorkspace.tsx` importing
+  its chrome components directly from `@/components/alert-designer/*`
+  with zero parallel copies.
+- Saving a new chat design updates every currently-visible item with no
+  duplication or resurrection (this stage's central live-update
+  guarantee, proven directly by `verify-chat-overlay-designer.mjs`'s
+  own "Saving a new design while items are visible..." step), and a
+  reconnecting client replays the resulting presentation change via a
+  real `Last-Event-ID`, never a gap.
+- The public payload carries no management state (id, owner kind/id,
+  revision metadata, layer names, lock state) in either the alert or
+  chat public routes, and no secret, blocked term, or hidden-user value
+  ever appears in traffic a real public viewer could see - both
+  scanned explicitly in this pass.
+- No new third-party dependency, no new Twitch scope, no real
+  provider/OBS/manual-browser verification was used anywhere in Stage
+  13B - confirmed by the `THIRD_PARTY_NOTICES.md` audit in the previous
+  entry and by every fake-server-only integration script above.
+
+### Known limitations (carried forward, not resolved by this entry)
+`OverlaySettingsForm`'s "legacy presentation" labeling does not split
+the one mixed filtering/lifecycle-toggle section field-by-field (see
+the `feat(web): add chat overlay designer` entry). No real Twitch
+account, real YouTube account, real OBS installation, or manual browser
+session was used at any point in Stage 13A or 13B - every scenario
+above is either a real local process (MediaMTX, FFmpeg, the Go
+backend) or a local fake OAuth/Helix/EventSub server on loopback.
+
+### Push
+`git push origin main` next, then `git status`, `git rev-list
+--left-right --count origin/main...HEAD`, and `git rev-parse HEAD` /
+`git rev-parse origin/main` will be verified to confirm the remote and
+local HEAD match and the tree is clean.
+
+### Next step
+None - Stage 13 is complete. Stage 14 (built-in templates and template
+import/export) remains planned and was not started, per this task's own
+explicit instruction.
