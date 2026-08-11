@@ -599,7 +599,7 @@ async function connectAndEnableAccount(baseUrl, twitchState, wsState, suffix) {
 
 function validChatDesignDocument({ fill = '#112233' } = {}) {
   return {
-    version: 2,
+    version: 3,
     canvas: { width: 960, height: 280, transparent: true },
     layers: [
       {

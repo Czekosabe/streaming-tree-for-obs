@@ -155,7 +155,7 @@ async function stopBackend(handle, baseUrl) {
 
 function chatDocument(binding = 'username') {
   return {
-    version: 2,
+    version: 3,
     canvas: { width: 960, height: 280, transparent: true },
     layers: [
       {
@@ -174,7 +174,7 @@ function chatDocument(binding = 'username') {
   };
 }
 
-function alertDocument(binding = 'username', version = 2) {
+function alertDocument(binding = 'username', version = 3) {
   return {
     version,
     canvas: { width: 1920, height: 1080, transparent: true },
@@ -322,13 +322,13 @@ async function main() {
     const ruleDesignAfter = await request(baseUrl, 'GET', `/api/alert-rules/${ruleId}/visual-design`);
     expect(ruleDesignAfter.body.persisted === false, 'the rule still has no saved design after "Save as template"', ruleDesignAfter.body);
 
-    step('Import preview validates a v1-embedded-document file, migrates it to v2, and persists nothing');
+    step('Import preview validates a v1-embedded-document file, migrates it to the current version, and persists nothing');
     const v1File = templateFile({ target: 'chat', name: 'Legacy Import', visualDesign: chatDocument('username') });
     v1File.visualDesign.version = 1;
     const beforePreviewCount = (await request(baseUrl, 'GET', '/api/visual-templates')).body.length;
     const preview = await request(baseUrl, 'POST', '/api/visual-templates/import/preview', v1File);
     expect(preview.status === 200, 'import preview succeeds', preview.body);
-    expect(preview.body.document.version === 2, 'the embedded v1 document was migrated to v2 in the preview', preview.body.document);
+    expect(preview.body.document.version === 3, 'the embedded v1 document was migrated to v3 in the preview', preview.body.document);
     const afterPreviewCount = (await request(baseUrl, 'GET', '/api/visual-templates')).body.length;
     expect(afterPreviewCount === beforePreviewCount, 'import preview persisted nothing', { beforePreviewCount, afterPreviewCount });
 
@@ -336,7 +336,7 @@ async function main() {
     const imported = await request(baseUrl, 'POST', '/api/visual-templates/import', v1File);
     expect(imported.status === 201, 'import succeeds', imported.body);
     expect(typeof imported.body.id === 'string' && imported.body.id.startsWith('tpl_'), 'the imported template got a tpl_-prefixed id', imported.body.id);
-    expect(imported.body.document.version === 2, 'the persisted document is at the current version', imported.body.document);
+    expect(imported.body.document.version === 3, 'the persisted document is at the current version', imported.body.document);
     const importedId = imported.body.id;
 
     const fileWithId = { ...templateFile({ target: 'chat' }), id: 'tpl_attacker_chosen' };
@@ -410,7 +410,7 @@ async function main() {
     expect(!disposition.includes('/') && !disposition.includes('\\'), 'the filename has no path separators', disposition);
     expect(!('id' in exportResp.body) && !('createdAt' in exportResp.body) && !('updatedAt' in exportResp.body),
       'the exported file carries no local id or timestamps', exportResp.body);
-    expect(exportResp.body.visualDesign.version === 2, 'the export carries the current visual-design version', exportResp.body.visualDesign);
+    expect(exportResp.body.visualDesign.version === 3, 'the export carries the current visual-design version', exportResp.body.visualDesign);
 
     step('Delete the exported template, then re-import the exported bytes: a semantic round trip');
     const deleteExported = await request(baseUrl, 'DELETE', `/api/visual-templates/${importedId}`, undefined);

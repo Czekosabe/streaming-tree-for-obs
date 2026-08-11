@@ -17445,3 +17445,104 @@ the frontend; all 16 integration scripts. Only if every one of those
 is genuinely clean does this stage get marked Stage 14B: Completed /
 Stage 14: Completed, followed by a closing regression journal entry,
 `git push origin main`, and the final structured report.
+
+## 2026-08-12 03:05 — fix: closing regression, three stale integration-script literals
+
+### What
+The full closing regression for Stage 14B / Stage 14 as a whole:
+backend build (plain and `-tags integration`), `go vet`, `go test
+./...`, frontend `typecheck`/`lint`/`i18n:check`/`vitest run`, and all
+16 integration scripts run end to end. Backend and frontend were fully
+clean on the first pass. The integration-script run surfaced three
+genuine, pre-existing regressions - not new bugs in this stage's own
+code, but three scripts this stage's own `CurrentVersion` bump (2 → 3,
+`docs/visual-designs.md` §26) broke and nothing had re-run since:
+
+- **`scripts/verify-alert-designer.mjs`**: its `designDocument()`
+  fixture still hardcoded `version: 2`. A fresh-write document must be
+  at `CurrentVersion` (now 3) or `Validate` rejects it outright
+  (`docs/visual-designs.md` §1) - so the script's own "PUT saves a
+  design at revision 1" step failed with `visual_design_invalid`,
+  correctly, since the script itself was sending a document `Validate`
+  is right to reject. Fixed by bumping the fixture to `version: 3`.
+- **`scripts/verify-chat-overlay-designer.mjs`**: the identical bug in
+  its own `validChatDesignDocument()` fixture (`version: 2`), same
+  fix.
+- **`scripts/verify-visual-templates.mjs`**: three separate spots -
+  `chatDocument()`'s and `alertDocument()`'s own fresh-write defaults
+  (`version: 2`), and the step-11 import-preview migration assertion,
+  which asserted a stored v1 document's own embedded design migrates
+  to `version === 2` in preview. Since `MigrateToCurrentVersion` now
+  runs the `Version1 -> Version2 -> Version3` chain in full
+  (`docs/visual-designs.md` §11/§26), a v1 fixture now correctly
+  migrates all the way to 3, not 2 - the script's own assertion was
+  stale, not the migration. Fixed the two fresh-write defaults to 3 and
+  the three `=== 2` assertions (preview, persisted-import, export) to
+  `=== 3`, and reworded the step label/comment from "migrates it to
+  v2" to "migrates it to the current version" / "migrated to v3" so it
+  does not go stale again the same way at the next version bump.
+
+This is the same class of bug already caught and fixed earlier this
+stage in four Go tests with hardcoded `"version": 2` literals
+(`internal/httpapi/{visualdesign_test.go, chatoverlay_test.go,
+visualtemplate_test.go}`, `internal/domain/visualtemplate/
+service_test.go`) - these three Node integration scripts were simply
+missed at the time because they live outside `go test`'s own reach and
+are not part of the default build/test loop, only run explicitly. No
+scan was done at the time to check *every* hardcoded document-version
+literal repo-wide, Go and Node alike; this closing regression is what
+caught the gap, which is exactly the value of actually running the
+full 16-script suite rather than trusting that "the Go side was fixed"
+generalizes.
+
+### Files changed
+- `scripts/verify-alert-designer.mjs`, `scripts/verify-chat-overlay-
+  designer.mjs`, `scripts/verify-visual-templates.mjs` - stale
+  `version: 2` fixture/assertion literals updated to 3, one stale
+  step label/comment reworded.
+
+### Technical decisions
+- **Why the fix is "make the scripts match the correct current
+  behavior" and not "add a compatibility shim so old fixtures still
+  validate."** The backend's rejection was correct: a fresh write must
+  be at `CurrentVersion`, full stop, by design (§1) - loosening that to
+  accommodate a stale test fixture would be fixing the test by breaking
+  the product's own validation contract. The bug was entirely in the
+  three scripts, not in the backend.
+
+### Automated validation
+Full closing regression, all green:
+- Backend: `go build ./...` clean, `go build -tags integration ./...`
+  clean, `go vet ./...` clean, `go test ./...` - every package `ok`
+  (`internal/domain/visualasset`, `internal/domain/visualdesign`,
+  `internal/domain/visualpackage`, `internal/domain/visualtemplate`,
+  `internal/httpapi`, `internal/storage/sqlite`, and every other
+  package in the module).
+- Frontend: `npm run typecheck` clean, `npm run lint` clean, `npm run
+  i18n:check` clean (2 languages, 17 namespaces, no differences), `npx
+  vitest run` - 85 files / 1167 tests, all passed (the "Not
+  implemented: navigation" console lines are jsdom's own known
+  benign anchor-navigation warning, not a test failure - test/file
+  counts confirm a clean run).
+- All 16 integration scripts, run individually against a freshly
+  built `-tags integration` testserver each: `verify-alert-advanced-
+  queue`, `verify-alerts`, `verify-chat-automation`, `verify-chat-
+  overlay`, `verify-ffmpeg-branches`, `verify-mediamtx-runtime`,
+  `verify-operator-chat`, `verify-persistence`, `verify-twitch-
+  account-integration`, `verify-twitch-engagement`, `verify-twitch-
+  outbound-chat`, `verify-visual-template-packages`, `verify-
+  youtube-account-integration` passed on the first run; `verify-
+  alert-designer`, `verify-chat-overlay-designer`, `verify-visual-
+  templates` failed on the first run for the reason above, then
+  passed cleanly after the fix, re-run individually to confirm.
+
+### Known limitations
+None new - see the honestly-scoped limitations already named in
+`docs/visual-template-packages.md` §25 (no CSP; no sound/audio; no
+SVG/HTML/CSS/JS asset kind; no update system - Stage 20) and
+`docs/obs-browser-source.md` (no real OBS CEF manual verification of
+image/video/font rendering).
+
+### Next step
+Stage 14B and Stage 14 as a whole are now genuinely verified Completed
+- push to `origin/main` and produce the final structured report.

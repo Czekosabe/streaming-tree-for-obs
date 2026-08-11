@@ -601,14 +601,14 @@ function ruleBody(overrides) {
 // --- Stage 13A visual-design document builders -----------------------
 
 /** A minimal, valid document (CurrentVersion - bumped to 2 by Stage 13B,
- * docs/visual-designs.md's own version-decision section; a Stage 13A
- * v1 document's wire shape is unchanged, only the label moved) - one
- * text layer bound to alert_rendered_text, colored/named distinctly per
- * call so tests can tell two saved documents apart by their own
- * fill/name. */
+ * then to 3 by Stage 14B, docs/visual-designs.md's own version-decision
+ * sections; a Stage 13A v1 document's wire shape is unchanged, only the
+ * label moved) - one text layer bound to alert_rendered_text, colored/
+ * named distinctly per call so tests can tell two saved documents apart
+ * by their own fill/name. */
 function designDocument({ layerName = 'Alert text', fill = '#112233', staticSuffix = '' } = {}) {
   return {
-    version: 2,
+    version: 3,
     canvas: { width: 1920, height: 1080, transparent: true },
     layers: [
       {
