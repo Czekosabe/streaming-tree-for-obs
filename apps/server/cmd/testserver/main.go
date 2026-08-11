@@ -40,6 +40,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
@@ -295,6 +296,13 @@ func run() error {
 		return err
 	}
 
+	// Stage 14A: the reusable, portable visual-design template library -
+	// identical wiring to cmd/server, see its own comment.
+	visualTemplateService, err := visualtemplate.NewService(sqlite.NewVisualTemplateRepository(db.DB), visualtemplate.DefaultBuiltins(), nil)
+	if err != nil {
+		return err
+	}
+
 	branchManager := branch.NewManager(branch.Options{
 		Platforms:   platformService,
 		Outputs:     outputService,
@@ -337,6 +345,8 @@ func run() error {
 		OutboundChat:   outboundChatManager,
 		ChatAutomation: chatAutomationManager,
 		Alerts:         alertsManager,
+
+		VisualTemplates: visualTemplateService,
 	})
 
 	server := &http.Server{

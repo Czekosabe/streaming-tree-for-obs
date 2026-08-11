@@ -113,6 +113,11 @@ type Options struct {
 	// alert API (/api/public/alert-profiles/...). When nil, none of
 	// those routes are registered.
 	Alerts AlertsService
+	// VisualTemplates serves the Stage 14A reusable visual-template
+	// library (/api/visual-templates/...) - a management/editor
+	// surface only, never exposed on any public API. When nil, none of
+	// those routes are registered.
+	VisualTemplates VisualTemplateService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -181,6 +186,10 @@ func NewRouter(opts Options) http.Handler {
 	if opts.Alerts != nil {
 		registerAlertRoutes(mux, logger, opts.Alerts)
 		registerVisualDesignRoutes(mux, logger, opts.Alerts)
+	}
+
+	if opts.VisualTemplates != nil {
+		registerVisualTemplateRoutes(mux, logger, opts.VisualTemplates, opts.Alerts, opts.ChatOverlayProfiles)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

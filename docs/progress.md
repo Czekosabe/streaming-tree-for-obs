@@ -15410,3 +15410,127 @@ Implement the backend: `internal/domain/visualtemplate` (domain package),
 migration `0017_visual_templates.sql`, the SQLite repository, and the
 `/api/visual-templates/...` HTTP API - built directly against this
 contract.
+
+## 2026-08-11 19:40 — feat(server): add visual template library
+
+### What
+The full Stage 14A backend, built directly against `docs/visual-templates.md`:
+the domain package, migration, SQLite persistence, built-in registry,
+compatibility engine, and the complete `/api/visual-templates/...` HTTP API
+(management CRUD plus asset-free JSON import/preview/import/export) -
+combining what the task's own suggested commit split named separately as
+"add visual template library" and "import and export visual templates,"
+since both were designed and implemented as one coherent HTTP file
+(`internal/httpapi/visualtemplate.go`) sharing the same wire DTOs, and
+splitting them would have meant staging partial functions out of one file.
+
+### Files changed
+- `apps/server/internal/storage/sqlite/migrations/0017_visual_templates.sql`
+  (new) - the `visual_templates` table, per the contract's own §7.
+- `internal/domain/visualdesign/json.go` (new) - `MarshalDocumentJSON`/
+  `UnmarshalDocumentJSON`, a new shared, exported wire mirror for a
+  `Document`'s JSON shape - purely additive; `visualdesign_repository.go`'s
+  own long-standing private mirror is untouched, so this carries zero
+  regression risk to Stage 13A/13B.
+- `internal/domain/visualtemplate/` (new package): `template.go`
+  (`Template`/`Target`/`Source`, `NewTemplateID`), `errors.go` (domain
+  sentinels), `validation.go` (`Validate`, `NormalizeAndValidateDocument` -
+  the one shared migrate-then-validate entry point, contract §6),
+  `compatibility.go` (`AssessCompatibility`, the five blocker codes,
+  contract §9), `builtin.go` (`DefaultBuiltins` - 3 alert + 3 chat,
+  `ValidateBuiltins`), `repository.go` (the `Repository` interface),
+  `service.go` (the validated façade: `List`/`Get`/`Create`/
+  `UpdateMetadata`/`Delete`/`ImportPreview`/`Import`/`Export`, plus
+  `MaxImportBytes`). Imports only `visualdesign` and the standard library.
+- `internal/storage/sqlite/visualtemplate_repository.go` (new) - the SQLite
+  `Repository`, reusing the new `visualdesign.MarshalDocumentJSON`/
+  `UnmarshalDocumentJSON`, migrating a stored version-1 document on read
+  exactly like `visual_designs` already does.
+- `internal/httpapi/visualtemplate.go` (new) - `VisualTemplateService`
+  interface, `registerVisualTemplateRoutes`, the management DTO and the
+  separate portable-file DTO (contract §3), `resolveOwnerCheck`/
+  `compatibilityDTOFor` (the owner-instance compatibility bridge into
+  `internal/domain/alerts`/`internal/domain/chatoverlay` on the template
+  domain's own behalf, contract §9), `safeTemplateExportFilename`, and
+  `writeVisualTemplateError` (the full stable-error-code mapping, contract
+  §18).
+- `internal/httpapi/router.go` - new `Options.VisualTemplates` field and its
+  registration, reusing `opts.Alerts`/`opts.ChatOverlayProfiles` for
+  compatibility resolution.
+- `cmd/server/main.go`/`cmd/testserver/main.go` - construct
+  `visualtemplate.NewService` once (validating built-ins at startup,
+  failing loudly on error) and wire it into `Options.VisualTemplates`.
+- New test files: `internal/domain/visualtemplate/{builtin,compatibility,
+  service,validation}_test.go`, `internal/storage/sqlite/
+  visualtemplate_repository_test.go`, `internal/httpapi/
+  visualtemplate_test.go` - 65 new test functions total.
+
+### Technical decisions
+- **Why the compatibility engine never imports `internal/domain/alerts` or
+  `internal/domain/chatoverlay`** (contract §9): `OwnerBindingCheck` is a
+  narrow function value supplied by `internal/httpapi`, which already has
+  authenticated access to both. This keeps `internal/domain/visualtemplate`
+  as independent of both owning domains as `internal/domain/visualdesign`
+  itself already is - a real architectural constraint, not just a style
+  preference, verified by `go build`'s own import graph never round-
+  tripping.
+  A narrower, target-generic check (rejecting `alert_rendered_text` for a
+  chat-target template) *does* live inside `validation.go` directly, since
+  it only needs a `visualdesign` constant already visible to the package,
+  not an owning domain's own capability table.
+- **A real bug found and fixed while writing the HTTP tests**:
+  `ImportPreview` originally force-overwrote `candidate.TemplateSchemaVersion
+  = CurrentTemplateSchemaVersion` *before* calling `Validate`, which meant
+  an import carrying an unsupported future template `schemaVersion` (e.g.
+  99) was silently accepted instead of rejected -
+  `TestImportRejectsUnsupportedTemplateVersion` caught it immediately.
+  Fixed by validating the caller-supplied version as-is; a value that
+  survives `Validate` is `CurrentTemplateSchemaVersion` by definition, so
+  no overwrite is needed or correct.
+- **A `net/http.ServeMux` route-registration conflict, found and worked
+  around**: `GET /api/visual-templates/{id}` (wildcard) and a bare (any-
+  method) fallback registered at the literal sibling path
+  `/api/visual-templates/import` are genuinely ambiguous to Go's router (a
+  GET to `.../import` could match either), and `ServeMux.HandleFunc` panics
+  at registration time rather than silently picking one. Fixed by never
+  registering a bare any-method fallback for the two `/import`-family
+  literal paths - only their real `POST` handlers are registered; a
+  non-POST request to either path now falls through to the `{id}` wildcard
+  (treating "import" as a template id) and then to a 404, a harmless
+  cosmetic imprecision (still a client error, no data ever at risk) traded
+  for a route table that Go can actually build.
+- **Why `Import`/`Create` never trust a client-supplied id or timestamp**
+  (contract §7/§10): the request DTOs (`createVisualTemplateRequest`,
+  `visualTemplateFileDTO`) simply have no such field, and the strict
+  `DisallowUnknownFields` decoder rejects a client that tries to add one
+  anyway (proven directly by `TestImportCannotChooseLocalID`).
+
+### Automated validation
+`gofmt -l .` (clean), `go vet ./...` (clean), `go build ./...` (clean),
+`go build -tags integration ./cmd/testserver/...` (clean), `go test ./...`
+(every package passes, zero regressions to any Stage 1-13 package). 65 new
+test functions across the three new/touched test files, all passing,
+covering: template-format validation (target/metadata bounds/schema
+version/alert_rendered_text-for-chat rejection), the version-1-to-2
+migration and version-0/future rejection, the built-in registry (>=3 alert,
+>=3 chat, duplicate-id rejection, tpl_-namespace-collision rejection,
+invalid-document rejection), the compatibility engine (target mismatch,
+owner-check pass/fail with the correct blocker code, unsupported document
+version), SQLite persistence (create/get/list/update-metadata/delete,
+idempotent delete, stored-version-1 migration on read), and the full HTTP
+surface (CRUD, built-in immutability, import preview never persisting,
+import generating a new id and rejecting an unknown field/unsupported
+template version/unsupported design version/a client-supplied id, export
+headers/filename-safety/no-local-identifiers, a real export-delete-reimport
+round trip, and compatibility scoped to a real alert rule and a real chat
+overlay).
+
+### Known limitations
+Frontend, the 15th integration script, and the final documentation pass are
+still pending - this commit is backend-only, matching the task's own
+suggested commit split (frontend is its own later commit).
+
+### Next step
+The frontend: template schemas, API client/hooks, a shared template gallery
+reused by both Designers, import/export UI, "Save as template," and EN/PL
+localization.

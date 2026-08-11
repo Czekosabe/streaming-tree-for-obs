@@ -28,6 +28,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
@@ -347,6 +348,17 @@ func run() error {
 		return err
 	}
 
+	// Stage 14A: the reusable, portable visual-design template library -
+	// an independent management surface from visual_designs above; a
+	// template is never linked to any specific alert rule or chat
+	// overlay (see docs/visual-templates.md). Built-ins are validated
+	// once here so a malformed one fails startup loudly rather than
+	// reaching an operator.
+	visualTemplateService, err := visualtemplate.NewService(sqlite.NewVisualTemplateRepository(db.DB), visualtemplate.DefaultBuiltins(), nil)
+	if err != nil {
+		return err
+	}
+
 	// Every branch begins with desiredRunning false: a backend restart never
 	// resumes a broadcast on its own, so nothing is started here.
 	branchManager := branch.NewManager(branch.Options{
@@ -399,6 +411,8 @@ func run() error {
 		OutboundChat:   outboundChatManager,
 		ChatAutomation: chatAutomationManager,
 		Alerts:         alertsManager,
+
+		VisualTemplates: visualTemplateService,
 	})
 
 	server := &http.Server{
