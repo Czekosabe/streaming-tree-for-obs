@@ -573,3 +573,172 @@ func TestChatOverlayCompatibility(t *testing.T) {
 		}
 	}
 }
+
+// --- corrective pass: exact HTTP method semantics on the two literal
+// "import"/"import/preview" routes (they must never fall through to
+// the {id} wildcard and return a bare 404) ------------------------------
+
+func TestImportRouteAcceptsPost(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodPost, "/api/visual-templates/import", templateFileBody())
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %+v", resp.StatusCode, decodeTemplateBody(t, resp))
+	}
+}
+
+func TestImportPreviewRouteAcceptsPost(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodPost, "/api/visual-templates/import/preview", templateFileBody())
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %+v", resp.StatusCode, decodeTemplateBody(t, resp))
+	}
+}
+
+func TestImportRouteRejectsWrongMethodsWith405AndAllowHeader(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			resp := ts.do(t, method, "/api/visual-templates/import", nil)
+			if resp.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405", resp.StatusCode)
+			}
+			if allow := resp.Header.Get("Allow"); allow != http.MethodPost {
+				t.Errorf("Allow = %q, want %q", allow, http.MethodPost)
+			}
+		})
+	}
+}
+
+func TestImportPreviewRouteRejectsWrongMethodsWith405AndAllowHeader(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			resp := ts.do(t, method, "/api/visual-templates/import/preview", nil)
+			if resp.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405", resp.StatusCode)
+			}
+			if allow := resp.Header.Get("Allow"); allow != http.MethodPost {
+				t.Errorf("Allow = %q, want %q", allow, http.MethodPost)
+			}
+		})
+	}
+}
+
+func TestImportRouteWrongMethodUsesTheStableMethodNotAllowedBody(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodGet, "/api/visual-templates/import", nil)
+	body := decodeTemplateBody(t, resp)
+	if body["error"] != "method_not_allowed" {
+		t.Errorf("error = %v, want method_not_allowed (the same shared helper every other route uses)", body["error"])
+	}
+	if _, hasMessage := body["message"]; !hasMessage {
+		t.Error("expected a message field in the stable error envelope")
+	}
+}
+
+func TestImportRouteWrongMethodNeverParsesBodyOrCreatesATemplate(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	before := decodeTemplateList(t, ts.do(t, http.MethodGet, "/api/visual-templates", nil))
+
+	// A deliberately malformed body: if the handler ever decoded it, a
+	// 400 (malformed JSON) would leak through instead of a clean 405.
+	req := httptest.NewRequest(http.MethodGet, "/api/visual-templates/import", bytes.NewBufferString("{not valid json"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ts.handler.ServeHTTP(rec, req)
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405 even with a malformed body (the body must never be parsed)", resp.StatusCode)
+	}
+
+	after := decodeTemplateList(t, ts.do(t, http.MethodGet, "/api/visual-templates", nil))
+	if len(after) != len(before) {
+		t.Errorf("template count changed from %d to %d after a rejected wrong-method request", len(before), len(after))
+	}
+}
+
+func TestImportPreviewRouteWrongMethodNeverPersistsOrPreviews(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	before := decodeTemplateList(t, ts.do(t, http.MethodGet, "/api/visual-templates", nil))
+
+	resp := ts.do(t, http.MethodDelete, "/api/visual-templates/import/preview", templateFileBody())
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
+	}
+
+	after := decodeTemplateList(t, ts.do(t, http.MethodGet, "/api/visual-templates", nil))
+	if len(after) != len(before) {
+		t.Errorf("template count changed from %d to %d after a rejected wrong-method preview request", len(before), len(after))
+	}
+}
+
+func TestImportRouteWrongMethodExposesNoInternalRoutingError(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodPut, "/api/visual-templates/import", nil)
+	body := decodeTemplateBody(t, resp)
+	text, _ := json.Marshal(body)
+	for _, forbidden := range []string{"panic", "goroutine", "ServeMux", "runtime error", "internal_error"} {
+		if bytes.Contains(text, []byte(forbidden)) {
+			t.Errorf("response body leaked an internal routing detail (%q): %s", forbidden, text)
+		}
+	}
+}
+
+// The literal path segment "import" must never be treated as a
+// template id by the {id} wildcard route - i.e. a wrong method on the
+// known /import path must be 405, never a 404 "template not found".
+func TestImportPathSegmentIsNeverTreatedAsATemplateID(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodGet, "/api/visual-templates/import", nil)
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("GET /api/visual-templates/import must never 404 as if \"import\" were a template id")
+	}
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// Unknown resources must still 404, never overcorrected into 405 - the
+// distinction is "known route + wrong method = 405" vs "unknown
+// resource/path = 404".
+func TestUnknownVisualTemplateResourceStays404(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	resp := ts.do(t, http.MethodGet, "/api/visual-templates/does-not-exist", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a genuinely unknown template id", resp.StatusCode)
+	}
+	body := decodeTemplateBody(t, resp)
+	if body["error"] != "visual_template_not_found" {
+		t.Errorf("error = %v, want visual_template_not_found", body["error"])
+	}
+}
+
+// The wildcard routes must still work normally for a real template
+// after the routing fix.
+func TestWildcardTemplateRoutesStillWorkAfterTheRoutingFix(t *testing.T) {
+	ts := newTemplateTestServer(t)
+	created := decodeTemplateBody(t, ts.do(t, http.MethodPost, "/api/visual-templates", map[string]any{
+		"target": "chat", "name": "Still Works", "description": "", "author": "", "license": "",
+		"document": minimalChatDocumentDTO(),
+	}))
+	id := created["id"].(string)
+
+	getResp := ts.do(t, http.MethodGet, "/api/visual-templates/"+id, nil)
+	if getResp.StatusCode != http.StatusOK {
+		t.Errorf("GET /{id} status = %d, want 200", getResp.StatusCode)
+	}
+	putResp := ts.do(t, http.MethodPut, "/api/visual-templates/"+id, map[string]any{
+		"name": "Renamed", "description": "", "author": "", "license": "",
+	})
+	if putResp.StatusCode != http.StatusOK {
+		t.Errorf("PUT /{id} status = %d, want 200", putResp.StatusCode)
+	}
+	exportResp := ts.do(t, http.MethodGet, "/api/visual-templates/"+id+"/export", nil)
+	if exportResp.StatusCode != http.StatusOK {
+		t.Errorf("GET /{id}/export status = %d, want 200", exportResp.StatusCode)
+	}
+	deleteResp := ts.do(t, http.MethodDelete, "/api/visual-templates/"+id, nil)
+	if deleteResp.StatusCode != http.StatusNoContent {
+		t.Errorf("DELETE /{id} status = %d, want 204", deleteResp.StatusCode)
+	}
+}

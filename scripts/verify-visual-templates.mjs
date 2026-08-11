@@ -371,6 +371,36 @@ async function main() {
     const rejectedOversized = await request(baseUrl, 'POST', '/api/visual-templates/import', oversizedFile);
     expect(rejectedOversized.status === 413, 'an oversized import body is rejected', rejectedOversized.status);
 
+    step('Corrective pass: GET/PUT on /api/visual-templates/import returns 405 with Allow: POST, never a bare 404 treating "import" as a template id');
+    const countBeforeWrongMethod = (await request(baseUrl, 'GET', '/api/visual-templates')).body.length;
+    const getImport = await request(baseUrl, 'GET', '/api/visual-templates/import');
+    expect(getImport.status === 405, 'GET /api/visual-templates/import is 405, not 404', getImport.status);
+    expect(getImport.headers.get('allow') === 'POST', 'GET /api/visual-templates/import carries Allow: POST', getImport.headers.get('allow'));
+    expect(getImport.body?.error === 'method_not_allowed', 'the response uses the shared method_not_allowed error code', getImport.body);
+    const putImport = await request(baseUrl, 'PUT', '/api/visual-templates/import', { name: 'irrelevant' });
+    expect(putImport.status === 405, 'PUT /api/visual-templates/import is 405', putImport.status);
+    expect(putImport.headers.get('allow') === 'POST', 'PUT /api/visual-templates/import carries Allow: POST', putImport.headers.get('allow'));
+
+    step('Corrective pass: GET/DELETE on /api/visual-templates/import/preview returns 405 with Allow: POST');
+    const getPreview = await request(baseUrl, 'GET', '/api/visual-templates/import/preview');
+    expect(getPreview.status === 405, 'GET /api/visual-templates/import/preview is 405', getPreview.status);
+    expect(getPreview.headers.get('allow') === 'POST', 'GET /api/visual-templates/import/preview carries Allow: POST', getPreview.headers.get('allow'));
+    const deletePreview = await request(baseUrl, 'DELETE', '/api/visual-templates/import/preview');
+    expect(deletePreview.status === 405, 'DELETE /api/visual-templates/import/preview is 405', deletePreview.status);
+    expect(deletePreview.headers.get('allow') === 'POST', 'DELETE /api/visual-templates/import/preview carries Allow: POST', deletePreview.headers.get('allow'));
+    const countAfterWrongMethod = (await request(baseUrl, 'GET', '/api/visual-templates')).body.length;
+    expect(countAfterWrongMethod === countBeforeWrongMethod, 'no template was created/imported by any of the rejected wrong-method calls', { countBeforeWrongMethod, countAfterWrongMethod });
+
+    step('Corrective pass: an unknown template resource still 404s normally (never overcorrected into 405)');
+    const unknownResource = await request(baseUrl, 'GET', '/api/visual-templates/does-not-exist');
+    expect(unknownResource.status === 404, 'a genuinely unknown template id still 404s', unknownResource.status);
+
+    step('Corrective pass: the real POST import/preview endpoints still work after the routing fix');
+    const stillWorksPreview = await request(baseUrl, 'POST', '/api/visual-templates/import/preview', templateFile({ target: 'chat', name: 'Still Works Preview' }));
+    expect(stillWorksPreview.status === 200, 'POST import/preview still works after the routing fix', stillWorksPreview.body);
+    const stillWorksImport = await request(baseUrl, 'POST', '/api/visual-templates/import', templateFile({ target: 'chat', name: 'Still Works Import' }));
+    expect(stillWorksImport.status === 201, 'POST import still works after the routing fix', stillWorksImport.body);
+
     step('Export returns a safe Content-Disposition and no local database identifiers');
     const exportResp = await request(baseUrl, 'GET', `/api/visual-templates/${importedId}/export`);
     expect(exportResp.status === 200, 'export succeeds', exportResp.body);

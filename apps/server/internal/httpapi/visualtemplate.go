@@ -50,16 +50,32 @@ func registerVisualTemplateRoutes(mux *http.ServeMux, logger *slog.Logger, svc V
 	mux.HandleFunc("POST /api/visual-templates", handleCreateVisualTemplate(logger, svc))
 	mux.HandleFunc("/api/visual-templates", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
 
-	// Deliberately no bare (any-method) fallback registration for these
-	// two literal paths: a bare pattern here would be genuinely
-	// ambiguous against "GET /api/visual-templates/{id}" (id could be
-	// literally "import") and net/http's ServeMux rejects that
-	// combination at registration time. A non-POST request to either
-	// path instead falls through to the {id} wildcard (treating
-	// "import"/"import" as a template id, itself falling through to a
-	// 404) - still a client error, never a security concern.
+	// A bare (any-method) fallback registration for these two literal
+	// paths would be genuinely ambiguous against "GET
+	// /api/visual-templates/{id}" (id could be literally "import") and
+	// net/http's ServeMux rejects that exact combination at
+	// registration time - "matches fewer methods... but has a more
+	// general path pattern". The fix is not to give up 405 semantics
+	// here, but to register one explicit, method-specific pattern per
+	// method this route must reject: a literal method+path pattern is
+	// always strictly more specific than a same-method wildcard
+	// pattern, so "GET /api/visual-templates/import" cleanly outranks
+	// "GET /api/visual-templates/{id}" with no conflict, for every
+	// method in turn. This keeps the exact same URLs, the exact same
+	// shared methodNotAllowed helper/JSON body/Allow header every other
+	// route already uses, and never treats the literal path segment
+	// "import" as a template id.
+	importPreviewNotAllowed := methodNotAllowed(logger, http.MethodPost)
 	mux.HandleFunc("POST /api/visual-templates/import/preview", handleImportVisualTemplatePreview(logger, svc, alerts, chatOverlays))
+	for _, m := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+		mux.HandleFunc(m+" /api/visual-templates/import/preview", importPreviewNotAllowed)
+	}
+
+	importNotAllowed := methodNotAllowed(logger, http.MethodPost)
 	mux.HandleFunc("POST /api/visual-templates/import", handleImportVisualTemplate(logger, svc))
+	for _, m := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+		mux.HandleFunc(m+" /api/visual-templates/import", importNotAllowed)
+	}
 
 	mux.HandleFunc("GET /api/visual-templates/{id}", handleGetVisualTemplate(logger, svc))
 	mux.HandleFunc("PUT /api/visual-templates/{id}", handleUpdateVisualTemplateMetadata(logger, svc))

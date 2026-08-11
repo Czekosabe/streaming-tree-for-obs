@@ -16003,3 +16003,141 @@ None for Stage 14A - it is complete. Stage 14B (portable archive
 template packages, managed template assets) remains planned and was
 not started, per this task's own explicit instruction. Stage 15 and
 later remain untouched.
+
+## 2026-08-11 19:40 — fix(server): restore visual template method semantics
+
+### Status
+**Stage 14A: Completed (corrective pass applied). Stage 14B: Planned,
+not started. Stage 14 (as a whole): not yet complete.**
+
+### Stage 14A commit-count audit (re-verified against Git, not chat prose)
+A prior chat-only final report claimed "6 commits with individual
+progress entries" for Stage 14A. Re-audited directly:
+`git log --oneline d1eaec9..5aa9d63` and `git rev-list --count
+d1eaec9..5aa9d63` both agree on **exactly 8 commits**:
+
+| # | Hash | Subject |
+| - | ---- | ------- |
+| 1 | `2a250a9` | `fix(docs): correct current visual design contract` |
+| 2 | `44a724f` | `docs: define final packaging target` |
+| 3 | `18e284d` | `docs: define safe visual template format` |
+| 4 | `be6477e` | `feat(server): add visual template library` |
+| 5 | `070b578` | `feat(web): add visual template gallery` |
+| 6 | `54efeb0` | `test: verify visual templates locally` |
+| 7 | `488e33a` | `docs: document Stage 14A template library` |
+| 8 | `5aa9d63` | `docs: record Stage 14A closing regression` |
+
+Every one of these 8 commits has exactly one matching entry in this
+file (checked by grepping each subject against the journal's own `##`
+headings) - the "one progress entry per logical commit" invariant
+holds, and no commit exists outside the journal. **"6 commits" was an
+error in the prior chat-only report, never written into this
+repository** - `docs/progress.md` itself already correctly implied 8
+separate entries; no tracked document required correction for this,
+consistent with this project's own standing rule (see the Stage 13B
+git-history audit, `fix(docs): correct current visual design contract`,
+2a250a9, for the identical precedent). This entry is the complete
+record of the re-audit.
+
+### The real defect: 404 instead of 405 on wrong-method import calls
+`internal/httpapi/visualtemplate.go`'s own route registration
+(`be6477e`) deliberately omitted a method-not-allowed fallback for
+`/api/visual-templates/import` and `/api/visual-templates/import/preview`,
+with a comment explaining why: a bare (any-method) fallback pattern at
+either literal path is genuinely ambiguous against `GET
+/api/visual-templates/{id}` (`id` could be the literal string
+`"import"`), and `net/http.ServeMux` refuses to register that
+combination at all - a real Go 1.22 routing constraint, not a coding
+mistake. The chosen workaround at the time let a wrong-method request
+(e.g. `GET /api/visual-templates/import`) fall through to the `{id}`
+wildcard, treating `"import"` as a template id and answering `404
+visual_template_not_found` instead of the correct `405 Method Not
+Allowed`. The Stage 14A task's own completion requirements state
+"method handling for every endpoint" and "405 for a known route with
+the wrong method" - a *known* route silently degrading to a *not-found*
+response for the wrong method is exactly the deviation that
+requirement exists to catch, so it is corrected now rather than carried
+into Stage 14B.
+
+### The fix
+No URL changed. `registerVisualTemplateRoutes` now registers one
+explicit, method-specific `mux.HandleFunc` pattern per method the two
+literal routes must reject (`GET`, `PUT`, `DELETE`, `PATCH`), each
+pointing at the exact same shared `methodNotAllowed(logger,
+http.MethodPost)` helper every other endpoint in this codebase already
+uses - the identical JSON error envelope (`method_not_allowed`) and
+`Allow` header, never a route-specific shape. This works because a
+*literal, method-specific* pattern (`GET /api/visual-templates/import`)
+is always strictly more specific than a *same-method* wildcard pattern
+(`GET /api/visual-templates/{id}`) along the one dimension that
+differs, so `net/http.ServeMux` can resolve the ordering unambiguously
+- unlike the rejected *bare, any-method* pattern this replaces. `HEAD`
+needed no explicit registration: `net/http.ServeMux` already routes an
+unmatched `HEAD` request through the `GET` handler for the same
+pattern when no explicit `HEAD` handler exists, so registering `GET`
+alone was sufficient to also correctly 405 a stray `HEAD` request -
+verified directly by a dedicated subtest (`TestImportRouteRejects
+WrongMethodsWith405AndAllowHeader/HEAD`) rather than assumed. No
+external router dependency was added; the fix is entirely additive
+`mux.HandleFunc` calls inside the existing file.
+
+### Files changed
+- `apps/server/internal/httpapi/visualtemplate.go` - route registration
+  rewritten as described above; the old code comment explaining the
+  "404 is harmless" compromise replaced with one explaining the actual
+  fix and why it resolves the same underlying ServeMux ambiguity
+  without a bare fallback.
+- `apps/server/internal/httpapi/visualtemplate_test.go` - 11 new test
+  functions: `TestImportRouteAcceptsPost`/`TestImportPreviewRouteAccepts
+  Post` (control - the real endpoints still work),
+  `TestImportRouteRejectsWrongMethodsWith405AndAllowHeader`/
+  `TestImportPreviewRouteRejectsWrongMethodsWith405AndAllowHeader`
+  (table-driven over GET/PUT/DELETE/PATCH/HEAD, asserting both the
+  status and the exact `Allow: POST` header),
+  `TestImportRouteWrongMethodUsesTheStableMethodNotAllowedBody` (proves
+  the shared helper's own envelope, not a bespoke one),
+  `TestImportRouteWrongMethodNeverParsesBodyOrCreatesATemplate` (sends a
+  deliberately malformed body with a wrong method - a 400 leaking
+  through would prove the body was parsed; asserts the template count is
+  unchanged), `TestImportPreviewRouteWrongMethodNeverPersistsOrPreviews`
+  (same guarantee for the preview route),
+  `TestImportRouteWrongMethodExposesNoInternalRoutingError` (scans the
+  response body for routing-internal strings),
+  `TestImportPathSegmentIsNeverTreatedAsATemplateID` (the specific
+  regression this pass fixes: asserts the response is never 404),
+  `TestUnknownVisualTemplateResourceStays404` (the explicit "known
+  route + wrong method = 405, unknown resource = 404" distinction, so
+  this fix can never overcorrect into 405-for-everything), and
+  `TestWildcardTemplateRoutesStillWorkAfterTheRoutingFix` (GET/PUT/
+  DELETE `/{id}` and GET `/{id}/export` against a real template, end to
+  end).
+- `scripts/verify-visual-templates.mjs` - 4 new steps (17-20) covering
+  the same guarantees against the real integration backend: GET/PUT on
+  `/import` and GET/DELETE on `/import/preview` all 405 with `Allow:
+  POST`; the template count is asserted unchanged across all four wrong-
+  method calls in one before/after comparison; a genuinely unknown
+  resource still 404s; both real POST endpoints still work immediately
+  afterward. No existing assertion was weakened; the script remains
+  provider-free.
+- `docs/visual-templates.md` §19 - a new, concise "Method contract"
+  paragraph stating the two import routes are POST-only, wrong methods
+  get 405 + `Allow: POST` via the shared envelope, and unknown resources
+  stay 404 - no architecture rewritten.
+
+### Automated validation
+`gofmt -l .` (clean), `go vet ./...` (clean), `go test
+./internal/httpapi/...` (pass, 354 tests across httpapi + the new
+cases), `go test ./internal/domain/visualtemplate/...` (pass), `go
+build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean). `node scripts/verify-visual-templates.mjs`
+run twice consecutively, both clean (27 steps).
+
+### Known limitations
+None new. Stage 14B (portable archive template packages, managed
+assets) remains untouched by this corrective pass, exactly as
+instructed.
+
+### Next step
+The full, unmodified product regression (frontend, backend, all fifteen
+integration scripts) immediately before push, then a dedicated closing-
+regression journal entry proving it.

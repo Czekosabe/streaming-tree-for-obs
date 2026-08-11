@@ -456,6 +456,23 @@ GET    /api/visual-templates/{id}/export         download the portable JSON file
 the server always generates both. `PUT` and `DELETE` against a built-in id
 return 409 `visual_template_immutable`.
 
+**Method contract.** `/api/visual-templates/import` and
+`/api/visual-templates/import/preview` are **POST-only**; any other method
+(`GET`, `PUT`, `DELETE`, `PATCH`, `HEAD`) returns `405 Method Not Allowed`
+with `Allow: POST`, using the exact same stable `method_not_allowed` JSON
+envelope every other endpoint in this project already uses - never a
+route-specific error shape. The wrong-method body is never parsed and no
+template is ever created or previewed as a side effect. A genuinely
+unknown resource (e.g. `GET /api/visual-templates/does-not-exist`) still
+404s as `visual_template_not_found`; the literal path segment `import` is
+never mistaken for a template id. (A `net/http.ServeMux` route-registration
+detail: the two literal `import`/`import/preview` paths are registered
+with one explicit handler per rejected method rather than a single bare
+fallback, since a bare fallback there is genuinely ambiguous against the
+`{id}` wildcard and Go refuses to register it - see
+`internal/httpapi/visualtemplate.go`'s own comment for the full
+reasoning.)
+
 ## 20. Implementation map
 
 - `internal/domain/visualtemplate` - the provider-independent domain:
