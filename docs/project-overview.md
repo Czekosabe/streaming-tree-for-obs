@@ -1102,8 +1102,8 @@ it is architected; this table only tracks status and dependencies.
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — stage 12 as a whole is now complete |
 | 13A | Shared, provider-independent visual-design document, persistence/HTTP API, immutable per-alert snapshotting, shared React renderer, and the Alert Overlay Designer editor (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for one repeated chat item card, with Stage 10's own filtering/lifecycle staying authoritative | **Completed** — stage 13 as a whole is now complete |
-| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner-instance compatibility, and asset-free JSON import/export, built on stage 13's document format (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** — stage 14 as a whole is **not** complete until 14B lands |
-| 14B | Portable archive template packages, managed template assets, and any safe custom-media/font primitives those packages need | Planned, not started |
+| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner-instance compatibility, and asset-free JSON import/export, built on stage 13's document format (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
+| 14B | Portable archive template packages, managed template assets, and safe custom image/video/font primitives (see [visual-template-packages.md](visual-template-packages.md)) | **Completed** — stage 14 as a whole is now complete |
 | 15 | YouTube and Kick engagement connectors | Planned |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
@@ -1198,9 +1198,19 @@ Key dependencies:
   and there is no foreign key or live reference from a saved
   `visual_designs` row back to whatever template it may once have come
   from - deleting a template can never change an already-created
-  design. Stage 14B (portable archive packages, bundled assets) remains
-  planned; stage 14A deliberately implements no archive format, no
-  asset storage, and no new visual-design primitive.
+  design. Stage 14B (portable archive packages, managed assets, image/
+  video/font primitives) is now complete too - the visual-design
+  document moved from version 2 to version 3 to add the two new shared
+  layer kinds (`image`/`video`) and an optional custom-font reference,
+  again a lossless relabel-only migration chained after Version1→
+  Version2; a fourth, independently versioned schema (the package
+  manifest, `streaming-tree-template-package`) wraps schema B's own
+  template file inside a ZIP archive alongside a bounded set of
+  content-addressed, independently-signature-validated assets - see
+  [`docs/visual-template-packages.md`](visual-template-packages.md) for
+  the full contract and [`docs/progress.md`](progress.md)'s own Stage
+  14B entries for what was actually built/tested. Stage 14 as a whole
+  is now complete.
 - Stage 20's own future one-launch Windows packaging target is now
   documented (§12.1) ahead of implementation, specifically so stage
   14A's own asset-free, single-JSON-file design (no archive, no bundled

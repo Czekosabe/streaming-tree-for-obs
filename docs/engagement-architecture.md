@@ -1091,6 +1091,42 @@ bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 > [progress.md](progress.md)'s Stage 14A entries and
 > [visual-templates.md](visual-templates.md) for the full contract.
 
+> **Factual status update (stage 14B, completed): stage 14 as a whole
+> is now complete.** The portable **archive** package §13.2/§13.3
+> originally described, and the previous status update above named as
+> "entirely unimplemented," is now real: a ZIP-only
+> `.streaming-tree-template` container (`manifest.json`/`template.json`/
+> `assets/...`, nothing else at the archive root) validated by a
+> "never blind extraction" pipeline (bounds/path-grammar/mode checks on
+> every entry before any byte is trusted, streamed asset validation via
+> independent magic-byte signature detection, never a filesystem join
+> of an untrusted archive path). This introduced a **fourth**
+> independently versioned schema alongside the two 14A already
+> established - a package manifest (`streaming-tree-template-package`,
+> its own `schemaVersion` starting at 1) - and pushed the shared
+> visual-design document from version 2 to version 3 to add two new
+> layer kinds (`image`/`video`, an opaque managed-asset reference only,
+> never a URL) and an optional managed-WOFF2 custom-font reference on
+> every text-capable layer - both migrations lossless/relabel-only,
+> chained the same way Version1→Version2 already was, so every Stage
+> 13/14A design keeps rendering identically. A new sibling domain,
+> `internal/domain/visualasset`, owns content-addressed, SHA-256-
+> deduplicated, immutable blob storage separate from per-logical-asset
+> metadata, served publicly only through an unguessable per-blob token
+> (`/api/public/visual-assets/{token}`, HTTP Range supported) - a local
+> asset id, blob hash, or filesystem path is never exposed on that
+> route. Package import keeps the exact same two-step preview-then-
+> confirm discipline 14A's own JSON import established: a preview
+> stages verified bytes under a random, TTL-bounded token and persists
+> nothing; the actual import re-validates the original bytes from
+> scratch rather than trusting the preview. Sound/audio playback was a
+> deliberate, explicit non-goal (Stage 17 owns the application's one
+> audio subsystem) - a package video asset is always rendered muted,
+> with no controls, regardless of what its own container holds. See
+> [progress.md](progress.md)'s Stage 14B entries and
+> [visual-template-packages.md](visual-template-packages.md) for the
+> full contract, the exact bounds, and the stable error-code list.
+
 ### 13.1 Two designers, one underlying model
 
 Two planned visual editors: the **Chat Overlay Designer** and the **Alert
@@ -1283,7 +1319,7 @@ that table.
 | 13A | Alert Overlay Designer and the shared visual-design engine (§13.1) — **Completed** |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — **Completed**, stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-ins, a persisted user template library, compatibility, asset-free JSON import/export (§13.2/§13.3) — **Completed** |
-| 14B | Portable archive template packages, bundled template assets (§13.2/§13.3) — stage 14 as a whole is not complete until this lands |
+| 14B | Portable archive template packages, managed assets, image/video/font primitives (§13.2/§13.3) — **Completed**, stage 14 as a whole is now complete |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
 | 16 | External donation-service connectors (§15) |
 | 17 | TTS and audio queue (§12) |
@@ -1332,12 +1368,13 @@ Dependencies that constrain this order:
   (13A and 13B) was complete - the document itself is unchanged by
   stage 14A, wrapped in its own independently versioned
   template-interchange schema. Stage 14B (portable archive packages,
-  bundled assets) is planned to need stage 14A's own template as its
-  payload the same way, deliberately kept a separate stage because
-  archive extraction/asset storage is a substantially larger untrusted-
-  input security boundary than a first template implementation should
-  absorb at once (see [visual-templates.md](visual-templates.md) for
-  the full reasoning).
+  managed assets) needed stage 14A's own template file shape as its
+  embedded payload the same way, deliberately kept a separate stage
+  because archive extraction/asset storage is a substantially larger
+  untrusted-input security boundary than a first template
+  implementation should absorb at once - see
+  [visual-template-packages.md](visual-template-packages.md) for the
+  full contract that stage actually shipped.
 - Stage 17 (TTS) and stage 18 (goals/widgets) both consume the stage 8 bus
   directly and do not depend on the designers, so they can in principle move
   earlier if priorities change — they are ordered late here only because they
@@ -1346,8 +1383,10 @@ Dependencies that constrain this order:
 **Stage 13A and stage 13B are now both completed - stage 13 as a whole
 is complete** (see [progress.md](progress.md)'s Stage 13A/13B entries
 and [visual-designs.md](visual-designs.md) for the document contract).
-**Stage 14A is now completed - stage 14 as a whole remains incomplete
-until stage 14B lands** (see [progress.md](progress.md)'s Stage 14A
-entries and [visual-templates.md](visual-templates.md) for the
-template-library contract). Every other stage in this table remains as
-planned; see [progress.md](progress.md) for what actually exists today.
+**Stage 14A and stage 14B are now both completed - stage 14 as a whole
+is complete** (see [progress.md](progress.md)'s Stage 14A/14B entries,
+[visual-templates.md](visual-templates.md) for the template-library
+contract, and [visual-template-packages.md](visual-template-packages.md)
+for the portable-package/managed-asset contract). Every other stage in
+this table remains as planned; see [progress.md](progress.md) for what
+actually exists today.

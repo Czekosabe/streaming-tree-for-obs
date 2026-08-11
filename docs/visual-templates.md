@@ -344,18 +344,26 @@ later" via a dead schema field:
   template-only designer (to modify a template: load it into the normal
   Alert/Chat Designer as a draft, edit normally, "Save as template" again).
 
-**Stage 14B (planned, not started by this task)** will define, deliberately
-and separately: the final portable archive extension/format and its own
-manifest; bundled assets and their managed local storage; image/GIF/video/
-font decode-and-present decisions; per-file and total package size limits;
-decompression-ratio ("zip bomb") protection; absolute-path and `..`
-rejection; symlink/hard-link rejection; duplicate-path/case-collision
-handling; MIME/signature verification; asset hashing/deduplication if
-justified; a deletion/garbage-collection policy; public asset serving and
-its CSP implications; licence-file metadata; archive import/export; and
-migration of an older archive version. Stage 14B must also explicitly decide
-whether a sound asset belongs to a visual template or to the later
-audio/TTS subsystem - not decided here.
+**Stage 14B (completed - Stage 14 as a whole is now complete)** defined and
+shipped every item above, deliberately and separately from this document:
+the final portable archive extension/format (`.streaming-tree-template`,
+ZIP-only) and its own manifest; bundled assets and their managed local
+storage (content-addressed, SHA-256-deduplicated blobs); image/video/font
+decode-and-present decisions (GIF hidden, not decoded, under
+`prefers-reduced-motion`); per-file and total package size limits;
+decompression-ratio protection and a "never blind extraction" validation
+pipeline; absolute-path, `..`, symlink, and hard-link rejection; duplicate-
+path/case-collision handling; MIME/signature verification; a deletion/
+garbage-collection policy deferred to next clean startup for playback
+safety; public asset serving over a per-blob unguessable token; and archive
+import/export, including a two-step, never-trust-the-preview import flow.
+Stage 14B decided sound/audio remains entirely out of scope for a visual
+template or asset - that stays Stage 17's own subsystem. See
+[`docs/visual-template-packages.md`](visual-template-packages.md) for the
+full contract; note that document also records one deliberately deferred
+item of its own (a repo-wide `Content-Security-Policy` header, tracked as a
+Stage 20 hardening item - see that document §25), which is a documentation
+and hardening gap, not a gap in what Stage 14B otherwise implements.
 
 ## 13. Public/private field discipline
 

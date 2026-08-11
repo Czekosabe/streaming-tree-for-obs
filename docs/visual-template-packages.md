@@ -678,3 +678,26 @@ directly.
 - No content-delivery network, no remote asset fetching of any kind - every
   managed asset is stored and served locally, same-origin, by this
   application.
+- **No `Content-Security-Policy` header on any page or response.** This was
+  audited as part of Stage 14B and deliberately deferred rather than shipped
+  half-right: no CSP exists anywhere in this application today (audited
+  across `internal/httpapi`), and a narrow, source-backed policy cannot be
+  written honestly right now, because the public alert and chat overlay
+  pages this stage's own image/video/font assets render on are the same
+  pages Stage 13B's `message_fragments`/`badge_list` layers already load
+  third-party emote and badge images onto from multiple external providers
+  (Twitch's own CDN today, with 7TV/BTTV/FFZ-style providers a realistic
+  future addition per `internal/provider/twitch/chatassets`) - none of
+  which this codebase currently enumerates as a closed, stable allowlist.
+  Writing a CSP `img-src`/`media-src` directive today would mean either
+  guessing at that host list (risking silent breakage the moment a
+  provider's CDN hostname changes) or falling back to a wildcard broad
+  enough to defeat the policy's own purpose - both rejected as a fake or
+  incomplete CSP. This stage's own new surface (managed images/video,
+  custom fonts, package import) is same-origin only and adds no new
+  external host, so it does not make the existing gap any worse. Tracked
+  as a named hardening item for Stage 20 (`docs/project-overview.md` §13
+  roadmap: "Logs, diagnostics, packaging and remote-server hardening"),
+  once every trusted external image host across every provider
+  integration can be enumerated and pinned in one pass instead of
+  piecemeal per stage.

@@ -1,4 +1,4 @@
-# Visual design document contract (Stage 13A + 13B)
+# Visual design document contract (Stage 13A + 13B + 14B)
 
 This document is the canonical contract for the shared, provider-independent
 **visual design document** introduced in Stage 13A: a versioned, bounded,
@@ -13,9 +13,13 @@ shared primitives that reuse required (§21) and widening the document
 schema from version 1 to version 2 (§19) - Stage 13 as a whole is now
 complete. Stage 14A packages this same document, unchanged, as the
 embedded payload inside its own independently versioned template-
-interchange schema (`docs/visual-templates.md`); Stage 14B is expected
-to define a portable archive format on top of that, which neither this
-document nor Stage 14A defines.
+interchange schema (`docs/visual-templates.md`). Stage 14B (completed -
+Stage 14 as a whole is now complete) widened the document schema again,
+from version 2 to version 3 (§26), adding managed image/video layers and
+optional custom-font references, and defined the portable archive format
+that carries a document plus its bundled assets
+(`docs/visual-template-packages.md`), which neither this document nor
+Stage 14A defines.
 
 The implementation lives at `apps/server/internal/domain/visualdesign` (the
 shared, provider-independent domain), with owner-specific binding-capability
@@ -26,11 +30,13 @@ shared package itself - see §12/§20).
 ## 1. Schema versioning
 
 Every document carries an explicit integer `version`. **The current version is
-2** (`visualdesign.CurrentVersion` = `Version2`). Stage 13A originally shipped
+3** (`visualdesign.CurrentVersion` = `Version3`). Stage 13A originally shipped
 with version 1 only (four layer kinds, eight text bindings); Stage 13B bumped
 `CurrentVersion` to 2 to add the two shared layer kinds and two text bindings
-chat needed (§19/§21) - this section describes the contract as it exists
-**today**, not Stage 13A's own original one.
+chat needed (§19/§21); Stage 14B bumped it again to 3 to add managed
+image/video layers and optional custom-font references (§26) - this section
+describes the contract as it exists **today**, not Stage 13A's own original
+one.
 
 - A document whose `version` does not equal `CurrentVersion` is rejected
   outright by `Validate` at the point it is validated - there is no "best
@@ -39,19 +45,21 @@ chat needed (§19/§21) - this section describes the contract as it exists
   create/import) must already be at `CurrentVersion`, or it is rejected.
 - Reading a **stored** row is different: `MigrateToCurrentVersion`
   (`internal/domain/visualdesign/migration.go`) runs once, on read, before
-  `Validate` ever sees the document, and transparently upgrades a
-  version-1 row to version 2 - see §19 for the exact migration and why it is
-  lossless. This is the "explicit, reviewed migration function in the domain
-  package, never silently inferred from the JSON shape" this section
-  originally promised before Stage 13B needed it for real; every Stage 13A
-  alert design has loaded and rendered identically since.
+  `Validate` ever sees the document, and transparently upgrades a version-1
+  row to version 2, then version 2 to version 3 - see §19/§26 for the exact
+  migrations and why each is lossless. This is the "explicit, reviewed
+  migration function in the domain package, never silently inferred from the
+  JSON shape" this section originally promised before Stage 13B needed it
+  for real; every Stage 13A alert design has loaded and rendered identically
+  since.
 - A version *older than 1*, or *newer than `CurrentVersion`*, is never
   migrated and is always rejected - `MigrateToCurrentVersion` only knows the
-  one specific `Version1 -> Version2` step, and passes anything else through
-  unchanged, which then fails `Validate`'s own version check. Stage 14A's own
-  template import path (`docs/visual-templates.md`) reuses this exact
-  migrate-then-validate sequence for a portable file's embedded document, so
-  an unknown/future/malformed version is rejected there too, never silently
+  two specific steps, `Version1 -> Version2` and `Version2 -> Version3`, and
+  passes anything else through unchanged, which then fails `Validate`'s own
+  version check. Stage 14A's own template import path
+  (`docs/visual-templates.md`) reuses this exact migrate-then-validate
+  sequence for a portable file's embedded document, so an
+  unknown/future/malformed version is rejected there too, never silently
   reinterpreted.
 - The public payload (`PublicDocument`) carries its own `schemaVersion`,
   copied from the source document's `version` - a public consumer (the
@@ -118,26 +126,30 @@ about gaps, and rendering never depends on array/DOM insertion order.
   layer always receives a brand-new id - never derived from its position in
   the array.
 
-## 6. Shared primitive types (current set: six layer kinds)
+## 6. Shared primitive types (current set: eight layer kinds)
 
 Stage 13A shipped four deliberately small, generic layer kinds. Stage 13B
 reused all four completely unchanged and added two more (`message_fragments`,
-`badge_list`) - the current, complete set is six:
+`badge_list`). Stage 14B added two more still (`image`, `video`) - the
+current, complete set is eight:
 
 | Kind | Purpose | Added |
 | --- | --- | --- |
 | `shape` | A solid-color rectangle (fill, border, corner radius) - also used as a "background" instead of a separate arbitrary CSS background concept. | Stage 13A |
-| `text` | Bound, closed-vocabulary text content (see §7/§20) with bounded typography. | Stage 13A |
+| `text` | Bound, closed-vocabulary text content (see §7/§20) with bounded typography, optionally a managed custom-font reference (§26). | Stage 13A |
 | `platform_icon` | The application's own existing provider glyph mapping - never an arbitrary icon URL. | Stage 13A |
 | `avatar` | The safe, already-normalized avatar URL already present on a public alert/chat item - never an arbitrary URL, never a fresh per-render provider request. | Stage 13A |
-| `message_fragments` | A chat item's own already-normalized, already-ordered message fragments (text/emote/mention), rendered as text with resolved safe emote images - never raw HTML, never a fresh per-render provider request. | Stage 13B (§21) |
+| `message_fragments` | A chat item's own already-normalized, already-ordered message fragments (text/emote/mention), rendered as text with resolved safe emote images, optionally a managed custom-font reference (§26) - never raw HTML, never a fresh per-render provider request. | Stage 13B (§21) |
 | `badge_list` | A chat item's own already-resolved public badge image DTOs, bounded count - never an arbitrary image URL. | Stage 13B (§21) |
+| `image` | A managed, operator-uploaded or package-imported image asset - an opaque `assetId` reference, never a filesystem path or arbitrary URL (§26). | Stage 14B (§26) |
+| `video` | A managed, operator-uploaded or package-imported video asset, muted/no-controls, autoplay subject to `prefers-reduced-motion` (§26). | Stage 14B (§26) |
 
-No custom media layer kind (uploaded image/video/audio/font) exists yet -
-that remains explicitly out of scope. Stage 14A (built-in templates,
-asset-free JSON import/export, `docs/visual-templates.md`) does not add one
-either; any such primitive remains deferred to Stage 14B at the earliest, with
-its own dedicated storage/security model.
+No arbitrary/remote image or video URL, `data:` URL, or executable/HTML/CSS
+media exists as a layer primitive - every `image`/`video` layer resolves
+through this application's own managed-asset store (§26,
+`docs/visual-template-packages.md`), never a caller-supplied URL. Sound/audio
+remains explicitly out of scope for any layer kind - that is Stage 17's own
+subsystem.
 
 Every layer additionally carries: `id`, `name` (management-only), `kind`,
 `visible`, `locked` (management-only), `order`, `frame`, `opacity`
@@ -308,16 +320,20 @@ CREATE TABLE visual_designs (
 Exercised for real since Stage 13B: `MigrateToCurrentVersion`
 (`internal/domain/visualdesign/migration.go`) is the one explicit migration
 function, applied on read whenever an older stored version is encountered -
-never a schema-version bump silently reinterpreting old field names. Today it
-knows exactly one step, `Version1 -> Version2`, proven lossless by
-`migration_test.go` (a raw pre-migration row inserted directly via SQL reads
-back migrated and byte-for-byte semantically unchanged). `Validate` always
-validates the *current* version's own rules after any such migration runs - a
-document that migration could not bring to `CurrentVersion` (too old, unknown,
-or future) still fails `Validate` outright. See §19 for the full Stage 13B
-migration and §1 for the version-rejection contract this section's own rule
-extends. A future `Version2 -> Version3` step would get its own explicit,
-reviewed function added here the same way, applied in sequence.
+never a schema-version bump silently reinterpreting old field names. It now
+knows two steps in sequence, `Version1 -> Version2` and `Version2 ->
+Version3`, each proven lossless by its own test (`migration_test.go` for the
+first; `visualdesign_repository_test.go`'s
+`TestVisualDesignRepositoryRoundTripsImageVideoFontLayers` pins the second
+at the SQLite persistence layer, since a raw pre-migration row inserted
+directly via SQL reads back migrated and byte-for-byte semantically
+unchanged). `Validate` always validates the *current* version's own rules
+after any such migration runs - a document that migration could not bring
+to `CurrentVersion` (too old, unknown, or future) still fails `Validate`
+outright. See §19 for the full Stage 13B migration, §26 for the full Stage
+14B migration, and §1 for the version-rejection contract this section's own
+rule extends. A future `Version3 -> Version4` step would get its own
+explicit, reviewed function added here the same way, applied in sequence.
 
 ## 12. Backward compatibility
 
@@ -405,7 +421,7 @@ None of Stage 13A's own non-goals above changed - the same closed,
 bounded-primitive discipline applies to chat exactly as it does to alerts.
 See §17-§25 below for the full Stage 13B contract.
 
-## 16. Stage 14 relationship
+## 16. Stage 14 relationship (Completed - Stage 14 as a whole is now complete)
 
 Stage 14 is split into 14A (reusable template library, built-in templates,
 asset-free JSON import/export) and 14B (portable archive packages, managed
@@ -414,15 +430,19 @@ template assets). Stage 14A treats this same `Document` shape as the
 - a Stage 14A template file's own `schemaVersion` counts template-format
 revisions, completely separately from this document's own `version`; see
 `docs/visual-templates.md` for the full contract and the worked example of
-why the two counters are independent. Stage 14A adds no new layer kind, no
-new binding, and no asset primitive to this document - every template's own
-embedded document is validated by the exact same `Validate` this file
-describes, normalized to `CurrentVersion` via `MigrateToCurrentVersion` on
-import exactly like any other stored document. Stage 14B remains responsible
-for its own archive/packaging format (asset bundling, metadata, versioning of
-the archive itself, migration of an imported older archive) on top of the
-Stage 14A template payload; none of that is defined here, and none of it is
-implemented by Stage 13A, Stage 13B, or Stage 14A.
+why the two counters are independent. Stage 14A itself adds no new layer
+kind, no new binding, and no asset primitive to this document - every
+template's own embedded document is validated by the exact same `Validate`
+this file describes, normalized to `CurrentVersion` via
+`MigrateToCurrentVersion` on import exactly like any other stored document.
+
+Stage 14B is what actually adds a new layer kind and an asset primitive to
+this document - the two new layer kinds `image`/`video` and the optional
+`fontAssetId` field that bumped `CurrentVersion` to 3 (§26) - plus its own
+archive/packaging format on top of the Stage 14A template payload (asset
+bundling, manifest, package versioning, migration of an imported older
+package): see `docs/visual-template-packages.md` for that full contract,
+which this document does not duplicate.
 
 ## 17. Chat item/card design semantics (Stage 13B)
 
@@ -747,3 +767,49 @@ existing reset handling regardless, which already carries the current
 presentation. No snapshot/config race is possible: config is always fetched
 fresh after any signal that it might be stale, never assumed current from a
 value cached before the page connected.
+
+## 26. Document version 3 (Stage 14B)
+
+Stage 14B (managed visual assets and portable archive template packages,
+`docs/visual-template-packages.md`) needs two new closed `LayerKind` values,
+`image` and `video`, plus an optional `fontAssetId` field on the existing
+`text` and `message_fragments` layer props (§6/§21) - a version-2 reader has
+no way to safely interpret any of these. Exactly like the `Version1 ->
+Version2` step (§19), this is a genuine schema-vocabulary change, so
+`CurrentVersion` becomes **3**, with an explicit `Version2 -> Version3` step
+added to the same `MigrateToCurrentVersion` function.
+
+The migration is the same trivial, lossless relabel as before: a stored
+version-2 document's wire shape is byte-for-byte identical to a version-3
+one (every version-2 field still exists, unchanged; only the set of values
+`LayerKind` accepts grew wider, and `fontAssetId` is a new optional field
+that simply defaults to empty/absent on every existing document). A
+version-2 document, by construction, could never have populated
+`fontAssetId` or used an `image`/`video` `kind` value, so migrating it is
+exactly "parse it as today, then relabel `Version = 3`" - pinned by
+`TestVisualDesignRepositoryRoundTripsImageVideoFontLayers`
+(`internal/storage/sqlite/visualdesign_repository_test.go`), which also
+guards the two independently-JSON-mirrored persistence paths (§10) that
+must both carry these fields. `Validate` continues to reject any document
+whose `Version` is not `CurrentVersion` at the point it is validated - a
+stale-version *write* is still rejected outright; only a stale-version
+*stored row being read back* is transparently upgraded, exactly as §19
+already established.
+
+The two new layer kinds, `image` and `video`, each carry an `assetId` field
+- an opaque managed-asset reference (`internal/domain/visualasset`), never
+a filesystem path or an `http(s)`/`file`/`blob`/`data` URL - plus a closed
+`fit` enum (`contain` | `cover`, never arbitrary CSS `object-fit`). `image`
+additionally carries a short plain-text `alt` label (bounded, never
+markup); `video` additionally carries an operator-controlled `loop`
+boolean, with autoplay-subject-to-`prefers-reduced-motion`, muted, and
+no-controls/no-volume always fixed by the renderer regardless of what the
+layer contains - there is deliberately no volume, poster, track, or
+subtitle field. `fontAssetId` (on `text` and `message_fragments`) is an
+identical opaque managed-asset reference for a WOFF2 font asset, loaded via
+the standard `FontFace` API under an application-generated internal family
+name - a font's own internal name is never trusted as CSS. See
+`docs/visual-template-packages.md` §12 for the full managed-asset
+resolution, validation, and public-serving contract these three fields
+depend on; that document, not this one, owns everything about what an
+`assetId`/`fontAssetId` value resolves to.

@@ -65,6 +65,33 @@ guaranteed to stay accurate forever.
 > [`docs/visual-designs.md`](visual-designs.md) §25 for the full
 > protocol. Still **no real OBS installation was used** for Stage 13B's
 > own verification either.
+>
+> **Factual status update (stage 14B, completed - Stage 14 as a whole is
+> now complete):** managed visual assets (images, video, custom fonts)
+> and portable archive template packages changed nothing about this
+> document's own OBS-level research either - every alert and chat
+> overlay route, its transparent background, and its lack of any
+> OBS-specific permission are all unchanged, and OBS itself does not
+> know or care whether a design layer is a plain shape/text primitive or
+> an image/video backed by a managed asset. A design-driven public
+> payload's image/video layers carry an already-resolved public asset
+> URL (never a package-local or database-local asset ID), served by this
+> application's own backend with correct HTTP Range support so CEF's
+> `<video>` element can seek exactly as it would against any ordinary
+> video URL. Per this project's `prefers-reduced-motion` policy, video
+> never autoplays and GIF/WebP images are hidden entirely when that
+> preference is set; OBS's Browser Source has no user-facing
+> `prefers-reduced-motion` toggle, so in practice a Browser Source
+> always renders with motion enabled, exactly like a default browser
+> profile. Custom fonts load through the standard `FontFace` API under
+> an application-generated internal family name, the same web platform
+> mechanism this project already relied on for the fonts it bundled
+> before Stage 14B - no new OBS-level behavior. This document's own
+> testing was, as with every prior stage, jsdom/unit/integration-level
+> only; real image decoding, real video codec/seek behavior, and real
+> custom-font rendering **inside an actual OBS CEF browser source were
+> not manually verified** as part of Stage 14B and remain open until a
+> future manual verification pass.
 
 ## Sources inspected
 
@@ -393,16 +420,19 @@ internally on `renderingMode`.
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's, 12B's, 13A's or 13B's own
+verification, or for Stage 12A's, 12B's, 13A's, 13B's or 14B's own
 verification.** Every finding above comes from reading the official
 pages listed, not from observing a live Browser Source. The local
 integration scripts (`scripts/verify-chat-overlay.mjs`,
 `scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
 `scripts/verify-alert-designer.mjs`,
-`scripts/verify-chat-overlay-designer.mjs`) exercise the same HTTP/SSE
-contract a real Browser Source would consume, from a plain Node.js
-HTTP client - they prove the backend's contract is correct, not that
-OBS's own CEF renders either overlay identically. Re-verify this
-document's recommendations manually the first time either feature is
-actually used inside real OBS, and re-check it entirely if OBS changes
-Browser Source's documented behavior in a future release.
+`scripts/verify-chat-overlay-designer.mjs`,
+`scripts/verify-visual-template-packages.mjs`) exercise the same
+HTTP/SSE contract a real Browser Source would consume, from a plain
+Node.js HTTP client - they prove the backend's contract is correct, not
+that OBS's own CEF decodes an image/video asset, seeks a video via
+Range requests, or renders a custom `FontFace` identically to a
+headless test environment. Re-verify this document's recommendations
+manually the first time any of these features is actually used inside
+real OBS, and re-check it entirely if OBS changes Browser Source's
+documented behavior in a future release.

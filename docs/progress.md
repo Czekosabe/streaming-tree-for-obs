@@ -17324,3 +17324,124 @@ roadmap/status update marking Stage 14B and Stage 14 as a whole
 Completed once every remaining check below genuinely passes), then the
 full closing regression across both apps and all 16 integration
 scripts, then push.
+
+## 2026-08-12 02:20 — docs: close out Stage 14B documentation pass
+
+### What
+The documentation-only pass that follows implementation completion:
+every remaining stale "Stage 14B" forward-reference across the repo
+updated to reflect what actually shipped, plus the two audits the task
+itself required before Stage 14B could be called complete (a factual
+OBS Browser Source note, and an explicit CSP decision - never a fake or
+partial one).
+
+- **`README.md`**: roadmap table rows for 14A/14B marked Completed;
+  three separate stale "Stage 14B's own future job" / "planned" prose
+  mentions (Chat Overlay Designer section, JSON template contract
+  section, Stage 13A non-goals section, and the "what will be added
+  later" list) rewritten to state what exists now, linking to
+  `docs/visual-template-packages.md`.
+- **`config/README.md`**: item 16 (Stage 14A's `visual_templates`
+  table) no longer points at "Stage 14B's own future" format; new item
+  17 added describing Stage 14B's actual `0018_visual_assets.sql`
+  four-table migration, the on-disk blob store location
+  (`<data dir>/assets/visual/`), and the preview-staging directory
+  (corrected mid-edit from an initially-assumed OS-temp-dir location to
+  the real one, `.../assets/visual/previews/<token>/`, after checking
+  `visualasset/blobstore.go` directly rather than trusting memory).
+- **`docs/obs-browser-source.md`**: a new "Factual status update (stage
+  14B, completed)" blockquote added after the existing Stage 13B one,
+  same pattern - what changed at the OBS/Browser-Source level (nothing:
+  same routes, same transparent background, no new permission), how a
+  resolved public asset URL and HTTP Range support let CEF's `<video>`
+  element seek normally, how `prefers-reduced-motion` interacts with a
+  Browser Source that has no such user toggle, and an explicit
+  statement that real codec/seek/font-rendering behavior inside actual
+  OBS CEF was **not manually verified** this stage. The "What was not
+  tested" section and the two Stage 13A/13B narrative paragraphs above
+  it were extended the same way, listing Stage 14B and the 16th
+  integration script alongside the existing ones.
+- **CSP audit** (`docs/visual-template-packages.md` §25): grepped the
+  entire backend for any existing `Content-Security-Policy` handling -
+  none exists anywhere in this application today. Concluded a narrow,
+  source-backed CSP cannot honestly be written yet: the public alert
+  and chat overlay pages that Stage 14B's own image/video assets render
+  on are the same pages Stage 13B's `message_fragments`/`badge_list`
+  layers already load third-party emote/badge images onto from Twitch's
+  CDN (and potentially other emote providers later), and this codebase
+  does not currently enumerate that host set as a closed allowlist -
+  writing `img-src`/`media-src` today would mean guessing at hosts or
+  using a wildcard broad enough to defeat the policy. Documented as a
+  named, explicit deferral to Stage 20 hardening rather than a fake or
+  partial header, per the task's own explicit instruction never to ship
+  either.
+- **`docs/visual-templates.md`** §12: the "Stage 14B (planned, not
+  started by this task)" paragraph rewritten in the past tense to state
+  what Stage 14B actually delivered against every item that paragraph
+  originally listed as future work, linking to
+  `docs/visual-template-packages.md` for the full contract.
+- **`docs/visual-designs.md`**: this document was still describing
+  document version 2 as current and enumerating only six layer kinds -
+  genuinely stale, not just a forward-reference, since `CurrentVersion`
+  moved to `Version3` earlier this stage. Added new §26 ("Document
+  version 3 (Stage 14B)") documenting the `Version2 -> Version3`
+  migration step, the `image`/`video` layer kinds, and the optional
+  `fontAssetId` field on `text`/`message_fragments`, cross-referencing
+  `TestVisualDesignRepositoryRoundTripsImageVideoFontLayers` as the
+  regression guard. §1 (schema versioning), §6 (layer kind table, now
+  eight kinds), §11 (migration behavior), and §16 (Stage 14
+  relationship) updated to match; title changed to "Stage 13A + 13B +
+  14B".
+
+### Files changed
+- `README.md`, `config/README.md`, `docs/obs-browser-source.md`,
+  `docs/visual-template-packages.md`, `docs/visual-templates.md`,
+  `docs/visual-designs.md`, `docs/project-overview.md`,
+  `docs/engagement-architecture.md` (roadmap/status rows and dependency
+  prose, updated earlier this stage alongside the Stage 20 updater
+  target and the Stage 14B contract doc respectively).
+
+### Technical decisions
+- **Why the preview-staging path claim was corrected before commit
+  instead of left as a plausible guess.** An initial draft of the
+  `config/README.md` addition stated the preview staging area lived
+  under the OS temp directory - a reasonable-sounding guess that was
+  never actually checked against the implementation. Re-reading
+  `visualasset/blobstore.go` directly showed it is in fact a sibling
+  directory inside the same on-disk asset store
+  (`<data dir>/assets/visual/previews/<token>/`), not the OS temp
+  directory. Fixed before commit - this project's own standing rule is
+  to read the real implementation rather than trust a remembered or
+  assumed shape, and a documentation pass is not exempt from that rule
+  just because it touches no code.
+- **Why the CSP gap is documented as a named Stage 20 item rather than
+  shipping a narrow policy scoped to only this stage's own new assets.**
+  A CSP scoped to "same-origin plus nothing" would be trivially correct
+  for Stage 14B's own new image/video/font surface (all same-origin),
+  but publishing it would misleadingly imply the *page* is
+  CSP-protected when the same page's pre-existing third-party emote/
+  badge images are not accounted for at all - a header that is accurate
+  about one asset class on a page and silent about another invites
+  exactly the false sense of protection this project's "never a fake or
+  incomplete CSP" instruction was written to prevent. Doing it properly
+  requires enumerating every trusted external image host across every
+  provider integration in one pass, which is Stage 20 hardening work,
+  not a Stage 14B side effect.
+
+### Automated validation
+None - documentation only, no code changed in this entry. Full
+closing regression (backend + frontend + all 16 integration scripts)
+is the next step, before this stage can be called Completed.
+
+### Known limitations
+None new. This entry's own "Technical decisions" section names the one
+deliberate, explicit deferral (CSP → Stage 20) this pass produced.
+
+### Next step
+Full closing regression: `go build ./...`, `go build -tags integration
+./...`, `go vet ./...`, `go test ./...` on the backend; `npm run
+typecheck`, `npm run lint`, `npm run i18n:check`, `npx vitest run` on
+the frontend; all 16 integration scripts. Only if every one of those
+is genuinely clean does this stage get marked Stage 14B: Completed /
+Stage 14: Completed, followed by a closing regression journal entry,
+`git push origin main`, and the final structured report.

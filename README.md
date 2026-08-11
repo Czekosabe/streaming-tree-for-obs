@@ -190,8 +190,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 12B | Mid-alert preemption and bounded alert grouping, deliberately deferred out of 12A | **Completed** — see [progress.md](docs/progress.md); Stage 12 as a whole is now complete |
 | 13A | Shared, provider-independent visual-design document, its persistence/HTTP API, immutable per-alert snapshotting, and the Alert Overlay Designer editor UI | **Completed** — see [progress.md](docs/progress.md) |
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for chat overlays | **Completed** — see [progress.md](docs/progress.md); Stage 13 as a whole is now complete |
-| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner compatibility, and asset-free JSON import/export, built on Stage 13's own document format | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is **not** complete until 14B lands |
-| 14B | Portable archive template packages, managed template assets, and any safe custom-media/font primitives those packages need | Planned, not started |
+| 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner compatibility, and asset-free JSON import/export, built on Stage 13's own document format | **Completed** — see [progress.md](docs/progress.md) |
+| 14B | Portable archive template packages, managed visual assets, and safe custom image/video/font primitives, see [visual-template-packages.md](docs/visual-template-packages.md) | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is now complete |
 | 15–19 | TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
@@ -1589,11 +1589,12 @@ the shutdown/refresh checkbox trade-off) this feature is built on.
 **What this stage does not implement.** TTS and YouTube/Kick/TikTok
 overlay support are still unimplemented — only Twitch chat reaches any
 overlay, exactly like the operator Chat page above. Asset-free JSON
-template import/export for a chat visual design now exists (Stage 14A,
-via the Chat Overlay Designer's own Templates gallery — see below); a
-portable *archive* template package (bundled assets, its own file
-extension) remains Stage 14B's own future job. See
-[`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+template import/export for a chat visual design exists (Stage 14A, via
+the Chat Overlay Designer's own Templates gallery — see below); a
+portable *archive* template package with managed image/video/font
+assets now exists too (Stage 14B — see
+[`docs/visual-template-packages.md`](docs/visual-template-packages.md)).
+See [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 
 ### Chat Overlay Designer (Stage 13B)
 
@@ -1682,10 +1683,13 @@ real rendered preview/compatibility), then explicitly confirm — nothing
 is persisted merely by selecting a file. An older exported document
 (schema version 1, from before Stage 13B) is transparently migrated to
 the current version on import; an unknown/future/malformed version is
-rejected outright, never silently reinterpreted. See
-[`docs/visual-templates.md`](docs/visual-templates.md) for the full
-contract, including the explicit split from Stage 14B's own future
-portable archive/asset format.
+rejected outright, never silently reinterpreted. This asset-free JSON
+format remains unchanged and fully supported after Stage 14B - a
+template whose document references a managed asset is exported as a
+portable archive package instead (`.streaming-tree-template`, see
+[`docs/visual-template-packages.md`](docs/visual-template-packages.md)).
+See [`docs/visual-templates.md`](docs/visual-templates.md) for the
+JSON format's own full contract.
 
 ### Persisted overlay profiles
 
@@ -2108,12 +2112,14 @@ alone persists nothing. See
 contract.
 
 **What this stage does not implement.** Uploaded/remote images, GIFs,
-video, sounds, fonts, custom CSS, or arbitrary HTML/JS remain
-unimplemented — Stage 13A's own layer kinds and typography/animation
-options are closed, bounded enums, never free-form CSS or markup, and
-Stage 14A's own template library (below) adds no new primitive either.
-A portable *archive* template package remains Stage 14B's own future
-job. No
+video, sounds, fonts, custom CSS, or arbitrary HTML/JS were not part of
+Stage 13A — its own layer kinds and typography/animation options are
+closed, bounded enums, never free-form CSS or markup, and Stage 14A's
+own template library (below) added no new primitive either. Managed
+images/video/fonts and a portable *archive* template package were later
+added deliberately, as their own dedicated stage — see
+[`docs/visual-template-packages.md`](docs/visual-template-packages.md)
+(Stage 14B). No
 new Twitch scope and no new EventSub subscription type were added for
 12A, 12B or 13A: alerts only ever match events already reaching the
 Event Bus, and the alert engine never talks to Twitch directly.
@@ -3221,10 +3227,12 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **Portable archive template packages, bundled template assets, TTS,
-  goal widgets, and any donation-service connector** — architecture
-  only so far (stage 14B onward), see
+- **TTS, goal widgets, and any donation-service connector** — architecture
+  only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+  Portable archive template packages and managed template assets shipped
+  in Stage 14B — see
+  [`docs/visual-template-packages.md`](docs/visual-template-packages.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---

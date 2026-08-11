@@ -316,6 +316,27 @@ with no transcoding, is this stage's deliberate scope.
     template *asset* directory anywhere - Stage 14A adds no new layer
     kind and no asset primitive to the embedded visual-design document,
     and no ZIP/archive format exists yet; see `docs/visual-templates.md`
-    for the explicit split from Stage 14B's own future portable
-    archive/asset format, which this application does not implement.
-    Stage 14A added **no new environment variable**.
+    for the explicit split from Stage 14B's own portable archive/asset
+    format, added later as its own stage (below), which Stage 14A itself
+    does not implement. Stage 14A added **no new environment variable**.
+17. Stage 14B (managed visual assets and portable archive template
+    packages, Stage 14 as a whole now complete) adds four new
+    **persisted** tables in one migration (`0018_visual_assets.sql`):
+    content-addressed blob metadata, logical asset metadata, and two
+    reference-tracking join tables (alert-rule and chat-overlay design
+    references to an asset). The blob *bytes* themselves are still never
+    stored in SQLite or in this directory - they live as plain files
+    under `<application data directory>/assets/visual/`, addressed by
+    SHA-256 digest, one file per unique blob regardless of how many
+    logical assets or references point at it. A package archive
+    (`.streaming-tree-template`) uploaded for preview is staged under a
+    random, short-lived token in a sibling
+    `<application data directory>/assets/visual/previews/<token>/`
+    directory - not the permanent, content-addressed blob store, and not
+    this directory - and is deleted on preview cancellation, on preview
+    TTL expiry (10 minutes), or unconditionally on the next clean
+    application startup; the real import that follows a preview does not
+    trust or reuse the preview's staged files, re-validating the
+    archive's bytes from scratch. See `docs/visual-template-packages.md`
+    for the full manifest, validation, and storage contract. Stage 14B
+    added **no new environment variable**.
