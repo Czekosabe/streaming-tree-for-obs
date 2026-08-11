@@ -275,12 +275,14 @@ func run() error {
 		return err
 	}
 
-	// Stage 12A: the alert runtime - identical wiring to cmd/server, see
-	// its own comment.
+	// Stage 12A/13A: the alert runtime and its visual-design service -
+	// identical wiring to cmd/server, see its own comment.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
+	visualDesignService := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
-		DomainService: alertsDomainService,
-		Bus:           eventBus,
+		DomainService:       alertsDomainService,
+		VisualDesignService: visualDesignService,
+		Bus:                 eventBus,
 	})
 	if err := alertsManager.Start(ctx); err != nil {
 		return err

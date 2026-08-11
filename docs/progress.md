@@ -13864,3 +13864,98 @@ The thirteenth local integration script
 (`scripts/verify-alert-designer.mjs`), run at least twice, then the
 Stage 13A documentation pass and the full closing regression across
 all thirteen integration scripts.
+
+## 2026-08-11 06:50 — test: verify alert designer locally
+
+### What
+`scripts/verify-alert-designer.mjs`, the thirteenth local integration
+script (Stage 13A task Part 57) - same no-real-Twitch/no-real-OBS fake
+OAuth+Helix+EventSub harness as every other `verify-*.mjs` script,
+covering the visual-design HTTP API and its full-stack integration
+with the real Stage 12B alert queue/playback/public-SSE runtime.
+
+### A real pre-existing wiring gap, found and fixed
+Writing this script's first save immediately failed every save/get/
+delete call with `visual_design_unavailable`, even though
+`internal/httpapi/visualdesign_test.go` and every Go-level test passed.
+Cause: `apps/server/cmd/server/main.go` (production) wires
+`alerts.ManagerOptions.VisualDesignService`, but the 308c9c1 commit
+never added the identical wiring to `apps/server/cmd/testserver/main.go`
+- the integration-only binary every `verify-*.mjs` script builds and
+drives. Every Stage 13A HTTP endpoint has therefore been silently
+unreachable under the entire integration-test harness since that
+commit; nothing caught it earlier because no prior script exercised
+`/api/alert-rules/{id}/visual-design`. Fixed by adding the same two
+lines (`alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))`
++ `VisualDesignService: visualDesignService`) to `cmd/testserver/main.go`,
+mirroring `cmd/server/main.go` exactly. `gofmt -l .`, `go vet ./...` and
+`go test ./...` all stayed clean after the fix.
+
+### Scenario coverage (28 steps)
+Deterministic draft generation and its non-persistence (two GETs, same
+layer id, `persisted:false` both times); save-at-revision-1; GET
+reflects a save; stale-revision 409 with no overwrite; valid-revision
+save incrementing to revision 2; a representative rejection matrix
+(off-canvas frame, unavailable text binding for the rule's own event
+type, non-hex color, unrecognized layer kind, oversized static text -
+all 422); a real fake-Twitch follow event rendering
+`renderingMode:"visual_design"` with the full 2-layer public design,
+scanned to confirm no editor-only `name`/`locked` field or layer-name
+text ever reaches the public SSE payload; saving a new design while an
+alert is current never mutates the current instance (Part 22's central
+guarantee, verified again here at the full public-HTTP/SSE level, not
+just the Go-level `visualdesign_snapshot_test.go` it was originally
+proven at); the next new alert picking up the new revision; Test Rule
+producing a synthetic alert through the real queue that is still
+design-driven; Replay Previous re-showing its own originally-captured
+design even after the rule's design changed again in between; a
+grouped (merged) Bits alert remaining design-driven with its design
+untouched by the merge (a genuinely new interaction, not previously
+covered at any level); a lower-priority-preemption replacing the
+current alert with the *interrupting* alert's own distinct design (also
+new); Reset to legacy (idempotent DELETE, GET reverting to a draft, the
+next new alert legacy-rendered with no `visualDesign` key at all); rule
+deletion cascading its design (404 afterward); design survival across a
+full backend restart plus a fresh real event still rendering correctly
+post-restart; and a closing secret scan across every captured HTTP/SSE
+body and the backend's own stdout/stderr confirming no access/refresh
+token or raw EventSub envelope ever leaks.
+
+### Deliberately omitted scenarios (Part 57: "acceptable only when every
+omitted scenario is listed here and mapped to a specific covering test")
+- The full validation-rejection matrix beyond the 5 representative cases
+  above (every individual bound on opacity/border/corner-radius/
+  outline/shadow/font-size/font-weight/line-height/letter-spacing, every
+  canvas-dimension bound, every layer-count/document-size boundary, the
+  full "unknown field rejected" scan) - already exhaustively covered by
+  `internal/domain/visualdesign/validation_test.go` and
+  `internal/httpapi/visualdesign_test.go`.
+- Revision-conflict and cascade-delete edge cases beyond the ones
+  exercised here - `internal/storage/sqlite/visualdesign_repository_test.go`
+  (`TestVisualDesignRepositorySurvivesRestart`, owner-uniqueness,
+  idempotent delete at the repository layer).
+- The queued-alert-retains-its-old-design-after-a-later-save and
+  delete-returns-only-*new*-alerts-to-legacy guarantees - already proven
+  at the Go level by
+  `internal/alerts/visualdesign_snapshot_test.go`'s
+  `TestSnapshotCurrentAlertUnaffectedByLaterSave` and
+  `TestSnapshotDeleteReturnsRuleToLegacyForNewAlertsOnly`; this script
+  proves the current-alert-unaffected half directly (step 18) and relies
+  on the named Go tests for the queued/deleted halves rather than
+  duplicating the same timing-sensitive scenario a second time at the
+  slower full-stack level.
+- Frontend-only guarantees (Designer UI interactions, undo/redo,
+  drag/resize, preview-scenario fixtures, Preview-vs-Test-Rule
+  separation) - covered by the frontend Testing Library suite recorded
+  in the previous commit's entry, out of scope for a backend/full-stack
+  script by construction.
+
+### Runs
+Two consecutive clean runs (all 28 steps passing both times), per Part
+57's own explicit requirement, immediately after the wiring fix above.
+
+### Next step
+The Stage 13A documentation pass (README, project-overview,
+engagement-architecture, obs-browser-source, config/README,
+THIRD_PARTY_NOTICES audit), then the full closing regression across
+frontend, backend, and all thirteen integration scripts, then push.
