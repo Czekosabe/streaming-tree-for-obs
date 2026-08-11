@@ -7,9 +7,24 @@ import (
 	"sync"
 
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
+	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	operatorchat "github.com/streaming-tree/server/internal/operatorchat"
 )
+
+// AssetRefTracker is the narrow subset of visualasset.Service a chat
+// visual design that references a Stage 14B managed asset needs -
+// identical in shape to internal/alerts.AssetRefTracker, kept as its
+// own local interface rather than a shared one so this package never
+// needs to import internal/alerts (see this package's own doc comment
+// on one-directional dependencies). Optional - nil degrades to "no
+// overlay design saved through this Manager may reference a managed
+// asset".
+type AssetRefTracker interface {
+	Get(ctx context.Context, id string) (visualasset.Asset, error)
+	SetDesignAssetRefs(ctx context.Context, designID string, assetIDs []string) error
+	ClearDesignRefs(ctx context.Context, designID string) error
+}
 
 // upstreamSubscription is the subset of *operatorchat.Subscription this
 // package consumes - an interface (rather than the concrete type
@@ -47,6 +62,11 @@ type Manager struct {
 	// legacy presentation rather than panicking; production always
 	// wires a real one.
 	visualDesignSvc *visualdesign.Service
+	// assetSvc is Stage 14B's own managed-asset service - optional, see
+	// AssetRefTracker's own doc comment. Set after construction via
+	// SetAssetService (kept out of NewManager's own positional argument
+	// list so its two existing call sites/tests never need to change).
+	assetSvc AssetRefTracker
 
 	mu          sync.Mutex
 	projections map[string]*Projection
@@ -72,6 +92,14 @@ func NewManager(upstream UpstreamSource, resolver SettingsResolver, visualDesign
 		logger:          logger,
 		projections:     make(map[string]*Projection),
 	}
+}
+
+// SetAssetService wires Stage 14B's managed-asset service in after
+// construction (see the Manager field's own doc comment) - call once,
+// before Start, from the same place production wiring already sets
+// every other optional dependency.
+func (m *Manager) SetAssetService(svc AssetRefTracker) {
+	m.assetSvc = svc
 }
 
 // Start subscribes once to the upstream operator-chat projection and
@@ -281,9 +309,19 @@ func (m *Manager) Remove(ctx context.Context, overlayID string) {
 	}
 
 	if m.visualDesignSvc != nil {
+		existing, found, err := m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindChatOverlay, overlayID)
+		if err != nil {
+			m.logger.Error("failed to look up a chat overlay's own visual design during profile deletion",
+				"overlay_id", overlayID, "error", err)
+		}
 		if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindChatOverlay, overlayID); err != nil {
 			m.logger.Error("failed to delete a chat overlay's own visual design during profile deletion",
 				"overlay_id", overlayID, "error", err)
+		} else if found && m.assetSvc != nil {
+			if err := m.assetSvc.ClearDesignRefs(ctx, existing.ID); err != nil {
+				m.logger.Error("failed to clear a chat overlay design's asset references during profile deletion",
+					"overlay_id", overlayID, "error", err)
+			}
 		}
 	}
 }
@@ -317,12 +355,35 @@ func (m *Manager) SaveVisualDesign(ctx context.Context, overlayID string, doc vi
 	if err := chatoverlaydomain.ValidateDesignBindingsForChatOverlay(doc); err != nil {
 		return visualdesign.Record{}, err
 	}
+	if err := visualdesign.ValidateAssetReferences(doc, m.resolveAssetKind(ctx)); err != nil {
+		return visualdesign.Record{}, err
+	}
 	rec, err := m.visualDesignSvc.Save(ctx, visualdesign.OwnerKindChatOverlay, overlayID, doc, expectedRevision)
 	if err != nil {
 		return visualdesign.Record{}, err
 	}
+	if m.assetSvc != nil {
+		if err := m.assetSvc.SetDesignAssetRefs(ctx, rec.ID, rec.Document.AssetReferences()); err != nil {
+			return visualdesign.Record{}, err
+		}
+	}
 	m.refreshPresentation(ctx, overlayID)
 	return rec, nil
+}
+
+// resolveAssetKind: see internal/alerts.Manager's own identical helper -
+// nil if no asset service is wired.
+func (m *Manager) resolveAssetKind(ctx context.Context) visualdesign.AssetResolverFunc {
+	if m.assetSvc == nil {
+		return nil
+	}
+	return func(assetID string) (string, bool) {
+		asset, err := m.assetSvc.Get(ctx, assetID)
+		if err != nil {
+			return "", false
+		}
+		return string(asset.Kind), true
+	}
 }
 
 // DeleteVisualDesign implements "Reset to legacy presentation" (Stage
@@ -333,8 +394,17 @@ func (m *Manager) DeleteVisualDesign(ctx context.Context, overlayID string) erro
 	if m.visualDesignSvc == nil {
 		return ErrVisualDesignUnavailable
 	}
+	existing, found, err := m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindChatOverlay, overlayID)
+	if err != nil {
+		return err
+	}
 	if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindChatOverlay, overlayID); err != nil {
 		return err
+	}
+	if found && m.assetSvc != nil {
+		if err := m.assetSvc.ClearDesignRefs(ctx, existing.ID); err != nil {
+			return err
+		}
 	}
 	m.refreshPresentation(ctx, overlayID)
 	return nil

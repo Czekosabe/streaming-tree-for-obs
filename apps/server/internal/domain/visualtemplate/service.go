@@ -5,8 +5,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
+
+// AssetRefTracker is the narrow subset of visualasset.Service a
+// template that references a Stage 14B managed asset needs - identical
+// in shape to internal/alerts.AssetRefTracker/internal/chatoverlay.
+// AssetRefTracker. Optional: nil degrades to "no template created or
+// imported through this Service may reference a managed asset".
+type AssetRefTracker interface {
+	Get(ctx context.Context, id string) (visualasset.Asset, error)
+	SetTemplateAssetRefs(ctx context.Context, templateID string, assetIDs []string) error
+	ClearTemplateRefs(ctx context.Context, templateID string) error
+}
 
 // MaxImportBytes bounds a raw imported/previewed template file (Stage
 // 14A task Part 20) - generous relative to visualdesign.MaxDocumentBytes
@@ -26,6 +38,30 @@ type Service struct {
 	builtins []Template
 	now      Clock
 	newID    func() (string, error)
+	// assetSvc is Stage 14B's own managed-asset service - optional, see
+	// AssetRefTracker's own doc comment. Set after construction via
+	// SetAssetService so NewService's own signature/call sites never
+	// need to change.
+	assetSvc AssetRefTracker
+}
+
+// SetAssetService wires Stage 14B's managed-asset service in after
+// construction - call once, before serving any request.
+func (s *Service) SetAssetService(svc AssetRefTracker) {
+	s.assetSvc = svc
+}
+
+func (s *Service) resolveAssetKind(ctx context.Context) visualdesign.AssetResolverFunc {
+	if s.assetSvc == nil {
+		return nil
+	}
+	return func(assetID string) (string, bool) {
+		asset, err := s.assetSvc.Get(ctx, assetID)
+		if err != nil {
+			return "", false
+		}
+		return string(asset.Kind), true
+	}
 }
 
 // NewService builds a Service. now defaults to time.Now().UTC when nil.
@@ -107,7 +143,19 @@ func (s *Service) Create(ctx context.Context, target Target, name, description, 
 	if err := Validate(t); err != nil {
 		return Template{}, err
 	}
-	return s.repo.Create(ctx, t)
+	if err := visualdesign.ValidateAssetReferences(t.Document, s.resolveAssetKind(ctx)); err != nil {
+		return Template{}, err
+	}
+	created, err := s.repo.Create(ctx, t)
+	if err != nil {
+		return Template{}, err
+	}
+	if s.assetSvc != nil {
+		if err := s.assetSvc.SetTemplateAssetRefs(ctx, created.ID, created.Document.AssetReferences()); err != nil {
+			return Template{}, err
+		}
+	}
+	return created, nil
 }
 
 // UpdateMetadata edits name/description/author/license for a USER
@@ -136,7 +184,18 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, ok := s.findBuiltin(id); ok {
 		return ErrImmutable
 	}
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.assetSvc != nil {
+		// docs/visual-template-packages.md §46: deleting a template
+		// never cascade-deletes the assets it references - only its own
+		// reference rows are cleared.
+		if err := s.assetSvc.ClearTemplateRefs(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ImportPreview validates raw (a Stage 14A portable template file,

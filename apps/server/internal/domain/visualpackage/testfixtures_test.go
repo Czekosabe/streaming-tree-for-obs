@@ -162,7 +162,7 @@ func assetFreeDocument(t *testing.T) visualdesign.Document {
 			ID: "layer-1", Name: "Rect", Kind: visualdesign.LayerShape,
 			Visible: true, Order: 0,
 			Frame: visualdesign.Frame{X: 0, Y: 0, Width: 100, Height: 100}, Opacity: 1,
-			Shape: &visualdesign.ShapeProps{Kind: visualdesign.ShapeRectangle, Fill: "#112233"},
+			Shape:          &visualdesign.ShapeProps{Kind: visualdesign.ShapeRectangle, Fill: "#112233"},
 			EntryAnimation: visualdesign.AnimationNone, ExitAnimation: visualdesign.AnimationNone,
 		}},
 	}

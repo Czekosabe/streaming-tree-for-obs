@@ -16572,3 +16572,119 @@ metadata/delete), package import/import-preview/export routes, and the
 public `/api/public/visual-assets/{token}` serving route with Range
 support - then wire every new service into `cmd/server/main.go` and
 `cmd/testserver/main.go`, including the startup reconciliation call.
+
+## 2026-08-11 22:10 — feat(server): validate and track visual design asset references
+
+### What
+Closes a real gap the previous commit's own "known limitations" section
+named: existence/kind validation and reference-tracking for Stage 14B
+asset references (docs/visual-template-packages.md §12/§15) were only
+happening on the package-import path - a Designer's own "Save" for an
+alert rule or chat overlay, and "Save as template", had no such check at
+all, meaning a saved design could reference a nonexistent or wrong-kind
+managed asset, and the delete-guard/garbage-collector's own reference
+counts would never reflect it. Fixed by threading an optional
+`AssetRefTracker` into `internal/alerts.Manager`,
+`internal/chatoverlay.Manager`, and `internal/domain/visualtemplate.
+Service` - the exact same narrow-interface pattern this project already
+uses for `visualtemplate.OwnerBindingCheck` and `chatassets.Resolver`.
+
+### Files changed
+- `apps/server/internal/domain/visualdesign/assetrefs.go` (new) -
+  `Document.AssetReferences()` (every image/video/font asset id a
+  document's own layers carry, deduplicated) and
+  `ValidateAssetReferences(doc, resolve)` (existence + kind-match check
+  via an injected `AssetResolverFunc` closure) - the one place `Layer`'s
+  own payload union is walked for this purpose, reused by all three call
+  sites below rather than duplicated three times.
+- `apps/server/internal/domain/visualdesign/errors.go` - two new
+  sentinels, `ErrAssetMissing`/`ErrAssetKindMismatch` (docs/visual-
+  template-packages.md §57's `visual_asset_missing`/
+  `visual_asset_kind_mismatch`).
+- `apps/server/internal/alerts/manager.go` - new `AssetRefTracker`
+  interface, `ManagerOptions.AssetService` (optional, nil-safe exactly
+  like `VisualDesignService`), `SaveVisualDesign` now validates
+  references before persisting and calls `SetDesignAssetRefs` after;
+  `DeleteVisualDesign` and `DeleteRule`'s own existing visual-design
+  cascade now also call `ClearDesignRefs`.
+- `apps/server/internal/chatoverlay/manager.go` - the identical pattern,
+  added via a new `SetAssetService` setter (kept out of `NewManager`'s
+  own positional argument list so its two existing call sites and both
+  test files never need to change) rather than an options struct, since
+  this constructor is positional, not options-struct-shaped, unlike
+  `internal/alerts.NewManager`.
+- `apps/server/internal/domain/visualtemplate/service.go` - the same
+  pattern again via `SetAssetService`: `Create` now validates references
+  and tracks them via `SetTemplateAssetRefs`; `Delete` now calls
+  `ClearTemplateRefs` (never cascade-deleting the assets themselves,
+  docs/visual-template-packages.md §46).
+- `apps/server/internal/domain/visualpackage/service_test.go` - the
+  test harness now wires `tmplSvc.SetAssetService(assetSvc)`, which
+  `visualtemplate.Service.Create`'s own new validation step requires
+  once a document actually references an asset (three of this file's
+  tests started failing the instant `Create` began enforcing it - the
+  assets it needed already existed by then, since `visualpackage.
+  Service.Import` always uploads before calling `Create`, but the test
+  harness had never told the template service where to look them up).
+
+### Technical decisions
+- **Why a narrow interface per package instead of importing
+  `*visualasset.Service` directly everywhere.** Every existing cross-
+  package dependency in this codebase (`OwnerBindingCheck`,
+  `OperatorChatAssetResolver`, `chatassets.Resolver`) is a small,
+  purpose-built interface, never the full concrete service type - kept
+  consistent here for the same reason: each of the three callers needs
+  three methods at most, and a narrow interface makes exactly which
+  capability each package actually depends on explicit at the call
+  site.
+- **Why `internal/chatoverlay.Manager` got a setter instead of a fourth
+  `NewManager` positional parameter.** `internal/alerts.Manager` already
+  takes an options struct, so adding `AssetService` there was a pure
+  field addition with zero call-site churn. `chatoverlay.NewManager` is
+  positional with only two real call sites (`cmd/server`,
+  `cmd/testserver`) plus two test files - a setter avoids touching any
+  of them just to add one more optional dependency, matching the same
+  "nil is always safe" contract the constructor's other optional
+  argument already has.
+- **Why validation happens inside the domain `Service`/`Manager` layer
+  (not only at the httpapi boundary, which does not exist yet for this
+  feature).** The exact same `Create`/`Save` methods are called from
+  three different directions today - a normal HTTP save, `visualpackage.
+  Service.Import`'s own call into `templates.Create`, and every existing
+  Go test - so the guarantee needed to be real at the one place all
+  three paths converge, not duplicated (or, worse, forgotten) at each
+  call site individually.
+- **Why the small duplicate `SetTemplateAssetRefs` call inside
+  `visualpackage.Service.Import` was left in place rather than removed
+  now that `visualtemplate.Service.Create` does the same thing when
+  wired with an asset service.** `visualpackage.Service` must keep
+  working correctly even if a future caller constructs a
+  `visualtemplate.Service` without ever calling `SetAssetService` on it
+  (exactly as today's own `internal/domain/visualtemplate` test suite
+  still does) - relying solely on `Create`'s own optional side effect
+  would make `visualpackage.Service.Import`'s own correctness silently
+  depend on how a completely different package happened to be wired.
+  The cost is one redundant, idempotent replace-all write when both
+  paths are wired (the normal production case) - accepted deliberately
+  rather than adding a second, more fragile invariant.
+
+### Automated validation
+- `go build ./...` - clean.
+- `go test ./...` (full backend suite) - all pass, including the three
+  `visualpackage` tests that surfaced the test-harness wiring gap above,
+  and every pre-existing `internal/alerts`/`internal/chatoverlay`/
+  `internal/domain/visualtemplate` test (none needed further changes
+  beyond the previous commit's four version-literal updates).
+
+### Known limitations
+Still no HTTP route, and `cmd/server`/`cmd/testserver` still do not
+construct a `visualasset.Service`/`visualpackage.Service` or call
+`SetAssetService` anywhere yet - so in the actually-running application
+today, every `AssetRefTracker`/`assetSvc` field wired in this commit is
+still nil in practice, and `ValidateAssetReferences` still runs with a
+nil resolver everywhere real HTTP traffic reaches it (harmless: it can
+only ever reject a document that references an asset, and no UI yet
+exists that could produce one). That wiring is the next step.
+
+### Next step
+HTTP APIs, as planned in the previous entry, unchanged.

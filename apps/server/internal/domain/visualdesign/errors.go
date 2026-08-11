@@ -21,4 +21,18 @@ var (
 	// ErrTooLarge means the serialized document exceeds
 	// MaxDocumentBytes.
 	ErrTooLarge = errors.New("visual design document is too large")
+	// ErrAssetMissing means a document references a managed asset id
+	// (Stage 14B - AssetReferences) that does not exist in the managed
+	// asset store. Existence itself can only be checked by the owning
+	// service (internal/domain/alerts, internal/domain/chatoverlay),
+	// since this package never imports internal/domain/visualasset -
+	// this sentinel exists so every caller reports the same stable
+	// condition the same way (docs/visual-template-packages.md §57's
+	// visual_asset_missing).
+	ErrAssetMissing = errors.New("visual design references a managed asset that does not exist")
+	// ErrAssetKindMismatch means a document references a managed asset
+	// that exists but is the wrong kind for the layer/field referencing
+	// it (an image layer pointing at a font asset, for example) - docs/
+	// visual-template-packages.md §57's visual_asset_kind_mismatch.
+	ErrAssetKindMismatch = errors.New("visual design references a managed asset of the wrong kind")
 )

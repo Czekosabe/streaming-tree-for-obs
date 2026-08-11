@@ -11,9 +11,26 @@ import (
 
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	bus "github.com/streaming-tree/server/internal/engagement"
 )
+
+// AssetRefTracker is the narrow subset of visualasset.Service a visual
+// design that references a Stage 14B managed asset needs: existence/
+// kind lookup for validation (docs/visual-template-packages.md §12's
+// "two validation layers"), and reference-tracking maintenance so an
+// asset the delete-guard/garbage-collector care about actually reflects
+// which designs use it (§13/§15). Optional - a nil AssetService degrades
+// to "no design saved through this Manager may reference a managed
+// asset" (SaveVisualDesign's ValidateAssetReferences call gets a nil
+// resolver), never a panic; every rule that predates Stage 14B keeps
+// working unchanged.
+type AssetRefTracker interface {
+	Get(ctx context.Context, id string) (visualasset.Asset, error)
+	SetDesignAssetRefs(ctx context.Context, designID string, assetIDs []string) error
+	ClearDesignRefs(ctx context.Context, designID string) error
+}
 
 // alertsPollInterval mirrors internal/chatautomation's own
 // schedulerPollInterval reasoning exactly: a real-time poll loop (never
@@ -44,6 +61,11 @@ type ManagerOptions struct {
 	// panicking, so existing tests/callers that predate Stage 13A never
 	// need to change.
 	VisualDesignService *visualdesign.Service
+	// AssetService is Stage 14B's own managed-asset service - optional,
+	// exactly like VisualDesignService: nil means "no design saved
+	// through this Manager may reference a managed asset" rather than
+	// panicking.
+	AssetService AssetRefTracker
 	// Now is a test-only fake-clock override; production code leaves it
 	// nil.
 	Now clock
@@ -59,6 +81,7 @@ type ManagerOptions struct {
 type Manager struct {
 	domainSvc       *domain.Service
 	visualDesignSvc *visualdesign.Service
+	assetSvc        AssetRefTracker
 	source          *bus.Bus
 	now             clock
 
@@ -83,7 +106,7 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		domainSvc: opts.DomainService, visualDesignSvc: opts.VisualDesignService, source: opts.Bus, now: now,
+		domainSvc: opts.DomainService, visualDesignSvc: opts.VisualDesignService, assetSvc: opts.AssetService, source: opts.Bus, now: now,
 		profiles: make(map[string]*profileRuntime), ctx: ctx, cancel: cancel,
 	}
 }
@@ -367,7 +390,11 @@ func (m *Manager) DeleteRule(ctx context.Context, id string) error {
 	// Repository.Delete's own doc comment for why this is an explicit
 	// application-level call rather than a SQL foreign key cascade.
 	if m.visualDesignSvc != nil {
+		existingDesign, found, _ := m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindAlertRule, id)
 		_ = m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindAlertRule, id)
+		if found && m.assetSvc != nil {
+			_ = m.assetSvc.ClearDesignRefs(ctx, existingDesign.ID)
+		}
 	}
 	m.reloadRules(ctx, existing.ProfileID)
 	return nil
@@ -434,12 +461,38 @@ func (m *Manager) SaveVisualDesign(ctx context.Context, ruleID string, doc visua
 	if err := domain.ValidateDesignBindingsForEventType(doc, rule.EventType); err != nil {
 		return visualdesign.Record{}, err
 	}
+	if err := visualdesign.ValidateAssetReferences(doc, m.resolveAssetKind(ctx)); err != nil {
+		return visualdesign.Record{}, err
+	}
 	rec, err := m.visualDesignSvc.Save(ctx, visualdesign.OwnerKindAlertRule, ruleID, doc, expectedRevision)
 	if err != nil {
 		return visualdesign.Record{}, err
 	}
+	if m.assetSvc != nil {
+		if err := m.assetSvc.SetDesignAssetRefs(ctx, rec.ID, rec.Document.AssetReferences()); err != nil {
+			return visualdesign.Record{}, err
+		}
+	}
 	m.reloadRuleDesign(rule.ProfileID, ruleID, rec.Document)
 	return rec, nil
+}
+
+// resolveAssetKind adapts m.assetSvc into the narrow closure
+// visualdesign.ValidateAssetReferences needs - nil if no asset service
+// is wired, so a design with no asset reference at all still saves
+// exactly as it always could, while one that DOES reference an asset
+// correctly fails closed (docs/visual-template-packages.md §12).
+func (m *Manager) resolveAssetKind(ctx context.Context) visualdesign.AssetResolverFunc {
+	if m.assetSvc == nil {
+		return nil
+	}
+	return func(assetID string) (string, bool) {
+		asset, err := m.assetSvc.Get(ctx, assetID)
+		if err != nil {
+			return "", false
+		}
+		return string(asset.Kind), true
+	}
 }
 
 // DeleteVisualDesign removes ruleID's own saved visual design, if any
@@ -454,8 +507,17 @@ func (m *Manager) DeleteVisualDesign(ctx context.Context, ruleID string) error {
 	if err != nil {
 		return err
 	}
+	existing, found, err := m.visualDesignSvc.Get(ctx, visualdesign.OwnerKindAlertRule, ruleID)
+	if err != nil {
+		return err
+	}
 	if err := m.visualDesignSvc.Delete(ctx, visualdesign.OwnerKindAlertRule, ruleID); err != nil {
 		return err
+	}
+	if found && m.assetSvc != nil {
+		if err := m.assetSvc.ClearDesignRefs(ctx, existing.ID); err != nil {
+			return err
+		}
 	}
 	if pr, ok := m.getRuntime(rule.ProfileID); ok {
 		pr.setRuleDesign(ruleID, nil)

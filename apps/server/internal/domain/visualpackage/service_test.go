@@ -36,6 +36,7 @@ func newTestService(t *testing.T) (*Service, *visualasset.Service, *visualtempla
 	if err != nil {
 		t.Fatalf("build template service: %v", err)
 	}
+	tmplSvc.SetAssetService(assetSvc)
 
 	pkgSvc := NewService(assetSvc, tmplSvc, nil)
 	return pkgSvc, assetSvc, tmplSvc
