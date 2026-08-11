@@ -15170,3 +15170,113 @@ local HEAD match and the tree is clean.
 None - Stage 13 is complete. Stage 14 (built-in templates and template
 import/export) remains planned and was not started, per this task's own
 explicit instruction.
+
+## 2026-08-11 18:10 — fix(docs): correct current visual design contract
+
+### Status
+Stage 14 (built-in templates and template import/export) is being split into
+14A (this task - reusable template library, built-in templates, asset-free
+JSON import/export) and 14B (portable archive packages, managed assets,
+planned, not started). This entry begins Stage 14A.
+
+### What
+`docs/visual-designs.md` is the canonical *live* contract for the shared
+visual-design document, and it had drifted: its opening sections (§1 schema
+versioning, §6 primitive list, §7 binding vocabulary, §11 migration
+behavior, §13 security model) still described Stage 13A's own original
+shape (version 1 only, four layer kinds, eight bindings, "no migration
+needed"), even though Stage 13B's own later sections (§19-§21) already
+correctly described the real current shape (version 2, six layer kinds, ten
+bindings, a real migration). Verified directly against
+`internal/domain/visualdesign` source (`document.go`, `layer.go`,
+`migration.go`) rather than assumed - every number below was counted from
+the actual `const`/`var` declarations, not copied from prose.
+
+### Changes
+- §1: "current, and so far only, version is 1" corrected to "current version
+  is 2", with the historical Stage 13A-only fact preserved explicitly
+  ("Stage 13A originally shipped with version 1 only"). Added the real
+  migrate-then-validate contract (a fresh write must already be at
+  `CurrentVersion`; a stored row is transparently upgraded on read; anything
+  older-than-1 or newer-than-`CurrentVersion` is never migrated and always
+  rejected) and a forward pointer to Stage 14A's own reuse of this exact
+  sequence for template import.
+- §6: retitled from "Stage 13A's bounded set" (four kinds) to the current
+  six-kind table, each row tagged with which stage added it, and the "no
+  custom media kind yet" line updated to name Stage 14B (not "Stage 13B or
+  Stage 14" vaguely) as the earliest place one could ever appear.
+- §7: retitled from "Alert-specific bindings (kept out of the shared
+  schema)" - which conflated "the enum lives in the shared package" with
+  "the enum is alert-only," never true even in Stage 13A's own design - to
+  "Text bindings: a shared closed enum, owner-specific availability."
+  Lists all ten current values, explicitly marks which are alert-only
+  (`alert_rendered_text`, `group_count`), which are chat-only (`timestamp`,
+  `account_label`), and which are shared; describes both owners' own
+  capability-check functions instead of only the alert one; cross-references
+  §20 (Stage 13B's own already-correct binding table) as the authoritative
+  detail.
+- §11: "Not yet needed (only version 1 exists)" corrected to describe the
+  real, exercised `Version1 -> Version2` migration and its own test proof.
+- §13: "one of eight closed enum values" corrected to "one of ten."
+- §16: "Stage 14 ... is expected to treat this same Document shape as its
+  template payload" corrected to describe the real 14A/14B split and that a
+  template's own `schemaVersion` counts template-format revisions
+  completely independently from the embedded document's own `version` -
+  forward-referencing the new `docs/visual-templates.md` (written in the
+  next commit).
+
+### Stage 13B Git-history audit (Stage 14A task Part 3)
+The prior session's own **chat-only** final report (never written into this
+repository) claimed "Six commits" for Stage 13B. Audited directly against
+`git log --oneline 41dfddd..d1eaec9` (the exact range from Stage 13A's own
+final commit through Stage 13B's own closing-regression commit) rather than
+trusting that prose:
+
+| # | Hash | Subject |
+| - | ---- | ------- |
+| 1 | `dcf64aa` | `fix(docs): correct Stage 13A final status` |
+| 2 | `25fc441` | `docs: define chat visual design contract` |
+| 3 | `bcb35a7` | `feat(server): persist chat overlay visual designs` |
+| 4 | `53c1573` | `feat(server): integrate visual designs with chat overlays` |
+| 5 | `f58c69f` | `feat(web): share visual designer foundations` |
+| 6 | `510e10c` | `feat(web): add chat overlay designer` |
+| 7 | `e01edf3` | `test: verify chat overlay designer locally` |
+| 8 | `5dfc107` | `docs: complete Stage 13 visual designers` |
+| 9 | `d1eaec9` | `docs: record Stage 13 closing regression` |
+
+**Exactly 9 commits, not 6.** `grep -n "commit" docs/*.md README.md
+THIRD_PARTY_NOTICES.md config/README.md` for any aggregate commit-count
+claim matching this range found none in any tracked document - every
+individual progress.md entry for these nine commits describes only its own
+scope, never a running total. **The error existed only in the prior
+session's own chat-message prose, never in this repository**, so per this
+task's own explicit instruction ("do NOT create a documentation correction
+merely for that chat message"), no tracked file needed correcting for this -
+this entry is the complete record of the audit itself.
+
+### Files changed
+`docs/visual-designs.md` only.
+
+### Technical decisions
+- **What counts as "the canonical live contract" vs. "a historical
+  record."** `docs/visual-designs.md` is a reference document that describes
+  the system *as it exists now* (unlike `docs/progress.md`, an append-only
+  journal, or `docs/engagement-architecture.md` §13's own dated `>` status
+  blockquotes) - so its own stale sections were corrected in place, exactly
+  like the Stage 13B `fix(docs): correct Stage 13A final status` commit
+  already established for this same file's §10/§15 CHECK-constraint claim.
+  Historical facts (Stage 13A shipped version 1; four kinds originally) were
+  preserved as explicit past-tense statements inside the corrected
+  sections, never deleted outright.
+
+### Automated validation
+Documentation only - no code changed. `git log` commands used for the audit
+above are reproducible directly from this entry.
+
+### Known limitations
+None.
+
+### Next step
+`docs/visual-templates.md` - the canonical Stage 14A template-format/library
+contract, written before any template code is implemented, per this task's
+own explicit ordering requirement.

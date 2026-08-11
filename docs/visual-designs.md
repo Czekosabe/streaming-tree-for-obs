@@ -23,16 +23,34 @@ shared package itself - see §12/§20).
 
 ## 1. Schema versioning
 
-Every document carries an explicit integer `version`. The current, and so far
-only, version is **1** (`visualdesign.CurrentVersion`).
+Every document carries an explicit integer `version`. **The current version is
+2** (`visualdesign.CurrentVersion` = `Version2`). Stage 13A originally shipped
+with version 1 only (four layer kinds, eight text bindings); Stage 13B bumped
+`CurrentVersion` to 2 to add the two shared layer kinds and two text bindings
+chat needed (§19/§21) - this section describes the contract as it exists
+**today**, not Stage 13A's own original one.
 
-- A document whose `version` does not equal the currently supported version is
-  rejected outright by `Validate` - there is no "best effort" reinterpretation
-  of an unrecognized shape.
-- Stage 13A defines no migration path between versions, because only one
-  version has ever existed. A future version bump gets its own explicit,
-  reviewed migration function in the domain package; it is never silently
-  inferred from the JSON shape.
+- A document whose `version` does not equal `CurrentVersion` is rejected
+  outright by `Validate` at the point it is validated - there is no "best
+  effort" reinterpretation of an unrecognized shape. This still applies
+  unchanged: a *fresh write* (a Designer Save, a Stage 14A template
+  create/import) must already be at `CurrentVersion`, or it is rejected.
+- Reading a **stored** row is different: `MigrateToCurrentVersion`
+  (`internal/domain/visualdesign/migration.go`) runs once, on read, before
+  `Validate` ever sees the document, and transparently upgrades a
+  version-1 row to version 2 - see §19 for the exact migration and why it is
+  lossless. This is the "explicit, reviewed migration function in the domain
+  package, never silently inferred from the JSON shape" this section
+  originally promised before Stage 13B needed it for real; every Stage 13A
+  alert design has loaded and rendered identically since.
+- A version *older than 1*, or *newer than `CurrentVersion`*, is never
+  migrated and is always rejected - `MigrateToCurrentVersion` only knows the
+  one specific `Version1 -> Version2` step, and passes anything else through
+  unchanged, which then fails `Validate`'s own version check. Stage 14A's own
+  template import path (`docs/visual-templates.md`) reuses this exact
+  migrate-then-validate sequence for a portable file's embedded document, so
+  an unknown/future/malformed version is rejected there too, never silently
+  reinterpreted.
 - The public payload (`PublicDocument`) carries its own `schemaVersion`,
   copied from the source document's `version` - a public consumer (the
   frontend renderer) can reject or gracefully ignore a version it does not yet
@@ -98,21 +116,26 @@ about gaps, and rendering never depends on array/DOM insertion order.
   layer always receives a brand-new id - never derived from its position in
   the array.
 
-## 6. Shared primitive types (Stage 13A's bounded set)
+## 6. Shared primitive types (current set: six layer kinds)
 
-Four layer kinds, deliberately small and generic enough to be reused
-unchanged by Stage 13B:
+Stage 13A shipped four deliberately small, generic layer kinds. Stage 13B
+reused all four completely unchanged and added two more (`message_fragments`,
+`badge_list`) - the current, complete set is six:
 
-| Kind | Purpose |
-| --- | --- |
-| `shape` | A solid-color rectangle (fill, border, corner radius) - also used as a "background" instead of a separate arbitrary CSS background concept. |
-| `text` | Bound, closed-vocabulary text content (see §7) with bounded typography. |
-| `platform_icon` | The application's own existing provider glyph mapping - never an arbitrary icon URL. |
-| `avatar` | The safe, already-normalized avatar URL already present on a public alert item - never an arbitrary URL, never a fresh per-render provider request. |
+| Kind | Purpose | Added |
+| --- | --- | --- |
+| `shape` | A solid-color rectangle (fill, border, corner radius) - also used as a "background" instead of a separate arbitrary CSS background concept. | Stage 13A |
+| `text` | Bound, closed-vocabulary text content (see §7/§20) with bounded typography. | Stage 13A |
+| `platform_icon` | The application's own existing provider glyph mapping - never an arbitrary icon URL. | Stage 13A |
+| `avatar` | The safe, already-normalized avatar URL already present on a public alert/chat item - never an arbitrary URL, never a fresh per-render provider request. | Stage 13A |
+| `message_fragments` | A chat item's own already-normalized, already-ordered message fragments (text/emote/mention), rendered as text with resolved safe emote images - never raw HTML, never a fresh per-render provider request. | Stage 13B (§21) |
+| `badge_list` | A chat item's own already-resolved public badge image DTOs, bounded count - never an arbitrary image URL. | Stage 13B (§21) |
 
 No custom media layer kind (uploaded image/video/audio/font) exists yet -
-that remains explicitly out of scope until its own storage/security model is
-designed (Stage 13B or Stage 14, not assumed here).
+that remains explicitly out of scope. Stage 14A (built-in templates,
+asset-free JSON import/export, `docs/visual-templates.md`) does not add one
+either; any such primitive remains deferred to Stage 14B at the earliest, with
+its own dedicated storage/security model.
 
 Every layer additionally carries: `id`, `name` (management-only), `kind`,
 `visible`, `locked` (management-only), `order`, `frame`, `opacity`
@@ -121,37 +144,56 @@ Every layer additionally carries: `id`, `name` (management-only), `kind`,
 alerts and the chat overlay), and a bounded `animationDurationMs`
 (`0`-`2000`).
 
-## 7. Alert-specific bindings (kept out of the shared schema)
+## 7. Text bindings: a shared closed enum, owner-specific availability
 
-A `text` layer's content source is the closed `TextBinding` enum:
+A `text` layer's content source is the closed `TextBinding` enum - as of
+Stage 13B this enum is **genuinely shared** across every owner, not an
+alert-only concept with chat bolted on later. Ten values exist today:
 
 `static`, `alert_rendered_text`, `username`, `platform`, `event_type`,
-`message`, `quantity`, `group_count`.
+`message`, `quantity`, `group_count`, `timestamp`, `account_label`.
 
 - `static` uses the layer's own `staticText` (bounded 500 code points,
-  never empty).
+  never empty) - meaningful for every owner.
 - `alert_rendered_text` reuses the Stage 12 rule's own already-rendered,
   already-validated text template - the shared document never replaces or
-  duplicates that parser.
-- The remaining five mirror `internal/alerts`'s own closed placeholder
-  vocabulary one-to-one, so both systems describe the same underlying alert
-  data.
+  duplicates that parser. **Alert-only**: never legal for a chat-overlay
+  design (enforced both by chat's own capability check, §20, and - for a
+  Stage 14A template specifically targeting chat - by template-level
+  validation itself, `docs/visual-templates.md`).
+- `group_count` is likewise **alert-only** (chat items are never grouped).
+- `username`, `platform`, `event_type`, `message`, `quantity` are shared:
+  each means something for both an alert and a chat item, documented once in
+  §20's own table rather than per-owner.
+- `timestamp`, `account_label` are **chat-only** (Stage 13B, §20) - no alert
+  event type ever populates either.
 
-**Availability is capability-driven, exactly like Stage 12's own
-`AvailablePlaceholders`**: `AvailableTextBindings(eventType)` in
-`internal/domain/alerts/visualdesign_binding.go` returns the bindings that
-actually make sense for a given event type (e.g. `quantity` is unavailable
-for `follow`), reading the *same* `CapabilityFor`/`GroupingCapabilityFor`
-tables Stage 12's template placeholders already use - never a second,
-independently-maintained list that could drift. `Validate
-DesignBindingsForEventType` rejects a save containing an unavailable binding
-(422), the design-document analogue of `ValidateTemplateForEventType`.
+**Availability for a *specific owner instance* is capability-driven**, never
+just "is this binding structurally valid":
 
-This capability logic deliberately lives **beside** the alert domain
-(`internal/domain/alerts`), not inside `internal/domain/visualdesign` itself
-- the shared package has no concept of "alert capability" at all, and never
-imports `internal/domain/engagement`, `internal/provider/twitch`,
-`internal/alerts`, or `internal/operatorchat`.
+- For an alert rule, `AvailableTextBindings(eventType)` in
+  `internal/domain/alerts/visualdesign_binding.go` returns the bindings that
+  actually make sense for that rule's own event type (e.g. `quantity` is
+  unavailable for `follow`), reading the *same* `CapabilityFor`/
+  `GroupingCapabilityFor` tables Stage 12's template placeholders already
+  use - never a second, independently-maintained list that could drift.
+  `ValidateDesignBindingsForEventType` rejects a save containing an
+  unavailable binding (422), the design-document analogue of
+  `ValidateTemplateForEventType`.
+- For a chat overlay, `AvailableTextBindings(itemKind)` in
+  `internal/domain/chatoverlay/visualdesign_binding.go` returns the bindings
+  valid for a message or activity item; `ValidateDesignBindingsForChatOverlay`
+  rejects `alert_rendered_text` outright and gates `event_type`/`quantity` to
+  activity items.
+
+This capability logic deliberately lives **beside each owning domain**
+(`internal/domain/alerts`, `internal/domain/chatoverlay`), never inside
+`internal/domain/visualdesign` itself - the shared package has no concept of
+"alert capability" or "chat capability" at all, and never imports
+`internal/domain/engagement`, `internal/provider/twitch`, `internal/alerts`,
+`internal/chatoverlay`, or `internal/operatorchat`. Neither owning domain
+imports the other either. See §20 for the full current-vs-owner binding
+table and the exact chat-side rules.
 
 ### Missing-value behavior
 
@@ -259,14 +301,21 @@ CREATE TABLE visual_designs (
   explicit application-level call instead: `internal/alerts.Manager.
   DeleteRule` calls `visualDesignSvc.Delete` as part of deleting a rule.
 
-## 11. Migration behavior (between future document versions)
+## 11. Migration behavior (between document versions)
 
-Not yet needed (only version 1 exists), but the contract for when it is: a
-new version gets an explicit `migrateVX toVY(doc)` function in
-`internal/domain/visualdesign`, applied on read when an older stored version
-is encountered, never a schema-version bump silently reinterpreting old field
-names. `Validate` always validates the *current* version's own rules after
-any such migration runs.
+Exercised for real since Stage 13B: `MigrateToCurrentVersion`
+(`internal/domain/visualdesign/migration.go`) is the one explicit migration
+function, applied on read whenever an older stored version is encountered -
+never a schema-version bump silently reinterpreting old field names. Today it
+knows exactly one step, `Version1 -> Version2`, proven lossless by
+`migration_test.go` (a raw pre-migration row inserted directly via SQL reads
+back migrated and byte-for-byte semantically unchanged). `Validate` always
+validates the *current* version's own rules after any such migration runs - a
+document that migration could not bring to `CurrentVersion` (too old, unknown,
+or future) still fails `Validate` outright. See §19 for the full Stage 13B
+migration and §1 for the version-rejection contract this section's own rule
+extends. A future `Version2 -> Version3` step would get its own explicit,
+reviewed function added here the same way, applied in sequence.
 
 ## 12. Backward compatibility
 
@@ -301,8 +350,8 @@ existing rule's public appearance changes merely because Stage 13A shipped.
   `data:` URL, or `javascript:` URL is ever accepted anywhere in the document.
   Every style value is a validated, typed, bounded primitive (§8).
 - **No arbitrary object paths / expression language**: a text binding is one
-  of eight closed enum values (§7) - never `event.user.name`-style path
-  syntax, never a template/expression language.
+  of ten closed enum values, shared across every owner (§7/§20) - never
+  `event.user.name`-style path syntax, never a template/expression language.
 - **No arbitrary URLs**: `platform_icon` uses only the application's own
   glyph mapping; `avatar` uses only the already-normalized, already-safe
   avatar URL a public alert item already carries (HTTPS-only, approved
@@ -354,13 +403,22 @@ See §17-§25 below for the full Stage 13B contract.
 
 ## 16. Stage 14 relationship
 
-Stage 14 (built-in templates, template import/export) is expected to treat
-this same `Document` shape as its **template payload** - the thing a
-template package contains one or more of. Stage 14 is responsible for its own
-archive/packaging format (asset bundling, metadata, versioning of the archive
-itself, migration of an imported older template package) on top of this
-payload; none of that is defined here, and none of it is implemented by
-Stage 13A or Stage 13B.
+Stage 14 is split into 14A (reusable template library, built-in templates,
+asset-free JSON import/export) and 14B (portable archive packages, managed
+template assets). Stage 14A treats this same `Document` shape as the
+**embedded payload** inside its own, independent template-interchange schema
+- a Stage 14A template file's own `schemaVersion` counts template-format
+revisions, completely separately from this document's own `version`; see
+`docs/visual-templates.md` for the full contract and the worked example of
+why the two counters are independent. Stage 14A adds no new layer kind, no
+new binding, and no asset primitive to this document - every template's own
+embedded document is validated by the exact same `Validate` this file
+describes, normalized to `CurrentVersion` via `MigrateToCurrentVersion` on
+import exactly like any other stored document. Stage 14B remains responsible
+for its own archive/packaging format (asset bundling, metadata, versioning of
+the archive itself, migration of an imported older archive) on top of the
+Stage 14A template payload; none of that is defined here, and none of it is
+implemented by Stage 13A, Stage 13B, or Stage 14A.
 
 ## 17. Chat item/card design semantics (Stage 13B)
 
