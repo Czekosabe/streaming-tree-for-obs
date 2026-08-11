@@ -74,6 +74,24 @@ type visualDesignAvatarDTO struct {
 	BorderWidth  int    `json:"borderWidth"`
 }
 
+type visualDesignMessageFragmentsDTO struct {
+	FontFamily      string  `json:"fontFamily"`
+	FontSize        int     `json:"fontSize"`
+	FontWeight      int     `json:"fontWeight"`
+	LineHeight      float64 `json:"lineHeight"`
+	LetterSpacing   float64 `json:"letterSpacing"`
+	TextColor       string  `json:"textColor"`
+	HorizontalAlign string  `json:"horizontalAlign"`
+	VerticalAlign   string  `json:"verticalAlign"`
+	EmoteSize       int     `json:"emoteSize"`
+}
+
+type visualDesignBadgeListDTO struct {
+	MaxCount  int `json:"maxCount"`
+	BadgeSize int `json:"badgeSize"`
+	Gap       int `json:"gap"`
+}
+
 type visualDesignLayerDTO struct {
 	ID      string               `json:"id"`
 	Name    string               `json:"name"`
@@ -84,10 +102,12 @@ type visualDesignLayerDTO struct {
 	Frame   visualDesignFrameDTO `json:"frame"`
 	Opacity float64              `json:"opacity"`
 
-	Shape        *visualDesignShapeDTO  `json:"shape,omitempty"`
-	Text         *visualDesignTextDTO   `json:"text,omitempty"`
-	PlatformIcon *struct{}              `json:"platformIcon,omitempty"`
-	Avatar       *visualDesignAvatarDTO `json:"avatar,omitempty"`
+	Shape            *visualDesignShapeDTO            `json:"shape,omitempty"`
+	Text             *visualDesignTextDTO             `json:"text,omitempty"`
+	PlatformIcon     *struct{}                        `json:"platformIcon,omitempty"`
+	Avatar           *visualDesignAvatarDTO           `json:"avatar,omitempty"`
+	MessageFragments *visualDesignMessageFragmentsDTO `json:"messageFragments,omitempty"`
+	BadgeList        *visualDesignBadgeListDTO        `json:"badgeList,omitempty"`
 
 	EntryAnimation      string `json:"entryAnimation"`
 	ExitAnimation       string `json:"exitAnimation"`
@@ -152,6 +172,17 @@ func documentToDTO(doc visualdesign.Document) visualDesignDocumentDTO {
 		if l.Avatar != nil {
 			dto.Avatar = &visualDesignAvatarDTO{CornerRadius: l.Avatar.CornerRadius, BorderColor: l.Avatar.BorderColor, BorderWidth: l.Avatar.BorderWidth}
 		}
+		if l.MessageFragments != nil {
+			dto.MessageFragments = &visualDesignMessageFragmentsDTO{
+				FontFamily: string(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
+				HorizontalAlign: string(l.MessageFragments.HorizontalAlign), VerticalAlign: string(l.MessageFragments.VerticalAlign),
+				EmoteSize: l.MessageFragments.EmoteSize,
+			}
+		}
+		if l.BadgeList != nil {
+			dto.BadgeList = &visualDesignBadgeListDTO{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
+		}
 		layers = append(layers, dto)
 	}
 	return visualDesignDocumentDTO{
@@ -194,6 +225,17 @@ func documentFromDTO(dto visualDesignDocumentDTO) visualdesign.Document {
 		}
 		if l.Avatar != nil {
 			layer.Avatar = &visualdesign.AvatarProps{CornerRadius: l.Avatar.CornerRadius, BorderColor: l.Avatar.BorderColor, BorderWidth: l.Avatar.BorderWidth}
+		}
+		if l.MessageFragments != nil {
+			layer.MessageFragments = &visualdesign.MessageFragmentsProps{
+				FontFamily: visualdesign.FontFamily(l.MessageFragments.FontFamily), FontSize: l.MessageFragments.FontSize, FontWeight: l.MessageFragments.FontWeight,
+				LineHeight: l.MessageFragments.LineHeight, LetterSpacing: l.MessageFragments.LetterSpacing, TextColor: l.MessageFragments.TextColor,
+				HorizontalAlign: visualdesign.HorizontalAlign(l.MessageFragments.HorizontalAlign), VerticalAlign: visualdesign.VerticalAlign(l.MessageFragments.VerticalAlign),
+				EmoteSize: l.MessageFragments.EmoteSize,
+			}
+		}
+		if l.BadgeList != nil {
+			layer.BadgeList = &visualdesign.BadgeListProps{MaxCount: l.BadgeList.MaxCount, BadgeSize: l.BadgeList.BadgeSize, Gap: l.BadgeList.Gap}
 		}
 		layers = append(layers, layer)
 	}
@@ -242,6 +284,16 @@ func toPublicVisualDesignDTO(doc *visualdesign.PublicDocument) map[string]any {
 		}
 		if l.Avatar != nil {
 			layer["avatar"] = map[string]any{"cornerRadius": l.Avatar.CornerRadius, "borderColor": l.Avatar.BorderColor, "borderWidth": l.Avatar.BorderWidth}
+		}
+		if l.MessageFragments != nil {
+			layer["messageFragments"] = map[string]any{
+				"fontFamily": l.MessageFragments.FontFamily, "fontSize": l.MessageFragments.FontSize, "fontWeight": l.MessageFragments.FontWeight,
+				"lineHeight": l.MessageFragments.LineHeight, "letterSpacing": l.MessageFragments.LetterSpacing, "textColor": l.MessageFragments.TextColor,
+				"horizontalAlign": l.MessageFragments.HorizontalAlign, "verticalAlign": l.MessageFragments.VerticalAlign, "emoteSize": l.MessageFragments.EmoteSize,
+			}
+		}
+		if l.BadgeList != nil {
+			layer["badgeList"] = map[string]any{"maxCount": l.BadgeList.MaxCount, "badgeSize": l.BadgeList.BadgeSize, "gap": l.BadgeList.Gap}
 		}
 		layers = append(layers, layer)
 	}

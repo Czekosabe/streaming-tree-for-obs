@@ -14735,3 +14735,170 @@ run build` - all clean.
 ### Next step
 The 14th integration script, `scripts/verify-chat-overlay-designer.mjs`,
 run at least twice.
+
+## 2026-08-11 15:20 — test: verify chat overlay designer locally
+
+### What
+`scripts/verify-chat-overlay-designer.mjs`, the fourteenth and final
+local integration script (Stage 13B task Part 39) - the same no-real-
+Twitch/no-real-OBS fake OAuth+Helix+EventSub harness every other
+`verify-*.mjs` script uses, covering the chat-overlay visual-design
+HTTP API and its full-stack integration with the real Stage 10
+chat-overlay projection/public-SSE runtime.
+
+### Two real pre-existing bugs, found and fixed while writing it
+1. **Missing HTTP wire DTO fields for the two Stage 13B layer kinds.**
+   The first `PUT .../visual-design` carrying a `message_fragments`
+   layer failed immediately with `unknown_field: "messageFragments"`.
+   `internal/domain/visualdesign` (document/layer/validation/public.go)
+   and `internal/storage/sqlite` had all been updated for
+   `MessageFragmentsProps`/`BadgeListProps` in the "persist chat overlay
+   visual designs" commit, but `internal/httpapi/visualdesign.go` - the
+   one hand-written wire-DTO layer both the alert-rule and chat-overlay
+   HTTP routes share (`documentToDTO`/`documentFromDTO`/
+   `toPublicVisualDesignDTO`) - was never updated to match, so the HTTP
+   API could not accept, return, or publicly expose either new layer
+   kind at all. No existing Go test caught this because
+   `internal/httpapi/visualdesign_test.go`'s own fixture never exercised
+   the two new kinds either. Fixed by adding
+   `visualDesignMessageFragmentsDTO`/`visualDesignBadgeListDTO` and
+   wiring all three conversion functions; `gofmt -l .`, `go vet ./...`,
+   `go build ./...` and `go test ./internal/httpapi/...` all stayed
+   clean afterward.
+2. **`scripts/verify-alert-designer.mjs` (the 13th script) silently
+   broken by the Stage 13B document-version bump.** Re-running it after
+   the fix above failed at its very first save with
+   `visual_design_invalid`: its own `designDocument()` fixture still
+   hard-coded `version: 1`, and `validation.go` rejects any
+   `doc.Version != CurrentVersion` outright on a fresh save (only a
+   *stored* pre-existing row is migrated on read, via
+   `MigrateToCurrentVersion` in `scanVisualDesign` - a brand-new save
+   request is never migrated, by design, since a client is expected to
+   send the current schema). `CurrentVersion` became `Version2` in the
+   "persist chat overlay visual designs" commit; the Go-level
+   `internal/httpapi/visualdesign_test.go` fixture was bumped to
+   `version: 2` in that same commit, but the equivalent integration-
+   script literal was missed, so this regression existed - undetected -
+   from that commit onward until this script's own full run surfaced
+   it. Fixed by updating `designDocument()`'s `version: 1` to `version:
+   2` (the document's own wire shape is otherwise byte-for-byte
+   unchanged, matching `MigrateToCurrentVersion`'s own documented
+   losslessness). Re-ran `verify-alert-designer.mjs` twice afterward -
+   all 28 steps pass both times, zero assertions weakened.
+
+### Scenario coverage (27 steps)
+Legacy overlay unaffected (a real fake-Twitch message still renders
+through the Stage 10 legacy path with no design saved); deterministic,
+never-persisted draft generation (two GETs, same layer id, both
+`persisted:false`); save-at-revision-1; stale-revision 409 with no
+overwrite; valid-revision save incrementing to revision 2; an
+alert-only binding (`alert_rendered_text`) rejected for a chat design
+(422); an unrecognized layer kind rejected (422); a second overlay's
+own save never disturbing the first overlay's revision (owner-kind
+independence); public config reporting `renderingMode:"visual_design"`
+with the full 5-layer design and no editor-only `name`/`locked` field;
+a real fake-Twitch chat message resolving the design's own
+username/message_fragments layers while still carrying its own real
+content and provider id (presentation is separate from content); the
+active design's avatar layer never starved by the legacy
+`showAvatar:false` toggle (Part 11's data-needs override, now proven
+again at the full public-HTTP/SSE level in addition to
+`lifecycle_test.go`'s own Go-level proof); a blocked term and a hidden
+user both still preventing their own item from ever reaching the
+public overlay, design-driven or not; a moderation message deletion
+staying immediate (reason `message_deleted`, no message text in the
+remove payload); saving a NEW design while an item is currently visible
+producing a `chat-overlay.reset` with the exact same item count (no
+duplication, no resurrection of the earlier moderated-away message -
+Part 20's central current-presentation guarantee) immediately followed
+by a `chat-overlay.presentation` event, and a refetched public config
+reflecting the new design; a reconnecting subscriber using a real
+`Last-Event-ID` (captured from before the save) replaying the
+save-produced revision with no `chat-overlay.gap`; Reset to legacy
+(idempotent DELETE) returning one overlay to legacy while leaving a
+second, independently-designed overlay completely unaffected; deleting
+an overlay profile cascading its own saved design (404 afterward);
+design survival across a full backend restart plus a fresh real event
+still rendering correctly post-restart; and a closing scan that
+deliberately separates the full captured-traffic haystack (which
+legitimately contains the blocked term/hidden user, since the admin
+management API echoes back what an operator just configured) from a
+public-only haystack (SSE bodies and `/api/public/*` responses only),
+confirming the blocked term, the hidden user's provider id, any
+internal overlay id, any access/refresh token, and any raw EventSub
+envelope key never appear in anything a real public viewer could see.
+
+### Deliberately omitted scenarios (Part 39: "a representative subset
+may be used only if every omission is mapped to a specific covering
+test")
+- Capacity eviction staying cosmetically classified for a design-driven
+  overlay - the classification is entirely a Stage 10
+  `internal/chatoverlay` concern, unaffected by rendering mode; already
+  proven by `remove_reason_test.go`'s
+  `TestProjectionCapacityEvictionCarriesCapacityEvictedReason` and
+  `TestRemoveReasonIsCosmetic`, and exercised end-to-end (legacy mode)
+  by the existing, unchanged `verify-chat-overlay.mjs`.
+- Per-user "clear my messages" and whole-chat "clear" immediacy for a
+  design-driven overlay - the immediate-removal mechanism is identical
+  to the message-deletion path this script does exercise (step 19);
+  already proven directly by
+  `TestProjectionUserMessagesClearCarriesImmediateUserMessagesClearedReason`
+  and `TestProjectionChatClearCarriesImmediateChatClearedReason`, and
+  end-to-end (legacy mode) by `verify-chat-overlay.mjs`.
+- Activity-item (follow/subscription/bits/raid/redemption) rendering
+  through a saved design - the item-kind/binding-availability logic is
+  proven at the Go level by
+  `internal/domain/chatoverlay/visualdesign_binding_test.go`, and the
+  frontend mapping from a `PublicChatOverlayItem` activity to a
+  `VisualDesignDataContext` (shared by both the real renderer and every
+  designer preview scenario) by
+  `chat-item-data-context.test.ts`; simulating a real fake-Twitch
+  activity event end-to-end would duplicate
+  `verify-twitch-engagement.mjs`'s own already-exhaustive event
+  coverage without adding a new interaction to prove.
+- Rich-message rendering (emote fragments, badges, mentions) through a
+  saved design beyond the plain-text case this script exercises - the
+  `message_fragments`/`badge_list` layer components' own safe rendering
+  (never `dangerouslySetInnerHTML`, bounded badge count, HTTPS-only
+  image URLs) is a frontend-only concern, proven by
+  `MessageFragmentsLayer`/`BadgeListLayer`'s own component tests and
+  `VisualDesignRenderer.test.tsx`; the backend's role (passing already-
+  normalized fragment/badge DTOs through unmodified) is generic to
+  every layer kind and already covered by step 15's real-message
+  round-trip.
+- An unbridgeable gap on reconnect forcing a fresh full resync rather
+  than a replay - a general Stage 10 SSE-ring-buffer property,
+  independent of rendering mode; already proven by
+  `verify-chat-overlay.mjs`'s own gap-handling coverage and
+  `internal/chatoverlay`'s projection replay tests.
+- The full validation-rejection matrix beyond the 2 representative
+  cases here (every individual bound, the full unknown-field scan,
+  every canvas/layer-count/document-size boundary) - already
+  exhaustively covered by
+  `internal/domain/visualdesign/validation_test.go` and
+  `internal/httpapi/visualdesign_test.go`.
+- Frontend-only guarantees (Designer UI interactions, undo/redo,
+  drag/resize, the 21 preview scenarios, Preview-vs-real-overlay
+  separation) - covered by the frontend Testing Library suite recorded
+  in the "add chat overlay designer" commit's own journal entry, out of
+  scope for a backend/full-stack script by construction.
+
+### Runs
+Two consecutive clean runs (all 27 steps passing both times), per Part
+39's own explicit requirement, immediately after the two fixes above.
+`verify-alert-designer.mjs` was also re-run twice after its own fix,
+confirming zero regression to Stage 13A's own script.
+
+### Automated validation
+`gofmt -l .` (clean), `go vet ./...` (clean), `go build ./...` (clean),
+`go test ./internal/httpapi/...` (pass); `node
+scripts/verify-chat-overlay-designer.mjs` x2 (pass); `node
+scripts/verify-alert-designer.mjs` x2 (pass, post-fix).
+
+### Next step
+The Stage 13 documentation completion pass (README, project-overview,
+engagement-architecture new Stage 13B status blockquote,
+visual-designs.md final consolidation, obs-browser-source, config/README,
+THIRD_PARTY_NOTICES audit), then the full closing regression across
+frontend, backend, and all fourteen integration scripts, then the final
+Stage 13 closing-regression journal entry, then push.
