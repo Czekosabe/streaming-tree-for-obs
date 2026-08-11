@@ -14140,3 +14140,115 @@ before implementing" precedent), then the SQLite migration, backend
 domain/runtime integration, frontend designer reuse, the 14th
 integration script, final documentation, and the Stage 13 closing
 regression.
+
+## 2026-08-11 09:40 — docs: define chat visual design contract
+
+### Status
+Contract written before implementation, per this task's own explicit
+"write the design-format contract first" instruction (mirroring the
+same precedent Stage 13A itself followed for the alert designer).
+
+### What
+Appended §17-§25 to `docs/visual-designs.md` (the file is append-
+extended, not rewritten - §1-§16 are untouched except §15/§16's own
+small forward-pointing corrections already made in the previous
+commit), covering every Stage 13B architecture decision before any
+Go/TypeScript code exists for it:
+
+- **§17 Chat item/card semantics**: a chat visual design describes one
+  repeated overlay item/card, instantiated once per currently-visible
+  item by the existing `ChatOverlayRenderer`; Stage 10's own
+  `internal/chatoverlay` projection keeps owning every filtering/
+  lifecycle concern (account selection, hidden users, blocked terms,
+  bot/command filtering, activity-type selection, maxVisibleItems,
+  message lifetime, capacity eviction, moderation removal, stack
+  direction) completely unchanged - the document has no field that
+  could ever touch any of it.
+- **§18 Ownership**: `OwnerKindChatOverlay = "chat_overlay"`, one
+  design per chat-overlay profile, explicit cascade-delete on profile
+  deletion mirroring the alert-rule pattern exactly.
+- **§19 Document version 2**: two new closed enum values each on
+  `LayerKind` and `TextBinding` are a genuine schema-vocabulary change
+  (not just a new owner kind, which needed no version bump) -
+  `CurrentVersion` becomes 2, with a lossless `MigrateToCurrentVersion`
+  (a stored v1 document's wire shape is already byte-for-byte a valid
+  v2 one; migration is exactly "relabel Version=2", since a v1
+  document could never have used a v2-only value).
+- **§20 Shared vocabulary, owner-specific capability**: `TextBinding`
+  stays one enum; 5 existing values are reused for chat with their
+  meaning documented once (`event_type` doubles as an activity item's
+  own `activityType`, reusing the identical vocabulary rather than a
+  redundant second binding); `timestamp`/`account_label` are new,
+  chat-only; `alert_rendered_text` is alert-only and rejected outright
+  for chat. A new `internal/domain/chatoverlay/visualdesign_binding.go`
+  (mirroring `internal/domain/alerts`'s own file) owns the chat-side
+  capability check, item-kind-aware (message vs activity) rather than
+  event-type-aware.
+- **§21 New shared primitives**: `message_fragments` (renders the
+  item's own already-normalized ordered fragments - text/emote/mention
+  - never reparses raw payload, never `dangerouslySetInnerHTML`) and
+  `badge_list` (renders already-resolved public badge image DTOs,
+  bounded count/size/gap) - both genuinely shared types in
+  `internal/domain/visualdesign`, not chat-specific, even though no
+  alert item has fragments/badges to bind today.
+- **§22 Data-needs model**: `internal/domain/chatoverlay.
+  DeriveDataNeeds(doc) ChatDataNeeds` derived only from the saved
+  design's own layers, threaded through `resolvedSettings` so an active
+  design's avatar/badge/account-label layers are never silently starved
+  by an unrelated legacy toggle being off - while never bypassing the
+  filtering that happens upstream of it (blocked terms, hidden users,
+  moderation, account selection all remain authoritative first).
+- **§23 Legacy mode**: identical backward-compatibility guarantee to
+  Stage 13A's alerts - no migration ever attaches a design to an
+  existing profile, opening the Designer persists nothing, and a
+  profile's legacy visual columns are preserved (never overwritten)
+  while a design is active, so Reset to legacy restores them exactly.
+- **§24 Current-presentation semantics vs alert snapshot semantics**:
+  the deliberate, load-bearing difference from Stage 13A - an alert
+  design is snapshotted per alert *instance* (queued/replayed alerts
+  must never change), while a chat design is current profile
+  presentation with no per-item snapshot at all, since nothing about a
+  visible chat item is ever "replayed" the way a finished alert is;
+  saving a new chat design updates every currently-visible item's
+  presentation immediately, safely, via the existing
+  `Projection.Configure`/`Manager.Rebuild` rebuild path (proven
+  duplication/resurrection-safe by that path's own existing semantics,
+  not new code).
+- **§25 Public presentation protocol**: `GET .../config` gains additive
+  `renderingMode`/`visualDesign` fields (mirroring `PublicAlert`'s own
+  discriminator); a new `chat-overlay.presentation` SSE event (no item
+  content, just a sequence number) tells an already-connected client to
+  refetch config, participating in the exact same monotonic revision/
+  replay/gap mechanism every other `chat-overlay.*` event already uses.
+  A design Save/Delete also triggers the existing `Manager.Rebuild`
+  path so already-visible items' optional fields re-derive against the
+  new data-needs immediately.
+
+### Technical decisions
+The single highest-leverage decision in this document is §24: recognizing
+that alerts and chat need genuinely different design-change semantics
+(snapshot-per-instance vs. current-presentation) rather than forcing
+chat to awkwardly imitate the alert snapshot model it does not need -
+and that the *existing* Stage 10 `Configure`/`Rebuild` rebuild path
+already safely implements exactly what a "current presentation changed"
+update needs (a full, id-keyed re-derivation from whatever
+operator-chat still retains), so no new duplication/resurrection-safety
+mechanism had to be invented at all.
+
+### Files changed
+`docs/visual-designs.md`, `docs/progress.md` (this entry).
+
+### Automated validation
+None required - documentation only, no code exists for this contract
+yet.
+
+### Known limitations
+This is a specification, not yet an implementation - every claim above
+(migration losslessness, data-needs derivation, the presentation
+protocol) is proven by the Go/TypeScript code and tests that follow in
+subsequent commits, not by this document alone.
+
+### Next step
+The SQLite migration widening `visual_designs.owner_kind`'s CHECK
+constraint, the `internal/domain/visualdesign` version-2/layer-kind/
+binding changes, and their tests.

@@ -336,16 +336,14 @@ automation/manual OBS testing.
 
 ## 15. Stage 13B relationship
 
-Stage 13B is expected to build the **Chat Overlay Designer** directly on top
-of this exact same `visualdesign.Document`/layer model - a second owner kind
-(`chat_overlay`) added to `AcceptedOwnerKinds` plus its own migration
-widening the `visual_designs.owner_kind` `CHECK` constraint (see §10 above -
-the table shape needs no change, but the literal `CHECK` list does), reusing
-the identical canvas/layer/style/animation primitives this document already
-defines. Any further shared primitive genuinely required to complete that
-reuse (for example, a layer kind neither designer currently needs alone) is
-explicitly Stage 13B's own scope to add - this document deliberately does
-not pre-guess what that will be.
+Stage 13B builds the **Chat Overlay Designer** directly on top of this exact
+same `visualdesign.Document`/layer model: a second owner kind (`chat_overlay`)
+added to `AcceptedOwnerKinds` plus its own migration widening the
+`visual_designs.owner_kind` `CHECK` constraint (§10/§18), the document version
+bumped from 1 to 2 to add the two new shared layer kinds and two new text
+bindings chat needs (§19), and chat-specific binding-capability/data-needs
+logic kept beside the chat domain, never inside this shared package (§20/§22).
+See §17-§25 below for the full Stage 13B contract.
 
 ## 16. Stage 14 relationship
 
@@ -355,4 +353,328 @@ template package contains one or more of. Stage 14 is responsible for its own
 archive/packaging format (asset bundling, metadata, versioning of the archive
 itself, migration of an imported older template package) on top of this
 payload; none of that is defined here, and none of it is implemented by
-Stage 13A.
+Stage 13A or Stage 13B.
+
+## 17. Chat item/card design semantics (Stage 13B)
+
+A chat visual design is fundamentally different in shape from an alert one:
+an alert canvas represents one whole-screen presentation shown once at a
+time, while a public chat overlay shows **several independently-lived items
+at once** (a scrolling/stacking list, each with its own entry, lifetime, and
+possible moderation removal). Stage 13B's document therefore describes the
+visual presentation of **one repeated chat-overlay item/card**, not the
+overlay as a whole:
+
+```
+ChatOverlayRenderer (internal/chatoverlay's existing Stage 10 projection)
+    |
+    +-- item A -> VisualDesignRenderer(document, dataContext for A)
+    +-- item B -> VisualDesignRenderer(document, dataContext for B)
+    +-- item C -> VisualDesignRenderer(document, dataContext for C)
+```
+
+The same one saved design is instantiated once per currently-visible item,
+each with its own safe, normalized `dataContext` (§20). Everything about
+**which** items exist and for how long - filtering (account selection,
+hidden users, blocked terms, bot/command filtering, activity-type
+selection), the visible-item list itself, `maxVisibleItems`, message
+lifetime, capacity eviction, stack direction, and every moderation-lifecycle
+removal (message deletion, chat clear, user-messages clear) - remains
+entirely owned by the existing Stage 10 `internal/chatoverlay` projection
+(`Projection`/`resolvedSettings`/`evaluate`), completely unchanged and never
+reimplemented here. The chat visual-design document has no field that could
+ever control any of that; a document cannot set its own `maxVisibleItems` or
+lifetime, and none of its layers can resurrect, reorder, or hide a specific
+item independently of the projection's own decision.
+
+## 18. Chat-overlay ownership (Stage 13B)
+
+Exactly like Stage 13A's alert-rule ownership model (§18 of the Stage 13A
+task, "one saved visual design belongs to one alert rule"): one saved
+visual design belongs to **exactly one chat-overlay profile**. A profile
+may have no saved design (renders through the Stage 10 fixed/legacy
+renderer) or exactly one (design-driven item rendering) - never many
+profiles sharing one mutable design object. Reusable designs/templates
+remain Stage 14's job.
+
+`OwnerKindChatOverlay = "chat_overlay"` is added to `AcceptedOwnerKinds`.
+Deleting a chat-overlay profile deletes its saved design through an explicit
+application-level call, mirroring `internal/alerts.Manager.DeleteRule`'s own
+cascade for alert rules exactly (§10's own reasoning: a polymorphic
+`owner_id` cannot be a SQL foreign key, so cascade-on-owner-delete is always
+an explicit call, never implicit).
+
+## 19. Document version 2 (Stage 13B)
+
+Stage 13B needs two new closed `TextBinding` values (`timestamp`,
+`account_label`) and two new closed `LayerKind` values (`message_fragments`,
+`badge_list` - see §21) that a version-1 reader has no way to safely
+interpret. Per this document's own §11 migration policy, this is a genuine
+schema-vocabulary change, not merely a new owner kind reusing the existing
+vocabulary (owner-kind expansion alone, per §18, needed no version bump) -
+so `CurrentVersion` becomes **2**, with an explicit `MigrateToCurrentVersion`
+function in `internal/domain/visualdesign`.
+
+The migration itself is intentionally trivial and lossless: a stored
+version-1 document's wire shape is byte-for-byte identical to a version-2
+one (every version-1 field still exists, unchanged, in version 2; only the
+set of values `LayerKind`/`TextBinding` accept grew wider). A version-1
+document, by construction, never used a value that only exists in version 2
+- so migrating it is exactly "parse it as today, then relabel `Version =
+2`," with no field renamed, reinterpreted, or dropped. Every existing Stage
+13A alert design therefore loads and renders **identically** after
+migration - proven by a dedicated test that a pre-migration v1 fixture and
+its post-migration v2 result produce the same `PublicDocument`. Migration
+runs once, on read, inside the SQLite repository (`fromJSONDocument` +
+`MigrateToCurrentVersion`); every new `Save` from either Designer always
+writes at `CurrentVersion` going forward. `Validate` continues to reject any
+document whose `Version` is not `CurrentVersion` at the point it is
+validated - a stale-version *write* is still rejected outright, exactly as
+before; only a stale-version *stored row being read back* is transparently
+upgraded.
+
+## 20. Shared vocabulary, owner-specific capability (Stage 13B)
+
+`TextBinding` stays one single closed enum in the shared package - Stage
+13B does **not** duplicate it. Five existing values are reused verbatim for
+chat, with their real-world meaning documented once, here, rather than
+per-owner:
+
+| Binding | Alert meaning | Chat meaning |
+| --- | --- | --- |
+| `static` | operator-authored fixed text | operator-authored fixed text |
+| `username` | the alert actor's display name | the message/activity item's user display name |
+| `platform` | the alert's own provider | the item's own provider |
+| `event_type` | the alert rule's own event type (`follow`, `bits`, ...) | the activity item's own `activityType` (`follow`, `bits`, ...) - same underlying vocabulary, reused rather than inventing a second `activity_type` binding for the identical concept |
+| `quantity` | bits/gift-count/redemption quantity | the activity item's own `Activity.Quantity`, where present |
+
+Two values are new, chat-only:
+
+- `timestamp`: the item's own `OccurredAt`, formatted by the shared renderer
+  using a fixed, safe format - never a user-suppliable format string.
+- `account_label`: the item's own `AccountLabel`, when the owning profile's
+  account-label setting resolved one (§22).
+
+One value is **alert-only and never legal for a chat-overlay design**:
+`alert_rendered_text` (Stage 12's own rendered text template has no chat
+equivalent - a chat message's own text is the `message` binding, or the
+`message_fragments` layer kind for rich rendering, §21). Two new layer kinds
+(§21) are chat-only in practice today (nothing stops an alert design from
+using them structurally, but no alert item ever has fragments/badges to
+bind, so the alert binding-capability table never offers them).
+
+This is enforced exactly like Stage 13A's own alert capability check,
+**beside** the owning domain, never inside the shared package:
+
+- `internal/domain/alerts/visualdesign_binding.go`'s existing
+  `AvailableTextBindings(EventType)`/`ValidateDesignBindingsForEventType`
+  additionally reject `timestamp`/`account_label` for every event type (no
+  alert item has either), and continue to never offer `alert_rendered_text`
+  to chat by construction (chat never calls this function at all).
+- A new `internal/domain/chatoverlay/visualdesign_binding.go` defines
+  `AvailableTextBindings(itemKind ChatItemKind) []visualdesign.TextBinding`
+  (item kind, not event type - see §20.1) and
+  `ValidateDesignBindingsForItemKind(doc, itemKind) error`, rejecting
+  `alert_rendered_text` outright for every chat item kind and gating
+  `event_type`/`quantity` to activity items only (a message item has
+  neither).
+
+Neither domain package imports the other; `internal/domain/visualdesign`
+imports neither.
+
+### 20.1 Message items vs activity items
+
+A chat visual design is one document, reused for **both** of Stage 10's own
+item kinds (`co.KindMessage`, `co.KindActivity`) - Stage 13B does not create
+a separate persisted design per item kind or per Twitch event type (that
+would be template/preset complexity Stage 14's own job, not this stage's).
+`AvailableTextBindings(itemKind)` therefore returns the binding set valid
+for *either* kind when validating a save (a design commonly contains both a
+`message` layer and an `event_type`/`quantity` layer, since different
+layers naturally apply to different real items) - what actually renders for
+a specific item at request time is governed by §22's missing-value/hide
+behavior, not by validation-time rejection.
+
+## 21. New shared primitives: message fragments and badges (Stage 13B)
+
+Stage 13A's four layer kinds (§6) cannot represent two things Stage 10's
+real renderer already supports and Stage 13B must not regress (task Part
+12): richly-formatted message text (ordinary text mixed with resolved emote
+images and mentions) and a bounded row of badge images. Both are genuinely
+new **shared** primitives - reused unchanged by any future owner, not
+chat-specific in the type system, exactly like the original four:
+
+- **`message_fragments`**: renders the item's own already-normalized,
+  already-ordered message fragments (plain text, resolved emote image,
+  mention) - never re-parses raw IRC/EventSub payload, never makes a
+  provider request at render time, never accepts `dangerouslySetInnerHTML`.
+  An unknown/unrecognized fragment type falls back to its own safe text.
+  Payload (`MessageFragmentsProps`): the same bounded typography fields
+  `TextProps` already has (font family/size/weight/line height/letter
+  spacing/color/alignment - a plain struct field subset, not embedding
+  `TextProps` itself, since `binding`/`staticText`/outline/shadow do not
+  apply to a fragment stream) plus a bounded `EmoteSize` (8-128 design
+  units, matching font-size-adjacent bounds).
+- **`badge_list`**: renders the item's own already-resolved public badge
+  image DTOs (`1x`/`2x`/`4x` URLs the backend already resolves via
+  `chatassets`/badge lookup, exactly the same safe URLs Stage 10's own
+  renderer already uses) - never a provider request in the renderer, never
+  an arbitrary URL stored in the design itself. Payload (`BadgeListProps`):
+  bounded `MaxCount` (1-20), `BadgeSize` (8-128 design units), `Gap`
+  (0-32 design units).
+
+Both kinds carry no binding field at all (unlike `text`) - there is exactly
+one thing each kind can ever show (the item's own message fragments, or the
+item's own badges), so there is nothing to choose between. Both hide safely
+when their item has no fragments/badges to show (§22), following the same
+`MissingHide`-only-in-public rule §7 already established for text layers.
+
+## 22. Chat data-needs model (Stage 13B)
+
+Stage 10's existing renderer strips several optional public fields
+(avatar, badges, account label) when the owning profile's own legacy
+`show*` toggle is off (§10's own `buildItem`/`buildUser` in
+`internal/chatoverlay/lifecycle.go`) - correct behavior for the legacy
+renderer, but wrong for a design-driven one: if a saved design contains an
+`avatar` layer while the legacy `ShowAvatar` toggle happens to be off, the
+server must not silently strip the very field the active design needs, or
+the Designer's own promise ("what you build is what renders") would be a
+lie.
+
+`internal/domain/chatoverlay/visualdesign_dataneeds.go` defines a small,
+typed, server-side assessment:
+
+```go
+type ChatDataNeeds struct {
+    Avatar       bool
+    Badges       bool
+    AccountLabel bool
+}
+
+func DeriveDataNeeds(doc visualdesign.Document) ChatDataNeeds
+```
+
+`DeriveDataNeeds` walks the (already-validated) document's own layers once
+- an `avatar` layer sets `Avatar`, a `badge_list` layer sets `Badges`, a
+text layer bound to `account_label` sets `AccountLabel` - and is **derived
+only from the saved design**, never from a legacy toggle. When a profile is
+design-driven, `internal/chatoverlay`'s own `resolvedSettings` carries this
+assessment (`resolvedSettings.designDataNeeds`, populated by
+`DefaultSettingsResolver.Resolve`) and `buildUser`/`buildItem` populate a
+field whenever **either** the legacy toggle **or** the active design's own
+data-needs says to - so an active design's layers are always honestly
+populated, while a legacy-mode overlay's behavior is completely unchanged
+(nil `designDataNeeds` when no design is saved, exactly the same
+`buildUser` logic as today).
+
+This mechanism only ever **adds** fields already governed by privacy/
+filtering that happen upstream of it - it can never bypass a blocked term,
+a hidden user, moderation removal, or account selection, all of which are
+decided by `passesStaticFilters`/`evaluate` before `buildItem` ever runs
+(§17's own "filtering stays entirely Stage 10's job").
+
+## 23. Legacy mode and the generated draft (Stage 13B)
+
+Exactly like §12's alert backward-compatibility guarantee: every existing
+chat-overlay profile has no saved visual design and **must continue
+rendering exactly through the Stage 10 fixed renderer** - no migration ever
+attaches a design to an existing profile, and no existing profile's public
+appearance changes merely because Stage 13B shipped.
+
+- `GET /api/chat-overlays/{id}/visual-design` for a profile with no saved
+  design returns a **freshly generated, never-persisted** draft
+  (`chatoverlaydomain.GenerateLegacyDraft`) approximating that profile's
+  current fixed presentation (bubble/background, username, message region,
+  platform icon, avatar/badges/timestamp/account-label if their legacy
+  toggles are already on) as closely as practical - an honest best effort,
+  not a pixel-perfect reproduction (mirroring §12's own alert draft's own
+  documented honesty). Opening the Designer performs no write and emits no
+  public presentation change.
+- The design becomes real, and the profile becomes design-driven, only
+  after an explicit `PUT` (Save).
+- `DELETE /api/chat-overlays/{id}/visual-design` ("Reset to legacy
+  presentation") detaches the saved design and returns the profile to the
+  Stage 10 fixed renderer - idempotent, never deletes the profile itself.
+- While a design is active, the profile's own legacy visual-presentation
+  columns (font, colors, bubble, animations, and similar) remain stored
+  completely unchanged - never overwritten or deleted by saving a design -
+  so Reset to legacy restores exactly the presentation that was active
+  before the design was ever saved. Only the profile's own
+  filter/lifecycle columns (§17's own list) stay authoritative in *both*
+  rendering modes; the legacy *visual* columns are read only by the legacy
+  renderer, and only when no design is saved.
+
+## 24. Current-presentation semantics (Stage 13B) vs alert snapshot semantics (Stage 13A)
+
+This is a deliberate, load-bearing difference from Stage 13A, not an
+oversight:
+
+- An **alert** design is **snapshotted per alert instance** (§12/§22 of the
+  Stage 13A task): Stage 12 already snapshots presentation settings when an
+  alert instance is created, and Stage 13A extends that same guarantee to
+  designs, because a queued or replayed alert must keep showing exactly the
+  presentation it had when it was created, forever, regardless of later
+  edits.
+- A **chat-overlay** design is **current profile presentation**, not a
+  per-item snapshot. A chat item's own *content* (its text, user, badges)
+  is fixed at the moment operator-chat created it - exactly like an alert's
+  content - but which **visual design** renders that content is not part of
+  the item at all; it is resolved fresh, at render time, from whatever the
+  owning profile's current saved design is. Saving a new chat design
+  therefore updates every currently-visible item's presentation
+  immediately, including items that were already on screen before the
+  save - there is no chat equivalent of an alert's queued/replayed
+  snapshot to preserve, since nothing about a visible chat item is ever
+  "replayed" the way a finished alert is.
+
+Concretely: saving a new chat design never mutates, duplicates, resurrects,
+or reorders any chat item (§17); it only changes which layer tree
+`VisualDesignRenderer` uses to draw the *same* still-current item list -
+enforced by reusing the existing `Projection.Configure`/`Manager.Rebuild`
+rebuild path (a full, safe re-derivation from whatever operator-chat still
+retains, the same mechanism every other settings change already uses,
+§25).
+
+## 25. Public presentation update protocol (Stage 13B)
+
+The public chat-overlay page fetches `GET .../config` once and then follows
+an SSE stream (`GET .../stream`) - unlike an alert, whose entire
+presentation-plus-content arrives in one `alert.show` event, a chat design
+can now change while that page stays open indefinitely. Two additive,
+race-safe mechanisms, layered on the existing protocol without replacing
+it:
+
+1. **`GET /api/public/chat-overlays/{slug}/config`** gains two additive
+   fields: `renderingMode` (`"legacy"` | `"visual_design"`, mirroring
+   `PublicAlert`'s own discriminator) and, when design-driven, the full
+   safe `PublicDocument` (`visualDesign`, mirroring the same field name
+   already used on `PublicAlert`). A legacy overlay's config response is
+   byte-for-byte unchanged from Stage 10 aside from the additive
+   `renderingMode: "legacy"` field - no existing Stage 10 client or
+   integration script parses config as anything but an open, additive
+   object, so this cannot break one.
+2. A new SSE event, **`chat-overlay.presentation`**, carries no item
+   content at all - just a sequence number, participating in the exact
+   same monotonic revision stream/replay/gap mechanism every other
+   `chat-overlay.*` event already uses (`Projection`'s own ring buffer). It
+   is emitted exactly once per successful design Save or Delete
+   (`Manager.NotifyPresentationChanged`), and tells an already-connected
+   client "your presentation config is now stale - refetch `GET .../config`
+   before trusting it further." The frontend reducer's own item state
+   (upsert/remove/reset) is completely unaffected by this event - it is
+   purely a "go re-fetch config" signal, never a substitute for one.
+
+Saving or deleting a chat design also triggers the *existing*
+`Manager.Rebuild` path (§24) so already-visible items' own optional fields
+(avatar/badges/account label) are correctly re-derived against the new
+`designDataNeeds` (§22) - this produces its own ordinary `chat-overlay.reset`
+revision, immediately followed by the new `chat-overlay.presentation`
+revision, both through the same sequence counter. A client that reconnects
+after a retained gap replays every revision it missed, including a
+`chat-overlay.presentation` one, so it never ends up with a stale design
+paired against fresh item state; a client whose gap could not be satisfied
+(`chat-overlay.gap`) always re-fetches `GET .../config` as part of its
+existing reset handling regardless, which already carries the current
+presentation. No snapshot/config race is possible: config is always fetched
+fresh after any signal that it might be stale, never assumed current from a
+value cached before the page connected.
