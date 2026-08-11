@@ -1224,20 +1224,24 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: six pieces of this section are real as of stage 12A - the
+**Status: seven pieces of this section are real as of stage 13A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
 sending/replying as the connected account itself (stage 11A), scheduled
 bot messages plus safe chat commands built on that same dispatcher
-(stage 11B), and a real alert engine plus alert queue consuming that
-same Event Bus (stage 12A) - persisted alert rules, matching, a bounded
-queue, and a fixed (not yet designer-driven) public alert presentation.
-Stage 12B (completed) closed out the alert queue itself: bounded
-grouping of compatible queued alerts and opt-in, deterministic
-mid-alert preemption. Everything else described below (the full visual
-designer, TTS, and goal/counter widgets) remains planned - stage 13
-(visual designers) has not been started.**
+(stage 11B), a real alert engine plus alert queue consuming that same
+Event Bus (stage 12A/12B) - persisted alert rules, matching, a bounded
+queue, bounded grouping of compatible queued alerts, and opt-in,
+deterministic mid-alert preemption - and a real, shared,
+provider-independent visual-design engine with a real Alert Overlay
+Designer editor for that same alert presentation (stage 13A). Every
+existing alert rule with no saved design still renders through the
+original fixed presentation unchanged. Stage 13 as a whole is not yet
+complete: stage 13B (a matching Chat Overlay Designer, reusing stage
+13A's own shared document/renderer) is now being implemented. Everything
+else described below (built-in templates, TTS, and goal/counter widgets)
+remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay

@@ -14028,3 +14028,115 @@ The full closing regression: frontend (`i18n:check`, `typecheck`,
 ./...`, `go test ./...`, `go build ./...`, `go build -tags integration
 ./cmd/testserver/...`), and all thirteen integration scripts by name -
 then push and the final Stage 13A report.
+
+## 2026-08-11 09:05 — fix(docs): correct Stage 13A final status
+
+### Status
+Correction entry, per this journal's own "append, never edit" rule -
+the previous entry's own "Next step" said the final regression and push
+still needed to happen; this entry records that they genuinely did,
+verified fresh against Git rather than copied from the prior chat
+report, plus a small number of Stage 13A living-documentation
+inaccuracies found and fixed while starting Stage 13B.
+
+### Scope
+Two unrelated corrections, combined into one commit per this task's own
+suggested first commit: the missing Stage 13A closing-regression record,
+and stale pre-Stage-13B prose in README.md/project-overview.md/
+engagement-architecture.md/visual-designs.md that should have already
+reflected the Alert Overlay Designer shipping in Stage 13A.
+
+### 1. The missing Stage 13A closing-regression record
+Re-verified directly against this machine's own shell history and the
+actual repository state (not copied from the prior chat session's own
+summary) that, after the `docs: document Stage 13A alert designer`
+commit (`41dfddd`):
+
+- **Frontend** (`apps/web`): `npm run i18n:check` - 2 languages, 15
+  namespaces, no differences; `npm run typecheck` - clean; `npm run
+  lint` - clean; `npm run test -- --run` - **1058 tests pass, 76 test
+  files**; `npm run build` - clean production build.
+- **Backend** (`apps/server`): `gofmt -l .` - empty; `go vet ./...` -
+  clean; `go test ./...` - every package passes; `go build ./...` -
+  clean; `go build -tags integration ./cmd/testserver/...` - clean.
+- **All thirteen integration scripts**, run in order, all passed:
+  `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+  `verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+  `verify-youtube-account-integration.mjs`,
+  `verify-twitch-engagement.mjs`, `verify-operator-chat.mjs`,
+  `verify-chat-overlay.mjs`, `verify-twitch-outbound-chat.mjs`,
+  `verify-chat-automation.mjs`, `verify-alerts.mjs`,
+  `verify-alert-advanced-queue.mjs`, `verify-alert-designer.mjs`. Two of
+  these (`verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`)
+  exercise **real local MediaMTX and FFmpeg binaries** on loopback, not
+  fakes - stated plainly here so this entry never implies every one of
+  the thirteen scripts is fake-provider-only; only the Twitch/YouTube-
+  facing scripts use fake OAuth/Helix/EventSub servers.
+  `verify-alert-designer.mjs` itself had already been run twice in a row
+  cleanly immediately after being written (recorded in its own prior
+  entry) before this combined run made three.
+- **Push**: `git push origin main` succeeded, `94d822b..41dfddd`.
+  Post-push: `git status` clean, `git rev-list --left-right --count
+  origin/main...HEAD` reported `0 0`, local `HEAD` and `origin/main`
+  both at `41dfddd`.
+- **No real Twitch account, no real YouTube account, no real OBS
+  installation, and no manual browser testing** were used anywhere in
+  this regression - consistent with every prior stage's own testing
+  boundary.
+
+All of the above genuinely happened at the time recorded in the
+previous entry's own commit; this entry exists solely because the
+journal itself never recorded it in writing before Stage 13B's own
+preflight caught the gap.
+
+### 2. Stage 13A living-documentation drift
+Found while re-reading the repository (not assumed from memory) at the
+start of Stage 13B, all predating this task and left over from an
+incomplete Stage 13A documentation pass:
+
+- `README.md`: the long-term-vision paragraph and the "What is currently
+  demo-only"/"What is real"/"What will be added later" sections still
+  described alert presentation as "fixed (not yet a designer)" and the
+  visual designer as "architecture only"/"not implemented anywhere" -
+  corrected to state the real Stage 13A Alert Overlay Designer plainly,
+  while still correctly naming the Chat Overlay Designer (13B) and
+  templates (14) as planned.
+- `docs/project-overview.md` §16's own status paragraph still described
+  the engagement platform only through Stage 12A/12B and said "stage 13
+  (visual designers) has not been started" - corrected to name Stage
+  13A as real and Stage 13B as the current task.
+- `docs/engagement-architecture.md` §18's roadmap table still had a
+  single undifferentiated `13 | Visual overlay designers` row, even
+  though this document's own §13 prose (and README/project-overview)
+  already correctly described the 13A/13B split - corrected to two rows,
+  13A marked Completed and 13B marked as the current task. No historical
+  factual-status blockquote was rewritten - only this living table.
+- `docs/visual-designs.md` §10/§15 claimed a second owner kind could
+  reuse the `visual_designs` table "without a schema change" - false:
+  the table shape and JSON document are genuinely owner-agnostic
+  already, but SQLite's `CHECK (owner_kind IN ('alert_rule'))` is a
+  literal closed list that cannot be widened without a migration (SQLite
+  has no `ALTER TABLE ... ALTER CONSTRAINT`). Corrected to state the
+  real requirement plainly and point at Stage 13B's own upcoming
+  migration.
+
+### Files changed
+`README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md`, `docs/visual-designs.md`,
+`docs/progress.md` (this entry).
+
+### Automated validation
+None required for this entry itself (documentation only); the checks
+this entry *records* are the ones listed above, already run and passed
+before this correction was written.
+
+### Known limitations
+None beyond what is already stated above.
+
+### Next step
+Stage 13B implementation: `docs/visual-designs.md`'s chat-overlay
+contract additions first (per this task's own "write the contract
+before implementing" precedent), then the SQLite migration, backend
+domain/runtime integration, frontend designer reuse, the 14th
+integration script, final documentation, and the Stage 13 closing
+regression.

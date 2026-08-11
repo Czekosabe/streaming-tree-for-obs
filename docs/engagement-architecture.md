@@ -1169,7 +1169,8 @@ that table.
 | 11B | Scheduled bot messages and chat commands (§8.1–8.3) — **Completed** |
 | 12A | Alert engine and alert queue (§9–10), scoped to the 8 real Twitch event types, no monetary threshold, no per-rule TTS — **Completed** |
 | 12B | Mid-alert preemption and bounded alert grouping (§10), deliberately deferred out of 12A — **Completed** |
-| 13 | Visual overlay designers (§13.1) |
+| 13A | Alert Overlay Designer and the shared visual-design engine (§13.1) — **Completed** |
+| 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — current task |
 | 14 | Built-in templates and template import/export (§13.3) |
 | 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
 | 16 | External donation-service connectors (§15) |

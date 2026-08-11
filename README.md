@@ -22,13 +22,17 @@ scheduled bot messages and safe chat commands built on that same foundation
 same Event Bus (stage 12A) — persisted alert profiles/rules, a
 provider-independent matching engine, a bounded in-memory queue with
 priority/expiration/pause/resume/skip/replay/clear, local synthetic test
-alerts, and a fixed (not yet a designer) alert presented on its own public
-OBS Browser Source route — plus, closing out the alert queue itself, real
-**bounded alert grouping** and real, opt-in **mid-alert preemption** (stage
-12B). **Still planned**: the full visual overlay/alert designer and
-templates, text-to-speech, goal/counter widgets, additional engagement
-providers (YouTube, Kick chat/events), and external donation-service
-connectors — detailed in
+alerts, presented on its own public OBS Browser Source route — plus,
+closing out the alert queue itself, real **bounded alert grouping** and
+real, opt-in **mid-alert preemption** (stage 12B), and a real, shared,
+provider-independent **visual-design engine** with a real **Alert Overlay
+Designer** editor for that same alert presentation (stage 13A). **Still
+planned**: a matching **Chat Overlay Designer** reusing that same engine
+(stage 13B, needed before "the visual designers" as a whole can be called
+complete), built-in templates and template import/export (stage 14),
+text-to-speech, goal/counter widgets, additional engagement providers
+(YouTube, Kick chat/events), and external donation-service connectors —
+detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
@@ -2893,7 +2897,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Alerts, TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a visual overlay designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, and real *scheduled messages and chat commands* as of stage 11B (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually) and [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)) — everything still built on top of *those* (alerts, TTS, goal widgets) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, a Chat Overlay Designer, overlay templates | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, and a real, shared visual-design engine with a real **Alert Overlay Designer** as of stage 13A (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands) and [Alerts](#alerts)) — a **Chat Overlay Designer** reusing that same visual-design engine (stage 13B) and everything built on top of it (TTS, goal widgets, templates) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -2986,11 +2990,19 @@ directly next to the control.
   capability-driven quantity thresholds and visibility toggles; a bounded
   in-memory queue with priority ordering, expiration, pause/resume, skip,
   replay and clear; local synthetic test alerts that exercise the exact
-  same queue and renderer with no real Twitch account or event involved; a
-  fixed (not yet a free-form designer) alert presentation reusing this
-  application's own existing safe glyph/avatar and animation assets; and a
-  real, public, unauthenticated OBS Browser Source alert route — see
-  [Alerts](#alerts).
+  same queue and renderer with no real Twitch account or event involved;
+  and a real, public, unauthenticated OBS Browser Source alert route —
+  see [Alerts](#alerts).
+- **A real, shared, provider-independent visual-design engine and Alert
+  Overlay Designer** (stage 13A) — a versioned, bounded layer-tree
+  document persisted per alert rule with optimistic-concurrency
+  revisions; one shared React renderer used identically by the Designer's
+  own canvas and the real public alert route; drag/resize/numeric
+  editing, layer ordering, show/hide/lock, duplicate/delete, bounded
+  undo/redo, zoom/fit and deterministic preview scenarios; every existing
+  rule keeps rendering through the original fixed presentation until an
+  operator explicitly opens the Designer and saves — see
+  [Alerts](#alerts) and [`docs/visual-designs.md`](docs/visual-designs.md).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3002,9 +3014,11 @@ API does not report them, so showing a number would mean inventing it.
   foundation Twitch's and YouTube's integrations now provide - deferred,
   capability-gated (stage 7C; Kick may land together with its own
   engagement adapter in stage 15).
-- **The full visual overlay/alert designer, overlay templates, TTS, goal
-  widgets, and any donation-service connector** — architecture only so
-  far, see
+- **The Chat Overlay Designer** (stage 13B) — reusing stage 13A's own
+  shared visual-design engine and React renderer for chat overlays, the
+  same way the real Alert Overlay Designer already uses it for alerts.
+- **Built-in templates, template import/export, TTS, goal widgets, and
+  any donation-service connector** — architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 

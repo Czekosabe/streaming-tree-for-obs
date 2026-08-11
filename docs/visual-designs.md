@@ -232,9 +232,17 @@ CREATE TABLE visual_designs (
   codebase instead uses a direct, single-purpose foreign key column). This is
   a conscious choice, not an oversight: Stage 13A accepts only
   `owner_kind = 'alert_rule'` (`AcceptedOwnerKinds`, enforced again at the
-  database layer via `CHECK`), but the column shape is written so a future
-  owner kind (Stage 13B's chat overlays) can share this exact table without a
-  schema change.
+  database layer via `CHECK`). The `visual_designs` table itself, its
+  `document_json` shape, and every Go type are already owner-agnostic and
+  need no structural change for a second owner kind - but SQLite's `CHECK
+  (owner_kind IN ('alert_rule'))` is a literal, closed list, not a foreign
+  key against an extensible lookup table, so accepting a second owner kind
+  still requires its own migration to widen that literal list (see Stage
+  13B's `0016_visual_design_chat_overlay_owner.sql`, which rebuilds the
+  table with the wider CHECK and copies every existing row across
+  unchanged - SQLite cannot `ALTER TABLE` a `CHECK` constraint directly).
+  This document previously claimed the table could accept a new owner kind
+  "without a schema change" - that was incorrect, corrected here.
 - `document_json` is a versioned JSON blob rather than one column per field -
   the one deliberate exception to this project's general "never a settings
   blob" rule, justified by the shape of the data (a dynamic, variant-typed
@@ -330,12 +338,14 @@ automation/manual OBS testing.
 
 Stage 13B is expected to build the **Chat Overlay Designer** directly on top
 of this exact same `visualdesign.Document`/layer model - a second owner kind
-(e.g. `chat_overlay`) added to `AcceptedOwnerKinds`, reusing the identical
-canvas/layer/style/animation primitives this document already defines. Any
-further shared primitive genuinely required to complete that reuse (for
-example, a layer kind neither designer currently needs alone) is explicitly
-Stage 13B's own scope to add - this document deliberately does not
-pre-guess what that will be.
+(`chat_overlay`) added to `AcceptedOwnerKinds` plus its own migration
+widening the `visual_designs.owner_kind` `CHECK` constraint (see §10 above -
+the table shape needs no change, but the literal `CHECK` list does), reusing
+the identical canvas/layer/style/animation primitives this document already
+defines. Any further shared primitive genuinely required to complete that
+reuse (for example, a layer kind neither designer currently needs alone) is
+explicitly Stage 13B's own scope to add - this document deliberately does
+not pre-guess what that will be.
 
 ## 16. Stage 14 relationship
 
