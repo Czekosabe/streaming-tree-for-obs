@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import type { AlertEventTypeCapability, AlertRule, AlertRuleInput } from '@/api/alerts-schemas';
 import { AlertRenderer } from '@/components/alerts/AlertRenderer';
@@ -14,7 +15,6 @@ import { SelectInput } from '@/components/ui/SelectInput';
 import { TextArea, TextInput } from '@/components/ui/TextInput';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useAccountsQuery } from '@/hooks/use-accounts';
-import { ApiError } from '@/lib/api-client';
 import {
   useAlertEventTypesQuery,
   useAlertPreviewMutation,
@@ -24,6 +24,8 @@ import {
   useTestAlertRuleMutation,
   useUpdateAlertRuleMutation,
 } from '@/hooks/use-alerts';
+import { useVisualDesignQuery } from '@/hooks/use-visual-design';
+import { ApiError } from '@/lib/api-client';
 import {
   ALERT_ANIMATIONS,
   ALERT_EVENT_TYPES,
@@ -273,6 +275,8 @@ function RuleFormModal({
       <div className="space-y-4">
         {errorText !== null && <p role="alert" className="text-sm text-status-error">{errorText}</p>}
 
+        {editingRuleId !== null ? <DesignerLinkBanner ruleId={editingRuleId} /> : null}
+
         <FormField label={t('rules.fields.name')}>
           {({ inputId }) => (
             <TextInput id={inputId} value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
@@ -515,6 +519,33 @@ function RuleFormModal({
         <EditorPreview template={draft.textTemplate} eventType={draft.eventType} mutation={previewMutation} />
       </div>
     </Modal>
+  );
+}
+
+/** Stage 13A task Part 20: the rule editor must clearly state whether
+ * presentation is controlled by the Designer, and always offer a link
+ * to it - never two independently-editable panels that appear to
+ * control the same real output. Fields below this banner (duration,
+ * priority, grouping, preemption, event matching, and the visibility
+ * toggles) remain real rule behavior regardless of design mode; only
+ * the profile's own fixed theme/position/alignment and this rule's
+ * own visibility toggles become legacy-fallback-only once a design is
+ * saved. */
+function DesignerLinkBanner({ ruleId }: { ruleId: string }) {
+  const { t } = useTranslation('alertDesigner');
+  const navigate = useNavigate();
+  const designQuery = useVisualDesignQuery(ruleId);
+  const persisted = designQuery.data?.persisted === true;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-sunken p-3">
+      <p className="text-sm font-medium text-ink">
+        {persisted ? t('designerLink.controlledByDesigner') : t('designerLink.legacyDescription')}
+      </p>
+      <Button variant="secondary" onClick={() => navigate(`/alerts/rules/${ruleId}/designer`)}>
+        {t('designerLink.openDesigner')}
+      </Button>
+    </div>
   );
 }
 

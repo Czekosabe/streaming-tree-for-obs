@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
+import { AlertDesignerPage } from '@/pages/AlertDesignerPage';
 import { AlertsPage } from '@/pages/AlertsPage';
 import { AutomationPage } from '@/pages/AutomationPage';
 import { ChatPage } from '@/pages/ChatPage';
@@ -32,6 +33,10 @@ export function App() {
             <Route path="/overlays" element={<OverlaysPage />} />
             <Route path="/automation" element={<AutomationPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            {/* No AppShell: the Designer wants full control of the
+                viewport for its own canvas/panel layout and top bar -
+                see AlertDesignerPage's own doc comment. */}
+            <Route path="/alerts/rules/:ruleId/designer" element={<AlertDesignerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             {/* No AppShell: a standalone Browser Source page, never the

@@ -13694,3 +13694,173 @@ designer` route, drag/resize/numeric editing, the layers list and
 property panel, undo/redo wiring, zoom/snapping, deterministic preview
 scenarios, and the Preview-vs-Test-Rule/Save/revision-conflict/
 Reset-to-legacy flows.
+
+## 2026-08-11 05:38 — feat(web): add alert overlay designer
+
+### What
+The Alert Overlay Designer itself (Stage 13A task Part 26 onward): a
+new full-bleed route (`/alerts/rules/{ruleId}/designer`, deliberately
+outside `AppShell` - like the two public Browser Source routes, it
+wants the whole viewport for its own top bar/three-panel layout), a
+brand-new pointer-based move/resize primitive (no in-repo precedent
+existed before this), a bounded undo/redo history wired to real
+editing actions, deterministic local preview scenarios, and the full
+Preview-vs-Test-Rule / Save-with-revision-conflict / Reset-to-legacy /
+discard-confirmation flows RuleManager.tsx's own new banner links into.
+
+### Editor interaction model (Stage 13A task Part 28-37)
+- **Selection**: click a layer (canvas or layers list) to select;
+  click empty canvas to deselect; both stay in sync since both drive
+  the same `selectedLayerId` state. Selection is editor-only, never
+  serialized.
+- **Move/resize**: `hooks/use-drag-resize.ts` - pointer-based, scale-
+  aware (accounts for editor zoom), clamped to the canvas and the
+  8-design-unit minimum size, with center/edge snapping during a move
+  (`models/visualdesign.ts`'s own `snapFramePosition`, already tested
+  in the previous commit). Every one of the 8 documented resize
+  handles (4 edges + 4 corners) is its own small hit target
+  (`DesignerCanvas.tsx`). The properties panel's own numeric X/Y/
+  Width/Height inputs always work too and are never merely a fallback
+  UI wart - both paths go through the exact same `onLayerDraftChange`/
+  `onLayerCommit` callbacks, so pointer dragging is never the *only*
+  way to reposition a layer (Part 29's own explicit requirement).
+- **Keyboard nudging**: Arrow = 1 design unit, Shift+Arrow = 10, on the
+  selected (and unlocked) layer, ignored while focus is inside a text
+  input/textarea/select (Part 36).
+- **Undo/redo**: `models/visualdesign.ts`'s already-tested bounded
+  `History<T>` (50 entries). Every discrete action (add/delete/
+  duplicate/reorder/property edit/move-commit/resize-commit) is
+  exactly one undo step; continuous pointer-drag/numeric-typing updates
+  go through a separate "draft" path (`updateDraft`, no history entry)
+  until the gesture completes, satisfying Part 35's "one undo step per
+  gesture, not hundreds."
+- **Layers list**: `DesignerLayersPanel.tsx` - front-to-back visual
+  order, show/hide, lock/unlock (a locked layer stays selectable so it
+  can be unlocked, per Part 33), move up/down/to-front/to-back (button-
+  only reordering - drag-to-reorder was left as the documented
+  optional extra Part 32 allows), duplicate (small offset, clamped to
+  canvas, new id), delete.
+- **Zoom**: a small closed preset list (25%-200%) plus Fit; verified by
+  its own test that changing zoom never mutates layer geometry (Part
+  37's own explicit requirement) - zoom is pure `useState`, never
+  written into the document.
+- **Canvas properties**: width/height plus the two built-in presets;
+  changing the preset directly sets both dimensions in one commit.
+
+### Preview scenarios and the Preview-vs-Test-Rule distinction (Stage
+13A task Part 39/40)
+- `components/alert-designer/preview-scenarios.ts`: 15 deterministic,
+  local fixtures (the 8 real event types plus grouped-Bits, grouped-
+  gift-batch, anonymous, missing-avatar, very-long-username, very-
+  long-message, missing-message) - never touches the Event Bus, the
+  real queue, or a real Twitch account. `avatarUrl` is `null` for
+  every single one (honest - see the previous commit's own note on why
+  no real event populates this yet).
+- The one binding that genuinely depends on the rule's own *saved*
+  template - `alert_rendered_text` - reuses the exact same, already-
+  local `/api/alert-rule-preview` endpoint `RuleManager.tsx`'s own
+  `EditorPreview` already calls for this exact purpose (Stage 12A's
+  own established "local template preview" precedent), rather than
+  reimplementing placeholder rendering a second time in TypeScript.
+  Every other binding (username/message/quantity/groupCount) resolves
+  from the local fixture directly, no network call needed.
+- **Test Rule** (top bar button) calls the real
+  `POST /api/alert-rules/{id}/test` endpoint - the rule's own last
+  *saved* design, never the unsaved draft in the editor (verified by a
+  test: changing the preview scenario never calls `testAlertRule`, and
+  clicking Test Rule always passes just the rule id, never the current
+  in-memory document).
+
+### Save / revision conflict / Reset to legacy (Stage 13A task Part 41/19)
+- Save is disabled until the draft actually differs from the last-
+  saved document (deep-equality via `JSON.stringify`, not reference
+  equality - immutable updates already guarantee correctness, but this
+  is simpler to reason about and cheap at this document's own bounded
+  size). A successful save resets the undo history's own baseline to
+  the server's returned document (never leaving stale "redo" entries
+  pointing at pre-save state) and flips the rule into persisted/
+  design-driven mode.
+- A `409` (`ApiError.status === 409`) shows a persistent reload banner
+  instead of retrying or merging - Part 41's own explicit "never
+  silently overwrite... offer Reload server version" - implemented as
+  a full page reload (the simplest genuinely-correct way to fetch the
+  server's current version, avoiding a second, parallel "what is the
+  real current state" code path).
+- **Reset to legacy** (`DELETE .../visual-design`) requires an explicit
+  `ConfirmDialog` before calling the mutation - proven by a test that
+  clicking the top-bar button alone never calls `deleteVisualDesign`.
+- **Discard-unsaved-changes**: the in-app "Back" button shows its own
+  `ConfirmDialog` when the draft is dirty (real, tested); a genuine
+  browser tab close/refresh gets the native `beforeunload` prompt
+  instead (this app has no data-router `useBlocker`/`unstable_usePrompt`
+  wired up yet, so the native prompt is the honest, correct fallback
+  for that specific case rather than a fake in-app dialog that could
+  never actually intercept a real navigation-bar reload).
+
+### RuleManager.tsx integration (Stage 13A task Part 20)
+A new `DesignerLinkBanner` shown whenever editing an existing rule
+(never for a brand-new, not-yet-created one, which has no rule id to
+attach a design to): "Presentation controlled by Designer" plus an
+Open Designer link when a design is already saved for this rule, or a
+plain legacy-description hint plus the same link when none exists yet.
+Every other field in the rule editor (duration, priority, grouping,
+preemption, event matching, and yes, still the visibility toggles/
+animations) remains real, always-editable rule behavior regardless of
+design mode, per Part 20's own explicit carve-out - this integration
+deliberately does not disable or hide any existing field.
+
+### Tests
+- `hooks/use-drag-resize.test.ts`: move/resize math via `renderHook`
+  and hand-built fake `PointerEvent`s (no full DOM pointer-capture
+  simulation needed) - move delta, exactly-one-commit-per-gesture,
+  canvas clamping, the "se"/"nw" resize handles, the minimum-size
+  floor, a locked layer ignoring drag entirely, and snapping.
+- `components/alert-designer/preview-scenarios.test.ts`: scenario
+  count, base-event-type mapping, every edge-case fixture's own
+  specific claim (anonymous has no username but a real quantity, the
+  two "very long" fixtures are actually long, grouped scenarios report
+  `groupCount > 1`, every scenario's `avatarUrl` is null).
+- `components/alert-designer/AlertDesignerWorkspace.test.tsx` (18
+  tests): loads the generated draft without saving anything; Save
+  stays disabled until dirty; add/select/deselect/duplicate/delete/
+  hide layer; undo/redo round-trip; zoom never touches geometry;
+  move-to-back reorders; a first save calls `saveVisualDesign` with
+  `expectedRevision=0`; a 409 shows the reload banner and keeps the
+  local draft; Reset to legacy requires the confirm dialog; Back with/
+  without unsaved changes; Test Rule always uses the saved rule id,
+  never the draft; changing the preview scenario never calls
+  `saveVisualDesign`/`testAlertRule`.
+- `pages/AlertDesignerPage.test.tsx`: loading state, error state, and
+  the happy path rendering the workspace once every dependency
+  (rule/profile/event-types/design) has resolved.
+- Two real bugs caught by writing these tests (both fixed, not the
+  tests weakened): an ambiguous `/discard/i` and `/reset to legacy/i`
+  text query matched multiple elements (the dialog's own title *and*
+  message both contain the word) - fixed by scoping queries with
+  `within(dialog)`, not by loosening the assertion; and a wrong test
+  expectation (`toHaveBeenCalledWith()` with zero arguments) that
+  didn't match `deleteVisualDesign`'s real one-argument signature - the
+  component itself was already correct, only the test assertion was
+  wrong.
+
+### Automated validation
+- `npm run i18n:check` - 2 languages, 15 namespaces, no differences.
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run test -- --run` - **1058 tests pass, 76 test files**.
+- `npm run build` - clean production build.
+
+### Known limitations
+No manual browser verification was performed for this UI-heavy commit,
+per this task's own explicit "no manual browser... testing" scope
+boundary for Stage 13A - correctness is established entirely through
+the rendered Testing-Library tests above, which exercise the real
+component tree (not a hand-wavy approximation). Drag-to-reorder in the
+layers list was left unimplemented (explicitly optional per Part 32,
+since button-based reordering already satisfies the requirement).
+
+### Next step
+The thirteenth local integration script
+(`scripts/verify-alert-designer.mjs`), run at least twice, then the
+Stage 13A documentation pass and the full closing regression across
+all thirteen integration scripts.
