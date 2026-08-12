@@ -12,31 +12,36 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/streaming-tree/server/internal/domain/account"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/provider/youtube"
+	"github.com/streaming-tree/server/internal/provider/youtube/streamlistpb"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
 
-// fakeYouTubeAPI is a local httptest double serving only the two live-chat
-// endpoints this connector depends on. The broadcast's liveChatId and the
-// queue of liveChatMessages.list pages are both mutable at runtime so a
-// test can simulate a broadcast/chat becoming available mid-test.
-type fakeYouTubeAPI struct {
+// fakeYouTubeBroadcastAPI is a local httptest double serving only
+// /liveBroadcasts - broadcast/liveChatId resolution stays REST (docs/
+// provider-integrations/youtube-engagement.md §3.5/§9), unaffected by the
+// Stage 15A transport corrective pass. Message receiving is exercised
+// through fakeStreamListServer (grpc_fake_test.go) instead - a real local
+// gRPC server, not a REST fake.
+type fakeYouTubeBroadcastAPI struct {
 	srv *httptest.Server
 
 	mu         sync.Mutex
 	liveChatID string
-	pages      []map[string]any // consumed in order, one per ListLiveChatMessages call; last one repeats
-	listCalls  int
 }
 
-func newFakeYouTubeAPI(t *testing.T) *fakeYouTubeAPI {
+func newFakeYouTubeBroadcastAPI(t *testing.T) *fakeYouTubeBroadcastAPI {
 	t.Helper()
-	f := &fakeYouTubeAPI{}
+	f := &fakeYouTubeBroadcastAPI{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/liveBroadcasts", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -53,75 +58,71 @@ func newFakeYouTubeAPI(t *testing.T) *fakeYouTubeAPI {
 			},
 		})
 	})
-	mux.HandleFunc("/liveChat/messages", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		idx := f.listCalls
-		if idx >= len(f.pages) {
-			idx = len(f.pages) - 1
-		}
-		var page map[string]any
-		if idx >= 0 {
-			page = f.pages[idx]
-		} else {
-			page = map[string]any{"items": []map[string]any{}}
-		}
-		f.listCalls++
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(page)
-	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
 }
 
-func (f *fakeYouTubeAPI) setLiveChatID(id string) {
+func (f *fakeYouTubeBroadcastAPI) setLiveChatID(id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.liveChatID = id
 }
 
-func (f *fakeYouTubeAPI) setPages(pages ...map[string]any) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.pages = pages
-	f.listCalls = 0
-}
+// --- streamList proto response builders, mirroring the old REST JSON
+// helpers this file used before the transport correction - see
+// docs/provider-integrations/youtube-engagement.md §4b.1 for the field
+// mapping these mirror exactly.
 
-func textMessagePage(nextToken string, ended bool, messages ...map[string]any) map[string]any {
-	page := map[string]any{
-		"nextPageToken":         nextToken,
-		"pollingIntervalMillis": 50, // fast, only used by the test's own timing knobs below
-		"items":                 messages,
+func streamPage(nextToken string, ended bool, items ...*streamlistpb.LiveChatMessage) scriptedResponse {
+	resp := &streamlistpb.LiveChatMessageListResponse{
+		NextPageToken: proto.String(nextToken),
+		Items:         items,
 	}
 	if ended {
-		page["offlineAt"] = "2026-08-12T06:30:00Z"
+		resp.OfflineAt = proto.String("2026-08-12T06:30:00Z")
 	}
-	return page
+	return scriptedResponse{resp: resp}
 }
 
-func textMessageItem(id, authorChannelID, text string) map[string]any {
-	return map[string]any{
-		"id": id,
-		"snippet": map[string]any{
-			"type": "textMessageEvent", "publishedAt": "2026-08-12T06:00:00Z",
-			"authorChannelId": authorChannelID, "textMessageDetails": map[string]any{"messageText": text},
+func streamErr(code codes.Code, msg string) scriptedResponse {
+	return scriptedResponse{err: status.Error(code, msg)}
+}
+
+func streamTextMessage(id, authorChannelID, text string) *streamlistpb.LiveChatMessage {
+	return &streamlistpb.LiveChatMessage{
+		Id: proto.String(id),
+		Snippet: &streamlistpb.LiveChatMessageSnippet{
+			Type:            streamlistpb.LiveChatMessageSnippet_TypeWrapper_TEXT_MESSAGE_EVENT.Enum(),
+			PublishedAt:     proto.String("2026-08-12T06:00:00Z"),
+			AuthorChannelId: proto.String(authorChannelID),
+			DisplayedContent: &streamlistpb.LiveChatMessageSnippet_TextMessageDetails{
+				TextMessageDetails: &streamlistpb.LiveChatTextMessageDetails{MessageText: proto.String(text)},
+			},
 		},
-		"authorDetails": map[string]any{"channelId": authorChannelID, "displayName": "Viewer"},
+		AuthorDetails: &streamlistpb.LiveChatMessageAuthorDetails{
+			ChannelId: proto.String(authorChannelID), DisplayName: proto.String("Viewer"),
+		},
 	}
 }
 
-func chatEndedItem(id string) map[string]any {
-	return map[string]any{
-		"id":      id,
-		"snippet": map[string]any{"type": "chatEndedEvent", "publishedAt": "2026-08-12T06:00:00Z"},
+func streamChatEnded(id string) *streamlistpb.LiveChatMessage {
+	return &streamlistpb.LiveChatMessage{
+		Id: proto.String(id),
+		Snippet: &streamlistpb.LiveChatMessageSnippet{
+			Type:        streamlistpb.LiveChatMessageSnippet_TypeWrapper_CHAT_ENDED_EVENT.Enum(),
+			PublishedAt: proto.String("2026-08-12T06:00:00Z"),
+		},
 	}
 }
 
-func unsupportedTypeItem(id string) map[string]any {
-	return map[string]any{
-		"id":      id,
-		"snippet": map[string]any{"type": "pollEvent", "publishedAt": "2026-08-12T06:00:00Z"},
+func streamUnsupportedType(id string) *streamlistpb.LiveChatMessage {
+	return &streamlistpb.LiveChatMessage{
+		Id: proto.String(id),
+		Snippet: &streamlistpb.LiveChatMessageSnippet{
+			Type:        streamlistpb.LiveChatMessageSnippet_TypeWrapper_POLL_EVENT.Enum(),
+			PublishedAt: proto.String("2026-08-12T06:00:00Z"),
+		},
 	}
 }
 
@@ -134,7 +135,8 @@ type testSetup struct {
 	accounts *account.Service
 	settings *engagementsettings.Service
 	bus      *bus.Bus
-	api      *fakeYouTubeAPI
+	rest     *fakeYouTubeBroadcastAPI
+	grpcFake *fakeStreamListServer
 
 	broadcastID string // empty means "no broadcast selected"
 }
@@ -153,8 +155,10 @@ func newTestSetup(t *testing.T) *testSetup {
 		t.Fatalf("sqlite.Migrate() error = %v", err)
 	}
 
-	api := newFakeYouTubeAPI(t)
-	client := youtube.New(youtube.Options{APIBaseURL: api.srv.URL})
+	rest := newFakeYouTubeBroadcastAPI(t)
+	grpcFake := newFakeStreamListServer(t)
+	target, creds := grpcFake.grpcOptions()
+	client := youtube.New(youtube.Options{APIBaseURL: rest.srv.URL, GRPCTarget: target, GRPCTransportCredentials: creds})
 
 	accountRepo := sqlite.NewAccountRepository(db.DB)
 	secretStore := secretstest.New()
@@ -184,7 +188,7 @@ func newTestSetup(t *testing.T) *testSetup {
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
-	ts := &testSetup{accounts: accounts, settings: settings, bus: eventBus, api: api}
+	ts := &testSetup{accounts: accounts, settings: settings, bus: eventBus, rest: rest, grpcFake: grpcFake}
 
 	m := NewManager(Options{
 		Accounts: accounts, Settings: settings, Bus: eventBus, Client: client, Logger: logger,
@@ -221,14 +225,11 @@ func speedUpTiming(t *testing.T) {
 	t.Helper()
 	origBackoff, origMaxBackoff := initialBackoff, maxBackoff
 	origWaiting := waitingRetryInterval
-	origMinPoll, origMaxPoll := minPollInterval, maxPollInterval
 	initialBackoff, maxBackoff = 10*time.Millisecond, 50*time.Millisecond
 	waitingRetryInterval = 20 * time.Millisecond
-	minPollInterval, maxPollInterval = 10*time.Millisecond, 50*time.Millisecond
 	t.Cleanup(func() {
 		initialBackoff, maxBackoff = origBackoff, origMaxBackoff
 		waitingRetryInterval = origWaiting
-		minPollInterval, maxPollInterval = origMinPoll, origMaxPoll
 	})
 }
 
@@ -266,7 +267,7 @@ func TestEnableWithBroadcastButNoLiveChatWaits(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("") // not live yet / chat disabled
+	ts.rest.setLiveChatID("") // not live yet / chat disabled
 
 	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
 		t.Fatalf("Enable() error = %v", err)
@@ -274,14 +275,14 @@ func TestEnableWithBroadcastButNoLiveChatWaits(t *testing.T) {
 	waitForState(t, ts.manager, "acct_1", StateWaitingForLiveChat, 2*time.Second)
 }
 
-func TestFirstPollBaselinesAndDoesNotPublishHistory(t *testing.T) {
+func TestFirstStreamResponseBaselinesAndDoesNotPublishHistory(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_after_baseline", false, textMessageItem("hist_1", "UC_old", "old history message")),
-		textMessagePage("token_2", false), // no new messages on the second poll either
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_after_baseline", false, streamTextMessage("hist_1", "UC_old", "old history message")),
+		streamPage("token_2", false), // no new messages after the baseline either
 	)
 
 	sub, _, err := ts.bus.Subscribe(0)
@@ -306,10 +307,10 @@ func TestLiveMessageAfterBaselineIsPublished(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_1", false), // baseline: nothing
-		textMessagePage("token_2", false, textMessageItem("live_1", "UC_viewer", "hello live chat")),
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", false), // baseline: nothing
+		streamPage("token_2", false, streamTextMessage("live_1", "UC_viewer", "hello live chat")),
 	)
 
 	sub, _, err := ts.bus.Subscribe(0)
@@ -334,14 +335,14 @@ func TestLiveMessageAfterBaselineIsPublished(t *testing.T) {
 	}
 }
 
-func TestChatEndedEventStopsPollingAndSetsState(t *testing.T) {
+func TestChatEndedEventStopsReceivingAndSetsState(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_1", false),
-		textMessagePage("token_2", false, chatEndedItem("end_1")),
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", false),
+		streamPage("token_2", false, streamChatEnded("end_1")),
 	)
 
 	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
@@ -350,13 +351,13 @@ func TestChatEndedEventStopsPollingAndSetsState(t *testing.T) {
 	waitForState(t, ts.manager, "acct_1", StateChatEnded, 2*time.Second)
 }
 
-func TestOfflineAtAlsoStopsPollingAsChatEnded(t *testing.T) {
+func TestOfflineAtAlsoStopsReceivingAsChatEnded(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_1", true), // offlineAt present on the very baseline call
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", true), // offlineAt present on the very baseline response
 	)
 
 	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
@@ -369,11 +370,11 @@ func TestUnsupportedEventTypeIsCountedNotPublished(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_1", false),
-		textMessagePage("token_2", false, unsupportedTypeItem("poll_1")),
-		textMessagePage("token_3", false),
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", false),
+		streamPage("token_2", false, streamUnsupportedType("poll_1")),
+		streamPage("token_3", false),
 	)
 
 	sub, _, err := ts.bus.Subscribe(0)
@@ -405,8 +406,8 @@ func TestDisableStopsTheConnector(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(textMessagePage("token_1", false))
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1", streamPage("token_1", false))
 
 	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
 		t.Fatalf("Enable() error = %v", err)
@@ -432,9 +433,10 @@ func TestRestartEstablishesAFreshBaselineNoReplay(t *testing.T) {
 	speedUpTiming(t)
 	ts := newTestSetup(t)
 	ts.broadcastID = "bcast_1"
-	ts.api.setLiveChatID("chat_1")
-	ts.api.setPages(
-		textMessagePage("token_1", false, textMessageItem("live_1", "UC_viewer", "first live message")),
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", false), // baseline: nothing
+		streamPage("token_2", false, streamTextMessage("live_1", "UC_viewer", "first live message")),
 	)
 
 	sub, _, err := ts.bus.Subscribe(0)
@@ -451,11 +453,14 @@ func TestRestartEstablishesAFreshBaselineNoReplay(t *testing.T) {
 		t.Fatal("timed out waiting for the first live message")
 	}
 
-	// Simulate a broadcast change: same page content queued again. If
-	// Restart replayed the old continuation instead of re-baselining,
-	// the exact same message would be published a second time.
-	ts.api.setPages(
-		textMessagePage("token_1", false, textMessageItem("live_1", "UC_viewer", "first live message")),
+	// Restart forces a genuinely fresh stream (no held continuation, per
+	// docs/provider-integrations/youtube-engagement.md §7). Placing the
+	// same message directly in the *first* (baseline) response this time
+	// proves it: if Restart incorrectly treated this as a resume, the
+	// message would be published immediately as live; a correct fresh
+	// baseline must suppress it.
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_1", false, streamTextMessage("live_1", "UC_viewer", "first live message")),
 	)
 	if _, err := ts.manager.Restart(context.Background(), "acct_1"); err != nil {
 		t.Fatalf("Restart() error = %v", err)
@@ -466,5 +471,166 @@ func TestRestartEstablishesAFreshBaselineNoReplay(t *testing.T) {
 		t.Fatalf("expected the post-restart baseline to suppress the replayed message, got %+v", evt)
 	case <-time.After(300 * time.Millisecond):
 		// expected: nothing published from the re-baseline
+	}
+}
+
+// --- Stage 15A transport corrective pass: baseline-vs-reconnect tests
+// (docs/provider-integrations/youtube-engagement.md §7, corrective task
+// §29-30) - these did not exist for the superseded REST design, since
+// REST's discrete request/response calls never needed to distinguish a
+// "fresh" call from a "resumed" one the way a long-lived gRPC stream does.
+
+func TestTransientStreamLossResumesWithoutRebaselining(t *testing.T) {
+	speedUpTiming(t)
+	ts := newTestSetup(t)
+	ts.broadcastID = "bcast_1"
+	ts.rest.setLiveChatID("chat_1")
+	// First connection: baseline (nothing), then a transient failure
+	// (UNAVAILABLE) with a captured continuation token "token_after_baseline".
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_after_baseline", false),
+		streamErr(codes.Unavailable, "transient"),
+	)
+
+	sub, _, err := ts.bus.Subscribe(0)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateReconnecting, 2*time.Second)
+
+	// Once reconnecting, the resumed stream's first response must be
+	// treated as live immediately, not re-baselined - the same content
+	// that would be suppressed as history on a fresh connect must be
+	// published here, since the connector is resuming from a still-valid
+	// continuation token, not starting over.
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_after_resume", false, streamTextMessage("live_1", "UC_viewer", "resumed live message")),
+	)
+
+	select {
+	case evt := <-sub.Events():
+		if evt.Message == nil || evt.Message.Text != "resumed live message" {
+			t.Fatalf("expected the resumed message to be published immediately, got %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the resumed live message - it was likely incorrectly re-baselined")
+	}
+
+	req, _, _ := ts.grpcFake.lastRequestSnapshot()
+	if req.GetPageToken() != "token_after_baseline" {
+		t.Fatalf("expected the reconnect request to carry the last known page token, got %q", req.GetPageToken())
+	}
+}
+
+func TestInvalidContinuationTriggersFreshRebaseline(t *testing.T) {
+	speedUpTiming(t)
+	ts := newTestSetup(t)
+	ts.broadcastID = "bcast_1"
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_after_baseline", false),
+		streamErr(codes.InvalidArgument, "continuation no longer valid"),
+	)
+
+	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateWaitingForLiveChat, 2*time.Second)
+
+	snap, _ := ts.manager.Snapshot("acct_1")
+	if snap.PossibleGapCount == 0 {
+		t.Fatal("expected an invalid continuation to be recorded as a possible gap")
+	}
+
+	// The next attempt must start a genuinely fresh stream (no page
+	// token) and re-baseline - a historical item in that fresh response
+	// must not be published.
+	sub, _, err := ts.bus.Subscribe(0)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	ts.grpcFake.setScript("chat_1",
+		streamPage("token_new_baseline", false, streamTextMessage("hist_2", "UC_old", "should be suppressed as re-baseline")),
+		streamPage("token_new_2", false, streamTextMessage("live_2", "UC_viewer", "resumes normally after rebaseline")),
+	)
+
+	select {
+	case evt := <-sub.Events():
+		if evt.Message == nil || evt.Message.Text != "resumes normally after rebaseline" {
+			t.Fatalf("expected only the post-rebaseline live message to be published, got %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the post-rebaseline live message")
+	}
+}
+
+func TestSelectedBroadcastChangeCancelsOldStreamAndOpensNewLiveChatID(t *testing.T) {
+	speedUpTiming(t)
+	ts := newTestSetup(t)
+	ts.broadcastID = "bcast_1"
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1", streamPage("token_1", false))
+
+	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateConnected, 2*time.Second)
+
+	ts.rest.setLiveChatID("chat_2")
+	ts.grpcFake.setScript("chat_2", streamPage("token_1", false))
+	if _, err := ts.manager.Restart(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Restart() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateConnected, 2*time.Second)
+
+	req, _, _ := ts.grpcFake.lastRequestSnapshot()
+	if req.GetLiveChatId() != "chat_2" {
+		t.Fatalf("expected the connector to have opened a stream for the newly-selected chat_2, last request was for %q", req.GetLiveChatId())
+	}
+}
+
+func TestOAuthMetadataIsAttachedWithoutLoggingToken(t *testing.T) {
+	speedUpTiming(t)
+	ts := newTestSetup(t)
+	ts.broadcastID = "bcast_1"
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1", streamPage("token_1", false))
+
+	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateConnected, 2*time.Second)
+
+	_, auth, _ := ts.grpcFake.lastRequestSnapshot()
+	if auth != "Bearer fake-access-token" {
+		t.Fatalf("expected the request to carry the account's own OAuth token as Bearer metadata, got %q", auth)
+	}
+}
+
+func TestRequestedPartsAreExactlyIDSnippetAuthorDetails(t *testing.T) {
+	speedUpTiming(t)
+	ts := newTestSetup(t)
+	ts.broadcastID = "bcast_1"
+	ts.rest.setLiveChatID("chat_1")
+	ts.grpcFake.setScript("chat_1", streamPage("token_1", false))
+
+	if _, err := ts.manager.Enable(context.Background(), "acct_1"); err != nil {
+		t.Fatalf("Enable() error = %v", err)
+	}
+	waitForState(t, ts.manager, "acct_1", StateConnected, 2*time.Second)
+
+	req, _, _ := ts.grpcFake.lastRequestSnapshot()
+	want := []string{"id", "snippet", "authorDetails"}
+	got := req.GetPart()
+	if len(got) != len(want) {
+		t.Fatalf("expected part=%v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected part=%v, got %v", want, got)
+		}
 	}
 }

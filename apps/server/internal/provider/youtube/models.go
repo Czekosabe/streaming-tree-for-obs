@@ -174,13 +174,6 @@ func (f *flexibleInt64) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type liveChatMessageListResponse struct {
-	NextPageToken         string                    `json:"nextPageToken"`
-	PollingIntervalMillis int                       `json:"pollingIntervalMillis"`
-	OfflineAt             string                    `json:"offlineAt"`
-	Items                 []liveChatMessageResource `json:"items"`
-}
-
 type liveChatMessageResource struct {
 	ID            string                       `json:"id"`
 	Snippet       liveChatMessageSnippet       `json:"snippet"`

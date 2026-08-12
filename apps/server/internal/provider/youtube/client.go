@@ -3,6 +3,7 @@ package youtube
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,13 +12,16 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/credentials"
 )
 
 // Production endpoints. These are Go constants, not configuration: nothing a
 // frontend request can influence ever reaches this client, and a test
-// injects DefaultOAuthBaseURL / DefaultAPIBaseURL / DefaultAuthBaseURL
-// overrides only through Options at construction time, in Go code, never
-// over HTTP.
+// injects DefaultOAuthBaseURL / DefaultAPIBaseURL / DefaultAuthBaseURL /
+// DefaultGRPCTarget overrides only through Options at construction time, in
+// Go code, never over HTTP or a production environment variable - see
+// docs/provider-integrations/youtube-engagement.md §4b/§9.
 const (
 	// DefaultAuthBaseURL is Google's authorization endpoint host - the one
 	// endpoint this client never calls itself; it only builds the URL for
@@ -25,6 +29,13 @@ const (
 	DefaultAuthBaseURL  = "https://accounts.google.com"
 	DefaultOAuthBaseURL = "https://oauth2.googleapis.com"
 	DefaultAPIBaseURL   = "https://www.googleapis.com/youtube/v3"
+
+	// DefaultGRPCTarget is the production host for the streamList gRPC
+	// server-streaming RPC (docs/provider-integrations/
+	// youtube-engagement.md §4b.2) - the "dns:///" scheme is gRPC's normal
+	// DNS-resolving target syntax, exactly as Google's own Python demo
+	// code uses it, not a YouTube-specific requirement.
+	DefaultGRPCTarget = "dns:///youtube.googleapis.com:443"
 )
 
 // requestTimeout bounds every single HTTP call this client makes.
@@ -34,23 +45,35 @@ const requestTimeout = 15 * time.Second
 // hostile or misbehaving server cannot exhaust memory.
 const maxResponseBytes = 1 << 20 // 1 MiB
 
-// Client is this application's HTTP client for Google's OAuth and the
+// Client is this application's HTTP+gRPC client for Google's OAuth and the
 // YouTube Data/Live Streaming APIs.
 type Client struct {
 	httpClient   *http.Client
 	authBaseURL  string
 	oauthBaseURL string
 	apiBaseURL   string
+
+	grpcTarget         string
+	grpcTransportCreds credentials.TransportCredentials
 }
 
-// Options constructs a Client. AuthBaseURL, OAuthBaseURL and APIBaseURL are
-// test-only overrides (an httptest server address); production code leaves
-// all three zero so the real Google endpoints above are used.
+// Options constructs a Client. AuthBaseURL, OAuthBaseURL, APIBaseURL,
+// GRPCTarget and GRPCTransportCredentials are test-only overrides (an
+// httptest server address / a local test gRPC server address and insecure
+// credentials); production code leaves all of them zero so the real Google
+// endpoints/TLS credentials above are used. Only the `-tags integration`
+// test server ever sets GRPCTarget/GRPCTransportCredentials, and only from
+// its own build-tag-gated main.go - never from a value a normal production
+// build's configuration or environment can reach (docs/provider-
+// integrations/youtube-engagement.md §9/§4b.2).
 type Options struct {
 	HTTPClient   *http.Client
 	AuthBaseURL  string
 	OAuthBaseURL string
 	APIBaseURL   string
+
+	GRPCTarget               string
+	GRPCTransportCredentials credentials.TransportCredentials
 }
 
 // New builds a Client.
@@ -79,7 +102,18 @@ func New(opts Options) *Client {
 	if apiBase == "" {
 		apiBase = DefaultAPIBaseURL
 	}
-	return &Client{httpClient: httpClient, authBaseURL: authBase, oauthBaseURL: oauthBase, apiBaseURL: apiBase}
+	grpcTarget := opts.GRPCTarget
+	if grpcTarget == "" {
+		grpcTarget = DefaultGRPCTarget
+	}
+	grpcCreds := opts.GRPCTransportCredentials
+	if grpcCreds == nil {
+		grpcCreds = credentials.NewTLS(&tls.Config{})
+	}
+	return &Client{
+		httpClient: httpClient, authBaseURL: authBase, oauthBaseURL: oauthBase, apiBaseURL: apiBase,
+		grpcTarget: grpcTarget, grpcTransportCreds: grpcCreds,
+	}
 }
 
 func (c *Client) doForm(ctx context.Context, endpoint string, form url.Values) (int, []byte, error) {

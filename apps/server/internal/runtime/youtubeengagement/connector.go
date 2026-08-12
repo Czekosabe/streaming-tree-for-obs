@@ -27,18 +27,13 @@ var (
 	// has become available - fixed, not exponential, since neither is a
 	// failure.
 	waitingRetryInterval = 10 * time.Second
-
-	// minPollInterval/maxPollInterval defensively clamp the server-
-	// suggested pollingIntervalMillis (docs/provider-integrations/
-	// youtube-engagement.md §3.2) - a misbehaving or unexpected value
-	// must never make this connector hammer the API or stall
-	// indefinitely.
-	minPollInterval = 2 * time.Second
-	maxPollInterval = 30 * time.Second
 )
 
-// connector supervises exactly one YouTube account's live chat poll loop
-// for as long as it stays enabled.
+// connector supervises exactly one YouTube account's live chat gRPC
+// streamList connection for as long as it stays enabled. See
+// docs/provider-integrations/youtube-engagement.md §4b/§7-§8 for the
+// full researched transport contract (Stage 15A transport corrective
+// pass) this file implements.
 type connector struct {
 	accountID string
 	mgr       *Manager
@@ -46,6 +41,18 @@ type connector struct {
 
 	mu       sync.Mutex
 	snapshot Snapshot
+}
+
+// chatSession is the small piece of state a *transient* reconnect needs to
+// carry forward from one serve() attempt to the next within the same
+// run() retry loop, so a stream that merely dropped and is being retried
+// can resume without re-baselining - see serve()'s own doc comment and
+// docs/provider-integrations/youtube-engagement.md §7's "baseline vs.
+// reconnect" distinction. A nil session (or a session for a different
+// liveChatID) always forces a fresh baseline.
+type chatSession struct {
+	liveChatID string
+	pageToken  string
 }
 
 func newConnector(mgr *Manager, accountID string) *connector {
@@ -140,16 +147,23 @@ func (c *connector) setError(code string) {
 
 // run is the connector's whole lifetime: repeatedly attempt one serve()
 // pass, waiting or backing off between attempts as appropriate, until ctx
-// is cancelled or a terminal state is reached.
+// is cancelled or a terminal state is reached. A resumable chatSession
+// (see serve()) is threaded from one attempt to the next so a stream that
+// merely dropped can reconnect without re-baselining; it is cleared
+// whenever serve() reports there is nothing left to resume (a fresh
+// baseline was already consumed, the chat ended, or the connector is
+// waiting for a broadcast/live chat to reappear).
 func (c *connector) run(ctx context.Context) {
 	backoff := initialBackoff
+	var session *chatSession
 	for {
 		if ctx.Err() != nil {
 			c.setState(StateStopping)
 			return
 		}
 
-		err := c.serve(ctx)
+		nextSession, err := c.serve(ctx, session)
+		session = nextSession
 
 		if ctx.Err() != nil {
 			c.setState(StateStopping)
@@ -166,14 +180,18 @@ func (c *connector) run(ctx context.Context) {
 			// Waiting for a broadcast/live chat to appear is ordinary,
 			// expected streamer behavior, not a failure - retry on a
 			// fixed interval, never count it as a reconnect, never grow
-			// the failure backoff for it.
+			// the failure backoff for it. A held session cannot survive
+			// this anyway (serve() only returns a non-nil session
+			// alongside a retryable stream error, never alongside a
+			// waiting state), but clearing it here is the honest,
+			// explicit statement of that invariant.
 			wait = waitingRetryInterval
+			session = nil
 		} else {
-			c.markDataGap()
 			c.incrementReconnectCount()
 			c.setState(StateReconnecting)
-			c.mgr.logger.Info("youtube engagement connector lost its poll loop, retrying",
-				"accountId", c.accountID, "error", sanitizeErr(err))
+			c.mgr.logger.Info("youtube engagement connector lost its live chat stream, retrying",
+				"accountId", c.accountID, "error", sanitizeErr(err), "resuming", session != nil)
 			backoff *= 2
 			if backoff > maxBackoff {
 				backoff = maxBackoff
@@ -201,39 +219,116 @@ func sanitizeErr(err error) string {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "context ended"
 	default:
-		return "poll failed"
+		return "stream failed"
 	}
 }
 
-// serve resolves the account's selected broadcast and live chat, then
-// polls it until an error, a chat-ended signal, or ctx cancellation. A
-// fresh baseline (docs/provider-integrations/youtube-engagement.md §7) is
-// always established here - serve never resumes a continuation token from
-// a previous call, since that is exactly what Restart/broadcast-change use
-// to guarantee no old-chat events ever leak into a newly-selected
-// broadcast, and a process restart never persists one at all.
-func (c *connector) serve(ctx context.Context) error {
+// serve resolves the account's selected broadcast and live chat, then opens
+// one streamList gRPC stream and receives from it until an error, a
+// chat-ended signal, or ctx cancellation. It returns the chatSession the
+// caller (run) should pass back on its next attempt, or nil if nothing is
+// resumable (a fresh baseline is required next time, or the loop should
+// stop/wait).
+//
+// Two distinct cutover behaviors apply, per docs/provider-integrations/
+// youtube-engagement.md §7:
+//
+//   - session is nil, or is for a different liveChatID (broadcast/chat
+//     changed): this is a genuinely fresh stream. Its first response is
+//     consumed entirely to establish a baseline continuation token and is
+//     never published to the Event Bus - only responses after that
+//     baseline are live.
+//   - session matches this liveChatID and carries a page token: this is a
+//     resume of a still-live stream that merely dropped. Its first
+//     response is treated as live immediately - baselining it would
+//     silently drop real chat on every transient reconnect.
+func (c *connector) serve(ctx context.Context, session *chatSession) (*chatSession, error) {
 	broadcastID, ok := c.resolveBroadcast(ctx)
 	if !ok {
 		c.setWaiting(StateWaitingForBroadcast)
-		return nil
+		return nil, nil
 	}
 
 	liveChatID, ok := c.resolveLiveChatID(ctx, broadcastID)
 	if !ok {
 		c.setWaiting(StateWaitingForLiveChat)
-		return nil
+		return nil, nil
+	}
+
+	resuming := session != nil && session.liveChatID == liveChatID && session.pageToken != ""
+	pageToken := ""
+	if resuming {
+		pageToken = session.pageToken
 	}
 
 	c.setConnecting(broadcastID)
 
-	pageToken, err := c.baseline(ctx, liveChatID)
+	stream, err := c.mgr.openStream(ctx, c.accountID, liveChatID, pageToken)
 	if err != nil {
-		return c.classifyPollError(err)
+		if resuming && !continuationRejected(err) {
+			// A transient failure opening a resume attempt - the
+			// continuation token itself was never rejected by the
+			// provider, only the connection attempt failed. Preserve it
+			// so the next retry still resumes instead of re-baselining.
+			return session, c.classifyPollError(err)
+		}
+		if resuming {
+			// The held continuation was rejected outright (§16) - a
+			// possible gap, not a silent loss: the next attempt starts
+			// over with a fresh baseline.
+			c.markDataGap()
+		}
+		return nil, c.classifyPollError(err)
+	}
+	defer stream.Close()
+
+	if !resuming {
+		page, err := stream.Recv()
+		if err != nil {
+			return nil, c.classifyPollError(err)
+		}
+		c.touchPoll()
+		if page.Ended {
+			c.setState(StateChatEnded)
+			return nil, nil
+		}
+		pageToken = page.NextPageToken
 	}
 
 	c.setConnected()
-	return c.pollLoop(ctx, liveChatID, pageToken)
+
+	for {
+		page, err := stream.Recv()
+		if err != nil {
+			if continuationRejected(err) {
+				c.markDataGap()
+				return nil, c.classifyPollError(err)
+			}
+			return &chatSession{liveChatID: liveChatID, pageToken: pageToken}, c.classifyPollError(err)
+		}
+		c.touchPoll()
+
+		for _, msg := range page.Messages {
+			if c.handleMessage(msg) {
+				c.setState(StateChatEnded)
+				return nil, nil
+			}
+		}
+		if page.Ended {
+			c.setState(StateChatEnded)
+			return nil, nil
+		}
+		pageToken = page.NextPageToken
+	}
+}
+
+// continuationRejected reports whether err means the provider rejected the
+// held continuation/liveChatId itself (mapped from gRPC INVALID_ARGUMENT,
+// or from the chat becoming disabled/not-found) - as opposed to a merely
+// transient transport failure that leaves the continuation still good to
+// retry. See docs/provider-integrations/youtube-engagement.md §4b.3/§16.
+func continuationRejected(err error) bool {
+	return errors.Is(err, youtube.ErrLiveChatNotFound) || errors.Is(err, youtube.ErrLiveChatDisabled)
 }
 
 // resolveBroadcast resolves this account's linked destination, then that
@@ -254,7 +349,8 @@ func (c *connector) resolveBroadcast(ctx context.Context) (string, bool) {
 // resolveLiveChatID reads the broadcast's current liveChatId, treating an
 // empty value (not live yet, or chat disabled) as an honest "not
 // available yet" rather than an error - see docs/provider-integrations/
-// youtube-engagement.md §3.5/§7.
+// youtube-engagement.md §3.5/§7. This stays REST (GetBroadcast) - only the
+// message-receive transport moved to gRPC (§9).
 func (c *connector) resolveLiveChatID(ctx context.Context, broadcastID string) (string, bool) {
 	var liveChatID string
 	err := c.mgr.accounts.WithFreshToken(ctx, c.accountID, func(accessToken string) (bool, error) {
@@ -274,91 +370,9 @@ func (c *connector) resolveLiveChatID(ctx context.Context, broadcastID string) (
 	return liveChatID, true
 }
 
-// baseline issues the first ListLiveChatMessages call and returns its
-// nextPageToken without publishing anything from it - the safe cutover
-// point between provider-returned history and genuinely new/live
-// messages.
-func (c *connector) baseline(ctx context.Context, liveChatID string) (string, error) {
-	var page youtube.LiveChatMessagePage
-	err := c.mgr.accounts.WithFreshToken(ctx, c.accountID, func(accessToken string) (bool, error) {
-		p, err := c.mgr.client.ListLiveChatMessages(ctx, liveChatID, "", accessToken)
-		if err != nil {
-			if errors.Is(err, youtube.ErrUnauthorized) {
-				return true, err
-			}
-			return false, err
-		}
-		page = p
-		return false, nil
-	})
-	if err != nil {
-		return "", err
-	}
-	c.touchPoll()
-	return page.NextPageToken, nil
-}
-
-// pollLoop repeatedly waits the (clamped) server-suggested interval, then
-// polls for new messages, publishing every normalized one, until an error
-// or a chat-ended signal.
-func (c *connector) pollLoop(ctx context.Context, liveChatID, pageToken string) error {
-	interval := minPollInterval
-	for {
-		select {
-		case <-time.After(interval):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-
-		var page youtube.LiveChatMessagePage
-		err := c.mgr.accounts.WithFreshToken(ctx, c.accountID, func(accessToken string) (bool, error) {
-			p, err := c.mgr.client.ListLiveChatMessages(ctx, liveChatID, pageToken, accessToken)
-			if err != nil {
-				if errors.Is(err, youtube.ErrUnauthorized) {
-					return true, err
-				}
-				return false, err
-			}
-			page = p
-			return false, nil
-		})
-		if err != nil {
-			return c.classifyPollError(err)
-		}
-		c.touchPoll()
-
-		for _, msg := range page.Messages {
-			ended := c.handleMessage(msg)
-			if ended {
-				c.setState(StateChatEnded)
-				return nil
-			}
-		}
-
-		if page.Ended {
-			c.setState(StateChatEnded)
-			return nil
-		}
-
-		pageToken = page.NextPageToken
-		interval = clampPollInterval(page.PollingIntervalMillis)
-	}
-}
-
-func clampPollInterval(ms int) time.Duration {
-	d := time.Duration(ms) * time.Millisecond
-	if d < minPollInterval {
-		return minPollInterval
-	}
-	if d > maxPollInterval {
-		return maxPollInterval
-	}
-	return d
-}
-
 // handleMessage normalizes and publishes one message, returning true if
 // this message is the chatEndedEvent lifecycle signal (the caller must
-// stop polling, not treat it as a published event).
+// stop receiving, not treat it as a published event).
 func (c *connector) handleMessage(msg youtube.LiveChatMessage) bool {
 	res, err := youtube.NormalizeLiveChatMessage(c.accountID, msg)
 	if err != nil {
@@ -406,10 +420,16 @@ func (c *connector) attachDestination(evt *engagement.Event) {
 	}
 }
 
-// classifyPollError maps a poll/baseline failure onto this connector's own
-// state, distinguishing "the chat genuinely ended" (terminal, honest, no
-// retry) from "an invalid/expired continuation" (retryable via a fresh
-// baseline, marked as a possible gap) from a real transient/auth failure.
+// classifyPollError maps a stream-open/Recv failure onto this connector's
+// own state, distinguishing terminal operator-facing problems (require an
+// explicit Restart/re-Enable) from retryable transport loss (bounded
+// exponential backoff - the expected, normal way a long-lived gRPC stream
+// recovers from an ordinary network blip). This is a deliberate difference
+// from the superseded REST-polling connector, whose discrete request/
+// response calls treated most unrecognized failures as terminal by
+// default: a streaming connection dropping and reconnecting is ordinary
+// operation, not usually a real problem. See docs/provider-integrations/
+// youtube-engagement.md §4b.3/§18.
 func (c *connector) classifyPollError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -419,9 +439,11 @@ func (c *connector) classifyPollError(err error) error {
 		return nil
 	case errors.Is(err, youtube.ErrLiveChatDisabled), errors.Is(err, youtube.ErrLiveChatNotFound):
 		// The chat is no longer reachable the way this connector last
-		// knew it (disabled, or the id is stale/invalid) - an honest
-		// waiting state, not a hard error; the outer run loop will
-		// re-resolve the broadcast/live chat from scratch next attempt.
+		// knew it (disabled, or the id is stale/invalid - including a
+		// gRPC INVALID_ARGUMENT on the held continuation, §4b.3) - an
+		// honest waiting state, not a hard error; the outer run loop
+		// will re-resolve the broadcast/live chat from scratch next
+		// attempt.
 		c.setWaiting(StateWaitingForLiveChat)
 		return errWaitingForLiveChat
 	case errors.Is(err, account.ErrReconnectRequired):
@@ -433,8 +455,20 @@ func (c *connector) classifyPollError(err error) error {
 	case errors.Is(err, youtube.ErrQuotaExceeded):
 		c.setError(ErrorQuotaExceeded)
 		return err
+	case errors.Is(err, youtube.ErrForbidden):
+		// gRPC PERMISSION_DENIED - documented for this RPC, and not
+		// something a retry or token refresh fixes (§4b.3).
+		c.setError(ErrorProviderUnavailable)
+		return err
 	case errors.Is(err, youtube.ErrUnauthorized):
 		c.setError(ErrorReconnectRequired)
+		return err
+	case errors.Is(err, youtube.ErrUnavailable):
+		// gRPC UNAVAILABLE/DEADLINE_EXCEEDED, or a dial failure -
+		// retryable transport loss. Deliberately no setState call here:
+		// the outer run() loop's own generic branch transitions to
+		// StateReconnecting and retries with bounded exponential
+		// backoff.
 		return err
 	default:
 		c.setError(ErrorProviderUnavailable)

@@ -60,6 +60,9 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
+
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
@@ -136,10 +139,23 @@ func run() error {
 		EventSubURL:  os.Getenv("STREAMING_TREE_TEST_TWITCH_EVENTSUB_BASE_URL"),
 	})
 	twitchAdapter := twitch.NewAdapter(twitchClient)
+	// STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET/_INSECURE exist only in this
+	// build-tag-gated binary, exactly like the three REST base URL
+	// overrides above - unset means the real production streamList gRPC
+	// host over TLS (youtube.DefaultGRPCTarget), exactly like cmd/server.
+	// Insecure transport credentials can only ever be selected here, never
+	// through a normal production build's configuration or environment -
+	// see docs/provider-integrations/youtube-engagement.md §9/§4b.2.
+	var grpcCreds credentials.TransportCredentials
+	if os.Getenv("STREAMING_TREE_TEST_YOUTUBE_GRPC_INSECURE") == "1" {
+		grpcCreds = insecure.NewCredentials()
+	}
 	youtubeClient := youtube.New(youtube.Options{
-		AuthBaseURL:  os.Getenv("STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL"),
-		OAuthBaseURL: os.Getenv("STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL"),
-		APIBaseURL:   os.Getenv("STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL"),
+		AuthBaseURL:              os.Getenv("STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL"),
+		OAuthBaseURL:             os.Getenv("STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL"),
+		APIBaseURL:               os.Getenv("STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL"),
+		GRPCTarget:               os.Getenv("STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET"),
+		GRPCTransportCredentials: grpcCreds,
 	})
 	youtubeAdapter := youtube.NewAdapter(youtubeClient)
 	providers := map[account.ProviderID]account.Provider{

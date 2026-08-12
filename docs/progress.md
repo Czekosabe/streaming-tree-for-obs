@@ -20062,3 +20062,180 @@ confirms that).
 Implement the gRPC `streamList` client wrapper and rewrite
 `internal/runtime/youtubeengagement`'s connector to use it, replacing the
 REST polling receive loop entirely (§9-23 of the corrective task).
+
+## 2026-08-12 — feat(server): receive YouTube live chat with gRPC
+
+### Status
+In progress - Stage 15A transport corrective pass, continued. Replaces the
+connector's actual inbound transport, building on the previous commit's
+corrected research and vendored proto/generated code.
+
+### Scope
+Rewrote `internal/provider/youtube`'s live-chat receive path and
+`internal/runtime/youtubeengagement`'s connector to use the gRPC
+`streamList` server-streaming RPC instead of REST `liveChatMessages.list`
+polling, per the corrected research (`docs/provider-integrations/
+youtube-engagement.md` §4b/§7). Outbound sending
+(`liveChatMessages.insert`) and all broadcast/channel/video metadata calls
+stay REST, unchanged - only the receive transport moved.
+
+### Changes
+- `apps/server/internal/provider/youtube/livechat_stream_client.go` (new):
+  `Client.OpenLiveChatStream` dials a gRPC connection (production:
+  `dns:///youtube.googleapis.com:443` over TLS; test-only: `Options.
+  GRPCTarget`/`GRPCTransportCredentials`, mirroring the existing REST base-
+  URL override pattern), attaches the account's OAuth access token as
+  `authorization: Bearer <token>` request metadata, and issues one
+  `StreamList` call with `part=[id,snippet,authorDetails]` and no
+  `max_results` (the proto's own comment: "Not used in the streaming
+  RPC"). Returns a `*LiveChatStream` with `Recv()`/`Close()`. Maps gRPC
+  status codes to this package's existing REST-era sentinel errors
+  (`classifyStreamError`) so downstream code needs no gRPC-aware error
+  handling: `PERMISSION_DENIED`→`ErrForbidden`, `INVALID_ARGUMENT`→
+  `ErrLiveChatNotFound` (an explicit, documented judgment call - no
+  structured reason is documented for this RPC, see the doc's §4b.3),
+  `UNAUTHENTICATED`→`ErrUnauthorized`, `RESOURCE_EXHAUSTED`→
+  `ErrRateLimited`, `UNAVAILABLE`/`DEADLINE_EXCEEDED`/undocumented codes→
+  `ErrUnavailable`, `CANCELED`→`context.Canceled`. One fresh
+  `*grpc.ClientConn` per stream, closed with the stream - no pooling (§12
+  of the corrective task: a local desktop app with normally very few
+  connected accounts does not need one).
+- `apps/server/internal/provider/youtube/livechat_stream_convert.go`
+  (new): converts a `streamlistpb.LiveChatMessage`/
+  `LiveChatMessageListResponse` into the exact same `LiveChatMessage`/
+  `LiveChatMessagePage` shapes the superseded REST client produced -
+  `livechat_normalize.go` (the event-type mapping table, money model,
+  etc.) needed **zero changes** as a result; it has no idea which
+  transport a message arrived over.
+- `apps/server/internal/provider/youtube/client.go`: added
+  `DefaultGRPCTarget` and `Options.GRPCTarget`/
+  `GRPCTransportCredentials` (test-only overrides, unreachable from
+  production config/env - §26).
+- `apps/server/internal/provider/youtube/livechat_client.go`/`models.go`:
+  deleted `ListLiveChatMessages`, `LiveChatMessagesLimit`,
+  `LiveChatMessagesPart`, and the REST `liveChatMessageListResponse`
+  wire struct entirely - dead code once nothing calls them (§20).
+  `InsertLiveChatMessage` (outbound, REST) is unchanged in behavior,
+  using its own small `liveChatMessagesInsertPart` constant now.
+- `internal/runtime/youtubeengagement/connector.go`: replaced
+  `baseline`/`pollLoop`/`clampPollInterval` (and the now-meaningless
+  `minPollInterval`/`maxPollInterval`, since the streaming RPC's response
+  has no `pollingIntervalMillis` field) with a single `serve` that opens
+  one stream and receives from it until it ends. Implements the
+  baseline-vs-reconnect distinction the REST design never needed to make
+  explicit (`docs/provider-integrations/youtube-engagement.md` §7): a
+  `chatSession{liveChatID, pageToken}` is threaded from one `run()`
+  retry attempt to the next; a session matching the just-resolved
+  liveChatID with a held page token resumes **without** re-baselining
+  its first response, while a nil/mismatched session (fresh
+  enable/restart/broadcast-change, or a rejected continuation) baselines
+  exactly as before. A rejected continuation
+  (`ErrLiveChatNotFound`/`ErrLiveChatDisabled`) marks a possible gap and
+  discards the session; a merely transient failure while resuming
+  preserves it so the next retry still resumes. `classifyPollError` was
+  also revised: `ErrUnavailable` (gRPC `UNAVAILABLE`/`DEADLINE_EXCEEDED`,
+  or a dial failure) is now retried with the existing bounded
+  exponential backoff instead of going terminal - a deliberate,
+  documented behavior change from the superseded REST connector, whose
+  discrete request/response calls defaulted unrecognized failures to a
+  terminal `StateError`; a long-lived stream dropping and reconnecting
+  is ordinary operation, not usually a real problem (§4b.3/§18).
+- `internal/runtime/youtubeengagement/manager.go`: added `openStream`,
+  wrapping `account.Service.WithFreshToken` around the stream-open call
+  only (not the subsequent `Recv()` loop - a mid-stream
+  `UNAUTHENTICATED` is treated as a retryable reconnect instead, since
+  the next attempt's own resolve+open calls pick up a refreshed token
+  naturally; see the function's own doc comment for the full reasoning).
+- `apps/server/cmd/testserver/main.go`: added
+  `STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET`/`_INSECURE` env var
+  overrides, read only in this `-tags integration` binary, mirroring the
+  existing three REST base-URL overrides exactly. `cmd/server/main.go`
+  needed **no change at all** - `youtube.Options{}`'s zero value already
+  resolves to the real production gRPC target over TLS.
+- Tests: `apps/server/internal/provider/youtube/
+  livechat_stream_client_test.go` (new) - dial, request fields
+  (liveChatId/part/no max_results/pageToken), OAuth metadata, response
+  conversion, offlineAt detection, and every gRPC status code's mapping,
+  each against a real local gRPC server (not a bypassed Go interface).
+  `apps/server/internal/runtime/youtubeengagement/
+  grpc_fake_test.go` (new) - a real local, script-controllable
+  `V3DataLiveChatMessageServiceServer` this package's own tests dial the
+  same way the production connector dials Google.
+  `manager_test.go` rewritten to script that fake instead of an httptest
+  REST double for message receiving (the `/liveBroadcasts` REST fake
+  stays - broadcast resolution is unaffected); every existing scenario
+  was preserved, plus new tests for the baseline-vs-reconnect
+  distinction (`TestTransientStreamLossResumesWithoutRebaselining`,
+  `TestInvalidContinuationTriggersFreshRebaseline`), broadcast-change
+  stream-cancellation, OAuth metadata, and requested `part` fields.
+
+### Files changed
+- `apps/server/internal/provider/youtube/livechat_stream_client.go` (new)
+- `apps/server/internal/provider/youtube/livechat_stream_client_test.go` (new)
+- `apps/server/internal/provider/youtube/livechat_stream_convert.go` (new)
+- `apps/server/internal/provider/youtube/client.go`
+- `apps/server/internal/provider/youtube/livechat_client.go`
+- `apps/server/internal/provider/youtube/livechat_client_test.go`
+- `apps/server/internal/provider/youtube/models.go`
+- `apps/server/internal/runtime/youtubeengagement/connector.go`
+- `apps/server/internal/runtime/youtubeengagement/manager.go`
+- `apps/server/internal/runtime/youtubeengagement/manager_test.go`
+- `apps/server/internal/runtime/youtubeengagement/grpc_fake_test.go` (new)
+- `apps/server/cmd/testserver/main.go`
+- `docs/progress.md` (this entry)
+
+### Technical decisions
+- Kept the exact same `youtube.LiveChatMessage`/`LiveChatMessagePage`
+  Go types for both transports, converting gRPC responses into them
+  (`livechat_stream_convert.go`) rather than teaching the normalizer
+  about protobuf - satisfies the corrective task's §21 requirement that
+  downstream packages never import generated protobuf types, with the
+  smallest possible surface area (one conversion file) and zero risk of
+  behavioral drift in the already-tested normalization logic.
+  `giftEvent`'s ID-reuse caveat (§23) needed no new handling: it was
+  already, and remains, an intentionally-unsupported diagnostic-only
+  type (`docs/provider-integrations/youtube-engagement.md` §5) - nothing
+  about the transport correction changes that.
+- One `*grpc.ClientConn` per stream attempt, not a shared pool (§12) -
+  documented in the client's own doc comment as a deliberate choice for
+  this application's scale.
+- `Recv()` calls are not individually wrapped in `WithFreshToken` the way
+  each REST poll call was - a stream, unlike a sequence of discrete
+  calls, cannot swap its per-call auth metadata mid-flight; a mid-stream
+  auth failure is instead treated as a retryable reconnect, letting the
+  next attempt's own token resolution refresh naturally (`manager.go`'s
+  `openStream` doc comment has the full reasoning).
+- `ErrUnavailable` reclassified as retryable-with-backoff rather than
+  terminal, a deliberate, documented departure from the superseded REST
+  connector's philosophy - see `connector.go`'s `classifyPollError` doc
+  comment.
+
+### Automated validation
+From `apps/server`: `gofmt -l .` (clean), `go build ./...` (clean),
+`go build -tags integration ./cmd/testserver/...` (clean), `go vet ./...`
+(clean), `go test ./...` (all packages pass, including
+`internal/provider/youtube` and `internal/runtime/youtubeengagement`
+with their new gRPC-based tests). `-race` is unavailable in this
+environment (`CGO_ENABLED=0`, consistent with this project's existing
+CGO-free posture - `modernc.org/sqlite` was chosen for the same reason).
+
+### Known limitations
+- The integration-level fake gRPC service (`-tags integration`, driven by
+  `scripts/verify-youtube-engagement.mjs`) and the corresponding
+  end-to-end script assertions are not yet updated - that is the next
+  commit. Until then, `verify-youtube-engagement.mjs` still exercises
+  the old REST fake, which no longer matches production code; the full
+  regression is deliberately deferred until that script is corrected
+  too (§27 of the corrective task).
+- `TestLiveChatStreamRecvMapsGRPCErrorCodes`'s gRPC-status-per-code table
+  covers the two RPC-documented codes (`PERMISSION_DENIED`,
+  `INVALID_ARGUMENT`) plus the standard defensive set
+  (`UNAUTHENTICATED`/`RESOURCE_EXHAUSTED`/`UNAVAILABLE`/
+  `DEADLINE_EXCEEDED`/an undocumented code) - not an exhaustive list of
+  every gRPC status the real service could theoretically ever return.
+
+### Next step
+Build the real local `-tags integration` fake gRPC `StreamList` service
+and rewrite `scripts/verify-youtube-engagement.mjs` to exercise it,
+retaining every existing behavioral assertion and adding the 20
+transport-specific ones the corrective task requires (§24-27).

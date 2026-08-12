@@ -2,6 +2,7 @@ package youtubeengagement
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -229,6 +230,38 @@ func (m *Manager) Snapshot(accountID string) (Snapshot, bool) {
 		return Snapshot{}, false
 	}
 	return c.getSnapshot(), true
+}
+
+// openStream opens one streamList gRPC stream for accountID/liveChatID/
+// pageToken, reusing account.Service.WithFreshToken's existing single-
+// flight-refresh-then-retry-once pattern exactly the way every other
+// YouTube call in this codebase already does (docs/provider-integrations/
+// youtube-engagement.md §2) - the gRPC transport's own initial
+// authentication failure (UNAUTHENTICATED, mapped to youtube.ErrUnauthorized
+// by classifyStreamError) is treated identically to a REST 401 here. Once
+// the stream is open, its own Recv() calls are not individually wrapped in
+// WithFreshToken - see connector.go's classifyPollError doc comment for why
+// a mid-stream auth failure is instead treated as a retryable reconnect
+// (the next attempt's resolveBroadcast/resolveLiveChatID/openStream calls
+// each go through WithFreshToken again and pick up a refreshed token
+// naturally).
+func (m *Manager) openStream(ctx context.Context, accountID, liveChatID, pageToken string) (*youtube.LiveChatStream, error) {
+	var stream *youtube.LiveChatStream
+	err := m.accounts.WithFreshToken(ctx, accountID, func(accessToken string) (bool, error) {
+		s, err := m.client.OpenLiveChatStream(ctx, liveChatID, pageToken, accessToken)
+		if err != nil {
+			if errors.Is(err, youtube.ErrUnauthorized) {
+				return true, err
+			}
+			return false, err
+		}
+		stream = s
+		return false, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return stream, nil
 }
 
 // Snapshots returns every currently-tracked connector's status.
