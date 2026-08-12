@@ -16,8 +16,10 @@ import (
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	bus "github.com/streaming-tree/server/internal/engagement"
 	"github.com/streaming-tree/server/internal/provider/twitch"
+	"github.com/streaming-tree/server/internal/provider/youtube"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
+	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 )
 
 // EngagementBusService is the subset of bus.Bus the HTTP layer needs.
@@ -37,6 +39,22 @@ type EngagementConnectorService interface {
 	Snapshots() []twitchengagement.Snapshot
 }
 
+// YouTubeEngagementConnectorService is the subset of
+// youtubeengagement.Manager the HTTP layer needs - the Stage 15A twin of
+// EngagementConnectorService, kept as a separate interface (rather than a
+// generic one both managers satisfy) because the two Snapshot shapes
+// genuinely differ (WebSocket-subscription fields vs. poll/broadcast
+// fields) and forcing a shared interface would mean losing one side's own
+// fields or inventing a lowest-common-denominator shape neither manager
+// actually has.
+type YouTubeEngagementConnectorService interface {
+	Enable(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error)
+	Disable(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error)
+	Restart(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error)
+	Snapshot(accountID string) (youtubeengagement.Snapshot, bool)
+	Snapshots() []youtubeengagement.Snapshot
+}
+
 // EngagementSettingsService is the subset of engagementsettings.Service the
 // HTTP layer needs.
 type EngagementSettingsService interface {
@@ -51,13 +69,17 @@ const (
 )
 
 // registerEngagementRoutes wires the Event Bus snapshot/SSE API and the
-// per-account Twitch engagement connector management API.
+// per-account Twitch/YouTube engagement connector management API. Every
+// route is provider-agnostic (keyed by account id, never a provider-
+// specific path) - handlers dispatch to whichever connector manager
+// matches the account's own ProviderID.
 func registerEngagementRoutes(
 	mux *http.ServeMux, logger *slog.Logger,
 	accounts AccountService, deviceFlow DeviceFlowService,
-	evBus EngagementBusService, settings EngagementSettingsService, connectors EngagementConnectorService,
+	evBus EngagementBusService, settings EngagementSettingsService,
+	connectors EngagementConnectorService, youtubeConnectors YouTubeEngagementConnectorService,
 ) {
-	mux.HandleFunc("GET /api/engagement/status", handleGetEngagementStatus(logger, evBus, connectors))
+	mux.HandleFunc("GET /api/engagement/status", handleGetEngagementStatus(logger, evBus, connectors, youtubeConnectors))
 	mux.HandleFunc("/api/engagement/status", methodNotAllowed(logger, http.MethodGet))
 
 	mux.HandleFunc("GET /api/engagement/events", handleGetEngagementEvents(logger, evBus))
@@ -67,21 +89,27 @@ func registerEngagementRoutes(
 	mux.HandleFunc("GET /api/engagement/stream", handleEngagementStream(logger, evBus, &sseClients))
 	mux.HandleFunc("/api/engagement/stream", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/connected-accounts/{id}/engagement", handleGetAccountEngagement(logger, accounts, settings, connectors))
-	mux.HandleFunc("PUT /api/connected-accounts/{id}/engagement", handlePutAccountEngagement(logger, accounts, connectors))
+	mux.HandleFunc("GET /api/connected-accounts/{id}/engagement", handleGetAccountEngagement(logger, accounts, settings, connectors, youtubeConnectors))
+	mux.HandleFunc("PUT /api/connected-accounts/{id}/engagement", handlePutAccountEngagement(logger, accounts, connectors, youtubeConnectors))
 	mux.HandleFunc("/api/connected-accounts/{id}/engagement", methodNotAllowed(logger, http.MethodGet, http.MethodPut))
 
 	mux.HandleFunc("POST /api/connected-accounts/{id}/engagement/authorize", handleAuthorizeEngagement(logger, accounts, deviceFlow))
 	mux.HandleFunc("/api/connected-accounts/{id}/engagement/authorize", methodNotAllowed(logger, http.MethodPost))
 
-	mux.HandleFunc("POST /api/connected-accounts/{id}/engagement/restart", handleRestartEngagement(logger, connectors))
+	mux.HandleFunc("POST /api/connected-accounts/{id}/engagement/restart", handleRestartEngagement(logger, accounts, connectors, youtubeConnectors))
 	mux.HandleFunc("/api/connected-accounts/{id}/engagement/restart", methodNotAllowed(logger, http.MethodPost))
 }
 
 // --- response DTOs -------------------------------------------------------
 
+// connectorResponse is the shared, provider-agnostic connector status DTO
+// for both Twitch (WebSocket) and YouTube (polling) connectors. Every
+// provider-specific field is additive/omitempty, so Twitch's own existing
+// response shape is unchanged when nothing YouTube-specific applies, and
+// vice versa - see toConnectorResponse/toYouTubeConnectorResponse.
 type connectorResponse struct {
 	AccountID string `json:"accountId"`
+	Provider  string `json:"provider"`
 	Enabled   bool   `json:"enabled"`
 	State     string `json:"state"`
 
@@ -94,8 +122,15 @@ type connectorResponse struct {
 	LastDataGapAt   string `json:"lastDataGapAt,omitempty"`
 
 	ReconnectCount            int `json:"reconnectCount"`
-	ActiveSubscriptionCount   int `json:"activeSubscriptionCount"`
-	ExpectedSubscriptionCount int `json:"expectedSubscriptionCount"`
+	ActiveSubscriptionCount   int `json:"activeSubscriptionCount,omitempty"`
+	ExpectedSubscriptionCount int `json:"expectedSubscriptionCount,omitempty"`
+
+	// YouTube-only fields (Stage 15A) - always zero/empty for a Twitch
+	// connector.
+	SelectedBroadcastID   string `json:"selectedBroadcastId,omitempty"`
+	LastPollAt            string `json:"lastPollAt,omitempty"`
+	PossibleGapCount      int    `json:"possibleGapCount,omitempty"`
+	UnsupportedEventCount int    `json:"unsupportedEventCount,omitempty"`
 
 	LastError string `json:"lastError,omitempty"`
 }
@@ -109,12 +144,25 @@ func formatOptionalTime(t *time.Time) string {
 
 func toConnectorResponse(s twitchengagement.Snapshot) connectorResponse {
 	return connectorResponse{
-		AccountID: s.AccountID, Enabled: s.Enabled, State: string(s.State),
+		AccountID: s.AccountID, Provider: string(account.ProviderTwitch), Enabled: s.Enabled, State: string(s.State),
 		BlockerCodes: s.BlockerCodes, MissingScopes: s.MissingScopes,
 		ConnectedAt: formatOptionalTime(s.ConnectedAt), LastEventAt: formatOptionalTime(s.LastEventAt),
 		LastKeepaliveAt: formatOptionalTime(s.LastKeepaliveAt), LastDataGapAt: formatOptionalTime(s.LastDataGapAt),
 		ReconnectCount: s.ReconnectCount, ActiveSubscriptionCount: s.ActiveSubscriptionCount,
 		ExpectedSubscriptionCount: s.ExpectedSubscriptionCount, LastError: s.LastError,
+	}
+}
+
+func toYouTubeConnectorResponse(s youtubeengagement.Snapshot) connectorResponse {
+	return connectorResponse{
+		AccountID: s.AccountID, Provider: string(account.ProviderYouTube), Enabled: s.Enabled, State: string(s.State),
+		BlockerCodes: s.BlockerCodes,
+		ConnectedAt:  formatOptionalTime(s.ConnectedAt), LastEventAt: formatOptionalTime(s.LastEventAt),
+		LastDataGapAt:       formatOptionalTime(s.LastDataGapAt),
+		ReconnectCount:      s.ReconnectCount,
+		SelectedBroadcastID: s.SelectedBroadcastID, LastPollAt: formatOptionalTime(s.LastPollAt),
+		PossibleGapCount: s.PossibleGapCount, UnsupportedEventCount: s.UnsupportedEventCount,
+		LastError: s.LastError,
 	}
 }
 
@@ -130,6 +178,19 @@ func toAccountEngagementResponse(s twitchengagement.Snapshot, assessment twitch.
 		connectorResponse: toConnectorResponse(s),
 		RequiredScopes:    assessment.Required, GrantedScopes: assessment.Granted,
 		PermissionUpgradeRequired: assessment.PermissionUpgradeRequired,
+	}
+}
+
+// toYouTubeAccountEngagementResponse never reports a permission-upgrade
+// requirement - no additional OAuth scope is needed for Stage 15A beyond
+// the existing youtube.RequiredScope, per docs/provider-integrations/
+// youtube-engagement.md §1/§3.6, so there is no scope-assessment step to
+// run here, unlike Twitch's own AssessEngagementCapability.
+func toYouTubeAccountEngagementResponse(s youtubeengagement.Snapshot, granted []string) accountEngagementResponse {
+	return accountEngagementResponse{
+		connectorResponse: toYouTubeConnectorResponse(s),
+		RequiredScopes:    []string{youtube.RequiredScope}, GrantedScopes: granted,
+		PermissionUpgradeRequired: false,
 	}
 }
 
@@ -260,7 +321,7 @@ func toEventResponse(e engagement.Event) eventResponse {
 
 // --- status and snapshot handlers ----------------------------------------
 
-func handleGetEngagementStatus(logger *slog.Logger, evBus EngagementBusService, connectors EngagementConnectorService) http.HandlerFunc {
+func handleGetEngagementStatus(logger *slog.Logger, evBus EngagementBusService, connectors EngagementConnectorService, youtubeConnectors YouTubeEngagementConnectorService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		snap := evBus.Snapshot()
 		resp := engagementStatusResponse{
@@ -271,6 +332,11 @@ func handleGetEngagementStatus(logger *slog.Logger, evBus EngagementBusService, 
 		if connectors != nil {
 			for _, c := range connectors.Snapshots() {
 				resp.Connectors = append(resp.Connectors, toConnectorResponse(c))
+			}
+		}
+		if youtubeConnectors != nil {
+			for _, c := range youtubeConnectors.Snapshots() {
+				resp.Connectors = append(resp.Connectors, toYouTubeConnectorResponse(c))
 			}
 		}
 		writeJSON(w, logger, http.StatusOK, resp)
@@ -411,7 +477,8 @@ func handleEngagementStream(logger *slog.Logger, evBus EngagementBusService, act
 // --- per-account connector management ------------------------------------
 
 func handleGetAccountEngagement(
-	logger *slog.Logger, accounts AccountService, settings EngagementSettingsService, connectors EngagementConnectorService,
+	logger *slog.Logger, accounts AccountService, settings EngagementSettingsService,
+	connectors EngagementConnectorService, youtubeConnectors YouTubeEngagementConnectorService,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID := r.PathValue("id")
@@ -420,23 +487,34 @@ func handleGetAccountEngagement(
 			writeAccountError(w, logger, r, err)
 			return
 		}
-		if acc.ProviderID != account.ProviderTwitch {
-			writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch accounts support engagement in this stage.")
-			return
-		}
 
-		snap, ok := connectors.Snapshot(accountID)
-		if !ok {
-			persisted, _, err := settings.Get(r.Context(), accountID)
-			if err != nil {
-				writeDomainError(w, logger, r, err)
-				return
+		switch acc.ProviderID {
+		case account.ProviderTwitch:
+			snap, ok := connectors.Snapshot(accountID)
+			if !ok {
+				persisted, _, err := settings.Get(r.Context(), accountID)
+				if err != nil {
+					writeDomainError(w, logger, r, err)
+					return
+				}
+				snap = twitchengagement.Snapshot{AccountID: accountID, Enabled: persisted.Enabled, State: twitchengagement.StateDisabled}
 			}
-			snap = twitchengagement.Snapshot{AccountID: accountID, Enabled: persisted.Enabled, State: twitchengagement.StateDisabled}
+			assessment := twitch.AssessEngagementCapability(acc.Scopes)
+			writeJSON(w, logger, http.StatusOK, toAccountEngagementResponse(snap, assessment))
+		case account.ProviderYouTube:
+			snap, ok := youtubeConnectors.Snapshot(accountID)
+			if !ok {
+				persisted, _, err := settings.Get(r.Context(), accountID)
+				if err != nil {
+					writeDomainError(w, logger, r, err)
+					return
+				}
+				snap = youtubeengagement.Snapshot{AccountID: accountID, Enabled: persisted.Enabled, State: youtubeengagement.StateDisabled}
+			}
+			writeJSON(w, logger, http.StatusOK, toYouTubeAccountEngagementResponse(snap, acc.Scopes))
+		default:
+			writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch and YouTube accounts support engagement in this stage.")
 		}
-
-		assessment := twitch.AssessEngagementCapability(acc.Scopes)
-		writeJSON(w, logger, http.StatusOK, toAccountEngagementResponse(snap, assessment))
 	}
 }
 
@@ -444,16 +522,12 @@ type setEngagementRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
-func handlePutAccountEngagement(logger *slog.Logger, accounts AccountService, connectors EngagementConnectorService) http.HandlerFunc {
+func handlePutAccountEngagement(logger *slog.Logger, accounts AccountService, connectors EngagementConnectorService, youtubeConnectors YouTubeEngagementConnectorService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID := r.PathValue("id")
 		acc, err := accounts.GetAccount(r.Context(), accountID)
 		if err != nil {
 			writeAccountError(w, logger, r, err)
-			return
-		}
-		if acc.ProviderID != account.ProviderTwitch {
-			writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch accounts support engagement in this stage.")
 			return
 		}
 
@@ -463,19 +537,35 @@ func handlePutAccountEngagement(logger *slog.Logger, accounts AccountService, co
 			return
 		}
 
-		var snap twitchengagement.Snapshot
-		if body.Enabled {
-			snap, err = connectors.Enable(r.Context(), accountID)
-		} else {
-			snap, err = connectors.Disable(r.Context(), accountID)
+		switch acc.ProviderID {
+		case account.ProviderTwitch:
+			var snap twitchengagement.Snapshot
+			if body.Enabled {
+				snap, err = connectors.Enable(r.Context(), accountID)
+			} else {
+				snap, err = connectors.Disable(r.Context(), accountID)
+			}
+			if err != nil {
+				writeEngagementError(w, logger, r, err)
+				return
+			}
+			assessment := twitch.AssessEngagementCapability(acc.Scopes)
+			writeJSON(w, logger, http.StatusOK, toAccountEngagementResponse(snap, assessment))
+		case account.ProviderYouTube:
+			var snap youtubeengagement.Snapshot
+			if body.Enabled {
+				snap, err = youtubeConnectors.Enable(r.Context(), accountID)
+			} else {
+				snap, err = youtubeConnectors.Disable(r.Context(), accountID)
+			}
+			if err != nil {
+				writeEngagementError(w, logger, r, err)
+				return
+			}
+			writeJSON(w, logger, http.StatusOK, toYouTubeAccountEngagementResponse(snap, acc.Scopes))
+		default:
+			writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch and YouTube accounts support engagement in this stage.")
 		}
-		if err != nil {
-			writeEngagementError(w, logger, r, err)
-			return
-		}
-
-		assessment := twitch.AssessEngagementCapability(acc.Scopes)
-		writeJSON(w, logger, http.StatusOK, toAccountEngagementResponse(snap, assessment))
 	}
 }
 
@@ -513,19 +603,37 @@ func handleAuthorizeEngagement(logger *slog.Logger, accounts AccountService, dev
 
 // handleRestartEngagement provides operational recovery: cancel and restart
 // a connector without changing its persisted enabled setting or creating a
-// duplicate session.
-func handleRestartEngagement(logger *slog.Logger, connectors EngagementConnectorService) http.HandlerFunc {
+// duplicate session. Also the mechanism a future selected-broadcast-change
+// handler would call for a YouTube account, so its own old-chat runtime
+// state is fully discarded before the new one is resolved.
+func handleRestartEngagement(logger *slog.Logger, accounts AccountService, connectors EngagementConnectorService, youtubeConnectors YouTubeEngagementConnectorService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireEmptyBody(w, r, logger) {
 			return
 		}
 		accountID := r.PathValue("id")
-		snap, err := connectors.Restart(r.Context(), accountID)
+		acc, err := accounts.GetAccount(r.Context(), accountID)
 		if err != nil {
-			writeEngagementError(w, logger, r, err)
+			writeAccountError(w, logger, r, err)
 			return
 		}
-		writeJSON(w, logger, http.StatusOK, toConnectorResponse(snap))
+
+		switch acc.ProviderID {
+		case account.ProviderYouTube:
+			snap, err := youtubeConnectors.Restart(r.Context(), accountID)
+			if err != nil {
+				writeEngagementError(w, logger, r, err)
+				return
+			}
+			writeJSON(w, logger, http.StatusOK, toYouTubeConnectorResponse(snap))
+		default:
+			snap, err := connectors.Restart(r.Context(), accountID)
+			if err != nil {
+				writeEngagementError(w, logger, r, err)
+				return
+			}
+			writeJSON(w, logger, http.StatusOK, toConnectorResponse(snap))
+		}
 	}
 }
 
@@ -533,9 +641,9 @@ func handleRestartEngagement(logger *slog.Logger, connectors EngagementConnector
 
 func writeEngagementError(w http.ResponseWriter, logger *slog.Logger, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, twitchengagement.ErrUnsupportedProvider):
-		writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch accounts support engagement in this stage.")
-	case errors.Is(err, twitchengagement.ErrNotFound):
+	case errors.Is(err, twitchengagement.ErrUnsupportedProvider), errors.Is(err, youtubeengagement.ErrUnsupportedProvider):
+		writeError(w, logger, http.StatusUnprocessableEntity, "engagement_not_supported", "Only Twitch and YouTube accounts support engagement in this stage.")
+	case errors.Is(err, twitchengagement.ErrNotFound), errors.Is(err, youtubeengagement.ErrNotFound):
 		writeError(w, logger, http.StatusNotFound, "engagement_connector_not_found", "No engagement connector is configured for this account.")
 	case errors.Is(err, twitchengagement.ErrConflict):
 		writeError(w, logger, http.StatusConflict, "engagement_connector_conflict", "The connector is busy; try again shortly.")

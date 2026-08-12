@@ -19,6 +19,7 @@ import (
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
+	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
@@ -79,12 +80,57 @@ func (f *fakeConnectors) Snapshots() []twitchengagement.Snapshot {
 	return out
 }
 
+// fakeYouTubeConnectors is a controllable YouTubeEngagementConnectorService
+// double - the real polling connector lifecycle is already exhaustively
+// tested in internal/runtime/youtubeengagement; these tests only need to
+// verify the HTTP layer's request/response mapping and error handling.
+type fakeYouTubeConnectors struct {
+	snapshots map[string]youtubeengagement.Snapshot
+}
+
+func newFakeYouTubeConnectors() *fakeYouTubeConnectors {
+	return &fakeYouTubeConnectors{snapshots: map[string]youtubeengagement.Snapshot{}}
+}
+
+func (f *fakeYouTubeConnectors) Enable(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error) {
+	snap := youtubeengagement.Snapshot{AccountID: accountID, Enabled: true, State: youtubeengagement.StateWaitingForBroadcast}
+	f.snapshots[accountID] = snap
+	return snap, nil
+}
+
+func (f *fakeYouTubeConnectors) Disable(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error) {
+	delete(f.snapshots, accountID)
+	return youtubeengagement.Snapshot{AccountID: accountID, Enabled: false, State: youtubeengagement.StateDisabled}, nil
+}
+
+func (f *fakeYouTubeConnectors) Restart(ctx context.Context, accountID string) (youtubeengagement.Snapshot, error) {
+	snap, ok := f.snapshots[accountID]
+	if !ok {
+		return youtubeengagement.Snapshot{}, youtubeengagement.ErrNotFound
+	}
+	return snap, nil
+}
+
+func (f *fakeYouTubeConnectors) Snapshot(accountID string) (youtubeengagement.Snapshot, bool) {
+	snap, ok := f.snapshots[accountID]
+	return snap, ok
+}
+
+func (f *fakeYouTubeConnectors) Snapshots() []youtubeengagement.Snapshot {
+	out := make([]youtubeengagement.Snapshot, 0, len(f.snapshots))
+	for _, s := range f.snapshots {
+		out = append(out, s)
+	}
+	return out
+}
+
 type engagementTestServer struct {
-	handler    http.Handler
-	accounts   *account.Service
-	settings   *engagementsettings.Service
-	bus        *bus.Bus
-	connectors *fakeConnectors
+	handler           http.Handler
+	accounts          *account.Service
+	settings          *engagementsettings.Service
+	bus               *bus.Bus
+	connectors        *fakeConnectors
+	youtubeConnectors *fakeYouTubeConnectors
 }
 
 func newEngagementTestServer(t *testing.T) *engagementTestServer {
@@ -135,14 +181,19 @@ func newEngagementTestServer(t *testing.T) *engagementTestServer {
 	t.Cleanup(eventBus.Shutdown)
 
 	connectors := newFakeConnectors()
+	youtubeConnectors := newFakeYouTubeConnectors()
 
 	handler := NewRouter(Options{
 		Logger: logger, StartedAt: time.Now(), Platforms: platforms,
 		Accounts: accounts, DeviceFlow: deviceFlow, TwitchMetadata: twitch.NewMetadataService(accounts, twitch.New(twitch.Options{})),
 		EngagementBus: eventBus, EngagementSettings: settings, EngagementConnectors: connectors,
+		YouTubeEngagementConnectors: youtubeConnectors,
 	})
 
-	return &engagementTestServer{handler: handler, accounts: accounts, settings: settings, bus: eventBus, connectors: connectors}
+	return &engagementTestServer{
+		handler: handler, accounts: accounts, settings: settings, bus: eventBus,
+		connectors: connectors, youtubeConnectors: youtubeConnectors,
+	}
 }
 
 func (ts *engagementTestServer) createAccount(t *testing.T, id string, providerID account.ProviderID, scopes []string) {
@@ -198,9 +249,37 @@ func TestGetAccountEngagementReportsDisabledForNeverEnabledAccount(t *testing.T)
 	}
 }
 
-func TestGetAccountEngagementRejectsNonTwitchProvider(t *testing.T) {
+func TestGetAccountEngagementReportsWaitingForYouTubeAccount(t *testing.T) {
+	// Stage 15A: YouTube accounts are now a supported engagement provider,
+	// unlike the earlier Stage 8A-only behavior this test used to assert.
 	ts := newEngagementTestServer(t)
-	ts.createAccount(t, "unused", account.ProviderYouTube, nil)
+	ts.createAccount(t, "unused", account.ProviderYouTube, []string{"https://www.googleapis.com/auth/youtube.force-ssl"})
+
+	accounts, err := ts.accounts.ListAccounts(context.Background())
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("ListAccounts() = %v, %v", accounts, err)
+	}
+
+	recorder := do(t, ts.handler, http.MethodGet, "/api/connected-accounts/"+accounts[0].ID+"/engagement", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for a YouTube account, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var body accountEngagementResponse
+	decodeBody(t, recorder, &body)
+	if body.Provider != "youtube" {
+		t.Errorf("Provider = %q, want youtube", body.Provider)
+	}
+	if body.Enabled {
+		t.Error("expected Enabled=false before the connector is ever enabled")
+	}
+	if body.PermissionUpgradeRequired {
+		t.Error("YouTube should never report a permission-upgrade requirement - no additional scope is needed")
+	}
+}
+
+func TestGetAccountEngagementRejectsUnsupportedProvider(t *testing.T) {
+	ts := newEngagementTestServer(t)
+	ts.createAccount(t, "unused", account.ProviderID("some_future_provider"), nil)
 
 	accounts, err := ts.accounts.ListAccounts(context.Background())
 	if err != nil || len(accounts) != 1 {
@@ -209,12 +288,42 @@ func TestGetAccountEngagementRejectsNonTwitchProvider(t *testing.T) {
 
 	recorder := do(t, ts.handler, http.MethodGet, "/api/connected-accounts/"+accounts[0].ID+"/engagement", nil)
 	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 for a non-Twitch account, body = %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("status = %d, want 422 for an unsupported provider, body = %s", recorder.Code, recorder.Body.String())
 	}
 	var body ErrorBody
 	decodeBody(t, recorder, &body)
 	if body.Error != "engagement_not_supported" {
 		t.Errorf("Error = %q, want engagement_not_supported", body.Error)
+	}
+}
+
+func TestPutAccountEngagementEnableAndDisableYouTube(t *testing.T) {
+	ts := newEngagementTestServer(t)
+	ts.createAccount(t, "unused", account.ProviderYouTube, []string{"https://www.googleapis.com/auth/youtube.force-ssl"})
+	accounts, err := ts.accounts.ListAccounts(context.Background())
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("ListAccounts() = %v, %v", accounts, err)
+	}
+	accountID := accounts[0].ID
+
+	enableRec := do(t, ts.handler, http.MethodPut, "/api/connected-accounts/"+accountID+"/engagement", map[string]any{"enabled": true})
+	if enableRec.Code != http.StatusOK {
+		t.Fatalf("enable status = %d, want 200, body = %s", enableRec.Code, enableRec.Body.String())
+	}
+	var enabled accountEngagementResponse
+	decodeBody(t, enableRec, &enabled)
+	if !enabled.Enabled || enabled.Provider != "youtube" {
+		t.Fatalf("expected an enabled youtube response, got %+v", enabled)
+	}
+
+	disableRec := do(t, ts.handler, http.MethodPut, "/api/connected-accounts/"+accountID+"/engagement", map[string]any{"enabled": false})
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, want 200, body = %s", disableRec.Code, disableRec.Body.String())
+	}
+	var disabled accountEngagementResponse
+	decodeBody(t, disableRec, &disabled)
+	if disabled.Enabled {
+		t.Fatal("expected Enabled=false after disable")
 	}
 }
 

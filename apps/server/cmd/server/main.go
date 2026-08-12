@@ -45,6 +45,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
+	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 )
@@ -163,12 +164,14 @@ func run() error {
 	eventBus := bus.New(bus.Options{Capacity: cfg.EngagementBufferSize})
 	engagementSettingsService := engagementsettings.NewService(sqlite.NewEngagementSettingsRepository(db.DB), nil)
 
-	// twitchEngagementManager is constructed below (it needs accountService
-	// and deviceFlowManager, both defined further down); onAccountRemoved
-	// closes over a pointer set once that manager exists, so Disconnect's
-	// hook is wired before accountService itself is constructed without
-	// requiring twitchengagement.Manager to exist yet.
+	// twitchEngagementManager/youtubeEngagementManager are constructed
+	// below (each needs accountService and deviceFlowManager, both
+	// defined further down); onAccountRemoved closes over pointers set
+	// once those managers exist, so Disconnect's hook is wired before
+	// accountService itself is constructed without requiring either
+	// manager to exist yet.
 	var twitchEngagementManager *twitchengagement.Manager
+	var youtubeEngagementManager *youtubeengagement.Manager
 
 	accountService := account.NewService(account.Options{
 		Repository:     sqlite.NewAccountRepository(db.DB),
@@ -183,6 +186,9 @@ func run() error {
 		OnAccountRemoved: func(cbCtx context.Context, accountID string) {
 			if twitchEngagementManager != nil {
 				twitchEngagementManager.StopAndRemove(accountID)
+			}
+			if youtubeEngagementManager != nil {
+				youtubeEngagementManager.StopAndRemove(accountID)
 			}
 		},
 	})
@@ -218,6 +224,29 @@ func run() error {
 	})
 	if err := twitchEngagementManager.Start(ctx); err != nil {
 		logger.Warn("could not restore enabled Twitch engagement connectors at startup", slog.Any("error", err))
+	}
+
+	// broadcastLookup resolves a destination's currently-selected YouTube
+	// live-broadcast id, reusing Stage 7B's own remote-target selection -
+	// shared by the Stage 15A engagement connector and the YouTube
+	// outbound-chat adapter below, never a second, invented selector. Only
+	// a YouTube-provider, live_broadcast-typed target is ever returned.
+	broadcastLookup := func(platformID string) (string, bool) {
+		target, found, err := remoteTargetService.GetTarget(ctx, platformID)
+		if err != nil || !found {
+			return "", false
+		}
+		if target.ProviderID != string(account.ProviderYouTube) || target.ResourceType != remotetarget.ResourceTypeLiveBroadcast {
+			return "", false
+		}
+		return target.ResourceID, true
+	}
+	youtubeEngagementManager = youtubeengagement.NewManager(youtubeengagement.Options{
+		Accounts: accountService, Settings: engagementSettingsService, Bus: eventBus, Client: youtubeClient,
+		Logger: logger, DestinationLookup: destinationLookup, BroadcastLookup: broadcastLookup,
+	})
+	if err := youtubeEngagementManager.Start(ctx); err != nil {
+		logger.Warn("could not restore enabled YouTube engagement connectors at startup", slog.Any("error", err))
 	}
 
 	// Stage 9: the unified-operator-chat projection consumes the same
@@ -291,13 +320,17 @@ func run() error {
 		return err
 	}
 
-	// Stage 11A: the outbound-chat dispatcher. In-memory only, reset on
+	// Stage 11A/15A: the outbound-chat dispatcher. In-memory only, reset on
 	// every restart - see internal/outboundchat's own doc comment. The
 	// same twitchAdapter already registered with account.Service also
 	// implements outboundchat.Provider (Adapter.SendChatMessage), so no
-	// second Twitch client or adapter is constructed here.
+	// second Twitch client or adapter is constructed here. The YouTube
+	// adapter is its own type (youtube.OutboundChatAdapter, not
+	// youtube.Adapter) since sending needs the same broadcastLookup
+	// dependency the engagement connector above already uses.
+	youtubeOutboundAdapter := youtube.NewOutboundChatAdapter(youtubeClient, destinationLookup, broadcastLookup)
 	outboundChatManager := outboundchat.NewManager(outboundchat.ManagerOptions{
-		Accounts: accountService, Providers: []outboundchat.Provider{twitchAdapter},
+		Accounts: accountService, Providers: []outboundchat.Provider{twitchAdapter, youtubeOutboundAdapter},
 	})
 
 	youtubeAuthManager := youtubeauth.NewManager(youtubeauth.Options{
@@ -430,9 +463,10 @@ func run() error {
 		YouTubeMetadata: youtubeMetadataService,
 		RemoteTargets:   remoteTargetService,
 
-		EngagementBus:        eventBus,
-		EngagementSettings:   engagementSettingsService,
-		EngagementConnectors: twitchEngagementManager,
+		EngagementBus:               eventBus,
+		EngagementSettings:          engagementSettingsService,
+		EngagementConnectors:        twitchEngagementManager,
+		YouTubeEngagementConnectors: youtubeEngagementManager,
 
 		OperatorChatProjection:        operatorChatProjection,
 		OperatorChatPrefs:             operatorChatPrefsService,
@@ -485,6 +519,7 @@ func run() error {
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
+		youtubeEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
@@ -523,6 +558,7 @@ func run() error {
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
+		youtubeEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)

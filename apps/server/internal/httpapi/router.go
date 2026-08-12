@@ -74,6 +74,12 @@ type Options struct {
 	// management API. Required alongside EngagementBus and Accounts/
 	// DeviceFlow for the engagement routes to register.
 	EngagementConnectors EngagementConnectorService
+	// YouTubeEngagementConnectors serves the per-account YouTube Live Chat
+	// polling connector management API (Stage 15A) - the same
+	// account-scoped routes EngagementConnectors already registers also
+	// dispatch to this manager for a YouTube account. Required alongside
+	// EngagementConnectors for the engagement routes to register.
+	YouTubeEngagementConnectors YouTubeEngagementConnectorService
 	// OperatorChatProjection serves the Stage 9 unified-operator-chat
 	// status/snapshot/SSE API. Required alongside OperatorChatPrefs for the
 	// operator-chat routes to register.
@@ -174,8 +180,8 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.EngagementBus != nil && opts.Accounts != nil && opts.DeviceFlow != nil &&
-		opts.EngagementSettings != nil && opts.EngagementConnectors != nil {
-		registerEngagementRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.EngagementBus, opts.EngagementSettings, opts.EngagementConnectors)
+		opts.EngagementSettings != nil && opts.EngagementConnectors != nil && opts.YouTubeEngagementConnectors != nil {
+		registerEngagementRoutes(mux, logger, opts.Accounts, opts.DeviceFlow, opts.EngagementBus, opts.EngagementSettings, opts.EngagementConnectors, opts.YouTubeEngagementConnectors)
 	}
 
 	if opts.OperatorChatProjection != nil && opts.OperatorChatPrefs != nil && opts.Accounts != nil {

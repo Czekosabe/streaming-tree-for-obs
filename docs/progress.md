@@ -18640,3 +18640,111 @@ The alerts monetary model: a new SQLite migration for currency-aware
 threshold columns, new `EventType`/`Capability` entries for the four
 new YouTube-capable event kinds, matcher support for a money condition,
 new alert placeholders, and deterministic preview fixtures.
+
+## 2026-08-12 08:59 — feat(server): wire YouTube engagement into the HTTP API and main.go
+
+### What
+Makes every backend piece built so far actually reachable through the
+real API and the real running application - until this commit, the
+YouTube connector/outbound adapter existed but no HTTP route or
+`main.go`/`testserver` wiring could ever construct or reach them.
+
+- **`internal/httpapi/engagement.go`**: generalized the per-account
+  engagement routes (`GET`/`PUT /api/connected-accounts/{id}/
+  engagement`, `POST .../restart`) to dispatch by the account's own
+  `ProviderID` between the existing Twitch connector manager and a new
+  YouTube one, rather than hard-rejecting every non-Twitch account as
+  the three handlers previously did outright. Added
+  `YouTubeEngagementConnectorService` (the Stage 15A twin of
+  `EngagementConnectorService` - kept as a genuinely separate interface
+  since the two `Snapshot` shapes differ, not a forced shared one) and
+  `toYouTubeConnectorResponse`/`toYouTubeAccountEngagementResponse`.
+  Extended the shared `connectorResponse` DTO additively (`provider`,
+  `selectedBroadcastId`, `lastPollAt`, `possibleGapCount`,
+  `unsupportedEventCount`, all `omitempty`) so Twitch's own existing
+  response shape is byte-identical for every field it already sends.
+  `handleAuthorizeEngagement` (the scope-upgrade flow) deliberately
+  stays Twitch-only - YouTube needs no additional scope, so there is no
+  upgrade flow for it to have. `writeEngagementError` now also
+  recognizes `youtubeengagement.ErrUnsupportedProvider`/`ErrNotFound`.
+- **`internal/httpapi/router.go`**: added the required
+  `YouTubeEngagementConnectors` option, alongside the existing
+  `EngagementConnectors`, gating the whole engagement route group.
+- **`cmd/server/main.go`/`cmd/testserver/main.go`** (near-identical
+  edits in both, mirroring the file pair's own existing twin
+  convention): a new `broadcastLookup(platformID) (broadcastID string,
+  ok bool)` closure wrapping `remoteTargetService.GetTarget`, filtered
+  to a YouTube-provider `live_broadcast`-typed target only - shared,
+  unchanged, by both the new `youtubeengagement.Manager` and the new
+  `youtube.OutboundChatAdapter`, reusing Stage 7B's existing selected-
+  broadcast persistence exactly as the research/design commits
+  intended, never a second selector. `youtubeEngagementManager` is
+  constructed and started right after the Twitch one, using the same
+  `eventBus`/`engagementSettingsService`/`destinationLookup` already in
+  scope; `OnAccountRemoved` now stops both managers, not just Twitch's.
+  `outboundChatManager` now registers `youtubeOutboundAdapter` alongside
+  `twitchAdapter` - one shared dispatcher, two providers, exactly as
+  designed. Shutdown sequence now also shuts down
+  `youtubeEngagementManager`.
+- **No new integration-tagged transport override was needed** - the
+  chosen REST-polling transport (`docs/provider-integrations/
+  youtube-engagement.md` §4) reuses the exact same
+  `STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL` override
+  `cmd/testserver/main.go` already wired for `youtubeClient` before
+  this stage began (confirmed already present, per the earlier
+  codebase-research commit) - `/liveChat/messages` is just another path
+  on that same base URL, unlike a gRPC transport would have required.
+- **`internal/httpapi/engagement_test.go`**: added `fakeYouTubeConnectors`
+  (mirroring the existing `fakeConnectors` double) and wired it through
+  `newEngagementTestServer`. Replaced the now-incorrect
+  `TestGetAccountEngagementRejectsNonTwitchProvider` (which asserted a
+  422 for a YouTube account - no longer true) with
+  `TestGetAccountEngagementReportsWaitingForYouTubeAccount` (asserts
+  the real supported behavior) and a new
+  `TestGetAccountEngagementRejectsUnsupportedProvider` using a
+  genuinely fabricated unknown provider string, so the "an unsupported
+  provider is still rejected" case stays covered honestly. Added
+  `TestPutAccountEngagementEnableAndDisableYouTube`.
+
+### Files changed
+- `apps/server/cmd/server/main.go`
+- `apps/server/cmd/testserver/main.go`
+- `apps/server/internal/httpapi/{engagement.go, engagement_test.go,
+  router.go}`
+
+### Technical decisions
+- **Why `handleGetAccountEngagement`/`handlePutAccountEngagement`/
+  `handleRestartEngagement` use a `switch acc.ProviderID` rather than
+  two parallel route trees.** The URL is already provider-agnostic
+  (`/api/connected-accounts/{id}/engagement`, keyed by account id) -
+  duplicating it per provider would create two URLs meaning the same
+  thing, which this project's own API design has never done elsewhere
+  (compare the already-unified `/api/connected-accounts/{id}` account
+  model itself). Dispatching inside one handler keeps exactly one
+  route per concern.
+- **Why the pre-existing rejection test had to be corrected rather
+  than just left passing.** It was asserting `422 engagement_not_
+  supported` for a YouTube account - which was true before this
+  commit and is now false. Leaving it unchanged would have made the
+  test suite actively assert a stale, incorrect contract; the honest
+  fix was replacing it with a test of the real current behavior plus
+  a new test of the case it was actually meant to guard (an account
+  provider this application genuinely does not support).
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including the corrected/new engagement HTTP tests.
+
+### Known limitations
+None new. The connector/adapter are now fully reachable through the
+real API and would run in a real deployment - what remains is the
+alerts monetary model, the frontend UI, i18n, the 17th integration
+script, and the closing documentation/regression pass.
+
+### Next step
+The alerts monetary model: a new SQLite migration for currency-aware
+threshold columns, new `EventType`/`Capability` entries for the four
+new YouTube-capable event kinds, matcher support for a money condition,
+new alert placeholders, and deterministic preview fixtures.
