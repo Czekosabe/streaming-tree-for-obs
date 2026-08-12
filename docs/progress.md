@@ -20853,3 +20853,175 @@ transport corrective pass's own closing entry followed).
 None for this corrective pass - it is closed. A future session would
 either revisit Kick's transport situation (Stage 15B) or begin Stage 16,
 neither of which is part of this pass.
+
+## 2026-08-12 — docs: research external donation providers
+
+### Status
+In progress - begins Stage 16A (external donation foundation +
+StreamElements real-time donations). Stage 15B (Kick) remains
+feasibility-gated/not started and does not block this independent
+milestone - see the new research document's own §0 for the explicit
+roadmap-independence decision, mirroring how Stage 15A was never blocked
+on Stage 7C.
+
+### Scope
+Audited the real, current backend and frontend implementation (not
+architecture prose) before designing anything, then researched current
+official documentation for all three providers this stage's own task
+names (StreamElements, Streamlabs, Ko-fi) and recorded a canonical
+research contract with an explicit feasibility matrix, per this project's
+"document the contract before writing provider code" discipline.
+
+### Code audit findings (before any design)
+- `engagement.TypeDonation` does not exist - "donation" was prose/planning
+  only. `engagement.ProviderStreamElements` does not exist either.
+- `engagement.Money`/`NewMoney` are already fully generic (no YouTube
+  coupling despite their doc comments) - reusable as-is.
+- `account.Account`/`account.Provider` are OAuth-shaped throughout
+  (`Login`, `Scopes`, `ValidateToken`/`RefreshToken`/`RevokeToken`/
+  `GetIdentity`, a `WithFreshToken` single-refresh-retry pattern, a
+  `StatusReconnectRequired` meaning "repeat the OAuth flow") - a
+  StreamElements personal JWT (no login, no scopes, no refresh token, no
+  revoke endpoint) does not fit this shape without forcing several
+  interface methods to fake behavior that doesn't apply.
+- `internal/operatorchat`'s activity dispatch (`projection.go`
+  `handleEvent`) is an explicit allow-list `switch evt.Type` - a new
+  `TypeDonation` would be silently dropped unless added there. Its
+  `buildActivityItem`/`Activity` money handling is already fully generic
+  (a plain `if evt.Money != nil` block).
+- **A real, pre-existing frontend/backend schema bug found in passing**:
+  the backend's own operator-chat activity JSON wire field is
+  `amountMicros`/`displayAmount` (`internal/httpapi/operatorchat.go`),
+  but the frontend's `operatorChatActivitySchema` (`api/
+  operator-chat-schemas.ts`) declares a plain `amount: z.number().
+  optional()` that the backend never actually sends - so no
+  money-carrying activity (this includes the already-shipped YouTube
+  Super Chat/Super Sticker) has ever actually shown its amount in the
+  operator Chat page's activity row. Confirmed independently by reading
+  the real Go JSON tags, not trusting either audit's paraphrase. This
+  stage's own requirement that a real donation "visibly communicate...
+  amount/currency" in operator chat makes fixing this a genuine
+  prerequisite, not scope creep - recorded here now, fixed in a later
+  commit in this stage.
+- `internal/domain/alerts`' capability table, money-threshold validation,
+  matcher, and Test Rule fixture builder are all already fully generic
+  and event-type-driven - registering a new `EventDonation` follows the
+  exact same lockstep pattern `EventYouTubeSuperChat` already
+  established (model.go constant + `ValidEventTypes`, capability.go
+  entry, matcher.go `mapEventType` case, testevents.go
+  `reverseMapEventType`/`fixtureProviderID`/`fixtureMoney` cases).
+  `alert_rule_providers.provider_id` has no CHECK constraint (a new
+  provider value needs no migration); `alert_rules.event_type` does (a
+  new event type needs the existing CHECK-list-widening rebuild
+  pattern, `0019_alerts_youtube_events.sql`'s own template).
+- **A real architectural fork found before deciding the persistence
+  model**: `alert_rule_accounts.connected_account_id` is a hard SQL
+  foreign key into `connected_accounts`. If donation sources are *not*
+  rows in `connected_accounts` (the design this document ultimately
+  chooses - see below), that foreign key would make it impossible to
+  ever select a donation source in an alert rule's account filter. The
+  existing `alert_rule_providers.provider_id` column already has no such
+  constraint (validated in Go code only, via `AccountLookup`, a narrow
+  single-method interface `Service` is handed at construction) - the
+  same looser pattern is reused for `alert_rule_accounts` (constraint
+  dropped, validated by a small combined lookup checking both domains -
+  see the next commit).
+- Frontend: no shared generic "connector card" component exists - Twitch
+  and YouTube each have their own hand-written sibling
+  (`TwitchConnectorCard.tsx`/`YouTubeConnectorCard.tsx`), by explicit
+  project convention (documented in `YouTubeConnectorCard.tsx`'s own
+  comment). A StreamElements card follows the same convention, not a
+  shared abstraction. A manual-credential-paste UI pattern already
+  exists once in this codebase (`StreamKeySection.tsx`, the destination
+  stream-key field) - `gcTime: 0`, immediate-clear-on-success,
+  status-only response schema, never echoing the secret - the exact
+  template to copy for a StreamElements JWT field. No provider-icon
+  asset system exists at all (`PlatformGlyph` renders plain colored
+  text-initial badges - "the project does not ship third-party
+  trademarks"); an unrecognized `providerId` already degrades safely
+  everywhere (total lookup-with-null-fallback pattern in
+  `models/provider-labels.ts`) - a `streamelements` providerId needs no
+  defensive frontend change to avoid crashing. Every provider allow-list
+  gating outbound-chat/automation targets is a literal `providerId ===
+  'twitch' || providerId === 'youtube'` OR-chain repeated at each call
+  site (never a capability flag) - `streamelements` is therefore
+  automatically excluded from every outbound-chat/automation target list
+  by construction, as long as it is never added to those specific
+  literals (it IS added to the alert-rule provider/account filter's own
+  separate allow-list, since donations are alert-capable).
+
+### Official research and feasibility matrix
+Recorded in full in the new research document (see below); summary:
+**StreamElements** is selected for Stage 16A - a raw WebSocket ("Astro",
+`wss://astro.streamelements.com/`), a dedicated `channel.tips` topic
+(scope `tips:read`) plus `channel.tips.moderation` (scope
+`tips:moderation`), and a documented personal-JWT authentication path
+StreamElements' own support content explicitly recommends for "your own
+stream or ... any single use case" - no confidential client secret, no
+public endpoint, no relay. **Streamlabs** is deferred to Stage 16B:
+its Socket API is real-time-capable but (a) uses Socket.IO, a different
+protocol this project does not otherwise depend on, and (b) its
+documented OAuth2 token exchange requires a confidential `client_secret`
+with no PKCE/public-client alternative found, plus a default
+10-whitelisted-user cap on unapproved applications - recorded as
+"feasible transport, unresolved/poor desktop authentication model," not
+generic non-support. **Ko-fi** is feasibility-gated for the current
+local-only deployment model: its only documented delivery mechanism is a
+webhook (Ko-fi POSTs to an operator-configured public URL), which this
+local-first desktop application does not operate and this stage's own
+task explicitly forbids solving via a tunnel/relay/port-forward
+workaround.
+
+### Files changed
+- `docs/provider-integrations/external-donations.md` (new)
+- `docs/progress.md` (this entry)
+
+### Technical decisions
+- One combined research document (not two), mirroring
+  `kick-engagement.md`'s own precedent of a feasibility verdict and
+  implementation contract living together.
+- `docs.streamelements.com`'s topic/example pages render their code
+  samples server-side inside a `data-code` HTML attribute - extracted
+  byte-for-byte from that attribute (not summarized through an
+  intermediate model), the same discipline the Stage 15A YouTube
+  `stream_list.proto` extraction used, to guarantee no field name/value
+  was altered. `dev.streamelements.com`'s Stoplight-hosted OAuth2
+  reference page renders its body client-side and could not be reached
+  by this research's fetch tooling after two independent attempts -
+  recorded honestly in the research document rather than guessed at
+  either way; the JWT-path decision does not depend on that page's
+  content regardless (§3 of the research document explains why).
+  `support.streamelements.com` and `help.ko-fi.com` both return HTTP 403
+  to automated fetching (Zendesk bot protection, not a documentation
+  availability decision) - each page's own search-engine-indexed content
+  was used instead and quoted narrowly, for exactly the one operational
+  fact each was needed for.
+- The persistence-model decision (a new `internal/domain/donationsource`
+  domain, not a widened `connected_accounts`) is recorded in the audit
+  findings above and finalized in the next commit's own progress entry,
+  where the actual schema is designed.
+
+### Automated validation
+None yet - this is a research/documentation-only commit, per this
+project's "document the contract before writing provider code"
+discipline (Stage 15A/15B both followed the same order). Implementation
+and its own validation begin in the next commit.
+
+### Known limitations
+- `dev.streamelements.com`'s OAuth2 reference page's own body content
+  could not be independently confirmed (see Technical decisions) -
+  Stage 16A's decision to use personal JWT does not depend on that page,
+  so this does not block implementation, but a future stage revisiting
+  StreamElements' OAuth2 flow in more depth should re-attempt that page
+  with different tooling rather than treating this document's silence on
+  it as a confirmed "no public client flow exists."
+- Streamlabs' and Ko-fi's own donation-history/API surfaces beyond the
+  specific pages this document needed were not exhaustively explored,
+  since both are already gated by their transport/auth findings above
+  regardless of what else their APIs offer.
+
+### Next step
+Design and implement the donation-source persistence model (the
+`internal/domain/donationsource` domain, its SQLite migration, and
+SecretStore wiring for the StreamElements JWT), per this document's own
+architectural fork findings above.
