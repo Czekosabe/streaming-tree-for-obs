@@ -74,6 +74,7 @@
     "deleteConfirmMessage": "Usunięcie „{{name}}” natychmiast przestaje dopasowywać ją do kolejnych zdarzeń.",
     "testAction": "Testuj regułę",
     "testSentNotice": "Prawdziwy, testowy alert został wysłany przez rzeczywistą kolejkę - obserwuj Browser Source, aby go zobaczyć.",
+    "testScenarioLabel": "Scenariusz testowy",
     "overlapWarning": "Zakres ilości tej reguły pokrywa się z inną włączoną regułą dla tego samego typu zdarzenia ({{other}}) - jedno prawdziwe zdarzenie może uruchomić obie.",
     "fields": {
       "name": "Nazwa",
@@ -91,14 +92,24 @@
       "showUsername": "Pokaż nazwę użytkownika",
       "showMessage": "Pokaż wiadomość",
       "showQuantity": "Pokaż ilość",
+      "currency": "Waluta",
+      "amountHint": "3-literowy kod waluty (np. USD). Wymagany, jeśli ustawiono którąkolwiek z granic kwoty poniżej - kwoty nigdy nie są porównywane między walutami.",
+      "minimumAmount": "Minimalna kwota",
+      "maximumAmount": "Maksymalna kwota",
+      "amountInvalid": "Podaj prawidłową, nieujemną kwotę oraz walutę, jeśli ustawiono którąkolwiek z granic.",
+      "showAmount": "Pokaż kwotę",
       "textTemplate": "Tekst alertu",
       "entryAnimation": "Animacja wejścia",
       "exitAnimation": "Animacja wyjścia",
       "animationDuration": "Czas trwania animacji (ms)",
-      "providers": "Ogranicz jawnie do Twitcha",
-      "providersHint": "Twitch jest obecnie jedynym obsługiwanym dostawcą, więc dziś nie ma to większego znaczenia - opcja istnieje, aby regułę można było jawnie przypisać tylko do Twitcha, gdy pojawi się kolejny dostawca, zamiast domyślnie dopasowywać każdego przyszłego.",
+      "providers": "Ogranicz do dostawcy",
+      "providersHint": "Pozostaw oba wyłączone, aby dopasować każdego dostawcę. Przypnij do jednego lub obu, aby ograniczyć tę regułę do konkretnych platform.",
+      "provider": {
+        "twitch": "Twitch",
+        "youtube": "YouTube"
+      },
       "accounts": "Filtr kont",
-      "accountsHint": "Puste oznacza dowolne połączone konto.",
+      "accountsHint": "Puste oznacza dowolne połączone konto Twitch lub YouTube.",
       "addAccount": "Dodaj konto",
       "removeAccount": "Usuń konto",
       "allowGrouping": "Grupuj podobne alerty w kolejce",
@@ -124,7 +135,11 @@
       "subscription_gift_batch": "Pakiet podarowanych subskrypcji",
       "bits": "Bits",
       "raid": "Najazd",
-      "channel_point_redemption": "Wymiana punktów kanału"
+      "channel_point_redemption": "Wymiana punktów kanału",
+      "youtube_membership": "Członkostwo",
+      "youtube_membership_milestone": "Rocznica członkostwa",
+      "youtube_super_chat": "Super Chat",
+      "youtube_super_sticker": "Super Sticker"
     },
     "role": {
       "everyone": "Każdy",
@@ -151,7 +166,9 @@
       "very_long_username": "Bardzo długa nazwa użytkownika",
       "very_long_message": "Bardzo długa wiadomość",
       "anonymous_bits": "Anonimowy sprawca",
-      "missing_avatar": "Brak awatara"
+      "missing_avatar": "Brak awatara",
+      "no_comment": "Brak komentarza (Super Chat/Sticker)",
+      "alternate_currency": "Inna waluta (EUR)"
     }
   },
   "common": {
@@ -165,7 +182,7 @@
     "renderedCount": "{{count}} znaków",
     "unresolvedWarning": "Niedostępne dla tego zdarzenia: {{names}}",
     "tooLongWarning": "Ta wiadomość jest zbyt długa dla nakładki alertów.",
-    "noAccounts": "Żadne konto Twitch nie jest jeszcze gotowe - najpierw je połącz.",
+    "noAccounts": "Żadne konto Twitch ani YouTube nie jest jeszcze gotowe - najpierw je połącz.",
     "synthetic": "Test",
     "replayed": "Powtórzony"
   },
@@ -179,6 +196,7 @@
     "alert_rule_condition_unsupported": "Ten warunek nie jest obsługiwany przez typ zdarzenia tej reguły.",
     "alert_rule_account_not_found": "Jedno z wybranych kont już nie istnieje.",
     "alert_rule_threshold_invalid": "Próg ilości jest nieprawidłowy.",
+    "alert_rule_amount_invalid": "Próg kwoty jest nieprawidłowy.",
     "alert_template_invalid": "Tekst alertu zawiera nieznany lub nieprawidłowy symbol zastępczy.",
     "alert_template_unresolved": "Tekst alertu zawiera symbol zastępczy, którego obecnie nie można rozwiązać.",
     "alert_queue_paused": "Kolejka jest obecnie wstrzymana.",

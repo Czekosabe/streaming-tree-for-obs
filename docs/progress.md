@@ -18968,3 +18968,116 @@ Frontend work, now against a verified-correct HTTP contract: schemas
 for YouTube event types and the `Money` value, then the Engagement/
 Chat/Automation/Alerts pages - all through the existing pages, never a
 new YouTube-specific route.
+
+## 2026-08-12 11:22 — feat(web): YouTube money/membership support in the Alerts rule editor
+
+### What
+Adds the frontend half of Stage 15A's alerts monetary model to the
+existing Alerts page - the 4 new YouTube event types, currency-aware
+amount thresholds, membership-level placeholder support, and a
+provider filter that now actually offers both Twitch and YouTube -
+entirely inside the existing rule editor, no new page or route.
+
+- **`api/alerts-schemas.ts`**: `alertEventTypeSchema` gained the 4 new
+  values (`youtube_membership`, `youtube_membership_milestone`,
+  `youtube_super_chat`, `youtube_super_sticker`, matching
+  `domain.EventType` exactly); `alertEventTypeCapabilitySchema` gained
+  `hasAmount`/`hasMembershipLevel` (previously silently dropped by zod,
+  even though the backend already sent them - see the prior commit's
+  fix); `alertRuleSchema`/`AlertRuleInput` gained
+  `currency`/`minimumAmountMicros`/`maximumAmountMicros`/`showAmount`;
+  `alertErrorCodeSchema` gained `alert_rule_amount_invalid`.
+- **`models/alerts.ts`**: `ALERT_EVENT_TYPES`/`KNOWN_ALERT_PLACEHOLDERS`
+  extended (`amount`/`currency`/`membershipLevel`); new
+  `MAX_AMOUNT_MICROS` (mirrors the backend's own bound exactly),
+  `isValidAmountRange` (mirrors `ValidateMoneyThresholds` - a bound
+  requires a currency, inclusive range, min ≤ max),
+  `normalizeCurrencyCode` (mirrors `NormalizeCurrency`'s uppercasing),
+  and a `parseAmountMicros`/`formatAmountMicros` pair that are exact
+  inverses of each other and of the backend's own
+  `FormatAmountMicros` - `parseAmountMicros` uses `BigInt` arithmetic
+  on the zero-padded fraction string rather than
+  `Math.round(x * 1_000_000)`, so a decimal amount a human typed can
+  never pick up float rounding error on its way to an integer-micros
+  value that represents real money.
+- **`components/alerts/RuleManager.tsx`**: `emptyDraft`/`draftFromRule`
+  carry the 4 new fields; selecting a new event type resets them
+  (mirroring the existing quantity-field reset) so a stale Super Chat
+  threshold can never leak into a Follow rule. New capability-gated
+  UI block (`capability?.hasAmount === true`): a currency text input
+  (normalized to uppercase on blur) plus minimum/maximum amount text
+  inputs backed by local decimal-string state (so a momentarily
+  incomplete "5." while typing is never silently discarded, only
+  committed to the draft once `parseAmountMicros` actually parses it)
+  and a `showAmount` toggle alongside the existing show-quantity
+  toggle. The provider filter, previously a single hardcoded
+  Twitch-only toggle whose own i18n text admitted "Twitch is currently
+  the only supported provider," is now two real toggles (Twitch,
+  YouTube) backed by `ALERT_RULE_PROVIDERS`; the account picker now
+  lists both Twitch and YouTube connected accounts instead of Twitch
+  only. The Test Rule row gained a scenario `<SelectInput>` covering
+  all 6 backend `Scenario*` constants (including Stage 15A's new
+  `no_comment`/`alternate_currency`) and now actually passes the
+  chosen scenario to `testMutation.mutate` - previously the mutation,
+  its i18n strings, and 4 of the 6 scenario labels already existed but
+  nothing in the UI ever called it with a non-empty scenario.
+- **`i18n/resources/{en,pl}/alerts.json`**: new `rules.fields.{currency,
+  minimumAmount, maximumAmount, amountHint, amountInvalid, showAmount,
+  provider.twitch, provider.youtube}`, `rules.testScenarioLabel`, 4 new
+  `rules.eventType.*` entries, 2 new `test.scenarios.*` entries, and
+  `errors.alert_rule_amount_invalid` - both languages, full parity.
+  `rules.fields.providersHint`/`common.noAccounts` text updated to
+  reflect that YouTube is now a real second provider, not aspirational.
+
+### Files changed
+- `apps/web/src/api/{alerts-schemas.ts, alerts-schemas.test.ts}`
+- `apps/web/src/models/{alerts.ts, alerts.test.ts, visualdesign.test.ts}`
+- `apps/web/src/components/alerts/RuleManager.tsx`
+- `apps/web/src/components/alert-designer/AlertDesignerWorkspace.test.tsx`
+- `apps/web/src/pages/{AlertsPage.test.tsx, AlertDesignerPage.test.tsx}`
+- `apps/web/src/i18n/resources/{en,pl}/alerts.json`
+
+### Technical decisions
+- **Why the amount text inputs keep their own local string state
+  instead of formatting `draft.minimumAmountMicros` directly into the
+  `value` prop.** A controlled input whose value is re-derived from a
+  parsed number on every keystroke fights the user mid-edit (typing
+  "5." would round-trip through `formatAmountMicros` and silently
+  drop the trailing dot). Local text state decouples what is *typed*
+  from what is *validated and will be saved*, matching how a real
+  currency input should behave.
+- **Why `parseAmountMicros` uses `BigInt` rather than
+  `Math.round(major * 1_000_000 + fraction * 1_000_000)`.** JavaScript
+  numbers are floats; scaling a decimal by 1e6 and rounding can
+  misrepresent a value a fraction of a micro off for some inputs. Since
+  this number becomes a real monetary threshold compared exactly
+  against a provider's own integer micros, exactness was worth the
+  small extra complexity - string-level zero-padding and integer
+  arithmetic can never drift.
+- **Why the provider filter became two independent toggles instead of
+  a multi-select dropdown.** Two providers total makes a dropdown
+  needlessly indirect; two toggles mirror the existing show/hide
+  toggle idiom already used throughout this same form.
+
+### Automated validation
+`cd apps/web`: `npx tsc -b` clean, `npm run lint` clean, `npm run
+i18n:check` clean (2 languages, 17 namespaces, no diff against en),
+`npx vitest run` - 85 files / 1200 tests, all passing (including 5 new
+`RuleManager`-exercising `AlertsPage.test.tsx` cases covering the money
+UI's capability gating and the broadened provider/account pickers, 18
+new pure-function tests for the money helpers, and schema round-trip
+tests for the new `AlertRule` fields/capability flags/error code),
+`npm run build` clean.
+
+### Known limitations
+None new for what this commit touches. Still pending: the Engagement/
+Chat/Automation pages (their own hardcoded Twitch-only account filters
+per the earlier reconnaissance pass), i18n for those pages, the 17th
+integration script, and the closing documentation/regression pass.
+
+### Next step
+Engagement/Chat/Automation pages: broaden their own hardcoded
+`providerId === 'twitch'` account filters to include YouTube (a
+parallel `YouTubeConnectorCard` for Engagement, a generalized
+`OutboundChatComposer` prop for Chat's reply-disabled-for-YouTube
+outbound picker), each with new i18n strings.

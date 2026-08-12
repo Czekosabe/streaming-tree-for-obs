@@ -32,6 +32,17 @@ const twitchAccount = {
   updatedAt: '2026-08-10T00:00:00Z',
 };
 
+const youtubeAccount = {
+  id: 'acct_2',
+  providerId: 'youtube',
+  login: 'ytstreamer',
+  displayName: 'YT Streamer',
+  status: 'connected' as const,
+  scopes: [],
+  createdAt: '2026-08-10T00:00:00Z',
+  updatedAt: '2026-08-10T00:00:00Z',
+};
+
 function baseProfile(overrides: Partial<AlertProfile> = {}): AlertProfile {
   return {
     id: 'alprof_1', publicSlug: 'slug1', name: 'Main', enabled: true,
@@ -49,6 +60,7 @@ function baseRule(overrides: Partial<AlertRule> = {}): AlertRule {
     requiredRole: 'everyone', showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
     textTemplate: '{username} just followed!', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     providers: [], accounts: [],
+    showAmount: false,
     allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
     createdAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z',
     ...overrides,
@@ -68,15 +80,21 @@ function baseQueueStatus(overrides: Partial<AlertQueueStatus> = {}): AlertQueueS
 const eventTypes = [
   {
     eventType: 'follow' as const, hasUser: true, hasMessage: false, hasQuantity: false,
-    hasAnonymity: false, hasRewardTitle: false, hasRoles: false,
+    hasAnonymity: false, hasRewardTitle: false, hasRoles: false, hasAmount: false, hasMembershipLevel: false,
     availablePlaceholders: ['platform', 'eventType', 'username'],
     groupable: false, groupingRequiresHiddenMessage: false,
   },
   {
     eventType: 'bits' as const, hasUser: true, hasMessage: true, hasQuantity: true,
-    hasAnonymity: true, hasRewardTitle: false, hasRoles: false,
+    hasAnonymity: true, hasRewardTitle: false, hasRoles: false, hasAmount: false, hasMembershipLevel: false,
     availablePlaceholders: ['platform', 'eventType', 'username', 'quantity', 'message', 'groupCount'],
     groupable: true, groupingRequiresHiddenMessage: true,
+  },
+  {
+    eventType: 'youtube_super_chat' as const, hasUser: true, hasMessage: true, hasQuantity: false,
+    hasAnonymity: false, hasRewardTitle: false, hasRoles: false, hasAmount: true, hasMembershipLevel: false,
+    availablePlaceholders: ['platform', 'eventType', 'username', 'message', 'amount', 'currency', 'groupCount'],
+    groupable: false, groupingRequiresHiddenMessage: false,
   },
 ];
 
@@ -190,6 +208,61 @@ describe('AlertsPage', () => {
     await user.selectOptions(eventTypeSelect, 'bits');
 
     expect(await screen.findByText(/minimum quantity/i)).toBeInTheDocument();
+  });
+
+  it('selecting a YouTube money event type shows the currency/amount fields and hides them again for follow (Stage 15A)', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.queryByLabelText(/^currency$/i)).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/event type/i), 'youtube_super_chat');
+
+    expect(await screen.findByLabelText(/^currency$/i)).toBeInTheDocument();
+    expect(screen.getByText(/minimum amount/i)).toBeInTheDocument();
+    expect(screen.getByText(/maximum amount/i)).toBeInTheDocument();
+    expect(screen.getByText(/^show amount$/i)).toBeInTheDocument();
+    // The amount placeholder buttons come straight from the mocked
+    // capability's own availablePlaceholders - never hand-maintained.
+    expect(screen.getByRole('button', { name: '{amount}' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '{currency}' })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/event type/i), 'follow');
+    expect(screen.queryByLabelText(/^currency$/i)).not.toBeInTheDocument();
+  });
+
+  it('the provider filter offers both Twitch and YouTube, and the account picker lists both providers (Stage 15A)', async () => {
+    vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([twitchAccount, youtubeAccount]);
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    await screen.findByLabelText(/^name$/i);
+    expect(screen.getByText('Twitch')).toBeInTheDocument();
+    expect(screen.getByText('YouTube')).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /add account/i }));
+    const accountSelect = screen.getByLabelText(/account filter/i);
+    const optionLabels = within(accountSelect)
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(optionLabels).toEqual(expect.arrayContaining(['Streamer', 'YT Streamer']));
   });
 
   it('grouping control is unavailable for follow, available for bits, and reveals the group window once enabled (Stage 12B)', async () => {

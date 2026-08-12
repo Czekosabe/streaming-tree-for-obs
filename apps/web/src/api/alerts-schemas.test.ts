@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   alertAnimationSchema,
+  alertErrorCodeSchema,
+  alertEventTypeCapabilitySchema,
   alertEventTypeSchema,
   alertHideReasonSchema,
   alertInterruptModeSchema,
@@ -27,12 +29,34 @@ describe('alertEventTypeSchema', () => {
     'bits',
     'raid',
     'channel_point_redemption',
+    'youtube_membership',
+    'youtube_membership_milestone',
+    'youtube_super_chat',
+    'youtube_super_sticker',
   ])('accepts %s', (value) => {
     expect(alertEventTypeSchema.parse(value)).toBe(value);
   });
 
   it('rejects donation - not a real Stage 12A event type', () => {
     expect(alertEventTypeSchema.safeParse('donation').success).toBe(false);
+  });
+});
+
+describe('alertEventTypeCapabilitySchema', () => {
+  it('parses hasAmount/hasMembershipLevel alongside every other capability flag', () => {
+    const parsed = alertEventTypeCapabilitySchema.parse({
+      eventType: 'youtube_super_chat', hasUser: true, hasMessage: true, hasQuantity: false,
+      hasAnonymity: false, hasRewardTitle: false, hasRoles: false, hasAmount: true, hasMembershipLevel: false,
+      availablePlaceholders: ['amount', 'currency'], groupable: false, groupingRequiresHiddenMessage: false,
+    });
+    expect(parsed.hasAmount).toBe(true);
+    expect(parsed.hasMembershipLevel).toBe(false);
+  });
+});
+
+describe('alertErrorCodeSchema', () => {
+  it('accepts alert_rule_amount_invalid', () => {
+    expect(alertErrorCodeSchema.parse('alert_rule_amount_invalid')).toBe('alert_rule_amount_invalid');
   });
 });
 
@@ -88,10 +112,27 @@ describe('alertRuleSchema', () => {
       showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
       textTemplate: '{username} followed!', entryAnimation: 'fade', exitAnimation: 'fade',
       animationDurationMs: 400, providers: [], accounts: [],
+      showAmount: false,
       allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.minimumQuantity).toBeNull();
+  });
+
+  it('parses a YouTube Super Chat rule with money fields', () => {
+    const parsed = alertRuleSchema.parse({
+      id: 'alrule_2', profileId: 'alprof_1', name: 'Super Chat', enabled: true,
+      eventType: 'youtube_super_chat', priority: 50, durationMs: 5000,
+      requiredRole: 'everyone', showPlatform: true, showUsername: true, showMessage: true, showQuantity: false,
+      textTemplate: '{username} sent {amount} {currency}', entryAnimation: 'fade', exitAnimation: 'fade',
+      animationDurationMs: 400, providers: ['youtube'], accounts: [],
+      currency: 'USD', minimumAmountMicros: 1_000_000, maximumAmountMicros: null, showAmount: true,
+      allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    });
+    expect(parsed.currency).toBe('USD');
+    expect(parsed.minimumAmountMicros).toBe(1_000_000);
+    expect(parsed.showAmount).toBe(true);
   });
 
   it('parses a rule with real quantity bounds and grouping/interruption enabled', () => {
@@ -102,6 +143,7 @@ describe('alertRuleSchema', () => {
       showPlatform: true, showUsername: true, showMessage: false, showQuantity: true,
       textTemplate: '{username} cheered {quantity}', entryAnimation: 'fade', exitAnimation: 'fade',
       animationDurationMs: 400, providers: ['twitch'], accounts: ['acct_1'],
+      showAmount: false,
       allowGrouping: true, groupWindowMs: 8000, interruptMode: 'lower_priority', interruptible: false,
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });

@@ -33,17 +33,41 @@ import {
   DEFAULT_GROUP_WINDOW_MS,
   codePointLength,
   extractPlaceholderNames,
+  formatAmountMicros,
   insertPlaceholder,
   isValidAlertName,
   isValidAlertTemplate,
+  isValidAmountRange,
   isValidAnimationDurationMs,
   isValidDurationMs,
   isValidGroupWindowMs,
   isValidPriority,
   isValidThresholdRange,
+  normalizeCurrencyCode,
+  parseAmountMicros,
   unknownPlaceholderNames,
   unsupportedPlaceholderNames,
 } from '@/models/alerts';
+
+/** Providers alert rules can currently filter on - mirrors
+ * internal/domain/alerts.ValidateProviders' own closed accept list
+ * (Stage 15A added youtube alongside twitch). */
+const ALERT_RULE_PROVIDERS = ['twitch', 'youtube'] as const;
+
+/** Test Rule's own edge-scenario vocabulary - mirrors
+ * internal/alerts/testevents.go's own Scenario* constants exactly. An
+ * edge scenario applicable only to a specific event type's capability
+ * (e.g. very_long_message on a type with no message) is a documented
+ * no-op on the backend, never an error, so this list is not itself
+ * capability-filtered. */
+const TEST_RULE_SCENARIOS = [
+  'very_long_username',
+  'very_long_message',
+  'anonymous_bits',
+  'missing_avatar',
+  'no_comment',
+  'alternate_currency',
+] as const;
 
 function errorMessage(t: TFunction<'alerts'>, error: unknown): string {
   if (error instanceof ApiError && error.code !== null) {
@@ -61,6 +85,7 @@ function emptyDraft(defaultEventType: AlertRuleInput['eventType']): AlertRuleInp
     showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
     textTemplate: '', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
     providers: [], accounts: [],
+    currency: '', minimumAmountMicros: null, maximumAmountMicros: null, showAmount: false,
     allowGrouping: false, groupWindowMs: DEFAULT_GROUP_WINDOW_MS,
     interruptMode: 'never', interruptible: true,
   };
@@ -74,6 +99,8 @@ function draftFromRule(rule: AlertRule): AlertRuleInput {
     showMessage: rule.showMessage, showQuantity: rule.showQuantity, textTemplate: rule.textTemplate,
     entryAnimation: rule.entryAnimation, exitAnimation: rule.exitAnimation, animationDurationMs: rule.animationDurationMs,
     providers: rule.providers, accounts: rule.accounts,
+    currency: rule.currency ?? '', minimumAmountMicros: rule.minimumAmountMicros ?? null,
+    maximumAmountMicros: rule.maximumAmountMicros ?? null, showAmount: rule.showAmount,
     allowGrouping: rule.allowGrouping, groupWindowMs: rule.groupWindowMs,
     interruptMode: rule.interruptMode, interruptible: rule.interruptible,
   };
@@ -88,6 +115,7 @@ export function RuleManager({ profileId }: { profileId: string }) {
 
   const [editingId, setEditingId] = useState<string | null | 'new'>(null);
   const [deleteTarget, setDeleteTarget] = useState<AlertRule | null>(null);
+  const [testScenarios, setTestScenarios] = useState<Record<string, string>>({});
 
   const rules = rulesQuery.data?.rules ?? [];
   const overlapWarnings = rulesQuery.data?.overlapWarnings ?? [];
@@ -131,7 +159,26 @@ export function RuleManager({ profileId }: { profileId: string }) {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button size="sm" onClick={() => testMutation.mutate({ id: rule.id })} disabled={testMutation.isPending}>
+                        <SelectInput
+                          aria-label={t('rules.testScenarioLabel')}
+                          className="w-40"
+                          options={[
+                            { value: '', label: t('test.scenarioDefault') },
+                            ...TEST_RULE_SCENARIOS.map((s) => ({ value: s, label: t(`test.scenarios.${s}`) })),
+                          ]}
+                          value={testScenarios[rule.id] ?? ''}
+                          onChange={(e) => setTestScenarios((prev) => ({ ...prev, [rule.id]: e.target.value }))}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const scenario = testScenarios[rule.id];
+                            testMutation.mutate(
+                              scenario === undefined || scenario === '' ? { id: rule.id } : { id: rule.id, scenario },
+                            );
+                          }}
+                          disabled={testMutation.isPending}
+                        >
                           {t('rules.testAction')}
                         </Button>
                         <Button size="sm" onClick={() => setEditingId(rule.id)}>
@@ -214,8 +261,22 @@ function RuleFormModal({
   const updateMutation = useUpdateAlertRuleMutation(profileId);
   const previewMutation = useAlertPreviewMutation();
   const [draft, setDraft] = useState<AlertRuleInput>(initial);
+  // Local decimal-string display state for the amount thresholds - the
+  // draft itself stores integer micros (parseAmountMicros/
+  // formatAmountMicros are the exact inverse of each other, see
+  // models/alerts.ts), but a text input needs to show exactly what the
+  // operator typed (including a momentarily-incomplete "5." while
+  // typing) without discarding the last successfully-parsed value.
+  const [minAmountText, setMinAmountText] = useState(() =>
+    initial.minimumAmountMicros != null ? formatAmountMicros(initial.minimumAmountMicros) : '',
+  );
+  const [maxAmountText, setMaxAmountText] = useState(() =>
+    initial.maximumAmountMicros != null ? formatAmountMicros(initial.maximumAmountMicros) : '',
+  );
 
-  const twitchAccounts = (accountsQuery.data ?? []).filter((a) => a.providerId === 'twitch');
+  const filterableAccounts = (accountsQuery.data ?? []).filter(
+    (a) => a.providerId === 'twitch' || a.providerId === 'youtube',
+  );
   const capability = eventTypes.find((e) => e.eventType === draft.eventType);
 
   const nameValid = isValidAlertName(draft.name);
@@ -223,6 +284,7 @@ function RuleFormModal({
   const durationValid = isValidDurationMs(draft.durationMs);
   const animationDurationValid = isValidAnimationDurationMs(draft.animationDurationMs);
   const thresholdValid = isValidThresholdRange(draft.minimumQuantity ?? null, draft.maximumQuantity ?? null);
+  const amountValid = isValidAmountRange(draft.currency ?? '', draft.minimumAmountMicros ?? null, draft.maximumAmountMicros ?? null);
   const templateValid = isValidAlertTemplate(draft.textTemplate);
   const unsupported = unsupportedPlaceholderNames(draft.textTemplate, capability);
   const unknown = unknownPlaceholderNames(draft.textTemplate);
@@ -231,7 +293,7 @@ function RuleFormModal({
     draft.allowGrouping && capability?.groupingRequiresHiddenMessage === true &&
     extractPlaceholderNames(draft.textTemplate).includes('message');
   const formValid =
-    nameValid && priorityValid && durationValid && animationDurationValid && thresholdValid &&
+    nameValid && priorityValid && durationValid && animationDurationValid && thresholdValid && amountValid &&
     templateValid && unsupported.length === 0 && unknown.length === 0 &&
     groupWindowValid && !groupingTemplateUnsafe;
 
@@ -295,14 +357,17 @@ function RuleFormModal({
               id={inputId}
               options={ALERT_EVENT_TYPES.map((v) => ({ value: v, label: t(`rules.eventType.${v}`) }))}
               value={draft.eventType}
-              onChange={(e) =>
+              onChange={(e) => {
+                setMinAmountText('');
+                setMaxAmountText('');
                 setDraft((d) => ({
                   ...d,
                   eventType: e.target.value as AlertRuleInput['eventType'],
                   minimumQuantity: null, maximumQuantity: null, showMessage: false, showQuantity: false,
+                  currency: '', minimumAmountMicros: null, maximumAmountMicros: null, showAmount: false,
                   allowGrouping: false,
-                }))
-              }
+                }));
+              }}
             />
           )}
         </FormField>
@@ -339,6 +404,63 @@ function RuleFormModal({
           </div>
         )}
 
+        {capability?.hasAmount === true && (
+          <div className="space-y-3 rounded-lg border border-line p-3">
+            <FormField label={t('rules.fields.currency')} hint={t('rules.fields.amountHint')}>
+              {({ inputId }) => (
+                <TextInput
+                  id={inputId}
+                  value={draft.currency ?? ''}
+                  maxLength={8}
+                  onChange={(e) => setDraft((d) => ({ ...d, currency: e.target.value }))}
+                  onBlur={(e) => setDraft((d) => ({ ...d, currency: normalizeCurrencyCode(e.target.value) }))}
+                />
+              )}
+            </FormField>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <FormField label={t('rules.fields.minimumAmount')}>
+                {({ inputId }) => (
+                  <TextInput
+                    id={inputId}
+                    value={minAmountText}
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      setMinAmountText(text);
+                      const parsed = parseAmountMicros(text);
+                      if (text.trim() === '') {
+                        setDraft((d) => ({ ...d, minimumAmountMicros: null }));
+                      } else if (parsed !== null) {
+                        setDraft((d) => ({ ...d, minimumAmountMicros: parsed }));
+                      }
+                    }}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('rules.fields.maximumAmount')}>
+                {({ inputId }) => (
+                  <TextInput
+                    id={inputId}
+                    value={maxAmountText}
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      setMaxAmountText(text);
+                      const parsed = parseAmountMicros(text);
+                      if (text.trim() === '') {
+                        setDraft((d) => ({ ...d, maximumAmountMicros: null }));
+                      } else if (parsed !== null) {
+                        setDraft((d) => ({ ...d, maximumAmountMicros: parsed }));
+                      }
+                    }}
+                  />
+                )}
+              </FormField>
+            </div>
+            {!amountValid && (
+              <p className="text-[11px] text-status-error">{t('rules.fields.amountInvalid')}</p>
+            )}
+          </div>
+        )}
+
         {capability?.hasRoles === true ? (
           <FormField label={t('rules.fields.requiredRole')}>
             {({ inputId }) => (
@@ -372,6 +494,10 @@ function RuleFormModal({
           {capability?.hasQuantity === true && (
             <ToggleSwitch label={t('rules.fields.showQuantity')} checked={draft.showQuantity}
               onCheckedChange={(v) => setDraft((d) => ({ ...d, showQuantity: v }))} />
+          )}
+          {capability?.hasAmount === true && (
+            <ToggleSwitch label={t('rules.fields.showAmount')} checked={draft.showAmount}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, showAmount: v }))} />
           )}
         </div>
 
@@ -485,12 +611,25 @@ function RuleFormModal({
           />
         </div>
 
-        <ToggleSwitch
-          label={t('rules.fields.providers')}
-          description={t('rules.fields.providersHint')}
-          checked={draft.providers.includes('twitch')}
-          onCheckedChange={(v) => setDraft((d) => ({ ...d, providers: v ? ['twitch'] : [] }))}
-        />
+        <div>
+          <p className="text-xs font-medium text-ink-muted">{t('rules.fields.providers')}</p>
+          <p className="text-[11px] text-ink-faint">{t('rules.fields.providersHint')}</p>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            {ALERT_RULE_PROVIDERS.map((provider) => (
+              <ToggleSwitch
+                key={provider}
+                label={t(`rules.fields.provider.${provider}`)}
+                checked={draft.providers.includes(provider)}
+                onCheckedChange={(v) =>
+                  setDraft((d) => ({
+                    ...d,
+                    providers: v ? [...d.providers, provider] : d.providers.filter((p) => p !== provider),
+                  }))
+                }
+              />
+            ))}
+          </div>
+        </div>
 
         <div>
           <p className="text-xs font-medium text-ink-muted">{t('rules.fields.accounts')}</p>
@@ -500,7 +639,7 @@ function RuleFormModal({
               <div key={index} className="flex items-center gap-2">
                 <SelectInput
                   aria-label={t('rules.fields.accounts')}
-                  options={[{ value: '', label: '' }, ...twitchAccounts.map((a) => ({ value: a.id, label: a.displayName || a.login }))]}
+                  options={[{ value: '', label: '' }, ...filterableAccounts.map((a) => ({ value: a.id, label: a.displayName || a.login }))]}
                   value={accountId}
                   onChange={(e) => updateAccount(index, e.target.value)}
                 />
@@ -513,7 +652,7 @@ function RuleFormModal({
             onClick={() => setDraft((d) => ({ ...d, accounts: [...d.accounts, ''] }))}>
             {t('rules.fields.addAccount')}
           </Button>
-          {twitchAccounts.length === 0 && <p className="mt-1 text-[11px] text-status-error">{t('common.noAccounts')}</p>}
+          {filterableAccounts.length === 0 && <p className="mt-1 text-[11px] text-status-error">{t('common.noAccounts')}</p>}
         </div>
 
         <EditorPreview template={draft.textTemplate} eventType={draft.eventType} mutation={previewMutation} />

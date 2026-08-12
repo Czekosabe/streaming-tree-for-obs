@@ -17,6 +17,7 @@ const rule: AlertRule = {
   priority: 50, durationMs: 5000, requiredRole: 'everyone', showPlatform: true, showUsername: true,
   showMessage: false, showQuantity: false, textTemplate: '{username} followed!', entryAnimation: 'fade',
   exitAnimation: 'fade', animationDurationMs: 400, providers: [], accounts: [],
+  showAmount: false,
   allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
   createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
 };

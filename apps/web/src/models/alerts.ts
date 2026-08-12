@@ -55,6 +55,9 @@ export const KNOWN_ALERT_PLACEHOLDERS = [
   'message',
   'rewardTitle',
   'groupCount',
+  'amount',
+  'currency',
+  'membershipLevel',
 ] as const;
 export type KnownAlertPlaceholder = (typeof KNOWN_ALERT_PLACEHOLDERS)[number];
 
@@ -67,6 +70,10 @@ export const ALERT_EVENT_TYPES = [
   'bits',
   'raid',
   'channel_point_redemption',
+  'youtube_membership',
+  'youtube_membership_milestone',
+  'youtube_super_chat',
+  'youtube_super_sticker',
 ] as const;
 
 export const ALERT_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'broadcaster'] as const;
@@ -131,6 +138,63 @@ export function isValidThresholdRange(minimum: number | null, maximum: number | 
   if (maximum !== null && (!Number.isInteger(maximum) || maximum < 0)) return false;
   if (minimum !== null && maximum !== null && minimum > maximum) return false;
   return true;
+}
+
+/** Mirrors internal/domain/alerts.maxAmountMicros exactly - the same
+ * bound the backend enforces, so a value this app will never actually
+ * accept never appears "valid" client-side either. */
+export const MAX_AMOUNT_MICROS = 1_000_000_000_000;
+
+/** Inclusive amount-threshold bounds, plus the backend's own
+ * currency-required-whenever-a-bound-is-set rule - mirrors
+ * internal/domain/alerts.ValidateMoneyThresholds exactly (Stage 15A). */
+export function isValidAmountRange(currency: string, minimum: number | null, maximum: number | null): boolean {
+  if (minimum === null && maximum === null) return true;
+  if (currency.trim() === '') return false;
+  if (minimum !== null && (!Number.isInteger(minimum) || minimum < 0 || minimum > MAX_AMOUNT_MICROS)) return false;
+  if (maximum !== null && (!Number.isInteger(maximum) || maximum < 0 || maximum > MAX_AMOUNT_MICROS)) return false;
+  if (minimum !== null && maximum !== null && minimum > maximum) return false;
+  return true;
+}
+
+/** Uppercases a currency code exactly like the backend's own
+ * NormalizeCurrency (internal/domain/alerts/validation.go) - so a value
+ * typed in lowercase compares/displays consistently before the round
+ * trip to the server ever normalizes it. */
+export function normalizeCurrencyCode(currency: string): string {
+  return currency.toUpperCase();
+}
+
+/** Converts a user-typed decimal major-unit string (e.g. "5.00") into
+ * integer micros, or null if the string is not a valid non-negative
+ * decimal number - the exact inverse of formatAmountMicros below. Never
+ * a float: the fractional part is parsed as a zero-padded 6-digit
+ * string and summed as integers, so this can never accumulate the
+ * rounding error a `Math.round(x * 1_000_000)` float computation could. */
+export function parseAmountMicros(input: string): number | null {
+  const trimmed = input.trim();
+  if (trimmed === '') return null;
+  const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(trimmed);
+  if (match === null) return null;
+  const major = match[1] ?? '0';
+  const fraction = (match[2] ?? '').padEnd(6, '0');
+  const micros = BigInt(major) * 1_000_000n + BigInt(fraction);
+  if (micros > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(micros);
+}
+
+/** Formats integer micros as a plain decimal major-unit string (no
+ * currency symbol - mirrors internal/alerts.FormatAmountMicros exactly,
+ * including its "trim trailing zeros, then pad back to at least 2
+ * fraction digits" behavior). */
+export function formatAmountMicros(amountMicros: number): string {
+  const negative = amountMicros < 0;
+  const abs = Math.abs(Math.trunc(amountMicros));
+  const major = Math.floor(abs / 1_000_000);
+  const fraction = abs % 1_000_000;
+  let frac = String(fraction).padStart(6, '0').replace(/0+$/, '');
+  if (frac.length < 2) frac = (frac + '00').slice(0, 2);
+  return `${negative ? '-' : ''}${major}.${frac}`;
 }
 
 /** Parses a template's `{name}` placeholders (ignoring `{{`/`}}`

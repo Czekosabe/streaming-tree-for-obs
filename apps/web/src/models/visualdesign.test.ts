@@ -92,12 +92,12 @@ describe('isValidStaticText', () => {
 describe('availableTextBindings', () => {
   const followCapability: AlertEventTypeCapability = {
     eventType: 'follow', hasUser: true, hasMessage: false, hasQuantity: false,
-    hasAnonymity: false, hasRewardTitle: false, hasRoles: false,
+    hasAnonymity: false, hasRewardTitle: false, hasRoles: false, hasAmount: false, hasMembershipLevel: false,
     availablePlaceholders: [], groupable: false, groupingRequiresHiddenMessage: false,
   };
   const bitsCapability: AlertEventTypeCapability = {
     eventType: 'bits', hasUser: true, hasMessage: true, hasQuantity: true,
-    hasAnonymity: true, hasRewardTitle: false, hasRoles: false,
+    hasAnonymity: true, hasRewardTitle: false, hasRoles: false, hasAmount: false, hasMembershipLevel: false,
     availablePlaceholders: [], groupable: true, groupingRequiresHiddenMessage: true,
   };
 

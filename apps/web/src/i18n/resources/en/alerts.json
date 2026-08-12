@@ -74,6 +74,7 @@
     "deleteConfirmMessage": "Deleting \"{{name}}\" stops it from matching any further event immediately.",
     "testAction": "Test rule",
     "testSentNotice": "A real, synthetic test alert was sent through the real queue - watch the Browser Source to see it.",
+    "testScenarioLabel": "Test scenario",
     "overlapWarning": "This rule's quantity range overlaps another enabled rule for the same event type ({{other}}) - one real event may trigger both.",
     "fields": {
       "name": "Name",
@@ -91,14 +92,24 @@
       "showUsername": "Show username",
       "showMessage": "Show message",
       "showQuantity": "Show quantity",
+      "currency": "Currency",
+      "amountHint": "3-letter currency code (e.g. USD). Required if either amount bound below is set - amounts are never compared across currencies.",
+      "minimumAmount": "Minimum amount",
+      "maximumAmount": "Maximum amount",
+      "amountInvalid": "Enter a valid non-negative amount, and a currency if either bound is set.",
+      "showAmount": "Show amount",
       "textTemplate": "Alert text",
       "entryAnimation": "Entry animation",
       "exitAnimation": "Exit animation",
       "animationDuration": "Animation duration (ms)",
-      "providers": "Restrict to Twitch explicitly",
-      "providersHint": "Twitch is currently the only supported provider, so this makes little difference today - it exists so a rule can be pinned to Twitch specifically once another provider is added, rather than matching every future one by default.",
+      "providers": "Restrict to provider",
+      "providersHint": "Leave both off to match every provider. Pin to one or both to scope this rule to specific platforms.",
+      "provider": {
+        "twitch": "Twitch",
+        "youtube": "YouTube"
+      },
       "accounts": "Account filter",
-      "accountsHint": "Empty means any connected account.",
+      "accountsHint": "Empty means any connected Twitch or YouTube account.",
       "addAccount": "Add account",
       "removeAccount": "Remove account",
       "allowGrouping": "Group similar queued alerts",
@@ -124,7 +135,11 @@
       "subscription_gift_batch": "Gift sub batch",
       "bits": "Bits",
       "raid": "Raid",
-      "channel_point_redemption": "Channel point redemption"
+      "channel_point_redemption": "Channel point redemption",
+      "youtube_membership": "Membership",
+      "youtube_membership_milestone": "Membership milestone",
+      "youtube_super_chat": "Super Chat",
+      "youtube_super_sticker": "Super Sticker"
     },
     "role": {
       "everyone": "Everyone",
@@ -151,7 +166,9 @@
       "very_long_username": "Very long username",
       "very_long_message": "Very long message",
       "anonymous_bits": "Anonymous actor",
-      "missing_avatar": "Missing avatar"
+      "missing_avatar": "Missing avatar",
+      "no_comment": "No comment (Super Chat/Sticker)",
+      "alternate_currency": "Alternate currency (EUR)"
     }
   },
   "common": {
@@ -165,7 +182,7 @@
     "renderedCount": "{{count}} characters",
     "unresolvedWarning": "Unavailable for this event: {{names}}",
     "tooLongWarning": "This message is too long for the alert overlay.",
-    "noAccounts": "No Twitch account is ready yet - connect one first.",
+    "noAccounts": "No Twitch or YouTube account is ready yet - connect one first.",
     "synthetic": "Test",
     "replayed": "Replayed"
   },
@@ -179,6 +196,7 @@
     "alert_rule_condition_unsupported": "This condition is not supported by the rule's event type.",
     "alert_rule_account_not_found": "One of the selected accounts no longer exists.",
     "alert_rule_threshold_invalid": "The quantity threshold is invalid.",
+    "alert_rule_amount_invalid": "The amount threshold is invalid.",
     "alert_template_invalid": "The alert text uses an unknown or malformed placeholder.",
     "alert_template_unresolved": "The alert text uses a placeholder that cannot currently be resolved.",
     "alert_queue_paused": "The queue is currently paused.",

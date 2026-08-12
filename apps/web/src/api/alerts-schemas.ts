@@ -21,6 +21,10 @@ export const alertEventTypeSchema = z.enum([
   'bits',
   'raid',
   'channel_point_redemption',
+  'youtube_membership',
+  'youtube_membership_milestone',
+  'youtube_super_chat',
+  'youtube_super_sticker',
 ]);
 export type AlertEventType = z.infer<typeof alertEventTypeSchema>;
 
@@ -61,6 +65,14 @@ export const alertEventTypeCapabilitySchema = z.object({
   hasAnonymity: z.boolean(),
   hasRewardTitle: z.boolean(),
   hasRoles: z.boolean(),
+  /** Stage 15A: whether this event type carries a real, provider-reported
+   * Money value (YouTube Super Chat/Super Sticker only) - gates the
+   * amount/currency threshold and show-amount controls. */
+  hasAmount: z.boolean(),
+  /** Stage 15A: whether this event type carries a real, provider-reported
+   * membership level name (YouTube membership-family events only) - gates
+   * the {membershipLevel} placeholder's availability. */
+  hasMembershipLevel: z.boolean(),
   availablePlaceholders: z.array(z.string()),
   /** Stage 12B: whether this event type has any safe grouping strategy
    * at all - see internal/domain/alerts.GroupingCapability. */
@@ -121,6 +133,13 @@ export const alertRuleSchema = z.object({
   animationDurationMs: z.number(),
   providers: z.array(z.string()),
   accounts: z.array(z.string()),
+  /** Stage 15A money threshold/display fields - the currency twin of
+   * minimumQuantity/maximumQuantity/showQuantity above. currency is
+   * always uppercase (backend-normalized) when set. */
+  currency: z.string().optional(),
+  minimumAmountMicros: z.number().nullable().optional(),
+  maximumAmountMicros: z.number().nullable().optional(),
+  showAmount: z.boolean(),
   allowGrouping: z.boolean(),
   groupWindowMs: z.number(),
   interruptMode: alertInterruptModeSchema,
@@ -149,6 +168,10 @@ export type AlertRuleInput = {
   animationDurationMs: number;
   providers: string[];
   accounts: string[];
+  currency?: string;
+  minimumAmountMicros?: number | null;
+  maximumAmountMicros?: number | null;
+  showAmount: boolean;
   allowGrouping: boolean;
   groupWindowMs: number;
   interruptMode: AlertInterruptMode;
@@ -295,6 +318,7 @@ export const alertErrorCodeSchema = z.enum([
   'alert_rule_condition_unsupported',
   'alert_rule_account_not_found',
   'alert_rule_threshold_invalid',
+  'alert_rule_amount_invalid',
   'alert_template_invalid',
   'alert_template_unresolved',
   'alert_queue_paused',
