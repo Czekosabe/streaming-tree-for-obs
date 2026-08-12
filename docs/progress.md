@@ -21192,3 +21192,166 @@ Implement the StreamElements Astro WebSocket connector: the exact
 decimal-to-integer-micros money conversion, the wire client/normalizer,
 and the runtime connector manager that reads a source's credential from
 SecretStore and publishes real donations onto the Engagement Event Bus.
+
+## 2026-08-12 — feat(server): receive StreamElements donations
+
+### Status
+Completed.
+
+### Scope
+The StreamElements Astro WebSocket receive path itself: exact money
+conversion, wire envelope/tip types, the moderation-aware tip normalizer,
+a real WebSocket client against the documented Astro protocol, and a
+runtime connector manager (one goroutine per enabled donation source)
+that publishes normalized donations onto the existing Engagement Event
+Bus. No HTTP API wiring yet, and no frontend - see Known limitations.
+
+### Changes
+- `apps/server/internal/provider/streamelements/money.go` - exact
+  decimal-to-integer-micros conversion using `math/big.Rat` (never
+  `float64`); `ParseAmountMicros(json.Number)`, `BuildMoney(...)`.
+  Rejects (never rounds) a value with more than 6 fractional digits or
+  outside the int64/`maxAmountMicros` bound.
+- `apps/server/internal/provider/streamelements/errors.go` - sentinel
+  errors for every rejection this package can produce
+  (`ErrAmountMalformed`, `ErrTipNotPublishable`, `ErrSubscribeFailed`,
+  `ErrFrameTooLarge`, etc.), each mapped to a stable code further up the
+  stack, never a raw provider string.
+- `apps/server/internal/provider/streamelements/envelope.go` - the
+  Astro wire shapes verified against the live docs in the research
+  commit: `Envelope`, `SubscribeRequest`, `WelcomeData`,
+  `ReconnectData`, `ResponseData`; `channel.tips`/
+  `channel.tips.moderation` topic constants; `jwt` token-type constant.
+- `apps/server/internal/provider/streamelements/tip.go` - `Tip`/
+  `TipDonation`/`TipUser` wire structs (including the privacy-sensitive
+  fields this application never normalizes further);
+  `Tip.Publishable()` implementing the exact
+  allowed+success-only-publish policy from the research doc's own §7.
+- `apps/server/internal/provider/streamelements/normalize.go` -
+  `NormalizeTip(sourceID, tip)`: builds a provider-independent
+  `engagement.Event{Type: TypeDonation, ProviderID:
+  ProviderStreamElements}`; uses `tip._id` as both `ProviderEventID` and
+  `DedupeKey`; preserves the donor's display name or marks the event
+  anonymous (never fabricates a stable donor id); builds a plain-text
+  `Message` only when non-empty; deliberately never touches
+  email/geo/paymentMethod/the payment-rail `provider` field/
+  transactionId.
+- `apps/server/internal/provider/streamelements/client.go` - a typed
+  Astro WebSocket client on `github.com/coder/websocket` (no new
+  dependency): `Client.Connect(ctx, room, token, withModeration,
+  resumeToken)` dials, waits for `welcome`, and either subscribes to
+  `channel.tips`(+`channel.tips.moderation`) explicitly or - when
+  resuming with a `resumeToken` - deliberately sends no subscribe
+  request at all, relying on the documented automatic subscription
+  restoration. `Stream.Recv(ctx)` returns the next tip/moderation
+  update or a graceful-reconnect token, silently skipping any
+  unexpected/forward-compatible envelope type or a single malformed tip
+  payload rather than ever crashing the stream. `DefaultWSURL =
+  "wss://astro.streamelements.com/"` is fixed in code; `Options.WSBaseURL`
+  is the only override point, used exclusively by tests/integration
+  builds.
+- `apps/server/internal/runtime/streamelementsengagement/` (new
+  package) - `state.go` (`State`/`Snapshot`, closely mirroring
+  `youtubeengagement`'s own split of "what is configured" vs. "what is
+  happening right now"), `errors.go`, `manager.go` (`Manager`:
+  `Start`/`Shutdown`/`Enable`/`Disable`/`Restart`/`StopAndRemove`/
+  `Snapshot(s)`, one connector per enabled source), `connector.go` (the
+  per-source `run`/`serve` loop). Publishes to the exact same
+  `internal/engagement.Bus` every other provider uses - no second
+  donation-only pipeline.
+
+### Technical decisions
+- **`math/big.Rat` for money, verified empirically before writing the
+  final parser** - a throwaway `go run` program (deleted immediately
+  after) confirmed `big.Rat.SetString` correctly parses integers,
+  decimals, trailing zeros, and exponent notation, and that plain
+  `json.Unmarshal` into a `json.Number` struct field already preserves
+  exact lexical text with no `UseNumber()` decoder needed - simplifying
+  the final design to plain `json.Unmarshal`.
+- **Both `channel.tips` and `channel.tips.moderation` are always
+  subscribed together** (never independently configurable) - a
+  personal JWT is not scope-limited the way a real OAuth grant would
+  be, and the moderation topic is what carries a later pending→allowed
+  transition; subscribing to only `channel.tips` would silently break
+  the documented moderation-hold behavior.
+- **No second dedup pipeline for "repeated allowed update, same tip
+  id"** - relies entirely on `internal/engagement.Bus`'s own existing
+  `DedupeKey`-based deduplication (5-minute TTL, already used by every
+  other provider) rather than adding a connector-local dedup cache. A
+  pending tip is never even attempted to be published in the first
+  place (`NormalizeTip` rejects it before `Bus.Publish` is ever
+  called), so the only case the Bus's dedup needs to catch is a
+  near-immediate provider-side retry of the same allowed tip - well
+  within its TTL.
+- **`StatePossibleGap` is entered only after a genuinely unexpected
+  disconnect, cleared by the next real tip** - a graceful
+  `reconnect_token`-based resume (the documented, gap-free path) goes
+  straight to `StateConnected`; only a connection that dropped without
+  that handoff, and had to reconnect from scratch, shows the operator
+  an honest "you may have missed something" signal.
+- **A rejected subscribe (bad/expired JWT) reaches the terminal
+  `StateReconnectRequired`, not an endless backoff retry** - retrying
+  the exact same rejected credential forever would never succeed;
+  distinguishing this from an ordinary transient connect failure (which
+  does retry with backoff) required `client.go`'s `Connect` to return a
+  distinguishable `ErrSubscribeFailed`.
+- **Backoff resets to `initialBackoff` on every successful connect**
+  (not only after a long-lived connection, and unlike
+  `youtubeengagement`'s own connector, whose doc comment flags its
+  never-resets behavior as "worth deciding differently") - a successful
+  WebSocket connect+subscribe means the "can we reach the provider at
+  all" problem is over; only a subsequent read-loop failure should grow
+  the backoff again, from a fresh baseline.
+- **`Manager.getSource` re-reads a source's metadata on every connect
+  attempt** rather than capturing it once at Enable time, so an
+  operator's label/room-id edit takes effect on the next reconnect
+  without requiring an explicit Restart.
+
+### Automated validation
+From `apps/server`: `gofmt -l .` (clean), `go vet ./...` (clean),
+`go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean), `go test ./...` (all packages pass).
+`internal/provider/streamelements`'s own suite covers every money edge
+case from the research doc (integer/decimal/trailing-zero/exponent/
+zero/negative/>6-fractional-digit/overflow/malformed-lexical/currency-
+normalization), the full moderation-status publish matrix, the
+sensitive-field-never-exposed regression test, and - against a real
+local in-process WebSocket server, never by calling package-internal
+functions directly - welcome/subscribe success and failure, resume-
+token query-param handling, oversized/malformed-frame handling,
+reconnect-token delivery, and cancellation.
+`internal/runtime/streamelementsengagement`'s own suite (also against a
+real local fake Astro server, run 3x consecutively with no flakiness)
+covers: enable reaches connected; an allowed tip is published with the
+correct event shape; a pending tip is never published; an unexpected
+disconnect marks a possible gap that a subsequent real tip clears; a
+graceful reconnect uses the resume token, skips re-subscribing, and
+never shows a possible gap; a rejected subscribe reaches
+`reconnect_required` and stops retrying; a credential missing from
+SecretStore reaches an honest error state; disable and source deletion
+both stop and forget the connector.
+
+### Known limitations
+- No HTTP API endpoints exist yet for donation-source CRUD/credential
+  management/enable-disable/status - `internal/httpapi` is not touched
+  in this commit.
+- `cmd/server/main.go` and `cmd/testserver/main.go` do not yet
+  construct or start a `streamelementsengagement.Manager` - the
+  connector code exists and is fully tested in isolation, but nothing
+  in the running application wires it up yet.
+- No frontend changes - an operator cannot yet add a StreamElements
+  donation source through the UI.
+- No integration-only WebSocket endpoint override wiring in
+  `cmd/testserver` yet (the equivalent of the Twitch/YouTube
+  `STREAMING_TREE_TEST_*_BASE_URL` pattern) - `Options.WSBaseURL` exists
+  on the client but nothing threads an environment variable to it yet.
+- No fake Astro server binary (`cmd/fakestreamelements`) or 18th
+  integration script yet.
+
+### Next step
+Wire the HTTP API: donation-source CRUD/credential-replace/enable/
+disable/delete/status endpoints, the real (non-nil) combined
+`AccountLookupAdapter`/`donationsource.Service` wiring into
+`cmd/server/main.go` and `cmd/testserver/main.go` (replacing the
+temporary `nil` arguments from the previous commit), and the
+integration-only WebSocket endpoint override.
