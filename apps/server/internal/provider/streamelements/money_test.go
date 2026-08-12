@@ -130,6 +130,37 @@ func TestBuildMoneyPropagatesAmountErrors(t *testing.T) {
 	}
 }
 
+func TestBuildMoneyGeneratesADisplayAmountWhenNoneIsSupplied(t *testing.T) {
+	cases := []struct {
+		amount, currency, want string
+	}{
+		{"4.2", "USD", "4.20 USD"},
+		{"10", "USD", "10.00 USD"},
+		{"1.000001", "USD", "1.000001 USD"},
+		{"0.01", "eur", "0.01 EUR"},
+		{"0", "USD", "0.00 USD"},
+	}
+	for _, c := range cases {
+		money, err := BuildMoney(num(c.amount), c.currency, "")
+		if err != nil {
+			t.Fatalf("BuildMoney(%q, %q, \"\") error = %v", c.amount, c.currency, err)
+		}
+		if money.DisplayAmount != c.want {
+			t.Errorf("BuildMoney(%q, %q, \"\").DisplayAmount = %q, want %q", c.amount, c.currency, money.DisplayAmount, c.want)
+		}
+	}
+}
+
+func TestBuildMoneyNeverOverwritesAProviderSuppliedDisplayAmount(t *testing.T) {
+	money, err := BuildMoney(num("4.2"), "USD", "$4.20")
+	if err != nil {
+		t.Fatalf("BuildMoney() error = %v", err)
+	}
+	if money.DisplayAmount != "$4.20" {
+		t.Fatalf("DisplayAmount = %q, want the supplied \"$4.20\" unmodified", money.DisplayAmount)
+	}
+}
+
 func TestParseAmountMicrosNoFloatingPointArithmeticRegression(t *testing.T) {
 	// A value that is exactly representable in decimal but famously NOT
 	// exactly representable in binary float64 (0.1 + 0.2 != 0.3 in

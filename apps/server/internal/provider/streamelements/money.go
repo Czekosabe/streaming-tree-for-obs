@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
+	"strings"
 
 	"github.com/streaming-tree/server/internal/domain/engagement"
 )
@@ -69,6 +71,15 @@ func ParseAmountMicros(raw json.Number) (int64, error) {
 // engagement.NewMoney's own currency uppercasing/validation - the single
 // entry point normalize.go uses, and the one this package's own tests
 // exercise both halves through.
+//
+// If displayAmount is empty, one is generated with formatDisplayAmount -
+// unlike YouTube, a StreamElements tip carries no provider-formatted
+// display string of its own (docs/provider-integrations/
+// external-donations.md §7's own verbatim payload has no such field), and
+// leaving DisplayAmount empty would mean a real donation's amount never
+// renders anywhere that only reads DisplayAmount (operator chat, the
+// Engagement diagnostic feed) despite AmountMicros/Currency being exactly
+// known - see internal/operatorchat/activity.go's own buildActivityItem.
 func BuildMoney(amountRaw json.Number, currency, displayAmount string) (engagement.Money, error) {
 	micros, err := ParseAmountMicros(amountRaw)
 	if err != nil {
@@ -78,5 +89,28 @@ func BuildMoney(amountRaw json.Number, currency, displayAmount string) (engageme
 	if err != nil {
 		return engagement.Money{}, fmt.Errorf("%w: %s", ErrInvalidCurrency, err)
 	}
+	if money.DisplayAmount == "" {
+		money.DisplayAmount = formatDisplayAmount(money.AmountMicros, money.Currency)
+	}
 	return money, nil
+}
+
+// formatDisplayAmount renders exact integer micros as a decimal string
+// with a trailing currency code, entirely through integer arithmetic
+// (division/modulo, string padding/trimming) - never float64, so it can
+// never introduce the imprecision ParseAmountMicros itself exists to
+// avoid. Always at least 2 fractional digits (conventional for currency);
+// more are shown, never rounded away, when the exact value actually has
+// them (e.g. 1,000,001 micros -> "1.000001 USD", never "1.00 USD").
+func formatDisplayAmount(amountMicros int64, currency string) string {
+	whole := amountMicros / microsPerUnit
+	frac := amountMicros % microsPerUnit
+	if frac < 0 {
+		frac = -frac
+	}
+	fracStr := strings.TrimRight(fmt.Sprintf("%06d", frac), "0")
+	if len(fracStr) < 2 {
+		fracStr += strings.Repeat("0", 2-len(fracStr))
+	}
+	return strconv.FormatInt(whole, 10) + "." + fracStr + " " + currency
 }

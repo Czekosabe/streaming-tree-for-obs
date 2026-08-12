@@ -21489,6 +21489,152 @@ loopback HTTP control API) and the 18th integration script
 (`scripts/verify-streamelements-donations.mjs`) that drives the real
 backend against it end to end.
 
+## 2026-08-12 — test: verify StreamElements donations locally
+
+### Status
+Completed.
+
+### Scope
+The real local fake Astro WebSocket server binary and the 18th
+integration script, driving the real backend end to end against it -
+plus two real product-code fixes this work uncovered (donation
+activities never rendering an amount in operator chat; a real fake-
+server bug that made the "disable closes the connection" behavior
+untestable). No product scope beyond those two fixes - everything else
+in this commit is test infrastructure.
+
+### Changes
+- `apps/server/cmd/fakestreamelements/main.go` (new, `-tags
+  integration`) - a real local WebSocket server implementing the Astro
+  protocol server-side, reusing `internal/provider/streamelements`'s own
+  wire types directly (one definition of the envelope shape in the whole
+  codebase). Connection lifecycle: rejects an unrecognized
+  `reconnect_token` at the HTTP-upgrade level (never accepts-then-
+  errors); sends `welcome`; for a fresh connect, reads exactly two
+  subscribe requests and can be configured to reject one by topic or by
+  an expected token value; for a resumed connect, restores the prior
+  topic set without expecting a fresh subscribe, mirroring Astro's own
+  documented behavior. A dedicated read loop after the handshake detects
+  an organic client-initiated close (a hijacked HTTP connection's own
+  `r.Context()` is never auto-cancelled by the standard library on peer
+  disconnect - this was a real bug found and fixed mid-implementation,
+  see Errors below) as well as an explicit `/control/disconnect`.
+  Control API: `/control/health`, `/control/connections` (per-connection
+  room/hasToken/subscribedTopics/resumedWithToken - never the credential
+  value), `/control/subscribe-error`, `/control/require-token`,
+  `/control/push-tip`, `/control/push-reconnect` (with an optional
+  `markValid:false` to simulate a token the server will then reject),
+  `/control/invalidate-reconnect-token`, `/control/disconnect`,
+  `/control/malformed`, `/control/oversized`, `/control/reset`.
+- `scripts/verify-streamelements-donations.mjs` (new) - the 18th
+  integration script. Builds and runs the real `-tags integration`
+  `cmd/testserver` binary against the fake Astro server via
+  `STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL`. Covers (as one
+  continuous run, 24 numbered steps): donation-source CRUD and
+  credential handling (never echoed, on create and on replace); the real
+  connect/welcome/subscribe lifecycle (room, credential-presence,
+  exactly `channel.tips` + `channel.tips.moderation`, never
+  `channel.activities`); exact money conversion and currency
+  normalization on a real published event; moderation semantics
+  (pending/rejected produce nothing, a later "allowed" update publishes
+  exactly once, a duplicate update never duplicates, a different tip id
+  is a distinct event); the payment rail never becoming the engagement
+  provider id; a malformed amount rejected without a crash; a real
+  monetary-threshold alert rule (matching, below-threshold, and
+  currency-mismatch cases) plus a Test Rule scenario that never touches
+  the fake provider; a public alert-stream privacy scan; a graceful
+  reconnect (resumes, never shows a possible gap); an unexpected
+  disconnect (marks a possible gap, a real tip clears it); a stale/
+  rejected reconnect token falling back to an ordinary fresh connect
+  without looping forever; disable/credential-replacement/delete/
+  backend-restart lifecycle behavior; and a final scan of every captured
+  HTTP body, SSE payload, and backend log line for the two credentials
+  actually issued during the run. A representative subset of the
+  governing task's full ~45-scenario enumeration, not a literal
+  transcription - mirrors this project's own established convention
+  (see `scripts/verify-twitch-engagement.mjs`/
+  `verify-youtube-engagement.mjs`'s own doc comments); explicitly
+  deferred to the Go unit/HTTP suites already covering them directly:
+  connector-level backoff-timing units, chatautomation's own "donations
+  never trigger a command" test, and the outbound-chat target-selector's
+  own provider allow-list test.
+- `apps/server/internal/provider/streamelements/money.go` - **bug fix**:
+  `BuildMoney` now generates a `DisplayAmount` via a new
+  `formatDisplayAmount` helper when the caller (always `normalize.go`,
+  since StreamElements' own tip payload carries no pre-formatted display
+  string the way YouTube's `amountDisplayString` does) passes an empty
+  one - previously every real donation's `Money.DisplayAmount` stayed
+  permanently empty, so nothing that only reads `DisplayAmount`
+  (operator chat's activity row, the Engagement diagnostic feed) ever
+  showed an amount at all despite `AmountMicros`/`Currency` being
+  exactly known. `formatDisplayAmount` is pure integer arithmetic
+  (division/modulo/string padding, never `float64`) and never rounds
+  away real fractional precision (1,000,001 micros formats as
+  "1.000001 USD", never "1.00 USD"); a caller-supplied display string
+  (nothing currently supplies one, but the parameter stays honored) is
+  never overwritten.
+- `apps/server/internal/provider/streamelements/money_test.go` - two new
+  tests for `formatDisplayAmount`'s exactness and its
+  supplied-value-wins precedence.
+
+### Technical decisions
+- **A hijacked HTTP connection's `r.Context()` is not cancelled by a
+  peer disconnect** - found via the integration script's own "disable
+  closes the connection" scenario timing out. The fake server originally
+  waited on `<-ctx.Done()` after the handshake, assuming an organic
+  client-initiated close would eventually cancel that context the way an
+  ordinary (non-hijacked) HTTP request's context is cancelled on
+  disconnect - but `websocket.Accept` hijacks the raw connection, and
+  once hijacked, the standard library stops tracking it entirely. Fixed
+  by replacing the wait with an actual `conn.Read(ctx)` loop (data
+  discarded) - mirrors how a real server would actually notice a client
+  disconnect (a failed read), and still honors `/control/disconnect`'s
+  own explicit cancellation through the very same mechanism, since
+  `coder/websocket`'s own `Read(ctx)` already closes the connection when
+  its own ctx argument is cancelled.
+- **"Backend restart reconnects a still-enabled source" only asserts
+  what the harness can actually prove** - the `-tags integration`
+  binary's own credential store (`internal/secrets/secretstest`) is
+  deliberately in-memory-only (see `cmd/testserver/main.go`'s own doc
+  comment) and has no real credential left after a process restart, so a
+  live post-restart reconnect is genuinely untestable here. The script
+  instead asserts the persisted `enabled` flag survived the restart and
+  that `Start()` reconciled the source into a real active state
+  (reaching `error`/`streamelements_credential_missing` in this harness,
+  an honest and expected outcome, not a bug) - mirroring
+  `scripts/verify-youtube-engagement.mjs`'s own restart assertion, which
+  for the identical reason checks the persisted flag rather than a live
+  reconnect.
+- **The invalid-reconnect-token scenario lands on `possible_gap`, not
+  `connected`, immediately after the fallback** - only a graceful,
+  resumed connection skips that display; a fallback to an ordinary fresh
+  connect is exactly the "may have missed something" case
+  `StatePossibleGap` exists to signal honestly. The script pushes one
+  more real tip afterward to prove full recovery to `connected`, rather
+  than weakening the assertion to accept `possible_gap` as "good enough."
+
+### Automated validation
+From `apps/server`: `gofmt -l .` (clean), `go vet ./...` (clean),
+`go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean), `go build -tags integration
+./cmd/fakestreamelements/...` (clean), `go test ./...` (all packages
+pass). `node scripts/verify-streamelements-donations.mjs` run twice
+consecutively, both passing, waited for autonomously.
+
+### Known limitations
+- README.md, docs/project-overview.md, docs/engagement-architecture.md,
+  and config/README.md have not been updated yet to reflect Stage 16A -
+  next commit.
+- The dedicated closing-regression progress entry and the full clean
+  final regression (frontend + backend + all 18 integration scripts in
+  one sequence) have not run yet.
+
+### Next step
+Update README.md, docs/project-overview.md,
+docs/engagement-architecture.md, and THIRD_PARTY_NOTICES.md (audit
+only - no new dependency was added) to reflect Stage 16A's real,
+implemented scope.
+
 ## 2026-08-12 — feat(server): integrate external donations with engagement
 
 ### Status
