@@ -18076,3 +18076,154 @@ change.
 Begin the mandatory Stage 15A official-documentation research pass
 (YouTube Live Chat API) and the Stage 15B Kick feasibility research
 pass, before any provider code is written.
+
+## 2026-08-12 08:21 — docs: research YouTube engagement and Kick feasibility
+
+### What
+The mandatory official-documentation research pass required before any
+Stage 15A provider code, plus the Stage 15B feasibility gate research
+that must happen in the same pass per this project's roadmap
+(`docs/engagement-architecture.md` §16/§18). Two new documents:
+
+- **`docs/provider-integrations/youtube-engagement.md`** - the Stage
+  15A contract, researched directly against `developers.google.com`
+  (streamList, list, liveChatMessages resource, insert, liveBroadcasts,
+  authentication, quota pages - full source list in the document
+  itself). Key decisions recorded with reasoning:
+  - **Transport: REST polling via `liveChatMessages.list`, not gRPC
+    `streamList`.** `streamList` is real (confirmed via two independent
+    fetches, including a skeptical quote-only re-check, since an
+    AI-summarized fetch pipeline is not a byte-verbatim source and this
+    detail mattered enough to double-check) - a genuine, currently-
+    documented server-streaming gRPC RPC with its full `.proto` source
+    published inline on the guide page. But: no official Go client is
+    named anywhere: only generic `grpc.io` code-gen links; no
+    independently-versioned/fetchable `.proto` artifact exists (only an
+    inline HTML code block meant for hand-copying); and this
+    environment has no `protoc`/`protoc-gen-go`/`protoc-gen-go-grpc`
+    (`which protoc` confirmed not found) to compile and verify
+    hand-transcribed `proto2` bindings against the real wire format -
+    for an API carrying real monetary data, shipping unverifiable
+    hand-written protobuf encoding was judged an unacceptable risk.
+    REST polling needs zero new dependencies, reuses the exact same
+    `internal/provider/youtube` HTTP client every other YouTube Data
+    API call already goes through, and is backed by the identical
+    official JSON schema. Honest cost recorded, not hidden: higher
+    quota use and higher latency than streamList would offer.
+  - **No additional OAuth scope needed.** The existing
+    `youtube.force-ssl` (`youtube.RequiredScope`) is a documented
+    accepted scope for `liveChatMessages.insert`; no separate/narrower
+    scope is documented for `list`/`streamList` either. No reconnect/
+    scope-upgrade flow required for Stage 15A.
+  - **Full event-type mapping table** for all 14 current
+    `snippet.type` values (`docs/provider-integrations/
+    youtube-engagement.md` §5), with reasoning per type: ordinary text
+    reuses the shared chat-message type; membership gifting/gift-
+    received reuse Twitch's existing gift-batch/gifted-subscription
+    concepts (semantically identical); Super Chat and Super Sticker get
+    two new, deliberately distinct monetary types (never collapsed into
+    Bits, never merged with each other); `fanFundingEvent` (legacy
+    pre-rename Super Chat), `pollEvent`, and `giftEvent` (the newer
+    virtual "Jewels" gift type) are all left as explicit unsupported-
+    type diagnostics rather than force-mapped - `giftEvent` specifically
+    because the proto's own doc comment states its message ID "may be
+    reused to update the combo count," meaning ordinary Event Bus dedup
+    does not safely apply to it, and because jewels are not fiat
+    currency and must never be treated as though they were.
+  - **Confirmed no image URL exists for Super Stickers** anywhere in
+    the schema (`superStickerMetadata` carries only `stickerId`/
+    `altText`/`language`) - Stage 15A must render safe text/alt only,
+    never invent or scrape a sticker image.
+  - **No reply-parent field exists** on `liveChatMessages.insert` at
+    all - YouTube reply must be unavailable, never faked as an
+    `@mention`-prefixed plain message.
+  - **No documented maximum message length** - the existing Twitch
+    500-code-point limit must not be reused as a YouTube fact; rely on
+    the provider's own `400 messageTextInvalid` rejection instead.
+  - **Initial-history/live-cutover strategy**: no explicit history/live
+    boundary marker exists in the API response, so Stage 15A implements
+    a baseline-first cutover - the connector's first successful `list`
+    call per start/restart/broadcast-change establishes a baseline
+    `nextPageToken` and is never published to the Event Bus; only
+    messages from the second and later calls are normalized and
+    published. Reconnect resumes from the last known token (no
+    re-baseline); backend restart never persists continuation state, so
+    every restart is a fresh baseline by construction - no history
+    replay is possible after a restart.
+  - A `Money` value shape is specified (integer `AmountMicros`,
+    uppercase `Currency`, optional non-authoritative
+    `DisplayAmount`) - implementation notes that
+    `internal/domain/engagement.Event` already has dormant, currently-
+    unused `Amount *float64`/`Currency string` fields reserved for
+    exactly this purpose (found during codebase research below), and
+    leaves the final struct-vs-existing-fields choice to implementation.
+- **`docs/provider-integrations/kick-engagement.md`** - Stage 15B
+  feasibility-only research against `docs.kick.com` (via its own
+  `llms.txt` index, to avoid guessing sub-page URLs). **Conclusion:
+  Stage 15B remains feasibility-gated.** Kick's current official event
+  model is webhook-only: `events/introduction.md` requires "a publicly
+  accessible URL" for event delivery; `events/subscribe-to-events.md`'s
+  subscription endpoint accepts only `method: webhook` with no
+  documented alternative; and `apis/chat.md` confirms there is **no**
+  REST polling fallback for chat at all (unlike YouTube) - reading chat
+  is only possible via the same webhook transport. This is a hard
+  architecture gate for a local-only desktop application with no
+  public-facing infrastructure, and is not worked around by scraping,
+  undocumented WebSocket/Pusher endpoints, tunnelling, port-forwarding,
+  or inventing Streaming-Tree-operated server infrastructure - all
+  explicitly out of scope per this task's own instructions. No Kick
+  code exists anywhere in this repository; none is added by this
+  document. Also recorded for a future re-check: Kick's OAuth flow
+  requires both `client_secret` *and* PKCE (a secondary friction point,
+  not the deciding factor); the webhook signature model
+  (RSA/SHA-256/PKCS#1v1.5 via `Kick-Event-Signature`); and the full
+  scope list.
+- Codebase research (three parallel read-only Explore passes, since the
+  scope needed for accurate implementation planning is large): mapped
+  the exact existing `internal/provider/youtube` client/OAuth/adapter
+  surface, `internal/domain/account`'s `WithFreshToken` pattern,
+  `internal/runtime/twitchengagement`'s connector/manager/backoff shape
+  to mirror, the Engagement Event Bus's exact `Event`/`Type`/dedupe
+  model (confirming `Amount`/`Currency` fields already exist but are
+  unused today), `internal/domain/alerts`' capability/matcher/migration
+  shape, `internal/outboundchat`'s provider-sender interface and
+  reply/retry semantics, `internal/chatautomation`'s already-generic
+  self-loop-protection and role-gating (no YouTube-specific change
+  needed there beyond normalized-event population), and the frontend's
+  exact hardcoded `providerId === 'twitch'` filter points that need
+  generalizing (`EngagementPage.tsx`, `ChatPage.tsx`,
+  `ScheduleManager.tsx`). This report is the implementation map the
+  rest of Stage 15A proceeds from - not re-summarized here in full,
+  since the code itself is the source of truth once written.
+
+### Files changed
+- `docs/provider-integrations/youtube-engagement.md` (new)
+- `docs/provider-integrations/kick-engagement.md` (new)
+
+### Technical decisions
+- **Why the gRPC transport decision is recorded as time-bound, not
+  permanent.** Both the lack of an official Go client and the lack of
+  a versioned `.proto` artifact are facts about *today's* documentation
+  and *this* development environment's toolchain, not permanent
+  properties of the YouTube API. If a future stage finds either
+  changed, the decision should be re-researched against then-current
+  sources rather than assumed still correct.
+- **Why Kick's feasibility conclusion is scoped to "current official
+  docs," not "Kick can never work."** Same reasoning - webhook-only is
+  what `docs.kick.com` says today; a future official client-initiated
+  transport would change the answer and should be re-checked, not
+  assumed unavailable forever.
+
+### Automated validation
+None - documentation only, no code in this entry.
+
+### Known limitations
+None new - see each document's own explicit scope statement.
+
+### Next step
+Begin Stage 15A backend implementation: extend the Engagement Event
+model (new Type constants, Money value, ProviderYouTube), the YouTube
+normalization layer, the YouTube engagement connector/manager, the
+YouTube outbound adapter, and the alerts monetary model - each as its
+own logical commit with its own progress entry, per this project's
+established discipline.
