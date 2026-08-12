@@ -25,11 +25,11 @@
     "preview": "Preview",
     "renderedCount": "{{count}} / 500 characters",
     "unresolvedWarning": "Unresolved: {{names}} - this send will be skipped rather than sending malformed text.",
-    "tooLongWarning": "The rendered message exceeds the 500-character Twitch limit.",
-    "noAccounts": "No Twitch account is ready to send outbound chat yet.",
+    "tooLongWarning": "The rendered message exceeds this application's own 500-character limit.",
+    "noAccounts": "No Twitch or YouTube account is ready to send outbound chat yet.",
     "permissionRequiredHint": "This account needs the outbound-chat permission upgrade first - see the Chat page's composer.",
     "restartNoticeTitle": "About restarts",
-    "restartNotice": "No backlog is replayed after a backend restart: offline or skipped messages are never sent later, and every enabled schedule gets a fresh countdown. Activity counts reset after each successful scheduled send. Local and Twitch rate limits still apply on top of this schedule's own settings."
+    "restartNotice": "No backlog is replayed after a backend restart: offline or skipped messages are never sent later, and every enabled schedule gets a fresh countdown. Activity counts reset after each successful scheduled send. Local and platform rate limits still apply on top of this schedule's own settings."
   },
   "schedules": {
     "empty": "No scheduled messages yet. Create one to have Streaming Tree post on a timer.",
@@ -39,7 +39,7 @@
     "deleteConfirmMessage": "\"{{name}}\" will stop sending immediately. This cannot be undone.",
     "sendNowAction": "Send now",
     "sendNowTitle": "Send \"{{name}}\" now?",
-    "sendNowMessage": "This sends a real message immediately to the eligible targets below, bypassing the interval, first delay and minimum-activity checks. Local and Twitch rate limits, message length and account permission still apply.",
+    "sendNowMessage": "This sends a real message immediately to the eligible targets below, bypassing the interval, first delay and minimum-activity checks. Local and platform rate limits, message length and account permission still apply.",
     "sendNowEligible": "Will send",
     "sendNowIneligible": "Will be skipped",
     "sendNowConfirm": "Send now",
@@ -61,7 +61,7 @@
       "minimumChatMessages": "Minimum chat messages since last send",
       "minimumChatMessagesHint": "Real human messages only - your own sent messages, test events and bot-marked users never count.",
       "maximumSendsPerHour": "Maximum sends per hour",
-      "maximumSendsPerHourHint": "A rolling limit on this schedule's own successful sends - separate from (and in addition to) Twitch's own rate limits.",
+      "maximumSendsPerHourHint": "A rolling limit on this schedule's own successful sends - separate from (and in addition to) the platform's own rate limits.",
       "messages": "Message alternatives",
       "messagesHint": "At least one. When there is more than one, a random alternative is chosen each time, avoiding an immediate repeat.",
       "addMessage": "Add alternative",

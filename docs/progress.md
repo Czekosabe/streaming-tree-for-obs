@@ -19304,3 +19304,81 @@ The Automation page (`CommandManager.tsx`/`ScheduleManager.tsx`):
 broaden their own hardcoded `providerId === 'twitch'` account/platform
 filters to include YouTube, consistent with the same pattern just
 applied to Engagement and Chat.
+
+## 2026-08-12 11:52 — feat(web): YouTube targets on the Automation page, fix misleading "Twitch limit" copy
+
+### What
+Broadens the Automation page's command/schedule target pickers to
+include YouTube accounts and platforms, completing the "existing pages
+only" account-filter pattern across Engagement, Chat, and Automation.
+Confirmed first (by reading `internal/chatautomation/placeholders.go`,
+which already switches on `account.ProviderYouTube` for platform-name
+resolution) that the backend already treats automation targets as
+provider-generic - commands/schedules already send through the same
+shared outbound dispatcher Stage 15A wired for YouTube, so this was a
+pure frontend gap, not a backend one.
+
+- **`components/automation/{CommandManager.tsx,
+  ScheduleManager.tsx}`**: `twitchAccounts`/`twitchPlatforms` renamed
+  `automationAccounts`/`automationPlatforms`, filters broadened to
+  `providerId === 'twitch' || providerId === 'youtube'`.
+- **`i18n/resources/{en,pl}/automation.json`** (real copy bug fixed):
+  `common.tooLongWarning` previously read "The rendered message
+  exceeds the 500-character Twitch limit" - but this 500-code-point
+  bound (`chatautomation.MaxTemplateCodePoints`) is this application's
+  own internal, provider-agnostic template-length bound, not a fact
+  about Twitch specifically. This directly contradicted a design
+  principle already stated explicitly in
+  `docs/provider-integrations/youtube-engagement.md` §9: *"the
+  existing Twitch 500-code-point limit must not be reused as if it
+  were a YouTube fact"* - the UI copy was doing exactly what that
+  research doc had already flagged as unsafe. Reworded to "this
+  application's own 500-character limit." Also reworded
+  `restartNotice`/`sendNowMessage`/`fields.maximumSendsPerHourHint`
+  from "Twitch rate limits" to "platform rate limits" (the same rolling
+  send-count/rate-limit mechanics apply to both providers identically),
+  and `noAccounts` to mention both providers.
+  `fields.onlyWhileReceivingHint`'s own mention of Twitch's "live"
+  status was left unchanged - it is a true clarifying example (this
+  app's own ingest status is not Twitch's live status), not a claim
+  about a bound or limit, so it carries no such risk.
+
+### Files changed
+- `apps/web/src/components/automation/{CommandManager.tsx,
+  ScheduleManager.tsx}`
+- `apps/web/src/i18n/resources/{en,pl}/automation.json`
+- `apps/web/src/pages/AutomationPage.test.tsx`
+
+### Technical decisions
+- **Why this copy bug was worth fixing rather than leaving for a later
+  polish pass.** The research doc's own §9 explicitly anticipated and
+  named this exact mistake before any code existed - "the existing
+  Twitch 500-code-point limit must not be reused as if it were a
+  YouTube fact." Automation's `tooLongWarning` is shown for *any*
+  target's rendered message, YouTube included, once YouTube accounts
+  became selectable targets in this same commit - leaving the old text
+  in place would have made the UI actively contradict a decision this
+  project had already deliberately written down.
+
+### Automated validation
+`cd apps/web`: `npx tsc -b` clean, `npm run lint` clean, `npm run
+i18n:check` clean, `npx vitest run` - 86 files / 1224 tests, all
+passing (including a new `AutomationPage.test.tsx` case proving a
+YouTube account is offered as a target alongside Twitch, and the
+stale Twitch-only "no accounts" regex assertion corrected to match
+current behavior), `npm run build` clean.
+
+### Known limitations
+None new for what this commit touches. This completes the required
+"existing pages only" frontend work across Engagement, Chat, and
+Automation; Alerts was completed in an earlier commit this session.
+Remaining for Stage 15A: the 17th integration script
+(`scripts/verify-youtube-engagement.mjs`) and the closing
+documentation/regression pass.
+
+### Next step
+The 17th integration script: `scripts/verify-youtube-engagement.mjs`,
+using a fake YouTube OAuth/REST server exercising the full real
+backend pipeline end to end - including explicit proof that initial
+chat history is never treated as live and that a backend restart never
+replays history.

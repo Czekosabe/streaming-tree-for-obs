@@ -34,6 +34,17 @@ const twitchAccount = {
   updatedAt: '2026-08-06T00:00:00Z',
 };
 
+const youtubeAccount = {
+  id: 'acct_2',
+  providerId: 'youtube',
+  login: 'My Channel',
+  displayName: 'My Channel',
+  status: 'connected' as const,
+  scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+  createdAt: '2026-08-06T00:00:00Z',
+  updatedAt: '2026-08-06T00:00:00Z',
+};
+
 function baseSchedule(overrides: Partial<Schedule> = {}): Schedule {
   return {
     id: 'sched_1', name: 'Hourly reminder', enabled: true,
@@ -155,6 +166,21 @@ describe('AutomationPage', () => {
     renderPage();
     (await screen.findByRole('button', { name: /^create$/i })).click();
     await screen.findByLabelText(/^name$/i);
-    expect(screen.queryByText(/no twitch account is ready/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no.*account is ready/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a connected YouTube account as a target alongside Twitch (Stage 15A)', async () => {
+    vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([twitchAccount, youtubeAccount]);
+    renderPage();
+
+    (await screen.findByRole('button', { name: /^create$/i })).click();
+    await screen.findByLabelText(/^name$/i);
+    screen.getByRole('button', { name: /add target/i }).click();
+
+    const accountSelect = await screen.findByLabelText(/^account$/i);
+    const optionLabels = within(accountSelect)
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(optionLabels).toEqual(expect.arrayContaining(['Streamer', 'My Channel']));
   });
 });

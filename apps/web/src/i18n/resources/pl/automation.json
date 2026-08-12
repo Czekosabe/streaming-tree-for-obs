@@ -25,11 +25,11 @@
     "preview": "Podgląd",
     "renderedCount": "{{count}} / 500 znaków",
     "unresolvedWarning": "Nierozwiązane: {{names}} - ta wysyłka zostanie pominięta zamiast wysłać uszkodzony tekst.",
-    "tooLongWarning": "Wygenerowana wiadomość przekracza limit 500 znaków Twitcha.",
-    "noAccounts": "Żadne konto Twitch nie jest jeszcze gotowe do wysyłania wiadomości.",
+    "tooLongWarning": "Wygenerowana wiadomość przekracza własny limit 500 znaków tej aplikacji.",
+    "noAccounts": "Żadne konto Twitch ani YouTube nie jest jeszcze gotowe do wysyłania wiadomości.",
     "permissionRequiredHint": "To konto wymaga najpierw uaktualnienia uprawnień do wysyłania czatu - zobacz kompozytor na stronie Czat.",
     "restartNoticeTitle": "O restartach",
-    "restartNotice": "Po restarcie backendu żadne zaległości nie są odtwarzane: wiadomości pominięte offline nigdy nie zostaną wysłane później, a każdy włączony harmonogram otrzymuje świeże odliczanie. Liczniki aktywności resetują się po każdej udanej wysyłce zaplanowanej. Lokalne limity i limity Twitcha nadal obowiązują oprócz ustawień tego harmonogramu."
+    "restartNotice": "Po restarcie backendu żadne zaległości nie są odtwarzane: wiadomości pominięte offline nigdy nie zostaną wysłane później, a każdy włączony harmonogram otrzymuje świeże odliczanie. Liczniki aktywności resetują się po każdej udanej wysyłce zaplanowanej. Lokalne limity i limity platformy nadal obowiązują oprócz ustawień tego harmonogramu."
   },
   "schedules": {
     "empty": "Brak zaplanowanych wiadomości. Utwórz jedną, aby Streaming Tree publikował wiadomości cyklicznie.",
@@ -39,7 +39,7 @@
     "deleteConfirmMessage": "„{{name}}” przestanie być wysyłana natychmiast. Tej operacji nie można cofnąć.",
     "sendNowAction": "Wyślij teraz",
     "sendNowTitle": "Wysłać „{{name}}” teraz?",
-    "sendNowMessage": "Spowoduje to natychmiastowe wysłanie prawdziwej wiadomości do kwalifikujących się celów poniżej, pomijając interwał, opóźnienie początkowe i minimalną aktywność. Lokalne limity i limity Twitcha, długość wiadomości oraz uprawnienia konta nadal obowiązują.",
+    "sendNowMessage": "Spowoduje to natychmiastowe wysłanie prawdziwej wiadomości do kwalifikujących się celów poniżej, pomijając interwał, opóźnienie początkowe i minimalną aktywność. Lokalne limity i limity platformy, długość wiadomości oraz uprawnienia konta nadal obowiązują.",
     "sendNowEligible": "Zostanie wysłana",
     "sendNowIneligible": "Zostanie pominięta",
     "sendNowConfirm": "Wyślij teraz",
@@ -61,7 +61,7 @@
       "minimumChatMessages": "Minimalna liczba wiadomości czatu od ostatniej wysyłki",
       "minimumChatMessagesHint": "Tylko prawdziwe wiadomości ludzi - własne wysłane wiadomości, zdarzenia testowe i użytkownicy oznaczeni jako boty nigdy się nie liczą.",
       "maximumSendsPerHour": "Maksymalna liczba wysyłek na godzinę",
-      "maximumSendsPerHourHint": "Kroczący limit własnych udanych wysyłek tego harmonogramu - niezależny od (i dodatkowy względem) limitów Twitcha.",
+      "maximumSendsPerHourHint": "Kroczący limit własnych udanych wysyłek tego harmonogramu - niezależny od (i dodatkowy względem) limitów platformy.",
       "messages": "Warianty wiadomości",
       "messagesHint": "Co najmniej jeden. Gdy jest ich więcej, za każdym razem wybierany jest losowy wariant, unikając natychmiastowego powtórzenia.",
       "addMessage": "Dodaj wariant",

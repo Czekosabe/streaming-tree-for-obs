@@ -79,8 +79,12 @@ export function ScheduleManager() {
   const [sendNowTarget, setSendNowTarget] = useState<Schedule | null>(null);
 
   const schedules = schedulesQuery.data ?? [];
-  const twitchAccounts = (accountsQuery.data ?? []).filter((a) => a.providerId === 'twitch');
-  const twitchPlatforms = (platformsQuery.data ?? []).filter((p) => p.providerId === 'twitch');
+  const automationAccounts = (accountsQuery.data ?? []).filter(
+    (a) => a.providerId === 'twitch' || a.providerId === 'youtube',
+  );
+  const automationPlatforms = (platformsQuery.data ?? []).filter(
+    (p) => p.providerId === 'twitch' || p.providerId === 'youtube',
+  );
 
   const editingSchedule = editing?.id !== null && editing?.id !== undefined
     ? (schedules.find((s) => s.id === editing.id) ?? null)
@@ -143,8 +147,8 @@ export function ScheduleManager() {
         <ScheduleFormModal
           initial={editingSchedule !== null ? draftFromSchedule(editingSchedule) : emptyDraft()}
           title={editingSchedule !== null ? t('schedules.editTitle') : t('schedules.createTitle')}
-          accounts={twitchAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
-          platforms={twitchPlatforms.map((p) => ({ id: p.id, label: p.displayName }))}
+          accounts={automationAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
+          platforms={automationPlatforms.map((p) => ({ id: p.id, label: p.displayName }))}
           busy={createMutation.isPending || updateMutation.isPending}
           errorText={
             createMutation.isError
@@ -191,7 +195,7 @@ export function ScheduleManager() {
       {sendNowTarget !== null && (
         <SendNowDialog
           schedule={sendNowTarget}
-          accounts={twitchAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
+          accounts={automationAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
           busy={sendNowMutation.isPending}
           results={sendNowMutation.data?.results ?? null}
           onClose={() => {

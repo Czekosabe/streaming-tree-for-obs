@@ -72,8 +72,12 @@ export function CommandManager() {
   const [deleteTarget, setDeleteTarget] = useState<Command | null>(null);
 
   const commands = commandsQuery.data ?? [];
-  const twitchAccounts = (accountsQuery.data ?? []).filter((a) => a.providerId === 'twitch');
-  const twitchPlatforms = (platformsQuery.data ?? []).filter((p) => p.providerId === 'twitch');
+  const automationAccounts = (accountsQuery.data ?? []).filter(
+    (a) => a.providerId === 'twitch' || a.providerId === 'youtube',
+  );
+  const automationPlatforms = (platformsQuery.data ?? []).filter(
+    (p) => p.providerId === 'twitch' || p.providerId === 'youtube',
+  );
   const editingCommand = editing?.id !== null && editing?.id !== undefined
     ? (commands.find((c) => c.id === editing.id) ?? null)
     : null;
@@ -123,8 +127,8 @@ export function CommandManager() {
         <CommandFormModal
           initial={editingCommand !== null ? draftFromCommand(editingCommand) : emptyDraft()}
           title={editingCommand !== null ? t('commands.editTitle') : t('commands.createTitle')}
-          accounts={twitchAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
-          platforms={twitchPlatforms.map((p) => ({ id: p.id, label: p.displayName }))}
+          accounts={automationAccounts.map((a) => ({ id: a.id, label: a.displayName || a.login }))}
+          platforms={automationPlatforms.map((p) => ({ id: p.id, label: p.displayName }))}
           busy={createMutation.isPending || updateMutation.isPending}
           errorText={
             createMutation.isError
