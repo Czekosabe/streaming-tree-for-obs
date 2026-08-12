@@ -1443,8 +1443,9 @@ shared, reusable visual-template library on top of that same document
 image/video/font assets (stage 14B, stage 14 as a whole complete) -
 built-in immutable templates, a persisted user template gallery,
 backend-authoritative target/owner-instance compatibility, closed,
-asset-free JSON import/export, and (14B) self-contained `.sttpkg`
-archives bundling those same designs with their own managed assets,
+asset-free JSON import/export, and (14B) self-contained
+`.streaming-tree-template` archives bundling those same designs with
+their own managed assets,
 with a strict draft-first application model (using a template only
 ever changes a Designer's own unsaved draft; the owner's saved design
 changes only through the Designer's own pre-existing Save) - and a
@@ -1507,12 +1508,20 @@ made from stage 5 onward:
    on that same capability and dispatcher - no further scope, no second
    bot identity), then YouTube (stage 7B, account, broadcast selection and
    metadata only, extended in stage 15A with a real inbound Live Chat
-   polling connector on the same already-granted scope - no separate
-   permission-upgrade step, unlike Twitch's - reusing the exact same
-   operator chat/chat overlay/alerts/outbound-chat pipelines Twitch's own
-   connector already established, plus Super Chat/Super Sticker monetary
-   alerts and membership-family events; still no YouTube donation-service
-   integration, which remains stage 16's own scope). Kick and TikTok
+   connector receiving over YouTube's official `liveChatMessages.
+   streamList` gRPC server-streaming RPC - a long-lived push connection,
+   not polling - on the same already-granted scope, with no separate
+   engagement identity and no separate permission-upgrade step, unlike
+   Twitch's - reusing the exact same operator chat/chat overlay/alerts/
+   outbound-chat pipelines Twitch's own connector already established,
+   plus Super Chat/Super Sticker monetary alerts and membership-family
+   events; outbound sending and metadata calls stay REST, where that was
+   already the correct transport. An earlier version of stage 15A briefly
+   shipped REST polling instead, on a since-corrected conclusion that
+   gRPC wasn't practically implementable - see
+   [youtube-engagement.md §0](provider-integrations/youtube-engagement.md).
+   Still no YouTube donation-service integration, which remains stage
+   16's own scope). Kick and TikTok
    account integration (stage 7C) are deliberately **deferred** rather
    than blocking: they are not a dependency of the Event Bus, which only
    needs the Twitch adapter that already exists. Kick's own engagement

@@ -75,7 +75,7 @@ type Options struct {
 	// DeviceFlow for the engagement routes to register.
 	EngagementConnectors EngagementConnectorService
 	// YouTubeEngagementConnectors serves the per-account YouTube Live Chat
-	// polling connector management API (Stage 15A) - the same
+	// gRPC streamList connector management API (Stage 15A) - the same
 	// account-scoped routes EngagementConnectors already registers also
 	// dispatch to this manager for a YouTube account. Required alongside
 	// EngagementConnectors for the engagement routes to register.

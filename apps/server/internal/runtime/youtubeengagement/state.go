@@ -1,19 +1,22 @@
-// Package youtubeengagement supervises one YouTube Live Chat polling
-// connector per enabled connected YouTube account - the Stage 15A inbound
-// engagement connector. See docs/provider-integrations/
-// youtube-engagement.md for the researched REST polling contract this
-// package implements, and internal/runtime/twitchengagement for the
-// analogous Stage 8A connector this package's lifecycle/state-machine
+// Package youtubeengagement supervises one YouTube Live Chat gRPC
+// streamList connector per enabled connected YouTube account - the Stage
+// 15A inbound engagement connector. See docs/provider-integrations/
+// youtube-engagement.md for the researched streamList contract this
+// package implements (§4b - the Stage 15A transport corrective pass
+// replaced an earlier REST-polling implementation with the official gRPC
+// server-streaming transport), and internal/runtime/twitchengagement for
+// the analogous Stage 8A connector this package's lifecycle/state-machine
 // shape deliberately mirrors where the underlying transport is actually
 // alike (both: one goroutine per enabled account, bounded exponential
 // backoff on failure, an explicit Snapshot never carrying a token).
 //
-// The two providers' transports are not alike in one fundamental way:
-// Twitch pushes over a WebSocket; YouTube is polled over plain HTTPS with
-// a server-recommended interval and a continuation (page) token. This
-// package's own states reflect that difference explicitly (StateWaitingForBroadcast/
-// StateWaitingForLiveChat/StateChatEnded have no Twitch equivalent) rather
-// than forcing YouTube's reality into Twitch's shape.
+// The two providers' transports are alike in one more way than they used
+// to be: both now push over a long-lived connection (Twitch: WebSocket;
+// YouTube: gRPC server-streaming). This package's own states still
+// reflect YouTube's genuinely different broadcast-lifecycle reality
+// (StateWaitingForBroadcast/StateWaitingForLiveChat/StateChatEnded have no
+// Twitch equivalent) rather than forcing YouTube's reality into Twitch's
+// shape.
 package youtubeengagement
 
 import "time"

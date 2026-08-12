@@ -35,18 +35,26 @@ stage 14A) shared by both Designers, and real **portable archive
 template packages with bundled assets** — managed images, video, and
 custom fonts, safe archive validation, and package preview/import/
 export (stage 14B; Stage 14 as a whole is now complete), see
-[`docs/visual-template-packages.md`](docs/visual-template-packages.md).
-**Still planned**: text-to-speech, goal/counter widgets, additional
-engagement providers (YouTube, Kick chat/events), external
-donation-service connectors, and Stage 20's own packaging/updater/
-hardening work — detailed in
+[`docs/visual-template-packages.md`](docs/visual-template-packages.md) —
+and a real second **YouTube inbound connector** (stage 15A) publishing
+Live Chat, Super Chat, Super Sticker and membership events onto that same
+Event Bus, over YouTube's official `streamList` gRPC push transport, with
+every downstream consumer above (operator chat, chat overlay, outbound
+sending, alerts) serving YouTube events identically to Twitch's — see
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
+**Still planned**: text-to-speech, goal/counter widgets, a **Kick**
+engagement connector (feasibility-gated — see
+[`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
+TikTok LIVE support (conditional on an official, permitted integration
+existing), external donation-service connectors, and Stage 20's own
+packaging/updater/hardening work — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 12B).
+engagement piece above in order (stages 8A through 15A).
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending, real scheduled messages/chat commands, a real alert engine, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -117,6 +125,7 @@ engagement piece above in order (stages 8A through 12B).
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
 > [Engagement Event Bus and Twitch chat/events](#engagement-event-bus-and-twitch-chatevents),
+> [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents),
 > [Unified operator chat](#unified-operator-chat),
 > [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay),
 > [Sending Twitch chat manually](#sending-twitch-chat-manually),
@@ -128,22 +137,40 @@ engagement piece above in order (stages 8A through 12B).
 > never starts on its own, and a backend restart never resumes one
 > automatically. The same is true of publishing metadata: saving locally and
 > publishing to the platform are two separate, both-explicit actions, for
-> both Twitch and YouTube. Enabling the Twitch engagement connector, and
-> upgrading an account's permission to send chat, are equally explicit —
-> restoring an enabled connector automatically on the next backend start
-> only ever applies to one you already enabled yourself. Manual sending is
-> always operator-initiated; a schedule or command only ever runs once you
-> have explicitly created and enabled it, and no missed run is ever
-> replayed after a restart. Real alert-event history is never persisted
-> either — the queue, the current alert and every counter are runtime-only
-> and reset cleanly on restart, exactly like the automation runtime above.
+> both Twitch and YouTube. Enabling either the Twitch or the YouTube
+> engagement connector, and upgrading a Twitch account's permission to
+> send chat, are equally explicit — restoring an enabled connector
+> automatically on the next backend start only ever applies to one you
+> already enabled yourself. Manual sending is always operator-initiated; a
+> schedule or command only ever runs once you have explicitly created and
+> enabled it, and no missed run is ever replayed after a restart. Real
+> alert-event history is never persisted either — the queue, the current
+> alert and every counter are runtime-only and reset cleanly on restart,
+> exactly like the automation runtime above.
 >
-> Kick/TikTok account integration, YouTube live-chat and Super Chat, and
-> everything else still built **on top of** the operator chat, outbound
-> chat, alert engine and visual-design/template/package engine — TTS,
-> goal widgets, donation connectors, and Stage 20's own packaging/
-> updater/hardening work — are still **planned**. Whatever remains
-> a placeholder is marked with a **Demo** badge — the full list is in
+> A connected **YouTube** account can, once a live broadcast with an
+> active Live Chat is selected, likewise **enable a real engagement
+> connector** — inbound Live Chat over YouTube's official `streamList`
+> gRPC push transport (not polling), reusing the exact same connected
+> account and OAuth scope, no separate engagement identity. Ordinary chat,
+> Super Chat, Super Sticker and channel memberships/milestones all flow
+> onto the same Engagement Event Bus the Twitch connector uses, and are
+> served by the exact same unified Chat page, operator-chat activities,
+> scheduled messages/commands and alerts — Super Chat/Super Sticker carry
+> a real monetary amount (integer micros, never a float; an alert's
+> currency must match the event's exactly, with no FX conversion ever).
+> Outbound plain-text YouTube chat sending works the same way Twitch's
+> does, through the same dispatcher; YouTube has no reply concept, so a
+> reply is rejected outright rather than silently downgraded. See
+> [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)
+> for the full detail.
+>
+> Kick/TikTok account integration, and everything else still built **on
+> top of** the operator chat, outbound chat, alert engine and
+> visual-design/template/package engine — TTS, goal widgets, donation
+> connectors, and Stage 20's own packaging/updater/hardening work — are
+> still **planned**. Whatever remains a placeholder is marked with a
+> **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
 Detailed project description: [`docs/project-overview.md`](docs/project-overview.md)
@@ -1112,24 +1139,27 @@ Streaming Tree never verifies that a selected broadcast is actually bound
 to the stream key configured below it — that binding lives entirely on
 YouTube's side.
 
-**What this stage does not implement.** YouTube live-chat ingestion and
-Super Chat/membership events are not implemented - Twitch is currently
-the only live provider source feeding chat and events anywhere in this
-application. The provider-independent operator **Chat** page itself
-*is* implemented (stage 9) - see
-[Unified operator chat](#unified-operator-chat). The public **OBS
-Browser Source chat overlay** built on top of that same chat is also now
-implemented (stage 10) - see
+**What this stage does not implement.** Stage 7B (this section) is the
+account, broadcast-selection, and metadata foundation only - it does not
+itself implement YouTube live-chat ingestion, Super Chat, Super Sticker,
+or membership events. That inbound engagement connector was built later,
+on top of this foundation, as stage 15A - see
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
+Twitch was the first provider to feed chat and events onto the
+Engagement Event Bus (stage 8A); YouTube is the second (stage 15A) -
+both now serve the exact same downstream pipeline: the
+provider-independent operator **Chat** page (stage 9) - see
+[Unified operator chat](#unified-operator-chat) - the public **OBS
+Browser Source chat overlay** built on top of that same chat (stage 10)
+- see
 [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay) below
 and [`docs/obs-browser-source.md`](docs/obs-browser-source.md) for the
-OBS-specific research it is built on. Outbound chat, alerts,
-text-to-speech, donations, automatic broadcast creation, automatic
-`liveStream` binding, and automatic stream-key retrieval from YouTube
-remain unimplemented - see
+OBS-specific research it is built on - outbound manual chat sending
+(stage 11A/15A) and real alerts (stage 12A, with Super Chat/Super Sticker
+money support added in 15A). Text-to-speech, donation connectors,
+automatic broadcast creation, automatic `liveStream` binding, and
+automatic stream-key retrieval from YouTube remain unimplemented - see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
-This stage is the account, broadcast-selection, and metadata
-foundation those still-planned features will build on later, not an
-implementation of them.
 
 ### Registering a Google Cloud project and configuring a Client ID
 
@@ -1685,9 +1715,13 @@ overlay's own public URL points at `/overlay/chat/{publicSlug}`. See
 underlying OBS Browser Source research (setup, recommended dimensions,
 the shutdown/refresh checkbox trade-off) this feature is built on.
 
-**What this stage does not implement.** TTS and YouTube/Kick/TikTok
-overlay support are still unimplemented — only Twitch chat reaches any
-overlay, exactly like the operator Chat page above. Asset-free JSON
+**What this stage does not implement.** TTS and Kick/TikTok overlay
+support are still unimplemented. YouTube chat *does* reach the overlay,
+same as Twitch's — this stage's own filtering/lifecycle/moderation
+stayed entirely authoritative when Stage 15A added the YouTube connector
+underneath it, exactly like the operator Chat page above (see
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)).
+Asset-free JSON
 template import/export for a chat visual design exists (Stage 14A, via
 the Chat Overlay Designer's own Templates gallery — see below); a
 portable *archive* template package with managed image/video/font
@@ -2049,10 +2083,13 @@ separate from Chat and Overlays.
 
 **What this stage does not implement.** Alerts, donations, Bits/sub
 alert rendering, sounds, TTS, goals/counters, a visual overlay
-designer, YouTube/Kick/TikTok outbound chat, a separate bot account,
-IRC, whispers, announcements, pinned messages, and any remote
-moderation action (bans, timeouts, message deletion) remain exactly as
-planned — see
+designer, Kick/TikTok outbound chat, a separate bot account, IRC,
+whispers, announcements, pinned messages, and any remote moderation
+action (bans, timeouts, message deletion) remain exactly as planned.
+YouTube scheduled messages and chat commands *are* implemented, as of
+Stage 15A, through this exact same dispatcher — see
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
+See
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
 Nothing in this stage can execute arbitrary code: there is no
 scripting language, no regular expressions, no arbitrary HTTP
@@ -2811,7 +2848,7 @@ node scripts/verify-alert-advanced-queue.mjs      # Stage 12B grouping and mid-a
 node scripts/verify-alert-designer.mjs            # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
 node scripts/verify-chat-overlay-designer.mjs     # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
 node scripts/verify-visual-templates.mjs          # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
-node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and portable .sttpkg template packages - no fake servers needed
+node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 node scripts/verify-youtube-engagement.mjs        # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 ```
 
@@ -3180,7 +3217,7 @@ rest of the repository.
 │   ├── verify-alert-designer.mjs   # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
 │   ├── verify-chat-overlay-designer.mjs # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
 │   ├── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
-│   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .sttpkg template packages - no fake servers needed
+│   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 │   └── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
@@ -3200,7 +3237,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), and real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts) and [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, donation connectors) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| TTS, goal/counter widgets, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — and a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a) and [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, donation connectors, Kick/TikTok engagement) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3324,6 +3361,19 @@ directly next to the control.
   preview, then explicit confirm) and export, with an older exported
   document version migrated transparently - see
   [`docs/visual-templates.md`](docs/visual-templates.md).
+- **A real YouTube inbound engagement connector** (stage 15A) — Live
+  Chat received over YouTube's official `streamList` gRPC server-
+  streaming transport (a long-lived push connection, not polling),
+  reusing the connected YouTube account's existing OAuth scope with no
+  separate engagement identity; ordinary chat, Super Chat, Super
+  Sticker, new-member and member-milestone events all normalized onto
+  the exact same Engagement Event Bus the Twitch connector uses, and
+  served by the exact same unified Chat page, operator-chat activities,
+  OBS chat overlay, manual/scheduled/command outbound sending, and
+  alerts — Super Chat/Super Sticker carry this application's first real
+  monetary value (integer micros, uppercased currency, no FX
+  conversion) — see
+  [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3333,8 +3383,9 @@ API does not report them, so showing a number would mean inventing it.
 - **Kick and TikTok account integration** — sign-in and metadata
   publishing for the remaining providers, reusing the same connected-account
   foundation Twitch's and YouTube's integrations now provide - deferred,
-  capability-gated (stage 7C; Kick may land together with its own
-  engagement adapter in stage 15).
+  capability-gated (stage 7C). Kick's own engagement adapter (stage 15B)
+  remains separately feasibility-gated - see
+  [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md).
 - **TTS, goal widgets, and any donation-service connector** — architecture
   only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).

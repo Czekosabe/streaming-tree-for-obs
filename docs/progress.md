@@ -20574,3 +20574,194 @@ recorded there.
 None for Stage 15A - it is closed, correctly this time. A future stage
 would either revisit Kick's transport situation (Stage 15B) or begin
 Stage 16+, neither of which is part of this corrective pass.
+
+## 2026-08-12 — fix(docs): reconcile Stage 15A current state
+
+### Status
+Completed. Documentation-only. The Stage 15A gRPC transport
+implementation itself (previous five commits, `c5009f2`..`97e63f6`) was
+already correctly closed and required no code changes - this pass exists
+solely because a post-report review of the actual uploaded repository
+files found that "corrected every living-documentation claim" was still
+false: several current-state documents, mostly in `README.md`, still
+described YouTube engagement as unimplemented or the transport as
+polling, discovered after the prior closing report had already declared
+the documentation fully reconciled.
+
+### Scope
+Re-audited every tracked living/current-state document for Stage 15A
+drift, distinguishing living claims (which describe today's state, and
+were corrected) from historical claims (which truthfully describe what a
+specific old stage implemented at the time, and were deliberately left
+alone) and from the deliberately-preserved superseded research record in
+`docs/provider-integrations/youtube-engagement.md` §4a (also left alone).
+Also audited and corrected an unrelated but adjacent drift the same
+review surfaced: three living-documentation references to a
+`.sttpkg` package extension, when the actual Stage 14B contract and
+every line of source code (Go and TypeScript) uses
+`.streaming-tree-template` exclusively - confirmed a pure documentation
+typo, not a real implementation inconsistency, before touching anything.
+
+### README.md drift found and corrected
+- The opening "Long-term vision" paragraph's **Still planned** list
+  named "additional engagement providers (YouTube, Kick chat/events)" -
+  YouTube engagement has been real since Stage 15A. Corrected to name
+  only genuinely unimplemented items (Kick engagement - feasibility-
+  gated, TikTok - conditional, donation connectors, Stage 20
+  packaging/updater/hardening), and added Stage 15A to the same
+  paragraph's "real today" list, which previously stopped at Stage 14B.
+- The **Project state** blockquote heading only credited "a real Twitch
+  inbound Event Bus connector" - updated to "real Twitch and YouTube
+  inbound Event Bus connectors" (and touched up its other Twitch-only
+  phrasing: chat sending, alert engine money support).
+- The Project state body's closing sentence read "Kick/TikTok account
+  integration, YouTube live-chat and Super Chat... are still planned" -
+  false. Replaced with a concise new paragraph describing the real
+  Stage 15A capability set (connected-account reuse, no separate
+  engagement identity, gRPC `streamList` inbound transport, ordinary
+  chat/Super Chat/Super Sticker/memberships onto the same Event Bus,
+  outbound text sending, reply rejection) linking to the detailed
+  section rather than duplicating it, and left only the genuinely
+  still-planned items (Kick/TikTok account integration and everything
+  built on top of the engines above) in the "still planned" sentence.
+- The Stage 7B ("Connected accounts and YouTube metadata") section's own
+  "What this stage does not implement" callout said "Twitch is currently
+  the only live provider source feeding chat and events anywhere in this
+  application" and listed "Outbound chat, alerts... remain unimplemented"
+  for YouTube - both false. Corrected to state that Stage 7B itself
+  (account/metadata only) still doesn't implement engagement, while
+  Stage 15A - built later, on top of it - does, and that outbound
+  sending and alerts are real for YouTube as of Stage 15A. The
+  historical fact that Stage 7B alone never implemented engagement was
+  kept, since it remains true of that specific stage.
+- The chat-overlay section's own callout claimed "only Twitch chat
+  reaches any overlay" - false; the overlay consumes the same operator-
+  chat projection Stage 15A extended to YouTube. Corrected.
+- The scheduled-messages/chat-commands section's own callout listed
+  "YouTube/Kick/TikTok outbound chat" as still planned - false for
+  YouTube (the chat-automation dispatcher already sends YouTube command
+  responses, exercised by `verify-youtube-engagement.mjs`'s own
+  self-loop-protection scenario). Corrected to keep only Kick/TikTok.
+- The "What is currently demo-only" table's own row listed "YouTube live
+  chat, Super Chat, membership events" as **Not implemented anywhere** -
+  false; removed them from that row (kept TTS/goal widgets/Kick/TikTok
+  engagement, the genuinely unimplemented items) and added a sentence
+  crediting Stage 15A alongside the row's existing stage 9-14B credits.
+- The "What is real" bulleted list documented every stage through 14B
+  but never mentioned Stage 15A at all - added a bullet for the real
+  YouTube inbound engagement connector, matching the existing Twitch
+  connector bullet's level of detail.
+- "What will be added later" described Kick's engagement adapter as
+  possibly landing "together with its own engagement adapter in stage
+  15" - imprecise now that Stage 15 has split into 15A (done) and 15B
+  (Kick, still gated); corrected to name stage 15B specifically, with a
+  link to the Kick feasibility document.
+- Two integration-script tree/list comments and one `docs/project-
+  overview.md` §14B description used the stale `.sttpkg` extension;
+  corrected to `.streaming-tree-template` (confirmed canonical: it is
+  the only extension any Go or TypeScript source file uses).
+
+### Historical README claims deliberately retained (not changed)
+- `docs/provider-integrations/youtube.md`'s own Stage 7B-scoped "not
+  implemented"/"out of scope" claims (loopback IPv6 listener, DVR/
+  latency broadcast properties, automatic stream-key retrieval) - all
+  genuinely still true of Stage 7B specifically, unrelated to engagement.
+- The Stage 11A (manual outbound chat) section's own callout naming a
+  separate bot account, announcements, whispers, pinned messages, and
+  remote moderation as unimplemented - true regardless of YouTube,
+  Twitch-specific gaps.
+- Every `verify-*.mjs` tree/list comment saying "fake Twitch only" -
+  these accurately describe which fake provider *that specific test
+  script* exercises (YouTube has its own dedicated
+  `verify-youtube-account-integration.mjs`/`verify-youtube-
+  engagement.mjs`), not a claim about the application's own capabilities.
+- `docs/progress.md`'s historical entries, including the original (now
+  corrected-elsewhere) "no verifiable gRPC transport exists" claim and
+  the "one polling connector per enabled account" phrasing in the
+  original Stage 15A implementation entry - both left exactly as
+  originally written, per this project's append-only correction
+  discipline; they truthfully record what was believed/shipped at the
+  time.
+- `docs/provider-integrations/youtube-engagement.md` §4a (the
+  superseded original transport-decision reasoning) - deliberately
+  preserved verbatim as history, not touched.
+
+### docs/project-overview.md drift found and corrected
+- §16's provider-support paragraph said Stage 15A added "a real inbound
+  Live Chat polling connector" - false. Replaced with the real
+  transport (`liveChatMessages.streamList`, gRPC server-streaming, a
+  long-lived push connection, same OAuth scope, no separate engagement
+  identity, outbound/metadata staying REST), and added a same-sentence
+  pointer to `youtube-engagement.md` §0 recording that an earlier
+  version of the stage briefly shipped REST polling before being
+  corrected - not erasing that history, just not stating it as the
+  current transport.
+- §14B's own template-package description used `.sttpkg`; corrected to
+  `.streaming-tree-template` (see above).
+
+### Other Stage 15A living-doc drift found (non-doc, corrected anyway)
+Found while tracing every "polling connector" occurrence repository-
+wide: four Go source **comments** (not behavior) still described the
+connector as "polling" - `internal/runtime/youtubeengagement/state.go`'s
+own package doc comment (the most out of date - it still explained
+"YouTube is polled over plain HTTPS with a server-recommended interval,"
+the exact REST-era description the code itself no longer matches),
+`manager.go`'s package doc comment, `internal/httpapi/router.go`'s
+`YouTubeEngagementConnectors` field doc comment, and one test file
+comment in `internal/httpapi/engagement_test.go`. All four corrected to
+say "gRPC streamList connector" - comment-only, zero behavior change,
+confirmed by the full backend test suite passing unchanged below. This
+is not a source-code defect in the sense this pass was watching for (no
+behavior was ever wrong) - just prose inside .go files that the original
+connector rewrite's own find-and-replace pass missed.
+
+### `.sttpkg` audit conclusion
+Repository-wide search found exactly three living-documentation
+occurrences (two in `README.md`, one in `docs/project-overview.md`), all
+now corrected. A parallel search for `.streaming-tree-template` found it
+used consistently and exclusively across every relevant Go and
+TypeScript source file (`internal/domain/visualpackage/{manifest,reader,
+writer,service}.go`, `internal/httpapi/{visualpackage,visualtemplate}.go`,
+`apps/web/src/api/visualpackage.ts`, `apps/web/src/models/
+visualtemplate.ts`, `apps/web/src/components/visual-templates/
+TemplateGallery.tsx`, plus their own tests) - the application itself
+never used `.sttpkg` anywhere; this was purely stale documentation
+shorthand, not an implementation inconsistency. No STOP condition was
+triggered.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `apps/server/internal/runtime/youtubeengagement/state.go` (comment only)
+- `apps/server/internal/runtime/youtubeengagement/manager.go` (comment only)
+- `apps/server/internal/httpapi/router.go` (comment only)
+- `apps/server/internal/httpapi/engagement_test.go` (comment only)
+- `docs/progress.md` (this entry)
+
+### Validation
+Repository-wide `git grep` searches (§14 of the corrective task) for
+"polling connector", "youtube live-chat/live chat.*planned",
+"super chat.*planned", "no verifiable grpc", and "sttpkg" - every
+remaining match reviewed and confirmed either historical/append-only
+(kept) or an unrelated substring inside already-correct text. Focused
+frontend/backend validation and the full 17-script integration
+regression are recorded in the dedicated closing entry that follows this
+one, after which no further code or documentation changes are made
+before push.
+
+### Known limitations
+None beyond what the prior five commits already recorded. This pass
+found no source-code behavioral defect - only prose (living docs and
+four code comments) that had not caught up to the already-correct
+implementation.
+
+### Stage status (unchanged by this pass)
+Stage 14: Completed. Stage 15A: Completed (gRPC transport, now also
+correctly described everywhere). Stage 15B: Planned/feasibility-gated/
+not started. Stage 15 as a whole: Incomplete. Stage 16: Planned, not
+started - not touched by this pass. The updater remains Stage 20 only;
+audio/TTS remains Stage 17.
+
+### Next step
+Run focused frontend/backend validation and the full 17-script
+integration regression, then record a dedicated closing entry and push.

@@ -14,9 +14,9 @@ import (
 	"github.com/streaming-tree/server/internal/provider/youtube"
 )
 
-// Manager supervises one YouTube Live Chat polling connector per enabled
-// connected YouTube account. See state.go's package doc comment for the
-// full design and how it deliberately differs from
+// Manager supervises one YouTube Live Chat gRPC streamList connector per
+// enabled connected YouTube account. See state.go's package doc comment
+// for the full design and how it deliberately differs from
 // internal/runtime/twitchengagement.
 type Manager struct {
 	accounts *account.Service

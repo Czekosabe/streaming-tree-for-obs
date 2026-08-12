@@ -81,9 +81,10 @@ func (f *fakeConnectors) Snapshots() []twitchengagement.Snapshot {
 }
 
 // fakeYouTubeConnectors is a controllable YouTubeEngagementConnectorService
-// double - the real polling connector lifecycle is already exhaustively
-// tested in internal/runtime/youtubeengagement; these tests only need to
-// verify the HTTP layer's request/response mapping and error handling.
+// double - the real gRPC streamList connector lifecycle is already
+// exhaustively tested in internal/runtime/youtubeengagement; these tests
+// only need to verify the HTTP layer's request/response mapping and error
+// handling.
 type fakeYouTubeConnectors struct {
 	snapshots map[string]youtubeengagement.Snapshot
 }
