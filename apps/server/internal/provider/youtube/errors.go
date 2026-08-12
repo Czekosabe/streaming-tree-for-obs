@@ -43,6 +43,25 @@ var (
 	// expiry) - the caller marks the account reconnect_required rather than
 	// treating this as a transient failure.
 	ErrInvalidGrant = errors.New("youtube refresh token is no longer valid")
+
+	// Stage 15A (live chat). Each is Google's own documented errors[].reason
+	// for liveChatMessages.list/streamList/insert - see
+	// docs/provider-integrations/youtube-engagement.md §3.2-§3.4.
+
+	// ErrLiveChatDisabled means the broadcast owner has disabled live chat.
+	ErrLiveChatDisabled = errors.New("youtube live chat is disabled for this broadcast")
+	// ErrLiveChatEnded means the specified live chat is no longer live -
+	// a real, honest, non-error connector lifecycle signal, never treated
+	// as a transient failure to retry.
+	ErrLiveChatEnded = errors.New("youtube live chat has ended")
+	// ErrLiveChatNotFound means the chat ID does not exist (or was
+	// deleted) - distinct from ErrLiveChatEnded, which is a real chat that
+	// is simply no longer live.
+	ErrLiveChatNotFound = errors.New("youtube live chat not found")
+	// ErrMessageInvalid means Google rejected the outgoing message body
+	// itself (messageTextInvalid/messageTextRequired/liveChatIdRequired/
+	// typeRequired) - a client-side validation failure, never retried.
+	ErrMessageInvalid = errors.New("youtube rejected the message")
 )
 
 // wireErr builds a sanitized error for an unexpected HTTP status: it names

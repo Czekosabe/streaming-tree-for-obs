@@ -18333,3 +18333,105 @@ unreachable until the next commits wire a real producer.
 The YouTube Live Chat REST polling transport client and the
 normalization layer that turns its responses into `engagement.Event`
 values using the model this commit just added.
+
+## 2026-08-12 08:36 — feat(server): add YouTube live chat client and normalizer
+
+### What
+The transport and normalization layers Stage 15A's connector will drive
+- `internal/provider/youtube/livechat_client.go` (new): `Client.
+  ListLiveChatMessages(ctx, liveChatID, pageToken, accessToken)
+  (LiveChatMessagePage, error)` (GET `/liveChat/messages`, fixed `part`
+  and `maxResults=500`) and `Client.InsertLiveChatMessage(ctx,
+  liveChatID, messageText, accessToken) (LiveChatMessage, error)` (POST
+  `/liveChat/messages`, `textMessageEvent` only - no reply field exists
+  to send, per research). Both reuse `Client.doAPI`/`classifyAPIError`
+  unchanged, exactly like every other YouTube Data API call in this
+  package.
+- `internal/provider/youtube/errors.go`/`client.go`: four new sentinels
+  (`ErrLiveChatDisabled`, `ErrLiveChatEnded`, `ErrLiveChatNotFound`,
+  `ErrMessageInvalid`), mapped from Google's own documented
+  `errors[].reason` values in `classifyAPIError`.
+- `internal/provider/youtube/models.go`: the full `liveChatMessage` wire
+  shape (every `*Details` sub-object as an optional pointer, mirroring
+  the API's own "exactly one of, selected by type" discipline), plus
+  `flexibleInt64` - a custom `UnmarshalJSON` accepting either a JSON
+  number or a JSON string for `amountMicros`/`banDurationSeconds`,
+  since the exact wire encoding of these two 64-bit fields could not be
+  confirmed from documentation prose alone (Google's protobuf-derived
+  JSON commonly encodes 64-bit integers as strings) - defensive
+  handling instead of guessing one encoding and silently failing to
+  parse a real Super Chat amount.
+- `internal/provider/youtube/api_client.go`/`models.go`: added
+  `LiveChatID` to `Broadcast` and the underlying wire resource -
+  `snippet.liveChatId`, confirmed absent from this codebase before this
+  commit (per the prior research-doc commit's codebase audit).
+- `internal/provider/youtube/livechat_normalize.go` (new):
+  `NormalizeLiveChatMessage(accountID string, msg LiveChatMessage)
+  (NormalizeResult, error)` - the full type-mapping table from
+  `docs/provider-integrations/youtube-engagement.md` §5, implemented.
+  `NormalizeResult` distinguishes three outcomes: a real event to
+  publish (`Supported: true`), a connector lifecycle signal
+  (`Lifecycle: "chat_ended"`, never published to the Event Bus), or a
+  deliberately-unsupported type (tombstone, sponsor-only-mode events,
+  pollEvent, giftEvent, fanFundingEvent, any unknown future type -
+  neither published nor errored, so the connector can count it as a
+  bounded diagnostic without crashing or logging raw content).
+- New tests: `livechat_client_test.go` (page parsing, `offlineAt`
+  detection, page-token forwarding, empty-liveChatId rejection, every
+  new error-code mapping, exact insert request body shape including an
+  explicit assertion that no reply field is ever sent) and
+  `livechat_normalize_test.go` (every implemented type, the
+  malformed-message error path, every deliberately-unsupported type in
+  one table-driven case, the `chatEndedEvent` lifecycle-not-an-event
+  distinction, the `giftEvent`-never-becomes-money guard, and
+  `flexibleInt64`'s dual string/number parsing).
+
+### Files changed
+- `internal/provider/youtube/{livechat_client.go (new),
+  livechat_client_test.go (new), livechat_normalize.go (new),
+  livechat_normalize_test.go (new), api_client.go, client.go,
+  errors.go, models.go}`
+
+### Technical decisions
+- **Why `userBannedEvent` normalizes to the banned user, not the
+  moderator, as `Event.User`.** The proto's own doc comment says
+  `authorChannelId` is "the moderator that took the action" for this
+  type, but the actually-useful subject for a moderation *activity
+  display* ("X was banned") is the banned user, whose identity is
+  separately available in `bannedUserDetails` - so this normalizer
+  deliberately reads the banned-user sub-object for `Event.User` rather
+  than the message's own top-level author fields, which would silently
+  show the moderator's name instead.
+- **Why every `*Details` field is a pointer, not a value.** Mirrors the
+  API's own oneof discipline exactly - a nil pointer for "this field
+  does not apply to this message's type" is unambiguous, whereas a
+  zero-value struct would be indistinguishable from "the provider sent
+  an object with all-empty fields."
+- **Why `flexibleInt64` exists instead of picking one encoding.** Two
+  independent documentation fetches (research doc commit) each
+  described `amountMicros` as an "unsigned long"/`uint64` without ever
+  showing a literal raw response body with real numeric values, leaving
+  the actual JSON wire encoding genuinely unverified. Silently assuming
+  a bare JSON number and having every real Super Chat response fail to
+  parse (if Google actually sends a string, as is common for 64-bit
+  protobuf-derived fields) would be a much worse failure mode than a
+  few extra lines of defensive unmarshal code.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go vet
+./...` clean, `go test ./...` - every package `ok`, including the full
+pre-existing suite (nothing regressed) and every new test above.
+
+### Known limitations
+None new. Still no connector/manager wiring anything to the Event Bus
+yet - this commit is transport + normalization only, exercised so far
+only by direct unit tests against a fake HTTP server, not yet reachable
+through any real account/broadcast/enable flow.
+
+### Next step
+The YouTube engagement connector/manager -
+`internal/runtime/youtubeengagement` - mirroring
+`internal/runtime/twitchengagement`'s lifecycle/state-machine/backoff
+shape where genuinely analogous, and implementing the baseline-first
+initial-history cutover and polling-interval-driven reconnect loop this
+provider's own transport actually needs.

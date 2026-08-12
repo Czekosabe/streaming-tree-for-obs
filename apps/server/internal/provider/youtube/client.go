@@ -153,6 +153,15 @@ func classifyAPIError(status int, body []byte, endpoint string) error {
 		return wireErr(ErrUnauthorized, status, endpoint)
 	case reason == "liveStreamingNotEnabled":
 		return fmt.Errorf("%w: %s", ErrLiveStreamingNotEnabled, endpoint)
+	case reason == "liveChatDisabled":
+		return fmt.Errorf("%w: %s", ErrLiveChatDisabled, endpoint)
+	case reason == "liveChatEnded":
+		return fmt.Errorf("%w: %s", ErrLiveChatEnded, endpoint)
+	case reason == "liveChatNotFound":
+		return fmt.Errorf("%w: %s", ErrLiveChatNotFound, endpoint)
+	case reason == "messageTextInvalid" || reason == "messageTextRequired" ||
+		reason == "liveChatIdRequired" || reason == "typeRequired":
+		return fmt.Errorf("%w: %s", ErrMessageInvalid, endpoint)
 	case reason == "quotaExceeded":
 		return fmt.Errorf("%w: %s", ErrQuotaExceeded, endpoint)
 	case reason == "rateLimitExceeded" || status == http.StatusTooManyRequests:

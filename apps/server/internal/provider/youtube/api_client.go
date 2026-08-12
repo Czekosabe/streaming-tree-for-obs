@@ -101,6 +101,11 @@ type Broadcast struct {
 	PrivacyStatus      string
 	ScheduledStartTime string
 	ActualStartTime    string
+	// LiveChatID is this broadcast's live chat ID, when one currently
+	// exists - empty when chat is unavailable (not live yet, or disabled
+	// by the owner). See docs/provider-integrations/
+	// youtube-engagement.md §3.5/§7.
+	LiveChatID string
 }
 
 // maxBroadcastsReturned bounds each broadcastStatus query's result count.
@@ -149,7 +154,7 @@ func (c *Client) ListBroadcasts(ctx context.Context, accessToken string) ([]Broa
 			merged = append(merged, Broadcast{
 				ID: item.ID, Title: item.Snippet.Title, LifeCycleStatus: item.Status.LifeCycleStatus,
 				PrivacyStatus: item.Status.PrivacyStatus, ScheduledStartTime: item.Snippet.ScheduledStartTime,
-				ActualStartTime: item.Snippet.ActualStartTime,
+				ActualStartTime: item.Snippet.ActualStartTime, LiveChatID: item.Snippet.LiveChatID,
 			})
 		}
 	}
@@ -183,7 +188,7 @@ func (c *Client) GetBroadcast(ctx context.Context, broadcastID, accessToken stri
 	return Broadcast{
 		ID: item.ID, Title: item.Snippet.Title, LifeCycleStatus: item.Status.LifeCycleStatus,
 		PrivacyStatus: item.Status.PrivacyStatus, ScheduledStartTime: item.Snippet.ScheduledStartTime,
-		ActualStartTime: item.Snippet.ActualStartTime,
+		ActualStartTime: item.Snippet.ActualStartTime, LiveChatID: item.Snippet.LiveChatID,
 	}, nil
 }
 
