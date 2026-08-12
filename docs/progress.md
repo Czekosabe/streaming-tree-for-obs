@@ -19694,3 +19694,109 @@ scripts in one clean sequence), a closing journal entry, push, and the
 final Stage 15A report - explicitly noting Stage 15 as a whole remains
 incomplete since Stage 15B (Kick) is feasibility-gated only, per the
 task's own requirement.
+
+## 2026-08-12 12:37 — docs: close out the Stage 15A documentation pass
+
+### What
+Brings the four documents Stage 15A's own task required up to date with
+what was actually implemented, correcting several now-stale "planned"/
+"stage 15" claims that predated this stage rather than leaving them to
+silently contradict the real, shipped feature - following this
+project's own append-only "Factual status update" callout convention
+in `engagement-architecture.md` (never rewriting a past callout's own
+claims, only adding a new one documenting what changed) and, in
+`project-overview.md`/`README.md`, updating the live roadmap
+tables/status paragraphs directly, matching how prior stage closures
+(14A/14B) already updated those same tables.
+
+- **`README.md`**: Roadmap table split Stage 15 into 15A (**Completed**)
+  and 15B (deferred, feasibility-gated); added both missing scripts to
+  both script-listing locations (`verify-visual-template-packages.mjs`,
+  the pre-existing but never-listed Stage 14B script, and the new
+  `verify-youtube-engagement.mjs`); added a full new "Engagement Event
+  Bus and YouTube chat/events" section mirroring the existing Twitch
+  section's own structure (Event Bus reuse, no separate permission
+  upgrade, REST polling and why, baseline-first cutover, the money
+  model, no-reply behavior, verifying it for real); corrected the
+  now-stale "TTS, YouTube live chat... unimplemented" line and the
+  "Genuinely supported alert events" list (now includes the 4 new
+  YouTube event types and the monetary-threshold capability).
+- **`docs/project-overview.md`**: roadmap table split into 15A
+  (Completed)/15B (deferred); §16's own status paragraph updated from
+  "nine pieces... stage 14A" to "ten pieces... stage 15A" (and its own
+  stale "Stage 14 as a whole is not complete until 14B lands" note
+  fixed to reflect 14B's own already-completed status); the "Key
+  dependencies" bullet's "Stage 15 will do the same" future-tense
+  claim replaced with a real summary of what Stage 15A actually built
+  and why (REST polling decision, baseline-first cutover, the money
+  model); §16 items 2/3's stale "no live chat, no Super Chat...
+  (stage 15)" language corrected to describe what is now real.
+- **`docs/engagement-architecture.md`**: added 4 new "Factual status
+  update (stage 15A, completed)" callouts at the exact points this
+  document's own established pattern already places them (§4's
+  connector/account terminology, §5.4's event-type table - correcting
+  the planning table's own `gifted_membership`/unnamespaced-type
+  assumptions against what was actually implemented, §6.4's OAuth-scope
+  block - correcting "stage 15, not stage 8" to the real stage number
+  and no-upgrade-needed fact, §7.1's Reply-action block, and §9's
+  alerts section); §16 and §17 updated with brief factual corrections;
+  §18's staged-implementation-order table split into 15A/15B rows.
+- **`docs/provider-integrations/youtube.md`**: "Areas reserved for
+  Stage 15" section updated with a "(Stage 15A, completed)" note
+  cross-referencing the new `youtube-engagement.md` research document
+  rather than leaving this Stage-7B-scoped document silently implying
+  engagement was still entirely unimplemented.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `docs/provider-integrations/youtube.md`
+
+### Technical decisions
+- **Why `engagement-architecture.md` gets new callouts instead of
+  edited-in-place claims, while `README.md`/`project-overview.md` get
+  their tables edited directly.** `engagement-architecture.md` is this
+  project's own append-only historical design record - each existing
+  "Factual status update" callout is itself a snapshot of what was true
+  at the time it was written, and past callouts stay intact so a reader
+  can trace the document's own history stage by stage. `README.md` and
+  `project-overview.md`'s roadmap tables and status paragraphs are
+  living, current-state summaries with no such append-only convention
+  already established for them - the prior stage closures (14A/14B)
+  already edited those tables in place rather than appending, so this
+  pass matches that existing precedent instead of inventing a new one.
+- **Why this pass corrects several claims older than Stage 15A itself
+  (the stale Stage 14B completeness note, the Kick-account-integration
+  wording in the 7C row) rather than staying strictly scoped to new
+  Stage 15A content.** Each correction was found directly adjacent to
+  text this pass was already editing for Stage 15A reasons, and each
+  was a genuine, load-bearing inaccuracy (a document claiming Stage 14
+  incomplete when its own roadmap table three lines above says
+  otherwise) rather than a style preference - leaving a freshly-touched
+  paragraph internally contradictory would have been worse than fixing
+  the one adjacent sentence.
+
+### Automated validation
+Documentation-only change; no code paths affected. Verified every new
+cross-reference resolves to a real file (`docs/provider-integrations/
+{youtube-engagement,kick-engagement}.md`, `docs/visual-template-packages.md`)
+and that the new README anchor link matches GitHub's own heading-to-
+anchor convention.
+
+### Known limitations
+Not every "stage 15"/"planned" mention across these four documents was
+individually hunted down and corrected - this pass covered every
+load-bearing status table, status paragraph, and directly-contradicted
+factual claim found while reading through the sections most relevant
+to Stage 15A, per this project's own "representative subset with
+documented deferral" convention, not an exhaustive grep-every-line
+pass across documents totaling several thousand lines combined.
+
+### Next step
+The closing full regression: `gofmt`/`go vet`/`go build`/`go test` for
+both build tags, the full frontend check suite
+(`i18n:check`/`typecheck`/`lint`/`vitest run`/`build`), and all 17
+integration scripts run in one clean, unmodified sequence - then a
+closing journal entry, `git push origin main`, and the final Stage 15A
+report to the user.

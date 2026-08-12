@@ -190,7 +190,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 6 | FFmpeg destination branches | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
-| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick may land together with its engagement adapter in stage 15, TikTok remains conditional on a stable official integration |
+| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick's own engagement feasibility was researched in Stage 15B and found feasibility-gated, TikTok remains conditional on a stable official integration |
 | 8A | Engagement Event Bus and a real Twitch inbound connector | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
@@ -203,7 +203,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for chat overlays | **Completed** — see [progress.md](docs/progress.md); Stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner compatibility, and asset-free JSON import/export, built on Stage 13's own document format | **Completed** — see [progress.md](docs/progress.md) |
 | 14B | Portable archive template packages, managed visual assets, and safe custom image/video/font primitives, see [visual-template-packages.md](docs/visual-template-packages.md) | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is now complete |
-| 15–19 | TTS, goal widgets, YouTube/Kick engagement connectors, external donations | Planned |
+| 15A | YouTube engagement connector: Live Chat REST polling, reusing operator chat/chat overlay/alerts/outbound chat unchanged, plus the first real monetary alert capability (Super Chat/Super Sticker) | **Completed** — see [progress.md](docs/progress.md) |
+| 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer, see [kick-engagement.md](docs/provider-integrations/kick-engagement.md); Stage 15 as a whole is **not** complete |
+| 16–19 | TTS, goal widgets, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -1322,8 +1324,11 @@ the full target design and
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** This stage is *inbound* only:
-reading chat and events, never sending anything to Twitch. TTS, YouTube
-live chat, and Kick/TikTok engagement are all still unimplemented — see
+reading chat and events, never sending anything to Twitch. TTS and
+Kick/TikTok engagement are still unimplemented (YouTube's own
+engagement connector is real as of Stage 15A — see
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)
+below) — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
 real, unified operator chat consuming this Event Bus is implemented —
 see [Unified operator chat](#unified-operator-chat) below — a real,
@@ -1471,6 +1476,84 @@ subset of scenarios is covered by Go unit tests instead of this script
 reconnects, and others needing precise timing control a fake clock
 provides more reliably than a real WebSocket exchange) — see
 [`docs/progress.md`](docs/progress.md) for exactly which.
+
+---
+
+## Engagement Event Bus and YouTube chat/events
+
+Stage 15A extends the same Engagement Event Bus a connected YouTube
+account's Live Chat: text messages, Super Chat, Super Sticker, channel
+memberships and membership milestones — onto the exact same bus the
+Twitch connector above publishes to. Every downstream consumer (the
+unified operator chat, the OBS chat overlay, manual/scheduled/command
+outbound sending, and alerts) serves YouTube events identically to
+Twitch's, through the exact same shared code — never a second,
+YouTube-only copy of any of them. See
+[`docs/provider-integrations/youtube-engagement.md`](docs/provider-integrations/youtube-engagement.md)
+for the fully researched YouTube Live Chat contract this connector
+implements.
+
+**No separate permission upgrade.** Unlike Twitch, a connected YouTube
+account (see
+[Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
+above) already carries the one scope
+(`https://www.googleapis.com/auth/youtube.force-ssl`) that covers
+reading chat, Super Chat/Super Sticker, membership events, and sending
+chat, all at once — enabling engagement on the Engagement page never
+prompts for additional authorization.
+
+**Polling, not a WebSocket.** YouTube's Live Chat API has no push
+transport this application could verify against an official, versioned
+contract (no official Go client, no independently fetchable `.proto`
+definition for the gRPC alternative — see the linked research
+document's own §4 for the full reasoning), so the connector instead
+polls `liveChatMessages.list` on a server-recommended interval. A
+connector must first have a **broadcast selected** (see
+[Linking a channel and selecting a broadcast](#linking-a-channel-and-selecting-a-broadcast)
+above) with an active live chat; without one it reports
+`waiting_for_broadcast` or `waiting_for_live_chat` — an honest "not
+ready yet" state, never an error.
+
+**The first poll never counts as live.** YouTube's own `list` API
+returns recent chat history on the very first call — this connector
+treats that first response as a silent baseline (its continuation
+token is kept, nothing in it is ever published) and only publishes
+messages returned by the *second and later* polls. This applies again
+after every restart: an explicit connector restart, or a full backend
+restart, always re-baselines rather than replaying history as if it
+had just happened.
+
+**A first real monetary value.** Super Chat and Super Sticker carry a
+genuine paid amount — this application's first real money value
+anywhere (`internal/domain/engagement.Money`): an integer
+micros amount (never a float), an uppercased currency code, and the
+provider's own formatted display string. There is no currency
+conversion anywhere in this codebase and there will not be one — an
+alert's amount threshold only ever matches the exact same currency,
+never a numerically-larger amount in a different one.
+
+**Replying is not offered.** YouTube's send API has no reply/parent-
+message concept at all — the Chat page's Reply action never appears
+on a YouTube message, and a send request that still tries to carry a
+reply reference for a YouTube account is rejected outright by the
+backend, never silently sent as a plain message instead.
+
+### Verifying it for real
+
+`scripts/verify-youtube-engagement.mjs` exercises this whole feature
+end to end against the real backend and a fake Google OAuth/YouTube
+API server (extending the same fake-server pattern
+`scripts/verify-youtube-account-integration.mjs` already established)
+— baseline-first cutover (seeded chat history never leaks onto the
+bus), a real chat message/Super Chat/Super Sticker each normalizing
+correctly and reaching both the Event Bus and the operator-chat
+projection, a real Super Chat triggering a real monetary alert with
+correct currency matching (no FX conversion), outbound sending with a
+rejected reply attempt, chat-automation self-loop protection (keyed on
+the stable channel id), and both an explicit connector restart and a
+full backend restart never replaying history — entirely on loopback,
+with **no real Google/YouTube account or network request to Google
+involved**.
 
 ---
 
@@ -2150,12 +2233,17 @@ below for the **Chat Overlay Designer**.
 
 ### Genuinely supported alert events
 
-Only what the real Twitch normalization code actually produces today:
+What the real Twitch normalization code actually produces:
 **follow, subscription, resubscription, gifted subscription, gift-sub
-batch, Bits, raid, and channel-point redemption.** Chat messages and
-moderation events never become alerts. Donations, YouTube Super Chat/Super
-Sticker, and membership events are not real sources here and are never
-presented as if they were.
+batch, Bits, raid, and channel-point redemption.** What the real
+YouTube normalization code produces (Stage 15A): **membership,
+membership milestone, Super Chat, and Super Sticker** — the last two
+carry this application's first real monetary threshold (an inclusive
+integer-micros amount range, exact-currency-match only, never a
+currency conversion). Chat messages and moderation events never become
+alerts on either provider. Donations from an external donation-service
+connector are not a real source here yet and are never presented as if
+they were.
 
 ### Alert profiles
 
@@ -2718,6 +2806,8 @@ node scripts/verify-alert-advanced-queue.mjs      # Stage 12B grouping and mid-a
 node scripts/verify-alert-designer.mjs            # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
 node scripts/verify-chat-overlay-designer.mjs     # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
 node scripts/verify-visual-templates.mjs          # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
+node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and portable .sttpkg template packages - no fake servers needed
+node scripts/verify-youtube-engagement.mjs        # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -3084,7 +3174,9 @@ rest of the repository.
 │   ├── verify-alert-advanced-queue.mjs # Stage 12B grouping and mid-alert preemption - fake Twitch only
 │   ├── verify-alert-designer.mjs   # Stage 13A alert visual-design HTTP API and public rendering - fake Twitch only
 │   ├── verify-chat-overlay-designer.mjs # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
-│   └── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
+│   ├── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
+│   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .sttpkg template packages - no fake servers needed
+│   └── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md

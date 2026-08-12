@@ -1091,7 +1091,7 @@ it is architected; this table only tracks status and dependencies.
 | 6 | FFmpeg destination branches: resolution/compatibility probing, output settings, per-branch supervision, restarts, failure isolation | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle (validate/refresh/reconnect/disconnect), destination linking, and explicit channel-metadata publishing | **Completed** |
 | 7B | YouTube account integration: Authorization Code Flow with PKCE via a loopback callback, multi-channel selection, a provider-independent remote-broadcast-target association, and explicit video-metadata publishing, reusing the same connected-account foundation | **Completed** |
-| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for stage 8. Kick account integration may land together with its own engagement adapter in stage 15, after researching Kick's current official APIs; TikTok remains conditional on a stable, official, permitted integration (§16, §19) |
+| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for stage 8. Kick's own engagement feasibility was researched in stage 15B and found feasibility-gated (webhook-only event delivery, no public inbound endpoint available) - Kick account integration remains deferred alongside it; TikTok remains conditional on a stable, official, permitted integration (§16, §19) |
 | 8A | Engagement Event Bus and a real Twitch inbound connector (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 8B | Additional Twitch event coverage, reserved only if stage 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat page consuming the Engagement Event Bus, provider-independent projection, persisted preferences, Twitch badge/emote resolution (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
@@ -1104,7 +1104,8 @@ it is architected; this table only tracks status and dependencies.
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for one repeated chat item card, with Stage 10's own filtering/lifecycle staying authoritative | **Completed** — stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner-instance compatibility, and asset-free JSON import/export, built on stage 13's document format (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 14B | Portable archive template packages, managed template assets, and safe custom image/video/font primitives (see [visual-template-packages.md](visual-template-packages.md)) | **Completed** — stage 14 as a whole is now complete |
-| 15 | YouTube and Kick engagement connectors | Planned |
+| 15A | YouTube engagement connector (Live Chat REST polling), integrated into the existing operator chat / Event Bus / alerts / outbound-chat pipelines unchanged, and a first real monetary alert capability (Super Chat/Super Sticker, integer-micros money, no currency conversion) | **Completed** |
+| 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer, and no scraping/tunneling/relay workaround is acceptable (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is **not** complete until this is resolved or explicitly re-scoped |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
 | 18 | Goals, counters and event widgets | Planned |
@@ -1132,8 +1133,25 @@ Key dependencies:
   provider's own OAuth flow is genuinely device-code-shaped.
 - Stage 8A (Event Bus) is a prerequisite for every stage from 9 onward, and
   reuses stage 7A's Twitch adapter (`internal/provider/twitch`) for its own
-  inbound connector rather than building a new one - see §16. Stage 15 will
-  do the same for stage 7B's YouTube adapter (`internal/provider/youtube`).
+  inbound connector rather than building a new one - see §16. Stage 15A did
+  the same for stage 7B's YouTube adapter (`internal/provider/youtube`):
+  a second, parallel inbound connector
+  (`internal/runtime/youtubeengagement`) publishing onto the exact same
+  Event Bus, reusing the operator chat/chat overlay/alerts/outbound-chat
+  pipelines unchanged - never a parallel YouTube-only copy of any of
+  them. REST polling (`liveChatMessages.list`) was chosen over YouTube's
+  own gRPC `streamList` transport specifically because no official Go
+  client and no independently verifiable `.proto` definition exist for
+  it (see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+  §4) - a real, environment-verified decision, not a default guess. A
+  baseline-first cutover (the very first poll's own messages are never
+  published, only its continuation token is kept) prevents YouTube's
+  own recent-chat-history replay from ever being mistaken for live
+  activity, including across a connector restart. Stage 15A also added
+  this application's first real monetary value
+  (`internal/domain/engagement.Money`: integer micros, uppercased
+  currency, no floating-point arithmetic anywhere, no currency
+  conversion ever) for Super Chat/Super Sticker alerts.
 - Stage 8A is started before stage 7C is implemented, deliberately. Stage
   7C (additional provider accounts) is not a dependency of the Event Bus -
   the bus and its Twitch connector need only the Twitch adapter that
@@ -1399,7 +1417,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: nine pieces of this section are real as of stage 14A - the
+**Status: ten pieces of this section are real as of stage 15A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1412,21 +1430,30 @@ deterministic mid-alert preemption - a real, shared,
 provider-independent visual-design engine with a real Alert Overlay
 Designer editor for that same alert presentation (stage 13A) and a real
 Chat Overlay Designer reusing that same shared document/renderer for
-the chat overlay (stage 13B, stage 13 as a whole complete), and a real,
+the chat overlay (stage 13B, stage 13 as a whole complete), a real,
 shared, reusable visual-template library on top of that same document
-(stage 14A) - built-in immutable templates, a persisted user template
-gallery, backend-authoritative target/owner-instance compatibility, and
-closed, asset-free JSON import/export, with a strict draft-first
-application model (using a template only ever changes a Designer's own
-unsaved draft; the owner's saved design changes only through the
-Designer's own pre-existing Save). Every existing alert rule or chat
-overlay with no saved design still renders through its original
-fixed/legacy presentation unchanged; a chat overlay's own filtering,
-lifecycle, moderation and stack ownership (stage 10) stays entirely
-authoritative in both rendering modes. Stage 14 as a whole is **not**
-complete until stage 14B (portable archive template packages, bundled
-assets) lands. Everything else described below (TTS and goal/counter
-widgets) remains planned.**
+(stage 14A) plus portable archive template packages with managed
+image/video/font assets (stage 14B, stage 14 as a whole complete) -
+built-in immutable templates, a persisted user template gallery,
+backend-authoritative target/owner-instance compatibility, closed,
+asset-free JSON import/export, and (14B) self-contained `.sttpkg`
+archives bundling those same designs with their own managed assets,
+with a strict draft-first application model (using a template only
+ever changes a Designer's own unsaved draft; the owner's saved design
+changes only through the Designer's own pre-existing Save) - and a
+second real inbound engagement connector, for YouTube (stage 15A),
+publishing onto that exact same Event Bus and reusing every pipeline
+above completely unchanged (never a parallel YouTube-only copy of
+operator chat, chat overlay, alerts, or outbound chat), plus this
+platform's first real monetary alert capability (Super Chat/Super
+Sticker, integer-micros money, no currency conversion). Every existing
+alert rule or chat overlay with no saved design still renders through
+its original fixed/legacy presentation unchanged; a chat overlay's own
+filtering, lifecycle, moderation and stack ownership (stage 10) stays
+entirely authoritative in both rendering modes. Stage 15 as a whole is
+**not** complete: stage 15B (a Kick engagement connector) remains
+feasibility-gated, not implemented (§13's own roadmap table). Everything
+else described below (TTS and goal/counter widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1456,15 +1483,14 @@ made from stage 5 onward:
    bundles exist today (stages 5, 7A and 7B); any further secret type this
    era needs remains planned.
 2. **A connected account (§8.1) is already a real, provider-independent
-   concept as of stage 7A, extended to a second provider in stage 7B - but
-   only for account lifecycle and metadata publishing, not for reading
-   chat or events.** The engagement Event Bus (stage 8A) reads chat/events
-   through a Twitch connection, and later a YouTube one too (stage 15), and
-   reuses this same connected-account concept and the
-   `internal/provider/twitch` / `internal/provider/youtube` adapters for
-   its own authorization, rather than introducing a second, competing
-   notion of "a Twitch account" or "a YouTube channel." See
-   engagement-architecture.md §4.
+   concept as of stage 7A, extended to a second provider in stage 7B, and
+   now (stage 15A) reads real chat/events through both.** The engagement
+   Event Bus (stage 8A) reads chat/events through a Twitch connection,
+   and, as of stage 15A, a YouTube one too, and reuses this same
+   connected-account concept and the `internal/provider/twitch` /
+   `internal/provider/youtube` adapters for its own authorization, rather
+   than introducing a second, competing notion of "a Twitch account" or
+   "a YouTube channel." See engagement-architecture.md §4.
 3. **Provider support is planned honestly**: Twitch first (stage 7A,
    account and metadata only, extended in stage 8A with a real inbound
    engagement connector requesting additional, separately-tracked scopes on
@@ -1472,17 +1498,24 @@ made from stage 5 onward:
    **manual** outbound-sending capability on that same account, then in
    stage 11B with real **scheduled and command-triggered** sending built
    on that same capability and dispatcher - no further scope, no second
-   bot identity), then YouTube (stage 7B,
-   account, broadcast selection and metadata only - no live chat, no Super
-   Chat, no membership events, no outbound chat). Kick and TikTok account
-   integration (stage
-   7C) are deliberately **deferred** rather than blocking: they are not a
-   dependency of the Event Bus, which only needs the Twitch adapter that
-   already exists. Kick account integration is expected to land together
-   with its own engagement adapter in stage 15, once its current official
-   APIs are researched, rather than as a separate earlier stage; TikTok
-   remains conditional on an official, stable integration - never via
-   scraping as a core feature. See engagement-architecture.md §16.
+   bot identity), then YouTube (stage 7B, account, broadcast selection and
+   metadata only, extended in stage 15A with a real inbound Live Chat
+   polling connector on the same already-granted scope - no separate
+   permission-upgrade step, unlike Twitch's - reusing the exact same
+   operator chat/chat overlay/alerts/outbound-chat pipelines Twitch's own
+   connector already established, plus Super Chat/Super Sticker monetary
+   alerts and membership-family events; still no YouTube donation-service
+   integration, which remains stage 16's own scope). Kick and TikTok
+   account integration (stage 7C) are deliberately **deferred** rather
+   than blocking: they are not a dependency of the Event Bus, which only
+   needs the Twitch adapter that already exists. Kick's own engagement
+   feasibility was researched in stage 15B and found feasibility-gated
+   (its currently-documented event delivery is webhook-only, requiring a
+   public inbound endpoint) - see
+   [kick-engagement.md](provider-integrations/kick-engagement.md); Kick
+   account integration remains deferred alongside it. TikTok remains
+   conditional on an official, stable integration - never via scraping as
+   a core feature. See engagement-architecture.md §16.
 
 This section is updated, and marked accordingly, only as each roadmap stage
 from §13 is actually completed - not before. Stages 5, 7A and 7B built

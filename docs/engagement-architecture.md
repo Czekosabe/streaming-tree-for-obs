@@ -62,7 +62,7 @@ document says otherwise:
 | --- | --- |
 | **Provider** | A built-in integration type: Twitch, YouTube, Kick, TikTok, or a non-platform source such as an external donation service. Exists today as `platform.ProviderDefinition` for the streaming side; the engagement side extends the same idea. |
 | **Connector** | The adapter code that talks to one provider's real API/protocol and translates its events and actions into the normalized model. Not the same as a *configured destination* (§4): a connector is code, a configured destination is a user's row. |
-| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing, **extended to YouTube as of stage 7B** (account lifecycle, broadcast selection and metadata publishing); this document's engagement uses of it (chat, events) remain planned, stage 8A (Twitch) and stage 15 (YouTube) onward. |
+| **Connected account** | A user's authenticated identity with a provider — distinct from a *configured destination* used for outgoing streaming. The two may reference the same provider without being the same record. **Implemented as of stage 7A** (`internal/domain/account`) for Twitch account lifecycle and metadata publishing, **extended to YouTube as of stage 7B** (account lifecycle, broadcast selection and metadata publishing); this document's engagement uses of it (chat, events) are **implemented for Twitch as of stage 8A and for YouTube as of stage 15A** - both connectors authorize through this exact same connected-account record, never a second, engagement-only identity concept. |
 | **Normalized engagement event** | One provider-independent representation of "something happened": a chat message, a follow, a donation, and so on. Defined in §5. |
 | **Engagement Event Bus** | The in-process component that receives normalized events from connectors and distributes them to every consumer (§6). |
 | **Operator chat** | The internal, full-detail chat view for the streamer/moderator (§7). |
@@ -158,6 +158,28 @@ of this document to reason about two credential lifecycles as if they were one.
 > commands (§8.1-8.3) remain exactly as planned before this stage - see
 > stage 11B in [project-overview.md §13](project-overview.md#13-roadmap).
 
+> **Factual status update (stage 15A, completed):** the YouTube adapter
+> (`internal/provider/youtube`) gained a real second inbound engagement
+> connector, `internal/runtime/youtubeengagement`, polling
+> `liveChatMessages.list` (REST, not YouTube's own gRPC `streamList` -
+> see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+> §4 for why) and publishing onto the exact same Event Bus stage 8A
+> introduced for Twitch. It authorizes through the exact same connected-
+> account foundation, requiring no additional OAuth scope beyond what
+> stage 7B already granted (`youtube.RequiredScope` alone covers reading
+> chat, Super Chat/Super Sticker, membership events, and sending). Every
+> downstream consumer described in this document - the unified operator
+> chat (§7), the OBS chat overlay (§7.3), manual/scheduled/command
+> outbound sending (§8), and alerts (§9-10) - now serves YouTube events
+> identically to Twitch's, through the exact same shared code, never a
+> parallel YouTube-only copy of any of them. Stage 15A also added this
+> platform's first real monetary value
+> (`internal/domain/engagement.Money`: integer micros, uppercased
+> currency, never a float, never a currency conversion) for Super
+> Chat/Super Sticker alerts (§9). Stage 15B (Kick) remains feasibility-
+> gated, not implemented - see
+> [kick-engagement.md](provider-integrations/kick-engagement.md).
+
 ## 5. Normalized engagement event model
 
 ### 5.1 Design goal
@@ -230,6 +252,27 @@ not a union of unrelated payloads a consumer must switch on blindly.
 
 This list is a planning target, not a promise that every provider supports
 every type — see §6.2 and §16.
+
+> **Factual status update (stage 15A, completed):** the real, implemented
+> YouTube type names differ from this planning table in two deliberate
+> ways, each decided while reading the real normalizer code, not
+> guessed ahead of time - see `docs/progress.md`'s Stage 15A event-model
+> entry for the full per-type reasoning. First, every real YouTube type
+> is namespaced (`youtube.super_chat`, `youtube.super_sticker`,
+> `youtube.membership`, plus a new `youtube.membership_milestone` this
+> table never anticipated, for an existing member's monthly-milestone
+> comment). Second, `gifted_membership` was never implemented as its own
+> type: YouTube's `membershipGiftingEvent`/`giftMembershipReceivedEvent`
+> reuse this model's own existing `subscription_gift_batch`/
+> `gifted_subscription` types instead, since they are semantically
+> identical to a Twitch gift batch/gifted recipient - never a provider-
+> specific duplicate where an existing normalized meaning already fits.
+> A handful of other YouTube message types (`tombstone`,
+> `sponsorOnlyModeStartedEvent`/`EndedEvent`, `pollEvent`, the newer
+> "Jewels" `giftEvent`, and the legacy pre-rename `fanFundingEvent`) are
+> deliberately never published at all - see
+> [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+> §5 for why each one specifically is unsupported rather than guessed at.
 
 ### 5.5 Handling missing data
 
@@ -424,6 +467,21 @@ connector.
 > identity to authorize). See
 > [`docs/provider-integrations/twitch-outbound-chat.md`](provider-integrations/twitch-outbound-chat.md).
 
+> **Factual status update (stage 15A, completed):** the YouTube
+> engagement connector anticipated above (stage 7B's own callout said
+> "stage 15, not stage 8" - now correct on the stage number) exists, but
+> requests **no additional scope at all** - unlike Twitch's own
+> engagement upgrade, `https://www.googleapis.com/auth/youtube.force-ssl`
+> (already granted since stage 7B) already covers reading live chat,
+> Super Chat/Super Sticker, and membership events, and sending chat, all
+> at once. There is consequently no YouTube equivalent of Twitch's own
+> "permission upgrade required" engagement state at all - a YouTube
+> account's engagement capability is simply available the moment the
+> account itself is healthy. Outbound sending (§8) reuses the same
+> single scope too - no third, YouTube-specific authorization profile
+> was ever needed. See
+> [youtube-engagement.md](provider-integrations/youtube-engagement.md) §3.6.
+
 ### 6.5 In-memory buffer versus persisted history
 
 The default and only currently planned storage model is an **in-memory,
@@ -506,6 +564,17 @@ the full user-facing description and
 > model as a narrowly-scoped field for this purpose, deliberately never
 > added to the public overlay item model in §7.3 below, which has no
 > legitimate use for it.
+
+> **Factual status update (stage 15A, completed):** the "Twitch" scoping
+> above is now a deliberate, permanent restriction rather than an
+> unaddressed gap - YouTube's `liveChatMessages.insert` API has no
+> reply/parent-message concept at all, confirmed from its own official
+> documentation (not merely unimplemented pending a future stage). The
+> Chat page's own Reply action is never offered for a YouTube-authored
+> message, and a send request carrying a reply-parent id for a YouTube
+> account is rejected outright server-side (`422
+> outbound_chat_reply_unsupported`), never silently downgraded to a
+> plain `@mention`-prefixed message.
 
 ### 7.3 OBS chat overlay — implemented (stage 10)
 
@@ -774,6 +843,26 @@ arbitrary code execution and no plan to add one (§2).
 > one). See [`docs/progress.md`](progress.md)'s Stage 12B `feat(server):
 > group and preempt queued alerts` entry for the full per-type
 > reasoning table.
+>
+> **Factual status update (stage 15A, completed):** Super Chat, Super
+> Sticker and membership are real now - the "do not exist yet" callout
+> above is superseded for these three. `youtube_super_chat` and
+> `youtube_super_sticker` are this platform's first two event types with
+> a real monetary threshold (`Currency`/`MinimumAmountMicros`/
+> `MaximumAmountMicros`/`ShowAmount` on `Rule`, integer micros only,
+> never a float, exact-currency-match only, never a currency
+> conversion), and `youtube_membership`/`youtube_membership_milestone`
+> are this platform's first two with a real membership-level condition
+> (`{membershipLevel}` placeholder, sourced from the provider's own
+> reported level name). **Donation** (a monetary event from a connector
+> that is itself a donation channel, §15) remains exactly as planned -
+> still no such connector exists. All four new event types are
+> deliberately never auto-groupable (§10) - a monetary/membership event
+> is never merged, since summing amounts risks silently mixing
+> currencies or burying an individually urgent paid message inside an
+> older queued group. See
+> [`docs/progress.md`](progress.md)'s Stage 15A alerts-monetary-model
+> entry for the full capability table and validation rules.
 
 ### 9.1 Alert rules
 
@@ -1220,6 +1309,16 @@ verified** — this document names candidates, it does not commit to them.
 - **YouTube and Kick require separate adapters.** Nothing about a Twitch
   connector implementation is assumed to transfer directly; each is planned as
   its own connector against the capability model of §6.2.
+  **Factual status update (stage 15A, completed):** confirmed in
+  practice, not just in principle - YouTube's own connector
+  (`internal/runtime/youtubeengagement`) is REST-polling-shaped, not
+  WebSocket-pushed like Twitch's, with its own genuinely different
+  states (`waiting_for_broadcast`/`waiting_for_live_chat`/`chat_ended`
+  have no Twitch equivalent at all) - see
+  [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+  §8. Kick's own connector was researched in stage 15B and found
+  feasibility-gated before any adapter code was written - see
+  [kick-engagement.md](provider-integrations/kick-engagement.md).
 - **TikTok LIVE chat/events are implemented only when an official, permitted,
   and sufficiently stable integration exists.** As of this writing no such
   integration is confirmed suitable; TikTok engagement support is listed in
@@ -1246,8 +1345,10 @@ prerequisite** for:
 - OAuth tokens for connected accounts (§6.4, roadmap stages 7A/7B,
   **completed** for Twitch and YouTube account-lifecycle and
   metadata-publish tokens; the engagement Event Bus's own use of the
-  same tokens for chat/event scopes is **completed** for Twitch (stage
-  8A) and still stage 15 (YouTube), planned),
+  same tokens for chat/event scopes is **completed** for both Twitch
+  (stage 8A) and YouTube (stage 15A) - YouTube's own engagement use
+  reuses the exact same token stage 7B already stored, requesting no
+  additional scope and needing no separate credential),
 - any future outbound bot-message credential (if a connector ever needs one
   beyond its OAuth token).
 
@@ -1320,7 +1421,8 @@ that table.
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — **Completed**, stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-ins, a persisted user template library, compatibility, asset-free JSON import/export (§13.2/§13.3) — **Completed** |
 | 14B | Portable archive template packages, managed assets, image/video/font primitives (§13.2/§13.3) — **Completed**, stage 14 as a whole is now complete |
-| 15 | YouTube and Kick engagement connectors (§16), and Kick account integration if not already done in 7C |
+| 15A | YouTube engagement connector (§16): Live Chat REST polling, reusing every pipeline above unchanged, plus the first real monetary alert capability (§9) — **Completed** |
+| 15B | Kick engagement connector, and Kick account integration if not already done in 7C — **Deferred**, feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is not complete |
 | 16 | External donation-service connectors (§15) |
 | 17 | TTS and audio queue (§12) |
 | 18 | Goals, counters and event widgets (§14) |

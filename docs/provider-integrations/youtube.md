@@ -471,13 +471,24 @@ for it exists), and anything under `status.uploadStatus`/`processingDetails`
 
 ## Areas reserved for Stage 15
 
-YouTube live-chat ingestion and sending, Super Chat events, membership
-events, and any YouTube engagement connector remain entirely unimplemented
-by this stage — `docs/engagement-architecture.md` still marks Stage 15 (and
-the Event Bus itself, Stage 8) planned, and nothing here changes that.
+**Update (Stage 15A, completed):** YouTube live-chat ingestion and sending,
+Super Chat/Super Sticker events, and membership events are now real,
+built on the exact connected-account foundation and adapter
+(`internal/provider/youtube`) this document describes - no second YouTube
+authorization, no additional OAuth scope beyond what this document's own
+`https://www.googleapis.com/auth/youtube.force-ssl` scope already covers.
+The full researched engagement contract (transport choice, event-type
+mapping, the money model, initial-history baseline safety) is documented
+separately in
+[`youtube-engagement.md`](youtube-engagement.md), mirroring this
+document's own "paraphrased, not pasted, revisited whenever Google
+changes these APIs" discipline for the Live Chat API specifically. Stage
+15B (a Kick engagement connector) remains feasibility-gated - see
+[`kick-engagement.md`](kick-engagement.md).
+
 Automatic broadcast creation, automatic `liveStream` binding, and automatic
-stream-key retrieval from YouTube are also explicitly out of scope for this
-stage and are not implemented.
+stream-key retrieval from YouTube remain out of scope, not implemented by
+Stage 15A either.
 
 ## Requirement to re-check this contract
 
