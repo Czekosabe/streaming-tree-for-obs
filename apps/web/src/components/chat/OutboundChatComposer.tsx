@@ -16,7 +16,10 @@ import {
 import { codePointLength, isMessageSendable, MAX_MESSAGE_CODE_POINTS, type ReplyTarget } from '@/models/outbound-chat';
 
 type OutboundChatComposerProps = {
-  twitchAccounts: ConnectedAccount[];
+  /** Every connected account whose provider supports outbound chat
+   * (currently Twitch and YouTube) - never filtered to one provider,
+   * see ChatPage.tsx's own account query. */
+  accounts: ConnectedAccount[];
   replyTarget: ReplyTarget | null;
   onCancelReply: () => void;
   onReplySent: () => void;
@@ -27,17 +30,20 @@ type OutboundChatComposerProps = {
  * the backend's own bounded dispatcher - never a separate bot identity, no
  * IRC, no optimistic local echo (the real EventSub echo produces the
  * timeline item once inbound engagement is enabled - see the stage's own
- * "self-message" design note).
+ * "self-message" design note). Stage 15A: the same composer, unchanged in
+ * structure, now also sends through the YouTube outbound adapter for a
+ * YouTube account - one shared dispatcher, two providers, never a second
+ * send queue.
  */
 export function OutboundChatComposer({
-  twitchAccounts,
+  accounts,
   replyTarget,
   onCancelReply,
   onReplySent,
 }: OutboundChatComposerProps) {
   const { t } = useTranslation('chat');
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(twitchAccounts[0]?.id);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(accounts[0]?.id);
   const [message, setMessage] = useState('');
 
   // A reply always selects and locks the message's own source account.
@@ -48,19 +54,19 @@ export function OutboundChatComposer({
   }, [replyTarget]);
 
   useEffect(() => {
-    if (selectedAccountId === undefined && twitchAccounts.length > 0) {
-      setSelectedAccountId(twitchAccounts[0]?.id);
+    if (selectedAccountId === undefined && accounts.length > 0) {
+      setSelectedAccountId(accounts[0]?.id);
     }
-  }, [selectedAccountId, twitchAccounts]);
+  }, [selectedAccountId, accounts]);
 
   const status = useOutboundChatStatusQuery(selectedAccountId);
   const engagement = useAccountEngagementQuery(selectedAccountId ?? '');
   const authorize = useAuthorizeOutboundChatMutation();
   const send = useSendOutboundChatMessageMutation();
 
-  const selectedAccount = twitchAccounts.find((a) => a.id === selectedAccountId);
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
 
-  if (twitchAccounts.length === 0) {
+  if (accounts.length === 0) {
     return null;
   }
 
@@ -104,13 +110,13 @@ export function OutboundChatComposer({
   return (
     <Panel data-testid="outbound-chat-composer">
       <PanelBody className="space-y-2">
-        {twitchAccounts.length > 1 && (
+        {accounts.length > 1 && (
           <SelectInput
             aria-label={t('compose.accountSelectorLabel')}
             value={selectedAccountId}
             disabled={replyTarget !== null}
             onChange={(e) => setSelectedAccountId(e.target.value)}
-            options={twitchAccounts.map((a) => ({
+            options={accounts.map((a) => ({
               value: a.id,
               label: a.displayName !== '' ? a.displayName : a.login,
             }))}
@@ -142,9 +148,11 @@ export function OutboundChatComposer({
           </div>
         )}
 
-        <p className="text-[11px] text-status-starting" role="note">
-          {t('compose.sharedChatWarning')}
-        </p>
+        {selectedAccount?.providerId === 'twitch' && (
+          <p className="text-[11px] text-status-starting" role="note">
+            {t('compose.sharedChatWarning')}
+          </p>
+        )}
 
         {status.data?.capability === 'permission_required' && (
           <div className="space-y-1.5 rounded-md border border-status-starting/40 bg-status-starting/10 p-2">

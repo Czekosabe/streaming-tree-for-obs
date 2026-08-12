@@ -52,6 +52,17 @@ const twitchAccount = {
   updatedAt: '2026-08-06T00:00:00Z',
 };
 
+const youtubeAccount = {
+  id: 'acct_2',
+  providerId: 'youtube',
+  login: 'My Channel',
+  displayName: 'My Channel',
+  status: 'connected' as const,
+  scopes: [],
+  createdAt: '2026-08-06T00:00:00Z',
+  updatedAt: '2026-08-06T00:00:00Z',
+};
+
 function baseChatItem(overrides: Record<string, unknown> = {}) {
   return {
     version: 1,
@@ -147,6 +158,16 @@ describe('ChatPage', () => {
     for (const secretShaped of ['accessToken', 'refreshToken', 'sessionId', 'reconnectUrl']) {
       expect(body).not.toContain(secretShaped);
     }
+  });
+
+  it('counts a connected YouTube account alongside Twitch, and offers it in the outbound composer (Stage 15A)', async () => {
+    vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([twitchAccount, youtubeAccount]);
+    renderPage();
+
+    expect(await screen.findByText(/2 accounts contributing/i)).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: /send from/i })).toBeInTheDocument();
+    expect(screen.getByText('Streamer')).toBeInTheDocument();
+    expect(screen.getByText('My Channel')).toBeInTheDocument();
   });
 
   it('distinguishes an activity item from a message item visually via a different test id', async () => {

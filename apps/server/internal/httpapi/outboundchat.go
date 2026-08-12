@@ -93,7 +93,13 @@ func toOutboundChatStatusResponse(acc account.Account, snap outboundchat.Snapsho
 		ProviderID: string(acc.ProviderID), Capability: toOutboundChatCapabilityLabel(acc, snap),
 		RequiredScopes: snap.Capability.Required, GrantedScopes: snap.Capability.Granted, MissingScopes: snap.Capability.Missing,
 		DispatcherState: string(snap.State), QueueDepth: snap.QueueDepth, QueueCapacity: snap.QueueCapacity,
-		LastErrorCode: snap.LastErrorCode, SharedChatWarning: sharedChatWarningID,
+		LastErrorCode: snap.LastErrorCode,
+	}
+	// SharedChatWarning is a genuinely Twitch-only concept (Shared Chat
+	// sessions) - Stage 15A's own YouTube account must never carry it,
+	// since YouTube has no such feature to warn about.
+	if acc.ProviderID == account.ProviderTwitch {
+		resp.SharedChatWarning = sharedChatWarningID
 	}
 	resp.CanSendNow = resp.Capability == "ready"
 	if snap.LastAttemptAt != nil {

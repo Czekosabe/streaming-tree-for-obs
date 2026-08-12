@@ -522,3 +522,23 @@ func TestSendOutboundChatMessageQueueFull(t *testing.T) {
 	// Manager.Shutdown.
 	close(block)
 }
+
+// TestToOutboundChatStatusResponseSharedChatWarningIsTwitchOnly is Stage
+// 15A's own regression test for a real bug found while wiring the
+// frontend: SharedChatWarning used to be set unconditionally to Twitch's
+// own Shared Chat disclosure, even for a YouTube account - which has no
+// Shared Chat concept at all, so the warning would have been actively
+// misleading for a YouTube operator.
+func TestToOutboundChatStatusResponseSharedChatWarningIsTwitchOnly(t *testing.T) {
+	twitchAcc := account.Account{ID: "a1", ProviderID: account.ProviderTwitch}
+	resp := toOutboundChatStatusResponse(twitchAcc, outboundchat.Snapshot{ProviderSupported: true})
+	if resp.SharedChatWarning == "" {
+		t.Error("SharedChatWarning empty for a Twitch account, want the real disclosure id")
+	}
+
+	youtubeAcc := account.Account{ID: "a2", ProviderID: account.ProviderYouTube}
+	resp = toOutboundChatStatusResponse(youtubeAcc, outboundchat.Snapshot{ProviderSupported: true})
+	if resp.SharedChatWarning != "" {
+		t.Errorf("SharedChatWarning = %q for a YouTube account, want empty (YouTube has no Shared Chat concept)", resp.SharedChatWarning)
+	}
+}

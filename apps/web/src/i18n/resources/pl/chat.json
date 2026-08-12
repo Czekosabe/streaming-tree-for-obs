@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Czat",
-    "description": "Ujednolicony czat operatora - połączony, aktualny czat Twitch ze wszystkich podłączonych kont. Diagnostykę łącznika znajdziesz w Zaangażowaniu."
+    "description": "Ujednolicony czat operatora - połączony, aktualny czat Twitch i YouTube ze wszystkich podłączonych kont. Diagnostykę łącznika znajdziesz w Zaangażowaniu."
   },
   "kind": {
     "message": "Wiadomość",
@@ -70,10 +70,10 @@
     "rateLimited": "Wysyłanie jest tymczasowo ograniczone.",
     "rateLimitedUntil": "Wysyłanie jest tymczasowo ograniczone - spróbuj ponownie po {{time}}.",
     "noLocalEchoExplanation": "Ta wiadomość zostanie wysłana, ale nie pojawi się tutaj lokalne echo, dopóki dla tego konta nie włączysz czatu przychodzącego.",
-    "dropped": "Twitch nie dostarczył tej wiadomości.",
+    "dropped": "Ta wiadomość nie została dostarczona.",
     "deliveryUnknown": "Ta wiadomość mogła zostać dostarczona albo nie - nie otrzymano potwierdzenia.",
-    "forbidden": "Twitch odrzucił wysyłkę - konto może być zbanowane lub wyciszone na tym czacie.",
-    "providerFailure": "Twitch zwrócił błąd podczas wysyłania tej wiadomości.",
+    "forbidden": "Wysyłka została odrzucona - konto może być zbanowane lub wyciszone na tym czacie.",
+    "providerFailure": "Wystąpił błąd podczas wysyłania tej wiadomości.",
     "queueFull": "Dla tego konta jest już zbyt wiele oczekujących wiadomości - poczekaj chwilę i spróbuj ponownie."
   },
   "filters": {

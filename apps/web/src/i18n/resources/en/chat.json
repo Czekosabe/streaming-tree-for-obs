@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Chat",
-    "description": "The unified operator chat - merged, live Twitch chat across your connected accounts. For connector diagnostics, see Engagement."
+    "description": "The unified operator chat - merged, live Twitch and YouTube chat across your connected accounts. For connector diagnostics, see Engagement."
   },
   "kind": {
     "message": "Message",
@@ -68,10 +68,10 @@
     "rateLimited": "Sending is temporarily rate limited.",
     "rateLimitedUntil": "Sending is temporarily rate limited - try again after {{time}}.",
     "noLocalEchoExplanation": "This message will send, but no local echo will appear here until inbound chat is enabled for this account.",
-    "dropped": "Twitch did not deliver this message.",
+    "dropped": "This message was not delivered.",
     "deliveryUnknown": "This message may or may not have been delivered - no confirmation was received.",
-    "forbidden": "Twitch rejected this send - the account may be banned or timed out in this chat room.",
-    "providerFailure": "Twitch returned an error while sending this message.",
+    "forbidden": "This send was rejected - the account may be banned or timed out in this chat room.",
+    "providerFailure": "An error occurred while sending this message.",
     "queueFull": "Too many messages are already queued for this account - wait a moment and try again."
   },
   "filters": {

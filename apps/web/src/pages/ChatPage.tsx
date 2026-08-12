@@ -32,16 +32,18 @@ import { isCommandMessage } from '@/models/operator-chat-presentation';
 
 /**
  * Stage 9 unified operator chat: the real, merged, live working view of
- * Twitch chat across every connected account - distinct from the
- * Engagement page's connector diagnostics (see pages/EngagementPage.tsx's
- * own doc comment). Consumes the operator-chat projection API, never the
- * raw Engagement Event Bus stream.
+ * Twitch and (Stage 15A) YouTube chat across every connected account -
+ * distinct from the Engagement page's connector diagnostics (see
+ * pages/EngagementPage.tsx's own doc comment). Consumes the operator-chat
+ * projection API, never the raw Engagement Event Bus stream.
  */
 export function ChatPage() {
   const { t } = useTranslation(['pages', 'chat']);
 
   const accountsQuery = useAccountsQuery();
-  const twitchAccounts = (accountsQuery.data ?? []).filter((account) => account.providerId === 'twitch');
+  const chatAccounts = (accountsQuery.data ?? []).filter(
+    (account) => account.providerId === 'twitch' || account.providerId === 'youtube',
+  );
 
   const status = useOperatorChatStatusQuery();
   const stream = useOperatorChatStream();
@@ -133,8 +135,8 @@ export function ChatPage() {
   }
 
   function accountLabelFor(accountId: string): string | null {
-    if (twitchAccounts.length <= 1) return null;
-    const account = twitchAccounts.find((a) => a.id === accountId);
+    if (chatAccounts.length <= 1) return null;
+    const account = chatAccounts.find((a) => a.id === accountId);
     if (account === undefined) return null;
     return account.displayName !== '' ? account.displayName : account.login;
   }
@@ -163,9 +165,9 @@ export function ChatPage() {
                 {t('chat:status.retainedCount', { count: status.data.retainedCount })}
               </span>
             )}
-            {twitchAccounts.length > 0 && (
+            {chatAccounts.length > 0 && (
               <span className="text-ink-faint">
-                {t('chat:status.accountsConnected', { count: twitchAccounts.length })}
+                {t('chat:status.accountsConnected', { count: chatAccounts.length })}
               </span>
             )}
             {stream.gapDetected && (
@@ -250,7 +252,7 @@ export function ChatPage() {
         </Panel>
 
         <OutboundChatComposer
-          twitchAccounts={twitchAccounts}
+          accounts={chatAccounts}
           replyTarget={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
           onReplySent={() => setReplyTarget(null)}
@@ -280,7 +282,7 @@ export function ChatPage() {
         size="sm"
       >
         <ChatFilterBar
-          accounts={twitchAccounts}
+          accounts={chatAccounts}
           isAccountVisible={isAccountVisible}
           onSetAccountVisible={(accountId, visible) =>
             setVisibilityMutation.mutate({ accountId, visible })
@@ -289,7 +291,7 @@ export function ChatPage() {
           onToggleHideBotMessages={setHideBotMessages}
           onResetAll={() => {
             setHideBotMessages(false);
-            for (const account of twitchAccounts) {
+            for (const account of chatAccounts) {
               if (!isAccountVisible(account.id)) {
                 setVisibilityMutation.mutate({ accountId: account.id, visible: true });
               }

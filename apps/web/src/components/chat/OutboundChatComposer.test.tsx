@@ -20,6 +20,10 @@ const account2 = {
   id: 'acct_2', providerId: 'twitch', login: 'second', displayName: 'Second Account',
   status: 'connected' as const, scopes: [], createdAt: '2026-08-06T00:00:00Z', updatedAt: '2026-08-06T00:00:00Z',
 };
+const youtubeAccount = {
+  id: 'acct_3', providerId: 'youtube', login: 'My Channel', displayName: 'My Channel',
+  status: 'connected' as const, scopes: [], createdAt: '2026-08-06T00:00:00Z', updatedAt: '2026-08-06T00:00:00Z',
+};
 
 function readyStatus(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,7 +45,7 @@ beforeEach(() => {
 describe('OutboundChatComposer', () => {
   it('renders nothing when there is no connected Twitch account', () => {
     const { container } = renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     expect(container.querySelector('[data-testid="outbound-chat-composer"]')).toBeNull();
   });
@@ -51,7 +55,7 @@ describe('OutboundChatComposer', () => {
       readyStatus({ capability: 'permission_required', canSendNow: false }),
     );
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     expect(await screen.findByRole('button', { name: /grant outbound chat permission/i })).toBeInTheDocument();
   });
@@ -66,7 +70,7 @@ describe('OutboundChatComposer', () => {
     });
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     await user.click(await screen.findByRole('button', { name: /grant outbound chat permission/i }));
     expect(await screen.findByText(/ABCD-EFGH/)).toBeInTheDocument();
@@ -76,7 +80,7 @@ describe('OutboundChatComposer', () => {
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const textarea = await screen.findByLabelText(/message/i);
     await waitFor(() => expect(textarea).toBeEnabled());
@@ -88,7 +92,7 @@ describe('OutboundChatComposer', () => {
   it('disables the send button for empty input', async () => {
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     await screen.findByLabelText(/message/i);
     expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled();
@@ -101,7 +105,7 @@ describe('OutboundChatComposer', () => {
     });
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const textarea = await screen.findByLabelText(/message/i);
     await waitFor(() => expect(textarea).toBeEnabled());
@@ -119,14 +123,14 @@ describe('OutboundChatComposer', () => {
     );
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const textarea = await screen.findByLabelText(/message/i);
     await waitFor(() => expect(textarea).toBeEnabled());
     await user.type(textarea, 'spammy text');
     await user.click(screen.getByRole('button', { name: /^send$/i }));
 
-    expect(await screen.findByText(/did not deliver/i)).toBeInTheDocument();
+    expect(await screen.findByText(/was not delivered/i)).toBeInTheDocument();
     // The message is preserved for the operator to edit/retry, per the
     // stage's own requirement - never silently cleared on a drop.
     expect(textarea).toHaveValue('spammy text');
@@ -139,7 +143,7 @@ describe('OutboundChatComposer', () => {
     );
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const textarea = await screen.findByLabelText(/message/i);
     await waitFor(() => expect(textarea).toBeEnabled());
@@ -155,7 +159,7 @@ describe('OutboundChatComposer', () => {
     );
     const user = userEvent.setup();
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const textarea = await screen.findByLabelText(/message/i);
     await waitFor(() => expect(textarea).toBeEnabled());
@@ -167,7 +171,7 @@ describe('OutboundChatComposer', () => {
   it('shows a backend-unavailable state when the status query fails', async () => {
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockRejectedValue(new Error('network down'));
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     expect(await screen.findByText(/unavailable/i)).toBeInTheDocument();
   });
@@ -175,18 +179,27 @@ describe('OutboundChatComposer', () => {
   it('always shows the Shared Chat warning while ready, never claiming a session is active', async () => {
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     const warning = await screen.findByRole('note');
     expect(warning).toHaveTextContent(/may distribute/i);
     expect(warning).not.toHaveTextContent(/is currently active/i);
   });
 
+  it('never shows the Shared Chat warning for a YouTube account (Stage 15A - no such concept)', async () => {
+    vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus({ providerId: 'youtube' }));
+    renderWithProviders(
+      <OutboundChatComposer accounts={[youtubeAccount]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+    );
+    await screen.findByLabelText(/message/i);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
   it('shows an account selector when more than one Twitch account exists', async () => {
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());
     renderWithProviders(
       <OutboundChatComposer
-        twitchAccounts={[account1, account2]}
+        accounts={[account1, account2]}
         replyTarget={null}
         onCancelReply={() => {}}
         onReplySent={() => {}}
@@ -202,7 +215,7 @@ describe('OutboundChatComposer', () => {
     });
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());
     renderWithProviders(
-      <OutboundChatComposer twitchAccounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
+      <OutboundChatComposer accounts={[account1]} replyTarget={null} onCancelReply={() => {}} onReplySent={() => {}} />,
     );
     expect(await screen.findByText(/no local echo/i)).toBeInTheDocument();
   });
@@ -214,7 +227,7 @@ describe('OutboundChatComposer', () => {
     const user = userEvent.setup();
     renderWithProviders(
       <OutboundChatComposer
-        twitchAccounts={[account1, account2]}
+        accounts={[account1, account2]}
         replyTarget={{ accountId: 'acct_1', providerMessageId: 'parent_1', authorDisplayName: 'Viewer', preview: 'original text' }}
         onCancelReply={() => {}}
         onReplySent={onReplySent}
@@ -243,7 +256,7 @@ describe('OutboundChatComposer', () => {
     const user = userEvent.setup();
     renderWithProviders(
       <OutboundChatComposer
-        twitchAccounts={[account1]}
+        accounts={[account1]}
         replyTarget={{ accountId: 'acct_1', providerMessageId: 'parent_1', authorDisplayName: 'Viewer', preview: 'x' }}
         onCancelReply={onCancelReply}
         onReplySent={() => {}}

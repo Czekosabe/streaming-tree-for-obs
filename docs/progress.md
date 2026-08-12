@@ -19204,3 +19204,103 @@ YouTube accounts (renamed to a provider-neutral name), confirming
 reply stays disabled for a YouTube account either via existing
 capability data or a new explicit check - the row/message rendering
 itself is already provider-generic and needs no change.
+
+## 2026-08-12 11:45 — feat(web): YouTube accounts in the Chat page composer, fix a real backend warning-leak bug
+
+### What
+Broadens the Chat page's outbound composer and account filter to
+include YouTube accounts alongside Twitch - the message-row/activity-
+row rendering was already fully provider-generic (confirmed by
+reading `ChatSourceLabel.tsx`/`use-operator-chat-stream.ts`, which
+carry a bare `providerId: string`, not a Twitch-only union) and needed
+no change; only the account-selection layer was hardcoded. Also found
+and fixed a genuine backend bug: the outbound-chat status endpoint
+always disclosed a Twitch-only "Shared Chat" warning, even for a
+YouTube account, which has no such feature.
+
+- **`components/chat/OutboundChatComposer.tsx`**: prop renamed
+  `twitchAccounts` → `accounts` (typed and documented as "every
+  connected account whose provider supports outbound chat"); the
+  Shared Chat disclosure note is now only rendered when the selected
+  account's `providerId === 'twitch'` - previously shown
+  unconditionally regardless of provider, which would have shown a
+  Twitch-only warning on a YouTube account's composer.
+- **`pages/ChatPage.tsx`**: `twitchAccounts` renamed `chatAccounts`
+  and its filter broadened to `providerId === 'twitch' ||
+  providerId === 'youtube'` - drives the "N accounts contributing"
+  status text, the account-label lookup used by message/activity rows,
+  `ChatFilterBar`'s per-account visibility toggles, and the composer's
+  own account list. `replyTargetFor` (`models/outbound-chat.ts`)
+  already rejected any non-Twitch item (`if (item.providerId !==
+  'twitch') return null`) - Reply was already correctly disabled for a
+  YouTube message before this commit, since YouTube's API has no reply
+  concept; confirmed rather than assumed by reading the function.
+- **`internal/httpapi/outboundchat.go`** (real backend bug, server
+  side): `toOutboundChatStatusResponse` set `SharedChatWarning` to the
+  Twitch-only disclosure id unconditionally for every provider - a
+  YouTube account's outbound status would have carried a warning about
+  a Twitch feature (Shared Chat) that does not exist on YouTube. Now
+  gated on `acc.ProviderID == account.ProviderTwitch`; a new pure unit
+  test (`TestToOutboundChatStatusResponseSharedChatWarningIsTwitchOnly`)
+  proves both the Twitch and YouTube cases directly, without needing a
+  full YouTube-provider HTTP test server.
+- **`i18n/resources/{en,pl}/chat.json`**: `page.description` now
+  mentions YouTube alongside Twitch; `compose.dropped`/`forbidden`/
+  `providerFailure` reworded to be provider-neutral ("This message was
+  not delivered." instead of "Twitch did not deliver this message.")
+  since the same `outbound_chat_*` error codes apply identically
+  regardless of provider - `authorizeStarted`/`permissionRequired`
+  intentionally left Twitch-specific since YouTube's own
+  `AssessCapability` never requires a permission upgrade (confirmed by
+  reading `internal/provider/youtube/outbound_chat_adapter.go`), so
+  that UI path is only ever reachable for a Twitch account in
+  practice.
+
+### Files changed
+- `apps/web/src/components/chat/{OutboundChatComposer.tsx,
+  OutboundChatComposer.test.tsx}`
+- `apps/web/src/pages/{ChatPage.tsx, ChatPage.test.tsx}`
+- `apps/web/src/i18n/resources/{en,pl}/chat.json`
+- `apps/server/internal/httpapi/{outboundchat.go, outboundchat_test.go}`
+
+### Technical decisions
+- **Why gate the Shared Chat warning on the selected account's
+  provider rather than genericizing its wording (as was done for the
+  dropped/forbidden/providerFailure error strings).** Those three are
+  driven by the same error codes regardless of provider, so
+  genericizing their wording stays accurate for both. Shared Chat is a
+  real, Twitch-specific mechanic with no YouTube equivalent at all -
+  genericizing it would either be false for YouTube or lose the
+  concrete warning's value for Twitch, so a provider check was the
+  honest fix, not a wording change.
+- **Why the backend fix keeps `SharedChatWarning` as a required
+  (non-optional) JSON field, using empty string for "not applicable"
+  rather than adding `omitempty`.** No frontend code reads this field
+  today (the composer's own warning display is now driven by the
+  account's own `providerId`, not this backend value) - keeping the
+  wire shape unchanged avoids touching the zod schema for a field nothing
+  currently consumes, while still fixing the dishonest value itself.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including the new `SharedChatWarning` regression test.
+`cd apps/web`: `npx tsc -b` clean, `npm run lint` clean, `npm run
+i18n:check` clean, `npx vitest run` - 86 files / 1223 tests, all
+passing (including a new `ChatPage.test.tsx` case proving a YouTube
+account is counted and offered in the composer, and two new
+`OutboundChatComposer.test.tsx` cases proving the Shared Chat warning
+shows for Twitch and never for YouTube), `npm run build` clean.
+
+### Known limitations
+None new for what this commit touches. Still pending: the Automation
+page's own identical hardcoded Twitch-only account/platform filters,
+the 17th integration script, and the closing documentation/regression
+pass.
+
+### Next step
+The Automation page (`CommandManager.tsx`/`ScheduleManager.tsx`):
+broaden their own hardcoded `providerId === 'twitch'` account/platform
+filters to include YouTube, consistent with the same pattern just
+applied to Engagement and Chat.
