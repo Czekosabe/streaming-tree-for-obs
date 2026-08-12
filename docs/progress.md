@@ -18435,3 +18435,115 @@ The YouTube engagement connector/manager -
 shape where genuinely analogous, and implementing the baseline-first
 initial-history cutover and polling-interval-driven reconnect loop this
 provider's own transport actually needs.
+
+## 2026-08-12 08:42 — feat(server): add YouTube engagement connector
+
+### What
+`internal/runtime/youtubeengagement` (new package) - the Stage 15A
+inbound engagement connector/manager, one polling connector per enabled
+connected YouTube account. Mirrors
+`internal/runtime/twitchengagement`'s `Manager`/`connector`/
+`State`/`Snapshot` shape where the underlying reality is genuinely
+alike (one goroutine per account, `Enable`/`Disable`/`Restart`/
+`Snapshot(s)`/`StopAndRemove`, bounded exponential backoff, a `Snapshot`
+that never carries a token), and diverges explicitly where it is not:
+YouTube is polled over HTTPS with a server-recommended interval and a
+continuation token, not pushed over a WebSocket, so this package adds
+its own states with no Twitch equivalent -
+`StateWaitingForBroadcast`/`StateWaitingForLiveChat`/`StateChatEnded`.
+
+- **`state.go`**: the 9-state machine plus `waitingState()`, a new
+  distinction from Twitch's model - "waiting for a broadcast/live chat
+  to appear" retries on a fixed interval and is never counted as a
+  reconnect or a failure, since it is ordinary streamer behavior, not
+  an error.
+- **`manager.go`**: `Options` takes `DestinationLookup` (identical
+  signature/reuse of Twitch's own pattern: account → linked
+  destination) plus a new `BroadcastLookup func(platformID string)
+  (broadcastID string, ok bool)`, deliberately reusing Stage 7B's
+  existing `remotetarget` selected-broadcast persistence via this
+  two-hop lookup rather than inventing a second, account-scoped
+  broadcast selector - per this stage's own explicit instruction.
+  `reconcile` has no scope-assessment/blocked-on-missing-scope path at
+  all (unlike Twitch's `AssessEngagementCapability`), since the
+  research confirmed no additional OAuth scope is needed for Stage
+  15A - only an unhealthy account (`StatusReconnectRequired`) blocks.
+- **`connector.go`**: `serve()` resolves broadcast → liveChatId (both
+  treated as an honest wait, never an error, when unavailable), then
+  `baseline()` issues exactly one `ListLiveChatMessages` call whose
+  result is never published - only its `nextPageToken` is kept - before
+  `pollLoop()` begins publishing anything, implementing the
+  baseline-first cutover from `docs/provider-integrations/
+  youtube-engagement.md` §7 precisely. Every poll interval is clamped
+  to `[2s, 30s]` regardless of what the server suggests. `handleMessage`
+  distinguishes a real event (published), the `chatEndedEvent`
+  lifecycle signal (stops polling, never published), and an
+  unsupported type (counted, never published, never logged raw).
+  `classifyPollError` maps `ErrLiveChatEnded` to a clean stop,
+  `ErrLiveChatDisabled`/`ErrLiveChatNotFound` to
+  `StateWaitingForLiveChat` (re-resolve from scratch, not a failure),
+  and genuine auth/rate/quota/transport failures to `StateError`/
+  backoff-and-retry appropriately. `Restart` (used both for an operator
+  action and for a selected-broadcast change) always re-baselines -
+  runtime continuation state is never persisted, so a process restart
+  can never replay history either.
+- The five timing constants (`initialBackoff`, `maxBackoff`,
+  `waitingRetryInterval`, `minPollInterval`, `maxPollInterval`) are
+  package-level `var`s rather than `const`s specifically so the test
+  suite can shrink them for a fast suite without touching production
+  code paths at all.
+- **`manager_test.go`** (10 tests): a local `fakeYouTubeAPI` httptest
+  double serving only `/liveBroadcasts` and `/liveChat/messages`, with
+  mutable `liveChatId`/page queue so a test can simulate a broadcast/
+  chat becoming available mid-test. Covers: waiting honestly with no
+  broadcast selected, waiting honestly with a broadcast but no live
+  chat, **the baseline call's own history never being published**, a
+  genuinely live message being published, `chatEndedEvent` stopping the
+  loop, the response's own `offlineAt` field also stopping the loop, an
+  unsupported type being counted without being published, `Disable`
+  fully removing the connector, `Enable` rejecting a non-existent/
+  wrong-provider account, and - the most safety-critical case -
+  **`Restart` re-baselining rather than replaying the exact same
+  already-seen message a second time**.
+
+### Files changed
+- `internal/runtime/youtubeengagement/{state.go, errors.go, manager.go,
+  connector.go, manager_test.go}` (all new)
+
+### Technical decisions
+- **Why `BroadcastLookup` is a second lookup function rather than
+  folding broadcast resolution into `DestinationLookup` itself.**
+  `DestinationLookup` already has an established, reused signature and
+  meaning (account → destination) shared with Twitch's manager: adding
+  a second, narrowly-scoped function (destination → selected YouTube
+  broadcast id) keeps each lookup single-purpose and keeps
+  `youtubeengagement` from needing to know anything about
+  `remotetarget.Target`'s own shape - the caller supplies the exact,
+  already-filtered YouTube live-broadcast id or reports none available.
+- **Why "waiting" states use a fixed retry interval instead of joining
+  the exponential-backoff pool.** A selected broadcast or its live chat
+  appearing/disappearing is the normal shape of a streaming session,
+  not a malfunction - growing the backoff for it would make the
+  connector needlessly slow to notice a broadcast going live 30 seconds
+  after the operator started it, exactly the kind of avoidable
+  responsiveness loss this stage's own task explicitly warned against
+  ("the connector should have an honest waiting/unavailable state
+  rather than thrashing").
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go vet
+./...` clean, `go test ./...` - every package `ok`, including all 10
+new tests and the full pre-existing suite (nothing regressed).
+
+### Known limitations
+None new. Still no HTTP API route, no outbound send adapter, and no
+`main.go`/`testserver` wiring - this connector is not yet reachable
+through any real enable/disable action or visible in any UI. Continued
+in the next commits.
+
+### Next step
+The YouTube outbound send adapter
+(`internal/provider/youtube/outbound_chat_adapter.go`), implementing
+`outboundchat.Provider` and registered alongside the existing Twitch
+adapter in the shared dispatcher - no second send queue, no reply
+support (per research), no optimistic local echo.
