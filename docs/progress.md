@@ -19925,3 +19925,140 @@ clean, this same session.
 ### Next step
 Push to `origin/main` and deliver the final Stage 15A report to the
 user.
+
+## 2026-08-12 — fix(docs): correct YouTube streamList research
+
+### Status
+In progress - Stage 15A transport corrective pass. Not a new stage; Stage
+15A is being corrected in place per explicit operator instruction. Stage
+15B remains untouched (feasibility-gated, not started).
+
+### Scope
+The Stage 15A closing report above states the connector uses REST polling
+because "no verifiable gRPC transport exists." That conclusion was
+challenged and re-researched directly against the live
+`developers.google.com` pages (not trusted from the prior session) and
+found to be **wrong**: `liveChatMessages.streamList` is a real, current,
+documented gRPC server-streaming RPC with a complete official `.proto`,
+documented Go code-generation support, a documented production host, and
+documented OAuth Bearer metadata authentication. This entry records the
+first corrective step: re-researching the live documentation, correcting
+the research contract, vendoring the real proto, and generating real Go
+gRPC client code from it - all **before** touching any provider/connector
+code, per this project's "document the contract before writing provider
+code" discipline.
+
+### Changes
+- Re-fetched, byte-for-byte (HTML tags stripped without an intermediate
+  summarizing model, to guarantee no field/comment/field-number was
+  altered), the complete `stream_list.proto` source and the Python demo
+  code block from
+  `https://developers.google.com/youtube/v3/live/streaming-live-chat`.
+  Cross-checked `https://developers.google.com/youtube/v3/live/docs/
+  liveChatMessages/streamList`, `.../liveChatMessages/list` (confirmed it
+  now explicitly recommends `streamList` instead), and `https://grpc.io/
+  docs/languages/go/basics/#generating-client-and-server-code` (confirmed
+  the exact `protoc-gen-go`/`protoc-gen-go-grpc` invocation).
+- Downloaded the official `protoc` v29.3 release binary
+  (`github.com/protocolbuffers/protobuf` releases) and installed
+  `protoc-gen-go`/`protoc-gen-go-grpc` via `go install` (both official
+  Go/gRPC modules) - the exact tooling gap the original research cited as
+  a blocker, resolved in minutes.
+- Vendored the real proto to
+  `apps/server/internal/provider/youtube/streamlistpb/stream_list.proto`,
+  copied verbatim from the extracted text with two additions, both
+  documented inline in the file's own header comment: an
+  `import "google/protobuf/duration.proto";` line (the published sample
+  omits it despite using `google.protobuf.Duration`) and a `go_package`
+  option (required for Go generation; the published sample targets
+  Python and has none).
+- Generated `stream_list.pb.go`/`stream_list_grpc.pb.go` from that proto
+  with the standard `protoc --go_out=... --go-grpc_out=...` invocation on
+  the first attempt; the generated package builds cleanly
+  (`go build ./internal/provider/youtube/streamlistpb/...`). Added a
+  maintainer-only regeneration README
+  (`streamlistpb/README.md`) - a normal build never needs `protoc` again.
+- Added `google.golang.org/grpc` v1.83.0 and `google.golang.org/protobuf`
+  v1.36.12 to `apps/server/go.mod`/`go.sum` (`go get` + `go mod tidy`);
+  recorded both, their purpose, and the vendored proto's Apache-2.0
+  provenance in `THIRD_PARTY_NOTICES.md`.
+- Rewrote `docs/provider-integrations/youtube-engagement.md`: added a
+  §0 correction notice explaining exactly what the original research got
+  wrong and why (each of its three cited facts was true in isolation but
+  did not actually block implementation - see the doc itself for the
+  full reasoning); preserved the original transport-decision reasoning
+  verbatim as §4a, explicitly marked superseded, per this project's
+  append-only correction discipline (history is never deleted); added §4b
+  with the corrected, fully-verified `streamList` contract (request/
+  response fields including the proto's own "`max_results`... Not used in
+  the streaming RPC" comment, production host `dns:///
+  youtube.googleapis.com:443`, OAuth Bearer metadata, and gRPC error-code
+  semantics); rewrote §1/§3.1/§3.2/§7 to reflect the corrected transport;
+  §7 additionally records a new distinction the REST design's shape never
+  had to make explicit - a reconnect holding a still-valid continuation
+  token must NOT re-baseline its first resumed response, unlike a
+  genuinely fresh stream, which must. Every other section (§2, §3.3-§3.6,
+  §5, §6, §8, §9, §10) was already transport-independent and is unchanged
+  in substance (light wording edits only, to stay consistent with the
+  new §0/§4b).
+- Re-checked Kick (`docs/provider-integrations/kick-engagement.md` §4.1,
+  new): confirmed the official
+  `KickEngineering/KickDevDocs` issue #20 ("Websocket-based Events") is
+  still open, `feature`/`planned`, project-board status still Backlog, no
+  shipping timeline - Stage 15B's feasibility-gated status is unaffected
+  by the YouTube correction.
+
+### Files changed
+- `apps/server/internal/provider/youtube/streamlistpb/stream_list.proto` (new)
+- `apps/server/internal/provider/youtube/streamlistpb/stream_list.pb.go` (new, generated)
+- `apps/server/internal/provider/youtube/streamlistpb/stream_list_grpc.pb.go` (new, generated)
+- `apps/server/internal/provider/youtube/streamlistpb/README.md` (new)
+- `apps/server/go.mod`, `apps/server/go.sum`
+- `THIRD_PARTY_NOTICES.md`
+- `docs/provider-integrations/youtube-engagement.md`
+- `docs/provider-integrations/kick-engagement.md`
+- `docs/progress.md` (this entry)
+
+### Technical decisions
+- Generated code is checked into the repository rather than generated at
+  build/CI time - consistent with this project's existing "no code
+  generation required for a normal build" posture, and explicitly
+  required by the corrective task's own §7.
+- The proto is vendored from an HTML documentation page, not a
+  separately-versioned upstream release, because that is the only form
+  Google publishes it in; the file's own header records the exact source
+  URL and fetch date so the provenance is auditable, same treatment this
+  project already gives other non-Go-module third-party sources.
+- No provider/connector code was touched in this step - only the research
+  document, the vendored proto, generated code, dependency manifests, and
+  third-party notices. The actual `internal/runtime/youtubeengagement`
+  connector rewrite is a separate, subsequent commit, per §5's own
+  explicit "correct the research document before provider implementation"
+  ordering.
+
+### Automated validation
+`go build ./internal/provider/youtube/streamlistpb/...` (generated code
+compiles). Full backend/frontend/integration regression is deferred to
+the end of this corrective pass (see later entries), per the task's own
+"restart the complete regression, don't validate piecemeal" discipline -
+this step's own validation is intentionally narrow (does the vendored
+proto actually generate and compile?), not a claim that the whole
+backend still builds with a dependency added (the very next step
+confirms that).
+
+### Known limitations
+- The connector itself still uses REST polling at this point in the
+  corrective pass - this commit only lands the corrected research and
+  the generated client code it depends on. The next commit(s) replace
+  the connector's actual transport.
+- `google.golang.org/grpc`/`google.golang.org/protobuf`'s own transitive
+  dependency tree (`golang.org/x/net`, `golang.org/x/text`,
+  `google.golang.org/genproto/googleapis/rpc`) was not individually
+  audited beyond confirming each is Apache-2.0/BSD-licensed and
+  Google-maintained - the same level of scrutiny this project already
+  gives `99designs/keyring`'s own transitive tree.
+
+### Next step
+Implement the gRPC `streamList` client wrapper and rewrite
+`internal/runtime/youtubeengagement`'s connector to use it, replacing the
+REST polling receive loop entirely (§9-23 of the corrective task).

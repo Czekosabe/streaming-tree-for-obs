@@ -162,3 +162,19 @@ stage does not have to re-derive the same research from scratch - and so
 nobody mistakes the *absence* of Kick support for an oversight rather
 than a deliberately researched, currently-correct architectural
 conclusion.
+
+### 4.1 Re-check, 2026-08-12 (Stage 15A transport corrective pass, §34)
+
+Performed solely to confirm the YouTube `streamList` gRPC correction
+elsewhere in this pass (`docs/provider-integrations/
+youtube-engagement.md` §0/§4b) does not accidentally invalidate this
+document's own gate - it does not; Kick and YouTube are unrelated
+providers with unrelated transport questions. Re-checked directly:
+`https://github.com/KickEngineering/KickDevDocs/issues/20` ("Websocket-
+based Events") is still **open**, labeled `feature`/`planned`, with a
+Kick Dev project board status of **Backlog** - unchanged from this
+document's original research. No comments, commits, or shipping
+timeline have been added since. Webhooks remain Kick's only official
+event-delivery transport; no direct WebSocket/desktop-friendly transport
+has shipped. **§2's gate, and Stage 15B's feasibility-gated status,
+stand unchanged.**

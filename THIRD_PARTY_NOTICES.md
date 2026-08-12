@@ -65,6 +65,8 @@ toolchain. The notable direct dependencies are:
 | [`modernc.org/sqlite`](https://gitlab.com/cznic/sqlite) | BSD-3-Clause | Pure-Go SQLite driver, so the backend builds without a C toolchain |
 | [`github.com/99designs/keyring`](https://github.com/99designs/keyring) v1.2.2 | MIT | Uniform interface over the operating system's credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) |
 | [`github.com/coder/websocket`](https://github.com/coder/websocket) v1.8.15 | ISC | WebSocket client used by the Stage 8A Twitch EventSub connector (`internal/runtime/twitchengagement`) |
+| [`google.golang.org/grpc`](https://github.com/grpc/grpc-go) v1.83.0 | Apache-2.0 | gRPC client used by the Stage 15A YouTube Live Chat connector's `streamList` server-streaming transport (`internal/provider/youtube`, `internal/runtime/youtubeengagement`) |
+| [`google.golang.org/protobuf`](https://github.com/protocolbuffers/protobuf-go) v1.36.12 | BSD-3-Clause | Protocol Buffers runtime for the generated `streamlistpb` client code (`internal/provider/youtube/streamlistpb`) |
 
 `coder/websocket` (the maintained continuation of the formerly-popular
 `nhooyr.io/websocket`) was chosen after checking: actively maintained, pure Go
@@ -113,6 +115,31 @@ The macOS Keychain backend requires CGO and the Xcode command line tools to
 build, an accepted trade-off: the only CGO-free alternative for macOS would be
 shelling out to the `security` command, which is not permitted. This has not
 been build-verified on macOS as part of this stage; see `docs/progress.md`.
+
+`google.golang.org/grpc` and `google.golang.org/protobuf` were added in the
+Stage 15A transport corrective pass (docs/provider-integrations/
+youtube-engagement.md §4b) to replace the connector's original REST-polling
+receive transport with the official `liveChatMessages.streamList` gRPC
+server-streaming RPC. Both are Google's own official Go implementations of
+gRPC and Protocol Buffers respectively - the same libraries any Go gRPC
+client for any service would use, not YouTube-specific. Their transitive
+dependencies (`golang.org/x/net`, `golang.org/x/text`,
+`google.golang.org/genproto/googleapis/rpc`) are all Apache-2.0 or
+BSD-licensed, standard-library-adjacent Google modules pulled in solely to
+support the gRPC/protobuf runtime, and carry no separate license obligations
+beyond their own upstream notices in the Go module cache.
+
+`apps/server/internal/provider/youtube/streamlistpb/stream_list.proto` is
+vendored (not authored) from Google's own YouTube Live Streaming API
+documentation (`https://developers.google.com/youtube/v3/live/
+streaming-live-chat`), whose code samples - including this proto - are
+licensed under Apache License 2.0 (`https://developers.google.com/
+site-policies#license`). See that file's own header comment for the exact
+source and the two small additions (one `import`, one `go_package` option)
+made to it, and `streamlistpb/README.md` for the maintainer-only
+regeneration procedure. The generated `.pb.go`/`_grpc.pb.go` files are
+Apache-2.0-licensed derivative output of that same proto, produced by
+Google's own `protoc-gen-go`/`protoc-gen-go-grpc` tools.
 
 Full licence texts are available in the Go module cache
 (`go env GOMODCACHE`) and on each project's page.
