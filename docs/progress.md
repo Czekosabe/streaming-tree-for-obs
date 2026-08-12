@@ -19555,3 +19555,142 @@ None new.
 Finish and land the 17th integration script itself
 (`scripts/verify-youtube-engagement.mjs`), now passing end to end
 against the fixed backend.
+
+## 2026-08-12 12:28 — test: add the 17th integration script, verify-youtube-engagement.mjs
+
+### What
+Adds `scripts/verify-youtube-engagement.mjs`, the 17th and final
+integration script this stage's own task requires - a local, no-real-
+Google, no-real-OBS end-to-end verification of the YouTube Live Chat
+engagement connector and its integration through every existing shared
+pipeline (Engagement Event Bus, operator chat, alerts, outbound chat,
+chat automation), run against the real backend binary and a fake
+Google OAuth/YouTube API server built specifically for this script
+(extending the same fake-server pattern `verify-youtube-account-
+integration.mjs` already established, adding `GET`/`POST
+/liveChat/messages` alongside the existing `/channels`/
+`/liveBroadcasts` handlers).
+
+What it proves end to end, against the real backend:
+- the connector only reaches `connected` once a destination is linked,
+  a broadcast with a real `liveChatId` is selected, and engagement is
+  enabled - the same real HTTP routes the frontend uses;
+- baseline-first cutover: history seeded in the very first poll
+  response is consumed silently and never reaches the Event Bus, even
+  though the fake server's first response already contains it;
+- a real chat message, Super Chat, and Super Sticker each normalize
+  correctly (integer-micros money, uppercased currency, no floats) and
+  reach both the Event Bus and the existing operator-chat projection -
+  confirmed with the exact same money fields (`amountMicros`,
+  `currency`) on both, never a parallel YouTube-only copy;
+- a real Super Chat triggers a real monetary alert with the correct
+  rendered amount/currency; a below-threshold amount and a numerically
+  larger but wrong-currency amount both correctly never trigger (no FX
+  conversion, ever) - proven by 3 separate real Super Chat events
+  against the same rule;
+- outbound sending goes through the existing shared dispatcher with
+  the exact expected wire body and no reply field ever sent; a reply
+  attempt is rejected outright with the newly-added 422
+  `outbound_chat_reply_unsupported`;
+- chat automation: a real viewer's message triggers a configured
+  command and sends a real response (this is the exact path the
+  reply-unsupported bug above broke completely before this session's
+  earlier fix), while the connected account's own echoed message never
+  triggers the same command (self-loop protection, keyed on the stable
+  channel id);
+- an explicit connector restart re-baselines and never replays a
+  message already delivered before the restart, while a genuinely new
+  Super Chat sent after the restart still triggers correctly;
+- a full backend process restart preserves the destination link and
+  selected broadcast (SQLite-backed);
+- a full secret scan of every captured HTTP body, callback response,
+  and backend log line for every issued OAuth token and the real OAuth
+  state value.
+
+Deliberately out of scope (documented in the script's own header,
+per this project's "representative subset with documented deferral"
+convention): membership/membership-milestone field-level assertions
+beyond "the event type appears" (already covered at the Go unit level),
+the transient `waiting_for_broadcast` auto-recovery timing (a real
+~10s fixed retry interval, already proven at the unit level), and the
+outbound "chat unavailable" HTTP path (already proven directly by
+`TestSendOutboundChatMessageChatUnavailable`).
+
+Two real implementation surprises found and worked around while
+writing this script (both are facts about the real backend, not bugs -
+recorded here so a future stage doesn't have to rediscover them):
+- with exactly one fake channel owned by the authenticating identity,
+  the OAuth attempt goes straight to `authorized` rather than pausing
+  at `awaiting_channel_selection` (that intermediate state only occurs
+  when more than one channel is offered - already covered by
+  `verify-youtube-account-integration.mjs`'s own two-channel scenario);
+- `findEventOfType` (borrowed from `verify-twitch-engagement.mjs`)
+  returns the *first* matching event of a type, which is wrong for a
+  script sending multiple events of the same type in sequence - this
+  script's own `findEventByProviderEventId` waits for a specific event
+  by id instead, used everywhere a step needs to confirm a *particular*
+  message actually landed before asserting on its downstream effects.
+
+### Files changed
+- `scripts/verify-youtube-engagement.mjs` (new)
+
+### Technical decisions
+- **Why the fake `/liveChat/messages` GET handler is a FIFO queue plus
+  a steady (empty) fallback page, rather than tracking real pagination
+  tokens.** The real connector's own page-token continuity is already
+  proven correct at the unit level (`internal/provider/youtube`'s own
+  tests); this script only needs a deterministic way to inject "a new
+  message arrives on the next poll" and "nothing new right now" from
+  JavaScript, without reimplementing YouTube's token semantics in a
+  fake server that would then need its own tests.
+- **Why the connector-restart-never-replays proof uses `POST
+  .../engagement/restart` rather than a full backend process restart.**
+  A full process restart loses the account's in-memory fake token
+  bundle (`cmd/testserver`'s own documented in-memory secret store,
+  see `verify-youtube-account-integration.mjs`'s identical note),
+  which would require a full re-authentication dance before the
+  connector could poll again at all - entangling the no-replay proof
+  with credential-persistence mechanics that are a test-harness
+  artifact, not a real production constraint. The connector-restart
+  endpoint exercises the identical real re-baseline code path within
+  the same running process, still holding a valid token - exactly the
+  same choice `verify-twitch-engagement.mjs`'s own "Explicit restart
+  recovers the connector" step already made for the analogous Twitch
+  concern. A full backend process restart is still exercised
+  separately, scoped only to what it can actually prove (SQLite-backed
+  persistence of the link/broadcast/enabled-flag).
+- **Why the self-loop-protection step first proves a *real* viewer's
+  message DOES trigger the command, before proving the self-authored
+  one does not.** Without the positive case, a completely broken
+  command pipeline (matching nothing, ever) would make the negative
+  self-loop assertion trivially, uselessly true - both counts would
+  stay at zero regardless of whether self-loop protection works. This
+  is exactly the failure mode that would have masked the
+  `ErrReplyUnsupported` bug found while writing this script, had the
+  self-loop test been written first without the positive case.
+
+### Automated validation
+Ran the full script directly (`node scripts/verify-youtube-engagement.mjs`)
+against a freshly built `-tags integration` backend - all 23 steps
+passed. Also re-ran the 3 other most closely related existing scripts
+to confirm no regression from this session's backend fixes:
+`verify-chat-automation.mjs`, `verify-twitch-outbound-chat.mjs`, and
+`verify-youtube-account-integration.mjs` - all still pass unchanged.
+`verify-alerts.mjs` also re-run clean (money-adjacent backend changes
+this session).
+
+### Known limitations
+The remaining 13 existing integration scripts (visual templates,
+ffmpeg/mediamtx runtime, persistence, chat overlay, etc.) were not
+individually re-run in this commit, since none of this session's
+changes touched code they exercise - they will run as part of the
+closing full regression pass.
+
+### Next step
+The closing documentation pass (README, project-overview,
+engagement-architecture, provider-integrations/youtube.md), then the
+full closing regression (frontend + backend + all 17 integration
+scripts in one clean sequence), a closing journal entry, push, and the
+final Stage 15A report - explicitly noting Stage 15 as a whole remains
+incomplete since Stage 15B (Kick) is feasibility-gated only, per the
+task's own requirement.
