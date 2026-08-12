@@ -19460,3 +19460,98 @@ the full YouTube engagement connector, chat overlay/operator chat
 integration, outbound send (including the two error paths just fixed),
 and a real Super Chat triggering a monetary alert, end to end against
 a fake YouTube OAuth/REST server.
+
+## 2026-08-12 12:27 — fix(server): chat-automation command responses always requested an unsupported reply
+
+### What
+While running the still-in-progress `scripts/verify-youtube-engagement.mjs`
+for the first time, its "a real viewer's message triggers a configured
+command" step timed out - `totalMatched` on `/api/chat-automation/status`
+correctly showed `1` (the command WAS recognized and matched), but
+`totalResponses` stayed at `0`: the response was silently never sent.
+
+Root cause: `commandEngine.handleEvent` (`internal/chatautomation/
+commands.go`) unconditionally sets `ReplyParentMessageID:
+evt.ProviderEventID` on every command response, on the theory that
+replying to the triggering message is always the right behavior (true
+for Twitch). But YouTube's outbound adapter reports `SupportsReply:
+false` and returns `ErrReplyUnsupported` for any request carrying a
+reply-parent id at all - so **every single chat-automation command
+response for a YouTube account would fail, unconditionally, forever**.
+This was a hard, total functionality gap for a documented Stage 15A
+requirement ("self-loop protection must work for YouTube"), not a rare
+edge case - self-loop protection itself was already correct (keyed on
+the stable provider user id, no provider-specific branch), but the
+actual response-sending step immediately after a successful match was
+unconditionally broken for any non-replying provider.
+
+- **`internal/chatautomation/dispatch.go`**: `dispatcher.send` (the one
+  place both the scheduler and the command engine funnel every send
+  through) now strips `ReplyParentMessageID` whenever the account's own
+  `Status()` snapshot reports `!Capability.SupportsReply` - the same
+  `Status()` call already made for the existing queue-quota check, so
+  this costs no extra round trip. `commands.go` itself needed no
+  change: it has no reason to know which providers support replies,
+  and this is the one shared choke point that already does.
+- **`internal/chatautomation/scheduler_test.go`**: the existing
+  `fakeOutboundProvider.AssessCapability` test double never set
+  `SupportsReply` at all (defaulting to `false`) - meaning it was
+  already an inaccurate simulation of Twitch's real capability
+  (`internal/provider/twitch/outbound_chat_adapter.go` reports
+  `SupportsReply: true`). Fixed to `SupportsReply: true`, matching
+  reality - `TestCommandEngineUsesSourceCommandAndReply` depends on a
+  reply actually being requested and continues to pass, now for the
+  right reason.
+- **`internal/chatautomation/commands_test.go`**: new
+  `fakeNonReplyingOutboundProvider` (a YouTube-shaped double reporting
+  `SupportsReply: false`, rejecting any request that still carries a
+  reply-parent id) and `TestCommandEngineStripsUnsupportedReplyForYouTubeAccount`
+  - proves a command response for a non-replying provider actually
+  gets sent (not silently dropped) with no reply field, the precise
+  regression this bug represented.
+
+### Files changed
+- `apps/server/internal/chatautomation/{dispatch.go,
+  scheduler_test.go, commands_test.go}`
+
+### Technical decisions
+- **Why fix this in `dispatch.go` rather than `commands.go`.**
+  `commands.go`'s own job is deciding *whether* and *what* to respond
+  with - it has no business knowing which providers can reply and
+  which can't. `dispatch.go` is the single funnel every automation send
+  (scheduled and command) already passes through and already fetches
+  `Status()` for the quota check - extending that one existing call
+  site keeps the provider-capability knowledge in exactly one place
+  (the same place `outboundchat.Capability.SupportsReply` itself
+  already lives), never duplicated into `commands.go` as a second copy.
+- **Why this was only caught by the integration script, not any of the
+  105 existing chatautomation unit tests.** Every existing test's own
+  fake provider either used the Twitch-shaped `fakeOutboundProvider`
+  (which happened to report `SupportsReply: false` too, by omission -
+  but no existing test asserted the *send actually succeeded* for a
+  YouTube-provider account past the self-loop-skip point) or never
+  constructed a YouTube-provider double at all. The self-loop test
+  (`TestCommandEngineIgnoresSelfMessageForYouTubeAccount`) stops before
+  ever reaching the send call, so it could never have caught this. Only
+  an end-to-end script exercising a real non-self YouTube trigger all
+  the way through a real `outboundchat.Manager` and a capability-
+  accurate fake provider could surface it - exactly the kind of gap
+  this project's own "proof not promise" integration-script discipline
+  exists to catch before a real operator would have hit it.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including the new regression test. Re-ran `node
+scripts/verify-chat-automation.mjs` and `node
+scripts/verify-twitch-outbound-chat.mjs` (Twitch's own reply behavior
+unaffected) - both still pass unchanged.
+
+### Known limitations
+None new.
+
+### Next step
+Finish and land the 17th integration script itself
+(`scripts/verify-youtube-engagement.mjs`), now passing end to end
+against the fixed backend.

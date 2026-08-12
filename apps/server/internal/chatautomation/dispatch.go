@@ -48,10 +48,27 @@ func newDispatcher(outbound outboundSender) *dispatcher {
 // (ErrQueueFull) rather than blocking or growing an unbounded backlog -
 // see the Stage 11B task's own Part 3 and Part 17 (commands must never
 // accumulate a stale response).
+//
+// A command response's own ReplyParentMessageID (see commands.go's own
+// "reply to the triggering message" behavior) is dropped here whenever
+// the target provider does not support replying at all (Stage 15A:
+// YouTube's send API has no such concept - see
+// outboundchat.Capability.SupportsReply) - commands.go itself has no
+// reason to know which providers support replies; this is the one place
+// both the scheduler and the command engine already funnel through, and
+// the same Status() call already made for the quota check above already
+// carries the answer. Without this, every command response for a
+// non-replying provider would otherwise fail outright with
+// ErrReplyUnsupported on every single trigger, never sending anything.
 func (d *dispatcher) send(ctx context.Context, req outboundchat.SendMessageRequest) (outboundchat.SendMessageResult, error) {
 	snap, err := d.outbound.Status(ctx, req.AccountID)
-	if err == nil && snap.QueueDepth >= automationQueueQuota {
-		return outboundchat.SendMessageResult{}, outboundchat.ErrQueueFull
+	if err == nil {
+		if snap.QueueDepth >= automationQueueQuota {
+			return outboundchat.SendMessageResult{}, outboundchat.ErrQueueFull
+		}
+		if !snap.Capability.SupportsReply {
+			req.ReplyParentMessageID = ""
+		}
 	}
 	return d.outbound.Send(ctx, req)
 }

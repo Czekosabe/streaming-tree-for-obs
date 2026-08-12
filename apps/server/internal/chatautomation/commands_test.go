@@ -1,12 +1,14 @@
 package chatautomation
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/streaming-tree/server/internal/domain/account"
 	domain "github.com/streaming-tree/server/internal/domain/chatautomation"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/outboundchat"
 )
 
 func TestParseCommandTokenExamples(t *testing.T) {
@@ -322,6 +324,59 @@ func TestCommandEngineUsesSourceCommandAndReply(t *testing.T) {
 	}
 	if call.ReplyParentMessageID != "msg_1" {
 		t.Errorf("ReplyParentMessageID = %q, want msg_1 (same-account reply)", call.ReplyParentMessageID)
+	}
+}
+
+// fakeNonReplyingOutboundProvider is a YouTube-shaped outboundchat.Provider
+// double reporting SupportsReply: false, exactly like the real
+// internal/provider/youtube/outbound_chat_adapter.go - used to prove
+// dispatcher.send strips a command's own reply-parent id rather than
+// letting every response fail outright with ErrReplyUnsupported (a real
+// bug this project's Stage 15A verify-youtube-engagement.mjs integration
+// script caught: without the strip, a YouTube command response could
+// never succeed, ever, since commands.go always requests a reply).
+type fakeNonReplyingOutboundProvider struct {
+	calls []outboundchat.SendMessageRequest
+}
+
+func (p *fakeNonReplyingOutboundProvider) ProviderID() account.ProviderID {
+	return account.ProviderYouTube
+}
+func (p *fakeNonReplyingOutboundProvider) AssessCapability(acc account.Account) outboundchat.Capability {
+	return outboundchat.Capability{Required: []string{"youtube.force-ssl"}, Available: true, SupportsReply: false}
+}
+func (p *fakeNonReplyingOutboundProvider) SendChatMessage(_ context.Context, _ account.Account, _ account.TokenBundle, _ string, req outboundchat.SendMessageRequest) (outboundchat.SendMessageResult, error) {
+	if req.ReplyParentMessageID != "" {
+		return outboundchat.SendMessageResult{}, outboundchat.ErrReplyUnsupported
+	}
+	p.calls = append(p.calls, req)
+	return outboundchat.SendMessageResult{Sent: true, CompletedAt: time.Now()}, nil
+}
+
+func TestCommandEngineStripsUnsupportedReplyForYouTubeAccount(t *testing.T) {
+	clock := newFakeClock()
+	acc := account.Account{
+		ID: "acct_yt", ProviderID: account.ProviderYouTube, ProviderUserID: "UC_channel_1",
+		Login: "My Channel", DisplayName: "My Channel", Status: account.StatusConnected,
+	}
+	provider := &fakeNonReplyingOutboundProvider{}
+	accounts := newFakeAccounts(acc)
+	manager := outboundchat.NewManager(outboundchat.ManagerOptions{
+		Accounts: accounts, Providers: []outboundchat.Provider{provider}, Now: clock.Now,
+	})
+	dispatch := newDispatcher(manager)
+	e := newCommandEngine(clock.Now, accounts, fakePlatforms{}, dispatch)
+	e.reload([]domain.Command{{
+		ID: "cmd_1", Name: "discord", Enabled: true, ResponseTemplate: "join us", RequiredRole: domain.RoleEveryone,
+		Targets: []domain.Target{{AccountID: "acct_yt"}},
+	}})
+
+	e.handleEvent(chatMessageEvent("acct_yt", "viewer_1", "!discord", nil, false))
+	if len(provider.calls) != 1 {
+		t.Fatalf("provider called %d times, want 1 (the response must actually be sent, not silently dropped)", len(provider.calls))
+	}
+	if provider.calls[0].ReplyParentMessageID != "" {
+		t.Errorf("ReplyParentMessageID = %q, want empty - a non-replying provider must never receive one", provider.calls[0].ReplyParentMessageID)
 	}
 }
 

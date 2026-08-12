@@ -101,7 +101,12 @@ type fakeOutboundProvider struct {
 
 func (p *fakeOutboundProvider) ProviderID() account.ProviderID { return account.ProviderTwitch }
 func (p *fakeOutboundProvider) AssessCapability(acc account.Account) outboundchat.Capability {
-	return outboundchat.Capability{Required: []string{"user:write:chat"}, Available: true}
+	// SupportsReply: true mirrors the real Twitch adapter's own capability
+	// (internal/provider/twitch/outbound_chat_adapter.go) - this fake
+	// simulates a Twitch-like provider throughout this package's test
+	// suite, and TestCommandEngineUsesSourceCommandAndReply specifically
+	// depends on a reply actually being requested.
+	return outboundchat.Capability{Required: []string{"user:write:chat"}, Available: true, SupportsReply: true}
 }
 func (p *fakeOutboundProvider) SendChatMessage(_ context.Context, _ account.Account, _ account.TokenBundle, _ string, req outboundchat.SendMessageRequest) (outboundchat.SendMessageResult, error) {
 	p.mu.Lock()
