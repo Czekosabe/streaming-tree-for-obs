@@ -19800,3 +19800,128 @@ both build tags, the full frontend check suite
 integration scripts run in one clean, unmodified sequence - then a
 closing journal entry, `git push origin main`, and the final Stage 15A
 report to the user.
+
+## 2026-08-12 12:51 — Stage 15A closing regression: all clean, all 17 scripts pass
+
+### What
+Closes out Stage 15A with the full regression pass its own task
+required, run as one clean, unmodified sequence against the final
+state of every commit above (`b48ea61` through `1f182ec`):
+
+- **Backend** (`cd apps/server`): `gofmt -l .` clean, `go build ./...`
+  clean, `go build -tags integration ./...` clean, `go vet ./...`
+  clean, `go vet -tags integration ./...` clean, `go test ./...` -
+  every package `ok`.
+- **Frontend** (`cd apps/web`): `npm run i18n:check` clean (2
+  languages, 17 namespaces, no diff against en), `npx tsc -b` clean,
+  `npm run lint` clean, `npx vitest run` - 86 files / 1224 tests, all
+  passing, `npm run build` clean.
+- **All 17 integration scripts**, run sequentially against fresh
+  `-tags integration` builds, every one PASS: `verify-persistence`,
+  `verify-mediamtx-runtime`, `verify-ffmpeg-branches`,
+  `verify-twitch-account-integration`,
+  `verify-youtube-account-integration`, `verify-twitch-engagement`,
+  `verify-youtube-engagement` (the new 17th script), `verify-operator-chat`,
+  `verify-chat-overlay`, `verify-twitch-outbound-chat`,
+  `verify-chat-automation`, `verify-alerts`,
+  `verify-alert-advanced-queue`, `verify-alert-designer`,
+  `verify-chat-overlay-designer`, `verify-visual-templates`,
+  `verify-visual-template-packages`.
+
+### Stage 15A summary (what actually shipped this stage)
+
+- A full YouTube Live Chat engagement connector
+  (`internal/runtime/youtubeengagement`), REST-polling (not YouTube's
+  own gRPC transport - no official Go client and no independently
+  verifiable `.proto` definition exist for it, confirmed by direct
+  environment inspection, not assumed), with a real baseline-first
+  cutover (the first poll's own messages are never published, proven
+  end to end by the new integration script, not just at the unit
+  level) and honest waiting/error states with no Twitch-shaped fiction
+  forced onto a genuinely different transport.
+- A YouTube outbound chat adapter reusing the exact same shared
+  dispatcher Twitch's own Stage 11A adapter already uses - one queue,
+  one capability model, never a second one - with reply correctly
+  rejected outright (YouTube's API has no such concept) rather than
+  silently downgraded.
+- Full integration into every existing shared pipeline unchanged:
+  operator chat, chat overlay, chat automation (including self-loop
+  protection keyed on the stable channel id), and alerts - never a
+  parallel YouTube-only copy of any of them.
+- This platform's first real monetary value
+  (`internal/domain/engagement.Money`: integer micros, uppercased
+  currency, no floating-point arithmetic, no currency conversion ever)
+  powering the first two monetary alert event types (Super Chat, Super
+  Sticker) plus two new membership-family event types, all reusing the
+  existing alert rule/matcher/template/queue machinery with new
+  currency-aware conditions and placeholders, never a second alert
+  system.
+- The full frontend surface for all of the above, entirely through the
+  four existing pages (Engagement, Chat, Automation, Alerts) - no new
+  route, no new OBS URL, no new permission - with complete EN/PL
+  parity.
+- Kick's own engagement feasibility researched against official
+  sources only and found feasibility-gated (webhook-only event
+  delivery, no public inbound endpoint available) - documented, not
+  implemented, per the task's own explicit instruction. **Stage 15 as
+  a whole remains incomplete** until Stage 15B is resolved or
+  explicitly re-scoped.
+
+### Bugs found and fixed this session (via the new integration script and adjacent code reading, not guessed at)
+
+1. `internal/httpapi/alerts.go`'s `alertRuleRequest`/`alertRuleResponse`
+   DTOs were missing the money fields entirely - the HTTP layer could
+   never actually persist a money-thresholded rule despite the domain/
+   storage layers already supporting one.
+2. `domain.ErrMoneyThresholdInvalid` had no HTTP error-code mapping,
+   producing a bare 500 instead of a 422.
+3. `connectorSchema`/`engagementEventSchema` (frontend) were missing
+   the always-sent `provider` field, wrongly required
+   `activeSubscriptionCount`/`expectedSubscriptionCount` (omitted for
+   YouTube), and had a dead `amount` field instead of the real
+   `amountMicros`/`displayAmount` the backend actually sends - any of
+   these would have broken on the first real YouTube connector/event.
+4. `outboundChatStatusResponse.SharedChatWarning` was unconditionally
+   set to Twitch's own Shared Chat disclosure, even for a YouTube
+   account with no such feature.
+5. `writeOutboundChatError` had no case for `ErrChatUnavailable` or
+   `ErrReplyUnsupported`, both real and reachable, both falling through
+   to a bare 500.
+6. **The most serious**: `chatautomation.commandEngine` unconditionally
+   requested a reply on every command response - fatal for YouTube,
+   whose adapter rejects any reply-carrying request outright. Every
+   single chat-automation command response for a YouTube account would
+   have failed, forever, with no existing unit test able to catch it
+   (each one stopped before or bypassed the actual send path). Found
+   by the new integration script's very first real run.
+
+Each was fixed with a dedicated regression test (Go unit/HTTP test or
+a new/extended integration-script step) proving the fix, not just
+patching and moving on.
+
+### Automated validation
+See "What" above - full backend + frontend + all-17-scripts regression,
+clean, this same session.
+
+### Known limitations (honest, as required)
+- **Stage 15 as a whole is NOT complete.** Stage 15B (Kick) is
+  feasibility-gated only - researched, documented, zero Kick code
+  written, per the task's own explicit instruction never to implement
+  it via scraping/tunneling/relay workarounds.
+- Membership/membership-milestone event types have field-level test
+  coverage at the Go unit level and are proven to reach the Event Bus
+  by the integration script, but were not given the same exhaustive
+  per-field integration-script scrutiny Super Chat/Super Sticker
+  received (a deliberate, documented scope trim - see
+  `scripts/verify-youtube-engagement.mjs`'s own header comment).
+- The transient `waiting_for_broadcast` auto-recovery path (a real
+  ~10s fixed retry interval) is proven at the Go unit level only, not
+  by the integration script, to keep that script's own runtime
+  reasonable.
+- The chunk-size warning in the frontend production build
+  (`index.js` ~965 kB) is pre-existing, unrelated to this stage, and
+  was not addressed.
+
+### Next step
+Push to `origin/main` and deliver the final Stage 15A report to the
+user.
