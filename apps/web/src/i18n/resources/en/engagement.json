@@ -89,6 +89,50 @@
     "youtube_membership": "Membership",
     "youtube_membership_milestone": "Membership milestone",
     "youtube_super_chat": "Super Chat",
-    "youtube_super_sticker": "Super Sticker"
+    "youtube_super_sticker": "Super Sticker",
+    "donation": "Donation"
+  },
+  "streamElementsConnector": {
+    "title": "StreamElements donations",
+    "description": "External donation sources are engagement sources, not streaming destinations - they never appear in your platform/destination configuration.",
+    "loading": "Loading donation sources…",
+    "subtitle": "Room: {{room}}",
+    "enableLabel": "Enable this donation source",
+    "enableDescription": "Opens one Astro WebSocket connection for this source when enabled.",
+    "possibleGapCount": "Possible gaps",
+    "addTitle": "Add a StreamElements donation source",
+    "addExplanation": "Find your StreamElements JWT and Account ID on your StreamElements dashboard, under your account's API settings.",
+    "labelField": "Label",
+    "labelPlaceholder": "e.g. Main channel donations",
+    "remoteChannelIdField": "StreamElements Account ID",
+    "remoteChannelIdHint": "The \"Account ID\" shown next to your JWT on the StreamElements dashboard - not a secret, but also not your channel name.",
+    "remoteChannelIdPlaceholder": "5ad23dcc18fff500d78c5348",
+    "tokenField": "JWT token",
+    "tokenHint": "Your personal StreamElements JWT. Treated as sensitive: stored in your OS credential store, never shown again after saving.",
+    "tokenPlaceholder": "Paste your StreamElements JWT",
+    "addAction": "Add donation source",
+    "adding": "Adding…",
+    "manageDetails": "Manage",
+    "saveMetadata": "Save changes",
+    "saved": "Saved.",
+    "credentialSectionTitle": "Credential",
+    "credentialConfigured": "A credential is currently stored for this source.",
+    "credentialMissing": "No credential is currently stored for this source.",
+    "replaceCredential": "Replace credential",
+    "delete": "Delete donation source",
+    "deleteDialog": {
+      "title": "Delete this donation source?",
+      "message": "This closes the active connection and permanently removes \"{{label}}\" and its stored credential. This cannot be undone."
+    },
+    "state": {
+      "disabled": "Disabled",
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "reconnecting": "Reconnecting",
+      "possible_gap": "Connected (possible gap)",
+      "reconnect_required": "Credential rejected",
+      "error": "Error",
+      "stopping": "Stopping"
+    }
   }
 }

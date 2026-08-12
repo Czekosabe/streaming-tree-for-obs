@@ -95,6 +95,7 @@ export const eventTypeSchema = z.enum([
   'youtube.membership_milestone',
   'youtube.super_chat',
   'youtube.super_sticker',
+  'donation',
 ]);
 export type EngagementEventType = z.infer<typeof eventTypeSchema>;
 

@@ -79,6 +79,7 @@ export function eventTypeKey(type: EngagementEventType): EngagementKey {
     'youtube.membership_milestone': 'eventType.youtube_membership_milestone',
     'youtube.super_chat': 'eventType.youtube_super_chat',
     'youtube.super_sticker': 'eventType.youtube_super_sticker',
+    donation: 'eventType.donation',
   };
   return keys[type];
 }
@@ -141,5 +142,7 @@ export function eventSummary(event: {
       return { actor, detail: event.displayAmount ?? event.message?.text ?? '' };
     case 'youtube.super_sticker':
       return { actor, detail: event.displayAmount ?? '' };
+    case 'donation':
+      return { actor, detail: event.displayAmount ?? event.message?.text ?? '' };
   }
 }

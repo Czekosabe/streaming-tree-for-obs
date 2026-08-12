@@ -25,6 +25,9 @@ export const alertEventTypeSchema = z.enum([
   'youtube_membership_milestone',
   'youtube_super_chat',
   'youtube_super_sticker',
+  /** Stage 16A: a real external donation (StreamElements first) - see
+   * internal/domain/engagement.TypeDonation. */
+  'donation',
 ]);
 export type AlertEventType = z.infer<typeof alertEventTypeSchema>;
 

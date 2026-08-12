@@ -106,7 +106,8 @@
       "providersHint": "Leave both off to match every provider. Pin to one or both to scope this rule to specific platforms.",
       "provider": {
         "twitch": "Twitch",
-        "youtube": "YouTube"
+        "youtube": "YouTube",
+        "streamelements": "StreamElements"
       },
       "accounts": "Account filter",
       "accountsHint": "Empty means any connected Twitch or YouTube account.",
@@ -139,7 +140,8 @@
       "youtube_membership": "Membership",
       "youtube_membership_milestone": "Membership milestone",
       "youtube_super_chat": "Super Chat",
-      "youtube_super_sticker": "Super Sticker"
+      "youtube_super_sticker": "Super Sticker",
+      "donation": "Donation"
     },
     "role": {
       "everyone": "Everyone",

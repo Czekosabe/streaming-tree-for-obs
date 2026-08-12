@@ -19,6 +19,15 @@ const CODE_MESSAGE_KEYS = new Map<string, ParseKeys<'errors'>>([
   ['credential_store_failure', 'codes.credential_store_failure'],
   ['branch_not_running', 'codes.branch_not_running'],
   ['branch_conflict', 'codes.branch_conflict'],
+  ['donation_source_not_found', 'codes.donation_source_not_found'],
+  ['invalid_provider', 'codes.invalid_provider'],
+  ['invalid_label', 'codes.invalid_label'],
+  ['invalid_remote_channel_id', 'codes.invalid_remote_channel_id'],
+  ['credential_required', 'codes.credential_required'],
+  ['credential_too_long', 'codes.credential_too_long'],
+  ['secret_store_unavailable', 'codes.secret_store_unavailable'],
+  ['engagement_not_supported', 'codes.engagement_not_supported'],
+  ['engagement_connector_not_found', 'codes.engagement_connector_not_found'],
 ]);
 
 /**

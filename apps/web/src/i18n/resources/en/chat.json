@@ -19,7 +19,8 @@
     "raid": "Raid",
     "channel_point_redemption": "Channel points",
     "stream_online": "Stream online (remote)",
-    "stream_offline": "Stream offline (remote)"
+    "stream_offline": "Stream offline (remote)",
+    "donation": "Donation"
   },
   "moderationAction": {
     "messageDeletedNotRetained": "A message was deleted (no longer retained)",

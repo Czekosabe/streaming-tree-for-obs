@@ -33,12 +33,13 @@ describe('alertEventTypeSchema', () => {
     'youtube_membership_milestone',
     'youtube_super_chat',
     'youtube_super_sticker',
+    'donation',
   ])('accepts %s', (value) => {
     expect(alertEventTypeSchema.parse(value)).toBe(value);
   });
 
-  it('rejects donation - not a real Stage 12A event type', () => {
-    expect(alertEventTypeSchema.safeParse('donation').success).toBe(false);
+  it('rejects streamelements_donation - not the real Stage 16A event type name', () => {
+    expect(alertEventTypeSchema.safeParse('streamelements_donation').success).toBe(false);
   });
 });
 

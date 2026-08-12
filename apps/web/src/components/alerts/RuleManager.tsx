@@ -24,6 +24,7 @@ import {
   useTestAlertRuleMutation,
   useUpdateAlertRuleMutation,
 } from '@/hooks/use-alerts';
+import { useDonationSourcesQuery } from '@/hooks/use-donationsources';
 import { useVisualDesignQuery } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
 import {
@@ -51,8 +52,9 @@ import {
 
 /** Providers alert rules can currently filter on - mirrors
  * internal/domain/alerts.ValidateProviders' own closed accept list
- * (Stage 15A added youtube alongside twitch). */
-const ALERT_RULE_PROVIDERS = ['twitch', 'youtube'] as const;
+ * (Stage 15A added youtube alongside twitch; Stage 16A added
+ * streamelements). */
+const ALERT_RULE_PROVIDERS = ['twitch', 'youtube', 'streamelements'] as const;
 
 /** Test Rule's own edge-scenario vocabulary - mirrors
  * internal/alerts/testevents.go's own Scenario* constants exactly. An
@@ -257,6 +259,7 @@ function RuleFormModal({
 }) {
   const { t } = useTranslation('alerts');
   const accountsQuery = useAccountsQuery();
+  const donationSourcesQuery = useDonationSourcesQuery();
   const createMutation = useCreateAlertRuleMutation(profileId);
   const updateMutation = useUpdateAlertRuleMutation(profileId);
   const previewMutation = useAlertPreviewMutation();
@@ -277,6 +280,18 @@ function RuleFormModal({
   const filterableAccounts = (accountsQuery.data ?? []).filter(
     (a) => a.providerId === 'twitch' || a.providerId === 'youtube',
   );
+  // Stage 16A: a donation source's own id is also a valid value for
+  // AlertRuleInput['accounts'] - see internal/alerts/wiring.go's combined
+  // AccountLookupAdapter (checks account.Service, then donationsource.
+  // Service). Presented as options alongside connected accounts rather
+  // than as a second filter list, since the rule's own `accounts` field is
+  // one shared array either way.
+  const donationSources = (donationSourcesQuery.data ?? []).map((source) => ({
+    id: source.id,
+    displayName: source.label,
+    login: source.label,
+  }));
+  const filterableAccountOptions = [...filterableAccounts, ...donationSources];
   const capability = eventTypes.find((e) => e.eventType === draft.eventType);
 
   const nameValid = isValidAlertName(draft.name);
@@ -639,7 +654,7 @@ function RuleFormModal({
               <div key={index} className="flex items-center gap-2">
                 <SelectInput
                   aria-label={t('rules.fields.accounts')}
-                  options={[{ value: '', label: '' }, ...filterableAccounts.map((a) => ({ value: a.id, label: a.displayName || a.login }))]}
+                  options={[{ value: '', label: '' }, ...filterableAccountOptions.map((a) => ({ value: a.id, label: a.displayName || a.login }))]}
                   value={accountId}
                   onChange={(e) => updateAccount(index, e.target.value)}
                 />
@@ -652,7 +667,7 @@ function RuleFormModal({
             onClick={() => setDraft((d) => ({ ...d, accounts: [...d.accounts, ''] }))}>
             {t('rules.fields.addAccount')}
           </Button>
-          {filterableAccounts.length === 0 && <p className="mt-1 text-[11px] text-status-error">{t('common.noAccounts')}</p>}
+          {filterableAccountOptions.length === 0 && <p className="mt-1 text-[11px] text-status-error">{t('common.noAccounts')}</p>}
         </div>
 
         <EditorPreview template={draft.textTemplate} eventType={draft.eventType} mutation={previewMutation} />

@@ -106,7 +106,8 @@
       "providersHint": "Pozostaw oba wyłączone, aby dopasować każdego dostawcę. Przypnij do jednego lub obu, aby ograniczyć tę regułę do konkretnych platform.",
       "provider": {
         "twitch": "Twitch",
-        "youtube": "YouTube"
+        "youtube": "YouTube",
+        "streamelements": "StreamElements"
       },
       "accounts": "Filtr kont",
       "accountsHint": "Puste oznacza dowolne połączone konto Twitch lub YouTube.",
@@ -139,7 +140,8 @@
       "youtube_membership": "Członkostwo",
       "youtube_membership_milestone": "Rocznica członkostwa",
       "youtube_super_chat": "Super Chat",
-      "youtube_super_sticker": "Super Sticker"
+      "youtube_super_sticker": "Super Sticker",
+      "donation": "Donacja"
     },
     "role": {
       "everyone": "Każdy",

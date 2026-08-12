@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { RecentEventsFeed } from '@/components/engagement/RecentEventsFeed';
+import { StreamElementsConnectorCard } from '@/components/engagement/StreamElementsConnectorCard';
 import { TwitchConnectorCard } from '@/components/engagement/TwitchConnectorCard';
 import { YouTubeConnectorCard } from '@/components/engagement/YouTubeConnectorCard';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
@@ -66,6 +67,8 @@ export function EngagementPage() {
             {youtubeAccounts.map((account) => <YouTubeConnectorCard key={account.id} account={account} />)}
           </>
         )}
+
+        <StreamElementsConnectorCard />
 
         <RecentEventsFeed />
       </div>

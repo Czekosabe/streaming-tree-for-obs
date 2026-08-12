@@ -89,6 +89,50 @@
     "youtube_membership": "Członkostwo",
     "youtube_membership_milestone": "Rocznica członkostwa",
     "youtube_super_chat": "Super Chat",
-    "youtube_super_sticker": "Super Sticker"
+    "youtube_super_sticker": "Super Sticker",
+    "donation": "Donacja"
+  },
+  "streamElementsConnector": {
+    "title": "Donacje StreamElements",
+    "description": "Zewnętrzne źródła donacji są źródłami zaangażowania, nie celami transmisji - nigdy nie pojawiają się w konfiguracji platform/celów.",
+    "loading": "Wczytywanie źródeł donacji…",
+    "subtitle": "Pokój: {{room}}",
+    "enableLabel": "Włącz to źródło donacji",
+    "enableDescription": "Po włączeniu otwiera jedno połączenie WebSocket Astro dla tego źródła.",
+    "possibleGapCount": "Możliwe luki",
+    "addTitle": "Dodaj źródło donacji StreamElements",
+    "addExplanation": "Znajdź swój JWT StreamElements i identyfikator konta na panelu StreamElements, w ustawieniach API swojego konta.",
+    "labelField": "Etykieta",
+    "labelPlaceholder": "np. Donacje głównego kanału",
+    "remoteChannelIdField": "Identyfikator konta StreamElements",
+    "remoteChannelIdHint": "\"Account ID\" pokazywany obok Twojego JWT na panelu StreamElements - nie jest sekretem, ale też nie jest nazwą Twojego kanału.",
+    "remoteChannelIdPlaceholder": "5ad23dcc18fff500d78c5348",
+    "tokenField": "Token JWT",
+    "tokenHint": "Twój osobisty JWT StreamElements. Traktowany jako poufny: przechowywany w magazynie poświadczeń systemu, nigdy nie pokazywany ponownie po zapisaniu.",
+    "tokenPlaceholder": "Wklej swój JWT StreamElements",
+    "addAction": "Dodaj źródło donacji",
+    "adding": "Dodawanie…",
+    "manageDetails": "Zarządzaj",
+    "saveMetadata": "Zapisz zmiany",
+    "saved": "Zapisano.",
+    "credentialSectionTitle": "Poświadczenie",
+    "credentialConfigured": "Dla tego źródła jest obecnie przechowywane poświadczenie.",
+    "credentialMissing": "Dla tego źródła nie jest obecnie przechowywane żadne poświadczenie.",
+    "replaceCredential": "Zastąp poświadczenie",
+    "delete": "Usuń źródło donacji",
+    "deleteDialog": {
+      "title": "Usunąć to źródło donacji?",
+      "message": "To zamyka aktywne połączenie i trwale usuwa „{{label}}” oraz jego przechowywane poświadczenie. Tej operacji nie można cofnąć."
+    },
+    "state": {
+      "disabled": "Wyłączone",
+      "connecting": "Łączenie",
+      "connected": "Połączone",
+      "reconnecting": "Ponowne łączenie",
+      "possible_gap": "Połączone (możliwa luka)",
+      "reconnect_required": "Poświadczenie odrzucone",
+      "error": "Błąd",
+      "stopping": "Zatrzymywanie"
+    }
   }
 }

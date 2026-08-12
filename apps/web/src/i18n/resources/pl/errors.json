@@ -16,6 +16,15 @@
     "credential_store_unavailable": "Bezpieczny magazyn poświadczeń jest teraz niedostępny.",
     "credential_store_failure": "Magazyn poświadczeń nie mógł zrealizować żądania.",
     "branch_not_running": "Ten cel obecnie nie działa.",
-    "branch_conflict": "Ten cel ma już proces uruchamiający się, aktywny lub restartujący się."
+    "branch_conflict": "Ten cel ma już proces uruchamiający się, aktywny lub restartujący się.",
+    "donation_source_not_found": "To źródło donacji już nie istnieje.",
+    "invalid_provider": "Ten dostawca usługi donacji nie jest obsługiwany.",
+    "invalid_label": "Etykieta jest wymagana i musi mieć rozsądną długość.",
+    "invalid_remote_channel_id": "Identyfikator konta jest wymagany i musi mieć rozsądną długość.",
+    "credential_required": "Poświadczenie jest wymagane.",
+    "credential_too_long": "Podane poświadczenie jest za długie.",
+    "secret_store_unavailable": "Bezpieczny magazyn poświadczeń jest teraz niedostępny.",
+    "engagement_not_supported": "Ten dostawca nie obsługuje zaangażowania w tej wersji.",
+    "engagement_connector_not_found": "Dla tego źródła nie skonfigurowano łącznika zaangażowania."
   }
 }

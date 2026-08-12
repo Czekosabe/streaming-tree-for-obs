@@ -70,4 +70,14 @@ describe('ActivityRow', () => {
     renderRow(activityItem('bits', { user: { anonymous: true } }));
     expect(screen.getByText(/anonymous/i)).toBeInTheDocument();
   });
+
+  it('renders a donation activity with its display amount', () => {
+    renderRow(
+      activityItem('donation', {
+        activity: { activityType: 'donation', amountMicros: 4_200_000, currency: 'USD', displayAmount: '$4.20' },
+      }),
+    );
+    expect(screen.getByText('Donation')).toBeInTheDocument();
+    expect(screen.getByText('$4.20')).toBeInTheDocument();
+  });
 });

@@ -36,6 +36,7 @@ const ACTIVITY_TYPE_KEYS: Record<string, ChatKey> = {
   channel_point_redemption: 'activityType.channel_point_redemption',
   'stream.online': 'activityType.stream_online',
   'stream.offline': 'activityType.stream_offline',
+  donation: 'activityType.donation',
 };
 
 /** Translation key for an activity type, or null for one this build does

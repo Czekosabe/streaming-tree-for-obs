@@ -16,6 +16,15 @@
     "credential_store_unavailable": "The secure credential store is not available right now.",
     "credential_store_failure": "The credential store could not complete the request.",
     "branch_not_running": "This destination is not currently running.",
-    "branch_conflict": "This destination already has a process starting, live or restarting."
+    "branch_conflict": "This destination already has a process starting, live or restarting.",
+    "donation_source_not_found": "This donation source no longer exists.",
+    "invalid_provider": "This donation service provider is not supported.",
+    "invalid_label": "Label is required and must be a reasonable length.",
+    "invalid_remote_channel_id": "The account ID is required and must be a reasonable length.",
+    "credential_required": "A credential is required.",
+    "credential_too_long": "The supplied credential is too long.",
+    "secret_store_unavailable": "The secure credential store is not available right now.",
+    "engagement_not_supported": "This provider does not support engagement in this version.",
+    "engagement_connector_not_found": "No engagement connector is configured for this source."
   }
 }

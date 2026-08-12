@@ -19,7 +19,8 @@
     "raid": "Najazd",
     "channel_point_redemption": "Punkty kanału",
     "stream_online": "Transmisja rozpoczęta (zdalnie)",
-    "stream_offline": "Transmisja zakończona (zdalnie)"
+    "stream_offline": "Transmisja zakończona (zdalnie)",
+    "donation": "Donacja"
   },
   "moderationAction": {
     "messageDeletedNotRetained": "Usunięto wiadomość (już niezachowana)",

@@ -21356,6 +21356,139 @@ disable/delete/status endpoints, the real (non-nil) combined
 temporary `nil` arguments from the previous commit), and the
 integration-only WebSocket endpoint override.
 
+## 2026-08-12 — feat(web): manage StreamElements donations
+
+### Status
+Completed.
+
+### Scope
+The frontend half of Stage 16A: an operator can now add, label, enable/
+disable, replace the credential for, and delete a StreamElements
+donation source entirely from the UI; a real donation now displays
+correctly everywhere money-carrying activity already flows (operator
+chat, the Engagement diagnostic feed, alert rules). Also fixes a
+pre-existing frontend/backend contract mismatch found while wiring this
+in.
+
+### Changes
+- `apps/web/src/api/donationsource-schemas.ts` (new) - Zod contracts
+  mirroring `internal/httpapi/donationsources.go` exactly: source/
+  connector/credential-status shapes, none carrying a credential value.
+- `apps/web/src/api/donationsources.ts` (new) - thin transport functions
+  (list/create/get/update/delete/replace-credential/engagement get-set-
+  restart), mirroring `api/engagement.ts`'s own shape.
+- `apps/web/src/hooks/use-donationsources.ts` (new) - React Query hooks;
+  the create and credential-replace mutations use `gcTime: 0` so the
+  pasted JWT never lingers in the mutation cache, mirroring
+  `hooks/use-credentials.ts`'s own `useSetStreamKeyMutation`.
+- `apps/web/src/models/donationsource-presentation.ts` (new) - exhaustive
+  connector-state -> label-key/tone mapping, mirroring
+  `models/engagement-presentation.ts`'s own `connectorStateKey`/
+  `connectorStateTone`.
+- `apps/web/src/components/engagement/StreamElementsConnectorCard.tsx`
+  (new) - the whole management surface: an "add source" form (password-
+  style token field, cleared on success/settle) plus one card per
+  configured source (inline metadata edit, credential replacement,
+  enable/disable, live connector status/stats, delete-with-confirmation).
+  Unlike Twitch/YouTube's connector cards, this is not paired with a
+  separate Settings-page linking flow - a donation source has no OAuth
+  step, so creation and management live together (see
+  `internal/domain/donationsource`'s own doc comment for why it is not a
+  `ConnectedAccount`).
+- `apps/web/src/pages/EngagementPage.tsx` - renders
+  `<StreamElementsConnectorCard />` unconditionally (donation sources are
+  not derived from `useAccountsQuery()`, so they are not gated behind the
+  existing "no Twitch/YouTube account" empty state).
+- `apps/web/src/api/operator-chat-schemas.ts` - **bug fix**:
+  `operatorChatActivitySchema` declared a plain `amount: z.number()`
+  field the backend has never actually sent (it sends `amountMicros`/
+  `displayAmount` - confirmed against `internal/httpapi/operatorchat.go`).
+  This silently dropped every money-carrying activity's amount in the
+  operator Chat page, including the already-shipped YouTube Super Chat -
+  found while wiring donations into operator chat, fixed as part of this
+  commit since a donation's entire point is to show an amount.
+- `apps/web/src/components/chat/ActivityRow.tsx` - renders
+  `activity.displayAmount` when present (previously nothing rendered any
+  amount at all, per the bug above).
+- `apps/web/src/api/engagement-schemas.ts`,
+  `apps/web/src/models/engagement-presentation.ts` - `'donation'` added to
+  the closed `eventTypeSchema` enum and the exhaustive
+  `eventTypeKey`/`eventSummary` mappings.
+- `apps/web/src/models/operator-chat-presentation.ts` - `'donation'` added
+  to `ACTIVITY_TYPE_KEYS`.
+- `apps/web/src/models/provider-labels.ts` - a `streamelements` entry
+  added to `PROVIDER_GLYPH_CLASSES` (a distinct, app-owned accent color -
+  never StreamElements' own logo).
+- `apps/web/src/api/alerts-schemas.ts`, `apps/web/src/models/alerts.ts` -
+  `'donation'` added to the closed `alertEventTypeSchema` enum and
+  `ALERT_EVENT_TYPES`.
+- `apps/web/src/components/alerts/RuleManager.tsx` - `'streamelements'`
+  added to `ALERT_RULE_PROVIDERS`; the rule editor's account/source
+  filter (`filterableAccountOptions`) now also lists every donation
+  source alongside connected Twitch/YouTube accounts, since
+  `AlertRuleInput['accounts']` is one shared array the backend's combined
+  `AccountLookupAdapter` already validates against both domains.
+- `apps/web/src/lib/api-error-message.ts` - donation-source-specific
+  backend error codes mapped to localized messages.
+- `en`/`pl` `engagement.json` - the full `streamElementsConnector` string
+  block (add-source form, per-source management, connector states) plus
+  `eventType.donation`; `alerts.json` - `rules.fields.provider.
+  streamelements` and `rules.eventType.donation`; `chat.json` -
+  `activityType.donation`; `errors.json` - the new backend error codes.
+- New/updated tests: `donationsource-schemas.test.ts`,
+  `donationsource-presentation.test.ts`,
+  `StreamElementsConnectorCard.test.tsx` (list rendering, credential
+  never rendered, add-source submit/clear, submit-button gating,
+  enable/disable, delete-requires-confirmation), an added donation case
+  in `ActivityRow.test.tsx`, and a fixed
+  `alerts-schemas.test.ts` case (see Technical decisions).
+
+### Technical decisions
+- **Donation sources are not folded into the existing account-filtered
+  Twitch/YouTube block on the Engagement page** - they render as their
+  own always-present panel (management, not just status), since a
+  donation source has no OAuth linking step to gate on and is not a
+  `ConnectedAccount` at all.
+- **A pre-existing frontend test's premise flipped**:
+  `alerts-schemas.test.ts` had `it('rejects donation - not a real Stage
+  12A event type', ...)`, asserting the exact string this stage makes
+  real. Rewritten to assert `'donation'` is now accepted (added to the
+  existing `it.each` acceptance list) and to instead reject
+  `'streamelements_donation'`, mirroring the exact same "example string
+  became real" fix the backend's own `validation_test.go` needed in the
+  `feat(server): receive StreamElements donations` commit.
+- **The `operatorChatActivitySchema` bug fix is included here, not held
+  for a separate cleanup commit** - it was only actually discovered
+  because wiring a donation's amount into operator chat required reading
+  the real backend field names, and leaving it unfixed would have meant
+  a donation amount silently failing to render the same way YouTube
+  Super Chat's already does - the same defect this feature would
+  otherwise visibly reproduce.
+
+### Automated validation
+From `apps/web`: `npm run i18n:check` (2 languages, 17 namespaces, no
+differences), `npm run typecheck` (clean), `npm run lint` (clean),
+`npm run test -- --run` (89 test files, 1253 tests, all pass - up from
+86 files/1225 tests before this commit), `npm run build` (clean; the
+existing >500kB single-chunk warning is pre-existing and unrelated to
+this change).
+
+### Known limitations
+- No fake Astro server binary or 18th integration script yet - the
+  frontend has only been exercised via component-level tests with a
+  mocked API client, never against the real running backend end to end.
+- No manual browser verification yet (deliberately deferred - see this
+  stage's own "no real provider testing" instruction; manual/OBS
+  verification is this project's final product stage, not part of any
+  automated commit).
+
+### Next step
+Build the real local fake Astro WebSocket server
+(`apps/server/cmd/fakestreamelements`, `-tags integration`, with a
+loopback HTTP control API) and the 18th integration script
+(`scripts/verify-streamelements-donations.mjs`) that drives the real
+backend against it end to end.
+
 ## 2026-08-12 — feat(server): integrate external donations with engagement
 
 ### Status

@@ -74,6 +74,7 @@ export const ALERT_EVENT_TYPES = [
   'youtube_membership_milestone',
   'youtube_super_chat',
   'youtube_super_sticker',
+  'donation',
 ] as const;
 
 export const ALERT_ROLES = ['everyone', 'subscriber', 'vip', 'moderator', 'broadcaster'] as const;

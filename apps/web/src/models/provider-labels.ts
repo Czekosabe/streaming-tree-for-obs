@@ -89,6 +89,10 @@ const PROVIDER_GLYPH_CLASSES: Record<string, string> = {
   youtube: 'border-red-500/35 bg-red-500/12 text-red-300',
   kick: 'border-emerald-500/35 bg-emerald-500/12 text-emerald-300',
   tiktok: 'border-sky-500/35 bg-sky-500/12 text-sky-300',
+  // A donation-service provider (Stage 16A), not a streaming destination -
+  // a distinct, app-owned accent, never StreamElements' own logo (see
+  // docs/provider-integrations/external-donations.md §22/§44).
+  streamelements: 'border-amber-500/35 bg-amber-500/12 text-amber-300',
 };
 
 const NEUTRAL_GLYPH_CLASS = 'border-line bg-surface-raised text-ink-muted';

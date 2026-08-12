@@ -65,8 +65,15 @@ export type OperatorChatMessage = z.infer<typeof operatorChatMessageSchema>;
 
 export const operatorChatActivitySchema = z.object({
   activityType: z.string(),
-  amount: z.number().optional(),
+  /** Real monetary value (YouTube Super Chat/Super Sticker, Stage 16A
+   * StreamElements donations) - mirrors internal/httpapi/operatorchat.go's
+   * operatorChatActivityResponse exactly (amountMicros/displayAmount, never
+   * a plain float "amount" - the backend has never actually sent that
+   * field; this replaces a pre-existing mismatch that silently dropped
+   * every money-carrying activity's amount). */
+  amountMicros: z.number().optional(),
   currency: z.string().optional(),
+  displayAmount: z.string().optional(),
   quantity: z.number().optional(),
 });
 export type OperatorChatActivity = z.infer<typeof operatorChatActivitySchema>;

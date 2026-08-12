@@ -50,6 +50,9 @@ export function ActivityRow({
       ) : (
         name !== '' && <span className="font-medium text-ink">{name}</span>
       )}
+      {activity.displayAmount !== undefined && (
+        <span className="font-medium text-status-live">{activity.displayAmount}</span>
+      )}
       {activity.quantity !== undefined && (
         <span className="text-ink-muted">{activity.quantity}</span>
       )}
