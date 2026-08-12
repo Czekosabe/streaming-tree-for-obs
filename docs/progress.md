@@ -21713,6 +21713,199 @@ order, in one clean sequence) - restart entirely from the beginning if
 anything fails. Then append and commit the dedicated Stage 16A closing-
 regression journal entry, push, and verify sync.
 
+## 2026-08-12 — docs: record Stage 16A closing regression
+
+### Status
+Completed. **Stage 16A is Completed. Stage 16B (additional external
+donation providers) is Planned/remaining. Stage 16 as a whole is
+Incomplete** - unchanged from every earlier entry in this milestone,
+recorded here as the final, authoritative statement.
+
+### Starting state
+This milestone began at HEAD `fbdebbd` (`docs: record Stage 15A
+documentation corrective regression`), branch `main` tracking
+`origin/main`, clean tree, ahead/behind 0/0. Stage 14 Completed, Stage
+15A Completed, Stage 15B feasibility-gated/not started, Stage 15 as a
+whole incomplete, Stage 16 not started, 17 integration scripts.
+
+### Provider research result
+Three candidate external donation services were researched against
+their current official documentation (StreamElements, Streamlabs,
+Ko-fi) - full findings, source URLs, and the feasibility matrix are in
+[external-donations.md](provider-integrations/external-donations.md).
+
+- **StreamElements: implemented.** A real WebSocket API
+  (`wss://astro.streamelements.com/`), dedicated `channel.tips`
+  (`tips:read`) and `channel.tips.moderation` (`tips:moderation`)
+  topics, and a documented personal-JWT authentication path suitable
+  for a source-available local desktop app with no confidential OAuth
+  client secret.
+- **Streamlabs: deferred, feasibility-gated (stage 16B).** Its own
+  Socket.IO-based Socket API is a different protocol this project
+  doesn't otherwise depend on, and its documented OAuth2 token exchange
+  (`POST https://streamlabs.com/api/v2.0/token`) requires a confidential
+  `client_secret` with no public/native-client alternative found;
+  unapproved apps are additionally capped at 10 whitelisted users.
+- **Ko-fi: deferred, feasibility-gated (stage 16B).** Payment
+  notification is webhook-only (Ko-fi POSTs to an operator-configured
+  public callback URL) - this is a local-first desktop application with
+  no public inbound endpoint, and no tunnel/relay/scraping workaround
+  was considered acceptable.
+
+### Authentication model
+A StreamElements personal JWT, pasted verbatim by the operator from
+their own StreamElements dashboard. No OAuth flow, no confidential
+client secret embedded anywhere, no undocumented flow invented. The
+JWT is never decoded or trusted locally - only the real StreamElements
+Astro service's own subscribe-response ever confirms validity.
+
+### SecretStore usage
+The credential is stored through the exact same OS credential store
+every other secret in this project uses
+(`internal/secrets.SecretStore`), under its own namespaced key
+(`secrets.SecretTypeDonationSourceToken`, keyed by the local donation
+source's own id) - never a second keyring wrapper. Never returned by
+any GET endpoint, never logged, cleared from frontend state immediately
+after every submit/replace (`gcTime: 0` on the relevant mutations).
+Deleting a source deletes its credential; replacing a source's
+credential atomically rotates it.
+
+### Production WebSocket endpoint, topics, and scopes
+`wss://astro.streamelements.com/` is fixed in code
+(`streamelements.DefaultWSURL`) - no normal operator setting can change
+it; only the `-tags integration` test binary's own
+`STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL` env var (invisible to
+a production build) can override it. Subscribes to exactly
+`channel.tips` (`tips:read`) and `channel.tips.moderation`
+(`tips:moderation`) - never `channel.activities`, which would have
+opened a second, duplicate tip-shaped path.
+
+### Moderation behavior
+A tip becomes a real, published `donation` event only when
+`approved == "allowed"` and `status == "success"`. `pending` never
+publishes; `rejected` never publishes; a later moderation-topic update
+to `allowed` for the same tip id publishes exactly once; a repeated
+`allowed` update for an already-published tip id never duplicates,
+relying on the existing Engagement Event Bus's own `DedupeKey`
+deduplication rather than a second, connector-local dedup cache.
+
+### Exact-money conversion
+`math/big.Rat` throughout (`internal/provider/streamelements/money.go`)
+- never `float64` at any point. A value is accepted only if it converts
+to a whole number of integer micros with zero remainder; a value
+carrying more fractional precision than integer micros can represent
+exactly is rejected outright, never silently rounded. A `DisplayAmount`
+is generated the same way (pure integer division/modulo/string
+formatting) when StreamElements itself supplies none, since - unlike
+YouTube - a StreamElements tip carries no pre-formatted display string
+of its own.
+
+### Sensitive fields deliberately discarded
+Donor email, geo, payment method, transaction id, and the payment-rail
+value (e.g. `"paypal"`, present on the tip's own `provider` field but
+never mapped onto `engagement.ProviderID`, which stays
+`"streamelements"` regardless) are read from the raw tip payload and
+then never normalized, persisted, logged, or exposed through any public
+API, operator-chat payload, alert payload, or frontend state. Verified
+by a dedicated Go regression test
+(`TestNormalizeTipNeverExposesSensitiveFields`) and, end to end against
+the real backend, by the 18th integration script's own privacy scan of
+every captured engagement-event, operator-chat, alert-queue, and public
+alert-stream payload.
+
+### Graceful reconnect and unexpected-disconnect behavior
+A documented `type=reconnect` envelope (carrying a `reconnect_token`,
+kept in runtime memory only, never persisted or logged) causes the
+connector to close and redial with `?reconnect_token=...`, relying on
+Astro's own documented automatic subscription restoration - the client
+deliberately never re-subscribes on that path, and the connector never
+displays a possible gap for it. An unexpected disconnect (no
+`reconnect` envelope) instead falls back to an ordinary fresh connect
+with bounded exponential backoff (resetting to the initial backoff on
+every successful connect, a deliberate improvement over the Twitch
+connector's own never-resets behavior), displaying `possible_gap` - an
+honest "may have missed something" signal - until the next real tip
+event clears it back to `connected`. A reconnect token the server later
+rejects (expired/invalid) is treated identically to any other transient
+connect failure, falling back to an ordinary fresh connect rather than
+looping forever on the same bad token.
+
+### Frontend test count
+89 test files, 1253 tests, all passing (from the final regression run
+below) - up from 86 files/1225 tests before this milestone began.
+
+### Backend checks
+`gofmt -l .` (clean), `go vet ./...` (clean), `go test ./...` (all
+packages pass), `go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean), plus `go build -tags integration
+./cmd/fakestreamelements/...` (clean) for the new fake Astro server.
+
+### Final regression - all 18 integration scripts, one clean sequence
+Run in the exact order below, from a fully clean tree (no source or
+product documentation changed during or after this sequence), waited
+for autonomously:
+
+1. `verify-persistence.mjs` — passed
+2. `verify-mediamtx-runtime.mjs` — passed (real local MediaMTX v1.19.3 install/supervision)
+3. `verify-ffmpeg-branches.mjs` — passed (real local FFmpeg + MediaMTX destination branches)
+4. `verify-twitch-account-integration.mjs` — passed
+5. `verify-youtube-account-integration.mjs` — passed
+6. `verify-twitch-engagement.mjs` — passed
+7. `verify-operator-chat.mjs` — passed
+8. `verify-chat-overlay.mjs` — passed
+9. `verify-twitch-outbound-chat.mjs` — passed
+10. `verify-chat-automation.mjs` — passed
+11. `verify-alerts.mjs` — passed
+12. `verify-alert-advanced-queue.mjs` — passed
+13. `verify-alert-designer.mjs` — passed
+14. `verify-chat-overlay-designer.mjs` — passed
+15. `verify-visual-templates.mjs` — passed
+16. `verify-visual-template-packages.mjs` — passed
+17. `verify-youtube-engagement.mjs` — passed
+18. `verify-streamelements-donations.mjs` — passed
+
+All 18 passed in this single sequence. No script was modified during
+this run, and no source or product documentation was modified
+afterward - this closing entry is the only change following it.
+
+### Real-local vs. real-remote status, restated accurately
+MediaMTX and FFmpeg are real, locally-installed/probed software,
+supervised as real child processes - never simulated. StreamElements,
+Twitch, YouTube, Streamlabs, Ko-fi, Kick, TikTok, and OBS itself were
+never contacted for real anywhere in this milestone's own automated
+work: every provider-facing scenario ran against a real local fake
+speaking the genuine wire protocol (Twitch's fake EventSub WebSocket,
+YouTube's fake `streamList` gRPC server, and this milestone's own fake
+Astro WebSocket server), never a bypass of the real transport code.
+
+### Stage status (final)
+- Stage 14: Completed (unchanged).
+- Stage 15A: Completed (unchanged).
+- Stage 15B: feasibility-gated, not started (unchanged) - Kick's
+  currently-documented event delivery remains webhook-only.
+- Stage 15 as a whole: Incomplete (unchanged).
+- **Stage 16A: Completed** (this milestone).
+- **Stage 16B: Planned** - Streamlabs and Ko-fi remain feasibility-
+  gated for the reasons recorded above; revisiting either requires a
+  materially different desktop-authentication or delivery model than
+  what their current official documentation describes.
+- **Stage 16 as a whole: Incomplete** - explicitly not marked complete,
+  since only one of the roadmap's named donation providers shipped.
+- Stage 17 (TTS/audio): not started.
+- Stage 18 (goals/widgets): not started.
+- Stage 19 (TikTok): not started.
+- Stage 20 (packaging/updater/hardening): not started - the
+  application updater remains exclusively Stage 20's own scope; nothing
+  in Stage 16A touches packaging, updates, or hardening.
+
+### Autonomy
+Every build, test run, and integration script in this milestone -
+including the `go build -tags integration` compilations, the MediaMTX
+binary download/verification, and all 18 integration scripts in this
+closing sequence - was waited for autonomously to real completion, with
+exit status inspected directly, never by asking whether to continue
+waiting.
+
 ## 2026-08-12 — feat(server): integrate external donations with engagement
 
 ### Status
