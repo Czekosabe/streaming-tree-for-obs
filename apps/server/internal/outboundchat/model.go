@@ -84,6 +84,13 @@ type Capability struct {
 	Missing                   []string
 	Available                 bool
 	PermissionUpgradeRequired bool
+	// SupportsReply reports whether this provider's send API has any
+	// reply/parent-message concept at all - false for YouTube (Stage
+	// 15A: liveChatMessages.insert has no such field), true for Twitch.
+	// The frontend uses this to disable Reply proactively; SendChatMessage
+	// itself is the authoritative backend enforcement (returns
+	// ErrReplyUnsupported for a provider that reports false here).
+	SupportsReply bool
 }
 
 // Provider is the narrow, provider-specific contract this package's

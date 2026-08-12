@@ -53,6 +53,21 @@ var (
 	// ErrCancelled means the send was cancelled before it started (caller
 	// context cancelled, or the dispatcher is shutting down).
 	ErrCancelled = errors.New("outbound chat send was cancelled")
+
+	// ErrChatUnavailable means the provider has no currently-writable chat
+	// for this account to send into (Stage 15A: YouTube has no selected
+	// broadcast, no live chat yet, or the chat has ended) - a stable,
+	// provider-independent "not live" outcome, never automatically
+	// retried, and never confused with ErrForbidden (which means a real
+	// chat rejected this specific sender).
+	ErrChatUnavailable = errors.New("outbound chat has no writable chat available")
+
+	// ErrReplyUnsupported means the target provider's send API has no
+	// reply/parent-message concept at all (Stage 15A: YouTube
+	// liveChatMessages.insert has no such field) - the backend rejects an
+	// attempted reply outright rather than silently sending it as a plain
+	// message or fabricating an @mention prefix.
+	ErrReplyUnsupported = errors.New("this provider does not support replying to a message")
 )
 
 // RateLimitedError signals a send was rejected due to rate limiting -

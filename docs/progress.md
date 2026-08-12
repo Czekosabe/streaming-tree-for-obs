@@ -18547,3 +18547,96 @@ The YouTube outbound send adapter
 `outboundchat.Provider` and registered alongside the existing Twitch
 adapter in the shared dispatcher - no second send queue, no reply
 support (per research), no optimistic local echo.
+
+## 2026-08-12 08:47 — feat(server): add YouTube outbound sending, confirm automation genericity
+
+### What
+- **`internal/provider/youtube/outbound_chat_adapter.go`** (new):
+  `OutboundChatAdapter` implements `outboundchat.Provider` -
+  deliberately a separate type from the existing `Adapter`
+  (`account.Provider`), since sending needs to resolve a `liveChatId`
+  first, a dependency `Adapter`'s own OAuth/identity methods have no
+  reason to carry. `SendChatMessage` rejects any reply request outright
+  (`outboundchat.ErrReplyUnsupported` - the API has no such field),
+  resolves the account's selected broadcast via the same two-hop
+  `destinationLookup`→`broadcastLookup` pattern
+  `internal/runtime/youtubeengagement` already uses (re-resolved fresh
+  on every send, never cached, so a broadcast that just went offline is
+  caught before the send rather than failing against a stale id), then
+  calls the existing `InsertLiveChatMessage`. No second send queue, no
+  optimistic local echo (a sent YouTube message reaches operator chat
+  only through the normal inbound poll path, exactly like Twitch's own
+  design) - both already guaranteed by reusing
+  `internal/outboundchat.Manager` unchanged, since no code there needed
+  to change at all to add a second provider.
+- **`internal/outboundchat/{model.go, errors.go, dispatcher.go}`**: added
+  `Capability.SupportsReply bool` (Twitch's own adapter now sets it
+  `true` explicitly; YouTube's sets it `false`) so the frontend can
+  disable Reply proactively rather than only discovering it is
+  unsupported after a rejected send. Added two new provider-independent
+  sentinels: `ErrChatUnavailable` ("no writable chat available" - no
+  broadcast selected, no live chat yet, or the chat ended) and
+  `ErrReplyUnsupported`, each mapped to a stable dispatcher error code
+  (`chat_unavailable`, `reply_unsupported`).
+- **Automation**: confirmed, rather than assumed, that
+  `internal/chatautomation`'s self-message-loop protection is genuinely
+  provider-agnostic - it compares `engagement.Event.User.ProviderUserID`
+  against the sending account's own `ProviderUserID` as plain strings,
+  with no Twitch-specific branch anywhere in that check. Added
+  `TestCommandEngineIgnoresSelfMessageForYouTubeAccount`, a YouTube-
+  scoped account/event, to prove this rather than leave it as an
+  unverified assumption from reading the code alone. Deliberately did
+  **not** add a YouTube case to `chatautomation.ChannelURL` - that
+  function's only input is `login`, and a YouTube account's `Login`
+  field is populated with the channel's display **title**
+  (`youtube.Adapter.GetIdentity`'s own doc comment), not a URL-safe
+  handle/slug; fabricating a `youtube.com/...` URL from an arbitrary
+  title would silently produce a wrong or broken link for any channel
+  whose title cannot serve as a handle. `ChannelURL` continues to
+  report `ok=false` for YouTube honestly rather than guess.
+
+### Files changed
+- `internal/provider/youtube/{outbound_chat_adapter.go (new),
+  outbound_chat_adapter_test.go (new)}`
+- `internal/outboundchat/{model.go, errors.go, dispatcher.go}`
+- `internal/provider/twitch/outbound_chat_adapter.go`
+  (`SupportsReply: true`)
+- `internal/chatautomation/commands_test.go`
+
+### Technical decisions
+- **Why `OutboundChatAdapter` is a new type rather than adding methods
+  onto the existing `youtube.Adapter`, unlike Twitch (which adds its
+  outbound methods onto the same `*Adapter` used for
+  `account.Provider`).** Twitch's outbound send needs nothing beyond
+  what `Adapter` already has; YouTube's genuinely needs an extra
+  dependency (the two lookup functions) that has no reason to exist on
+  every other `Adapter` method (`ValidateToken`, `RefreshToken`, etc.).
+  Forcing that dependency onto the shared type would leak an outbound-
+  chat-only concern into unrelated OAuth code paths. A second type
+  mirrors the same underlying interface cleanly without that leak.
+- **Why the liveChatId is re-resolved on every single send instead of
+  reusing whatever the engagement connector currently has cached.** The
+  outbound adapter and the inbound connector are independent - a
+  manual send can happen even while engagement is disabled entirely, so
+  there is no guaranteed live connector snapshot to borrow from. Paying
+  one extra `GetBroadcast` call per manual send is a deliberate,
+  bounded cost in exchange for never sending against a stale/wrong
+  chat id.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go vet
+./...` clean, `go test ./...` - every package `ok`, including 7 new
+outbound-adapter tests, the model/error/dispatcher changes (existing
+`internal/outboundchat` suite unaffected), and the new YouTube
+self-loop test.
+
+### Known limitations
+None new. Still no HTTP route exposes `OutboundChatAdapter`, and
+`main.go`/`testserver` do not yet register it with the dispatcher's
+`Manager` - not reachable through any real API call yet.
+
+### Next step
+The alerts monetary model: a new SQLite migration for currency-aware
+threshold columns, new `EventType`/`Capability` entries for the four
+new YouTube-capable event kinds, matcher support for a money condition,
+new alert placeholders, and deterministic preview fixtures.

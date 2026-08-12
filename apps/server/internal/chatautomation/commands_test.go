@@ -170,6 +170,33 @@ func TestCommandEngineIgnoresSelfMessage(t *testing.T) {
 	}
 }
 
+func TestCommandEngineIgnoresSelfMessageForYouTubeAccount(t *testing.T) {
+	// Self-loop protection compares stable provider user IDs only - it
+	// must work identically for a YouTube-sourced event without any
+	// provider-specific code path, since the same commandEngine.handleEvent
+	// switch has no Twitch-only branch for this check at all (Stage 15A
+	// task Part 34).
+	clock := newFakeClock()
+	acc := account.Account{
+		ID: "acct_yt", ProviderID: account.ProviderYouTube, ProviderUserID: "UC_channel_1",
+		Login: "My Channel", DisplayName: "My Channel", Status: account.StatusConnected,
+	}
+	provider := &fakeOutboundProvider{}
+	e, _ := newFakeCommandDeps(clock, acc, provider)
+	e.reload([]domain.Command{{
+		ID: "cmd_1", Name: "discord", Enabled: true, ResponseTemplate: "x", RequiredRole: domain.RoleEveryone,
+		Targets: []domain.Target{{AccountID: "acct_yt"}},
+	}})
+
+	e.handleEvent(chatMessageEvent("acct_yt", acc.ProviderUserID, "!discord", nil, false))
+	if provider.callCount() != 0 {
+		t.Errorf("provider called %d times, want 0 (YouTube self-message must never trigger)", provider.callCount())
+	}
+	if e.totalSelfSkips.Load() != 1 {
+		t.Errorf("totalSelfSkips = %d, want 1", e.totalSelfSkips.Load())
+	}
+}
+
 func TestCommandEngineIgnoresSyntheticMessage(t *testing.T) {
 	clock := newFakeClock()
 	provider := &fakeOutboundProvider{}

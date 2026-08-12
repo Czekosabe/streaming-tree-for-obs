@@ -19,6 +19,7 @@ func (a *Adapter) AssessCapability(acc account.Account) outboundchat.Capability 
 	return outboundchat.Capability{
 		Required: assessment.Required, Granted: assessment.Granted, Missing: assessment.Missing,
 		Available: assessment.Available, PermissionUpgradeRequired: assessment.PermissionUpgradeRequired,
+		SupportsReply: true,
 	}
 }
 

@@ -528,6 +528,10 @@ func errorCode(err error) string {
 		return "unsupported_provider"
 	case errors.Is(err, ErrPermissionRequired):
 		return "permission_required"
+	case errors.Is(err, ErrChatUnavailable):
+		return "chat_unavailable"
+	case errors.Is(err, ErrReplyUnsupported):
+		return "reply_unsupported"
 	default:
 		return "error"
 	}
