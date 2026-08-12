@@ -41,12 +41,18 @@ Live Chat, Super Chat, Super Sticker and membership events onto that same
 Event Bus, over YouTube's official `streamList` gRPC push transport, with
 every downstream consumer above (operator chat, chat overlay, outbound
 sending, alerts) serving YouTube events identically to Twitch's — see
-[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
+[Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents) —
+and a real external-donation connector (stage 16A): a provider-independent
+`donationsource` domain and a real **StreamElements** Astro WebSocket
+connector, publishing real donations onto that same Event Bus with exact
+integer-micros money and full reuse of operator chat/chat overlay/alerts —
+see [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
 **Still planned**: text-to-speech, goal/counter widgets, a **Kick**
 engagement connector (feasibility-gated — see
 [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
 TikTok LIVE support (conditional on an official, permitted integration
-existing), external donation-service connectors, and Stage 20's own
+existing), additional external donation-service connectors (Streamlabs,
+Ko-fi — both feasibility-gated, stage 16B), and Stage 20's own
 packaging/updater/hardening work — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
@@ -165,10 +171,19 @@ engagement piece above in order (stages 8A through 15A).
 > [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)
 > for the full detail.
 >
-> Kick/TikTok account integration, and everything else still built **on
-> top of** the operator chat, outbound chat, alert engine and
-> visual-design/template/package engine — TTS, goal widgets, donation
-> connectors, and Stage 20's own packaging/updater/hardening work — are
+> Stage 16A adds a real external-donation connector the same way: a
+> provider-independent `donationsource` domain (deliberately separate from
+> `connected_accounts` — a StreamElements personal JWT has no OAuth shape)
+> and a real Astro WebSocket connector publishing donations onto the same
+> Event Bus, with exact integer-micros money, moderation-aware
+> pending/allowed/rejected handling, and full reuse of operator chat and
+> alerts. See [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
+>
+> Kick/TikTok account integration, additional donation providers
+> (Streamlabs, Ko-fi — stage 16B, feasibility-gated), and everything else
+> still built **on top of** the operator chat, outbound chat, alert engine
+> and visual-design/template/package engine — TTS, goal widgets, and
+> Stage 20's own packaging/updater/hardening work — are
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -232,7 +247,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 14B | Portable archive template packages, managed visual assets, and safe custom image/video/font primitives, see [visual-template-packages.md](docs/visual-template-packages.md) | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is now complete |
 | 15A | YouTube engagement connector: Live Chat received over the official `streamList` gRPC server-streaming transport, reusing operator chat/chat overlay/alerts/outbound chat unchanged, plus the first real monetary alert capability (Super Chat/Super Sticker) | **Completed** — see [progress.md](docs/progress.md) |
 | 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer, see [kick-engagement.md](docs/provider-integrations/kick-engagement.md); Stage 15 as a whole is **not** complete |
-| 16–19 | TTS, goal widgets, external donations | Planned |
+| 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain, a real Astro WebSocket connector, exact integer-micros money conversion, and full reuse of the existing Event Bus/operator chat/alerts pipeline, see [external-donations.md](docs/provider-integrations/external-donations.md) | **Completed** — see [progress.md](docs/progress.md) |
+| 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth token exchange requires a confidential client secret with no public-client alternative found; Ko-fi is webhook-only, requiring a public inbound endpoint this deployment target does not offer; see [external-donations.md](docs/provider-integrations/external-donations.md); Stage 16 as a whole is **not** complete |
+| 17–19 | TTS, goal widgets | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -2259,8 +2276,11 @@ added deliberately, as their own dedicated stage — see
 new Twitch scope and no new EventSub subscription type were added for
 12A, 12B or 13A: alerts only ever match events already reaching the
 Event Bus, and the alert engine never talks to Twitch directly.
-Text-to-speech, goal/counter widgets, and any donation-service
-connector remain unimplemented. Real alert-event history, queue
+Text-to-speech and goal/counter widgets remain unimplemented; a real
+external donation-service connector (StreamElements) was added later,
+as its own dedicated stage — see
+[`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)
+(Stage 16A). Real alert-event history, queue
 contents, and every counter (including the grouping/preemption ones)
 are **runtime-only** — never persisted — exactly like the automation
 runtime above. Saved visual designs and their revisions **are**
@@ -2282,10 +2302,13 @@ YouTube normalization code produces (Stage 15A): **membership,
 membership milestone, Super Chat, and Super Sticker** — the last two
 carry this application's first real monetary threshold (an inclusive
 integer-micros amount range, exact-currency-match only, never a
-currency conversion). Chat messages and moderation events never become
-alerts on either provider. Donations from an external donation-service
-connector are not a real source here yet and are never presented as if
-they were.
+currency conversion). Stage 16A adds a real **donation** event type from
+a connected StreamElements donation source, reusing that exact same
+monetary-threshold model (integer micros, exact-currency-match, no FX);
+a donation is never auto-grouped (each one is individually meaningful),
+though the existing priority/preemption model still lets a large
+donation jump the queue. Chat messages and moderation events never
+become alerts on any provider.
 
 ### Alert profiles
 
@@ -2850,6 +2873,7 @@ node scripts/verify-chat-overlay-designer.mjs     # Stage 13B chat overlay visua
 node scripts/verify-visual-templates.mjs          # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
 node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 node scripts/verify-youtube-engagement.mjs        # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
+node scripts/verify-streamelements-donations.mjs  # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -3199,7 +3223,10 @@ rest of the repository.
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
 │   │   ├── twitch-outbound-chat.md # Researched Twitch Send Chat Message API contract (Stage 11A) + the Stage 11B automation layer built on top of it
-│   │   └── youtube.md          # Researched Google/YouTube API contract
+│   │   ├── youtube.md          # Researched Google/YouTube API contract
+│   │   ├── youtube-engagement.md # Researched YouTube Live Chat streamList gRPC contract (Stage 15A)
+│   │   ├── kick-engagement.md  # Researched Kick engagement feasibility (Stage 15B) - webhook-only, deferred
+│   │   └── external-donations.md # Researched StreamElements/Streamlabs/Ko-fi donation feasibility + the real StreamElements Astro contract (Stage 16A)
 │   └── progress.md             # Work journal
 ├── scripts/
 │   ├── verify-persistence.mjs      # Scripted restart-persistence check
@@ -3218,7 +3245,8 @@ rest of the repository.
 │   ├── verify-chat-overlay-designer.mjs # Stage 13B chat overlay visual-design HTTP API and public rendering - fake Twitch only
 │   ├── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
 │   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
-│   └── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
+│   ├── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
+│   └── verify-streamelements-donations.mjs # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -3237,7 +3265,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| TTS, goal/counter widgets, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — and a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a) and [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, donation connectors, Kick/TikTok engagement) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| TTS, goal/counter widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), and a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3386,12 +3414,19 @@ API does not report them, so showing a number would mean inventing it.
   capability-gated (stage 7C). Kick's own engagement adapter (stage 15B)
   remains separately feasibility-gated - see
   [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md).
-- **TTS, goal widgets, and any donation-service connector** — architecture
-  only so far, see
+- **TTS and goal widgets** — architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
   Portable archive template packages and managed template assets shipped
   in Stage 14B — see
   [`docs/visual-template-packages.md`](docs/visual-template-packages.md).
+  A real external-donation connector (StreamElements) shipped in Stage
+  16A — see
+  [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
+  Additional donation providers (Streamlabs, Ko-fi) remain feasibility-
+  gated — Streamlabs' documented OAuth token exchange requires a
+  confidential client secret with no public-client alternative found;
+  Ko-fi is webhook-only and needs a public inbound endpoint this
+  deployment target does not offer.
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---

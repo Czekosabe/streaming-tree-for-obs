@@ -64,7 +64,7 @@ toolchain. The notable direct dependencies are:
 | --- | --- | --- |
 | [`modernc.org/sqlite`](https://gitlab.com/cznic/sqlite) | BSD-3-Clause | Pure-Go SQLite driver, so the backend builds without a C toolchain |
 | [`github.com/99designs/keyring`](https://github.com/99designs/keyring) v1.2.2 | MIT | Uniform interface over the operating system's credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) |
-| [`github.com/coder/websocket`](https://github.com/coder/websocket) v1.8.15 | ISC | WebSocket client used by the Stage 8A Twitch EventSub connector (`internal/runtime/twitchengagement`) |
+| [`github.com/coder/websocket`](https://github.com/coder/websocket) v1.8.15 | ISC | WebSocket client used by the Stage 8A Twitch EventSub connector (`internal/runtime/twitchengagement`) and, reused unchanged, the Stage 16A StreamElements Astro connector (`internal/provider/streamelements`, `internal/runtime/streamelementsengagement`) |
 | [`google.golang.org/grpc`](https://github.com/grpc/grpc-go) v1.83.0 | Apache-2.0 | gRPC client used by the Stage 15A YouTube Live Chat connector's `streamList` server-streaming transport (`internal/provider/youtube`, `internal/runtime/youtubeengagement`) |
 | [`google.golang.org/protobuf`](https://github.com/protocolbuffers/protobuf-go) v1.36.12 | BSD-3-Clause | Protocol Buffers runtime for the generated `streamlistpb` client code (`internal/provider/youtube/streamlistpb`) |
 

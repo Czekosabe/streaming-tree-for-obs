@@ -1306,6 +1306,29 @@ other services that publish an official API or webhook. **No connector for any
 of these is promised until its official integration options have been
 verified** — this document names candidates, it does not commit to them.
 
+> **Factual status update (stage 16A, completed):** the plan above was
+> realized largely as described. StreamElements shipped first, over its
+> real Astro WebSocket protocol (`wss://astro.streamelements.com/`,
+> `channel.tips`/`channel.tips.moderation` topics), publishing a real
+> `donation` event onto the exact same Event Bus, matched by the exact
+> same alert engine, shown in the exact same operator chat - see
+> [external-donations.md](provider-integrations/external-donations.md)
+> for the full researched contract. One deliberate deviation from §6's
+> assumption that a provider's engagement connector always corresponds
+> to a `connected_accounts` row: a donation source lives in its own
+> `internal/domain/donationsource` domain instead, because a
+> StreamElements personal JWT (the only authentication method viable for
+> a source-available local desktop app without embedding a confidential
+> OAuth client secret) has none of `connected_accounts`' OAuth shape -
+> see that package's own doc comment. Streamlabs was researched and
+> found feasibility-gated: its documented OAuth2 token exchange requires
+> a confidential `client_secret` with no public/native-client
+> alternative, and unapproved apps are capped at 10 whitelisted users.
+> Ko-fi was researched and found feasibility-gated: webhook-only
+> delivery, requiring a public inbound HTTPS endpoint this local-first
+> deployment target does not offer. Neither is implemented; stage 16B
+> remains their own, separately-tracked scope.
+
 ## 16. Provider support honesty
 
 - **Twitch is expected to be the first engagement connector**, both because it
@@ -1430,7 +1453,8 @@ that table.
 | 14B | Portable archive template packages, managed assets, image/video/font primitives (§13.2/§13.3) — **Completed**, stage 14 as a whole is now complete |
 | 15A | YouTube engagement connector (§16): Live Chat received over the official `streamList` gRPC server-streaming transport, reusing every pipeline above unchanged, plus the first real monetary alert capability (§9) — **Completed** |
 | 15B | Kick engagement connector, and Kick account integration if not already done in 7C — **Deferred**, feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is not complete |
-| 16 | External donation-service connectors (§15) |
+| 16A | External donation foundation + StreamElements donations connector (§15) — **Completed** |
+| 16B | Additional external donation providers (Streamlabs, Ko-fi) (§15) — **Deferred**, feasibility-gated |
 | 17 | TTS and audio queue (§12) |
 | 18 | Goals, counters and event widgets (§14) |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |

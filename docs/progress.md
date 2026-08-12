@@ -21635,6 +21635,84 @@ docs/engagement-architecture.md, and THIRD_PARTY_NOTICES.md (audit
 only - no new dependency was added) to reflect Stage 16A's real,
 implemented scope.
 
+## 2026-08-12 — docs: complete Stage 16A external donations
+
+### Status
+Completed.
+
+### Scope
+Updates every top-level documentation surface to reflect Stage 16A as
+actually implemented, closing out the documentation half of this
+milestone. No product code changed in this commit.
+
+### Changes
+- `README.md` - roadmap table split into 16A (**Completed**) and 16B
+  (deferred, feasibility-gated); the top-of-file summary blockquote,
+  the "genuinely supported alert events" section (donation now listed
+  as a real, monetary-threshold-capable event type, never auto-grouped),
+  the integration-script list (both copies) and directory-structure
+  tree gained the 18th script and the three new
+  `provider-integrations/` docs, the capability summary table, and the
+  "what will be added later" list were all updated to stop describing
+  external donations as entirely unimplemented.
+- `docs/project-overview.md` - §13 roadmap table split into 16A/16B
+  exactly like README.md; the era-history paragraph (§2 area) gained a
+  new sentence describing Stage 16A's real scope and its one deliberate
+  architectural deviation (a separate `donationsource` domain, not
+  `connected_accounts`), replacing a stale forward-reference to "stage
+  16's own scope."
+- `docs/engagement-architecture.md` - §15 (External donations, written
+  as forward-looking prose before this stage existed) gained a
+  "Factual status update (stage 16A, completed)" block, mirroring the
+  exact same append pattern §16 already used for stage 15A/15B, rather
+  than rewriting the original planning prose; the roadmap table's single
+  "16" row split into 16A (Completed) / 16B (Deferred).
+- `config/README.md` - new item 18, following the established one-item-
+  per-stage pattern: the `donation_sources` table's safe-metadata-only
+  persistence, the credential's own SecretStore namespace, the
+  `STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL` integration-only
+  override (mirroring item 7's Twitch EventSub override exactly), and
+  the fact that a donation event itself is never persisted anywhere.
+- `THIRD_PARTY_NOTICES.md` - `github.com/coder/websocket`'s own notice
+  entry now credits both the Stage 8A Twitch connector and the Stage
+  16A StreamElements connector that reuses it unchanged; no dependency
+  actually changed, so no other edit was needed here.
+
+### Technical decisions
+- **Append, don't rewrite, for prose describing an already-completed
+  stage** - every edit to historical narrative (README's stage-15A
+  blockquote, engagement-architecture.md's §15/§16) added a clearly
+  timestamped block rather than altering the original text, per this
+  project's own append-only convention for factual-status updates;
+  only genuinely stale "current state" claims (roadmap tables, "not yet
+  implemented" summaries, script/file listings) were edited in place,
+  since those are meant to always reflect the present, not a snapshot.
+- **Did not backfill Stage 15A's own missing `config/README.md` item**
+  - noticed while adding Stage 16A's own item 18 that Stage 15A never
+    got a dedicated persistence-rule item there (only a passing mention
+    of its env vars in item 5). Left alone as a pre-existing gap outside
+    this task's own scope, rather than silently absorbing unrelated
+    corrective work into a Stage 16A documentation commit.
+
+### Automated validation
+Documentation-only commit; no code changed. Confirmed no broken
+internal links were introduced by spot-checking every new
+`docs/provider-integrations/external-donations.md` reference against
+the file's real path (already committed in `1d40e37`).
+
+### Known limitations
+None beyond what earlier Stage 16A entries already recorded (no manual
+browser/OBS verification - deliberately deferred to the product's own
+final manual-verification stage).
+
+### Next step
+Run the complete final regression from scratch (frontend: i18n:check/
+typecheck/lint/test/build; backend: gofmt/vet/test/build/build
+-tags integration; all 18 integration scripts in the exact documented
+order, in one clean sequence) - restart entirely from the beginning if
+anything fails. Then append and commit the dedicated Stage 16A closing-
+regression journal entry, push, and verify sync.
+
 ## 2026-08-12 — feat(server): integrate external donations with engagement
 
 ### Status

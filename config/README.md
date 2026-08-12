@@ -347,3 +347,28 @@ with no transcoding, is this stage's deliberate scope.
     archive's bytes from scratch. See `docs/visual-template-packages.md`
     for the full manifest, validation, and storage contract. Stage 14B
     added **no new environment variable**.
+18. Stage 16A (external donation foundation + StreamElements donations)
+    follows the exact same secret/config split established above. A
+    donation source's **safe metadata only** (label, provider, enabled,
+    remote channel id, timestamps) is persisted in one new SQLite table
+    (`donation_sources`, migration `0020_donation_sources.sql`); its
+    credential (a StreamElements personal JWT) is stored exclusively
+    through the same OS credential store every other secret in this
+    project uses, under its own namespaced key
+    (`internal/secrets.SecretTypeDonationSourceToken`) - never in this
+    directory, never in SQLite. `STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL`
+    (a local fake Astro WebSocket server address, for
+    `scripts/verify-streamelements-donations.mjs` only) follows the exact
+    same rule as item 7's Twitch EventSub override: it exists solely in
+    the `-tags integration` test binary, read directly via `os.Getenv`,
+    never through the shared config loader or a file here - a production
+    build cannot recognize it even if set, and the production Astro
+    endpoint (`wss://astro.streamelements.com/`) is otherwise fixed in
+    code. A donation source's live connector state (WebSocket
+    session, reconnect count, possible-gap signal, last error) is
+    **runtime state, kept in memory only** - never written here. A real
+    donation event itself is never persisted either - it flows once
+    through the same in-memory-only Engagement Event Bus every other
+    provider's event does, and a backend restart never replays donation
+    history. See
+    [external-donations.md](../docs/provider-integrations/external-donations.md).

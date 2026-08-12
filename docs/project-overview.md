@@ -1106,7 +1106,8 @@ it is architected; this table only tracks status and dependencies.
 | 14B | Portable archive template packages, managed template assets, and safe custom image/video/font primitives (see [visual-template-packages.md](visual-template-packages.md)) | **Completed** — stage 14 as a whole is now complete |
 | 15A | YouTube engagement connector (Live Chat received over the official `streamList` gRPC server-streaming transport), integrated into the existing operator chat / Event Bus / alerts / outbound-chat pipelines unchanged, and a first real monetary alert capability (Super Chat/Super Sticker, integer-micros money, no currency conversion) | **Completed** |
 | 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer, and no scraping/tunneling/relay workaround is acceptable (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is **not** complete until this is resolved or explicitly re-scoped |
-| 16 | External donation-service connectors | Planned |
+| 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain (deliberately separate from `connected_accounts`), a real Astro WebSocket connector, exact integer-micros money conversion, moderation-aware (pending/allowed/rejected) publish semantics, and full reuse of the existing Event Bus/operator chat/alerts pipeline (see [external-donations.md](provider-integrations/external-donations.md)) | **Completed** |
+| 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth2 token exchange requires a confidential `client_secret` with no public/native-client alternative found, and unapproved apps are capped at 10 whitelisted users; Ko-fi is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer (see [external-donations.md](provider-integrations/external-donations.md)). Stage 16 as a whole is **not** complete until this is resolved or explicitly re-scoped |
 | 17 | TTS and audio queue | Planned |
 | 18 | Goals, counters and event widgets | Planned |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
@@ -1520,8 +1521,18 @@ made from stage 5 onward:
    shipped REST polling instead, on a since-corrected conclusion that
    gRPC wasn't practically implementable - see
    [youtube-engagement.md §0](provider-integrations/youtube-engagement.md).
-   Still no YouTube donation-service integration, which remains stage
-   16's own scope). Kick and TikTok
+   Stage 16A then added the platform's first **external donation**
+   source - StreamElements - as a deliberately separate
+   `donationsource` domain (never `connected_accounts`: a StreamElements
+   personal JWT has no OAuth shape, no login, no scopes, no refresh
+   flow), received over the real Astro WebSocket protocol, publishing a
+   real `donation` event type onto that exact same Event Bus and reusing
+   operator chat/alerts unchanged, with exact integer-micros money
+   conversion and moderation-aware (pending/allowed/rejected) publish
+   semantics; a StreamElements donation source is never a chat-outbound
+   target and is never presented as a streaming destination. See
+   [external-donations.md](provider-integrations/external-donations.md).
+   Streamlabs and Ko-fi remain feasibility-gated (stage 16B).) Kick and TikTok
    account integration (stage 7C) are deliberately **deferred** rather
    than blocking: they are not a dependency of the Event Bus, which only
    needs the Twitch adapter that already exists. Kick's own engagement
