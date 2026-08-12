@@ -21355,3 +21355,113 @@ disable/delete/status endpoints, the real (non-nil) combined
 `cmd/server/main.go` and `cmd/testserver/main.go` (replacing the
 temporary `nil` arguments from the previous commit), and the
 integration-only WebSocket endpoint override.
+
+## 2026-08-12 — feat(server): integrate external donations with engagement
+
+### Status
+Completed.
+
+### Scope
+Wires everything the previous two commits built but did not yet connect
+to the running application: the donation-source management HTTP API,
+the per-source StreamElements engagement-connector HTTP API, and real
+(non-`nil`) construction of `donationsource.Service` and
+`streamelementsengagement.Manager` in both `cmd/server/main.go` and
+`cmd/testserver/main.go` - replacing the temporary `nil` arguments the
+persistence commit left in place. No frontend changes yet.
+
+### Changes
+- `apps/server/internal/httpapi/donationsources.go` (new) -
+  `DonationSourceService`/`DonationEngagementConnectorService`
+  interfaces; `registerDonationSourceRoutes` wiring: `GET/POST
+  /api/donation-sources`, `GET/PUT/DELETE /api/donation-sources/{id}`,
+  `PUT /api/donation-sources/{id}/credential` (status-only response,
+  mirrors `registerCredentialRoutes`), and `GET/PUT
+  /api/donation-sources/{id}/engagement` + `POST .../engagement/restart`
+  (mirrors the `/api/connected-accounts/{id}/engagement` sibling routes
+  `engagement.go` already registers for Twitch/YouTube). Every write
+  endpoint rejects unknown fields, never echoes the credential, and maps
+  domain errors to stable codes (404/409/422/503/500).
+- `apps/server/internal/httpapi/router.go` - `Options.DonationSources`/
+  `DonationConnectors` fields; `NewRouter` registers the new routes only
+  when both are non-nil, matching every other optional route group's
+  convention.
+- `apps/server/internal/httpapi/donationsources_test.go` (new) - 17
+  tests against the real router, a real SQLite-backed
+  `donationsource.Service`, and a real `streamelementsengagement.Manager`
+  pointed at a local fake Astro WebSocket server: collection/single-
+  resource CRUD, credential-never-echoed (create and replace), metadata
+  update never touches the credential, delete removes the credential
+  too, 404/405/422/400 mapping, and the engagement sub-resource
+  (default-disabled snapshot, enable/disable round trip, restart's
+  empty-body requirement).
+- `apps/server/internal/runtime/streamelementsengagement/manager.go` -
+  `Enable` now checks the source's `ProviderID` before starting a
+  connector, mirroring `youtubeengagement.Manager.Enable`'s own
+  provider check - unreachable today (`donationsource.ValidProviders`
+  has exactly one entry) but the domain is explicitly modeled to allow
+  more in Stage 16B, and this Manager only ever knows how to run
+  StreamElements; `Start`'s own restore loop gained the same filter.
+- `apps/server/cmd/server/main.go` /
+  `apps/server/cmd/testserver/main.go` - construct a real
+  `donationsource.Service` (forward-declaring
+  `streamElementsEngagementManager` so `OnSourceRemoved` can close over
+  it, exactly the way `twitchEngagementManager`/`youtubeEngagementManager`
+  already do for `OnAccountRemoved`) and a real
+  `streamelementsengagement.Manager`; `alerts.NewDomainService`'s third
+  argument is the real service instead of `nil`; both managers are
+  started at startup and added to the shutdown sequence; both are wired
+  into `httpapi.Options`. `cmd/testserver/main.go` additionally reads
+  `STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL` (unset means the real
+  production Astro endpoint, exactly like every other provider's test
+  override) - this env var only exists in the `-tags integration`
+  binary; a normal production build has no way to redirect the
+  StreamElements endpoint.
+
+### Technical decisions
+- **Connector status lives at a sibling `.../engagement` route, not
+  embedded in the CRUD response** - mirrors the existing
+  `/api/connected-accounts/{id}/engagement` pattern exactly rather than
+  inventing a new shape, so the frontend's existing mental model
+  (safe-metadata resource + a separate runtime-status sub-resource)
+  extends unchanged to donation sources.
+- **`Enable`'s provider check** (see Changes) - added even though
+  currently unreachable, because leaving `streamelementsengagement.
+  ErrUnsupportedProvider` completely dead code while the domain layer
+  explicitly models multiple future providers seemed more likely to
+  bite Stage 16B than the extra branch costs today.
+- **A stray `apps/server/server.pid` file from a manual smoke test
+  almost got committed** - caught by reviewing `git status` before
+  staging, per this project's own commit checklist; deleted before
+  staging. Recorded here only because it is a concrete example of why
+  that checklist step exists, not because it reflects anything about
+  the feature itself.
+
+### Automated validation
+From `apps/server`: `gofmt -l .` (clean), `go vet ./...` (clean),
+`go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean), `go test ./...` (all packages pass,
+including the 17 new `internal/httpapi` donation-source tests and the
+`streamelementsengagement` provider-check addition). Additionally
+smoke-tested the real `-tags integration` `testserver` binary standalone
+(temporary database, real HTTP requests via `curl`, not `go test`):
+`GET /api/health` returns 200, `GET /api/donation-sources` returns
+`{"items":[]}` with no panic - confirming the real main.go wiring
+starts up correctly, not just that it compiles.
+
+### Known limitations
+- No frontend changes - an operator still cannot add a StreamElements
+  donation source through the UI; the full HTTP API exists but has no
+  caller yet.
+- No fake Astro server binary (`cmd/fakestreamelements`) or 18th
+  integration script yet - every donation-path test so far is a Go
+  unit/handler test against a local in-process fake, never a script-
+  driven end-to-end scenario.
+
+### Next step
+Build the frontend: donation-source schemas/API client/hooks, a
+`StreamElementsConnectorCard.tsx` management surface, the credential
+input UX, alert-rule-editor provider/source-filter extension plus a
+donation Test Rule fixture, the `operatorChatActivitySchema`
+amount-field bug fix, provider-icon fallback, and EN/PL i18n strings
+for every new user-visible piece.

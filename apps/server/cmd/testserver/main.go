@@ -36,6 +36,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/account"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
+	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
@@ -48,6 +49,7 @@ import (
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/outboundchat"
+	"github.com/streaming-tree/server/internal/provider/streamelements"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -55,6 +57,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/streamelementsengagement"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
@@ -244,6 +247,36 @@ func run() error {
 		logger.Warn("could not restore enabled YouTube engagement connectors at startup", slog.Any("error", err))
 	}
 
+	// Stage 16A: same wiring as cmd/server/main.go - see its own comment
+	// for the full rationale.
+	// STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL exists only in this
+	// build-tag-gated binary, exactly like the Twitch/YouTube base-URL
+	// overrides above - unset means the real production Astro WebSocket
+	// endpoint (streamelements.DefaultWSURL), exactly like cmd/server. A
+	// normal production build has no environment variable that can ever
+	// change the StreamElements endpoint - see streamelements.Options.
+	// WSBaseURL's own doc comment.
+	var streamElementsEngagementManager *streamelementsengagement.Manager
+	donationSourceService := donationsource.NewService(donationsource.Options{
+		Repository: sqlite.NewDonationSourceRepository(db.DB),
+		Secrets:    secretStore,
+		OnSourceRemoved: func(sourceID string) {
+			if streamElementsEngagementManager != nil {
+				streamElementsEngagementManager.StopAndRemove(sourceID)
+			}
+		},
+	})
+	streamElementsEngagementManager = streamelementsengagement.NewManager(streamelementsengagement.Options{
+		Sources: donationSourceService, Secrets: secretStore, Bus: eventBus,
+		Client: streamelements.New(streamelements.Options{
+			WSBaseURL: os.Getenv("STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL"),
+		}),
+		Logger: logger,
+	})
+	if err := streamElementsEngagementManager.Start(ctx); err != nil {
+		logger.Warn("could not restore enabled StreamElements donation connectors at startup", slog.Any("error", err))
+	}
+
 	// Stage 9: the unified-operator-chat projection consumes the same
 	// Event Bus, begins empty regardless of what the bus already retains
 	// (see operatorchat.Projection.Start's own doc comment), and is
@@ -351,7 +384,7 @@ func run() error {
 	// Stage 12A/13A: the alert runtime, reusing the same shared
 	// visualDesignService constructed above - identical wiring to
 	// cmd/server, see its own comment.
-	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, nil)
+	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, donationSourceService)
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,
@@ -421,6 +454,9 @@ func run() error {
 		VisualTemplates: visualTemplateService,
 		VisualAssets:    visualAssetService,
 		VisualPackages:  visualPackageService,
+
+		DonationSources:    donationSourceService,
+		DonationConnectors: streamElementsEngagementManager,
 	})
 
 	server := &http.Server{
@@ -453,6 +489,7 @@ func run() error {
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		youtubeEngagementManager.Shutdown(shutdownCtx)
+		streamElementsEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)
@@ -475,6 +512,7 @@ func run() error {
 		youtubeAuthManager.Shutdown(shutdownCtx)
 		twitchEngagementManager.Shutdown(shutdownCtx)
 		youtubeEngagementManager.Shutdown(shutdownCtx)
+		streamElementsEngagementManager.Shutdown(shutdownCtx)
 		operatorChatProjection.Shutdown(shutdownCtx)
 		chatOverlayManager.Shutdown(shutdownCtx)
 		_ = outboundChatManager.Shutdown(shutdownCtx)

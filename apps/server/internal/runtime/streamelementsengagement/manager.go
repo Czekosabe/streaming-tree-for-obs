@@ -72,7 +72,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	}
 	for _, src := range all {
-		if !src.Enabled {
+		if !src.Enabled || src.ProviderID != donationsource.ProviderStreamElements {
 			continue
 		}
 		m.reconcile(src)
@@ -120,9 +120,24 @@ func (m *Manager) reconcile(src donationsource.Source) Snapshot {
 	return c.getSnapshot()
 }
 
-// Enable persists sourceID's Enabled flag and starts its connector.
+// Enable persists sourceID's Enabled flag and starts its connector. Mirrors
+// youtubeengagement.Manager.Enable's own provider check - today
+// donationsource.ValidProviders has exactly one entry, so this is
+// unreachable in practice, but the domain is explicitly modeled to allow
+// more (Stage 16B), and this Manager only ever knows how to run
+// StreamElements.
 func (m *Manager) Enable(ctx context.Context, sourceID string) (Snapshot, error) {
-	src, err := m.sources.SetEnabled(ctx, sourceID, true)
+	src, found, err := m.sources.Get(ctx, sourceID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if !found {
+		return Snapshot{}, ErrNotFound
+	}
+	if src.ProviderID != donationsource.ProviderStreamElements {
+		return Snapshot{}, ErrUnsupportedProvider
+	}
+	src, err = m.sources.SetEnabled(ctx, sourceID, true)
 	if err != nil {
 		return Snapshot{}, err
 	}

@@ -135,6 +135,16 @@ type Options struct {
 	// extension of /api/visual-templates/{id}/export-package) to
 	// register.
 	VisualPackages VisualPackageService
+	// DonationSources serves the Stage 16A external-donation-source
+	// management API (/api/donation-sources/...): safe-metadata CRUD and
+	// credential replacement. Required alongside DonationConnectors for
+	// those routes to register.
+	DonationSources DonationSourceService
+	// DonationConnectors serves the per-source StreamElements Astro
+	// WebSocket connector management API - the donation-source twin of
+	// EngagementConnectors/YouTubeEngagementConnectors. Required alongside
+	// DonationSources for the donation-source routes to register.
+	DonationConnectors DonationEngagementConnectorService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -215,6 +225,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.VisualPackages != nil && opts.VisualAssets != nil {
 		registerVisualPackageRoutes(mux, logger, opts.VisualPackages, opts.VisualAssets)
+	}
+
+	if opts.DonationSources != nil && opts.DonationConnectors != nil {
+		registerDonationSourceRoutes(mux, logger, opts.DonationSources, opts.DonationConnectors)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
