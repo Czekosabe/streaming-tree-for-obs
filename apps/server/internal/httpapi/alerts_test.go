@@ -278,6 +278,64 @@ func TestCreateAlertRuleThenGet(t *testing.T) {
 	}
 }
 
+func TestCreateAlertRuleRoundTripsMoneyFields(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["eventType"] = "youtube_super_chat"
+	body["textTemplate"] = "{username} sent {amount} {currency}"
+	body["showAmount"] = true
+	body["currency"] = "usd"
+	body["minimumAmountMicros"] = 1_000_000
+	body["maximumAmountMicros"] = 50_000_000
+
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	created := decodeAlertsBody(t, resp)
+	if created["showAmount"] != true {
+		t.Errorf("created showAmount = %v, want true", created["showAmount"])
+	}
+	if created["currency"] != "USD" {
+		t.Errorf("created currency = %v, want USD (normalized uppercase)", created["currency"])
+	}
+	if created["minimumAmountMicros"] != float64(1_000_000) {
+		t.Errorf("created minimumAmountMicros = %v, want 1000000", created["minimumAmountMicros"])
+	}
+	if created["maximumAmountMicros"] != float64(50_000_000) {
+		t.Errorf("created maximumAmountMicros = %v, want 50000000", created["maximumAmountMicros"])
+	}
+
+	id := created["id"].(string)
+	getResp := ts.do(t, http.MethodGet, "/api/alert-rules/"+id, nil)
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", getResp.StatusCode)
+	}
+	fetched := decodeAlertsBody(t, getResp)
+	if fetched["currency"] != "USD" || fetched["minimumAmountMicros"] != float64(1_000_000) {
+		t.Errorf("fetched rule money fields = %+v, want currency=USD minimumAmountMicros=1000000", fetched)
+	}
+}
+
+func TestCreateAlertRuleRejectsAmountThresholdWithoutCurrency(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["eventType"] = "youtube_super_chat"
+	body["minimumAmountMicros"] = 1_000_000
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (amount threshold requires a currency), body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	respBody := decodeAlertsBody(t, resp)
+	if respBody["error"] != "alert_rule_amount_invalid" {
+		t.Errorf("error = %v, want alert_rule_amount_invalid", respBody["error"])
+	}
+}
+
 func TestCreateAlertRuleRejectsUnsupportedCondition(t *testing.T) {
 	ts := newAlertsTestServer(t)
 	profileID := createTestProfile(t, ts)

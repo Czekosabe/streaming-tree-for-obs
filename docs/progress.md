@@ -18910,3 +18910,61 @@ Frontend work: schemas for YouTube event types and the `Money`
 value (exact micros↔decimal-string parsing, currency normalization),
 then the Engagement/Chat/Automation/Alerts pages - all through the
 existing pages, never a new YouTube-specific route.
+
+## 2026-08-12 09:41 — fix(server): wire the alert-rule HTTP DTOs and error mapping for money fields
+
+### What
+A frontend reconnaissance pass (in preparation for the Stage 15A
+frontend work) found that the previous commit's domain/storage layer
+for money-threshold rule fields was never actually reachable through
+the real HTTP API - `alertRuleRequest`/`alertRuleResponse` in
+`internal/httpapi/alerts.go` and their `toInput()`/
+`toAlertRuleResponse()` mappers never carried `Currency`/
+`MinimumAmountMicros`/`MaximumAmountMicros`/`ShowAmount`, even though
+`domain.RuleInput`/`domain.Rule` and the SQLite repository already did.
+A client could never actually create or read a money-thresholded rule
+over JSON. Separately, `domain.ErrMoneyThresholdInvalid` had no case in
+`writeAlertsError`, so a request that did reach validation (e.g. an
+amount threshold with no currency) returned a bare 500
+`internal_error` instead of a 422 - both real, user-facing bugs, caught
+before any frontend code was written against the broken contract.
+
+- **`internal/httpapi/alerts.go`**: added the 4 money fields to both
+  `alertRuleRequest`/`alertRuleResponse` and wired them through
+  `toInput()`/`toAlertRuleResponse()`, exactly mirroring the existing
+  `MinimumQuantity`/`MaximumQuantity`/`ShowQuantity` fields' own
+  `,omitempty` pointer/bool convention. Added a
+  `domain.ErrMoneyThresholdInvalid` case to `writeAlertsError`,
+  returning 422 `alert_rule_amount_invalid` (a new, distinct error
+  code from the quantity threshold's `alert_rule_threshold_invalid`,
+  since a client needs to tell which threshold failed).
+
+### Files changed
+- `apps/server/internal/httpapi/{alerts.go, alerts_test.go}`
+
+### Technical decisions
+- **Why a distinct `alert_rule_amount_invalid` error code rather than
+  reusing `alert_rule_threshold_invalid`.** A rule can have both a
+  quantity threshold and (for `HasAmount` types, still mutually
+  exclusive with `HasQuantity` today, but not guaranteed to stay that
+  way) an amount threshold; reusing one code for both failure reasons
+  would leave a client unable to tell which field to highlight in the
+  editor.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including two new HTTP-layer round-trip tests
+(`TestCreateAlertRuleRoundTripsMoneyFields`,
+`TestCreateAlertRuleRejectsAmountThresholdWithoutCurrency`) that would
+have caught both bugs.
+
+### Known limitations
+None new.
+
+### Next step
+Frontend work, now against a verified-correct HTTP contract: schemas
+for YouTube event types and the `Money` value, then the Engagement/
+Chat/Automation/Alerts pages - all through the existing pages, never a
+new YouTube-specific route.

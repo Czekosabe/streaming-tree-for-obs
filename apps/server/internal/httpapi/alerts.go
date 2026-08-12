@@ -244,6 +244,16 @@ type alertRuleRequest struct {
 	Providers           []string `json:"providers"`
 	Accounts            []string `json:"accounts"`
 
+	// Currency/MinimumAmountMicros/MaximumAmountMicros/ShowAmount: Stage
+	// 15A's money threshold/display fields - the JSON twin of
+	// MinimumQuantity/MaximumQuantity/ShowQuantity above, gated the same
+	// way by domain.ValidateRuleConditions (an event type without
+	// Capability.HasAmount rejects a non-zero-value here).
+	Currency            string `json:"currency,omitempty"`
+	MinimumAmountMicros *int64 `json:"minimumAmountMicros,omitempty"`
+	MaximumAmountMicros *int64 `json:"maximumAmountMicros,omitempty"`
+	ShowAmount          bool   `json:"showAmount"`
+
 	// AllowGrouping, GroupWindowMS, InterruptMode and Interruptible are
 	// Stage 12B additions. GroupWindowMS and Interruptible are pointers
 	// (and InterruptMode defaults on the empty string, never itself a
@@ -290,6 +300,7 @@ func (r alertRuleRequest) toInput() domain.RuleInput {
 		ShowPlatform: r.ShowPlatform, ShowUsername: r.ShowUsername, ShowMessage: r.ShowMessage, ShowQuantity: r.ShowQuantity,
 		TextTemplate: r.TextTemplate, EntryAnimation: domain.Animation(r.EntryAnimation), ExitAnimation: domain.Animation(r.ExitAnimation),
 		AnimationDurationMS: r.AnimationDurationMS, Providers: providers, Accounts: accounts,
+		Currency: r.Currency, MinimumAmountMicros: r.MinimumAmountMicros, MaximumAmountMicros: r.MaximumAmountMicros, ShowAmount: r.ShowAmount,
 		AllowGrouping: r.AllowGrouping, GroupWindowMS: groupWindowMS,
 		InterruptMode: interruptMode, Interruptible: interruptible,
 	}
@@ -317,6 +328,11 @@ type alertRuleResponse struct {
 	Providers           []string `json:"providers"`
 	Accounts            []string `json:"accounts"`
 
+	Currency            string `json:"currency,omitempty"`
+	MinimumAmountMicros *int64 `json:"minimumAmountMicros,omitempty"`
+	MaximumAmountMicros *int64 `json:"maximumAmountMicros,omitempty"`
+	ShowAmount          bool   `json:"showAmount"`
+
 	AllowGrouping bool `json:"allowGrouping"`
 	GroupWindowMS int  `json:"groupWindowMs"`
 
@@ -341,6 +357,7 @@ func toAlertRuleResponse(r domain.Rule) alertRuleResponse {
 		ShowMessage: r.ShowMessage, ShowQuantity: r.ShowQuantity, TextTemplate: r.TextTemplate,
 		EntryAnimation: string(r.EntryAnimation), ExitAnimation: string(r.ExitAnimation), AnimationDurationMS: r.AnimationDurationMS,
 		Providers: providers, Accounts: accounts,
+		Currency: r.Currency, MinimumAmountMicros: r.MinimumAmountMicros, MaximumAmountMicros: r.MaximumAmountMicros, ShowAmount: r.ShowAmount,
 		AllowGrouping: r.AllowGrouping, GroupWindowMS: r.GroupWindowMS,
 		InterruptMode: string(r.InterruptMode), Interruptible: r.Interruptible,
 		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -1047,6 +1064,8 @@ func writeAlertsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusNotFound, "alert_rule_account_not_found", "One of the target connected accounts does not exist.")
 	case errors.Is(err, domain.ErrThresholdInvalid):
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_threshold_invalid", "The quantity threshold is invalid.")
+	case errors.Is(err, domain.ErrMoneyThresholdInvalid):
+		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_amount_invalid", "The amount threshold is invalid.")
 	case errors.Is(err, domain.ErrConditionUnsupported):
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_condition_unsupported", "This condition is not supported by the rule's event type.")
 	case errors.Is(err, alerts.ErrPlaceholderInvalid):
