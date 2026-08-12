@@ -53,7 +53,7 @@ func newTemplateTestServer(t *testing.T) *templateTestServer {
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
-	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts)
+	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil)
 	visualDesignSvc := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{DomainService: domainSvc, VisualDesignService: visualDesignSvc, Bus: eventBus})
 	if err := alertsManager.Start(context.Background()); err != nil {

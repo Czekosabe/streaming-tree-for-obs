@@ -47,9 +47,9 @@ func TestGroupingCapabilityYouTubeEventTypesNeverGroupable(t *testing.T) {
 	}
 }
 
-func TestValidEventTypesIncludesAllTwelveTypes(t *testing.T) {
-	if len(ValidEventTypes) != 12 {
-		t.Fatalf("len(ValidEventTypes) = %d, want 12 (8 Twitch + 4 YouTube)", len(ValidEventTypes))
+func TestValidEventTypesIncludesAllThirteenTypes(t *testing.T) {
+	if len(ValidEventTypes) != 13 {
+		t.Fatalf("len(ValidEventTypes) = %d, want 13 (8 Twitch + 4 YouTube + 1 donation)", len(ValidEventTypes))
 	}
 	for _, et := range ValidEventTypes {
 		if _, ok := Capabilities[et]; !ok {

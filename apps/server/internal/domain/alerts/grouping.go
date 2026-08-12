@@ -99,6 +99,12 @@ type GroupingCapability struct {
 //     silently merging different currencies or hiding an individually
 //     urgent paid message inside an older queued group; not attempted
 //     without a proven-safe design.
+//   - EventDonation: Stage 16A task's own explicit instruction - each
+//     real donation is individually meaningful and is never
+//     auto-grouped, for the exact same reasoning as the two YouTube
+//     monetary types above. A large donation can still jump the queue
+//     through the existing, unrelated priority/interrupt mechanism -
+//     no separate "big donation interrupt" feature was built.
 var GroupingCapabilities = map[EventType]GroupingCapability{
 	EventFollow:                 {Groupable: false},
 	EventSubscription:           {Groupable: false},
@@ -113,6 +119,8 @@ var GroupingCapabilities = map[EventType]GroupingCapability{
 	EventYouTubeMembershipMilestone: {Groupable: false},
 	EventYouTubeSuperChat:           {Groupable: false},
 	EventYouTubeSuperSticker:        {Groupable: false},
+
+	EventDonation: {Groupable: false},
 }
 
 // GroupingCapabilityFor returns t's grouping capability, or the zero

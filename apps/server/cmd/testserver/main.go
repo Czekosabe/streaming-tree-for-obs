@@ -351,7 +351,7 @@ func run() error {
 	// Stage 12A/13A: the alert runtime, reusing the same shared
 	// visualDesignService constructed above - identical wiring to
 	// cmd/server, see its own comment.
-	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService)
+	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, nil)
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService:       alertsDomainService,
 		VisualDesignService: visualDesignService,

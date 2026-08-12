@@ -40,6 +40,8 @@ func mapEventType(t engagement.Type) (domain.EventType, bool) {
 		return domain.EventYouTubeSuperChat, true
 	case engagement.TypeYouTubeSuperSticker:
 		return domain.EventYouTubeSuperSticker, true
+	case engagement.TypeDonation:
+		return domain.EventDonation, true
 	default:
 		return "", false
 	}

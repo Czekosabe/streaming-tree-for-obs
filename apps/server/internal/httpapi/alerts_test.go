@@ -53,7 +53,7 @@ func newAlertsTestServer(t *testing.T) *alertsTestServer {
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
-	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts)
+	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil)
 	visualDesignSvc := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	manager := alerts.NewManager(alerts.ManagerOptions{DomainService: domainSvc, VisualDesignService: visualDesignSvc, Bus: eventBus})
 	if err := manager.Start(context.Background()); err != nil {
@@ -791,8 +791,8 @@ func TestListAlertEventTypesCapabilityDriven(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(list) != 12 {
-		t.Fatalf("len(list) = %d, want 12", len(list))
+	if len(list) != 13 {
+		t.Fatalf("len(list) = %d, want 13", len(list))
 	}
 	for _, entry := range list {
 		if entry["eventType"] == "follow" {

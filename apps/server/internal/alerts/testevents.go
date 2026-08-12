@@ -107,16 +107,20 @@ func buildFixtureEvent(eventType domain.EventType, edgeScenario string, now time
 
 // fixtureProviderID reports the realistic provider for a preview fixture -
 // YouTube for the four YouTube-only event types (membership/milestone/
-// Super Chat/Super Sticker), Twitch for everything else, including the
-// two event types Stage 15A's own YouTube gift events reuse (a real gift
-// from either provider previews identically, since the event type itself
-// carries no provider - this default keeps every pre-Stage-15A preview
-// fixture byte-for-byte unchanged).
+// Super Chat/Super Sticker), StreamElements for the generic donation
+// event (Stage 16A - the only donation-source provider implemented),
+// Twitch for everything else, including the two event types Stage 15A's
+// own YouTube gift events reuse (a real gift from either provider
+// previews identically, since the event type itself carries no provider -
+// this default keeps every pre-Stage-15A preview fixture byte-for-byte
+// unchanged).
 func fixtureProviderID(eventType domain.EventType) engagement.ProviderID {
 	switch eventType {
 	case domain.EventYouTubeMembership, domain.EventYouTubeMembershipMilestone,
 		domain.EventYouTubeSuperChat, domain.EventYouTubeSuperSticker:
 		return engagement.ProviderYouTube
+	case domain.EventDonation:
+		return engagement.ProviderStreamElements
 	default:
 		return engagement.ProviderTwitch
 	}
@@ -193,6 +197,8 @@ func reverseMapEventType(t domain.EventType) engagement.Type {
 		return engagement.TypeYouTubeSuperChat
 	case domain.EventYouTubeSuperSticker:
 		return engagement.TypeYouTubeSuperSticker
+	case domain.EventDonation:
+		return engagement.TypeDonation
 	default:
 		return ""
 	}

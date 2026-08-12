@@ -34,6 +34,13 @@ const (
 	// token set (access token, refresh token, token type, expiry), stored as
 	// one atomically-replaced value - see internal/domain/account.TokenBundle.
 	SecretTypeOAuthTokenBundle SecretType = "oauth-token-bundle"
+
+	// SecretTypeDonationSourceToken is an external donation source's
+	// credential (Stage 16A: a StreamElements personal JWT) - never an
+	// OAuth token bundle, since a donation source has no refresh token or
+	// expiry this application manages; see
+	// internal/domain/donationsource.
+	SecretTypeDonationSourceToken SecretType = "donation-source-token"
 )
 
 // BuildKey returns the namespaced key for one secret.

@@ -74,6 +74,12 @@ var Capabilities = map[EventType]Capability{
 	EventYouTubeMembershipMilestone: {HasUser: true, HasMessage: true, HasQuantity: true, HasMembershipLevel: true},
 	EventYouTubeSuperChat:           {HasUser: true, HasMessage: true, HasAmount: true},
 	EventYouTubeSuperSticker:        {HasUser: true, HasAmount: true},
+
+	// Stage 16A (external donations - StreamElements). HasAnonymity:
+	// the normalizer treats a missing/empty donor username as anonymous
+	// rather than fabricating a name - see docs/provider-integrations/
+	// external-donations.md §24.
+	EventDonation: {HasUser: true, HasMessage: true, HasAmount: true, HasAnonymity: true},
 }
 
 // CapabilityFor returns t's capability, or the zero Capability (nothing

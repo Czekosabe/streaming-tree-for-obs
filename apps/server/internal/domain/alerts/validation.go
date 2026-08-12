@@ -178,7 +178,7 @@ func ValidateAccounts(accountIDs []string) error {
 func ValidateProviders(providerIDs []ProviderID) error {
 	seen := make(map[ProviderID]bool, len(providerIDs))
 	for _, p := range providerIDs {
-		if p != ProviderTwitch && p != ProviderYouTube {
+		if p != ProviderTwitch && p != ProviderYouTube && p != ProviderStreamElements {
 			return validationErr("provider %q is not supported", string(p))
 		}
 		if seen[p] {

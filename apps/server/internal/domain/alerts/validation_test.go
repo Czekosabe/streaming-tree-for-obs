@@ -77,7 +77,7 @@ func TestValidateRuleFieldsTemplateTooLong(t *testing.T) {
 
 func TestValidateRuleFieldsUnknownEventType(t *testing.T) {
 	r := baseValidRule()
-	r.EventType = EventType("donation")
+	r.EventType = EventType("streamelements_donation")
 	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
 		t.Errorf("unknown event type error = %v, want ErrValidation", err)
 	}

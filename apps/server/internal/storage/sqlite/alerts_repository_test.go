@@ -253,16 +253,28 @@ func TestAlertsRuleDefaultsToEmptyCurrencyAndNoAmount(t *testing.T) {
 	}
 }
 
-func TestAlertsRuleCreateRejectsUnknownAccount(t *testing.T) {
+// TestAlertsRuleCreateAcceptsAnyAccountIDAtTheRepositoryLayer documents a
+// deliberate Stage 16A architecture change: alert_rule_accounts.
+// connected_account_id no longer carries a SQL foreign key (migration
+// 0020), since an alert rule's account/source filter may name either a
+// connected_accounts row or a donation_sources row, and SQLite cannot
+// express a foreign key against two tables. Existence is validated at
+// the domain.Service layer only now (see
+// TestCreateRuleRejectsUnknownAccount in
+// internal/domain/alerts/service_test.go, which proves the real
+// rejection via a fake AccountLookup) - the repository itself, like
+// alert_rule_providers.provider_id before it, persists whatever id it is
+// given.
+func TestAlertsRuleCreateAcceptsAnyAccountIDAtTheRepositoryLayer(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewAlertsRepository(db.DB)
 	if _, err := repo.CreateProfile(context.Background(), newTestProfile("alprof_1", "slug-x")); err != nil {
 		t.Fatalf("CreateProfile() error = %v", err)
 	}
 	r := testRule("alrule_1", "alprof_1")
-	r.Accounts = []string{"acct_missing"}
-	if _, err := repo.CreateRule(context.Background(), r); err != alerts.ErrAccountNotFound {
-		t.Errorf("CreateRule() error = %v, want ErrAccountNotFound", err)
+	r.Accounts = []string{"donsrc_missing_or_real_either_way"}
+	if _, err := repo.CreateRule(context.Background(), r); err != nil {
+		t.Errorf("CreateRule() error = %v, want nil (no repository-level account/source existence check)", err)
 	}
 }
 

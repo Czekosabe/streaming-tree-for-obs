@@ -68,7 +68,7 @@ func (e Event) Validate() error {
 		if e.Quantity == nil {
 			return fmt.Errorf("%w: %s requires a quantity", ErrInvalidEvent, e.Type)
 		}
-	case TypeYouTubeSuperChat, TypeYouTubeSuperSticker:
+	case TypeYouTubeSuperChat, TypeYouTubeSuperSticker, TypeDonation:
 		if e.Money == nil {
 			return fmt.Errorf("%w: %s requires money", ErrInvalidEvent, e.Type)
 		}

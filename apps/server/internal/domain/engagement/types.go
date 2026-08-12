@@ -32,9 +32,17 @@ type ProviderID string
 
 // ProviderTwitch and ProviderYouTube are the providers this application's
 // connectors produce events for (Stage 8A and Stage 15A respectively).
+//
+// ProviderStreamElements (Stage 16A) identifies the external-donation
+// source, not a streaming platform - see docs/provider-integrations/
+// external-donations.md. A donation's own payment rail (StreamElements'
+// own "provider" field, e.g. "paypal") is deliberately never mapped
+// here - it is a payment processor, not an engagement source, and is
+// discarded during normalization.
 const (
-	ProviderTwitch  ProviderID = "twitch"
-	ProviderYouTube ProviderID = "youtube"
+	ProviderTwitch         ProviderID = "twitch"
+	ProviderYouTube        ProviderID = "youtube"
+	ProviderStreamElements ProviderID = "streamelements"
 )
 
 // Type is the normalized, provider-independent event type. See
@@ -78,6 +86,15 @@ const (
 	// TypeBits or into each other.
 	TypeYouTubeSuperChat    Type = "youtube.super_chat"
 	TypeYouTubeSuperSticker Type = "youtube.super_sticker"
+
+	// TypeDonation (Stage 16A) is the generic, provider-independent
+	// donation event - a real monetary contribution from an external
+	// donation service (StreamElements first; see docs/provider-
+	// integrations/external-donations.md). The event type says what
+	// happened ("a donation"); ProviderID says where it came from
+	// (ProviderStreamElements) - never a second, provider-specific type
+	// like "streamelements.donation".
+	TypeDonation Type = "donation"
 )
 
 // KnownTypes lists every Type this stage's model and connectors recognize,
@@ -103,6 +120,7 @@ var KnownTypes = []Type{
 	TypeYouTubeMembershipMilestone,
 	TypeYouTubeSuperChat,
 	TypeYouTubeSuperSticker,
+	TypeDonation,
 }
 
 // Known reports whether t is one of KnownTypes.

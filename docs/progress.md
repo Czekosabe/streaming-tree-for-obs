@@ -21025,3 +21025,170 @@ Design and implement the donation-source persistence model (the
 `internal/domain/donationsource` domain, its SQLite migration, and
 SecretStore wiring for the StreamElements JWT), per this document's own
 architectural fork findings above.
+
+## 2026-08-12 — feat(server): persist external donation sources
+
+### Status
+In progress - Stage 16A, continued. Persistence and domain-model layer
+only; no provider connection code yet (next commit).
+
+### Scope
+Implemented the donation-source persistence model the research document
+called for: a new, deliberately separate `internal/domain/donationsource`
+domain (not a widened `connected_accounts`), its SQLite migration, and
+SecretStore wiring for the StreamElements JWT credential. Also registered
+the generic `donation` engagement event type and the `streamelements`
+provider identity across every domain package that needs its own
+independent copy (`engagement.ProviderID`, `alerts.ProviderID` -
+deliberately never `account.ProviderID`, since donation sources are not
+connected accounts), and wired `donation` into the alert capability
+table, matcher, Test Rule fixture builder, and operator-chat's activity
+allow-list - the same lockstep pattern every existing alert-capable
+event type already follows.
+
+### Changes
+- `internal/domain/engagement/types.go`: added `ProviderStreamElements`
+  and `TypeDonation` (added to `KnownTypes`); `validation.go` requires
+  `Money` for `TypeDonation`, mirroring `TypeYouTubeSuperChat`/
+  `TypeYouTubeSuperSticker` exactly.
+- `internal/domain/donationsource` (new package): `Source` (id,
+  provider, operator label, enabled, safe remote channel id, timestamps
+  - never a credential field), `CreateInput`/`UpdateInput`, a
+  `Repository` port, and a `Service` with `Create`/`UpdateMetadata`/
+  `SetEnabled`/`ReplaceCredential`/`Delete`/`Get`/`List`/`SourceExists`.
+  `credential.go` mirrors `account.TokenBundle`'s own SecretStore helper
+  shape exactly (`StoreCredential`/`LoadCredential`/
+  `CredentialConfigured`/`DeleteCredential`), under a new
+  `secrets.SecretTypeDonationSourceToken` namespace - a source's
+  credential is stored before its row becomes visible on create, and the
+  credential is rolled back if the row write then fails, so a source is
+  never listed without its credential already present.
+- `internal/secrets/store.go`: added `SecretTypeDonationSourceToken`.
+- `internal/storage/sqlite/migrations/0020_donation_sources.sql`: a new
+  `donation_sources` table (provider_id CHECK-constrained to
+  `'streamelements'` today, safe metadata only, no runtime/connection
+  state - mirrors `connected_account_engagement_settings`'s own scope
+  discipline); widens `alert_rules.event_type`'s CHECK list to add
+  `'donation'` (the same table-rebuild pattern migration 0019 already
+  used); and - the real architectural decision this migration makes -
+  **drops the SQL foreign key on `alert_rule_accounts.
+  connected_account_id`**, since that column may now hold either a
+  `connected_accounts` id or a `donation_sources` id and SQLite cannot
+  express a foreign key against two tables. Existence is validated at
+  the application layer only now, the same looser pattern
+  `alert_rule_providers.provider_id` (which never had a CHECK/FK at all)
+  already established.
+- `internal/storage/sqlite/donationsource_repository.go`: SQLite
+  implementation of `donationsource.Repository`, mirroring
+  `engagementsettings_repository.go`'s own structure.
+- `internal/domain/alerts`: `model.go` adds `ProviderStreamElements`
+  and `EventDonation` (+ `ValidEventTypes`); `capability.go` adds
+  `EventDonation: {HasUser: true, HasMessage: true, HasAmount: true,
+  HasAnonymity: true}`; `grouping.go` adds an explicit
+  `EventDonation: {Groupable: false}` entry (a real donation is never
+  auto-grouped, matching the two YouTube monetary types' own policy);
+  `validation.go`'s `ValidateProviders` now accepts
+  `ProviderStreamElements`.
+- `internal/alerts/matcher.go`: `mapEventType` adds
+  `engagement.TypeDonation -> domain.EventDonation`.
+- `internal/alerts/testevents.go`: `reverseMapEventType` and
+  `fixtureProviderID` (-> `engagement.ProviderStreamElements`) both add
+  the `EventDonation` case; the existing default `fixtureMoney` branch
+  ($5.00 USD / €10.00 EUR under `alternate_currency`) already applies
+  correctly with no donation-specific amount needed.
+- `internal/alerts/wiring.go`: `AccountLookupAdapter` gains a
+  `DonationSources *donationsource.Service` field; `AccountExists` now
+  checks connected accounts first, then donation sources, before
+  reporting not-found - `NewDomainService`'s signature grew a
+  `donationSources` parameter accordingly (existing call sites in
+  `cmd/server/main.go`/`cmd/testserver/main.go`/three httpapi test files
+  pass `nil` for now; real wiring lands in the httpapi/main.go
+  integration commit).
+- `internal/operatorchat/projection.go`: `handleEvent`'s activity
+  allow-list switch adds `engagement.TypeDonation` - without this, a
+  real donation event would have been silently dropped by operator chat
+  exactly the way the research commit's own audit found `TypeDonation`
+  would be (the same gap already latent for any hypothetical unlisted
+  type).
+
+### Files changed
+- `apps/server/internal/domain/engagement/types.go`,
+  `validation.go`
+- `apps/server/internal/domain/donationsource/` (new: `model.go`,
+  `errors.go`, `ids.go`, `repository.go`, `service.go`, `credential.go`,
+  `validation.go`, `service_test.go`)
+- `apps/server/internal/secrets/store.go`
+- `apps/server/internal/storage/sqlite/migrations/0020_donation_sources.sql`
+- `apps/server/internal/storage/sqlite/donationsource_repository.go`
+  (+ `donationsource_repository_test.go`)
+- `apps/server/internal/domain/alerts/model.go`, `capability.go`,
+  `grouping.go`, `validation.go`
+- `apps/server/internal/alerts/matcher.go`, `testevents.go`,
+  `wiring.go`
+- `apps/server/internal/operatorchat/projection.go`
+- `apps/server/internal/httpapi/alerts_test.go`,
+  `visualasset_test.go`, `visualtemplate_test.go` (temporary `nil`
+  donation-source lookup argument)
+- `apps/server/cmd/server/main.go`, `cmd/testserver/main.go`
+  (temporary `nil` donation-source lookup argument)
+- `apps/server/internal/domain/alerts/capability_test.go`,
+  `validation_test.go` (updated for the 13th event type; the
+  unknown-event-type test's own example string, literally `"donation"`,
+  had to change now that it is real)
+- `apps/server/internal/httpapi/alerts_test.go` (event-type list count)
+- `apps/server/internal/storage/sqlite/alerts_repository_test.go`
+  (the repository-level "unknown account is rejected" test now
+  documents the moved-to-Service-layer behavior instead, since the SQL
+  foreign key it exercised no longer exists)
+
+### Technical decisions
+- **Separate `donationsource` domain, not a widened `connected_accounts`**
+  - the decision the research commit's own audit flagged as an open
+  fork: `account.Account`/`account.Provider` are OAuth-shaped throughout
+  (login, scopes, `ValidateToken`/`RefreshToken`/`RevokeToken`/
+  `GetIdentity`, a `WithFreshToken` single-refresh-retry pattern, a
+  `StatusReconnectRequired` meaning "repeat the OAuth flow") and a
+  StreamElements personal JWT has none of that shape - login, scopes,
+  and a refresh flow would all have to be faked. A donation source is
+  also not a streaming destination and must never resemble one.
+- **`alert_rule_accounts`'s foreign key removed rather than widened
+  to a polymorphic reference** - SQLite has no clean way to express "this
+  id must exist in either of two tables," and the existing
+  `alert_rule_providers.provider_id` column already established the
+  precedent of application-layer-only existence validation for this
+  exact table family. The column itself keeps its existing name
+  (`connected_account_id`) to avoid unrelated schema churn - it is
+  untyped (`[]string`) at the Go layer already.
+- Credential-then-row write order on `Create` (rather than row-then-
+  credential) - a source is never visible to a list/get call without its
+  credential already stored, and a failed row write cleanly rolls back
+  the just-stored credential rather than leaving an orphaned secret no
+  row references.
+
+### Automated validation
+From `apps/server`: `gofmt -l .` (clean), `go build ./...` (clean),
+`go vet ./...` (clean), `go test ./...` (all packages pass, including
+new `internal/domain/donationsource` and
+`internal/storage/sqlite/donationsource_repository_test.go` coverage:
+create/get/update/delete/list-ordering/provider-CHECK-constraint at the
+repository layer; create validation, credential storage/rotation/
+rollback-on-failure, metadata-vs-credential isolation, enable/disable,
+delete-notifies-and-removes-credential, and source-existence lookup at
+the Service layer).
+
+### Known limitations
+- No provider connection code exists yet - a donation source can be
+  created, enabled, and have its credential stored, but nothing reads
+  that credential to open a StreamElements connection until the next
+  commit.
+- `AccountLookupAdapter`'s `DonationSources` field, and `NewDomainService`'s
+  new parameter, are wired as `nil` at every current call site - real
+  wiring (a constructed `donationsource.Service`) lands in the httpapi/
+  main.go integration commit once the runtime connector it depends on
+  also exists.
+
+### Next step
+Implement the StreamElements Astro WebSocket connector: the exact
+decimal-to-integer-micros money conversion, the wire client/normalizer,
+and the runtime connector manager that reads a source's credential from
+SecretStore and publishes real donations onto the Engagement Event Bus.

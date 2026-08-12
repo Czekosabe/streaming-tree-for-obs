@@ -27,11 +27,16 @@ import "time"
 // engagement.ProviderID/account.ProviderID/platform.ProviderID.
 type ProviderID string
 
-// ProviderTwitch and ProviderYouTube are the providers alerts support
-// (Stage 12A and Stage 15A respectively).
+// ProviderTwitch, ProviderYouTube, and ProviderStreamElements are the
+// providers alerts support (Stage 12A, Stage 15A, and Stage 16A
+// respectively). ProviderStreamElements identifies the donation source,
+// never the payment rail a donation happened to move through (see
+// docs/provider-integrations/external-donations.md §7's own "provider is
+// not Engagement ProviderID" note).
 const (
-	ProviderTwitch  ProviderID = "twitch"
-	ProviderYouTube ProviderID = "youtube"
+	ProviderTwitch         ProviderID = "twitch"
+	ProviderYouTube        ProviderID = "youtube"
+	ProviderStreamElements ProviderID = "streamelements"
 )
 
 // EventType is the closed set of normalized engagement event types an
@@ -63,6 +68,13 @@ const (
 	EventYouTubeMembershipMilestone EventType = "youtube_membership_milestone"
 	EventYouTubeSuperChat           EventType = "youtube_super_chat"
 	EventYouTubeSuperSticker        EventType = "youtube_super_sticker"
+
+	// EventDonation (Stage 16A) is the generic, provider-independent
+	// donation event - see docs/provider-integrations/
+	// external-donations.md. Provider filtering distinguishes which
+	// donation service a rule cares about (ProviderStreamElements
+	// today); the event type itself is never provider-specific.
+	EventDonation EventType = "donation"
 )
 
 // ValidEventTypes lists every accepted EventType, in the order shown by
@@ -73,6 +85,7 @@ var ValidEventTypes = []EventType{
 	EventBits, EventRaid, EventChannelPointRedemption,
 	EventYouTubeMembership, EventYouTubeMembershipMilestone,
 	EventYouTubeSuperChat, EventYouTubeSuperSticker,
+	EventDonation,
 }
 
 func (t EventType) valid() bool {
@@ -296,6 +309,12 @@ type Rule struct {
 
 	// Providers/Accounts filters: empty means "any" - see
 	// ValidateRuleConditions and the Stage 12A task's own Part 5.
+	// Accounts holds a connected_accounts id (Twitch/YouTube) or, as of
+	// Stage 16A, a donation source id - both are validated for
+	// existence by AccountLookup (see internal/alerts/wiring.go's own
+	// combined adapter), and the SQLite column itself carries no
+	// provider-specific foreign key (docs/provider-integrations/
+	// external-donations.md; migration 0020).
 	Providers []ProviderID
 	Accounts  []string
 
