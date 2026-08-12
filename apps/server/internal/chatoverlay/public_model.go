@@ -172,9 +172,13 @@ type Activity struct {
 	// ActivityType mirrors the source operatorchat.Activity.ActivityType
 	// verbatim - never relabelled (bits stay "bits", never "donation").
 	ActivityType string
-	Amount       *float64
-	Currency     string
-	Quantity     *int64
+	// AmountMicros/Currency/DisplayAmount mirror
+	// operatorchat.Activity.AmountMicros/Currency/DisplayAmount - always
+	// integer micros, never a float. See internal/domain/engagement.Money.
+	AmountMicros  *int64
+	Currency      string
+	DisplayAmount string
+	Quantity      *int64
 }
 
 // User is the public identity block attached to a message or activity

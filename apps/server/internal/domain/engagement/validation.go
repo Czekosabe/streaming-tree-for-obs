@@ -68,6 +68,19 @@ func (e Event) Validate() error {
 		if e.Quantity == nil {
 			return fmt.Errorf("%w: %s requires a quantity", ErrInvalidEvent, e.Type)
 		}
+	case TypeYouTubeSuperChat, TypeYouTubeSuperSticker:
+		if e.Money == nil {
+			return fmt.Errorf("%w: %s requires money", ErrInvalidEvent, e.Type)
+		}
+	}
+
+	if e.Money != nil {
+		if e.Money.AmountMicros < 0 {
+			return fmt.Errorf("%w: money amount must not be negative", ErrInvalidEvent)
+		}
+		if e.Money.Currency == "" {
+			return fmt.Errorf("%w: money requires a currency", ErrInvalidEvent)
+		}
 	}
 
 	if len(e.ProviderExtra) > maxProviderExtraEntries {

@@ -200,9 +200,10 @@ type eventResponse struct {
 	User    *eventUserResponse    `json:"user,omitempty"`
 	Message *eventMessageResponse `json:"message,omitempty"`
 
-	Amount   *float64 `json:"amount,omitempty"`
-	Currency string   `json:"currency,omitempty"`
-	Quantity *int64   `json:"quantity,omitempty"`
+	AmountMicros  *int64 `json:"amountMicros,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	DisplayAmount string `json:"displayAmount,omitempty"`
+	Quantity      *int64 `json:"quantity,omitempty"`
 
 	ModerationRef    string `json:"moderationRef,omitempty"`
 	ModerationAction string `json:"moderationAction,omitempty"`
@@ -219,9 +220,15 @@ func toEventResponse(e engagement.Event) eventResponse {
 		PlatformTimestamp: e.PlatformTimestamp.UTC().Format(time.RFC3339Nano),
 		ReceivedAt:        e.ReceivedAt.UTC().Format(time.RFC3339Nano),
 		Synthetic:         e.Synthetic,
-		Amount:            e.Amount, Currency: e.Currency, Quantity: e.Quantity,
-		ModerationRef: e.ModerationRef, ModerationAction: e.ModerationAction,
+		Quantity:          e.Quantity,
+		ModerationRef:     e.ModerationRef, ModerationAction: e.ModerationAction,
 		ProviderExtra: e.ProviderExtra,
+	}
+	if e.Money != nil {
+		amount := e.Money.AmountMicros
+		resp.AmountMicros = &amount
+		resp.Currency = e.Money.Currency
+		resp.DisplayAmount = e.Money.DisplayAmount
 	}
 	if e.User != nil {
 		badges := make([]eventBadgeResponse, 0, len(e.User.Badges))

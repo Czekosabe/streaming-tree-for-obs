@@ -13,6 +13,16 @@ import engagement "github.com/streaming-tree/server/internal/domain/engagement"
 // "gifted_subscription" - see internal/domain/engagement's own type
 // vocabulary, which this function deliberately does not reinterpret).
 func (p *Projection) buildActivityItem(evt engagement.Event) Item {
+	activity := &Activity{
+		ActivityType: string(evt.Type),
+		Quantity:     evt.Quantity,
+	}
+	if evt.Money != nil {
+		amount := evt.Money.AmountMicros
+		activity.AmountMicros = &amount
+		activity.Currency = evt.Money.Currency
+		activity.DisplayAmount = evt.Money.DisplayAmount
+	}
 	item := Item{
 		ID:                 newItemID("act"),
 		SourceEventID:      evt.ID,
@@ -23,12 +33,7 @@ func (p *Projection) buildActivityItem(evt engagement.Event) Item {
 		OccurredAt:         evt.PlatformTimestamp,
 		ReceivedAt:         evt.ReceivedAt,
 		Synthetic:          evt.Synthetic,
-		Activity: &Activity{
-			ActivityType: string(evt.Type),
-			Amount:       evt.Amount,
-			Currency:     evt.Currency,
-			Quantity:     evt.Quantity,
-		},
+		Activity:           activity,
 	}
 	if evt.User != nil {
 		item.User = toItemUser(evt.User)

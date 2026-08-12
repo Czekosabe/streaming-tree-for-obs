@@ -904,10 +904,11 @@ type publicChatOverlayMessageResponse struct {
 }
 
 type publicChatOverlayActivityResponse struct {
-	ActivityType string   `json:"activityType"`
-	Amount       *float64 `json:"amount,omitempty"`
-	Currency     string   `json:"currency,omitempty"`
-	Quantity     *int64   `json:"quantity,omitempty"`
+	ActivityType  string `json:"activityType"`
+	AmountMicros  *int64 `json:"amountMicros,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	DisplayAmount string `json:"displayAmount,omitempty"`
+	Quantity      *int64 `json:"quantity,omitempty"`
 }
 
 // publicChatOverlayRemoveResponse is the wire shape of a
@@ -990,8 +991,9 @@ func toPublicChatOverlayItemResponse(ctx context.Context, item co.Item, assets O
 	}
 	if item.Activity != nil {
 		resp.Activity = &publicChatOverlayActivityResponse{
-			ActivityType: item.Activity.ActivityType, Amount: item.Activity.Amount,
-			Currency: item.Activity.Currency, Quantity: item.Activity.Quantity,
+			ActivityType: item.Activity.ActivityType, AmountMicros: item.Activity.AmountMicros,
+			Currency: item.Activity.Currency, DisplayAmount: item.Activity.DisplayAmount,
+			Quantity: item.Activity.Quantity,
 		}
 	}
 	return resp

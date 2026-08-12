@@ -18227,3 +18227,109 @@ normalization layer, the YouTube engagement connector/manager, the
 YouTube outbound adapter, and the alerts monetary model - each as its
 own logical commit with its own progress entry, per this project's
 established discipline.
+
+## 2026-08-12 08:28 — feat(server): add ProviderYouTube, YouTube event types, and integer Money
+
+### What
+The provider-independent Engagement Event model extensions Stage 15A
+needs before any YouTube-specific code exists, per
+`docs/provider-integrations/youtube-engagement.md` §5/§6.
+
+- **`internal/domain/engagement/money.go`** (new): `Money{AmountMicros
+  int64; Currency string; DisplayAmount string}` and `NewMoney(...)`,
+  which normalizes currency to uppercase and rejects a negative or
+  implausibly large (>1,000,000.000000 major units) amount or an empty
+  currency. Integer-only by construction - no floating-point money
+  arithmetic exists anywhere in this application.
+- **`internal/domain/engagement/event.go`**: `Event.Amount *float64` +
+  `Event.Currency string` (dormant, populated by nothing today per the
+  codebase research in the prior research-doc commit) replaced with
+  `Event.Money *Money`.
+- **`internal/domain/engagement/types.go`**: added `ProviderYouTube`;
+  added four new `Type` constants -
+  `TypeYouTubeMembership`/`TypeYouTubeMembershipMilestone`/
+  `TypeYouTubeSuperChat`/`TypeYouTubeSuperSticker` - and registered them
+  in `KnownTypes`. Deliberately did **not** add a fifth type for
+  YouTube's `userBannedEvent` - it reuses the existing, genuinely
+  equivalent `TypeModeration`, matching this project's own
+  anti-duplication instruction (`docs/provider-integrations/
+  youtube-engagement.md`'s mapping table names `TypeYouTubeModeration`
+  as "new"; implementation reconsidered that during coding and reused
+  `TypeModeration` instead once the actual `TypeModeration` validation
+  shape - "either a moderationRef or a moderationAction" - was
+  confirmed to fit a ban/timeout action just as well as Twitch's own
+  `clear_user_messages`).
+- **`internal/domain/engagement/validation.go`**: `TypeYouTubeSuperChat`/
+  `TypeYouTubeSuperSticker` now require `Money`; `Money` itself is
+  validated (non-negative amount, non-empty currency) whenever present,
+  regardless of event type - defense in depth beyond `NewMoney`'s own
+  checks, in case a caller ever constructs `Money` directly.
+- **Ripple fixes** (four files, all mechanical renames from the dormant
+  float fields to the new integer shape, since `Amount`/`Currency` were
+  already plumbed end-to-end into the chat/overlay activity pipeline
+  before this commit): `internal/operatorchat/model.go` (`Activity`)
+  and `activity.go` (`buildActivityItem`);
+  `internal/chatoverlay/public_model.go` (`Activity`) and
+  `lifecycle.go` (`evaluate`); `internal/httpapi/{engagement,
+  operatorchat, chatoverlay}.go` (three DTOs, JSON field renamed
+  `amount`→`amountMicros`, `displayAmount` added - safe to rename since
+  no real event has ever populated the old field, confirmed by codebase
+  research in the prior commit).
+- **`internal/operatorchat/projection.go`**: added the four new
+  `Type` constants to the activity-event `case` list in `handleEvent` -
+  otherwise they would silently be dropped by the existing `default`
+  case (confirmed this is genuinely how an unhandled type behaves
+  today, not a hypothetical).
+- New tests: `internal/domain/engagement/money_test.go` - `NewMoney`
+  uppercasing/negative/overflow/zero/empty-currency cases, `Validate`
+  requiring `Money` for both new monetary types, `Validate` rejecting a
+  directly-constructed invalid `Money` (bypassing `NewMoney`), and a
+  `KnownTypes` membership check for all four new types.
+
+### Files changed
+- `internal/domain/engagement/{money.go (new), money_test.go (new),
+  event.go, types.go, validation.go}`
+- `internal/operatorchat/{model.go, activity.go, projection.go}`
+- `internal/chatoverlay/{public_model.go, lifecycle.go}`
+- `internal/httpapi/{engagement.go, operatorchat.go, chatoverlay.go}`
+
+### Technical decisions
+- **Why `TypeModeration` is reused for YouTube bans instead of adding a
+  new type**, superseding what the research document's own mapping
+  table originally said: once actually writing the validation/matcher
+  code, `TypeModeration`'s existing "moderationRef or moderationAction"
+  shape turned out to fit a YouTube ban exactly as well as it already
+  fits Twitch's `clear_user_messages` - both are "a moderation action
+  happened, described by a stable action identifier, not tied to one
+  specific prior message." Adding a fourth near-identical type would
+  have been exactly the "provider-specific duplicate where an existing
+  normalized meaning is truly equivalent" this project's own
+  instructions explicitly warn against. The research document is not
+  edited to match, since it correctly captured the reasoning available
+  *before* implementation - this entry is the record of the refinement
+  made once real code made the equivalence concrete.
+- **Why `Amount`/`Currency` were replaced outright instead of adding
+  `Money` alongside them.** Keeping both would mean two ways to
+  represent the same fact forever, and the old fields were never
+  populated by any real code path - replacing was strictly safer than
+  leaving a second, competing, float-based representation in place for
+  any future connector to accidentally use instead of the new
+  integer-only one.
+
+### Automated validation
+`cd apps/server`: `go build ./...` clean, `go vet ./...` clean, `go
+test ./internal/domain/engagement/... ./internal/operatorchat/...
+./internal/chatoverlay/... ./internal/httpapi/... ./internal/domain/
+alerts/... ./internal/alerts/...` - all `ok`, including every
+pre-existing test in the four ripple-affected packages (none needed
+updating - none constructed `Amount`/`Currency` directly).
+
+### Known limitations
+None new. This commit is model-only - no YouTube connector, no
+normalization layer, no HTTP route, no UI yet. Money/the new Types are
+unreachable until the next commits wire a real producer.
+
+### Next step
+The YouTube Live Chat REST polling transport client and the
+normalization layer that turns its responses into `engagement.Event`
+values using the model this commit just added.

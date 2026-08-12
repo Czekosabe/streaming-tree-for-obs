@@ -55,10 +55,11 @@ func buildItem(item operatorchat.Item, cfg resolvedSettings) Item {
 		out.Kind = KindActivity
 		if item.Activity != nil {
 			out.Activity = &Activity{
-				ActivityType: item.Activity.ActivityType,
-				Amount:       item.Activity.Amount,
-				Currency:     item.Activity.Currency,
-				Quantity:     item.Activity.Quantity,
+				ActivityType:  item.Activity.ActivityType,
+				AmountMicros:  item.Activity.AmountMicros,
+				Currency:      item.Activity.Currency,
+				DisplayAmount: item.Activity.DisplayAmount,
+				Quantity:      item.Activity.Quantity,
 			}
 		}
 	}

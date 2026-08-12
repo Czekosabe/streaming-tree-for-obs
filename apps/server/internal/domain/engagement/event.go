@@ -57,8 +57,11 @@ type Event struct {
 	User    *User
 	Message *Message
 
-	Amount   *float64
-	Currency string
+	// Money is set only for an event that genuinely carries a real
+	// provider-reported monetary/paid-support amount (Stage 15A: YouTube
+	// Super Chat/Super Sticker) - see money.go. Deliberately never a plain
+	// float; nil for every event type that has no such amount.
+	Money    *Money
 	Quantity *int64
 
 	// ModerationRef references the ID (or ProviderEventID) of the event

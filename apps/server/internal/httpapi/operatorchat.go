@@ -169,10 +169,11 @@ type operatorChatMessageResponse struct {
 }
 
 type operatorChatActivityResponse struct {
-	ActivityType string   `json:"activityType"`
-	Amount       *float64 `json:"amount,omitempty"`
-	Currency     string   `json:"currency,omitempty"`
-	Quantity     *int64   `json:"quantity,omitempty"`
+	ActivityType  string `json:"activityType"`
+	AmountMicros  *int64 `json:"amountMicros,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	DisplayAmount string `json:"displayAmount,omitempty"`
+	Quantity      *int64 `json:"quantity,omitempty"`
 }
 
 type operatorChatModerationResponse struct {
@@ -276,8 +277,9 @@ func toOperatorChatItemResponse(ctx context.Context, item oc.Item, assets Operat
 	}
 	if item.Activity != nil {
 		resp.Activity = &operatorChatActivityResponse{
-			ActivityType: item.Activity.ActivityType, Amount: item.Activity.Amount,
-			Currency: item.Activity.Currency, Quantity: item.Activity.Quantity,
+			ActivityType: item.Activity.ActivityType, AmountMicros: item.Activity.AmountMicros,
+			Currency: item.Activity.Currency, DisplayAmount: item.Activity.DisplayAmount,
+			Quantity: item.Activity.Quantity,
 		}
 	}
 	if item.Moderation != nil {

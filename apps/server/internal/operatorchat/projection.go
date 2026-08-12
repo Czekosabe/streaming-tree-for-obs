@@ -211,7 +211,9 @@ func (p *Projection) handleEvent(evt engagement.Event) {
 	case engagement.TypeFollow, engagement.TypeSubscription, engagement.TypeResubscription,
 		engagement.TypeGiftedSubscription, engagement.TypeSubscriptionGiftBatch, engagement.TypeBits,
 		engagement.TypeRaid, engagement.TypeChannelPointRedemption,
-		engagement.TypeStreamOnline, engagement.TypeStreamOffline:
+		engagement.TypeStreamOnline, engagement.TypeStreamOffline,
+		engagement.TypeYouTubeMembership, engagement.TypeYouTubeMembershipMilestone,
+		engagement.TypeYouTubeSuperChat, engagement.TypeYouTubeSuperSticker:
 		items = []Item{p.buildActivityItem(evt)}
 	default:
 		// Unsupported/unknown normalized type - ignored safely, never

@@ -119,9 +119,14 @@ type Activity struct {
 	// ActivityType mirrors the source engagement.Type (e.g. "follow",
 	// "bits", "raid") - never a made-up second vocabulary.
 	ActivityType string
-	Amount       *float64
-	Currency     string
-	Quantity     *int64
+	// AmountMicros/Currency/DisplayAmount mirror engagement.Event.Money
+	// when the source event carried one (Stage 15A: YouTube Super
+	// Chat/Super Sticker) - always integer micros, never a float. All
+	// three are the zero value together when the event carried no money.
+	AmountMicros  *int64
+	Currency      string
+	DisplayAmount string
+	Quantity      *int64
 }
 
 // ModerationInfo describes a moderation or system item's meaning.
