@@ -19081,3 +19081,126 @@ Engagement/Chat/Automation pages: broaden their own hardcoded
 parallel `YouTubeConnectorCard` for Engagement, a generalized
 `OutboundChatComposer` prop for Chat's reply-disabled-for-YouTube
 outbound picker), each with new i18n strings.
+
+## 2026-08-12 11:34 — feat(web): YouTube connector card on the Engagement page, and 3 real schema bugs fixed
+
+### What
+Adds a `YouTubeConnectorCard` to the Engagement page (a parallel
+sibling to `TwitchConnectorCard`, matching this codebase's own
+established convention for provider-specific status - see
+`YouTubeAccountsPanel.tsx`), and fixes three genuine, previously
+undetected schema gaps found while wiring it up: none of these were
+introduced by this commit, they were pre-existing since the backend's
+own Stage 15A commits shipped ahead of the frontend catching up.
+
+- **`api/engagement-schemas.ts`** (three real bugs):
+  1. `connectorSchema.provider` did not exist at all, even though
+     `internal/httpapi/engagement.go`'s `connectorResponse.Provider`
+     has no `omitempty` and is always sent - zod was silently
+     stripping a field every connector response actually carries.
+  2. `activeSubscriptionCount`/`expectedSubscriptionCount` were
+     required, but the backend's own struct tags mark both
+     `omitempty` - a YouTube connector (no subscription concept)
+     legitimately sends zero and omits them, which would have failed
+     `connectorSchema.parse` on the very first real YouTube connector
+     snapshot with a hard client-side crash, not a graceful "N/A".
+  3. `engagementEventSchema` had a stale, dead `amount: z.number()`
+     field that no backend response has ever populated (confirmed
+     unused anywhere in the frontend) instead of the real
+     `amountMicros`/`displayAmount` fields `eventResponse` actually
+     sends - a real YouTube Super Chat event reaching the Recent
+     Events Feed would have had its money fields silently dropped by
+     zod's default unknown-key stripping. Also added the 4 new
+     `youtube.*` values to `eventTypeSchema` - previously any
+     YouTube money/membership event would fail the whole event's
+     parse (an unrecognized `type` enum value is a hard zod error, not
+     a stripped field), breaking the feed's SSE stream outright the
+     first time one arrived.
+- **`connectorSchema`** also gained the YouTube-only additive fields
+  (`selectedBroadcastId`, `lastPollAt`, `possibleGapCount`,
+  `unsupportedEventCount`), all optional and always absent for Twitch.
+- **`components/engagement/YouTubeConnectorCard.tsx`** (new): mirrors
+  `TwitchConnectorCard.tsx`'s structure but never shows a permission-
+  upgrade action (YouTube needs no additional scope beyond
+  `youtube.RequiredScope` from the start - see
+  `toYouTubeAccountEngagementResponse`'s own doc comment) and never
+  shows subscription counts (no such concept); instead shows the
+  selected broadcast's poll recency, a "no broadcast selected" warning
+  when enabled without one, possible-gap and unsupported-event counts,
+  and the same restart-on-error action Twitch's card has.
+- **`pages/EngagementPage.tsx`**: now renders a card for every
+  connected YouTube account alongside Twitch's, instead of silently
+  never showing YouTube accounts at all.
+- **`models/engagement-presentation.ts`**: `eventTypeKey`/
+  `eventSummary` extended for the 4 new types (both are exhaustive
+  `Record`/`switch` constructs with no default case, so the TypeScript
+  compiler itself would have refused to build once the schema's
+  `EngagementEventType` union grew - these are not optional additions).
+  `eventSummary` gained an optional `displayAmount` field so a Super
+  Chat/Super Sticker's feed row shows the provider-rendered amount
+  (preferred) or its message (Super Chat only) as the detail text -
+  this diagnostic feed never formats currency itself, only ever shows
+  what the backend already rendered.
+- **`i18n/resources/{en,pl}/engagement.json`**: new `youtubeConnector.*`
+  block (subtitle, enable label/description, no-broadcast-selected
+  warning, last-poll/possible-gaps/unsupported-events labels, disable
+  confirmation), 4 new `eventType.youtube_*` entries, and
+  `connector.noAccounts` reworded to mention both providers.
+
+### Files changed
+- `apps/web/src/api/{engagement-schemas.ts, engagement-schemas.test.ts}`
+- `apps/web/src/components/engagement/{YouTubeConnectorCard.tsx (new),
+  YouTubeConnectorCard.test.tsx (new)}`
+- `apps/web/src/pages/{EngagementPage.tsx, EngagementPage.test.tsx}`
+- `apps/web/src/models/{engagement-presentation.ts,
+  engagement-presentation.test.ts}`
+- `apps/web/src/components/chat/OutboundChatComposer.test.tsx`
+- `apps/web/src/components/engagement/TwitchConnectorCard.test.tsx`
+- `apps/web/src/i18n/resources/{en,pl}/engagement.json`
+
+### Technical decisions
+- **Why a separate `YouTubeConnectorCard` rather than a generic
+  `ConnectorCard` with provider branching.** This is the third time
+  this exact fork-in-the-road has come up in this stage (Engagement,
+  and the still-pending Chat/Automation account filters) - the
+  codebase's own existing precedent (`YouTubeAccountsPanel.tsx` beside
+  `ConnectedAccountsPanel`/`TwitchDeviceFlowModal`) is consistently
+  "parallel sibling component, own i18n block," never a single
+  component with an internal provider switch. Matching that precedent
+  keeps this stage consistent with everything already in the
+  codebase rather than introducing a second competing pattern.
+- **Why `activeSubscriptionCount`/`expectedSubscriptionCount` becoming
+  optional wasn't a breaking change for `TwitchConnectorCard`.** The
+  component already renders `{data.activeSubscriptionCount}/
+  {data.expectedSubscriptionCount}` unconditionally - for a Twitch
+  connector these are still always sent (Twitch always has a real
+  subscription count, even if 0), so nothing in the Twitch card's
+  actual runtime behavior changes; only the schema's *type* became
+  honest about what the wire contract really guarantees.
+
+### Automated validation
+`cd apps/web`: `npx tsc -b` clean, `npm run lint` clean, `npm run
+i18n:check` clean, `npx vitest run` - 86 files / 1221 tests, all
+passing (including 9 new `YouTubeConnectorCard` tests, new schema
+tests proving the 3 fixed bugs - a `provider`-carrying connector
+round-trips, a YouTube connector with omitted subscription counts
+parses, a Super Chat event's `amountMicros`/`displayAmount` round-trip
+- and new `eventSummary`/`eventTypeKey` coverage for all 4 new event
+types), `npm run build` clean.
+
+### Known limitations
+None new for what this commit touches. Still pending: the Chat page's
+own hardcoded Twitch-only account filter and `OutboundChatComposer`'s
+`twitchAccounts` prop (needs broadening for YouTube's outbound
+adapter, with reply staying disabled for YouTube since the API has no
+such concept), the Automation page's identical hardcoded filter, i18n
+for both, the 17th integration script, and the closing documentation/
+regression pass.
+
+### Next step
+The Chat page: broaden `ChatPage.tsx`'s hardcoded `twitchAccounts`
+filter and `OutboundChatComposer`'s `twitchAccounts` prop to include
+YouTube accounts (renamed to a provider-neutral name), confirming
+reply stays disabled for a YouTube account either via existing
+capability data or a new explicit check - the row/message rendering
+itself is already provider-generic and needs no change.

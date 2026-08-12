@@ -35,6 +35,7 @@ describe('connectorSchema', () => {
   it('accepts a minimal disabled connector', () => {
     const result = connectorSchema.safeParse({
       accountId: 'acct_1',
+      provider: 'twitch',
       enabled: false,
       state: 'disabled',
       reconnectCount: 0,
@@ -47,6 +48,7 @@ describe('connectorSchema', () => {
   it('never carries a session id, reconnect URL, or token-shaped field', () => {
     const result = connectorSchema.safeParse({
       accountId: 'acct_1',
+      provider: 'twitch',
       enabled: true,
       state: 'connected',
       reconnectCount: 0,
@@ -62,12 +64,28 @@ describe('connectorSchema', () => {
       expect('sessionId' in result.data).toBe(false);
     }
   });
+
+  it('accepts a YouTube connector with its own additive fields and no subscription counts', () => {
+    const result = connectorSchema.safeParse({
+      accountId: 'acct_1',
+      provider: 'youtube',
+      enabled: true,
+      state: 'connected',
+      reconnectCount: 0,
+      selectedBroadcastId: 'broadcast_1',
+      lastPollAt: '2026-08-12T00:00:00Z',
+      possibleGapCount: 0,
+      unsupportedEventCount: 2,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('accountEngagementSchema', () => {
   it('accepts a blocked account with a capability assessment', () => {
     const result = accountEngagementSchema.safeParse({
       accountId: 'acct_1',
+      provider: 'twitch',
       enabled: true,
       state: 'blocked',
       blockerCodes: ['engagement_scope_upgrade_required'],
@@ -78,6 +96,20 @@ describe('accountEngagementSchema', () => {
       requiredScopes: ['user:read:chat', 'moderator:read:followers'],
       grantedScopes: ['channel:manage:broadcast'],
       permissionUpgradeRequired: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a YouTube account (never a scope-upgrade capability assessment)', () => {
+    const result = accountEngagementSchema.safeParse({
+      accountId: 'acct_1',
+      provider: 'youtube',
+      enabled: true,
+      state: 'connected',
+      reconnectCount: 0,
+      requiredScopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+      grantedScopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+      permissionUpgradeRequired: false,
     });
     expect(result.success).toBe(true);
   });
@@ -114,6 +146,10 @@ describe('eventTypeSchema', () => {
     'channel_point_redemption',
     'stream.online',
     'stream.offline',
+    'youtube.membership',
+    'youtube.membership_milestone',
+    'youtube.super_chat',
+    'youtube.super_sticker',
   ])('accepts %s', (type) => {
     expect(eventTypeSchema.safeParse(type).success).toBe(true);
   });
@@ -196,6 +232,31 @@ describe('engagementEventSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.user?.providerUserId).toBeUndefined();
+    }
+  });
+
+  it('accepts a YouTube Super Chat event with integer-micros amount fields', () => {
+    const result = engagementEventSchema.safeParse({
+      schemaVersion: 1,
+      sequence: 4,
+      id: 'evt_4',
+      providerId: 'youtube',
+      connectedAccountId: 'acct_1',
+      type: 'youtube.super_chat',
+      providerEventType: 'superChatEvent',
+      platformTimestamp: '2026-08-05T12:00:00Z',
+      receivedAt: '2026-08-05T12:00:00Z',
+      synthetic: false,
+      user: { providerUserId: 'u1', anonymous: false },
+      message: { text: 'thanks!', fragments: [] },
+      amountMicros: 5_000_000,
+      currency: 'USD',
+      displayAmount: '$5.00',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.amountMicros).toBe(5_000_000);
+      expect(result.data.displayAmount).toBe('$5.00');
     }
   });
 });

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/components/layout/AppShell';
 import { RecentEventsFeed } from '@/components/engagement/RecentEventsFeed';
 import { TwitchConnectorCard } from '@/components/engagement/TwitchConnectorCard';
+import { YouTubeConnectorCard } from '@/components/engagement/YouTubeConnectorCard';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { useAccountsQuery } from '@/hooks/use-accounts';
 import { useEngagementStatusQuery } from '@/hooks/use-engagement';
@@ -23,6 +24,7 @@ export function EngagementPage() {
   const accounts = useAccountsQuery();
 
   const twitchAccounts = (accounts.data ?? []).filter((account) => account.providerId === 'twitch');
+  const youtubeAccounts = (accounts.data ?? []).filter((account) => account.providerId === 'youtube');
 
   return (
     <AppShell
@@ -52,14 +54,17 @@ export function EngagementPage() {
           </PanelBody>
         </Panel>
 
-        {twitchAccounts.length === 0 ? (
+        {twitchAccounts.length === 0 && youtubeAccounts.length === 0 ? (
           <Panel>
             <PanelBody>
               <p className="text-xs text-ink-faint">{t('engagement:connector.noAccounts')}</p>
             </PanelBody>
           </Panel>
         ) : (
-          twitchAccounts.map((account) => <TwitchConnectorCard key={account.id} account={account} />)
+          <>
+            {twitchAccounts.map((account) => <TwitchConnectorCard key={account.id} account={account} />)}
+            {youtubeAccounts.map((account) => <YouTubeConnectorCard key={account.id} account={account} />)}
+          </>
         )}
 
         <RecentEventsFeed />

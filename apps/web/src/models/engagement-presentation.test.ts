@@ -37,6 +37,10 @@ const ALL_EVENT_TYPES: EngagementEventType[] = [
   'channel_point_redemption',
   'stream.online',
   'stream.offline',
+  'youtube.membership',
+  'youtube.membership_milestone',
+  'youtube.super_chat',
+  'youtube.super_sticker',
 ];
 
 describe('connectorStateKey', () => {
@@ -137,5 +141,49 @@ describe('eventSummary', () => {
     const summary = eventSummary({ type: 'stream.online' });
     expect(summary.actor).toBe('');
     expect(summary.detail).toBe('');
+  });
+
+  it('shows the provider-rendered display amount for a Super Chat, never the raw message when both are absent', () => {
+    const summary = eventSummary({
+      type: 'youtube.super_chat',
+      user: { displayName: 'Viewer', anonymous: false },
+      displayAmount: '$5.00',
+    });
+    expect(summary.detail).toBe('$5.00');
+  });
+
+  it('falls back to the message when a Super Chat has no displayAmount', () => {
+    const summary = eventSummary({
+      type: 'youtube.super_chat',
+      user: { displayName: 'Viewer', anonymous: false },
+      message: { text: 'thanks for the stream!' },
+    });
+    expect(summary.detail).toBe('thanks for the stream!');
+  });
+
+  it('shows the display amount for a Super Sticker (no message capability)', () => {
+    const summary = eventSummary({
+      type: 'youtube.super_sticker',
+      user: { displayName: 'Viewer', anonymous: false },
+      displayAmount: '€2.00',
+    });
+    expect(summary.detail).toBe('€2.00');
+  });
+
+  it('shows no detail for a plain membership event', () => {
+    const summary = eventSummary({
+      type: 'youtube.membership',
+      user: { displayName: 'Viewer', anonymous: false },
+    });
+    expect(summary.detail).toBe('');
+  });
+
+  it('shows the milestone message as detail', () => {
+    const summary = eventSummary({
+      type: 'youtube.membership_milestone',
+      user: { displayName: 'Viewer', anonymous: false },
+      message: { text: '6 months and counting!' },
+    });
+    expect(summary.detail).toBe('6 months and counting!');
   });
 });

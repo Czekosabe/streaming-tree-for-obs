@@ -28,6 +28,10 @@ export type ConnectorState = z.infer<typeof connectorStateSchema>;
 
 export const connectorSchema = z.object({
   accountId: z.string().min(1),
+  /** Always present on the wire (internal/httpapi/engagement.go's
+   * connectorResponse.Provider has no `omitempty`) - "twitch" or
+   * "youtube" today. */
+  provider: z.string().min(1),
   enabled: z.boolean(),
   state: connectorStateSchema,
   blockerCodes: z.array(z.string()).optional(),
@@ -37,9 +41,20 @@ export const connectorSchema = z.object({
   lastKeepaliveAt: z.string().optional(),
   lastDataGapAt: z.string().optional(),
   reconnectCount: z.number(),
-  activeSubscriptionCount: z.number(),
-  expectedSubscriptionCount: z.number(),
+  /** `omitempty` on the wire - a YouTube connector (which has no
+   * subscription concept) legitimately omits both at zero, so these
+   * must be optional rather than defaulting to a false "always
+   * present" assumption inherited from Twitch being the only provider
+   * before Stage 15A. */
+  activeSubscriptionCount: z.number().optional(),
+  expectedSubscriptionCount: z.number().optional(),
   lastError: z.string().optional(),
+  /** Stage 15A YouTube-only fields - always absent for a Twitch
+   * connector's own snapshot. */
+  selectedBroadcastId: z.string().optional(),
+  lastPollAt: z.string().optional(),
+  possibleGapCount: z.number().optional(),
+  unsupportedEventCount: z.number().optional(),
 });
 export type Connector = z.infer<typeof connectorSchema>;
 
@@ -76,6 +91,10 @@ export const eventTypeSchema = z.enum([
   'channel_point_redemption',
   'stream.online',
   'stream.offline',
+  'youtube.membership',
+  'youtube.membership_milestone',
+  'youtube.super_chat',
+  'youtube.super_sticker',
 ]);
 export type EngagementEventType = z.infer<typeof eventTypeSchema>;
 
@@ -134,8 +153,13 @@ export const engagementEventSchema = z.object({
   synthetic: z.boolean(),
   user: eventUserSchema.optional(),
   message: eventMessageSchema.optional(),
-  amount: z.number().optional(),
+  /** Stage 15A real monetary value (YouTube Super Chat/Super Sticker) -
+   * mirrors internal/httpapi/engagement.go's eventResponse exactly
+   * (amountMicros/currency/displayAmount, never a plain float "amount"
+   * field - internal/domain/engagement.Money is integer-micros only). */
+  amountMicros: z.number().optional(),
   currency: z.string().optional(),
+  displayAmount: z.string().optional(),
   quantity: z.number().optional(),
   moderationRef: z.string().optional(),
   moderationAction: z.string().optional(),

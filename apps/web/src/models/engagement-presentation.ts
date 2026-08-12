@@ -75,6 +75,10 @@ export function eventTypeKey(type: EngagementEventType): EngagementKey {
     channel_point_redemption: 'eventType.channel_point_redemption',
     'stream.online': 'eventType.stream_online',
     'stream.offline': 'eventType.stream_offline',
+    'youtube.membership': 'eventType.youtube_membership',
+    'youtube.membership_milestone': 'eventType.youtube_membership_milestone',
+    'youtube.super_chat': 'eventType.youtube_super_chat',
+    'youtube.super_sticker': 'eventType.youtube_super_sticker',
   };
   return keys[type];
 }
@@ -90,6 +94,12 @@ export function eventSummary(event: {
   user?: { displayName?: string | undefined; login?: string | undefined; anonymous: boolean } | undefined;
   message?: { text: string } | undefined;
   quantity?: number | undefined;
+  /** Stage 15A - the display-ready form of a real Money value (never
+   * derived from amountMicros here; this diagnostic feed never formats
+   * currency itself, it only ever shows what the provider/backend
+   * already rendered - see internal/domain/engagement.Money's own
+   * DisplayAmount field). */
+  displayAmount?: string | undefined;
 }): { actor: string; detail: string } {
   const actor = event.user?.anonymous
     ? ''
@@ -123,5 +133,13 @@ export function eventSummary(event: {
     case 'stream.online':
     case 'stream.offline':
       return { actor: '', detail: '' };
+    case 'youtube.membership':
+      return { actor, detail: '' };
+    case 'youtube.membership_milestone':
+      return { actor, detail: event.message?.text ?? '' };
+    case 'youtube.super_chat':
+      return { actor, detail: event.displayAmount ?? event.message?.text ?? '' };
+    case 'youtube.super_sticker':
+      return { actor, detail: event.displayAmount ?? '' };
   }
 }

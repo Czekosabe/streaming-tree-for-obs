@@ -13,7 +13,7 @@
     "subtitle": "Twitch · {{login}}",
     "enableLabel": "Enable Twitch chat and events",
     "enableDescription": "Opens one EventSub WebSocket connection for this account when enabled.",
-    "noAccounts": "No connected Twitch account yet. Connect one from Settings to enable engagement.",
+    "noAccounts": "No connected Twitch or YouTube account yet. Connect one from Settings to enable engagement.",
     "subscriptions": "Subscriptions",
     "reconnectCount": "Reconnects",
     "lastEventAt": "Last event",
@@ -45,6 +45,17 @@
       "credentialStoreUnavailable": "Secure storage is currently unavailable"
     }
   },
+  "youtubeConnector": {
+    "subtitle": "YouTube · {{login}}",
+    "enableLabel": "Enable YouTube chat and events",
+    "enableDescription": "Polls the selected broadcast's live chat for this account when enabled - the first poll is never treated as live (no history replay).",
+    "noBroadcastSelected": "No broadcast is currently selected for this account - choose one from Settings to start receiving events.",
+    "lastPollAt": "Last poll",
+    "possibleGapCount": "Possible gaps",
+    "unsupportedEventCount": "Unsupported events seen",
+    "disableConfirmTitle": "Disable YouTube engagement?",
+    "disableConfirmMessage": "This stops polling the selected broadcast's live chat for this account. It does not disconnect the account or affect metadata publishing."
+  },
   "feed": {
     "title": "Recent events",
     "description": "A bounded diagnostic feed - not the operator chat or an overlay.",
@@ -74,6 +85,10 @@
     "raid": "Raid",
     "channel_point_redemption": "Channel points",
     "stream_online": "Stream online",
-    "stream_offline": "Stream offline"
+    "stream_offline": "Stream offline",
+    "youtube_membership": "Membership",
+    "youtube_membership_milestone": "Membership milestone",
+    "youtube_super_chat": "Super Chat",
+    "youtube_super_sticker": "Super Sticker"
   }
 }

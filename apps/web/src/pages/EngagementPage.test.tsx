@@ -52,7 +52,7 @@ describe('EngagementPage', () => {
     expect(await screen.findByText('0/1000')).toBeInTheDocument();
   });
 
-  it('shows a clear empty state when no Twitch account is connected', async () => {
+  it('shows a clear empty state when no Twitch or YouTube account is connected', async () => {
     vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([]);
     vi.mocked(engagementApi).fetchEngagementStatus.mockResolvedValue({
       schemaVersion: 1,
@@ -66,10 +66,10 @@ describe('EngagementPage', () => {
 
     renderPage();
 
-    expect(await screen.findByText(/no connected twitch account yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no connected twitch or youtube account yet/i)).toBeInTheDocument();
   });
 
-  it('renders a connector card for each connected Twitch account, never a YouTube one', async () => {
+  it('renders a connector card for each connected Twitch and YouTube account (Stage 15A)', async () => {
     vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([
       {
         id: 'acct_twitch_1',
@@ -101,21 +101,18 @@ describe('EngagementPage', () => {
       activeSubscribers: 0,
       connectors: [],
     });
-    vi.mocked(engagementApi).fetchAccountEngagement.mockResolvedValue({
-      accountId: 'acct_twitch_1',
-      enabled: false,
-      state: 'disabled',
-      reconnectCount: 0,
-      activeSubscriptionCount: 0,
-      expectedSubscriptionCount: 0,
-      requiredScopes: [],
-      grantedScopes: [],
-      permissionUpgradeRequired: false,
-    });
+    vi.mocked(engagementApi).fetchAccountEngagement.mockImplementation((accountId: string) =>
+      Promise.resolve({
+        accountId, provider: accountId === 'acct_youtube_1' ? 'youtube' : 'twitch',
+        enabled: false, state: 'disabled', reconnectCount: 0,
+        activeSubscriptionCount: 0, expectedSubscriptionCount: 0,
+        requiredScopes: [], grantedScopes: [], permissionUpgradeRequired: false,
+      }),
+    );
 
     renderPage();
 
     expect(await screen.findByText('Streamer')).toBeInTheDocument();
-    expect(screen.queryByText('My Channel')).not.toBeInTheDocument();
+    expect(await screen.findByText('My Channel')).toBeInTheDocument();
   });
 });

@@ -13,7 +13,7 @@
     "subtitle": "Twitch · {{login}}",
     "enableLabel": "Włącz czat i zdarzenia Twitch",
     "enableDescription": "Po włączeniu otwiera jedno połączenie WebSocket EventSub dla tego konta.",
-    "noAccounts": "Brak podłączonego konta Twitch. Podłącz je w Ustawieniach, aby włączyć zaangażowanie.",
+    "noAccounts": "Brak podłączonego konta Twitch lub YouTube. Podłącz je w Ustawieniach, aby włączyć zaangażowanie.",
     "subscriptions": "Subskrypcje",
     "reconnectCount": "Ponowne połączenia",
     "lastEventAt": "Ostatnie zdarzenie",
@@ -45,6 +45,17 @@
       "credentialStoreUnavailable": "Bezpieczny magazyn jest obecnie niedostępny"
     }
   },
+  "youtubeConnector": {
+    "subtitle": "YouTube · {{login}}",
+    "enableLabel": "Włącz czat i zdarzenia YouTube",
+    "enableDescription": "Po włączeniu odpytuje czat na żywo wybranej transmisji dla tego konta - pierwsze odpytanie nigdy nie jest traktowane jako na żywo (bez odtwarzania historii).",
+    "noBroadcastSelected": "Żadna transmisja nie jest obecnie wybrana dla tego konta - wybierz ją w Ustawieniach, aby zacząć odbierać zdarzenia.",
+    "lastPollAt": "Ostatnie odpytanie",
+    "possibleGapCount": "Możliwe luki",
+    "unsupportedEventCount": "Napotkane nieobsługiwane zdarzenia",
+    "disableConfirmTitle": "Wyłączyć zaangażowanie YouTube?",
+    "disableConfirmMessage": "To zatrzymuje odpytywanie czatu na żywo wybranej transmisji dla tego konta. Nie odłącza konta ani nie wpływa na publikowanie metadanych."
+  },
   "feed": {
     "title": "Ostatnie zdarzenia",
     "description": "Ograniczony podgląd diagnostyczny - nie czat operatora ani nakładka.",
@@ -74,6 +85,10 @@
     "raid": "Najazd",
     "channel_point_redemption": "Punkty kanału",
     "stream_online": "Transmisja rozpoczęta",
-    "stream_offline": "Transmisja zakończona"
+    "stream_offline": "Transmisja zakończona",
+    "youtube_membership": "Członkostwo",
+    "youtube_membership_milestone": "Rocznica członkostwa",
+    "youtube_super_chat": "Super Chat",
+    "youtube_super_sticker": "Super Sticker"
   }
 }

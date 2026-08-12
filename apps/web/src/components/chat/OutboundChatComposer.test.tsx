@@ -31,7 +31,7 @@ function readyStatus(overrides: Record<string, unknown> = {}) {
 }
 
 function connectedEngagement() {
-  return { accountId: 'acct_1', enabled: true, state: 'connected' as const, reconnectCount: 0, activeSubscriptionCount: 13, expectedSubscriptionCount: 13, requiredScopes: [], grantedScopes: [], permissionUpgradeRequired: false };
+  return { accountId: 'acct_1', provider: 'twitch', enabled: true, state: 'connected' as const, reconnectCount: 0, activeSubscriptionCount: 13, expectedSubscriptionCount: 13, requiredScopes: [], grantedScopes: [], permissionUpgradeRequired: false };
 }
 
 beforeEach(() => {
@@ -197,7 +197,7 @@ describe('OutboundChatComposer', () => {
 
   it('explains that no local echo is expected when inbound engagement is disabled', async () => {
     vi.mocked(engagementApi).fetchAccountEngagement.mockResolvedValue({
-      accountId: 'acct_1', enabled: false, state: 'disabled' as const, reconnectCount: 0,
+      accountId: 'acct_1', provider: 'twitch', enabled: false, state: 'disabled' as const, reconnectCount: 0,
       activeSubscriptionCount: 0, expectedSubscriptionCount: 0, requiredScopes: [], grantedScopes: [], permissionUpgradeRequired: false,
     });
     vi.mocked(outboundChatApi).fetchOutboundChatStatus.mockResolvedValue(readyStatus());

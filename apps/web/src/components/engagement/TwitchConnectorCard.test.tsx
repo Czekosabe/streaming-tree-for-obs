@@ -31,6 +31,7 @@ const ACCOUNT: ConnectedAccount = {
 function connected(overrides: Partial<AccountEngagement> = {}): AccountEngagement {
   return {
     accountId: 'acct_twitch_1',
+    provider: 'twitch',
     enabled: true,
     state: 'connected',
     reconnectCount: 0,
