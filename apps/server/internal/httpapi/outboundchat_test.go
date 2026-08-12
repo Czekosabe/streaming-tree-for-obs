@@ -481,6 +481,42 @@ func TestSendOutboundChatMessageProviderFailure(t *testing.T) {
 	}
 }
 
+func TestSendOutboundChatMessageChatUnavailable(t *testing.T) {
+	// Stage 15A regression test: ErrChatUnavailable (YouTube: no selected
+	// broadcast, not live yet, or chat has ended) previously had no case
+	// in writeOutboundChatError and fell through to a bare 500.
+	ts := newOutboundChatTestServer(t)
+	acc := ts.createAccount(t, "a1", "user:write:chat")
+	ts.provider.setNext(outboundchat.SendMessageResult{}, outboundchat.ErrChatUnavailable)
+
+	resp := ts.do(t, http.MethodPost, "/api/connected-accounts/"+acc.ID+"/outbound-chat/messages", map[string]string{"message": "hi"})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	body := decodeOutboundChatBody(t, resp)
+	if body["error"] != "outbound_chat_unavailable" {
+		t.Errorf("error = %v, want outbound_chat_unavailable", body["error"])
+	}
+}
+
+func TestSendOutboundChatMessageReplyUnsupported(t *testing.T) {
+	// Stage 15A regression test: ErrReplyUnsupported (YouTube's send API
+	// has no reply/parent-message concept) previously had no case in
+	// writeOutboundChatError and fell through to a bare 500.
+	ts := newOutboundChatTestServer(t)
+	acc := ts.createAccount(t, "a1", "user:write:chat")
+	ts.provider.setNext(outboundchat.SendMessageResult{}, outboundchat.ErrReplyUnsupported)
+
+	resp := ts.do(t, http.MethodPost, "/api/connected-accounts/"+acc.ID+"/outbound-chat/messages", map[string]string{"message": "hi", "replyParentMessageId": "m1"})
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", resp.StatusCode)
+	}
+	body := decodeOutboundChatBody(t, resp)
+	if body["error"] != "outbound_chat_reply_unsupported" {
+		t.Errorf("error = %v, want outbound_chat_reply_unsupported", body["error"])
+	}
+}
+
 func TestSendOutboundChatMessageQueueFull(t *testing.T) {
 	ts := newOutboundChatTestServer(t)
 	acc := ts.createAccount(t, "a1", "user:write:chat")

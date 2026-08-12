@@ -72,7 +72,9 @@
     "deliveryUnknown": "This message may or may not have been delivered - no confirmation was received.",
     "forbidden": "This send was rejected - the account may be banned or timed out in this chat room.",
     "providerFailure": "An error occurred while sending this message.",
-    "queueFull": "Too many messages are already queued for this account - wait a moment and try again."
+    "queueFull": "Too many messages are already queued for this account - wait a moment and try again.",
+    "chatUnavailable": "No live chat is currently available for this account (not live yet, or the broadcast's chat has ended).",
+    "replyUnsupported": "This provider does not support replying to a message."
   },
   "filters": {
     "title": "Filters",

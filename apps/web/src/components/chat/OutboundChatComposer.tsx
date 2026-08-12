@@ -231,6 +231,12 @@ export function OutboundChatComposer({
         {sendErrorCode === 'outbound_chat_queue_full' && (
           <p className="text-[11px] text-status-error">{t('compose.queueFull')}</p>
         )}
+        {sendErrorCode === 'outbound_chat_unavailable' && (
+          <p className="text-[11px] text-status-starting">{t('compose.chatUnavailable')}</p>
+        )}
+        {sendErrorCode === 'outbound_chat_reply_unsupported' && (
+          <p className="text-[11px] text-status-error">{t('compose.replyUnsupported')}</p>
+        )}
       </PanelBody>
     </Panel>
   );

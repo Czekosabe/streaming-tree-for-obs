@@ -238,13 +238,22 @@ func writeOutboundChatError(w http.ResponseWriter, logger *slog.Logger, err erro
 	case errors.As(err, &rateLimitErr):
 		writeError(w, logger, http.StatusTooManyRequests, "outbound_chat_rate_limited", "Sending is temporarily rate limited.")
 	case errors.Is(err, outboundchat.ErrForbidden):
-		writeError(w, logger, http.StatusForbidden, "outbound_chat_forbidden", "Twitch rejected this send - the account may be banned or timed out in this chat room.")
+		writeError(w, logger, http.StatusForbidden, "outbound_chat_forbidden", "This send was rejected - the account may be banned or timed out in this chat room.")
 	case errors.Is(err, outboundchat.ErrDeliveryUnknown):
 		writeError(w, logger, http.StatusBadGateway, "outbound_chat_delivery_unknown", "The message may or may not have been delivered - no trustworthy result was received.")
 	case errors.Is(err, outboundchat.ErrProviderFailure):
 		writeError(w, logger, http.StatusBadGateway, "outbound_chat_provider_failure", "The chat provider returned an error.")
 	case errors.Is(err, outboundchat.ErrCancelled):
 		writeError(w, logger, http.StatusServiceUnavailable, "outbound_chat_cancelled", "The send was cancelled.")
+	case errors.Is(err, outboundchat.ErrChatUnavailable):
+		// Stage 15A: YouTube has no selected broadcast, no live chat yet,
+		// or the chat has ended - a real, honest "not ready right now"
+		// state, never a validation failure on the request itself.
+		writeError(w, logger, http.StatusConflict, "outbound_chat_unavailable", "No writable chat is currently available for this account.")
+	case errors.Is(err, outboundchat.ErrReplyUnsupported):
+		// Stage 15A: YouTube's send API has no reply/parent-message
+		// concept at all - a request-shape problem, not a transient one.
+		writeError(w, logger, http.StatusUnprocessableEntity, "outbound_chat_reply_unsupported", "This provider does not support replying to a message.")
 	case errors.Is(err, outboundchat.ErrMessageEmpty), errors.Is(err, outboundchat.ErrMessageTooLong),
 		errors.Is(err, outboundchat.ErrMessageInvalidUTF8), errors.Is(err, outboundchat.ErrMessageControlCharacter):
 		writeError(w, logger, http.StatusUnprocessableEntity, "validation_failed", "The message is invalid.")

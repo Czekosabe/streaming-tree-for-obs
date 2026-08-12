@@ -19382,3 +19382,81 @@ using a fake YouTube OAuth/REST server exercising the full real
 backend pipeline end to end - including explicit proof that initial
 chat history is never treated as live and that a backend restart never
 replays history.
+
+## 2026-08-12 12:04 — fix(server): map two unreachable-until-now outbound chat errors to real HTTP codes
+
+### What
+While researching how to write the 17th integration script (which
+needs to prove a YouTube reply attempt and a "no live chat yet" send
+attempt both fail honestly), found that `writeOutboundChatError`
+(`internal/httpapi/outboundchat.go`) had no case at all for two real,
+reachable error values the YouTube outbound adapter already returns -
+`outboundchat.ErrChatUnavailable` (no selected broadcast, not live
+yet, or the chat has ended) and `outboundchat.ErrReplyUnsupported`
+(YouTube's send API has no reply concept). Both existed since the
+outbound-adapter commit earlier this stage and were already correctly
+labeled in the dispatcher's own internal `errorCode()` status-snapshot
+function - but the actual HTTP response mapping was never extended to
+match, so both fell through to the `default` case: a bare 500
+`internal_error` instead of an honest 4xx. This is the third bug of
+this exact shape found this session (alongside the alert-rule money
+DTO gap and the `SharedChatWarning` leak) - each time, a Go value or
+condition existed correctly at the domain layer but its corresponding
+HTTP-layer mapping was never added when Stage 15A's later work
+introduced it.
+
+- **`internal/httpapi/outboundchat.go`**: added
+  `ErrChatUnavailable` → 409 `outbound_chat_unavailable` (a real,
+  honest "not ready right now" state, never a validation failure) and
+  `ErrReplyUnsupported` → 422 `outbound_chat_reply_unsupported` (a
+  request-shape problem, not a transient one). Also reworded the
+  `outbound_chat_forbidden` error message from "Twitch rejected this
+  send..." to provider-neutral wording, matching the same fix already
+  applied to the frontend's copy for the identical error code in an
+  earlier commit this session - the backend's own message string had
+  the same problem the frontend copy did.
+- **`components/chat/OutboundChatComposer.tsx`**: added UI cases for
+  both new codes (`compose.chatUnavailable`, `compose.replyUnsupported`),
+  with EN/PL i18n strings.
+
+### Files changed
+- `apps/server/internal/httpapi/{outboundchat.go, outboundchat_test.go}`
+- `apps/web/src/components/chat/OutboundChatComposer.tsx`
+- `apps/web/src/i18n/resources/{en,pl}/chat.json`
+
+### Technical decisions
+- **Why 409 for `ErrChatUnavailable` but 422 for `ErrReplyUnsupported`.**
+  Chat-unavailable is about current session/live state blocking the
+  action (the same category as `account.ErrReconnectRequired`, already
+  409 in this same switch) - retrying later may well succeed once the
+  broadcast goes live. Reply-unsupported is about the request itself
+  being invalid for this provider regardless of timing (like the
+  existing message-validation cases, already 422) - retrying the exact
+  same request will never succeed.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including two new regression tests
+(`TestSendOutboundChatMessageChatUnavailable`,
+`TestSendOutboundChatMessageReplyUnsupported`) that fail against the
+pre-fix code (both got 500 before this commit).
+`cd apps/web`: `npx tsc -b` clean, `npm run lint` clean, `npm run
+i18n:check` clean, `npx vitest run src/components/chat` - 9 files /
+123 tests passing.
+
+### Known limitations
+None new.
+
+### Next step
+Write and run the 17th integration script:
+`scripts/verify-youtube-engagement.mjs`, mirroring the harness already
+shared by all 16 existing scripts (`verify-youtube-account-integration.mjs`
+for the fake OAuth/API server and account-linking flow,
+`verify-twitch-engagement.mjs` for the Event Bus/connector pattern,
+`verify-alerts.mjs` for the monetary-alert trigger pattern) - proving
+the full YouTube engagement connector, chat overlay/operator chat
+integration, outbound send (including the two error paths just fixed),
+and a real Super Chat triggering a monetary alert, end to end against
+a fake YouTube OAuth/REST server.

@@ -74,7 +74,9 @@
     "deliveryUnknown": "Ta wiadomość mogła zostać dostarczona albo nie - nie otrzymano potwierdzenia.",
     "forbidden": "Wysyłka została odrzucona - konto może być zbanowane lub wyciszone na tym czacie.",
     "providerFailure": "Wystąpił błąd podczas wysyłania tej wiadomości.",
-    "queueFull": "Dla tego konta jest już zbyt wiele oczekujących wiadomości - poczekaj chwilę i spróbuj ponownie."
+    "queueFull": "Dla tego konta jest już zbyt wiele oczekujących wiadomości - poczekaj chwilę i spróbuj ponownie.",
+    "chatUnavailable": "Żaden czat na żywo nie jest obecnie dostępny dla tego konta (transmisja jeszcze się nie rozpoczęła lub czat transmisji już się zakończył).",
+    "replyUnsupported": "Ten dostawca nie obsługuje odpowiadania na wiadomości."
   },
   "filters": {
     "title": "Filtry",
