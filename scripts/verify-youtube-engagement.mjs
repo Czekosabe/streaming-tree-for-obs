@@ -5,21 +5,44 @@
  * existing shared operator chat / Engagement Event Bus / alerts
  * pipelines, and the YouTube outbound chat adapter.
  *
+ * Stage 15A transport corrective pass (docs/provider-integrations/
+ * youtube-engagement.md §4b): the connector's inbound (receive) transport
+ * is the official `liveChatMessages.streamList` gRPC server-streaming RPC,
+ * not REST polling. This script exercises the REAL gRPC transport - it
+ * builds and spawns a second real local process, `fakeyoutubegrpc`
+ * (apps/server/cmd/fakeyoutubegrpc), a genuine gRPC server implementing
+ * `V3DataLiveChatMessageService`, and points the backend under test at it
+ * via `STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET`/`_INSECURE`. This script
+ * itself never speaks gRPC - it drives that process over a small, plain
+ * HTTP JSON control API (`/control/script`, `/control/disconnect`,
+ * `/control/last-request`), the same way it already drives the backend
+ * under test itself over HTTP. The actual gRPC wire traffic (HTTP/2 +
+ * protobuf) happens entirely between the real backend (client) and the
+ * real fake server - never bypassed, never faked at the Go-interface
+ * level.
+ *
  * This script never contacts real Google or YouTube. It runs the real
  * backend under test (`go build -tags integration ./cmd/testserver` -
  * the same binary every other verify-*.mjs script in this directory
- * uses) against one small in-process fake HTTP server reproducing only
- * the Google OAuth and YouTube Data/Live-Chat API response shapes this
- * application actually parses:
+ * uses) against:
  *
- *   fake OAuth server   (oauth2.googleapis.com equivalent)
+ *   fake OAuth server    (oauth2.googleapis.com equivalent, plain HTTP)
  *     /token, /tokeninfo, /revoke
- *   fake YouTube server (www.googleapis.com/youtube/v3 equivalent)
- *     /channels, /liveBroadcasts, /liveChat/messages (GET+POST)
+ *   fake YouTube REST server (www.googleapis.com/youtube/v3 equivalent)
+ *     /channels, /liveBroadcasts, /liveChat/messages (POST only - insert)
+ *   fake YouTube gRPC server (youtube.googleapis.com streamList equivalent)
+ *     a real local gRPC server, see above
  *
- * pointed at via STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL and
- * STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL - env vars that exist only
- * in the `-tags integration` binary, never in a production build.
+ * pointed at via STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL,
+ * STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL, and
+ * STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET/_INSECURE - env vars that exist
+ * only in the `-tags integration` binary, never in a production build.
+ *
+ * The fake REST server's GET /liveChat/messages handler (the superseded
+ * REST receive method) is deliberately kept registered but made to fail
+ * loudly and count every hit - if the production connector ever falls
+ * back to REST polling instead of gRPC, this script fails immediately
+ * rather than silently passing (assertion #20 below).
  *
  * Account linking reuses the exact same simulated-browser PKCE dance
  * scripts/verify-youtube-account-integration.mjs already established
@@ -27,42 +50,58 @@
  * script's own doc comment for why the loopback-callback fetch is a
  * real HTTP call into the backend under test, not a fake.
  *
- * What this script proves, end to end, against the real backend:
- *   - the connector reaches "connected" only once a destination is
- *     linked, a broadcast with a live chat is selected, and engagement
- *     is enabled - the same real HTTP routes the frontend uses;
- *   - the first ("baseline") poll's own messages are NEVER published,
- *     even when the fake server's first response already contains
- *     history - proven by seeding history before the very first poll
- *     and confirming none of it ever reaches the Engagement Event Bus;
- *   - a real chat message, Super Chat, and Super Sticker are each
- *     normalized correctly (integer-micros money, no floats) and reach
- *     BOTH the Engagement Event Bus AND the existing operator-chat
- *     projection - the same shared pipeline Twitch already uses, no
- *     parallel YouTube-only copy;
- *   - a monetary alert rule actually triggers off a real Super Chat,
- *     with the real amount/currency rendered into the alert text;
- *   - outbound sending works through the existing shared dispatcher,
- *     a reply attempt is rejected outright (YouTube's API has no reply
- *     concept), and the connected account's own echoed message never
- *     triggers a chat-automation command (self-loop protection, keyed
- *     on the stable channel id, never a display-name comparison);
- *   - an explicit connector restart re-baselines and never replays a
- *     message already delivered before the restart;
- *   - a real backend process restart preserves the destination link
- *     and selected broadcast (SQLite-backed), exactly like every other
- *     verify-*.mjs script's own persistence proof.
+ * What this script proves, end to end, against the real backend, over
+ * the real gRPC transport:
+ *   1.  the fake gRPC service actually receives a StreamList call
+ *   2.  the requested liveChatId is correct
+ *   3.  the requested `part` is exactly id/snippet/authorDetails
+ *   4.  OAuth authorization metadata is present on the request (the
+ *       token value itself is never exposed back to this script)
+ *   5.  the first ("baseline") response is treated as history
+ *   6.  the baseline produces zero Event Bus side effects, even when it
+ *       already contains a message
+ *   7.  a genuinely live response after the baseline is normalized and
+ *       published normally
+ *   8.  a Super Chat delivered over the gRPC transport normalizes with
+ *       correct integer-micros money
+ *   9.  a membership (newSponsorEvent) delivered over gRPC normalizes
+ *       correctly
+ *   10. the connector captures nextPageToken from each response
+ *   11. a forced stream disconnect (via the fake's own control API) is
+ *       recovered from
+ *   12. the reconnect request carries the previously-captured pageToken
+ *   13. the resumed live event is delivered exactly once (no duplicate,
+ *       no drop)
+ *   14. an INVALID_ARGUMENT status on the held continuation triggers the
+ *       possible-gap / fresh-rebaseline flow
+ *   15. the new post-rebaseline baseline is suppressed exactly like the
+ *       original one
+ *   16. a subsequent live event after that rebaseline resumes normally
+ *   17. disabling the connector cancels its stream (the fake's request
+ *       counter for that liveChatId stops advancing)
+ *   18. selecting a different broadcast cancels the old stream and opens
+ *       a new one for the new liveChatId
+ *   19. a full backend process shutdown closes the stream cleanly
+ *   20. the fake REST server's liveChatMessages.list endpoint is NEVER
+ *       hit - the production connector must use gRPC exclusively
  *
- * Deliberately out of scope for this script (covered instead by the
- * Go unit/HTTP test suites already exercising them, per this project's
- * own "representative subset with documented deferral" convention):
- * membership/membership-milestone field-level assertions beyond "the
- * event type appears", the transient waiting_for_broadcast auto-
- * recovery timing (a real ~10s fixed retry interval - already proven
- * at the unit level in internal/runtime/youtubeengagement), and the
- * outbound "chat unavailable" (no broadcast selected) HTTP path -
- * already proven directly by
- * TestSendOutboundChatMessageChatUnavailable.
+ * plus the pre-existing Stage 15A behavioral coverage this script already
+ * had before the transport correction (unchanged in substance, only in
+ * how content is injected): operator-chat projection integration, a real
+ * monetary alert trigger, currency/threshold non-matches, Super Sticker
+ * (no message field), outbound send + reply rejection, chat-automation
+ * command dispatch + self-loop protection, an explicit connector restart
+ * re-baselining without replay, and destination/broadcast persistence
+ * across a full backend restart.
+ *
+ * Deliberately out of scope for this script (covered instead by the Go
+ * unit/HTTP test suites already exercising them, per this project's own
+ * "representative subset with documented deferral" convention):
+ * membership-milestone/gifting field-level assertions beyond "the event
+ * type appears" (membership itself IS covered here, per #9 above), the
+ * transient waiting_for_broadcast auto-recovery timing, and the outbound
+ * "chat unavailable" (no broadcast selected) HTTP path - already proven
+ * directly by TestSendOutboundChatMessageChatUnavailable.
  *
  * Every token, channel ID, and Client ID used here is an obviously-fake
  * string generated for this run only. No real Google account, Google
@@ -291,35 +330,29 @@ function mintToken(prefix) {
   return `${prefix}-${RUN_ID}-${randomBytes(12).toString('hex')}`;
 }
 
-// --- fake Google OAuth + YouTube API server ---------------------------
+// --- fake Google OAuth + YouTube REST server (metadata + outbound only) ---
 
 function newYouTubeFakeState() {
   return {
     accessTokens: new Map(), // token -> { valid, channelId, scope }
     refreshTokens: new Map(),
-    currentAccessToken: null,
     channels: new Map(), // channelId -> { id, title, country }
     broadcasts: new Map(), // broadcastId -> { id, snippet, status }
     pendingCodes: new Map(), // code -> { scope }
     revokedTokens: new Set(),
-    // liveChat.queue: a FIFO of pages to serve NEXT, one per real poll
-    // this script wants to inject content on. liveChat.steadyPage is
-    // served whenever the queue is empty - the connector's own
-    // baseline call always lands here unless a page was queued first,
-    // exactly mirroring "nothing new" in a real quiet chat.
-    liveChat: {
-      queue: [],
-      steadyPage: { items: [], nextPageToken: 'steady', offlineAt: '' },
-    },
     insertCallCount: 0,
     lastInsertBody: null,
+    // restListHitCount tracks every hit of the superseded REST
+    // liveChatMessages.list receive endpoint - must stay 0 for the
+    // whole run (assertion #20: the production connector must never
+    // fall back to REST polling).
+    restListHitCount: 0,
   };
 }
 
 function issueTokenPair(state, channelId, scope) {
   const accessToken = mintToken('fake-access');
   state.accessTokens.set(accessToken, { valid: true, channelId, scope });
-  state.currentAccessToken = accessToken;
   const refreshToken = mintToken('fake-refresh');
   state.refreshTokens.set(refreshToken, { valid: true, channelId, scope });
   return { accessToken, refreshToken };
@@ -445,13 +478,19 @@ function createFakeYouTubeAPIServer(state) {
         return;
       }
 
+      // The superseded REST receive method (docs/provider-integrations/
+      // youtube-engagement.md §3.2/§4b) - must never be called by the
+      // production connector after the transport correction. Kept
+      // registered (rather than 404ing, which could look like an
+      // unrelated routing problem) specifically so a regression back to
+      // REST polling fails loudly and is counted for assertion #20.
       if (req.method === 'GET' && url.pathname === '/liveChat/messages') {
-        const page = state.liveChat.queue.length > 0 ? state.liveChat.queue.shift() : state.liveChat.steadyPage;
-        sendJSON(res, 200, {
-          nextPageToken: page.nextPageToken ?? `token-${randomUUID().slice(0, 6)}`,
-          pollingIntervalMillis: 2000,
-          offlineAt: page.offlineAt ?? '',
-          items: page.items,
+        state.restListHitCount += 1;
+        sendJSON(res, 500, {
+          error: {
+            code: 500,
+            message: 'liveChatMessages.list must never be called by the production connector after the Stage 15A gRPC transport correction',
+          },
         });
         return;
       }
@@ -474,9 +513,70 @@ function createFakeYouTubeAPIServer(state) {
   });
 }
 
-// --- liveChatMessages.list item fixtures --------------------------------
+// --- fake gRPC streamList server (real local gRPC, control over HTTP) ----
+
+async function buildFakeGRPCServer(exePath) {
+  const build = spawnCaptured('go-build-fakegrpc', 'go', ['build', '-tags', 'integration', '-o', exePath, './cmd/fakeyoutubegrpc'], { cwd: SERVER_DIR });
+  const buildExit = await new Promise((r) => {
+    const timer = setTimeout(() => r(-1), BUILD_TIMEOUT_MS);
+    build.child.on('exit', (code) => { clearTimeout(timer); r(code); });
+  });
+  expect(buildExit === 0, 'the fake YouTube streamList gRPC server built successfully', build.getOutput());
+}
+
+async function startFakeGRPCServer(exePath, grpcAddr, controlAddr) {
+  const handle = spawnCaptured('fake-grpc', exePath, [`-grpc-addr=${grpcAddr}`, `-control-addr=${controlAddr}`], { cwd: SERVER_DIR });
+  await waitUntil(async () => {
+    if (handle.hasExited()) throw new Error(`fake gRPC server exited during startup:\n${handle.getOutput()}`);
+    const res = await fetch(`http://${controlAddr}/control/health`).catch(() => null);
+    return res !== null && res.ok ? true : false;
+  }, READINESS_TIMEOUT_MS, 'the fake YouTube streamList gRPC server to become ready');
+  return handle;
+}
+
+/** Appends scripted entries to one liveChatId's feed on the fake gRPC
+ * server - the gRPC-transport equivalent of the old REST fake's
+ * `state.liveChat.queue.push(...)`. Entries are consumed in order by
+ * every StreamList call for that liveChatId (a reconnect continues from
+ * wherever the feed left off; new entries wake an already-blocked call
+ * immediately). */
+async function scriptLiveChat(controlBaseUrl, liveChatId, entries) {
+  const res = await fetch(`${controlBaseUrl}/control/script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ liveChatId, entries }),
+  });
+  expect(res.status === 204, `scripted ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} for liveChatId ${liveChatId}`, await res.text());
+}
+
+async function scriptPage(controlBaseUrl, liveChatId, { items = [], nextPageToken = `token-${randomUUID().slice(0, 6)}`, offlineAt = '' } = {}) {
+  await scriptLiveChat(controlBaseUrl, liveChatId, [{ type: 'page', items, nextPageToken, offlineAt }]);
+}
+
+async function scriptError(controlBaseUrl, liveChatId, code, message = 'simulated') {
+  await scriptLiveChat(controlBaseUrl, liveChatId, [{ type: 'error', code, message }]);
+}
+
+async function forceDisconnect(controlBaseUrl, liveChatId) {
+  const res = await fetch(`${controlBaseUrl}/control/disconnect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ liveChatId }),
+  });
+  expect(res.status === 204, `forced a disconnect for liveChatId ${liveChatId}`, await res.text());
+}
+
+async function lastGRPCRequest(controlBaseUrl) {
+  const res = await fetch(`${controlBaseUrl}/control/last-request`);
+  return res.json();
+}
+
+// --- liveChatMessages item fixtures --------------------------------------
 // Exact wire shapes mirroring apps/server/internal/provider/youtube/
-// models.go's own liveChatMessageResource/snippet struct tags.
+// models.go's own liveChatMessageResource/snippet struct tags - the fake
+// gRPC server's own JSON->protobuf converter (apps/server/cmd/
+// fakeyoutubegrpc/main.go) expects precisely this shape, so these are
+// unchanged from the pre-correction REST fixtures.
 
 function textMessageItem({ id, authorChannelId, displayName, text }) {
   return {
@@ -485,13 +585,12 @@ function textMessageItem({ id, authorChannelId, displayName, text }) {
       type: 'textMessageEvent',
       publishedAt: new Date().toISOString(),
       authorChannelId,
-      hasDisplayContent: true,
       displayMessage: text,
       textMessageDetails: { messageText: text },
     },
     authorDetails: {
-      channelId: authorChannelId, channelUrl: `https://youtube.com/channel/${authorChannelId}`,
-      displayName, profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
+      channelId: authorChannelId, displayName,
+      profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
       isVerified: false, isChatOwner: false, isChatSponsor: false, isChatModerator: false,
     },
   };
@@ -504,13 +603,12 @@ function superChatItem({ id, authorChannelId, displayName, amountMicros, currenc
       type: 'superChatEvent',
       publishedAt: new Date().toISOString(),
       authorChannelId,
-      hasDisplayContent: true,
       displayMessage: comment ?? '',
       superChatDetails: { amountMicros, currency, amountDisplayString, userComment: comment ?? '', tier: 2 },
     },
     authorDetails: {
-      channelId: authorChannelId, channelUrl: `https://youtube.com/channel/${authorChannelId}`,
-      displayName, profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
+      channelId: authorChannelId, displayName,
+      profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
       isVerified: false, isChatOwner: false, isChatSponsor: false, isChatModerator: false,
     },
   };
@@ -523,7 +621,6 @@ function superStickerItem({ id, authorChannelId, displayName, amountMicros, curr
       type: 'superStickerEvent',
       publishedAt: new Date().toISOString(),
       authorChannelId,
-      hasDisplayContent: true,
       displayMessage: '',
       superStickerDetails: {
         amountMicros, currency, amountDisplayString, tier: 1,
@@ -531,9 +628,27 @@ function superStickerItem({ id, authorChannelId, displayName, amountMicros, curr
       },
     },
     authorDetails: {
-      channelId: authorChannelId, channelUrl: `https://youtube.com/channel/${authorChannelId}`,
-      displayName, profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
+      channelId: authorChannelId, displayName,
+      profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
       isVerified: false, isChatOwner: false, isChatSponsor: false, isChatModerator: false,
+    },
+  };
+}
+
+function membershipItem({ id, authorChannelId, displayName, memberLevelName = 'Tier 1', isUpgrade = false }) {
+  return {
+    id,
+    snippet: {
+      type: 'newSponsorEvent',
+      publishedAt: new Date().toISOString(),
+      authorChannelId,
+      displayMessage: '',
+      newSponsorDetails: { memberLevelName, isUpgrade },
+    },
+    authorDetails: {
+      channelId: authorChannelId, displayName,
+      profileImageUrl: 'https://fake.youtube.example/avatar.jpg',
+      isVerified: false, isChatOwner: false, isChatSponsor: true, isChatModerator: false,
     },
   };
 }
@@ -558,6 +673,11 @@ async function findEventByProviderEventId(baseUrl, providerEventId, timeoutMs = 
     const match = events.body.items.find((item) => item.providerEventId === providerEventId);
     return match ?? false;
   }, timeoutMs, `the event with providerEventId "${providerEventId}" to appear`);
+}
+
+async function countEventsWithProviderEventId(baseUrl, providerEventId) {
+  const events = await request(baseUrl, 'GET', '/api/engagement/events?limit=200');
+  return events.body.items.filter((item) => item.providerEventId === providerEventId).length;
 }
 
 async function findOperatorChatItem(baseUrl, predicate, timeoutMs = 15_000) {
@@ -586,7 +706,7 @@ function findAlert(status, substring) {
 }
 
 async function main() {
-  console.log('Stage 15A YouTube engagement (Live Chat connector + operator chat + outbound chat + alerts) verification (local fakes only, no real Google/YouTube, no real OBS)');
+  console.log('Stage 15A YouTube engagement (gRPC streamList connector + operator chat + outbound chat + alerts) verification (local fakes only, no real Google/YouTube, no real OBS)');
   console.log(`Run id: ${RUN_ID}`);
 
   const tempDir = mkdtempSync(join(tmpdir(), 'streaming-tree-youtube-engagement-'));
@@ -595,12 +715,15 @@ async function main() {
   console.log(`Temporary root: ${tempDir}`);
 
   const exePath = join(tempDir, process.platform === 'win32' ? 'testserver.exe' : 'testserver');
+  const fakeGRPCExePath = join(tempDir, process.platform === 'win32' ? 'fakeyoutubegrpc.exe' : 'fakeyoutubegrpc');
   const state = newYouTubeFakeState();
   const oauthServer = createFakeOAuthServer(state);
   const apiServer = createFakeYouTubeAPIServer(state);
 
   let backend = null;
+  let fakeGRPC = null;
   let baseUrl;
+  let controlBaseUrl;
 
   try {
     step('Build the integration-only test server (go build -tags integration ./cmd/testserver)');
@@ -611,12 +734,20 @@ async function main() {
     });
     expect(buildExit === 0, 'the integration test server built successfully', build.getOutput());
 
-    step('Reserve dynamic loopback ports and start the fake Google OAuth and YouTube API servers');
+    step('Build the fake YouTube streamList gRPC server (go build -tags integration ./cmd/fakeyoutubegrpc)');
+    await buildFakeGRPCServer(fakeGRPCExePath);
+
+    step('Reserve dynamic loopback ports and start the fake Google OAuth, YouTube REST, and YouTube gRPC servers');
     const [backendPort, oauthPort, apiPort] = await reservePorts(3);
+    const [grpcPort, controlPort] = await reservePorts(2);
     baseUrl = `http://127.0.0.1:${backendPort}`;
+    const grpcAddr = `127.0.0.1:${grpcPort}`;
+    const controlAddr = `127.0.0.1:${controlPort}`;
+    controlBaseUrl = `http://${controlAddr}`;
     await listen(oauthServer, oauthPort);
     await listen(apiServer, apiPort);
-    pass(`backend :${backendPort}  fake oauth :${oauthPort}  fake api :${apiPort}`);
+    fakeGRPC = await startFakeGRPCServer(fakeGRPCExePath, grpcAddr, controlAddr);
+    pass(`backend :${backendPort}  fake oauth :${oauthPort}  fake rest api :${apiPort}  fake grpc :${grpcPort}  fake grpc control :${controlPort}`);
 
     const env = {
       STREAMING_TREE_DATA_DIR: dataDir,
@@ -626,6 +757,8 @@ async function main() {
       STREAMING_TREE_FFMPEG_PATH: '',
       STREAMING_TREE_TEST_YOUTUBE_OAUTH_BASE_URL: `http://127.0.0.1:${oauthPort}`,
       STREAMING_TREE_TEST_YOUTUBE_API_BASE_URL: `http://127.0.0.1:${apiPort}`,
+      STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET: grpcAddr,
+      STREAMING_TREE_TEST_YOUTUBE_GRPC_INSECURE: '1',
     };
 
     step('Start the backend under test with no connectors enabled');
@@ -650,12 +783,6 @@ async function main() {
 
     const callback = await requestAbsolute(`${redirectUri}?code=${code}&state=${realState}`);
     expect(callback.status === 200, 'the OAuth callback was accepted', callback.text);
-    // With exactly one fake channel owned by this identity, the backend
-    // auto-selects it rather than pausing for explicit channel selection
-    // (that step - already covered by
-    // verify-youtube-account-integration.mjs - only applies when more
-    // than one channel is offered) - the attempt goes straight to
-    // "authorized".
     const authorized = await waitUntil(async () => {
       const snap = await request(baseUrl, 'GET', `/api/integrations/youtube/oauth-attempts/${start.body.attemptId}`);
       if (snap.body.state === 'error') throw new Error(`attempt error: ${snap.body.errorCode} - ${snap.body.errorMessage}`);
@@ -683,14 +810,14 @@ async function main() {
     expect(engagement0.status === 200 && engagement0.body.state === 'disabled', 'the connector state is "disabled" before it is ever enabled', engagement0.body);
     expect(engagement0.body.permissionUpgradeRequired === false, 'YouTube never requires a permission upgrade (single scope covers everything)', engagement0.body);
 
-    step('Seed pre-existing "history" in the fake liveChat response, before ever enabling engagement (the baseline-safety scenario)');
+    step('Seed pre-existing "history" as the fake gRPC service\'s very first scripted response (the baseline-safety scenario) [assertions #5, #6]');
     const historyId = `hist_${RUN_ID}`;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [textMessageItem({ id: historyId, authorChannelId: `UC_history_${RUN_ID}`, displayName: 'History Viewer', text: 'this is old history' })],
       nextPageToken: 'after-history',
     });
 
-    step('Enable engagement: the connector polls the fake liveChat endpoint and reaches "connected"');
+    step('Enable engagement: the connector opens a real gRPC stream to the fake service and reaches "connected" [assertion #1]');
     const enableResp = await request(baseUrl, 'PUT', `/api/connected-accounts/${accountId}/engagement`, { enabled: true });
     expect(enableResp.status === 200 && enableResp.body.enabled === true, 'the enable request succeeds', enableResp.body);
     await waitUntil(async () => {
@@ -698,10 +825,15 @@ async function main() {
       if (snap.body.state === 'error') throw new Error(`connector entered error state: ${snap.body.lastError}`);
       return snap.body.state === 'connected' ? snap.body : false;
     }, POLL_TIMEOUT_MS, 'the connector to reach "connected"');
-    expect(state.liveChat.queue.length === 0, 'the seeded "history" page was consumed by the baseline call', state.liveChat.queue.length);
 
-    step('Confirm the seeded history NEVER appears as a real engagement event (baseline-first cutover)');
-    await new Promise((r) => setTimeout(r, 3_000)); // a couple of real poll cycles
+    step('Confirm the fake gRPC service actually received the StreamList request, with the correct liveChatId, part, and OAuth metadata [assertions #2, #3, #4]');
+    const firstReq = await lastGRPCRequest(controlBaseUrl);
+    expect(firstReq.liveChatId === liveChatId, 'the requested liveChatId matches the selected broadcast\'s live chat', firstReq);
+    expect(Array.isArray(firstReq.part) && firstReq.part.join(',') === 'id,snippet,authorDetails', 'the requested part is exactly id,snippet,authorDetails', firstReq.part);
+    expect(firstReq.hasAuthorization === true, 'the request carried OAuth authorization metadata (the token value itself is never exposed by the fake\'s control API)', firstReq);
+
+    step('Confirm the seeded history NEVER appears as a real engagement event (baseline-first cutover) [assertion #6]');
+    await new Promise((r) => setTimeout(r, 1_500));
     const eventsAfterBaseline = await request(baseUrl, 'GET', '/api/engagement/events?limit=100');
     const historyLeaked = eventsAfterBaseline.body.items.some((e) => e.providerEventId === historyId);
     expect(!historyLeaked, 'the seeded "history" message never became a real event - baseline never publishes', eventsAfterBaseline.body.items);
@@ -727,9 +859,9 @@ async function main() {
     });
     expect(ruleBelowThreshold.status === 422, 'a quantity condition on a money-only event type is rejected (422)', ruleBelowThreshold.body);
 
-    step('Send a real chat message and confirm it reaches BOTH the Engagement Event Bus and the existing operator-chat projection');
+    step('Send a real chat message over gRPC and confirm it reaches BOTH the Engagement Event Bus and the existing operator-chat projection [assertion #7]');
     const chatterChannelId = `UC_chatter_${RUN_ID}`;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [textMessageItem({ id: `msg_${RUN_ID}`, authorChannelId: chatterChannelId, displayName: 'A Chatter', text: 'hello from YouTube' })],
       nextPageToken: 'after-chat',
     });
@@ -739,9 +871,19 @@ async function main() {
     const operatorItem = await findOperatorChatItem(baseUrl, (item) => item.kind === 'message' && item.message?.plainText === 'hello from YouTube');
     expect(operatorItem.providerId === 'youtube', 'the same message reached the existing shared operator-chat projection', operatorItem);
 
-    step('Send a real Super Chat: confirm integer-micros money on the Event Bus, on operator chat, AND that it triggers the real monetary alert');
+    step('Send a real membership event over gRPC and confirm it normalizes correctly [assertion #9]');
+    const newMemberChannelId = `UC_newmember_${RUN_ID}`;
+    await scriptPage(controlBaseUrl, liveChatId, {
+      items: [membershipItem({ id: `member_${RUN_ID}`, authorChannelId: newMemberChannelId, displayName: 'New Member', memberLevelName: 'Tier 1' })],
+      nextPageToken: 'after-membership',
+    });
+    const membershipEvent = await findEventOfType(baseUrl, 'youtube.membership');
+    expect(membershipEvent.providerEventId === `member_${RUN_ID}`, 'the membership event carries the correct providerEventId', membershipEvent);
+    expect(membershipEvent.user?.displayName === 'New Member', 'the membership event carries the correct member identity', membershipEvent.user);
+
+    step('Send a real Super Chat over gRPC: confirm integer-micros money on the Event Bus, on operator chat, AND that it triggers the real monetary alert [assertion #8]');
     const superChatterChannelId = `UC_superchat_${RUN_ID}`;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [superChatItem({
         id: `sc_1_${RUN_ID}`, authorChannelId: superChatterChannelId, displayName: 'Big Fan',
         amountMicros: 5_000_000, currency: 'usd', amountDisplayString: '$5.00', comment: 'great stream!',
@@ -764,7 +906,7 @@ async function main() {
 
     step('A Super Chat below the rule\'s minimum amount threshold does not trigger a second alert');
     const totalBefore = alertTriggered.totalEnqueued;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [superChatItem({
         id: `sc_below_${RUN_ID}`, authorChannelId: superChatterChannelId, displayName: 'Big Fan',
         amountMicros: 500_000, currency: 'usd', amountDisplayString: '$0.50', comment: 'small one',
@@ -779,7 +921,7 @@ async function main() {
     });
 
     step('A different currency never matches the USD-only rule (no FX conversion, ever)');
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [superChatItem({
         id: `sc_eur_${RUN_ID}`, authorChannelId: superChatterChannelId, displayName: 'Big Fan',
         amountMicros: 100_000_000, currency: 'eur', amountDisplayString: '€100.00', comment: 'big but wrong currency',
@@ -794,7 +936,7 @@ async function main() {
     });
 
     step('Send a real Super Sticker (no comment field at all) and confirm it normalizes with money but no message');
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [superStickerItem({
         id: `sticker_1_${RUN_ID}`, authorChannelId: superChatterChannelId, displayName: 'Big Fan',
         amountMicros: 2_000_000, currency: 'usd', amountDisplayString: '$2.00',
@@ -805,7 +947,65 @@ async function main() {
     expect(stickerEvent.amountMicros === 2_000_000, 'the Super Sticker amount is integer micros', stickerEvent);
     expect(stickerEvent.message === undefined, 'a Super Sticker never fabricates a message/comment field', stickerEvent);
 
-    step('Outbound send: a plain text message reaches the fake liveChat insert endpoint with the exact expected body, no reply field');
+    step('Forced stream disconnect: the connector recovers and resumes from its last captured pageToken, without re-baselining or duplicating [assertions #10, #11, #12, #13]');
+    const beforeDisconnectReq = await lastGRPCRequest(controlBaseUrl);
+    const capturedToken = beforeDisconnectReq.pageToken !== '' ? beforeDisconnectReq.pageToken : 'after-sticker';
+    await forceDisconnect(controlBaseUrl, liveChatId);
+    await waitUntil(async () => {
+      const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
+      return (snap.body.reconnectCount ?? 0) > 0 ? snap.body : false;
+    }, POLL_TIMEOUT_MS, 'the connector to register a reconnect after the forced disconnect');
+    const resumedMsgId = `resumed_${RUN_ID}`;
+    await scriptPage(controlBaseUrl, liveChatId, {
+      items: [textMessageItem({ id: resumedMsgId, authorChannelId: chatterChannelId, displayName: 'A Chatter', text: 'still here after reconnect' })],
+      nextPageToken: 'after-resume',
+    });
+    const resumedEvent = await findEventByProviderEventId(baseUrl, resumedMsgId);
+    expect(resumedEvent.message?.text === 'still here after reconnect', 'the resumed live message was delivered without being re-baselined', resumedEvent.message);
+    await new Promise((r) => setTimeout(r, 500));
+    const resumedCount = await countEventsWithProviderEventId(baseUrl, resumedMsgId);
+    expect(resumedCount === 1, 'the resumed message was delivered exactly once - no duplicate', resumedCount);
+    const afterResumeReq = await lastGRPCRequest(controlBaseUrl);
+    expect(afterResumeReq.pageToken === capturedToken, 'the reconnect request carried the previously-captured pageToken', { expected: capturedToken, got: afterResumeReq.pageToken });
+
+    step('An invalid/stale continuation (gRPC INVALID_ARGUMENT) triggers a possible gap and a fresh rebaseline, never a hard error [assertions #14, #15, #16]');
+    const gapCountBefore = (await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`)).body.possibleGapCount ?? 0;
+    // The error and the rebaseline-history response are scripted together,
+    // atomically, so the history entry is already queued by the time the
+    // connector's fresh reconnect happens - otherwise the fake server's
+    // own "send an immediate response rather than block" behavior (see
+    // apps/server/cmd/fakeyoutubegrpc/main.go) could race ahead of this
+    // script and hand the connector an empty synthetic baseline instead,
+    // making the history arrive as a live (not suppressed) message.
+    const rebaselineHistoryId = `rebaseline_hist_${RUN_ID}`;
+    await scriptLiveChat(controlBaseUrl, liveChatId, [
+      { type: 'error', code: 'INVALID_ARGUMENT', message: 'continuation no longer valid (simulated)' },
+      {
+        type: 'page',
+        items: [textMessageItem({ id: rebaselineHistoryId, authorChannelId: `UC_old2_${RUN_ID}`, displayName: 'Old Again', text: 'should be suppressed as the new baseline' })],
+        nextPageToken: 'after-rebaseline',
+      },
+    ]);
+    await waitUntil(async () => {
+      const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
+      return (snap.body.possibleGapCount ?? 0) > gapCountBefore ? snap.body : false;
+    }, POLL_TIMEOUT_MS, 'the connector to record a possible gap after the invalid continuation');
+    await waitUntil(async () => {
+      const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
+      return snap.body.state === 'connected' ? snap.body : false;
+    }, POLL_TIMEOUT_MS, 'the connector to reach "connected" again after the rebaseline');
+    await new Promise((r) => setTimeout(r, 1_500));
+    const rebaselineLeaked = await countEventsWithProviderEventId(baseUrl, rebaselineHistoryId);
+    expect(rebaselineLeaked === 0, 'the new baseline (after the invalid continuation) suppressed its own history exactly like the original baseline', rebaselineLeaked);
+    const postRebaselineMsgId = `post_rebaseline_${RUN_ID}`;
+    await scriptPage(controlBaseUrl, liveChatId, {
+      items: [textMessageItem({ id: postRebaselineMsgId, authorChannelId: chatterChannelId, displayName: 'A Chatter', text: 'resumed normally after rebaseline' })],
+      nextPageToken: 'after-rebaseline-2',
+    });
+    const postRebaselineEvent = await findEventByProviderEventId(baseUrl, postRebaselineMsgId);
+    expect(postRebaselineEvent.message?.text === 'resumed normally after rebaseline', 'a live event after the rebaseline resumes normally', postRebaselineEvent.message);
+
+    step('Outbound send: a plain text message reaches the fake liveChat insert endpoint (REST, unaffected by the transport correction) with the exact expected body, no reply field');
     const sendResp = await request(baseUrl, 'POST', `/api/connected-accounts/${accountId}/outbound-chat/messages`, { message: 'hello chat from the operator' });
     expect(sendResp.status === 200 && sendResp.body.sent === true, 'the send succeeds', sendResp.body);
     expect(!JSON.stringify(sendResp.body).includes('hello chat from the operator'), 'the response never echoes the sent text', sendResp.body);
@@ -830,7 +1030,7 @@ async function main() {
     expect(createCommand.status === 201, 'the test command was created', createCommand.body);
     const insertCallsBeforeViewer = state.insertCallCount;
     const viewerChannelId = `UC_viewer_${RUN_ID}`;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [textMessageItem({ id: `viewer_${RUN_ID}`, authorChannelId: viewerChannelId, displayName: 'A Viewer', text: '!echo' })],
       nextPageToken: 'after-viewer-command',
     });
@@ -839,7 +1039,7 @@ async function main() {
 
     step('Self-loop protection: the same command never fires for the connected account\'s own echoed message');
     const insertCallsBeforeSelf = state.insertCallCount;
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       // authorChannelId equals the CONNECTED ACCOUNT's own channel id -
       // exactly the stable-provider-id comparison self-loop protection
       // must use, never a display-name comparison.
@@ -852,20 +1052,24 @@ async function main() {
       'the account\'s own echoed "!echo" message never triggered the command (hard self-loop-protection rule, keyed on the stable channel id)',
       { before: insertCallsBeforeSelf, after: state.insertCallCount });
 
-    step('An explicit connector restart re-baselines and never replays a message already delivered before the restart');
+    step('An explicit connector restart re-baselines and never replays a message already delivered before the restart, and closes the old gRPC stream [assertion #19-adjacent]');
     const enqueuedBeforeRestart = (await queueStatus(baseUrl, profileId)).totalEnqueued;
+    const requestCountBeforeRestart = (await lastGRPCRequest(controlBaseUrl)).requestCount;
     const restartResp = await request(baseUrl, 'POST', `/api/connected-accounts/${accountId}/engagement/restart`);
     expect(restartResp.status === 200, 'the connector restart request succeeds', restartResp.body);
     await waitUntil(async () => {
       const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
       return snap.body.state === 'connected' ? snap.body : false;
     }, POLL_TIMEOUT_MS, 'the connector to reach "connected" again after the restart');
-    // No new page queued yet - the restarted connector's own baseline call
-    // (and its first steady-state poll) must consume the fake server's
-    // steady (empty) page, never re-deliver sc_1/msg_1/sticker_1 as new.
-    await new Promise((r) => setTimeout(r, 3_000));
-    const eventsAfterRestart = await request(baseUrl, 'GET', '/api/engagement/events?limit=200');
-    const superChatEventCount = eventsAfterRestart.body.items.filter((e) => e.type === 'youtube.super_chat' && e.providerEventId === `sc_1_${RUN_ID}`).length;
+    const requestCountAfterRestart = (await lastGRPCRequest(controlBaseUrl)).requestCount;
+    expect(requestCountAfterRestart > requestCountBeforeRestart, 'the restart opened a brand new StreamList request rather than reusing the old stream', {
+      before: requestCountBeforeRestart, after: requestCountAfterRestart,
+    });
+    // No new page scripted yet - the restarted connector's own baseline
+    // call must consume nothing new, never re-deliver sc_1/msg_1/sticker_1
+    // as new.
+    await new Promise((r) => setTimeout(r, 1_500));
+    const superChatEventCount = await countEventsWithProviderEventId(baseUrl, `sc_1_${RUN_ID}`);
     expect(superChatEventCount === 1, 'the original Super Chat was never re-published after the restart (still exactly one)', superChatEventCount);
     const statusAfterConnectorRestart = await queueStatus(baseUrl, profileId);
     expect(statusAfterConnectorRestart.totalEnqueued === enqueuedBeforeRestart,
@@ -874,7 +1078,7 @@ async function main() {
       });
 
     step('A genuinely new Super Chat sent after the restart still triggers a fresh alert (the connector still works, it just never replays)');
-    state.liveChat.queue.push({
+    await scriptPage(controlBaseUrl, liveChatId, {
       items: [superChatItem({
         id: `sc_2_${RUN_ID}`, authorChannelId: superChatterChannelId, displayName: 'Big Fan',
         amountMicros: 10_000_000, currency: 'usd', amountDisplayString: '$10.00', comment: 'after the restart!',
@@ -886,16 +1090,80 @@ async function main() {
     expect(findAlert(alertAfterRestart, '$10.00 USD').renderedText.includes('after the restart!'),
       'the fresh post-restart alert renders correctly', findAlert(alertAfterRestart, '$10.00 USD'));
 
-    step('Restart the whole backend process and confirm the destination link and selected broadcast both persisted');
+    step('Selecting a different broadcast cancels the old gRPC stream and opens a new one for the newly-selected liveChatId [assertion #18]');
+    const liveChatId2 = `chat2_${RUN_ID}`;
+    state.broadcasts.set('bcast_2', {
+      id: 'bcast_2', snippet: { title: 'A different live broadcast', liveChatId: liveChatId2 }, status: { lifeCycleStatus: 'live', lifeCycleStatusFilter: 'active', privacyStatus: 'public' },
+    });
+    await scriptPage(controlBaseUrl, liveChatId2, { nextPageToken: 'chat2-baseline' });
+    const setTarget2 = await request(baseUrl, 'PUT', `/api/platforms/${ytPlatform.id}/remote-target`, { resourceId: 'bcast_2' });
+    expect(setTarget2.status === 200 && setTarget2.body.resourceId === 'bcast_2', 'the second broadcast is selected as the new remote target', setTarget2.body);
+    const restartForBroadcastChange = await request(baseUrl, 'POST', `/api/connected-accounts/${accountId}/engagement/restart`);
+    expect(restartForBroadcastChange.status === 200, 'the connector restart (broadcast change) request succeeds', restartForBroadcastChange.body);
+    await waitUntil(async () => {
+      const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
+      return snap.body.state === 'connected' && snap.body.selectedBroadcastId === 'bcast_2' ? snap.body : false;
+    }, POLL_TIMEOUT_MS, 'the connector to reach "connected" against the newly-selected broadcast');
+    const afterBroadcastChangeReq = await lastGRPCRequest(controlBaseUrl);
+    expect(afterBroadcastChangeReq.liveChatId === liveChatId2, 'the connector opened a new stream for the newly-selected broadcast\'s liveChatId', afterBroadcastChangeReq);
+    const newLiveEventId = `chat2_live_${RUN_ID}`;
+    await scriptPage(controlBaseUrl, liveChatId2, {
+      items: [textMessageItem({ id: newLiveEventId, authorChannelId: `UC_chat2_${RUN_ID}`, displayName: 'Chat 2 Viewer', text: 'hello from the new broadcast' })],
+      nextPageToken: 'chat2-after-live',
+    });
+    const newBroadcastEvent = await findEventByProviderEventId(baseUrl, newLiveEventId);
+    expect(newBroadcastEvent.message?.text === 'hello from the new broadcast', 'the new broadcast\'s live chat delivers events normally', newBroadcastEvent.message);
+    // Old liveChatId must no longer be receiving - scripting a page for it
+    // must never produce a new event, since no connector is listening to
+    // it anymore.
+    const oldChatLeakId = `old_chat_leak_${RUN_ID}`;
+    await scriptPage(controlBaseUrl, liveChatId, {
+      items: [textMessageItem({ id: oldChatLeakId, authorChannelId: `UC_old_${RUN_ID}`, displayName: 'Old Chat', text: 'should never be received' })],
+      nextPageToken: 'old-chat-after-switch',
+    });
+    await new Promise((r) => setTimeout(r, 1_500));
+    const oldChatLeaked = await countEventsWithProviderEventId(baseUrl, oldChatLeakId);
+    expect(oldChatLeaked === 0, 'the old (deselected) broadcast\'s live chat is never received after the broadcast changed - its stream was really cancelled', oldChatLeaked);
+
+    step('Disabling the connector cancels its gRPC stream - no further requests for that liveChatId after Disable [assertion #17]');
+    const requestCountBeforeDisable = (await lastGRPCRequest(controlBaseUrl)).requestCount;
+    const disableResp = await request(baseUrl, 'PUT', `/api/connected-accounts/${accountId}/engagement`, { enabled: false });
+    expect(disableResp.status === 200 && disableResp.body.enabled === false, 'the disable request succeeds', disableResp.body);
+    await new Promise((r) => setTimeout(r, 1_000));
+    await scriptPage(controlBaseUrl, liveChatId2, {
+      items: [textMessageItem({ id: `after_disable_${RUN_ID}`, authorChannelId: `UC_chat2_${RUN_ID}`, displayName: 'Chat 2 Viewer', text: 'should never be received after disable' })],
+      nextPageToken: 'chat2-after-disable',
+    });
+    await new Promise((r) => setTimeout(r, 1_000));
+    const afterDisableLeaked = await countEventsWithProviderEventId(baseUrl, `after_disable_${RUN_ID}`);
+    expect(afterDisableLeaked === 0, 'no event is received after Disable - the connector\'s stream was really cancelled, not just ignored client-side', afterDisableLeaked);
+    const requestCountAfterDisable = (await lastGRPCRequest(controlBaseUrl)).requestCount;
+    expect(requestCountAfterDisable === requestCountBeforeDisable, 'no new StreamList request was issued after Disable', {
+      before: requestCountBeforeDisable, after: requestCountAfterDisable,
+    });
+
+    // Re-enable so the persistence check below (which expects
+    // engagement-enabled=true across a backend restart) still holds.
+    const reEnableResp = await request(baseUrl, 'PUT', `/api/connected-accounts/${accountId}/engagement`, { enabled: true });
+    expect(reEnableResp.status === 200 && reEnableResp.body.enabled === true, 're-enabled the connector for the persistence check below', reEnableResp.body);
+    await waitUntil(async () => {
+      const snap = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
+      return snap.body.state === 'connected' ? snap.body : false;
+    }, POLL_TIMEOUT_MS, 'the connector to reach "connected" again after re-enabling');
+
+    step('Restart the whole backend process (closing its gRPC stream cleanly) and confirm the destination link and selected broadcast both persisted [assertion #19]');
     const preRestartBackendOutput = backend.getOutput();
     await stopBackend(backend, baseUrl);
     backend = await startBackend(exePath, env, baseUrl);
     const linkAfterRestart = await request(baseUrl, 'GET', `/api/platforms/${ytPlatform.id}/connected-account`);
     expect(linkAfterRestart.body?.accountId === accountId, 'the platform link persisted across a full backend restart', linkAfterRestart.body);
     const targetAfterRestart = await request(baseUrl, 'GET', `/api/platforms/${ytPlatform.id}/remote-target`);
-    expect(targetAfterRestart.body?.resourceId === 'bcast_1', 'the selected broadcast persisted across a full backend restart', targetAfterRestart.body);
+    expect(targetAfterRestart.body?.resourceId === 'bcast_2', 'the selected broadcast persisted across a full backend restart', targetAfterRestart.body);
     const engagementAfterRestart = await request(baseUrl, 'GET', `/api/connected-accounts/${accountId}/engagement`);
     expect(engagementAfterRestart.body.enabled === true, 'the engagement-enabled flag persisted across a full backend restart', engagementAfterRestart.body);
+
+    step('Confirm the superseded REST liveChatMessages.list endpoint was NEVER called by the production connector, over this entire run [assertion #20]');
+    expect(state.restListHitCount === 0, 'the production connector never fell back to REST polling - gRPC streamList was used exclusively for receiving', state.restListHitCount);
 
     step('Search every captured HTTP body, callback response, and backend log line for real secret material');
     const haystack = secretScanChunks.join('\n');
@@ -918,6 +1186,7 @@ async function main() {
         // Already reporting a failure if we get here.
       }
     }
+    await killTree(fakeGRPC);
     await close(oauthServer);
     await close(apiServer);
     rmSync(tempDir, { recursive: true, force: true });

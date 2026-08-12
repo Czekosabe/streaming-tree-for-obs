@@ -20239,3 +20239,123 @@ Build the real local `-tags integration` fake gRPC `StreamList` service
 and rewrite `scripts/verify-youtube-engagement.mjs` to exercise it,
 retaining every existing behavioral assertion and adding the 20
 transport-specific ones the corrective task requires (§24-27).
+
+## 2026-08-12 — test: verify YouTube streaming transport locally
+
+### Status
+In progress - Stage 15A transport corrective pass, continued.
+
+### Scope
+Built a real local gRPC server for the integration harness and rewrote
+`scripts/verify-youtube-engagement.mjs` to exercise the real gRPC
+transport end to end, retaining every pre-existing Stage 15A behavioral
+assertion and adding the 20 transport-specific ones the corrective task
+requires (§24-27).
+
+### Changes
+- `apps/server/cmd/fakeyoutubegrpc/main.go` (new, `-tags integration`,
+  invisible to a normal build exactly like `cmd/testserver`): a real
+  local gRPC server implementing `V3DataLiveChatMessageServiceServer`,
+  paired with a small plain-HTTP JSON control API
+  (`/control/script`, `/control/disconnect`, `/control/last-request`,
+  `/control/health`) that `scripts/verify-youtube-engagement.mjs` drives
+  the same way it already drives the backend under test - it never
+  speaks gRPC itself; the real gRPC wire traffic happens only between
+  the backend under test (client) and this process (server). Scripted
+  content is appended per-liveChatId as an ordered, never-replayed
+  feed (`chatState`, a small `sync.Cond`-based queue) so a reconnect (or
+  a script update arriving while a call is already blocked) continues
+  correctly rather than restarting from position 0. Converts the exact
+  same REST-JSON item shapes the script already built
+  (`textMessageItem`/`superChatItem`/`superStickerItem`, plus a new
+  `membershipItem`) into real protobuf messages before sending them over
+  the wire, so the script's own fixtures needed almost no changes.
+  Also sends an immediate response (an empty-but-valid one, if nothing
+  is scripted yet) on every fresh connection instead of blocking
+  forever - discovered necessary during this commit's own first test
+  run (see Known limitations) because a genuinely idle gRPC stream with
+  nothing queued would otherwise never let the connector reach
+  "connected" at all, unlike the superseded REST design where every
+  poll call always got some response.
+- `scripts/verify-youtube-engagement.mjs`: rewritten to build and spawn
+  `fakeyoutubegrpc` alongside the existing fake OAuth/REST servers,
+  point the backend under test at it via
+  `STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET`/`_INSECURE`, and replace
+  every `state.liveChat.queue.push(...)` call with
+  `scriptPage(controlBaseUrl, liveChatId, {...})` against the new fake's
+  control API. The superseded REST `GET /liveChat/messages` handler is
+  kept registered (not removed) so a regression back to REST polling
+  fails loudly and is counted, rather than silently 404ing. Added the 20
+  transport-specific assertions the corrective task requires (see the
+  script's own header doc comment for the full enumerated list: gRPC
+  request received/liveChatId/part/OAuth metadata, baseline suppression,
+  live delivery, Super Chat and membership normalization over protobuf,
+  nextPageToken capture, forced disconnect + resume without
+  re-baselining or duplicating, invalid-continuation → possible-gap →
+  fresh-rebaseline → resumes normally, disabled/broadcast-changed/
+  backend-shutdown stream cancellation, and the "REST list never called"
+  guarantee) while keeping every pre-existing scenario (operator chat,
+  monetary alerts, currency/threshold non-matches, outbound send + reply
+  rejection, chat-automation self-loop protection, restart-without-
+  replay, and destination persistence across a full backend restart).
+
+### Files changed
+- `apps/server/cmd/fakeyoutubegrpc/main.go` (new)
+- `scripts/verify-youtube-engagement.mjs`
+- `docs/progress.md` (this entry)
+
+### Technical decisions
+- A standalone Go binary (not a Node `@grpc/grpc-js` dependency) was
+  chosen for the fake gRPC server: the `scripts/*.mjs` ecosystem has no
+  npm dependencies at all today (no root/scripts `package.json`), and
+  Node already builds and spawns one build-tag-gated Go binary
+  (`cmd/testserver`) for every other script in this directory - spawning
+  a second one is a direct extension of an existing, proven pattern
+  rather than a new one, and it means the actual gRPC wire protocol is
+  exercised by Go's own official `google.golang.org/grpc`, the same
+  library the production connector uses, on both ends.
+- The fake's script feed is append-only and never replays already-sent
+  entries, matching how a real server should behave, and deliberately
+  different from a naive "replay the last page" REST-polling-style fake
+  - a genuine reconnect-vs-fresh distinction can only be tested honestly
+  against a fake that itself never repeats content.
+- The initial-response-instead-of-blocking-forever behavior (see above)
+  was added specifically because the very first test run of this
+  integration surfaced it as a real gap, not assumed upfront - recorded
+  honestly under Known limitations below since the live official
+  documentation does not explicitly confirm this is always true of the
+  real Google service either (docs/provider-integrations/
+  youtube-engagement.md §4b.1 already records what is and is not
+  confirmed).
+
+### Automated validation
+`node scripts/verify-youtube-engagement.mjs` run twice consecutively,
+both passing cleanly against the real local gRPC fake, per this
+corrective task's own §41 requirement. `gofmt -l .`, `go build ./...`,
+`go vet ./...` from `apps/server` all still clean (the new binary is
+`-tags integration`-gated and invisible to these).
+
+### Known limitations
+- The fake server's "send an initial response immediately rather than
+  block when nothing is scripted yet" behavior is an assumption about
+  real Google server behavior, not something this pass's research could
+  independently confirm from the documentation prose alone (the proto
+  and Python demo confirm the *shape* of responses, not a timing
+  guarantee for an idle chat). It is the same assumption most streaming/
+  push APIs make (deliver current state promptly on connect) and is the
+  most conservative choice available given the connector's own design
+  requires establishing a baseline token to reach "connected" -
+  recorded here rather than silently assumed.
+- The fake's gRPC error-code simulation covers the two RPC-documented
+  codes (`PERMISSION_DENIED`/`INVALID_ARGUMENT` - only the latter is
+  exercised by name in this script; the former is covered at the Go
+  unit level, `livechat_stream_client_test.go`) plus `UNAVAILABLE` (the
+  forced-disconnect scenario). It does not attempt to simulate every
+  possible gRPC status the real service could return.
+
+### Next step
+Correct the remaining living documentation (README.md,
+docs/project-overview.md, docs/engagement-architecture.md,
+docs/provider-integrations/youtube.md, config/README.md if applicable)
+that still describes REST polling as the current YouTube receive
+transport, then run the complete final regression from scratch.
