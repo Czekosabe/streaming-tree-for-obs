@@ -27,8 +27,12 @@ import "time"
 // engagement.ProviderID/account.ProviderID/platform.ProviderID.
 type ProviderID string
 
-// ProviderTwitch is the only provider Stage 12A alerts support.
-const ProviderTwitch ProviderID = "twitch"
+// ProviderTwitch and ProviderYouTube are the providers alerts support
+// (Stage 12A and Stage 15A respectively).
+const (
+	ProviderTwitch  ProviderID = "twitch"
+	ProviderYouTube ProviderID = "youtube"
+)
 
 // EventType is the closed set of normalized engagement event types an
 // alert rule may match. Deliberately mirrors, as plain string literals,
@@ -48,6 +52,17 @@ const (
 	EventBits                   EventType = "bits"
 	EventRaid                   EventType = "raid"
 	EventChannelPointRedemption EventType = "channel_point_redemption"
+
+	// Stage 15A (YouTube). EventGiftedSubscription/EventSubscriptionGiftBatch
+	// above are deliberately reused for YouTube's giftMembershipReceived/
+	// membershipGifting events too - see internal/domain/engagement's own
+	// mapping (docs/provider-integrations/youtube-engagement.md §5) for
+	// the reasoning; only the two genuinely new concepts get new types
+	// here.
+	EventYouTubeMembership          EventType = "youtube_membership"
+	EventYouTubeMembershipMilestone EventType = "youtube_membership_milestone"
+	EventYouTubeSuperChat           EventType = "youtube_super_chat"
+	EventYouTubeSuperSticker        EventType = "youtube_super_sticker"
 )
 
 // ValidEventTypes lists every accepted EventType, in the order shown by
@@ -56,6 +71,8 @@ var ValidEventTypes = []EventType{
 	EventFollow, EventSubscription, EventResubscription,
 	EventGiftedSubscription, EventSubscriptionGiftBatch,
 	EventBits, EventRaid, EventChannelPointRedemption,
+	EventYouTubeMembership, EventYouTubeMembershipMilestone,
+	EventYouTubeSuperChat, EventYouTubeSuperSticker,
 }
 
 func (t EventType) valid() bool {
@@ -250,12 +267,26 @@ type Rule struct {
 	MinimumQuantity *int64
 	MaximumQuantity *int64
 
+	// Currency/MinimumAmountMicros/MaximumAmountMicros: Stage 15A's
+	// monetary condition (Super Chat/Super Sticker). Currency is required
+	// whenever either threshold is set - an amount threshold with no
+	// currency is meaningless, since this application never converts
+	// between currencies (see ValidateMoneyThresholds). Both thresholds
+	// are nil when unbounded on that side, both inclusive when set,
+	// always integer micros - never a float.
+	Currency            string
+	MinimumAmountMicros *int64
+	MaximumAmountMicros *int64
+
 	RequiredRole Role
 
 	ShowPlatform bool
 	ShowUsername bool
 	ShowMessage  bool
 	ShowQuantity bool
+	// ShowAmount: Stage 15A - only meaningful when Capability.HasAmount is
+	// true for this rule's own EventType (Super Chat/Super Sticker).
+	ShowAmount bool
 
 	TextTemplate string
 

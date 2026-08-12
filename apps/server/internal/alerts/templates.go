@@ -22,7 +22,11 @@ const MaxRenderedCodePoints = 240
 // Part 10. Adding a new placeholder means adding it here, to
 // resolvePlaceholder's own switch, and to capability.go's per-event
 // AvailablePlaceholders if it is conditionally available.
-var KnownPlaceholders = []string{"username", "platform", "eventType", "quantity", "message", "rewardTitle", "groupCount"}
+var KnownPlaceholders = []string{
+	"username", "platform", "eventType", "quantity", "message", "rewardTitle", "groupCount",
+	// Stage 15A.
+	"amount", "currency", "membershipLevel",
+}
 
 func isKnownPlaceholder(name string) bool {
 	for _, k := range KnownPlaceholders {
@@ -51,6 +55,12 @@ func AvailablePlaceholders(t domain.EventType) []string {
 	}
 	if capability.HasRewardTitle {
 		out = append(out, "rewardTitle")
+	}
+	if capability.HasAmount {
+		out = append(out, "amount", "currency")
+	}
+	if capability.HasMembershipLevel {
+		out = append(out, "membershipLevel")
 	}
 	if domain.GroupingCapabilityFor(t).Groupable {
 		out = append(out, "groupCount")
@@ -212,6 +222,21 @@ type Context struct {
 	Quantity    *int64
 	Message     *string
 	RewardTitle *string
+	// AmountDisplay/Currency: Stage 15A's real monetary value - nil
+	// AmountDisplay means "no amount to show" (a non-monetary event);
+	// {amount}/{currency} never render for one, matching every other
+	// optional-field placeholder's own "no fabrication" contract.
+	// AmountDisplay is pre-formatted text (the provider's own display
+	// string when available, else a plain major-unit decimal computed
+	// from the real integer micros) - matching itself always uses the
+	// integer micros separately (see matcher.go's amountInRange), never
+	// this display text.
+	AmountDisplay *string
+	Currency      string
+	// MembershipLevel: empty means "not available for this event" -
+	// {membershipLevel} never renders for an event with no real
+	// provider-reported level name.
+	MembershipLevel string
 	// GroupCount is always a known, non-optional value (an instance
 	// starts at 1 and only ever increments) - never a pointer, unlike
 	// the fields above whose absence is meaningful. Only ever resolvable
@@ -300,9 +325,44 @@ func resolvePlaceholder(name string, ctx Context) (string, bool) {
 		return *ctx.RewardTitle, true
 	case "groupCount":
 		return strconv.Itoa(ctx.GroupCount), true
+	case "amount":
+		if ctx.AmountDisplay == nil {
+			return "", false
+		}
+		return *ctx.AmountDisplay, true
+	case "currency":
+		if ctx.AmountDisplay == nil || ctx.Currency == "" {
+			return "", false
+		}
+		return ctx.Currency, true
+	case "membershipLevel":
+		if ctx.MembershipLevel == "" {
+			return "", false
+		}
+		return ctx.MembershipLevel, true
 	default:
 		return "", false
 	}
+}
+
+// FormatAmountMicros renders amountMicros/currency as a plain major-unit
+// decimal fallback (e.g. 1750000 -> "1.75") for when the provider supplied
+// no display string of its own - never used for matching, only display.
+// Always exactly six fractional digits trimmed of trailing zeros (but
+// never trimmed below two, matching ordinary currency display), since
+// amountMicros is defined to millionths.
+func FormatAmountMicros(amountMicros int64) string {
+	major := amountMicros / 1_000_000
+	fraction := amountMicros % 1_000_000
+	if fraction < 0 {
+		fraction = -fraction
+	}
+	frac := fmt.Sprintf("%06d", fraction)
+	frac = strings.TrimRight(frac, "0")
+	if len(frac) < 2 {
+		frac = (frac + "00")[:2]
+	}
+	return fmt.Sprintf("%d.%s", major, frac)
 }
 
 func codePointLen(s string) int {
@@ -321,6 +381,8 @@ func PlatformDisplayName(providerID domain.ProviderID) string {
 	switch providerID {
 	case domain.ProviderTwitch:
 		return "Twitch"
+	case domain.ProviderYouTube:
+		return "YouTube"
 	default:
 		return string(providerID)
 	}
@@ -334,24 +396,32 @@ func PlatformDisplayName(providerID domain.ProviderID) string {
 // whoever last edited it").
 var eventTypeLabels = map[domain.Language]map[domain.EventType]string{
 	domain.LanguageEnglish: {
-		domain.EventFollow:                 "Follow",
-		domain.EventSubscription:           "Subscription",
-		domain.EventResubscription:         "Resubscription",
-		domain.EventGiftedSubscription:     "Gifted Subscription",
-		domain.EventSubscriptionGiftBatch:  "Gift Sub Batch",
-		domain.EventBits:                   "Bits",
-		domain.EventRaid:                   "Raid",
-		domain.EventChannelPointRedemption: "Channel Point Redemption",
+		domain.EventFollow:                     "Follow",
+		domain.EventSubscription:               "Subscription",
+		domain.EventResubscription:             "Resubscription",
+		domain.EventGiftedSubscription:         "Gifted Subscription",
+		domain.EventSubscriptionGiftBatch:      "Gift Sub Batch",
+		domain.EventBits:                       "Bits",
+		domain.EventRaid:                       "Raid",
+		domain.EventChannelPointRedemption:     "Channel Point Redemption",
+		domain.EventYouTubeMembership:          "Membership",
+		domain.EventYouTubeMembershipMilestone: "Membership Milestone",
+		domain.EventYouTubeSuperChat:           "Super Chat",
+		domain.EventYouTubeSuperSticker:        "Super Sticker",
 	},
 	domain.LanguagePolish: {
-		domain.EventFollow:                 "Obserwacja",
-		domain.EventSubscription:           "Subskrypcja",
-		domain.EventResubscription:         "Przedłużona subskrypcja",
-		domain.EventGiftedSubscription:     "Podarowana subskrypcja",
-		domain.EventSubscriptionGiftBatch:  "Pakiet podarowanych subskrypcji",
-		domain.EventBits:                   "Bits",
-		domain.EventRaid:                   "Najazd",
-		domain.EventChannelPointRedemption: "Wymiana punktów kanału",
+		domain.EventFollow:                     "Obserwacja",
+		domain.EventSubscription:               "Subskrypcja",
+		domain.EventResubscription:             "Przedłużona subskrypcja",
+		domain.EventGiftedSubscription:         "Podarowana subskrypcja",
+		domain.EventSubscriptionGiftBatch:      "Pakiet podarowanych subskrypcji",
+		domain.EventBits:                       "Bits",
+		domain.EventRaid:                       "Najazd",
+		domain.EventChannelPointRedemption:     "Wymiana punktów kanału",
+		domain.EventYouTubeMembership:          "Członkostwo",
+		domain.EventYouTubeMembershipMilestone: "Rocznica członkostwa",
+		domain.EventYouTubeSuperChat:           "Super Chat",
+		domain.EventYouTubeSuperSticker:        "Super Sticker",
 	},
 }
 
@@ -397,6 +467,19 @@ func PreviewTemplate(eventType domain.EventType, template string, lang domain.La
 	if capability.HasRewardTitle {
 		if title, ok := evt.ProviderExtra["rewardTitle"]; ok {
 			ctx.RewardTitle = &title
+		}
+	}
+	if capability.HasAmount && evt.Money != nil {
+		display := evt.Money.DisplayAmount
+		if display == "" {
+			display = FormatAmountMicros(evt.Money.AmountMicros)
+		}
+		ctx.AmountDisplay = &display
+		ctx.Currency = evt.Money.Currency
+	}
+	if capability.HasMembershipLevel {
+		if level, ok := evt.ProviderExtra["memberLevelName"]; ok {
+			ctx.MembershipLevel = level
 		}
 	}
 	if domain.GroupingCapabilityFor(eventType).Groupable {

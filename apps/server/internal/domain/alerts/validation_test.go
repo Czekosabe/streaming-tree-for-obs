@@ -214,6 +214,95 @@ func TestValidateProviders(t *testing.T) {
 	}
 }
 
+func TestValidateProvidersAcceptsYouTube(t *testing.T) {
+	if err := ValidateProviders([]ProviderID{ProviderYouTube}); err != nil {
+		t.Errorf("ValidateProviders([youtube]) error = %v, want nil", err)
+	}
+	if err := ValidateProviders([]ProviderID{ProviderTwitch, ProviderYouTube}); err != nil {
+		t.Errorf("ValidateProviders([twitch,youtube]) error = %v, want nil", err)
+	}
+}
+
+func TestNormalizeCurrency(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"usd", "USD"},
+		{"USD", "USD"},
+		{"Eur", "EUR"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := NormalizeCurrency(c.in); got != c.want {
+			t.Errorf("NormalizeCurrency(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestValidateMoneyThresholds(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	cases := []struct {
+		name     string
+		currency string
+		min, max *int64
+		wantErr  bool
+	}{
+		{"both nil, no currency", "", nil, nil, false},
+		{"min set requires currency", "", i(100), nil, true},
+		{"max set requires currency", "", nil, i(100), true},
+		{"min set with currency ok", "USD", i(100), nil, false},
+		{"max set with currency ok", "USD", nil, i(100), false},
+		{"min < max ok", "USD", i(1), i(100), false},
+		{"min == max ok", "USD", i(50), i(50), false},
+		{"min > max rejected", "USD", i(100), i(1), true},
+		{"negative min rejected", "USD", i(-1), nil, true},
+		{"negative max rejected", "USD", nil, i(-1), true},
+		{"min over max bound rejected", "USD", i(maxAmountMicros + 1), nil, true},
+		{"max over max bound rejected", "USD", nil, i(maxAmountMicros + 1), true},
+		{"min at max bound ok", "USD", i(maxAmountMicros), nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := ValidateMoneyThresholds(c.currency, c.min, c.max)
+			if c.wantErr {
+				if !errors.Is(err, ErrMoneyThresholdInvalid) {
+					t.Errorf("ValidateMoneyThresholds(%q,%v,%v) = %v, want ErrMoneyThresholdInvalid", c.currency, c.min, c.max, err)
+				}
+			} else if err != nil {
+				t.Errorf("ValidateMoneyThresholds(%q,%v,%v) = %v, want nil", c.currency, c.min, c.max, err)
+			}
+		})
+	}
+}
+
+func TestValidateRuleConditionsAmountCapability(t *testing.T) {
+	r := baseValidRule()
+	r.EventType = EventFollow
+	r.ShowAmount = true
+	if !errors.Is(ValidateRuleConditions(r), ErrConditionUnsupported) {
+		t.Error("ShowAmount=true on a follow rule (no HasAmount) should be rejected as unsupported")
+	}
+
+	r.EventType = EventYouTubeSuperChat
+	if err := ValidateRuleConditions(r); err != nil {
+		t.Errorf("ShowAmount=true on a youtube_super_chat rule error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleFieldsMoneyThresholdRequiresCapability(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	r := baseValidRule()
+	r.EventType = EventFollow
+	r.Currency = "USD"
+	r.MinimumAmountMicros = i(1_000_000)
+	if !errors.Is(ValidateRuleFields(r), ErrConditionUnsupported) {
+		t.Error("a minimum amount on a follow rule should be rejected as unsupported")
+	}
+
+	r.EventType = EventYouTubeSuperChat
+	if err := ValidateRuleFields(r); err != nil {
+		t.Errorf("a minimum amount on a youtube_super_chat rule error = %v, want nil", err)
+	}
+}
+
 func baseValidRule() Rule {
 	return Rule{
 		ProfileID: "alprof_1", Name: "Follow alert", EventType: EventFollow,

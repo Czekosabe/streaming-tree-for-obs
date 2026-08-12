@@ -127,13 +127,19 @@ func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsServ
 // --- event-type capability DTO ---------------------------------------------
 
 type alertEventTypeCapabilityResponse struct {
-	EventType             string   `json:"eventType"`
-	HasUser               bool     `json:"hasUser"`
-	HasMessage            bool     `json:"hasMessage"`
-	HasQuantity           bool     `json:"hasQuantity"`
-	HasAnonymity          bool     `json:"hasAnonymity"`
-	HasRewardTitle        bool     `json:"hasRewardTitle"`
-	HasRoles              bool     `json:"hasRoles"`
+	EventType      string `json:"eventType"`
+	HasUser        bool   `json:"hasUser"`
+	HasMessage     bool   `json:"hasMessage"`
+	HasQuantity    bool   `json:"hasQuantity"`
+	HasAnonymity   bool   `json:"hasAnonymity"`
+	HasRewardTitle bool   `json:"hasRewardTitle"`
+	HasRoles       bool   `json:"hasRoles"`
+	// HasAmount/HasMembershipLevel: Stage 15A's YouTube monetary/
+	// membership capability flags, exposed exactly like every other
+	// capability flag so the frontend never hand-maintains its own copy
+	// (same rationale as this handler's own doc comment).
+	HasAmount             bool     `json:"hasAmount"`
+	HasMembershipLevel    bool     `json:"hasMembershipLevel"`
 	AvailablePlaceholders []string `json:"availablePlaceholders"`
 
 	// Groupable: Stage 12B task Part 31 - "for unsupported event types,
@@ -158,8 +164,9 @@ func handleListAlertEventTypes(logger *slog.Logger) http.HandlerFunc {
 			out = append(out, alertEventTypeCapabilityResponse{
 				EventType: string(t), HasUser: capability.HasUser, HasMessage: capability.HasMessage,
 				HasQuantity: capability.HasQuantity, HasAnonymity: capability.HasAnonymity, HasRewardTitle: capability.HasRewardTitle,
-				HasRoles: capability.HasRoles, AvailablePlaceholders: alerts.AvailablePlaceholders(t),
-				Groupable: grouping.Groupable, GroupingRequiresHiddenMessage: grouping.RequiresNoMessage,
+				HasRoles: capability.HasRoles, HasAmount: capability.HasAmount, HasMembershipLevel: capability.HasMembershipLevel,
+				AvailablePlaceholders: alerts.AvailablePlaceholders(t),
+				Groupable:             grouping.Groupable, GroupingRequiresHiddenMessage: grouping.RequiresNoMessage,
 			})
 		}
 		writeJSON(w, logger, http.StatusOK, out)

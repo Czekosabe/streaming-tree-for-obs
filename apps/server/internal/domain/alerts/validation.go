@@ -112,6 +112,50 @@ func ValidateThresholds(minimum, maximum *int64) error {
 	return nil
 }
 
+// maxAmountMicros mirrors internal/domain/engagement's own bound - a
+// threshold this application will never need to compare a real provider
+// amount against beyond.
+const maxAmountMicros int64 = 1_000_000_000_000 // 1,000,000.000000 major units
+
+// NormalizeCurrency uppercases a currency code exactly like
+// engagement.NewMoney does, so a rule's stored Currency always matches
+// the case a normalized Money.Currency will actually carry - an
+// exact-match comparison at match time never fails only because of case.
+func NormalizeCurrency(currency string) string {
+	b := []byte(currency)
+	for i, c := range b {
+		if c >= 'a' && c <= 'z' {
+			b[i] = c - ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
+// ValidateMoneyThresholds checks a rule's amount bounds (Stage 15A task
+// Part 38): each side, when set, must be non-negative and within the
+// supported bound; minimum must not exceed maximum; and setting either
+// threshold requires a non-empty currency, since this application never
+// compares an amount across currencies (no threshold is meaningful
+// without knowing which currency it is bounding).
+func ValidateMoneyThresholds(currency string, minimum, maximum *int64) error {
+	if minimum == nil && maximum == nil {
+		return nil
+	}
+	if currency == "" {
+		return fmt.Errorf("%w: an amount threshold requires a currency", ErrMoneyThresholdInvalid)
+	}
+	if minimum != nil && (*minimum < 0 || *minimum > maxAmountMicros) {
+		return fmt.Errorf("%w: minimum amount is out of range", ErrMoneyThresholdInvalid)
+	}
+	if maximum != nil && (*maximum < 0 || *maximum > maxAmountMicros) {
+		return fmt.Errorf("%w: maximum amount is out of range", ErrMoneyThresholdInvalid)
+	}
+	if minimum != nil && maximum != nil && *minimum > *maximum {
+		return fmt.Errorf("%w: minimum amount must not exceed maximum amount", ErrMoneyThresholdInvalid)
+	}
+	return nil
+}
+
 // ValidateAccounts checks a rule's account-filter list has no duplicate
 // entries. Existence of each account id is checked separately by
 // Service.validateRuleInput, which needs an AccountLookup to do so.
@@ -134,7 +178,7 @@ func ValidateAccounts(accountIDs []string) error {
 func ValidateProviders(providerIDs []ProviderID) error {
 	seen := make(map[ProviderID]bool, len(providerIDs))
 	for _, p := range providerIDs {
-		if p != ProviderTwitch {
+		if p != ProviderTwitch && p != ProviderYouTube {
 			return validationErr("provider %q is not supported", string(p))
 		}
 		if seen[p] {
@@ -168,6 +212,9 @@ func ValidateRuleConditions(r Rule) error {
 	}
 	if r.ShowUsername && !capability.HasUser {
 		return fmt.Errorf("%w: event type %q has no user to show", ErrConditionUnsupported, string(r.EventType))
+	}
+	if (r.MinimumAmountMicros != nil || r.MaximumAmountMicros != nil || r.ShowAmount) && !capability.HasAmount {
+		return fmt.Errorf("%w: event type %q has no amount to threshold or show", ErrConditionUnsupported, string(r.EventType))
 	}
 	if r.RequiredRole != RoleEveryone && !capability.HasRoles {
 		return fmt.Errorf("%w: event type %q has no role data to condition on", ErrConditionUnsupported, string(r.EventType))
@@ -219,6 +266,9 @@ func ValidateRuleFields(r Rule) error {
 		return err
 	}
 	if err := ValidateThresholds(r.MinimumQuantity, r.MaximumQuantity); err != nil {
+		return err
+	}
+	if err := ValidateMoneyThresholds(r.Currency, r.MinimumAmountMicros, r.MaximumAmountMicros); err != nil {
 		return err
 	}
 	if err := ValidateProviders(r.Providers); err != nil {

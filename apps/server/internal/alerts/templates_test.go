@@ -194,8 +194,86 @@ func TestEventTypeLabelLocalized(t *testing.T) {
 	}
 }
 
+func TestEventTypeLabelLocalizedYouTube(t *testing.T) {
+	if got := EventTypeLabel(domain.EventYouTubeSuperChat, domain.LanguageEnglish); got != "Super Chat" {
+		t.Errorf("EventTypeLabel(youtube_super_chat, en) = %q, want %q", got, "Super Chat")
+	}
+	if got := EventTypeLabel(domain.EventYouTubeSuperChat, domain.LanguagePolish); got != "Super Chat" {
+		t.Errorf("EventTypeLabel(youtube_super_chat, pl) = %q, want %q", got, "Super Chat")
+	}
+	if got := EventTypeLabel(domain.EventYouTubeMembership, domain.LanguagePolish); got != "Członkostwo" {
+		t.Errorf("EventTypeLabel(youtube_membership, pl) = %q, want %q", got, "Członkostwo")
+	}
+}
+
 func TestPlatformDisplayNameNeverTranslated(t *testing.T) {
 	if got := PlatformDisplayName(domain.ProviderTwitch); got != "Twitch" {
 		t.Errorf("PlatformDisplayName(twitch) = %q, want Twitch", got)
+	}
+}
+
+func TestPlatformDisplayNameYouTube(t *testing.T) {
+	if got := PlatformDisplayName(domain.ProviderYouTube); got != "YouTube" {
+		t.Errorf("PlatformDisplayName(youtube) = %q, want YouTube", got)
+	}
+}
+
+func TestAvailablePlaceholdersYouTubeMoneyAndMembership(t *testing.T) {
+	avail := AvailablePlaceholders(domain.EventYouTubeSuperChat)
+	wantHas := map[string]bool{"amount": false, "currency": false, "membershipLevel": false}
+	for _, a := range avail {
+		if _, ok := wantHas[a]; ok {
+			wantHas[a] = true
+		}
+	}
+	if !wantHas["amount"] || !wantHas["currency"] {
+		t.Errorf("AvailablePlaceholders(youtube_super_chat) = %v, want amount and currency present", avail)
+	}
+	if wantHas["membershipLevel"] {
+		t.Errorf("AvailablePlaceholders(youtube_super_chat) unexpectedly includes membershipLevel")
+	}
+
+	avail = AvailablePlaceholders(domain.EventYouTubeMembership)
+	found := false
+	for _, a := range avail {
+		if a == "membershipLevel" {
+			found = true
+		}
+		if a == "amount" {
+			t.Error("AvailablePlaceholders(youtube_membership) unexpectedly includes amount")
+		}
+	}
+	if !found {
+		t.Error("AvailablePlaceholders(youtube_membership) does not include membershipLevel")
+	}
+}
+
+func TestValidateTemplateForEventTypeAcceptsMoneyPlaceholders(t *testing.T) {
+	if err := ValidateTemplateForEventType("{amount} {currency}", domain.EventYouTubeSuperChat); err != nil {
+		t.Errorf("ValidateTemplateForEventType({amount}{currency}, youtube_super_chat) error = %v, want nil", err)
+	}
+	if err := ValidateTemplateForEventType("{amount}", domain.EventFollow); !errors.Is(err, ErrPlaceholderInvalid) {
+		t.Errorf("ValidateTemplateForEventType({amount}, follow) error = %v, want ErrPlaceholderInvalid", err)
+	}
+	if err := ValidateTemplateForEventType("{membershipLevel}", domain.EventYouTubeMembership); err != nil {
+		t.Errorf("ValidateTemplateForEventType({membershipLevel}, youtube_membership) error = %v, want nil", err)
+	}
+}
+
+func TestFormatAmountMicros(t *testing.T) {
+	cases := []struct {
+		micros int64
+		want   string
+	}{
+		{5_000_000, "5.00"},
+		{1_500_000, "1.50"},
+		{0, "0.00"},
+		{999, "0.000999"},
+		{1_000_001, "1.000001"},
+	}
+	for _, c := range cases {
+		if got := FormatAmountMicros(c.micros); got != c.want {
+			t.Errorf("FormatAmountMicros(%d) = %q, want %q", c.micros, got, c.want)
+		}
 	}
 }

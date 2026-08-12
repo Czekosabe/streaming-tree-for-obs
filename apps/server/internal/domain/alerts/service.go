@@ -195,12 +195,17 @@ type RuleInput struct {
 	MinimumQuantity *int64
 	MaximumQuantity *int64
 
+	Currency            string
+	MinimumAmountMicros *int64
+	MaximumAmountMicros *int64
+
 	RequiredRole Role
 
 	ShowPlatform bool
 	ShowUsername bool
 	ShowMessage  bool
 	ShowQuantity bool
+	ShowAmount   bool
 
 	TextTemplate string
 
@@ -223,8 +228,10 @@ func (s *Service) validateRuleInput(ctx context.Context, profileID string, in Ru
 		ProfileID: profileID, Name: in.Name, EventType: in.EventType,
 		Priority: in.Priority, DurationMS: in.DurationMS,
 		MinimumQuantity: in.MinimumQuantity, MaximumQuantity: in.MaximumQuantity,
+		Currency: NormalizeCurrency(in.Currency), MinimumAmountMicros: in.MinimumAmountMicros, MaximumAmountMicros: in.MaximumAmountMicros,
 		RequiredRole: in.RequiredRole,
 		ShowPlatform: in.ShowPlatform, ShowUsername: in.ShowUsername, ShowMessage: in.ShowMessage, ShowQuantity: in.ShowQuantity,
+		ShowAmount:   in.ShowAmount,
 		TextTemplate: in.TextTemplate, EntryAnimation: in.EntryAnimation, ExitAnimation: in.ExitAnimation,
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
 		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,
@@ -273,8 +280,10 @@ func ruleFromInput(id, profileID string, in RuleInput) Rule {
 		ID: id, ProfileID: profileID, Name: in.Name, Enabled: in.Enabled, EventType: in.EventType,
 		Priority: in.Priority, DurationMS: in.DurationMS,
 		MinimumQuantity: in.MinimumQuantity, MaximumQuantity: in.MaximumQuantity,
+		Currency: NormalizeCurrency(in.Currency), MinimumAmountMicros: in.MinimumAmountMicros, MaximumAmountMicros: in.MaximumAmountMicros,
 		RequiredRole: in.RequiredRole,
 		ShowPlatform: in.ShowPlatform, ShowUsername: in.ShowUsername, ShowMessage: in.ShowMessage, ShowQuantity: in.ShowQuantity,
+		ShowAmount:   in.ShowAmount,
 		TextTemplate: in.TextTemplate, EntryAnimation: in.EntryAnimation, ExitAnimation: in.ExitAnimation,
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
 		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,

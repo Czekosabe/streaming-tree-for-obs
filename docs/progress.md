@@ -18748,3 +18748,165 @@ The alerts monetary model: a new SQLite migration for currency-aware
 threshold columns, new `EventType`/`Capability` entries for the four
 new YouTube-capable event kinds, matcher support for a money condition,
 new alert placeholders, and deterministic preview fixtures.
+
+## 2026-08-12 09:19 — feat(server): alerts monetary model, YouTube event capabilities, and preview fixtures
+
+### What
+Finishes the alerts side of Stage 15A: Super Chat/Super Sticker can now
+be thresholded and shown by real, integer-only money, and the four new
+YouTube event kinds (membership, membership milestone, Super Chat,
+Super Sticker) are full first-class alert event types - creatable,
+matchable, previewable, and rendered through the exact same rule
+pipeline every Twitch event type already uses. No parallel YouTube-only
+alert system was built.
+
+- **`internal/domain/alerts/model.go`**: added `ProviderYouTube` and
+  the four new `EventType` consts, plus `Rule.{Currency,
+  MinimumAmountMicros, MaximumAmountMicros, ShowAmount}` - the money
+  twin of the existing `MinimumQuantity`/`MaximumQuantity`/
+  `ShowQuantity` fields.
+- **`capability.go`**: added `Capability.HasAmount`/`HasMembershipLevel`
+  and the four new `Capabilities` entries, built from the real
+  normalization capability each YouTube event type actually has (Super
+  Chat/Super Sticker carry a real `Money`; membership/milestone carry a
+  real member-level name) - never a capability invented ahead of what
+  normalization can populate, matching this table's own existing
+  Twitch-derived discipline.
+- **`grouping.go`**: all four new types are explicit
+  `{Groupable: false}` - Stage 15A's own conservative policy that a
+  monetary event is never auto-grouped (summing amounts risks silently
+  merging currencies or burying an individually urgent paid message).
+- **`errors.go`/`validation.go`**: new `ErrMoneyThresholdInvalid`,
+  `maxAmountMicros` bound (mirrors `engagement`'s own bound),
+  `NormalizeCurrency` (uppercases exactly like `engagement.NewMoney`
+  so a stored `Rule.Currency` always compares equal-case against a real
+  event's `Money.Currency`), and `ValidateMoneyThresholds` (each bound
+  non-negative and within range, min ≤ max, and a threshold requires a
+  currency since an amount is never meaningful without knowing which
+  currency it bounds - never a cross-currency comparison).
+  `ValidateRuleConditions`/`ValidateRuleFields`/`ValidateProviders`
+  extended to enforce `HasAmount`-gated money fields and accept
+  `ProviderYouTube`.
+- **`service.go`**: `RuleInput` carries the new fields through create/
+  update exactly like every existing optional condition.
+- **`storage/sqlite/migrations/0019_alerts_youtube_events.sql`** (new):
+  a full `alert_rules` table rebuild (SQLite has no `ALTER TABLE ...
+  ALTER CONSTRAINT`) widening the `event_type` CHECK to the 12 valid
+  types and adding `currency`/`minimum_amount_micros`/
+  `maximum_amount_micros`/`show_amount` columns - every existing row
+  copied unchanged via `INSERT ... SELECT`, safe even with
+  `alert_rule_providers`/`alert_rule_accounts` FK children since
+  SQLite's `DROP TABLE` never fires `ON DELETE` triggers (same pattern
+  as migration 0016). `alerts_repository.go`'s `ruleColumns`/
+  `scanRule`/`CreateRule`/`UpdateRule` updated to round-trip the new
+  columns; `alerts_repository_test.go` covers a full round trip and the
+  "no amount set" default.
+- **`internal/alerts/models.go`**: `Instance.{AmountMicros, Currency,
+  MembershipLevel}` - nil/empty unless the source event actually
+  carried the data and the rule's own show-flag is on, exactly
+  mirroring `Quantity`'s existing "nil unless capable and shown"
+  contract.
+- **`matcher.go`**: `mapEventType` recognizes the four new
+  `engagement.Type` values; new `amountInRange` (an event with no
+  `Money` never matches a money-threshold rule; a currency mismatch
+  never matches either - this application performs no FX conversion,
+  so two different currencies are simply never comparable);
+  `MatchEvent` applies the money-threshold check exactly like the
+  existing quantity-threshold check; `buildInstance` populates
+  `AmountMicros`/`Currency`/`MembershipLevel` and a `Context.
+  AmountDisplay`/`Currency`/`MembershipLevel` for template rendering
+  (preferring the event's own `DisplayAmount`, falling back to
+  `FormatAmountMicros` only when the provider didn't supply one).
+- **`templates.go`**: `KnownPlaceholders`/`AvailablePlaceholders`
+  extended with `amount`/`currency`/`membershipLevel`, gated on
+  `HasAmount`/`HasMembershipLevel` exactly like every other
+  capability-gated placeholder; new `FormatAmountMicros` (integer-
+  micros to a plain decimal string, no currency symbol - the symbol
+  lives in the provider's own `DisplayAmount` when present);
+  `PlatformDisplayName` gained a YouTube case; `eventTypeLabels`
+  extended in both English and Polish for the four new types.
+- **`testevents.go`**: two new preview scenarios,
+  `ScenarioNoComment` (a monetary event with no user comment - both
+  Super Chat and Super Sticker genuinely allow an empty comment) and
+  `ScenarioAlternateCurrency` (previews a non-USD amount so a template
+  author can see `{currency}` resolve to something other than the
+  fixture default before ever receiving a real non-USD Super Chat).
+  `reverseMapEventType` extended for the four new types;
+  `buildFixtureEvent` now sets `ProviderID: engagement.ProviderYouTube`
+  for YouTube-only event types (every pre-existing fixture still
+  defaults to Twitch, byte-for-byte unchanged), and populates
+  `Money`/`ProviderExtra["memberLevelName"]` when the event type's own
+  capability calls for it; `fixtureQuantity` gained a
+  `EventYouTubeMembershipMilestone` case (a representative 6-month
+  fixture).
+- **`internal/httpapi/alerts.go`**: `alertEventTypeCapabilityResponse`
+  was missing `hasAmount`/`hasMembershipLevel` entirely - a real gap
+  found while wiring this stage's work through the HTTP layer, since
+  the frontend's Alerts UI will need these flags to know when to show
+  the amount/currency/membership controls. Added both fields and wired
+  them from `domain.Capability` alongside every other flag.
+
+### Files changed
+- `apps/server/internal/domain/alerts/{model.go, capability.go,
+  grouping.go, errors.go, validation.go, service.go,
+  capability_test.go (new), validation_test.go}`
+- `apps/server/internal/storage/sqlite/migrations/
+  0019_alerts_youtube_events.sql` (new)
+- `apps/server/internal/storage/sqlite/{alerts_repository.go,
+  alerts_repository_test.go}`
+- `apps/server/internal/alerts/{models.go, matcher.go, templates.go,
+  testevents.go, matcher_test.go, templates_test.go,
+  testevents_test.go (new)}`
+- `apps/server/internal/httpapi/{alerts.go, alerts_test.go}`
+
+### Technical decisions
+- **Why `amountInRange` rejects on any currency mismatch instead of
+  treating a missing/mismatched currency as "0".** A silent zero would
+  make a EUR Super Chat invisible to a USD-thresholded rule in a way
+  that looks like "no match" for the wrong reason - explicit rejection
+  documents the real policy (no conversion, ever) rather than relying
+  on an accidental side effect of zero-comparison.
+- **Why `ValidateMoneyThresholds` requires a currency whenever either
+  bound is set, rather than defaulting to a fixed currency.** This
+  application has no FX rate source and must never invent one - a
+  threshold without a stated currency is not a meaningful threshold at
+  all, so it's rejected outright (422) rather than silently guessing
+  USD.
+- **Why the four new event types are hardcoded `Groupable: false`
+  rather than derived from `HasAmount`.** Deriving it would make
+  "groupable" and "has an amount" the same axis by accident; stating it
+  explicitly for each type documents that this is Stage 15A's own
+  deliberate safety policy, not an incidental consequence of a
+  different table.
+- **Why `alertEventTypeCapabilityResponse` needed a direct fix rather
+  than a follow-up TODO.** The frontend Alerts work (next step) reads
+  this endpoint to decide which controls to show per event type; had
+  `hasAmount`/`hasMembershipLevel` shipped missing, the frontend would
+  have had no way to know a Super Chat rule supports amount thresholds
+  without hardcoding a second, drifting copy of the capability table -
+  exactly what this endpoint exists to prevent.
+
+### Automated validation
+`cd apps/server`: `gofmt -l .` clean, `go build ./...` clean, `go
+build -tags integration ./...` clean, `go vet ./...` clean, `go vet
+-tags integration ./...` clean, `go test ./...` - every package `ok`,
+including new coverage: capability/grouping table tests for the four
+YouTube types, `ValidateMoneyThresholds`/`NormalizeCurrency` table
+tests, matcher tests for inclusive amount bounds, wrong-currency
+non-match, nil-`Money` non-match, no-threshold-matches-any-amount,
+`{amount}`/`{currency}`/`{membershipLevel}` placeholder rendering,
+`ShowAmount=false` hiding, old-Twitch-rules-unaffected, `testevents.go`
+fixture tests for both new preview scenarios, and the corrected
+`TestListAlertEventTypesCapabilityDriven` (12 event types, not 8).
+
+### Known limitations
+None new. What remains for Stage 15A: the frontend (schemas, Engagement/
+Chat/Automation/Alerts page UI, EN/PL i18n), frontend tests, the 17th
+integration script (`scripts/verify-youtube-engagement.mjs`), the
+closing documentation pass, and the final full regression + push.
+
+### Next step
+Frontend work: schemas for YouTube event types and the `Money`
+value (exact micros↔decimal-string parsing, currency normalization),
+then the Engagement/Chat/Automation/Alerts pages - all through the
+existing pages, never a new YouTube-specific route.

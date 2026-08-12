@@ -173,6 +173,86 @@ func TestAlertsRuleCreateThenGetRoundTrips(t *testing.T) {
 	}
 }
 
+// TestAlertsRuleRoundTripsYouTubeMoneyFields pins Stage 15A's own
+// migration (0019_alerts_youtube_events.sql) - currency/minimum_amount_
+// micros/maximum_amount_micros/show_amount, plus a YouTube event_type
+// value, all round-trip through the rebuilt alert_rules table exactly.
+func TestAlertsRuleRoundTripsYouTubeMoneyFields(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewAlertsRepository(db.DB)
+	if _, err := repo.CreateProfile(context.Background(), newTestProfile("alprof_1", "slug-x")); err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+
+	r := testRule("alrule_1", "alprof_1")
+	r.EventType = alerts.EventYouTubeSuperChat
+	r.Providers = []alerts.ProviderID{alerts.ProviderYouTube}
+	minAmount := int64(1_000_000)
+	maxAmount := int64(50_000_000)
+	r.Currency = "USD"
+	r.MinimumAmountMicros = &minAmount
+	r.MaximumAmountMicros = &maxAmount
+	r.ShowAmount = true
+
+	saved, err := repo.CreateRule(context.Background(), r)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if saved.EventType != alerts.EventYouTubeSuperChat {
+		t.Errorf("saved.EventType = %q, want youtube_super_chat", saved.EventType)
+	}
+	if len(saved.Providers) != 1 || saved.Providers[0] != alerts.ProviderYouTube {
+		t.Errorf("saved.Providers = %+v, want [youtube]", saved.Providers)
+	}
+	if saved.Currency != "USD" {
+		t.Errorf("saved.Currency = %q, want USD", saved.Currency)
+	}
+	if saved.MinimumAmountMicros == nil || *saved.MinimumAmountMicros != 1_000_000 {
+		t.Errorf("saved.MinimumAmountMicros = %v, want 1000000", saved.MinimumAmountMicros)
+	}
+	if saved.MaximumAmountMicros == nil || *saved.MaximumAmountMicros != 50_000_000 {
+		t.Errorf("saved.MaximumAmountMicros = %v, want 50000000", saved.MaximumAmountMicros)
+	}
+	if !saved.ShowAmount {
+		t.Error("saved.ShowAmount = false, want true")
+	}
+
+	got, found, err := repo.GetRule(context.Background(), "alrule_1")
+	if err != nil || !found {
+		t.Fatalf("GetRule() = %+v, found=%v, err=%v", got, found, err)
+	}
+	if got.Currency != "USD" || got.MinimumAmountMicros == nil || *got.MinimumAmountMicros != 1_000_000 {
+		t.Errorf("GetRule() = %+v, want currency/amount to survive a fresh read", got)
+	}
+}
+
+// TestAlertsRuleDefaultsToEmptyCurrencyAndNoAmount pins the safe-migration
+// contract: an existing (or new non-monetary) rule that never sets a
+// monetary condition stores an empty currency and NULL amount bounds,
+// never a fabricated default currency.
+func TestAlertsRuleDefaultsToEmptyCurrencyAndNoAmount(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewAlertsRepository(db.DB)
+	if _, err := repo.CreateProfile(context.Background(), newTestProfile("alprof_1", "slug-x")); err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+	r := testRule("alrule_1", "alprof_1")
+
+	saved, err := repo.CreateRule(context.Background(), r)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if saved.Currency != "" {
+		t.Errorf("saved.Currency = %q, want empty", saved.Currency)
+	}
+	if saved.MinimumAmountMicros != nil || saved.MaximumAmountMicros != nil {
+		t.Errorf("saved amount bounds = %v/%v, want both nil", saved.MinimumAmountMicros, saved.MaximumAmountMicros)
+	}
+	if saved.ShowAmount {
+		t.Error("saved.ShowAmount = true, want false by default")
+	}
+}
+
 func TestAlertsRuleCreateRejectsUnknownAccount(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewAlertsRepository(db.DB)

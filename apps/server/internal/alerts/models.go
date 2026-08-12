@@ -44,6 +44,17 @@ type Instance struct {
 	Message     string
 	Quantity    *int64
 	RewardTitle string
+	// AmountMicros/Currency: Stage 15A's real monetary value (Super
+	// Chat/Super Sticker) - AmountMicros is nil whenever the event has no
+	// Money or the rule's own ShowAmount is off, exactly mirroring
+	// Quantity's own "nil unless capable and shown" contract. Currency is
+	// only ever set alongside a non-nil AmountMicros.
+	AmountMicros *int64
+	Currency     string
+	// MembershipLevel: Stage 15A's real provider-reported membership
+	// level name (YouTube membership-family events only) - empty when
+	// the provider did not report one, never fabricated.
+	MembershipLevel string
 	// AvatarURL is the event's own normalized, already-safe avatar URL
 	// (engagement.User.AvatarURL) - Stage 13A's own `avatar` visual-
 	// design layer kind's only data source (Part 46: "no arbitrary URL

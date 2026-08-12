@@ -27,12 +27,18 @@ type Capability struct {
 	// ProviderExtra and are not exposed as a threshold-able quantity in
 	// Stage 12A.
 	HasQuantity bool
-	// HasAmount is always false for every Stage 12A event type: no real
-	// Twitch normalization path populates engagement.Event.Amount/
-	// Currency today (confirmed by grep across eventsub_normalize.go) -
-	// see the Stage 12A task's own Part 7 ("do not invent a money
-	// representation"). Reserved for a future connector/event type.
+	// HasAmount is false for every Stage 12A (Twitch) event type - no
+	// Twitch normalization path populates a real Money value (Stage 12A
+	// task Part 7: "do not invent a money representation"). Stage 15A's
+	// YouTube Super Chat/Super Sticker are the first two event types with
+	// HasAmount: true - a real, provider-reported monetary value a rule
+	// may threshold on (ValidateMoneyThresholds) and a template may show
+	// via {amount}/{currency} (internal/alerts/templates.go).
 	HasAmount bool
+	// HasMembershipLevel: the event carries a real provider-reported
+	// membership/level name, available via the {membershipLevel}
+	// placeholder - Stage 15A's YouTube membership-family events only.
+	HasMembershipLevel bool
 	// HasRoles is always false for every Stage 12A event type: none of
 	// these 8 normalized activity events populates
 	// engagement.User.Roles (only chat.message-adjacent code paths ever
@@ -62,6 +68,12 @@ var Capabilities = map[EventType]Capability{
 	EventBits:                   {HasUser: true, HasMessage: true, HasQuantity: true, HasAnonymity: true},
 	EventRaid:                   {HasUser: true, HasQuantity: true},
 	EventChannelPointRedemption: {HasUser: true, HasMessage: true, HasRewardTitle: true},
+
+	// Stage 15A (YouTube).
+	EventYouTubeMembership:          {HasUser: true, HasMembershipLevel: true},
+	EventYouTubeMembershipMilestone: {HasUser: true, HasMessage: true, HasQuantity: true, HasMembershipLevel: true},
+	EventYouTubeSuperChat:           {HasUser: true, HasMessage: true, HasAmount: true},
+	EventYouTubeSuperSticker:        {HasUser: true, HasAmount: true},
 }
 
 // CapabilityFor returns t's capability, or the zero Capability (nothing

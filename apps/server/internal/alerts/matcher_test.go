@@ -244,6 +244,172 @@ func TestMatchEventRewardTitleFromProviderExtra(t *testing.T) {
 	}
 }
 
+func TestMatchEventEveryYouTubeEventType(t *testing.T) {
+	cases := []struct {
+		engagementType engagement.Type
+		domainType     domain.EventType
+	}{
+		{engagement.TypeYouTubeMembership, domain.EventYouTubeMembership},
+		{engagement.TypeYouTubeMembershipMilestone, domain.EventYouTubeMembershipMilestone},
+		{engagement.TypeYouTubeSuperChat, domain.EventYouTubeSuperChat},
+		{engagement.TypeYouTubeSuperSticker, domain.EventYouTubeSuperSticker},
+	}
+	for _, c := range cases {
+		t.Run(string(c.engagementType), func(t *testing.T) {
+			evt := baseEvent(c.engagementType)
+			evt.ProviderID = engagement.ProviderYouTube
+			rule := baseRule("r1", c.domainType)
+			out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+			if len(out) != 1 {
+				t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+			}
+			if out[0].EventType != c.domainType {
+				t.Errorf("EventType = %q, want %q", out[0].EventType, c.domainType)
+			}
+			if out[0].ProviderID != domain.ProviderYouTube {
+				t.Errorf("ProviderID = %q, want youtube", out[0].ProviderID)
+			}
+		})
+	}
+}
+
+func moneyEvent(engagementType engagement.Type, amountMicros int64, currency string) engagement.Event {
+	evt := baseEvent(engagementType)
+	evt.ProviderID = engagement.ProviderYouTube
+	money, err := engagement.NewMoney(amountMicros, currency, "")
+	if err != nil {
+		panic(err)
+	}
+	evt.Money = &money
+	return evt
+}
+
+func TestMatchEventAmountBoundsInclusive(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	rule.Currency = "USD"
+	rule.MinimumAmountMicros, rule.MaximumAmountMicros = i(1_000_000), i(5_000_000)
+
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 999_999, "USD"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+		t.Error("amount just below inclusive minimum matched, want no match")
+	}
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 1_000_000, "USD"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+		t.Error("amount at inclusive minimum did not match")
+	}
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 5_000_000, "USD"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+		t.Error("amount at inclusive maximum did not match")
+	}
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 5_000_001, "USD"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+		t.Error("amount just above inclusive maximum matched, want no match")
+	}
+}
+
+func TestMatchEventAmountWrongCurrencyNeverMatchesNoConversion(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	rule.Currency = "USD"
+	rule.MinimumAmountMicros = i(1)
+	// A EUR event with a numerically-larger amount than the USD threshold
+	// must still never match - currencies are never compared/converted.
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 100_000_000, "EUR"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+		t.Error("EUR event matched a USD-currency threshold rule, want no match (no FX conversion)")
+	}
+}
+
+func TestMatchEventAmountNilMoneyNeverMatchesThreshold(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	rule.Currency = "USD"
+	rule.MinimumAmountMicros = i(1)
+	evt := baseEvent(engagement.TypeYouTubeSuperChat)
+	evt.ProviderID = engagement.ProviderYouTube
+	evt.Money = nil
+	if out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 0 {
+		t.Error("event with no Money matched an amount-threshold rule, want no match")
+	}
+}
+
+func TestMatchEventNoAmountThresholdMatchesAnyAmount(t *testing.T) {
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	if out := MatchEvent(moneyEvent(engagement.TypeYouTubeSuperChat, 1, "USD"), []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish); len(out) != 1 {
+		t.Error("rule with no amount threshold did not match a real Super Chat")
+	}
+}
+
+func TestMatchEventAmountPlaceholderRendersDisplayAmount(t *testing.T) {
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	rule.ShowAmount = true
+	rule.TextTemplate = "{username} sent {amount} {currency}"
+	evt := baseEvent(engagement.TypeYouTubeSuperChat)
+	evt.ProviderID = engagement.ProviderYouTube
+	money, err := engagement.NewMoney(5_000_000, "USD", "$5.00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evt.Money = &money
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+	}
+	if out[0].RenderedText != "Viewer sent $5.00 USD" {
+		t.Errorf("RenderedText = %q, want %q", out[0].RenderedText, "Viewer sent $5.00 USD")
+	}
+	if out[0].AmountMicros == nil || *out[0].AmountMicros != 5_000_000 || out[0].Currency != "USD" {
+		t.Errorf("instance amount/currency = %v/%q, want 5000000/USD", out[0].AmountMicros, out[0].Currency)
+	}
+}
+
+func TestMatchEventAmountHiddenWhenShowAmountFalse(t *testing.T) {
+	rule := baseRule("r1", domain.EventYouTubeSuperChat)
+	rule.ShowAmount = false
+	evt := baseEvent(engagement.TypeYouTubeSuperChat)
+	evt.ProviderID = engagement.ProviderYouTube
+	money, err := engagement.NewMoney(5_000_000, "USD", "$5.00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evt.Money = &money
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+	}
+	if out[0].AmountMicros != nil {
+		t.Errorf("AmountMicros = %v, want nil when ShowAmount=false", out[0].AmountMicros)
+	}
+}
+
+func TestMatchEventMembershipLevelFromProviderExtra(t *testing.T) {
+	rule := baseRule("r1", domain.EventYouTubeMembership)
+	rule.TextTemplate = "{username} became a {membershipLevel} member"
+	evt := baseEvent(engagement.TypeYouTubeMembership)
+	evt.ProviderID = engagement.ProviderYouTube
+	evt.ProviderExtra = map[string]string{"memberLevelName": "Gold"}
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+	}
+	if out[0].MembershipLevel != "Gold" {
+		t.Errorf("MembershipLevel = %q, want Gold", out[0].MembershipLevel)
+	}
+	if out[0].RenderedText != "Viewer became a Gold member" {
+		t.Errorf("RenderedText = %q, want %q", out[0].RenderedText, "Viewer became a Gold member")
+	}
+}
+
+func TestMatchEventOldTwitchRulesUnaffectedByMoneyFields(t *testing.T) {
+	// A pre-Stage-15A Twitch rule (zero-value Currency/AmountMicros) must
+	// keep matching exactly as before - the new money-threshold check is a
+	// no-op whenever both bounds are nil.
+	evt := baseEvent(engagement.TypeBits)
+	q := int64(100)
+	evt.Quantity = &q
+	rule := baseRule("r1", domain.EventBits)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1 (old Twitch rule unaffected by money fields)", len(out))
+	}
+}
+
 func TestMatchEventNoProviderHTTPCallEverPossible(t *testing.T) {
 	// Structural test: MatchEvent's signature takes no context.Context and
 	// no HTTP client, so a network call is not merely avoided but

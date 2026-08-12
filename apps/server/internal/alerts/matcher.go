@@ -32,6 +32,14 @@ func mapEventType(t engagement.Type) (domain.EventType, bool) {
 		return domain.EventRaid, true
 	case engagement.TypeChannelPointRedemption:
 		return domain.EventChannelPointRedemption, true
+	case engagement.TypeYouTubeMembership:
+		return domain.EventYouTubeMembership, true
+	case engagement.TypeYouTubeMembershipMilestone:
+		return domain.EventYouTubeMembershipMilestone, true
+	case engagement.TypeYouTubeSuperChat:
+		return domain.EventYouTubeSuperChat, true
+	case engagement.TypeYouTubeSuperSticker:
+		return domain.EventYouTubeSuperSticker, true
 	default:
 		return "", false
 	}
@@ -60,6 +68,28 @@ func quantityInRange(q int64, min, max *int64) bool {
 		return false
 	}
 	if max != nil && q > *max {
+		return false
+	}
+	return true
+}
+
+// amountInRange evaluates a rule's monetary condition against evt's real
+// Money value (Stage 15A task Part 38): an event with no Money can never
+// satisfy a money-threshold rule; a currency mismatch never matches
+// either, since this application performs no currency conversion - two
+// different currencies are simply never comparable, not "0 vs
+// converted".
+func amountInRange(money *engagement.Money, currency string, min, max *int64) bool {
+	if money == nil {
+		return false
+	}
+	if money.Currency != currency {
+		return false
+	}
+	if min != nil && money.AmountMicros < *min {
+		return false
+	}
+	if max != nil && money.AmountMicros > *max {
 		return false
 	}
 	return true
@@ -116,6 +146,11 @@ func MatchEvent(evt engagement.Event, rules []domain.Rule, designs map[string]*v
 		}
 		if rule.MinimumQuantity != nil || rule.MaximumQuantity != nil {
 			if quantity == nil || !quantityInRange(*quantity, rule.MinimumQuantity, rule.MaximumQuantity) {
+				continue
+			}
+		}
+		if rule.MinimumAmountMicros != nil || rule.MaximumAmountMicros != nil {
+			if !amountInRange(evt.Money, rule.Currency, rule.MinimumAmountMicros, rule.MaximumAmountMicros) {
 				continue
 			}
 		}
@@ -192,6 +227,30 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 		}
 	}
 
+	var amountDisplayForTemplate *string
+	var currencyForTemplate string
+	if capability.HasAmount && evt.Money != nil {
+		amount := evt.Money.AmountMicros
+		display := evt.Money.DisplayAmount
+		if display == "" {
+			display = FormatAmountMicros(amount)
+		}
+		amountDisplayForTemplate = &display
+		currencyForTemplate = evt.Money.Currency
+		if rule.ShowAmount {
+			inst.AmountMicros = &amount
+			inst.Currency = evt.Money.Currency
+		}
+	}
+
+	var membershipLevelForTemplate string
+	if capability.HasMembershipLevel {
+		if level, ok := evt.ProviderExtra["memberLevelName"]; ok && level != "" {
+			inst.MembershipLevel = level
+			membershipLevelForTemplate = level
+		}
+	}
+
 	var quantityForTemplate *int64
 	if capability.HasQuantity && evt.Quantity != nil {
 		q := *evt.Quantity
@@ -201,6 +260,7 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 	ctx := Context{
 		Username: username, Platform: inst.PlatformLabel, EventType: EventTypeLabel(eventType, lang),
 		Quantity: quantityForTemplate, Message: messagePtr, RewardTitle: rewardTitlePtr,
+		AmountDisplay: amountDisplayForTemplate, Currency: currencyForTemplate, MembershipLevel: membershipLevelForTemplate,
 		GroupCount: inst.GroupCount,
 	}
 	if result, err := Render(rule.TextTemplate, ctx); err == nil {

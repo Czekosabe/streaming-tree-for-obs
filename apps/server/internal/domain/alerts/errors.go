@@ -31,6 +31,10 @@ var (
 	// ErrThresholdInvalid means a rule's minimum/maximum quantity bounds
 	// are individually out of range, or minimum > maximum.
 	ErrThresholdInvalid = errors.New("alert rule quantity threshold is invalid")
+	// ErrMoneyThresholdInvalid means a rule's minimum/maximum amount
+	// bounds are individually invalid, minimum > maximum, or an amount
+	// threshold was set with no currency - see ValidateMoneyThresholds.
+	ErrMoneyThresholdInvalid = errors.New("alert rule money threshold is invalid")
 	// ErrTemplateInvalid means a rule's text template is malformed or
 	// uses an unknown/unsupported placeholder - see templates.go.
 	ErrTemplateInvalid = errors.New("alert template is invalid")

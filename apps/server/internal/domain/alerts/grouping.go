@@ -90,6 +90,15 @@ type GroupingCapability struct {
 //     task's own explicit "any additional stable grouping subject such
 //     as reward ID" case - conditioned on RequiresNoMessage since a
 //     redemption carries real user-input text.
+//   - EventYouTubeMembership, EventYouTubeMembershipMilestone: no
+//     documented benefit to merging distinct membership announcements,
+//     and a milestone carries a real per-event comment.
+//   - EventYouTubeSuperChat, EventYouTubeSuperSticker: Stage 15A task's
+//     own explicit conservative policy - a monetary event is never
+//     automatically grouped. Summing amounts across a group would risk
+//     silently merging different currencies or hiding an individually
+//     urgent paid message inside an older queued group; not attempted
+//     without a proven-safe design.
 var GroupingCapabilities = map[EventType]GroupingCapability{
 	EventFollow:                 {Groupable: false},
 	EventSubscription:           {Groupable: false},
@@ -99,6 +108,11 @@ var GroupingCapabilities = map[EventType]GroupingCapability{
 	EventBits:                   {Groupable: true, Strategy: GroupingSameActorQuantitySum, QuantitySummable: true, RequiresNoMessage: true},
 	EventRaid:                   {Groupable: false},
 	EventChannelPointRedemption: {Groupable: true, Strategy: GroupingSameActorSameSubjectCount, RequiresNoMessage: true, SubjectFromRewardID: true},
+
+	EventYouTubeMembership:          {Groupable: false},
+	EventYouTubeMembershipMilestone: {Groupable: false},
+	EventYouTubeSuperChat:           {Groupable: false},
+	EventYouTubeSuperSticker:        {Groupable: false},
 }
 
 // GroupingCapabilityFor returns t's grouping capability, or the zero

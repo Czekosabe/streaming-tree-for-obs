@@ -733,8 +733,8 @@ func TestListAlertEventTypesCapabilityDriven(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(list) != 8 {
-		t.Fatalf("len(list) = %d, want 8", len(list))
+	if len(list) != 12 {
+		t.Fatalf("len(list) = %d, want 12", len(list))
 	}
 	for _, entry := range list {
 		if entry["eventType"] == "follow" {
@@ -745,6 +745,16 @@ func TestListAlertEventTypesCapabilityDriven(t *testing.T) {
 		if entry["eventType"] == "bits" {
 			if entry["hasQuantity"] != true || entry["hasAnonymity"] != true {
 				t.Errorf("bits capability = %+v, want hasQuantity/hasAnonymity true", entry)
+			}
+		}
+		if entry["eventType"] == "youtube_super_chat" {
+			if entry["hasAmount"] != true {
+				t.Errorf("youtube_super_chat capability = %+v, want hasAmount true", entry)
+			}
+		}
+		if entry["eventType"] == "youtube_membership" {
+			if entry["hasMembershipLevel"] != true {
+				t.Errorf("youtube_membership capability = %+v, want hasMembershipLevel true", entry)
 			}
 		}
 	}

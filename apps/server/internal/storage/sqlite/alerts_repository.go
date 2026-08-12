@@ -196,25 +196,25 @@ func (r *AlertsRepository) DeleteProfile(ctx context.Context, id string) error {
 // --- rules ------------------------------------------------------------------
 
 const ruleColumns = `id, profile_id, name, enabled, event_type, priority, duration_ms,
-	minimum_quantity, maximum_quantity, required_role,
-	show_platform, show_username, show_message, show_quantity,
+	minimum_quantity, maximum_quantity, currency, minimum_amount_micros, maximum_amount_micros, required_role,
+	show_platform, show_username, show_message, show_quantity, show_amount,
 	text_template, entry_animation, exit_animation, animation_duration_ms,
 	allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at`
 
 func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	var (
-		ru                                                    alerts.Rule
-		enabled, showPlatform, showUsername, showMsg, showQty int
-		eventType, requiredRole, entryAnim, exitAnim          string
-		minQty, maxQty                                        sql.NullInt64
-		allowGrouping, interruptible                          int
-		interruptMode                                         string
-		createdAt, updatedAt                                  string
+		ru                                                             alerts.Rule
+		enabled, showPlatform, showUsername, showMsg, showQty, showAmt int
+		eventType, requiredRole, entryAnim, exitAnim, currency         string
+		minQty, maxQty, minAmount, maxAmount                           sql.NullInt64
+		allowGrouping, interruptible                                   int
+		interruptMode                                                  string
+		createdAt, updatedAt                                           string
 	)
 	if err := scanner.Scan(
 		&ru.ID, &ru.ProfileID, &ru.Name, &enabled, &eventType, &ru.Priority, &ru.DurationMS,
-		&minQty, &maxQty, &requiredRole,
-		&showPlatform, &showUsername, &showMsg, &showQty,
+		&minQty, &maxQty, &currency, &minAmount, &maxAmount, &requiredRole,
+		&showPlatform, &showUsername, &showMsg, &showQty, &showAmt,
 		&ru.TextTemplate, &entryAnim, &exitAnim, &ru.AnimationDurationMS,
 		&allowGrouping, &ru.GroupWindowMS, &interruptMode, &interruptible, &createdAt, &updatedAt,
 	); err != nil {
@@ -222,11 +222,13 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	}
 	ru.Enabled = enabled != 0
 	ru.EventType = alerts.EventType(eventType)
+	ru.Currency = currency
 	ru.RequiredRole = alerts.Role(requiredRole)
 	ru.ShowPlatform = showPlatform != 0
 	ru.ShowUsername = showUsername != 0
 	ru.ShowMessage = showMsg != 0
 	ru.ShowQuantity = showQty != 0
+	ru.ShowAmount = showAmt != 0
 	ru.EntryAnimation = alerts.Animation(entryAnim)
 	ru.ExitAnimation = alerts.Animation(exitAnim)
 	ru.AllowGrouping = allowGrouping != 0
@@ -239,6 +241,14 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	if maxQty.Valid {
 		v := maxQty.Int64
 		ru.MaximumQuantity = &v
+	}
+	if minAmount.Valid {
+		v := minAmount.Int64
+		ru.MinimumAmountMicros = &v
+	}
+	if maxAmount.Valid {
+		v := maxAmount.Int64
+		ru.MaximumAmountMicros = &v
 	}
 	var err error
 	if ru.CreatedAt, err = platform.ParseTimestamp(createdAt); err != nil {
@@ -329,14 +339,15 @@ func (r *AlertsRepository) CreateRule(ctx context.Context, ru alerts.Rule) (aler
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO alert_rules (
 			id, profile_id, name, enabled, event_type, priority, duration_ms,
-			minimum_quantity, maximum_quantity, required_role,
-			show_platform, show_username, show_message, show_quantity,
+			minimum_quantity, maximum_quantity, currency, minimum_amount_micros, maximum_amount_micros, required_role,
+			show_platform, show_username, show_message, show_quantity, show_amount,
 			text_template, entry_animation, exit_animation, animation_duration_ms,
 			allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ru.ID, ru.ProfileID, ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
-		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity), string(ru.RequiredRole),
-		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity),
+		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity),
+		ru.Currency, nullableInt64(ru.MinimumAmountMicros), nullableInt64(ru.MaximumAmountMicros), string(ru.RequiredRole),
+		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity), boolToInt(ru.ShowAmount),
 		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
 		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, nowText,
 	); err != nil {
@@ -434,14 +445,15 @@ func (r *AlertsRepository) UpdateRule(ctx context.Context, ru alerts.Rule) (aler
 	result, err := tx.ExecContext(ctx, `
 		UPDATE alert_rules SET
 			name = ?, enabled = ?, event_type = ?, priority = ?, duration_ms = ?,
-			minimum_quantity = ?, maximum_quantity = ?, required_role = ?,
-			show_platform = ?, show_username = ?, show_message = ?, show_quantity = ?,
+			minimum_quantity = ?, maximum_quantity = ?, currency = ?, minimum_amount_micros = ?, maximum_amount_micros = ?, required_role = ?,
+			show_platform = ?, show_username = ?, show_message = ?, show_quantity = ?, show_amount = ?,
 			text_template = ?, entry_animation = ?, exit_animation = ?, animation_duration_ms = ?,
 			allow_grouping = ?, group_window_ms = ?, interrupt_mode = ?, interruptible = ?, updated_at = ?
 		WHERE id = ?`,
 		ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
-		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity), string(ru.RequiredRole),
-		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity),
+		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity),
+		ru.Currency, nullableInt64(ru.MinimumAmountMicros), nullableInt64(ru.MaximumAmountMicros), string(ru.RequiredRole),
+		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity), boolToInt(ru.ShowAmount),
 		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
 		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, ru.ID,
 	)

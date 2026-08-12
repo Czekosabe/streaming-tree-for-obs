@@ -19,6 +19,15 @@ const (
 	ScenarioVeryLongMessage  = "very_long_message"
 	ScenarioAnonymous        = "anonymous_bits"
 	ScenarioMissingAvatar    = "missing_avatar"
+	// ScenarioNoComment previews a monetary event with no user comment -
+	// Super Chat/Super Sticker both allow an empty comment for real
+	// (Stage 15A task Part 44: "optional comment absent").
+	ScenarioNoComment = "no_comment"
+	// ScenarioAlternateCurrency previews a monetary event in a second
+	// currency (EUR instead of the default USD fixture), so a template
+	// author can see {currency} resolve to something other than the
+	// default before ever receiving a real non-USD Super Chat.
+	ScenarioAlternateCurrency = "alternate_currency"
 )
 
 // ScenarioEventType returns the EventType a bare scenario name (one of
@@ -47,7 +56,7 @@ func buildFixtureEvent(eventType domain.EventType, edgeScenario string, now time
 	engagementType := reverseMapEventType(eventType)
 	evt := engagement.Event{
 		SchemaVersion: engagement.CurrentSchemaVersion, ID: "synthetic",
-		ProviderID: engagement.ProviderTwitch, ConnectedAccountID: "synthetic",
+		ProviderID: fixtureProviderID(eventType), ConnectedAccountID: "synthetic",
 		Type: engagementType, PlatformTimestamp: now, DedupeKey: "synthetic",
 		Synthetic: true,
 	}
@@ -64,7 +73,7 @@ func buildFixtureEvent(eventType domain.EventType, edgeScenario string, now time
 		evt.User = &engagement.User{Anonymous: true}
 	}
 
-	if capability.HasMessage {
+	if capability.HasMessage && edgeScenario != ScenarioNoComment {
 		text := "This is a test alert message."
 		if edgeScenario == ScenarioVeryLongMessage {
 			text = strings.Repeat("This is a very long test alert message. ", 15) // well over the render limit
@@ -81,7 +90,66 @@ func buildFixtureEvent(eventType domain.EventType, edgeScenario string, now time
 		evt.ProviderExtra = map[string]string{"rewardTitle": "Test Reward"}
 	}
 
+	if capability.HasAmount {
+		money := fixtureMoney(eventType, edgeScenario)
+		evt.Money = &money
+	}
+
+	if capability.HasMembershipLevel {
+		if evt.ProviderExtra == nil {
+			evt.ProviderExtra = map[string]string{}
+		}
+		evt.ProviderExtra["memberLevelName"] = "Level 2"
+	}
+
 	return evt
+}
+
+// fixtureProviderID reports the realistic provider for a preview fixture -
+// YouTube for the four YouTube-only event types (membership/milestone/
+// Super Chat/Super Sticker), Twitch for everything else, including the
+// two event types Stage 15A's own YouTube gift events reuse (a real gift
+// from either provider previews identically, since the event type itself
+// carries no provider - this default keeps every pre-Stage-15A preview
+// fixture byte-for-byte unchanged).
+func fixtureProviderID(eventType domain.EventType) engagement.ProviderID {
+	switch eventType {
+	case domain.EventYouTubeMembership, domain.EventYouTubeMembershipMilestone,
+		domain.EventYouTubeSuperChat, domain.EventYouTubeSuperSticker:
+		return engagement.ProviderYouTube
+	default:
+		return engagement.ProviderTwitch
+	}
+}
+
+// fixtureMoney builds a representative Money value for a monetary preview
+// - a plausible mid-tier amount, in USD by default or EUR under
+// ScenarioAlternateCurrency (Stage 15A task Part 44's own "different
+// currency examples").
+func fixtureMoney(eventType domain.EventType, edgeScenario string) engagement.Money {
+	currency := "USD"
+	amountMicros := int64(5_000_000) // $5.00
+	display := "$5.00"
+	if edgeScenario == ScenarioAlternateCurrency {
+		currency = "EUR"
+		amountMicros = 10_000_000 // €10.00
+		display = "€10.00"
+	}
+	if eventType == domain.EventYouTubeSuperSticker {
+		amountMicros = 2_000_000 // a smaller, plausible sticker tier
+		display = "$2.00"
+		if edgeScenario == ScenarioAlternateCurrency {
+			amountMicros = 4_000_000
+			display = "€4.00"
+		}
+	}
+	money, err := engagement.NewMoney(amountMicros, currency, display)
+	if err != nil {
+		// Unreachable for these fixed, valid fixture values - NewMoney
+		// only rejects a negative/overflow amount or an empty currency.
+		return engagement.Money{AmountMicros: amountMicros, Currency: currency, DisplayAmount: display}
+	}
+	return money
 }
 
 func fixtureQuantity(eventType domain.EventType) int64 {
@@ -92,6 +160,8 @@ func fixtureQuantity(eventType domain.EventType) int64 {
 		return 5
 	case domain.EventRaid:
 		return 42
+	case domain.EventYouTubeMembershipMilestone:
+		return 6 // a representative member-month count
 	default:
 		return 1
 	}
@@ -115,6 +185,14 @@ func reverseMapEventType(t domain.EventType) engagement.Type {
 		return engagement.TypeRaid
 	case domain.EventChannelPointRedemption:
 		return engagement.TypeChannelPointRedemption
+	case domain.EventYouTubeMembership:
+		return engagement.TypeYouTubeMembership
+	case domain.EventYouTubeMembershipMilestone:
+		return engagement.TypeYouTubeMembershipMilestone
+	case domain.EventYouTubeSuperChat:
+		return engagement.TypeYouTubeSuperChat
+	case domain.EventYouTubeSuperSticker:
+		return engagement.TypeYouTubeSuperSticker
 	default:
 		return ""
 	}
