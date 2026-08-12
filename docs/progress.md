@@ -20430,3 +20430,147 @@ Run the complete final regression from scratch: frontend
 `go build -tags integration ./cmd/testserver/...`), then all 17
 integration scripts in one clean, unmodified sequence. If anything
 fails, fix it and restart the complete regression from the beginning.
+
+## 2026-08-12 — Stage 15A transport corrective pass: closing regression, all clean, all 17 scripts pass
+
+### Status
+**Completed.** This closes the Stage 15A transport corrective pass. Stage
+15A itself remains Completed (now on the corrected gRPC transport); Stage
+15B remains Planned/feasibility-gated/not started; Stage 15 as a whole
+remains **not** complete (unchanged - Stage 15B is still the gate).
+
+### Scope
+The previous Stage 15A closing report (2026-08-12 12:51 UTC entry above)
+concluded the YouTube Live Chat connector used REST polling because "no
+verifiable gRPC transport exists." That conclusion was challenged,
+re-researched directly against the live official documentation, and
+found to be wrong: `liveChatMessages.streamList` is a real, current,
+documented gRPC server-streaming RPC. This corrective pass (four prior
+commits, `c5009f2`..`120844c`) re-researched the transport, vendored the
+real proto and generated real Go gRPC client code from it, replaced the
+connector's REST-polling receive loop with the gRPC stream (including a
+baseline-vs-reconnect distinction the REST design never needed), built a
+real local fake gRPC server for the integration harness, rewrote
+`scripts/verify-youtube-engagement.mjs` around it with 20 new
+transport-specific assertions, and corrected every living-documentation
+claim that still described REST polling as current. This entry records
+the mandatory final, complete, unmodified regression required before
+closing the pass, and the honest final state.
+
+### Final regression (this session, one continuous unmodified sequence)
+Frontend (`apps/web`), in order: `npm run i18n:check` (2 languages, 17
+namespaces, no differences), `npm run typecheck` (clean), `npm run lint`
+(clean), `npm run test -- --run` (86 test files, **1224 tests**, all
+passed), `npm run build` (clean; the pre-existing ~965 kB main-chunk
+size warning is unrelated to this stage, unchanged, not addressed here).
+
+Backend (`apps/server`), in order: `gofmt -l .` (clean), `go vet ./...`
+(clean), `go test ./...` (all packages pass), `go build ./...` (clean),
+`go build -tags integration ./cmd/testserver/...` (clean).
+
+All 17 integration scripts, in this exact order, in one clean run, none
+modified during or after the sequence, no source code modified after
+the sequence began: `verify-persistence.mjs`,
+`verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`,
+`verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`, `verify-twitch-engagement.mjs`,
+`verify-operator-chat.mjs`, `verify-chat-overlay.mjs`,
+`verify-twitch-outbound-chat.mjs`, `verify-chat-automation.mjs`,
+`verify-alerts.mjs`, `verify-alert-advanced-queue.mjs`,
+`verify-alert-designer.mjs`, `verify-chat-overlay-designer.mjs`,
+`verify-visual-templates.mjs`, `verify-visual-template-packages.mjs`,
+`verify-youtube-engagement.mjs`. **All 17 passed. Nothing failed; the
+regression did not need to be restarted.**
+
+`verify-youtube-engagement.mjs` builds and spawns a real local gRPC
+server (`apps/server/cmd/fakeyoutubegrpc`) and points the real backend
+under test at it via `STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET`/
+`_INSECURE` - the production connector's actual `streamList` gRPC client
+code is exercised end to end (real HTTP/2 + protobuf on the wire), not
+bypassed. It asserts, among the pre-existing Stage 15A behavioral
+coverage: the fake gRPC service receives the StreamList call with the
+correct liveChatId/part/OAuth metadata; a fresh stream's first response
+is baselined (never published, even when it already contains a
+message); a live response after the baseline publishes normally; Super
+Chat and a membership event both normalize correctly when delivered
+over protobuf; `nextPageToken` is captured; a forced stream disconnect
+is recovered from, resuming from the last captured token *without*
+re-baselining or duplicating the resumed event; a gRPC `INVALID_ARGUMENT`
+on the held continuation triggers a possible gap and a fresh rebaseline
+that itself suppresses its own history and then resumes normally;
+disabling the connector, changing the selected broadcast, and a full
+backend shutdown each cancel the active stream; and the superseded REST
+`liveChatMessages.list` endpoint is never called even once across the
+entire run. Run twice consecutively during the corrective pass's own
+`test:` commit, and once more here as part of this final sequence - all
+three runs passed.
+
+No real YouTube account, real Google OAuth, real Twitch, real Kick, real
+OBS, or manual browser testing was used anywhere in this pass - only Go
+tests, Testing Library/jsdom, the `-tags integration` testserver, local
+fake REST Google/YouTube services, the real local gRPC `streamList`
+fake service described above, and the existing real local
+MediaMTX/FFmpeg processes already used by their own established scripts
+(`verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`) - real
+local processes, never a real remote/cloud service.
+
+### Files changed
+None in this entry beyond itself - no source code or scripts were
+touched during or after the final regression, per this pass's own
+closing discipline.
+
+### Technical decisions
+None new - this entry is the closing record of decisions already made
+and documented in the four prior commits of this corrective pass.
+
+### Automated validation
+See "Final regression" above - this entry's own validation section
+duplicates nothing further; the full command list and results are
+recorded there.
+
+### Known limitations (honest, carried forward from the prior three commits)
+- The two documented gRPC status codes for `streamList`
+  (`PERMISSION_DENIED`/`INVALID_ARGUMENT`) are mapped with confidence;
+  every other code this connector defends against (`UNAUTHENTICATED`/
+  `UNAVAILABLE`/`DEADLINE_EXCEEDED`/`RESOURCE_EXHAUSTED`/`CANCELED`, and
+  a generic "undocumented code" bucket) is a defensive, explicitly
+  recorded judgment call, not a confirmed provider guarantee - see
+  `docs/provider-integrations/youtube-engagement.md` §4b.3.
+- The fake gRPC server's "send an initial response immediately rather
+  than block forever when nothing is scripted yet" behavior is an
+  assumption about real Google server behavior that this pass's research
+  could not independently confirm from the documentation prose alone -
+  recorded honestly in the `test:` commit's own progress entry rather
+  than silently assumed.
+- Membership/membership-milestone/gifting event types have field-level
+  Go unit test coverage and are now also proven to reach the Event Bus
+  correctly over the gRPC transport by the integration script
+  (membership specifically, per its own new assertion), but membership-
+  milestone and gifting were not given the same per-field integration-
+  script scrutiny as text/Super Chat/Super Sticker/membership - the
+  same documented, deliberate scope trim the original Stage 15A closing
+  entry already recorded, unaffected by the transport correction.
+- The chunk-size warning in the frontend production build (`index.js`
+  ~965 kB) is pre-existing, unrelated to this stage, and was not
+  addressed.
+
+### Stage status (final, honest)
+- **Stage 14: Completed** (unaffected by this pass).
+- **Stage 15A: Completed**, corrected to the official gRPC `streamList`
+  inbound transport. The original REST-polling implementation and its
+  now-superseded reasoning remain on record, not deleted, in
+  `docs/provider-integrations/youtube-engagement.md` §4a.
+- **Stage 15B: Planned / feasibility-gated / not started.** Re-checked
+  during this pass (`docs/provider-integrations/kick-engagement.md`
+  §4.1): Kick's official WebSocket/direct-transport request
+  (`KickEngineering/KickDevDocs` issue #20) remains open,
+  `feature`/`planned`, Backlog status, no shipping timeline. No Kick
+  code exists anywhere in this repository.
+- **Stage 15 as a whole: Incomplete** (gated on Stage 15B).
+- The updater remains Stage 20 only; audio/TTS remains Stage 17. Neither
+  was touched by this pass.
+
+### Next step
+None for Stage 15A - it is closed, correctly this time. A future stage
+would either revisit Kick's transport situation (Stage 15B) or begin
+Stage 16+, neither of which is part of this corrective pass.
