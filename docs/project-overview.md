@@ -1104,7 +1104,7 @@ it is architected; this table only tracks status and dependencies.
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for one repeated chat item card, with Stage 10's own filtering/lifecycle staying authoritative | **Completed** — stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner-instance compatibility, and asset-free JSON import/export, built on stage 13's document format (see [engagement-architecture.md](engagement-architecture.md)) | **Completed** |
 | 14B | Portable archive template packages, managed template assets, and safe custom image/video/font primitives (see [visual-template-packages.md](visual-template-packages.md)) | **Completed** — stage 14 as a whole is now complete |
-| 15A | YouTube engagement connector (Live Chat REST polling), integrated into the existing operator chat / Event Bus / alerts / outbound-chat pipelines unchanged, and a first real monetary alert capability (Super Chat/Super Sticker, integer-micros money, no currency conversion) | **Completed** |
+| 15A | YouTube engagement connector (Live Chat received over the official `streamList` gRPC server-streaming transport), integrated into the existing operator chat / Event Bus / alerts / outbound-chat pipelines unchanged, and a first real monetary alert capability (Super Chat/Super Sticker, integer-micros money, no currency conversion) | **Completed** |
 | 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer, and no scraping/tunneling/relay workaround is acceptable (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is **not** complete until this is resolved or explicitly re-scoped |
 | 16 | External donation-service connectors | Planned |
 | 17 | TTS and audio queue | Planned |
@@ -1139,16 +1139,23 @@ Key dependencies:
   (`internal/runtime/youtubeengagement`) publishing onto the exact same
   Event Bus, reusing the operator chat/chat overlay/alerts/outbound-chat
   pipelines unchanged - never a parallel YouTube-only copy of any of
-  them. REST polling (`liveChatMessages.list`) was chosen over YouTube's
-  own gRPC `streamList` transport specifically because no official Go
-  client and no independently verifiable `.proto` definition exist for
-  it (see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
-  §4) - a real, environment-verified decision, not a default guess. A
-  baseline-first cutover (the very first poll's own messages are never
-  published, only its continuation token is kept) prevents YouTube's
-  own recent-chat-history replay from ever being mistaken for live
-  activity, including across a connector restart. Stage 15A also added
-  this application's first real monetary value
+  them. Messages are received over YouTube's official `streamList` gRPC
+  server-streaming transport, a real long-lived push connection (not
+  polling) - see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+  §4b for the full verified contract, including the vendored `.proto`
+  and generated Go client
+  (`apps/server/internal/provider/youtube/streamlistpb`). An earlier
+  version of this stage shipped REST polling (`liveChatMessages.list`)
+  instead, on a since-corrected conclusion that the gRPC transport
+  wasn't practically implementable - §0 of that same document records
+  the correction. Outbound sending and metadata calls stay REST. A
+  baseline-first cutover (a genuinely fresh stream's first response is
+  never published, only its continuation token is kept - a resumed
+  stream that still holds a valid token is different, and is treated as
+  live immediately) prevents YouTube's own recent-chat-history replay
+  from ever being mistaken for live activity, including across a
+  connector restart. Stage 15A also added this application's first real
+  monetary value
   (`internal/domain/engagement.Money`: integer micros, uppercased
   currency, no floating-point arithmetic anywhere, no currency
   conversion ever) for Super Chat/Super Sticker alerts.

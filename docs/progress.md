@@ -20359,3 +20359,74 @@ docs/project-overview.md, docs/engagement-architecture.md,
 docs/provider-integrations/youtube.md, config/README.md if applicable)
 that still describes REST polling as the current YouTube receive
 transport, then run the complete final regression from scratch.
+
+## 2026-08-12 — docs: correct Stage 15A receive transport
+
+### Status
+In progress - Stage 15A transport corrective pass, continued.
+
+### Scope
+Corrected every remaining living-documentation claim that the YouTube
+engagement connector receives chat via REST polling - the code and the
+canonical research contract were already corrected in the prior two
+commits; this pass finds and fixes every other place that fact was
+still stated. Searched `README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md`, `docs/provider-integrations/
+youtube.md`, and `config/README.md` for "poll"/`liveChatMessages`/
+"REST polling" and reviewed every match; `docs/provider-integrations/
+youtube.md` and `config/README.md`'s existing "poll" hits were both
+unrelated (Twitch device-flow token polling; OAuth env var docs) and
+needed no correction beyond documenting the two new gRPC test env vars.
+`docs/provider-integrations/kick-engagement.md`'s own "REST polling"
+mention is an accurate, unaffected factual comparison (YouTube genuinely
+has both `streamList` and `list`; Kick has neither) and was left as-is.
+`docs/progress.md`'s own historical entries are untouched, per this
+project's append-only correction discipline - they truthfully record
+what Stage 15A originally shipped.
+
+### Changes
+- `README.md`: rewrote the "Polling, not a WebSocket" callout to
+  describe the real gRPC `streamList` transport, the fresh-vs-resumed
+  baseline distinction, and that outbound/metadata stay REST; updated
+  the Stage 15A roadmap table row.
+- `docs/project-overview.md`: updated the Stage 15A roadmap table row
+  and the §13 "Key dependencies" paragraph to describe the gRPC
+  transport, cite the corrected research document's §4b, and record
+  (without deleting) that an earlier version of this stage shipped REST
+  polling on a since-corrected conclusion.
+- `docs/engagement-architecture.md`: updated the stage-15A factual
+  status update callout (§7-adjacent), the §16 provider-honesty section,
+  and the §17-adjacent roadmap table row, all the same way.
+- `config/README.md`: documented the new
+  `STREAMING_TREE_TEST_YOUTUBE_GRPC_TARGET`/`_GRPC_INSECURE` env vars
+  alongside the existing REST base-URL overrides.
+
+### Files changed
+- `README.md`
+- `docs/project-overview.md`
+- `docs/engagement-architecture.md`
+- `config/README.md`
+- `docs/progress.md` (this entry)
+
+### Technical decisions
+None new - this is a documentation-only correction pass with no code or
+behavior change, following the corrective task's own §33 instruction to
+search and correct living documentation only after the code and research
+contract were already corrected (previous two commits).
+
+### Automated validation
+None applicable (documentation-only change); the full regression
+(frontend + backend + all 17 integration scripts) runs next and is
+recorded in a dedicated final entry.
+
+### Known limitations
+None beyond what earlier entries in this corrective pass already
+recorded.
+
+### Next step
+Run the complete final regression from scratch: frontend
+(`i18n:check`/`typecheck`/`lint`/`test -- --run`/`build`), backend
+(`gofmt -l .`/`go vet ./...`/`go test ./...`/`go build ./...`/
+`go build -tags integration ./cmd/testserver/...`), then all 17
+integration scripts in one clean, unmodified sequence. If anything
+fails, fix it and restart the complete regression from the beginning.

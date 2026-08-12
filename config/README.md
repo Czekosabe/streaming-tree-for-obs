@@ -101,8 +101,12 @@ with no transcoding, is this stage's deliberate scope.
    a pasted `clientSecret` field is, not silently stripped of its secret.
    The `STREAMING_TREE_TEST_TWITCH_OAUTH_BASE_URL` / `_API_BASE_URL` and
    `STREAMING_TREE_TEST_YOUTUBE_AUTH_BASE_URL` / `_OAUTH_BASE_URL` /
-   `_API_BASE_URL` environment variables that let a test point a provider
-   client at a local fake server exist only in the `-tags integration` test
+   `_API_BASE_URL` / `_GRPC_TARGET` / `_GRPC_INSECURE` environment
+   variables that let a test point a provider client at a local fake
+   server (the last two specifically at a local fake `streamList` gRPC
+   server, insecure-transport-only and only ever selectable here - see
+   [youtube-engagement.md §9](../docs/provider-integrations/youtube-engagement.md))
+   exist only in the `-tags integration` test
    binary (`apps/server/cmd/testserver`) and are read directly via
    `os.Getenv`, never through the shared config loader - a production build
    cannot recognize them even if they happened to be set. See

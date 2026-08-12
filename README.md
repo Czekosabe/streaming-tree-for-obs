@@ -203,7 +203,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer for chat overlays | **Completed** — see [progress.md](docs/progress.md); Stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-in templates, a persisted user template library, target/owner compatibility, and asset-free JSON import/export, built on Stage 13's own document format | **Completed** — see [progress.md](docs/progress.md) |
 | 14B | Portable archive template packages, managed visual assets, and safe custom image/video/font primitives, see [visual-template-packages.md](docs/visual-template-packages.md) | **Completed** — see [progress.md](docs/progress.md); Stage 14 as a whole is now complete |
-| 15A | YouTube engagement connector: Live Chat REST polling, reusing operator chat/chat overlay/alerts/outbound chat unchanged, plus the first real monetary alert capability (Super Chat/Super Sticker) | **Completed** — see [progress.md](docs/progress.md) |
+| 15A | YouTube engagement connector: Live Chat received over the official `streamList` gRPC server-streaming transport, reusing operator chat/chat overlay/alerts/outbound chat unchanged, plus the first real monetary alert capability (Super Chat/Super Sticker) | **Completed** — see [progress.md](docs/progress.md) |
 | 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer, see [kick-engagement.md](docs/provider-integrations/kick-engagement.md); Stage 15 as a whole is **not** complete |
 | 16–19 | TTS, goal widgets, external donations | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
@@ -1502,26 +1502,31 @@ reading chat, Super Chat/Super Sticker, membership events, and sending
 chat, all at once — enabling engagement on the Engagement page never
 prompts for additional authorization.
 
-**Polling, not a WebSocket.** YouTube's Live Chat API has no push
-transport this application could verify against an official, versioned
-contract (no official Go client, no independently fetchable `.proto`
-definition for the gRPC alternative — see the linked research
-document's own §4 for the full reasoning), so the connector instead
-polls `liveChatMessages.list` on a server-recommended interval. A
-connector must first have a **broadcast selected** (see
+**A real gRPC push stream, not polling.** YouTube's Live Chat API's
+official `liveChatMessages.streamList` method is a gRPC server-streaming
+RPC — a long-lived push connection, not a client polling on an interval
+(see the linked research document's own §4b for the full verified
+contract: the vendored `.proto`, the generated Go client, the production
+host, and the OAuth metadata handshake). A connector must first have a
+**broadcast selected** (see
 [Linking a channel and selecting a broadcast](#linking-a-channel-and-selecting-a-broadcast)
 above) with an active live chat; without one it reports
 `waiting_for_broadcast` or `waiting_for_live_chat` — an honest "not
-ready yet" state, never an error.
+ready yet" state, never an error. Outbound sending
+(`liveChatMessages.insert`) and all broadcast/channel/video metadata
+calls stay REST — only receiving moved to gRPC.
 
-**The first poll never counts as live.** YouTube's own `list` API
-returns recent chat history on the very first call — this connector
-treats that first response as a silent baseline (its continuation
-token is kept, nothing in it is ever published) and only publishes
-messages returned by the *second and later* polls. This applies again
-after every restart: an explicit connector restart, or a full backend
-restart, always re-baselines rather than replaying history as if it
-had just happened.
+**The first response never counts as live.** A genuinely fresh stream's
+first response can carry recent chat history — this connector treats
+that first response as a silent baseline (its continuation token is
+kept, nothing in it is ever published) and only publishes messages from
+responses *after* that baseline. A transient reconnect that still holds
+a valid continuation token is different: its first resumed response is
+treated as live immediately, never re-baselined, so an ordinary network
+blip never silently drops real chat. This baseline behavior applies
+again after every *fresh* connect: an explicit connector restart, a
+broadcast change, or a full backend restart, all re-baseline rather than
+replaying history as if it had just happened.
 
 **A first real monetary value.** Super Chat and Super Sticker carry a
 genuine paid amount — this application's first real money value

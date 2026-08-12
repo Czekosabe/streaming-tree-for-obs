@@ -158,13 +158,19 @@ of this document to reason about two credential lifecycles as if they were one.
 > commands (§8.1-8.3) remain exactly as planned before this stage - see
 > stage 11B in [project-overview.md §13](project-overview.md#13-roadmap).
 
-> **Factual status update (stage 15A, completed):** the YouTube adapter
-> (`internal/provider/youtube`) gained a real second inbound engagement
-> connector, `internal/runtime/youtubeengagement`, polling
-> `liveChatMessages.list` (REST, not YouTube's own gRPC `streamList` -
-> see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
-> §4 for why) and publishing onto the exact same Event Bus stage 8A
-> introduced for Twitch. It authorizes through the exact same connected-
+> **Factual status update (stage 15A, completed, transport corrected):**
+> the YouTube adapter (`internal/provider/youtube`) gained a real second
+> inbound engagement connector, `internal/runtime/youtubeengagement`,
+> receiving over YouTube's official `liveChatMessages.streamList` gRPC
+> server-streaming transport (a real long-lived push connection - see
+> [youtube-engagement.md](provider-integrations/youtube-engagement.md)
+> §4b for the full verified contract, vendored `.proto`, and generated Go
+> client) and publishing onto the exact same Event Bus stage 8A
+> introduced for Twitch. An earlier version of this stage shipped REST
+> polling (`liveChatMessages.list`) instead, on a since-corrected
+> conclusion that gRPC wasn't practically implementable - see that same
+> document's §0. Outbound sending and metadata calls stay REST; only
+> receiving moved. It authorizes through the exact same connected-
 > account foundation, requiring no additional OAuth scope beyond what
 > stage 7B already granted (`youtube.RequiredScope` alone covers reading
 > chat, Super Chat/Super Sticker, membership events, and sending). Every
@@ -1309,11 +1315,12 @@ verified** — this document names candidates, it does not commit to them.
 - **YouTube and Kick require separate adapters.** Nothing about a Twitch
   connector implementation is assumed to transfer directly; each is planned as
   its own connector against the capability model of §6.2.
-  **Factual status update (stage 15A, completed):** confirmed in
-  practice, not just in principle - YouTube's own connector
-  (`internal/runtime/youtubeengagement`) is REST-polling-shaped, not
-  WebSocket-pushed like Twitch's, with its own genuinely different
-  states (`waiting_for_broadcast`/`waiting_for_live_chat`/`chat_ended`
+  **Factual status update (stage 15A, completed, transport corrected):**
+  confirmed in practice, not just in principle - YouTube's own connector
+  (`internal/runtime/youtubeengagement`) receives over a gRPC
+  server-streaming push connection (`streamList`), not WebSocket-pushed
+  like Twitch's, with its own genuinely different states
+  (`waiting_for_broadcast`/`waiting_for_live_chat`/`chat_ended`
   have no Twitch equivalent at all) - see
   [youtube-engagement.md](provider-integrations/youtube-engagement.md)
   §8. Kick's own connector was researched in stage 15B and found
@@ -1421,7 +1428,7 @@ that table.
 | 13B | Chat Overlay Designer, reusing 13A's shared document/renderer (§13.1) — **Completed**, stage 13 as a whole is now complete |
 | 14A | Reusable visual-template library: built-ins, a persisted user template library, compatibility, asset-free JSON import/export (§13.2/§13.3) — **Completed** |
 | 14B | Portable archive template packages, managed assets, image/video/font primitives (§13.2/§13.3) — **Completed**, stage 14 as a whole is now complete |
-| 15A | YouTube engagement connector (§16): Live Chat REST polling, reusing every pipeline above unchanged, plus the first real monetary alert capability (§9) — **Completed** |
+| 15A | YouTube engagement connector (§16): Live Chat received over the official `streamList` gRPC server-streaming transport, reusing every pipeline above unchanged, plus the first real monetary alert capability (§9) — **Completed** |
 | 15B | Kick engagement connector, and Kick account integration if not already done in 7C — **Deferred**, feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is not complete |
 | 16 | External donation-service connectors (§15) |
 | 17 | TTS and audio queue (§12) |
