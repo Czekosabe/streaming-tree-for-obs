@@ -17965,3 +17965,114 @@ Push `a77765a` and this entry's own commit to `origin/main`, verify the
 remote HEAD matches local HEAD with a clean tree and zero ahead/behind
 after push, and report the final structured result. No Stage 15 work
 begins as part of this task.
+
+## 2026-08-12 08:08 — fix(web): avoid false Tailwind class conflicts
+
+### What
+The operator continued to see one yellow VS Code problem marker each on
+`ChatOverlayRenderer.tsx` and `DesignerCanvas.tsx` even after the prior
+investigation confirmed both were Tailwind CSS IntelliSense-only false
+positives (tsc/eslint both clean). Rather than leave a persistent,
+recurring editor warning unaddressed, made a small, semantically neutral
+structural refactor to each file that removes the lexical pattern the
+extension's conflict checker misreads - no visual/behavioral change.
+
+- **`ChatOverlayRenderer.tsx`**: the root `cn(...)` call previously wrote
+  three mutually-exclusive selections directly as ternaries/a record
+  lookup inline inside the call (`stackDirection` → `justify-start`/
+  `justify-end`; `horizontalAlignment` → the `ALIGNMENT_ITEMS` record;
+  `layoutMode` → `max-w-full`/`mx-auto max-w-[720px]`). Tailwind CSS
+  IntelliSense's conflict checker has no control-flow awareness, so
+  writing both branches of a same-CSS-property ternary literally inside
+  a recognized class-merging call makes it see both as simultaneously
+  applied. Moved all three selections into one new exported helper,
+  `overlayRootLayoutClassName(config)` (`overlay-style.ts`, beside the
+  file's existing `entryAnimationClassName`/`exitAnimationClassName`
+  helpers, same pattern), which resolves to a single already-computed
+  string before the render even calls `cn(...)`. The component now calls
+  `cn('flex h-full w-full flex-col overflow-hidden p-3',
+  overlayRootLayoutClassName(config))` - a plain identifier argument,
+  not a literal ternary, which the extension's lexical scanner does not
+  trace back through a function call to find the two branches. The
+  now-unused local `ALIGNMENT_ITEMS` const was removed from the
+  component (its content moved into the new helper's own
+  `HORIZONTAL_ALIGNMENT_ITEMS` record). Output classes for every
+  `stackDirection`/`horizontalAlignment`/`layoutMode` combination are
+  byte-for-byte unchanged.
+- **`DesignerCanvas.tsx`**: the canvas workspace `div` combined two
+  Tailwind v4 arbitrary-value utilities in one static string -
+  `bg-[repeating-conic-gradient(...)]` (background-image) and
+  `bg-[length:20px_20px]` (background-size, via the `length:` type
+  hint). The extension's conflict grouping keys on the bare `bg-`
+  prefix and does not read the arbitrary-value type hint that
+  disambiguates the two, so it flags them as conflicting even though
+  they are correct and target different CSS properties. Since this
+  background is entirely static (identical string for every render,
+  no prop/state ever changes it), extracted it into a new named
+  component class, `.designer-canvas-checkerboard`
+  (`apps/web/src/index.css`, `@layer components`, beside the existing
+  `.skip-link`), reproducing the exact same two `background-image`/
+  `background-size` declarations. `DesignerCanvas.tsx`'s className is
+  now `"designer-canvas-checkerboard relative min-w-0 flex-1
+  overflow-auto p-6"` - a plain CSS class reference, not a Tailwind
+  arbitrary-value utility, so it is entirely outside anything the
+  extension's utility-conflict scanner inspects. Rendered background
+  is pixel-identical.
+
+Neither the Tailwind CSS IntelliSense extension setting, ESLint
+configuration, nor any TypeScript diagnostic was disabled or
+suppressed anywhere - both fixes are ordinary source refactors that
+happen to also remove the lexical ambiguity the extension was
+(incorrectly) flagging.
+
+### Files changed
+- `apps/web/src/components/chat-overlay/overlay-style.ts` - new
+  exported `overlayRootLayoutClassName`, three new private `Record`
+  maps (`STACK_DIRECTION_JUSTIFY`, `HORIZONTAL_ALIGNMENT_ITEMS`,
+  `LAYOUT_MODE_MAX_WIDTH`).
+- `apps/web/src/components/chat-overlay/ChatOverlayRenderer.tsx` -
+  removed the local `ALIGNMENT_ITEMS` const and the inline ternaries;
+  now calls the new helper.
+- `apps/web/src/index.css` - new `.designer-canvas-checkerboard`
+  component class.
+- `apps/web/src/components/alert-designer/DesignerCanvas.tsx` - uses
+  the new class instead of the two arbitrary-value utilities.
+
+### Technical decisions
+- **Why a named CSS class for the checkerboard but a hoisted-function
+  string for the overlay root, rather than the same strategy for
+  both.** The checkerboard background is a compile-time constant with
+  no runtime variation at all - a named CSS class is the more direct,
+  idiomatic fix and matches the project's own existing `.skip-link`
+  convention for one-off component styling. The overlay root's classes
+  genuinely vary per `config`, so a config-driven helper function
+  (matching the file's own pre-existing `entryAnimationClassName`
+  pattern) was the natural analogous fix rather than forcing a
+  config-keyed set of CSS classes for what Tailwind utilities already
+  express cleanly.
+- **Why this could not be verified as "zero VS Code problems" from the
+  CLI.** Tailwind CSS IntelliSense is a VS Code extension with no CLI
+  invocation surface this environment can exercise. `tsc`/`eslint`
+  were already clean before this change and remain clean after it;
+  what changed is the lexical shape of the source, removing the
+  specific pattern (literal ternary branches / bare `bg-` prefix
+  collision) documented as this extension's own false-positive
+  trigger. Final visual confirmation in the operator's own editor
+  remains an operator-side observation this task cannot substitute
+  for.
+
+### Automated validation
+`cd apps/web`: `npm run typecheck` (clean), `npm run lint` (clean),
+`npm run test -- --run` (85 files / 1167 tests passed, unchanged from
+before this refactor - no test needed updating since no rendered
+output changed), `npm run build` (succeeded, `dist/` emitted
+byte-different only in content-hashed filenames as expected).
+
+### Known limitations
+None new. This is a pure editor-experience refactor with no behavior
+change.
+
+### Next step
+Begin the mandatory Stage 15A official-documentation research pass
+(YouTube Live Chat API) and the Stage 15B Kick feasibility research
+pass, before any provider code is written.

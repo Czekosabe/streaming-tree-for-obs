@@ -6,7 +6,7 @@ import type { ChatOverlayLeavingItem as LeavingItemEntry } from '@/models/chat-o
 
 import { OverlayItemContent } from './OverlayItemContent';
 import { OverlayLeavingItem } from './OverlayLeavingItem';
-import { entryAnimationClassName, overlayContainerStyle } from './overlay-style';
+import { entryAnimationClassName, overlayContainerStyle, overlayRootLayoutClassName } from './overlay-style';
 
 function supportsMatchMedia(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function';
@@ -31,12 +31,6 @@ function usePrefersReducedMotion(): boolean {
   }, []);
   return reduced;
 }
-
-const ALIGNMENT_ITEMS: Record<PublicChatOverlayConfig['horizontalAlignment'], string> = {
-  left: 'items-start text-left',
-  center: 'items-center text-center',
-  right: 'items-end text-right',
-};
 
 type RenderEntry =
   | { kind: 'active'; id: string; item: PublicChatOverlayItem }
@@ -86,12 +80,7 @@ export function ChatOverlayRenderer({
 
   return (
     <div
-      className={cn(
-        'flex h-full w-full flex-col overflow-hidden p-3',
-        config.stackDirection === 'top_down' ? 'justify-start' : 'justify-end',
-        ALIGNMENT_ITEMS[config.horizontalAlignment],
-        config.layoutMode === 'vertical' ? 'max-w-full' : 'mx-auto max-w-[720px]',
-      )}
+      className={cn('flex h-full w-full flex-col overflow-hidden p-3', overlayRootLayoutClassName(config))}
       style={overlayContainerStyle(config)}
       data-testid="chat-overlay-root"
     >

@@ -129,3 +129,41 @@ export function exitAnimationClassName(
 export function exitAnimationFallbackMs(animationDurationMs: number): number {
   return clamp(animationDurationMs, 0, 5000) + 150;
 }
+
+const STACK_DIRECTION_JUSTIFY: Record<PublicChatOverlayConfig['stackDirection'], string> = {
+  top_down: 'justify-start',
+  bottom_up: 'justify-end',
+};
+
+const HORIZONTAL_ALIGNMENT_ITEMS: Record<PublicChatOverlayConfig['horizontalAlignment'], string> = {
+  left: 'items-start text-left',
+  center: 'items-center text-center',
+  right: 'items-end text-right',
+};
+
+const LAYOUT_MODE_MAX_WIDTH: Record<PublicChatOverlayConfig['layoutMode'], string> = {
+  vertical: 'max-w-full',
+  horizontal: 'mx-auto max-w-[720px]',
+};
+
+/**
+ * The overlay root's own stack-direction/alignment/max-width classes,
+ * resolved here as one already-computed string per config, rather than as
+ * ternaries/record lookups written directly inside the root `cn(...)` call
+ * in ChatOverlayRenderer.tsx. Each of the three selections above is
+ * genuinely mutually exclusive at runtime (exactly one key ever applies),
+ * but Tailwind CSS IntelliSense's conflict checker has no control-flow
+ * awareness - written as ternaries inside a recognized class-merging call,
+ * it sees both branches' literal classes at once and flags a false
+ * "conflicting classnames" warning (e.g. `justify-start` next to
+ * `justify-end`). Passing a single plain string built outside that call
+ * removes the ambiguity for the editor exactly as it already has none for
+ * the renderer - the CSS output is unchanged either way.
+ */
+export function overlayRootLayoutClassName(config: PublicChatOverlayConfig): string {
+  return [
+    STACK_DIRECTION_JUSTIFY[config.stackDirection],
+    HORIZONTAL_ALIGNMENT_ITEMS[config.horizontalAlignment],
+    LAYOUT_MODE_MAX_WIDTH[config.layoutMode],
+  ].join(' ');
+}

@@ -112,6 +112,21 @@
 }
 
 @layer components {
+  /*
+   * Alert Designer canvas workspace checkerboard (components/alert-designer/
+   * DesignerCanvas.tsx). A named class rather than two Tailwind arbitrary-
+   * value bg-[...] utilities (one for background-image, one for
+   * background-size) - both utilities are correct and target different CSS
+   * properties, but Tailwind CSS IntelliSense's conflict checker groups by
+   * bare "bg-" prefix and cannot see the arbitrary-value type hint that
+   * disambiguates them, producing a false "conflicting classnames" warning.
+   * This class reproduces the exact same two declarations.
+   */
+  .designer-canvas-checkerboard {
+    background-image: repeating-conic-gradient(#00000010 0% 25%, transparent 0% 50%);
+    background-size: 20px 20px;
+  }
+
   /* Skip link - visible only when focused. */
   .skip-link {
     position: absolute;

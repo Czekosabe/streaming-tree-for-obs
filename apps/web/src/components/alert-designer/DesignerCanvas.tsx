@@ -87,7 +87,7 @@ export function DesignerCanvas({
 
   return (
     <div
-      className="relative min-w-0 flex-1 overflow-auto bg-[repeating-conic-gradient(#00000010_0%_25%,transparent_0%_50%)] bg-[length:20px_20px] p-6"
+      className="designer-canvas-checkerboard relative min-w-0 flex-1 overflow-auto p-6"
       data-testid="designer-canvas-workspace"
       onClick={() => onSelect(null)}
     >
