@@ -17804,3 +17804,164 @@ The genuinely final, unmodified, all-16-scripts-in-one-sequence closing
 regression, run fresh from this commit's own clean tree - then its own
 dedicated `docs: record Stage 14 closing regression` journal entry and
 commit, then push.
+
+## 2026-08-12 07:45 — docs: record Stage 14 closing regression
+
+### What
+The genuinely final closing regression for Stage 14, run entirely from
+the clean tree left by the prior `fix: reconcile Stage 14 closing
+state` commit (`a77765a`) - no code, fixture, or product documentation
+changed before, during, or after this run. This is the single,
+unmodified, all-checks-in-one-sequence proof the prior mixed pass
+(13 of 16 scripts clean on a first run, 3 fixed and only those 3
+individually re-run) was not.
+
+**Frontend** (`cd apps/web`), run fresh, in order:
+- `npm run i18n:check` - passed: 2 languages (en, pl), 17 namespaces,
+  no differences against `en`.
+- `npm run typecheck` (`tsc -b`) - clean, zero errors.
+- `npm run lint` (`eslint .`) - clean, zero errors/warnings.
+- `npm run test -- --run` (`vitest run --run`) - **85 test files
+  passed, 1167 tests passed**, zero failures. The "Not implemented:
+  navigation (except hash changes)" jsdom console lines and the
+  Windows-only `[vitest-pool]: ... kill EPERM` worker-teardown message
+  are both post-completion noise unrelated to test outcome (every file/
+  test count and exit code confirm a clean run) - the identical
+  benign messages have appeared on every prior clean run this stage.
+- `npm run build` (`tsc -b && vite build`) - succeeded, 2223 modules
+  transformed, `dist/` emitted. The single "(!) Some chunks are larger
+  than 500 kB" advisory is Vite's own generic code-splitting
+  suggestion, not an error, and predates this stage - no frontend
+  source changed in this corrective pass at all, doc-only.
+
+**Backend** (`cd apps/server`), run fresh, in order:
+- `gofmt -l .` - no output (nothing unformatted).
+- `go vet ./...` - clean.
+- `go test ./...` - every package `ok` (`internal/alerts`,
+  `internal/chatautomation`, `internal/chatoverlay`, `internal/config`,
+  `internal/domain/account`, `internal/domain/alerts`,
+  `internal/domain/chatautomation`, `internal/domain/chatoverlay`,
+  `internal/domain/credential`, `internal/domain/engagement`,
+  `internal/domain/output`, `internal/domain/platform`,
+  `internal/domain/visualasset`, `internal/domain/visualdesign`,
+  `internal/domain/visualpackage`, `internal/domain/visualtemplate`,
+  `internal/engagement`, `internal/httpapi`, `internal/operatorchat`,
+  `internal/outboundchat`, `internal/provider/twitch`,
+  `internal/provider/twitch/chatassets`, `internal/provider/youtube`,
+  `internal/runtime/branch`, `internal/runtime/deviceflow`,
+  `internal/runtime/ffmpeg`, `internal/runtime/mediamtx`,
+  `internal/runtime/twitchengagement`, `internal/runtime/youtubeauth`,
+  `internal/secrets`, `internal/secrets/secretstest`,
+  `internal/storage/sqlite`; several packages report "no test files",
+  which is expected for thin/DTO-only packages).
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+
+**All sixteen local integration scripts**, run from the repository
+root in one single, uninterrupted, unmodified sequence, in this exact
+order, each against a freshly built `-tags integration` testserver -
+**every one passed, zero failures, nothing edited during or after the
+run**:
+
+1. `verify-persistence.mjs` - PASSED
+2. `verify-mediamtx-runtime.mjs` - PASSED
+3. `verify-ffmpeg-branches.mjs` - PASSED
+4. `verify-twitch-account-integration.mjs` - PASSED
+5. `verify-youtube-account-integration.mjs` - PASSED
+6. `verify-twitch-engagement.mjs` - PASSED
+7. `verify-operator-chat.mjs` - PASSED
+8. `verify-chat-overlay.mjs` - PASSED
+9. `verify-twitch-outbound-chat.mjs` - PASSED
+10. `verify-chat-automation.mjs` - PASSED
+11. `verify-alerts.mjs` - PASSED
+12. `verify-alert-advanced-queue.mjs` - PASSED
+13. `verify-alert-designer.mjs` - PASSED
+14. `verify-chat-overlay-designer.mjs` - PASSED
+15. `verify-visual-templates.mjs` - PASSED
+16. `verify-visual-template-packages.mjs` - PASSED
+
+No script was edited during or after this sequence, and no fixture
+inside any script was changed after the run - the three scripts fixed
+in the prior `fix: update three integration scripts for visual-design
+v3` commit (`c10d91f`) are included above at their normal position in
+the sequence (13-15) and passed unmodified, on this run, alongside the
+other thirteen. No existing assertion in any script was weakened,
+loosened, or removed to make it pass - every script passed on its own
+original, already-strict expectations.
+
+Every script, exactly as in every prior stage's own closing regression,
+used **no real Twitch account, no real YouTube account, and no real
+OBS installation** - Twitch/YouTube/EventSub are always local fake HTTP
+servers this repository owns and starts itself, and OBS Browser Source
+behavior is verified only via the same real HTTP/SSE contract a real
+Browser Source would consume, from a plain Node.js HTTP client, never
+an actual browser or manual test. **No manual browser testing of any
+kind was performed** for this regression. MediaMTX and FFmpeg, in
+contrast, are real: `verify-mediamtx-runtime.mjs` and
+`verify-ffmpeg-branches.mjs` supervise the project's own real, locally
+installed MediaMTX and FFmpeg binaries exactly as the running
+application does - only the upstream *platforms* (Twitch/YouTube/OBS)
+are faked, never this project's own managed runtime processes.
+
+**Editor diagnostic audit result (carried forward from the prior
+entry, not re-investigated here since nothing about either file
+changed):** both `ChatOverlayRenderer.tsx` and `DesignerCanvas.tsx`
+diagnostics were determined to be Tailwind CSS IntelliSense
+extension-only false positives - `tsc`/`eslint` clean for both files,
+both source expressions manually confirmed correct, no source change
+made. See the prior `fix: reconcile Stage 14 closing state` entry for
+the full investigation.
+
+**Application updater:** confirmed still entirely documentation-only.
+`docs/project-overview.md` §12.1.1 was verified (not modified) in the
+prior entry and remains the sole description of the Stage 20 update
+system - no updater code, GitHub Releases networking, download,
+installer, or restart logic exists anywhere in this codebase.
+
+### Files changed
+None. This commit is this journal entry alone - no code, fixture, or
+other documentation file changed.
+
+### Technical decisions
+- **Why this had to be its own separate, dedicated commit rather than
+  folded into the prior corrective commit.** The prior commit
+  (`a77765a`) was itself a documentation-only change to the tree the
+  regression needed to validate - recording "the regression passed" in
+  the same commit as the changes being regressed against would not be
+  genuine proof that the *committed, pushed* state is what was
+  verified. A separate commit, made only after the full sequence above
+  passed against the exact tree `a77765a` left behind, is what makes
+  this entry a verifiable record rather than a promise.
+
+### Automated validation
+This entire entry **is** the automated validation record - see "What"
+above for the complete, itemized frontend, backend, and sixteen-script
+results. Nothing failed; nothing was skipped; nothing was re-run
+selectively.
+
+### Known limitations
+Unchanged from every prior Stage 14B entry - see
+`docs/visual-template-packages.md` §25 (no CSP; sound/audio excluded;
+no SVG/HTML/CSS/JS/executable asset kind; no update system) and
+`docs/obs-browser-source.md` (no real OBS CEF manual verification of
+image/video codec/seek behavior or custom-font rendering). This
+regression adds no new limitation and removes none - it is proof of
+the existing, already-documented state, not a scope change.
+
+### Stage status
+**Stage 14A: Completed. Stage 14B: Completed. Stage 14 as a whole:
+Completed.** **Stage 15: Planned, not started** - no Stage 15
+research, design, or implementation occurred in this corrective pass
+or this regression. The application updater (Stage 20) remains
+entirely undocumented-as-implemented - documentation only, per
+`docs/project-overview.md` §12.1.1, unchanged and unimplemented. TTS/
+audio (Stage 17), goals/widgets (Stage 18), donations, and Kick/
+YouTube engagement expansion (Stage 15) all remain unimplemented,
+exactly as the roadmap tables in `README.md`, `docs/project-
+overview.md`, and `docs/engagement-architecture.md` already state.
+
+### Next step
+Push `a77765a` and this entry's own commit to `origin/main`, verify the
+remote HEAD matches local HEAD with a clean tree and zero ahead/behind
+after push, and report the final structured result. No Stage 15 work
+begins as part of this task.
