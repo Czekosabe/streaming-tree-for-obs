@@ -29,20 +29,24 @@ provider-independent **visual-design engine** with a real **Alert Overlay
 Designer** editor for that same alert presentation (stage 13A), and a
 matching real **Chat Overlay Designer** reusing that same engine for the
 chat overlay (stage 13B) — the visual designers are now complete as a
-whole — and a real **reusable visual-template library** (built-ins, a
+whole — a real **reusable visual-template library** (built-ins, a
 persisted user template gallery, and asset-free JSON import/export;
-stage 14A) shared by both Designers. **Still planned**: portable
-archive template packages with bundled assets (stage 14B), text-to-
-speech, goal/counter widgets, additional engagement providers
-(YouTube, Kick chat/events), and external donation-service connectors —
-detailed in
+stage 14A) shared by both Designers, and real **portable archive
+template packages with bundled assets** — managed images, video, and
+custom fonts, safe archive validation, and package preview/import/
+export (stage 14B; Stage 14 as a whole is now complete), see
+[`docs/visual-template-packages.md`](docs/visual-template-packages.md).
+**Still planned**: text-to-speech, goal/counter widgets, additional
+engagement providers (YouTube, Kick chat/events), external
+donation-service connectors, and Stage 20's own packaging/updater/
+hardening work — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
 engagement piece above in order (stages 8A through 12B).
 
-> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending, real scheduled messages/chat commands, a real alert engine, and real Alert/Chat Overlay Designers all work
+> ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, a real Twitch inbound Event Bus connector, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch chat sending, real scheduled messages/chat commands, a real alert engine, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed
 > MediaMTX process), **store a destination's stream key securely** in the
@@ -101,7 +105,14 @@ engagement piece above in order (stages 8A through 12B).
 > **reusable visual-template library** (built-in templates, a persisted
 > user template gallery, backend-authoritative compatibility, and
 > asset-free JSON import/export, never automatically saving an owner's
-> design). See
+> design; stage 14A), extended by real **portable archive template
+> packages** (`.streaming-tree-template`, ZIP-only) and real **managed
+> visual assets** — uploaded images, video, and custom WOFF2 fonts,
+> content/signature-validated, content-addressed and deduplicated,
+> served publicly over an unguessable per-asset token, with safe
+> archive validation (never blind extraction) and a two-step package
+> preview/import flow that never trusts its own preview (stage 14B;
+> Stage 14 as a whole is now complete). See
 > [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg),
 > [Connected accounts and Twitch metadata](#connected-accounts-and-twitch-metadata),
 > [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata),
@@ -129,9 +140,9 @@ engagement piece above in order (stages 8A through 12B).
 >
 > Kick/TikTok account integration, YouTube live-chat and Super Chat, and
 > everything else still built **on top of** the operator chat, outbound
-> chat, alert engine and visual-design/template engine — portable
-> archive template packages with bundled assets, TTS, goal widgets, and
-> donation connectors — are still **planned**. Whatever remains
+> chat, alert engine and visual-design/template/package engine — TTS,
+> goal widgets, donation connectors, and Stage 20's own packaging/
+> updater/hardening work — are still **planned**. Whatever remains
 > a placeholder is marked with a **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -3092,7 +3103,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement, portable archive template packages | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — and a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands) and [Alerts](#alerts)). Everything built on top of that engine (portable archive template packages, TTS, goal widgets) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| TTS, goal/counter widgets, YouTube live chat, Super Chat, membership events, Kick/TikTok engagement | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), and real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts) and [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, donation connectors) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real

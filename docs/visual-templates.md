@@ -6,28 +6,45 @@ wrapper around a complete `internal/domain/visualdesign.Document` (the
 document contract itself lives in [`visual-designs.md`](visual-designs.md) -
 this document never redefines it, only wraps it).
 
-Three distinct schemas are in play here, and this document is careful never
+Four distinct schemas are in play here, and this document is careful never
 to conflate them:
 
 **A. The visual-design document schema** (`visualdesign.Document`, currently
-version 2) - what a single saved design/template actually draws: layers,
-bindings, typography, animation. Defined and versioned entirely by
+version 3, since Stage 14B added managed image/video layers and optional
+custom-font references - see [`visual-designs.md`](visual-designs.md) §26)
+- what a single saved design/template actually draws: layers, bindings,
+typography, animation. Defined and versioned entirely by
 [`visual-designs.md`](visual-designs.md).
 
 **B. The Stage 14A template-interchange schema** (this document,
-currently version 1) - the portable wrapper: format discriminator, its own
-schema version, target, name, description, author, license, and one embedded
-document (A). Defined and versioned entirely here.
+currently version 1) - the portable, **asset-free** wrapper: format
+discriminator, its own schema version, target, name, description, author,
+license, and one embedded document (A). Defined and versioned entirely
+here. Still schema version 1 - Stage 14B added no new field to this
+schema.
 
-**C. The future Stage 14B archive/package schema** - not defined anywhere
-yet. Stage 14B will add an archive format (assets, a manifest, its own
-versioning) that *contains* one or more Stage 14A templates (B) as its
-payload. See §12 for the explicit scope boundary.
+**C. The Stage 14B package schema** (`streaming-tree-template-package`,
+independently versioned, currently schema version 1) - the portable
+**archive** format: a ZIP-only `.streaming-tree-template` package carrying
+its own manifest plus bundled assets, that *contains* the equivalent of a
+Stage 14A template (B) as its payload alongside the assets it references.
+Defined and versioned entirely in
+[`docs/visual-template-packages.md`](visual-template-packages.md) - this
+document never redefines it, only cross-references it. See §12 for the
+exact scope boundary between B (asset-free JSON) and C (asset-backed
+archive): an asset-free template stays a Stage 14A JSON file; a template
+that references any managed image/video/font asset can only be exported
+as a Stage 14B package.
 
-**A template's own schema version (B) and the embedded document's own
-version (A) are two completely independent counters.** A template schema v1
-file may legally embed a visual-design document at version 1 *or* version 2
-- see §5.
+**A template's own schema version (B), the Stage 14B package schema
+version (C), and the embedded document's own version (A) are three
+completely independent counters.** A template schema v1 JSON file may
+legally embed a visual-design document at version 1, 2, or 3 - see §5/§6
+for the exact migrate-then-validate chain that normalizes an older
+embedded document before it is accepted. A freshly created or freshly
+exported template's own embedded document is always written at the
+current version (3) - only an *imported* older file may legally carry an
+older embedded version.
 
 ## 1. What Stage 14A is, in one paragraph
 
@@ -41,24 +58,28 @@ primitive - see §12 for exactly what is deliberately deferred to Stage 14B.
 
 ## 2. Why Stage 14 is split into 14A and 14B
 
-The architecture eventually wants template *packages* capable of carrying
-real assets (custom images, fonts, sounds). That is a substantially larger
-untrusted-input security boundary than anything this project has built so
-far: archive extraction, path-traversal protection, symlink/hard-link
+The architecture wanted template *packages* capable of carrying real assets
+(custom images, fonts - sound/audio was, once actually decided, deliberately
+excluded from a visual template or asset entirely; see §12 and
+[`docs/visual-template-packages.md`](visual-template-packages.md) §2 - that
+stays Stage 17's own subsystem). That was a substantially larger untrusted-
+input security boundary than anything this project had built before Stage
+14B: archive extraction, path-traversal protection, symlink/hard-link
 rejection, decompression-ratio limits, per-asset and total-package size
 limits, asset storage and lifecycle, licence-file handling, image/video/font
 decoding and safe presentation, CSP implications for publicly serving a
-stored asset, and garbage collection of orphaned assets. None of that can be
-designed responsibly as an afterthought bolted onto a first template
+stored asset, and garbage collection of orphaned assets. None of that could
+be designed responsibly as an afterthought bolted onto a first template
 implementation.
 
-Stage 14A therefore proves the *reusable-template* concept completely on its
-own, safe foundation: real templates, real built-ins, real import/export
-semantics, real schema/versioning discipline, real compatibility, and a real
-preview/apply workflow - with **no arbitrary packaged bytes anywhere**. Stage
-14B will add archives/assets **deliberately**, as its own dedicated task,
-once this foundation exists to build on. See §12 for Stage 14B's own
-explicit (not-yet-decided) scope list.
+Stage 14A therefore proved the *reusable-template* concept completely on its
+own, safe foundation first: real templates, real built-ins, real import/
+export semantics, real schema/versioning discipline, real compatibility, and
+a real preview/apply workflow - with **no arbitrary packaged bytes
+anywhere**. Stage 14B (completed - Stage 14 as a whole is now complete)
+added archives/assets **deliberately**, as its own dedicated task, once this
+foundation existed to build on. See §12 for exactly what Stage 14A itself
+deferred and what Stage 14B actually shipped against that list.
 
 ## 3. The template file format
 
@@ -73,7 +94,7 @@ A Stage 14A template file is a single, closed, asset-free JSON object:
   "description": "A clean, low-contrast dark chat item.",
   "author": "Jane Streamer",
   "license": "CC0-1.0",
-  "visualDesign": { "version": 2, "canvas": { "...": "..." }, "layers": [ "..." ] }
+  "visualDesign": { "version": 3, "canvas": { "...": "..." }, "layers": [ "..." ] }
 }
 ```
 
@@ -108,15 +129,19 @@ wrapper shape** - if a future Stage 14A change ever needs a new top-level
 field or a changed metadata bound, that bump lives here, independently of
 anything happening to the embedded document. `visualDesign.version` (see
 [`visual-designs.md`](visual-designs.md), "A") counts revisions to the
-**document itself** - currently 2, and rising independently of this
+**document itself** - currently 3, and rising independently of this
 wrapper's own version.
 
-Worked example: a Stage 14A template schema v1 file may legally contain a
-visual-design document at version 1 (e.g. an alert design exported before
-Stage 13B shipped) *or* version 2 (anything saved since). Both are valid
-template-schema-v1 files. The template wrapper's own version never needs to
-change just because the embedded document's version changed, and vice versa
-- see §6 for exactly how an older embedded document is handled.
+Worked example (historical migration input, not current output): a Stage
+14A template schema v1 file may legally contain a visual-design document
+at version 1 (e.g. an alert design exported before Stage 13B shipped),
+version 2 (anything saved between Stage 13B and Stage 14B), or version 3
+(anything saved since Stage 14B, including any image/video layer or
+custom-font reference). All three are valid template-schema-v1 files. The
+template wrapper's own version never needs to change just because the
+embedded document's version changed, and vice versa - see §6 for exactly
+how an older embedded document is handled. A **fresh** export always
+embeds the current document version (3) - see §16.
 
 ## 6. Importing an older embedded visual-design version
 
@@ -130,9 +155,10 @@ The backend therefore always:
 1. reads the embedded document's own `version`,
 2. runs it through the exact same `visualdesign.MigrateToCurrentVersion` the
    SQLite `visual_designs` repository already uses on every read (see
-   [`visual-designs.md`](visual-designs.md) §11/§19) - a stored (or
-   imported) version-1 document is transparently upgraded to version 2,
-   losslessly,
+   [`visual-designs.md`](visual-designs.md) §11/§19/§26) - a stored (or
+   imported) version-1 document is transparently upgraded through version 2
+   to version 3, and a version-2 document is upgraded to version 3, each
+   step losslessly,
 3. runs the result through the exact same `visualdesign.Validate` every
    other write path already uses,
 4. only a document that is now genuinely at `CurrentVersion` and

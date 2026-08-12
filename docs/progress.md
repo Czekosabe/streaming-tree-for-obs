@@ -17546,3 +17546,261 @@ image/video/font rendering).
 ### Next step
 Stage 14B and Stage 14 as a whole are now genuinely verified Completed
 - push to `origin/main` and produce the final structured report.
+
+## 2026-08-12 05:59 — fix: reconcile Stage 14 closing state
+
+### What
+A post-report audit of the actual repository (not the prior chat
+summary) found that the previous closing pass, while substantively
+correct, left real living-documentation drift and had not yet run a
+single, unmodified, full closing regression. This entry is a small
+Stage 14 corrective pass - explicitly **not** Stage 15 work - that
+reconciles the drift, audits two editor diagnostics the operator
+observed directly, and sets up the genuinely final regression that
+follows as its own separate entry/commit.
+
+**Git truth audit (Part 2).** Re-derived the Stage 14B commit range
+directly from Git rather than trusting the prior chat report:
+`git rev-list --count a7a5229..HEAD` = **11**, matching
+`git log --oneline a7a5229..HEAD` exactly (`dda7f6d` through `c10d91f`).
+This matches the prior report's own "11 commits" claim - unlike the
+earlier Stage 14A corrective pass, which had to correct a genuine "6 vs
+8" chat-only miscount, this time the chat report was already right; no
+history rewrite was needed either way. Every one of the 11 commits has
+its own matching `docs/progress.md` entry (checked by subject line);
+the one-progress-entry-per-logical-commit invariant holds with no gaps.
+
+**README.md living-state drift found and fixed:**
+- The top "Long-term vision" paragraph (~L10-43) still said "**Still
+  planned**: portable archive template packages with bundled assets
+  (stage 14B)" alongside TTS/goal widgets/donations. Reworded to state
+  Stage 14B shipped real portable archive packages and managed assets,
+  linking `docs/visual-template-packages.md`, and narrowed "Still
+  planned" to the genuinely-still-planned set (TTS, goal widgets,
+  additional engagement providers, donation connectors, Stage 20
+  packaging/updater/hardening).
+- The "Project state" blockquote heading and its visual-template-
+  library bullet (~L49, ~L104-108) only mentioned Stage 14A's
+  asset-free JSON library, never Stage 14B's packages/managed assets.
+  Extended to name both.
+- The blockquote's own closing "still planned" paragraph (~L134-138)
+  literally listed "portable archive template packages with bundled
+  assets" as still planned - directly false since Stage 14B shipped.
+  Fixed to list only TTS/goal widgets/donation connectors.
+- The "What is currently demo-only" table row (~L3106) listed
+  "portable archive template packages" as one of several items
+  **"Not implemented anywhere"** and said "Everything built on top of
+  that engine (portable archive template packages, TTS, goal widgets)
+  remains planned." Removed portable archive packages from that row
+  entirely, added a clause naming Stage 14B as real and Stage 14 as a
+  whole Completed, and narrowed the trailing "remains planned" clause
+  to TTS/goal widgets/donation connectors only.
+
+**docs/visual-templates.md canonical drift found and fixed** (this
+file's own intro section stated things that were true when Stage 14A
+shipped alone, and had not been updated even though this same file's
+own §12 correctly says Stage 14B is Completed - a self-contradiction
+within one document):
+- Schema **A** (`visualdesign.Document`) was still described as
+  "currently version 2." Corrected to 3, cross-referencing
+  `visual-designs.md` §26.
+- Schema **C** was described as "The future Stage 14B archive/package
+  schema - not defined anywhere yet." Corrected to describe the real,
+  shipped `streaming-tree-template-package` manifest schema
+  (`schemaVersion` 1), cross-referencing `visual-template-packages.md`
+  as its canonical home - promoted from a 3-schema list to the correct
+  4-schema list (document / template wrapper / package manifest, per
+  `docs/project-overview.md`'s own "fourth independently versioned
+  schema" language already used elsewhere).
+- The worked example claimed "a template schema v1 file may legally
+  embed a visual-design document at version 1 *or* version 2" -
+  incomplete since the migration chain now also accepts and produces
+  version 3. Corrected to state all three (1, 2, 3), explicitly
+  labeling it a historical-migration-input example, not a claim about
+  current output.
+- §3's example JSON (`"visualDesign": { "version": 2, ... }`) was
+  presented as the current file shape but showed a stale embedded
+  version. Bumped to 3, since a fresh/current template always embeds
+  the current document version.
+- §5 repeated "currently 2" for the document version and its own worked
+  example only mentioned versions 1/2; corrected to 3 and to name all
+  three legal historical input versions, with an explicit note that a
+  fresh export is always version 3 (§16 already stated this generically
+  but §5's own worked example had not been updated to match).
+- §6's migration description said an imported version-1 document "is
+  transparently upgraded to version 2" - true but incomplete now that
+  the chain continues to 3. Corrected to describe the full
+  `1 → 2 → 3` (or `2 → 3`) chain.
+- §2 ("Why Stage 14 is split into 14A and 14B") was still written
+  entirely in future tense ("Stage 14B **will** add archives/assets...
+  See §12 for Stage 14B's own explicit (**not-yet-decided**) scope
+  list") and listed "sounds" as an asset type the architecture
+  eventually wants, which directly contradicts the since-decided fact
+  that sound/audio is excluded from every visual template/asset
+  entirely (Stage 17's own subsystem, `visual-template-packages.md`
+  §2). Rewritten in past tense, sound/audio call-out corrected, and the
+  "not-yet-decided" framing removed since §12 already documents what
+  was actually decided and shipped.
+
+No historical or explicitly-dated factual-status content was rewritten
+anywhere - every correction above was to genuinely living/canonical
+"current state" prose that had simply not been updated when
+`CurrentVersion` moved to 3 and Stage 14B shipped, exactly the failure
+mode this corrective pass exists to catch. `docs/visual-designs.md`,
+`docs/project-overview.md`, `docs/engagement-architecture.md`,
+`docs/visual-template-packages.md`, and `docs/obs-browser-source.md`
+were each re-audited against the same stale-phrase search and found
+already correct (the append-only "Factual status update" blockquote
+convention in `engagement-architecture.md` was followed correctly
+there, including for the historical §14A blockquote, which is
+explicitly dated/labeled and correctly left untouched; its §13.1-13.3
+forward-planning prose, predating even Stage 13, is likewise the
+document's own established original-planning record, faithfully
+preserved everywhere else in this file for every other now-implemented
+stage, reconciled by the blockquotes rather than rewritten in place -
+consistent with, not an exception to, this document's own existing
+convention).
+
+**Minor additional drift found in `config/README.md`** rule 4: still
+called the visual-template import/export format "planned," predating
+Stage 14A/14B. Corrected to name the real, implemented Stage 14A JSON
+export and Stage 14B package export while keeping the rule's general
+principle (no credential in any exported template/package) intact for
+genuinely future export formats too.
+
+**Stage 20 updater target (Part 7): verified, not modified.** Read
+`docs/project-overview.md` §12.1.1 in full and checked every required
+item named in this corrective task against the current text: canonical
+GitHub Releases source; never update from `main`/arbitrary URLs;
+SemVer-like versioning; Stable-only initial channel; manual "Check for
+updates"; automatic startup + ~hourly checks; persisted auto-check
+toggle; metadata-only automatic checking (no auto-install); non-
+blocking update banner with safe (never HTML/JS) release notes;
+active-stream install guard; SHA-256 download verification; future
+Authenticode investigation noted, not claimed done; external installer/
+updater handoff with graceful shutdown; explicit preservation of
+database/managed assets/templates/credential-store entries; recoverable
+failure semantics; no implied telemetry; explicit "Stage 20 only, not
+implemented" scope statement. Every item is present and accurate - no
+defect found, so per this task's own instruction the section was left
+completely unmodified.
+
+**Editor diagnostic audit (Part 8).** The operator's VS Code screenshots
+showed one yellow diagnostic each on `ChatOverlayRenderer.tsx` and
+`DesignerCanvas.tsx`. Ran `npm run typecheck` and `npm run lint` for
+the whole project (both fully clean, as in the prior closing
+regression) and additionally ran `npx eslint` directly against both
+files individually with the stylish formatter - zero output, zero
+findings, exit code 0 for both. Manually inspected both exact
+expressions the task pointed at:
+
+- **`ChatOverlayRenderer.tsx` ~L88-94**: the root `cn(...)` call
+  builds its className from three independent, mutually-exclusive
+  selections - a `stackDirection` ternary (`justify-start` /
+  `justify-end`), an `ALIGNMENT_ITEMS` record keyed by
+  `horizontalAlignment` (`items-start text-left` / `items-center
+  text-center` / `items-end text-right`), and a `layoutMode` ternary
+  (`max-w-full` / `mx-auto max-w-[720px]`). Exactly one branch/key of
+  each pair is ever included in the string actually produced at
+  runtime - never a genuine simultaneous conflict.
+- **`DesignerCanvas.tsx` ~L90**: the canvas workspace `div` combines
+  two Tailwind v4 arbitrary-value utilities in one static string -
+  `bg-[repeating-conic-gradient(...)]` (resolves to `background-image`
+  via Tailwind's own gradient-function value-shape inference) and
+  `bg-[length:20px_20px]` (explicitly type-hinted to
+  `background-size`) - the standard, correct idiom for a sized
+  checkerboard pattern background. Confirmed via `apps/web/src/
+  index.css` that this project genuinely runs Tailwind v4's CSS-first
+  config (`@import 'tailwindcss'` + `@theme`, no `tailwind.config.js`),
+  and confirmed `cn()` (`lib/cn.ts`) is a bare `clsx` wrapper, matching
+  the exact call shape the Tailwind CSS IntelliSense extension
+  recognizes as a class-merging function.
+
+**Conclusion: both are editor-extension-only false positives (Tailwind
+CSS IntelliSense's "conflicting classnames" checker), not real
+defects, and no source change was made for either.** That checker is a
+lexical scanner over the literal strings reachable in a recognized
+`className`/class-function call - it has no control-flow awareness of
+mutually-exclusive ternary branches or object-literal key selection
+(source 1), and its conflict grouping keys on the bare utility prefix
+rather than the arbitrary-value type-hint that actually disambiguates
+which CSS property is targeted (source 2). Both patterns are
+well-documented sources of this exact false positive. Since real
+compiler/lint tooling (`tsc`, `eslint`) is clean for both files and
+manual review confirms both expressions are correct as written, adding
+code solely to appease the extension (e.g. splitting the ternaries into
+separately-scoped strings, or restructuring the background utilities)
+would be meaningless churn against a correct, already-tested rendering
+path - exactly what this task's own instructions say not to do.
+
+**Why a further, genuinely final regression is still required (Part
+9).** The previous closing pass's regression evidence was real but
+mixed: 13 of 16 integration scripts passed on a first run, 3 failed on
+stale version-2 literals, those 3 were edited, and only those 3 were
+re-run individually afterward - never all 16 together, and never after
+this pass's own documentation edits. That is useful debugging evidence
+but not the single, unmodified, all-16-in-one-sequence proof this
+project's own "proof not promise" discipline requires before a stage
+can be marked Completed. This entry's own commit is therefore not yet
+followed by a stage-completion claim - the dedicated, unmodified final
+regression runs next, as its own separate journal entry and commit.
+
+**Stage 15 status: unchanged, Planned, not started.** No Stage 15
+research, design, or implementation occurred in this pass - YouTube/
+Kick engagement, TTS, goals/widgets, donations, the application
+updater, installer/packaging, and CSP all remain exactly as documented
+(Stage 15/17/18/20, per the roadmap tables already correct in
+`README.md`, `docs/project-overview.md`, and
+`docs/engagement-architecture.md`).
+
+### Files changed
+- `README.md`, `docs/visual-templates.md`, `config/README.md` - living-
+  documentation corrections only, no code changes. No file needed a
+  code fix; the two editor diagnostics resolved to false positives with
+  no source change.
+
+### Technical decisions
+- **Why the diagnostics were not silenced with an inline suppression
+  or restructured code.** Both resolved to a correct, already-tested
+  rendering path with a well-identified extension-side false-positive
+  cause. Adding a suppression comment, a blanket editor setting, or a
+  code restructure purely to change what one extension highlights
+  would be exactly the "meaningless code solely to silence it" this
+  task's own instructions forbid - the finding itself, recorded here,
+  is the deliverable.
+- **Why `docs/engagement-architecture.md` §13.1-13.3 were left
+  untouched despite describing "planned" content Stage 14B already
+  shipped.** That prose is the document's own original, pre-Stage-13
+  architecture-planning record, consistently preserved everywhere else
+  in this same file for every other stage that has since shipped
+  (§7-§11 all still contain "planned" language for now-implemented
+  features) - the file's own established convention is to reconcile
+  reality via an appended, explicitly-dated "Factual status update"
+  blockquote (present here at L1094 for Stage 14B) rather than editing
+  the original planning prose in place. Rewriting §13.1-13.3 now would
+  break that convention inconsistently for just one section rather than
+  fixing or preserving it project-wide.
+
+### Automated validation
+Focused validation only in this entry - see Part 11 below and the next
+entry for the full, genuinely final regression:
+- `cd apps/web && npm run i18n:check && npm run typecheck && npm run
+  lint && npm run test -- --run && npm run build` - all clean (i18n: 2
+  languages/17 namespaces, no diff; typecheck clean; lint clean; 1167
+  tests passed across 85 files; production build succeeded).
+- `cd apps/server && gofmt -l .` (no output - nothing unformatted),
+  `go vet ./...` (clean), `go test ./...` (every package `ok`),
+  `go build ./...` (clean), `go build -tags integration
+  ./cmd/testserver/...` (clean).
+
+### Known limitations
+None new. The CSP deferral, sound/audio exclusion, and no-real-OBS-
+manual-verification limitations already named in
+`docs/visual-template-packages.md` §25 and `docs/obs-browser-source.md`
+are unchanged by this documentation-only pass.
+
+### Next step
+The genuinely final, unmodified, all-16-scripts-in-one-sequence closing
+regression, run fresh from this commit's own clean tree - then its own
+dedicated `docs: record Stage 14 closing regression` journal entry and
+commit, then push.

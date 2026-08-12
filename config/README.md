@@ -77,12 +77,15 @@ with no transcoding, is this stage's deliberate scope.
    A user's local configuration (`*.local.yml`, `.env`) is ignored by
    `.gitignore`.
 3. Every file added here must be described in `docs/progress.md`.
-4. **No secret template belongs here, and no future exported package -
-   overlay templates, chat-bot configurations, or anything else a user can
-   export and share - may contain a credential.** The planned template
-   import/export format (see `docs/engagement-architecture.md`) is scoped to
-   declarative, non-secret content; a template that referenced a credential
-   would leak it the moment the template was shared.
+4. **No secret template belongs here, and no exported package - overlay
+   templates, chat-bot configurations, or anything else a user can export
+   and share - may contain a credential.** The implemented visual-template
+   JSON export (Stage 14A) and portable archive package export (Stage 14B,
+   see `docs/visual-templates.md` and `docs/visual-template-packages.md`),
+   plus any future template-like export format (see
+   `docs/engagement-architecture.md`), are scoped to declarative, non-secret
+   content; a template or package that referenced a credential would leak
+   it the moment it was shared.
 5. A Twitch, YouTube (or future provider) **Client ID is not a secret** and
    is the one piece of provider configuration that does live outside the OS
    credential store - but still not in this directory. Each resolves
