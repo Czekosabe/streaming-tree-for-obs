@@ -20765,3 +20765,91 @@ audio/TTS remains Stage 17.
 ### Next step
 Run focused frontend/backend validation and the full 17-script
 integration regression, then record a dedicated closing entry and push.
+
+## 2026-08-12 — docs: record Stage 15A documentation corrective regression
+
+### Status
+**Completed.** This closes the small documentation-only corrective pass
+recorded in the previous entry (commit `b695364`, "fix(docs): reconcile
+Stage 15A current state"). No source behavior changed anywhere in this
+pass - only prose (living documentation, plus four non-behavioral Go
+comments already recorded in that entry).
+
+### Scope
+Records the mandatory final proof required after a post-close
+documentation correction: focused frontend/backend validation, then all
+17 integration scripts in one clean, unmodified sequence, with no code
+or documentation changed afterward except this entry.
+
+### Focused validation (this session, one continuous sequence)
+Frontend (`apps/web`): `npm run i18n:check` (2 languages, 17 namespaces,
+no differences), `npm run typecheck` (clean), `npm run lint` (clean),
+`npm run build` (clean; the pre-existing ~965 kB main-chunk warning is
+unrelated to this pass), and `npm run test -- --run` as an extra safety
+check beyond what this pass strictly required (86 test files, **1224
+tests**, all passed).
+
+Backend (`apps/server`): `gofmt -l .` (clean), `go vet ./...` (clean),
+`go test ./...` (all packages pass, including the four packages whose
+comments changed - `internal/runtime/youtubeengagement`,
+`internal/httpapi` - recompiled and re-ran fresh), `go build ./...`
+(clean), `go build -tags integration ./cmd/testserver/...` (clean).
+
+### Final integration regression - all 17 scripts, one clean sequence
+In this exact order, none modified during or after the sequence, no
+source code or documentation modified after the sequence began:
+`verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+`verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`, `verify-twitch-engagement.mjs`,
+`verify-operator-chat.mjs`, `verify-chat-overlay.mjs`,
+`verify-twitch-outbound-chat.mjs`, `verify-chat-automation.mjs`,
+`verify-alerts.mjs`, `verify-alert-advanced-queue.mjs`,
+`verify-alert-designer.mjs`, `verify-chat-overlay-designer.mjs`,
+`verify-visual-templates.mjs`, `verify-visual-template-packages.mjs`,
+`verify-youtube-engagement.mjs`. **All 17 passed. Nothing failed; the
+regression did not need to be restarted.**
+
+`verify-youtube-engagement.mjs` again built and spawned the real local
+gRPC server (`apps/server/cmd/fakeyoutubegrpc`) and exercised the
+production connector's real `streamList` gRPC client end to end,
+confirming (among its full existing assertion set) that the superseded
+REST `liveChatMessages.list` endpoint was never called even once - the
+documentation correction in this pass touched no behavior, and this run
+proves the underlying gRPC transport is exactly as it was when the prior
+pass's own regression last confirmed it.
+
+No real Twitch, YouTube, Kick, or OBS account/service was used anywhere
+in this pass, and no manual browser testing was performed - only Go
+tests, Testing Library/jsdom, the `-tags integration` testserver, local
+fake REST Google/YouTube/Twitch services, the real local gRPC
+`streamList` fake service, and the existing real local MediaMTX/FFmpeg
+processes already used by their own established scripts. All
+long-running commands (builds, the frontend test suite, each of the 17
+integration scripts) were waited for autonomously, with no operator
+prompts about whether to keep waiting.
+
+### Files changed
+None in this entry beyond itself - no source code or documentation was
+touched during or after the final regression, per this pass's own
+closing discipline (matching the identical rule the prior Stage 15A
+transport corrective pass's own closing entry followed).
+
+### Stage status (final, honest, unchanged by this documentation-only pass)
+- **Stage 14: Completed** (unaffected).
+- **Stage 15A: Completed.** The gRPC `streamList` transport implementation
+  itself was already correct and unchanged by this pass; only its
+  documentation now actually says so everywhere a reader would look.
+- **Stage 15B: Planned / feasibility-gated / not started** (unchanged;
+  not re-researched in this pass, per its own explicit instruction not
+  to unless a repository source had changed - none had).
+- **Stage 15 as a whole: Incomplete** (gated on Stage 15B).
+- **Stage 16: Planned, not started.** Not touched by this pass - no
+  Stage 16 implementation exists anywhere in this repository.
+- The updater remains Stage 20 only (documentation-only target,
+  unimplemented); audio/TTS remains Stage 17 (unimplemented). Neither
+  was touched.
+
+### Next step
+None for this corrective pass - it is closed. A future session would
+either revisit Kick's transport situation (Stage 15B) or begin Stage 16,
+neither of which is part of this pass.
