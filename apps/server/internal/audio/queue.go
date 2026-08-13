@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	domain "github.com/streaming-tree/server/internal/domain/audio"
 )
 
 // NewItemID generates a fresh, unpredictable queue item identifier -
@@ -24,7 +26,7 @@ func NewItemID() (string, error) {
 // §11/governing task §26) - a later settings change affects only
 // future events, never an item already sitting in the queue.
 type ItemSnapshot struct {
-	ProviderMode ProviderMode
+	ProviderMode domain.ProviderMode
 	VoiceID      string
 	Language     string
 	Speed        float64

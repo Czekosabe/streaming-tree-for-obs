@@ -22698,3 +22698,94 @@ filtering, cooldown enforcement, preprocessing, enqueue, just-in-time
 synthesis via a `tts.Provider`, renderer lease, playback
 acknowledgement) plus the minimal `internal/provider/tts` interface it
 depends on.
+
+## 2026-08-13 — fix(server): relocate audio runtime to internal/audio
+
+### Status
+Completed.
+
+### Scope
+A package-placement correction, caught immediately after the previous
+commit (`ae4b3a9`, "feat(server): add shared audio queue") before any
+further code was built on top of it: the five runtime-primitive files
+that commit added had been placed inside `internal/domain/audio`
+alongside the settings-persistence code, rather than in their own
+`internal/audio` package - contradicting both this codebase's own
+established layering convention and docs/audio-tts.md §6's own
+explicit statement ("`internal/audio` owns exactly the runtime
+state..."). Fixed before the Event-Bus-subscribing manager (this
+stage's next piece) was built on the wrong foundation.
+
+### Changes
+- `git mv`'d `capability.go`, `capability_test.go`, `utterance.go`,
+  `utterance_test.go`, `preprocess.go`, `preprocess_test.go`,
+  `cooldown.go`, `cooldown_test.go`, `queue.go`, `queue_test.go` from
+  `apps/server/internal/domain/audio/` to the new
+  `apps/server/internal/audio/` - same `package audio` name in both
+  (Go permits this; the codebase already does it identically for
+  `internal/domain/alerts` vs. `internal/alerts`, both `package
+  alerts`, confirmed by checking their first lines directly).
+- `apps/server/internal/audio/queue.go` - `ItemSnapshot.ProviderMode`'s
+  type now reads `domain.ProviderMode` via a new
+  `domain "github.com/streaming-tree/server/internal/domain/audio"`
+  import, mirroring `internal/alerts/manager.go`'s own identical
+  `domain "github.com/streaming-tree/server/internal/domain/alerts"`
+  alias for the same "runtime package needs one type from its sibling
+  domain package" situation.
+- `apps/server/internal/provider/tts/provider.go` (new) - the minimal
+  provider-independent interface from docs/audio-tts.md §5:
+  `Provider` (`Capabilities`/`ListVoices`/`Synthesize`),
+  `Capabilities`/`Voice`/`SynthesizeInput`/`SynthesizeResult`, and the
+  sentinel errors (`ErrUnavailable`, `ErrVoiceNotFound`,
+  `ErrSynthesisFailed`, `ErrOutputTooLarge`) every concrete
+  implementation returns instead of a provider-specific error type.
+  Interface only - no Windows SAPI or non-Windows stub implementation
+  yet (that remains its own later commit); added now because the next
+  step (the Event-Bus-subscribing manager) needs this type to compile
+  against.
+
+### Technical decisions
+- **Confirmed the correct layering by direct inspection, not
+  assumption**: `head -1` on
+  `internal/domain/alerts/capability.go`,
+  `internal/alerts/manager.go`, and every `internal/domain/chatoverlay/
+  *.go` file showed the exact "same package name, two import paths,
+  one is `internal/domain/X` (persistence, pure), one is `internal/X`
+  (runtime, imports the Event Bus/providers)" split this codebase uses
+  everywhere - `internal/domain/audio` must stay settings-only, and
+  the queue/capability/utterance/preprocessing/cooldown runtime
+  belongs in `internal/audio`, exactly as docs/audio-tts.md §6 already
+  said before this correction was needed.
+- **No historical journal entry was rewritten** - the "add shared
+  audio queue" entry accurately described what that commit did at the
+  time (the files really were created under `internal/domain/audio`
+  then); this new entry documents the fix as its own append, mirroring
+  the Stage 16A journal-integrity corrective precedent's own "correct
+  forward, never rewrite backward" rule.
+
+### Automated validation
+- `gofmt -l` - clean on the moved and edited files.
+- `go build ./internal/audio/... ./internal/domain/audio/...` then
+  `go build ./...` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` - full suite passes, including all 34 tests
+  previously reported under `internal/domain/audio` now reporting
+  under `internal/audio` unchanged, and `internal/domain/audio`'s own
+  remaining 29 settings-persistence tests still passing from their
+  original location.
+
+### Known limitations
+Same as the previous entry - no Event Bus subscription, no
+orchestration manager, no provider synthesis, no renderer lease, no
+playback acknowledgement, no HTTP API, no frontend, no 19th
+integration script yet. Stage 17A is not complete; Stage 17 as a whole
+is not complete.
+
+### Next step
+Backend: the Event-Bus-subscribing `internal/audio` manager, now built
+on the correctly-placed runtime package, plus the minimal
+`internal/provider/tts` interface it depends on (already added
+alongside this correction - `apps/server/internal/provider/tts/
+provider.go`: `Provider`/`Capabilities`/`Voice`/`SynthesizeInput`/
+`SynthesizeResult` and the sentinel errors every concrete
+implementation returns instead of a provider-specific error type).
