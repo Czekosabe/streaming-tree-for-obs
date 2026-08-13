@@ -58,7 +58,7 @@ packaging/updater/hardening work — detailed in
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 15A).
+engagement piece above in order (stages 8A through 16A).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >

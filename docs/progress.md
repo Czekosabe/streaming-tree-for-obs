@@ -22015,3 +22015,179 @@ input UX, alert-rule-editor provider/source-filter extension plus a
 donation Test Rule fixture, the `operatorChatActivitySchema`
 amount-field bug fix, provider-icon fallback, and EN/PL i18n strings
 for every new user-visible piece.
+
+## 2026-08-13 — fix(docs): reconcile Stage 16A journal order
+
+### Status
+Completed. A journal-integrity/documentation-only corrective pass - no
+product code changed.
+
+### Scope
+An audit of this file found a real physical-ordering anomaly in the
+Stage 16A section, plus a counting error in the previous session's own
+final chat report. Both are reconciled here through Git evidence, not
+assumption. Stage 16A's actual product implementation is unaffected and
+remains exactly as it was.
+
+### Audited Stage 16A commit count and order
+`git rev-list --count fbdebbd..HEAD` (HEAD at the time of this audit:
+`9058984`) returns **8**, not 9. The previous chat report's closing
+summary said "Commits (9, in order)" but then itself listed only eight
+hashes - that sentence's number was a plain counting error in that
+report's own prose, not evidence of a ninth, undocumented commit. No
+ninth commit exists anywhere in `fbdebbd..9058984`; none is fabricated
+here. The real, Git-audited, chronological sequence (commit time order
+and hash-list order agree exactly - there is no ordering anomaly in Git
+itself, only in this file's own physical layout, below):
+
+1. `1d40e37` 2026-08-12 20:38:34+02:00 — docs: research external donation providers
+2. `0559f0c` 2026-08-12 20:51:35+02:00 — feat(server): persist external donation sources
+3. `e2664e5` 2026-08-12 21:11:25+02:00 — feat(server): receive StreamElements donations
+4. `0e5855b` 2026-08-12 21:21:58+02:00 — feat(server): integrate external donations with engagement
+5. `b5f4f65` 2026-08-12 21:44:43+02:00 — feat(web): manage StreamElements donations
+6. `3b59af1` 2026-08-12 22:04:56+02:00 — test: verify StreamElements donations locally
+7. `d5f3811` 2026-08-12 22:10:02+02:00 — docs: complete Stage 16A external donations
+8. `9058984` 2026-08-12 22:24:38+02:00 — docs: record Stage 16A closing regression
+
+Each of these 8 commits has exactly one corresponding entry in this
+file (verified by heading count against commit count) - the "every
+commit has a corresponding entry" invariant was never violated.
+
+### The physical journal-entry ordering anomaly - exact Git evidence
+Before this correction, this file's Stage 16A headings physically
+appeared in this order: research → persist → receive → **manage** →
+test → docs-complete → closing-regression → **integrate** - with the
+`feat(server): integrate external donations with engagement` entry
+displaced to the very end, physically after its own closing-regression
+entry, even though its commit (`0e5855b`) is chronologically the 4th of
+the 8, well before `manage`/`test`/`docs-complete`/`closing-regression`.
+
+Walking `git show <hash>:docs/progress.md`'s own heading list at each
+commit shows exactly how this happened:
+
+- At `0e5855b` itself, the `integrate` entry is correctly appended last
+  (line 21359 of that commit's own file) - the "entry reflects reality
+  at commit time, correctly positioned" rule was followed. It is also
+  confirmed absent from the immediately preceding commit `e2664e5`
+  (`git show e2664e5:docs/progress.md | grep -c` for its own heading
+  text returns 0) - so the entry did not exist before its own commit
+  either; the "entry before/with its own commit" convention was
+  followed correctly at write time.
+- At `b5f4f65` (the very next commit), the new `feat(web): manage
+  StreamElements donations` entry appears inserted at line 21359 - the
+  exact position `integrate` occupied a moment before - pushing
+  `integrate` down to line 21492, instead of `manage` being appended
+  after `integrate`'s own true end.
+- The same misplaced-insertion pattern repeats at every subsequent
+  commit: `3b59af1`'s new `test` entry is again inserted immediately
+  after `receive StreamElements donations` (pushing `integrate` further
+  down, to line 21638); `d5f3811`'s new `docs: complete` entry does the
+  same (`integrate` now at line 21716); `9058984`'s new
+  closing-regression entry does the same again (`integrate` finally
+  landing at line 21909, dead last).
+- A byte-for-byte `diff` of the `integrate` entry's own text, taken
+  from its first appearance at `0e5855b` versus its current position at
+  `9058984`, is **identical** - confirmed directly, not assumed. The
+  entry's own content was never edited, rewritten, or corrupted at any
+  point; only its position relative to newer entries was affected, by
+  each newer entry being inserted before it instead of after it.
+
+### Root cause
+Every one of the four misplaced insertions used an edit anchored on the
+end of the `feat(server): receive StreamElements donations` entry - a
+real, unique, but *stale* location - rather than re-reading the file's
+actual current tail before each append. This is consistent with a
+context-compaction boundary having fallen in the middle of that prior
+session around the `receive StreamElements donations` milestone: the
+working mental model of "where the file currently ends" appears to have
+stayed anchored there for the rest of the session, even as `integrate`
+and then four more entries were genuinely appended (each individual
+append landed at a real, existing location in the file - never
+corrupting content - just consistently the wrong one).
+
+### Which journal invariant was violated
+Precisely: **entries must be appended at the file's true physical end,
+not inserted at a stale remembered location.** This is a real
+violation, evidenced directly above, distinct from and narrower than
+the other three invariants this project's journal rules state:
+
+- "an entry is written before the commit it describes" - **not
+  violated** (confirmed above: `integrate`'s entry did not predate its
+  own commit).
+- "every commit has a corresponding entry" - **not violated** (8
+  commits, 8 entries, one-to-one, confirmed above).
+- "corrections are appended rather than overwriting history" - **not
+  applicable here** (no correction was involved in the original
+  incident; this is the first correction).
+- "earlier history is not rewritten/deleted without a reason" - **the
+  spirit of this was affected**, in a physical-layout sense only:
+  `integrate`'s already-committed section had four *later* commits'
+  worth of new content inserted before it rather than after it, which
+  is not the same as rewriting or deleting its content (which never
+  happened), but is also not strict, correctly-ordered appending.
+
+This is this task's own **Outcome A in substance** (later commits
+physically displaced an earlier, correctly-placed entry), stated with
+the precise mechanism Git evidence actually shows, rather than assumed.
+
+### What was NOT done, explicitly
+No historical entry was moved, edited, reordered, or deleted by this
+corrective commit. `feat(server): integrate external donations with
+engagement`'s own entry stays exactly where the last of the four
+misplaced insertions left it - physically last among the pre-correction
+Stage 16A entries, immediately before this very correction entry. No
+old commit was amended, rebased, or rewritten. This correction entry is
+the only change this commit makes to this file.
+
+### Product-code status (unchanged)
+No source code was touched by this audit. Stage 16A's product
+implementation (donation-source persistence, the StreamElements Astro
+WebSocket client, the exact-money parser, alert integration, operator
+chat, the frontend management UI, the integration fake, and the 18th
+integration script) is exactly as it was at `9058984` and remains
+correct - this was a documentation/journal-layout issue only, never a
+functional defect.
+
+### Living-documentation drift also corrected in this pass
+- `README.md`'s top-of-file summary paragraph said "...then each
+  engagement piece above in order (stages 8A through 15A)" - stale
+  since that same paragraph already describes Stage 16A as real
+  earlier in its own text. Corrected minimally to "stages 8A through
+  16A." No surrounding prose was rewritten.
+- Audited README.md's and docs/project-overview.md's roadmap tables:
+  both correctly show 15A Completed / 15B feasibility-gated (Stage 15
+  incomplete) / 16A Completed / 16B feasibility-gated (Stage 16
+  incomplete) / 17-19 Planned / 20 Planned. README.md's own summary
+  table collapses stages 17-19 into one row ("17-19 | TTS, goal widgets
+  | Planned"), which does not restate Stage 19's TikTok conditional
+  status - but this collapsing pre-dates Stage 16A entirely (it was not
+  introduced or altered by this milestone), and README.md explicitly
+  defers to docs/project-overview.md#13-roadmap for "the full table
+  with dependencies," which already states Stage 19's conditional
+  status correctly. Not a genuine current-state contradiction - left
+  unchanged, per this task's own explicit instruction not to fix
+  something that isn't actually broken.
+- Searched living documentation (README.md, docs/project-overview.md,
+  docs/engagement-architecture.md, config/README.md,
+  THIRD_PARTY_NOTICES.md, docs/provider-integrations/*.md) for stale
+  claims (external donations not implemented, StreamElements planned,
+  Stage 16 not started/completed, Streamlabs/Ko-fi implemented, "17
+  integration scripts," and similar) - none found. The prior
+  documentation corrective commit (`d5f3811`) had already addressed the
+  living-state claims; this pass found no further drift beyond the
+  8A-through-15A phrase above.
+
+### Automated validation
+This is a documentation-only commit; no product code changed here. Full
+focused validation (frontend `i18n:check`/`typecheck`/`lint`/`build`,
+backend `gofmt`/`vet`/`test`/`build`/`build -tags integration` for both
+`cmd/testserver` and `cmd/fakestreamelements`) still ran before this
+commit to prove nothing regressed, and the complete 18-script final
+regression runs again after this commit, per this project's own
+proof-not-promise discipline - see the dedicated closing entry that
+follows this one for the full results.
+
+### Stage status (unchanged by this corrective pass)
+Stage 16A: **Completed**. Stage 16B: **Planned**, feasibility-gated
+(Streamlabs, Ko-fi). Stage 16 as a whole: **Incomplete**. Stage 17: not
+started.
