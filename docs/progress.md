@@ -22295,3 +22295,78 @@ the final regression - was waited for autonomously to real completion,
 with each script's own pass/fail output inspected directly (not merely
 the batch's aggregate exit code), never by asking whether to continue
 waiting.
+
+## 2026-08-13 — fix(docs): reconcile engagement platform current state
+
+### Status
+Completed. A living-documentation-only corrective pass, made before
+Stage 17A implementation begins - no product code changed.
+
+### Scope
+`docs/project-overview.md` §16 ("Engagement and overlay platform")
+contained two living-state drifts the Stage 16A corrective audit had
+not covered: its own top-of-section "Status" summary paragraph still
+said "ten pieces ... as of stage 15A" and closed with "Everything else
+described below (TTS and goal/counter widgets) remains planned"
+without ever mentioning Stage 16A; and, further down §16, a sentence
+originally written immediately after stage 11B ("Everything else this
+section describes (alerts, TTS, goal widgets, further providers, a
+visual overlay designer, overlay templates) remains planned") had never
+been updated even though alerts, the visual designers, visual
+templates/packages, and two further providers (YouTube, StreamElements)
+are all real today.
+
+### Changes
+- `docs/project-overview.md` §16's own "Status" paragraph: "ten pieces"
+  -> "eleven pieces"; "as of stage 15A" -> "as of stage 16A"; added a
+  clause describing the real StreamElements donation connector (stage
+  16A) alongside the existing YouTube (stage 15A) clause; added an
+  explicit "Stage 16 as a whole is not complete" sentence (stage 16B
+  feasibility-gated) alongside the existing Stage 15 sentence; the
+  closing "Everything else ... remains planned" sentence is unchanged
+  in substance (TTS and goal/counter widgets genuinely still are).
+- §16's second drift (the stage-11B-era "everything else remains
+  planned" sentence, further down the section): left the original
+  sentence in place, reframed with "at the time this sentence was first
+  written (immediately after stage 11B)" so it stays an honest
+  historical statement rather than a deleted one, and appended a new
+  "Factual status update (stage 16A, completed)" callout immediately
+  after it - this project's own established convention for this exact
+  situation - stating plainly which of that list are now real (alerts,
+  the visual overlay designer, overlay templates, and a further
+  provider - both YouTube and StreamElements) and which genuinely remain
+  planned (TTS, goal/counter widgets, Kick/TikTok/Streamlabs/Ko-fi).
+
+### Technical decisions
+- **Neither drift was fixed by deleting the original sentence** - per
+  this project's own append-only convention for factual corrections
+  (and this task's own explicit instruction not to rewrite historical
+  factual callouts), the stage-11B-era sentence was reframed as an
+  explicitly time-scoped historical statement and then followed by a
+  new, clearly labeled factual-update block, mirroring the exact
+  pattern `docs/engagement-architecture.md` already uses in several
+  places for the same kind of correction. The top-of-section "Status"
+  paragraph, by contrast, is itself explicitly a living current-state
+  summary (its own opening word is "Status"), not a historical
+  callout - so it was edited in place, the same way the Stage 16A
+  corrective pass already treated other genuinely-living summaries
+  (roadmap tables, "what will be added later" lists) as things meant to
+  always reflect the present.
+- **No other living-doc drift was found or touched** in this pass -
+  scope was deliberately narrow, matching this task's own explicit
+  instruction not to turn this into another broad documentation
+  rewrite. The broader Stage 17A documentation pass (README.md, this
+  file's own progress entries, `docs/audio-tts.md`, and so on) is
+  separate, later work.
+
+### Automated validation
+Documentation-only commit; no product code changed. No focused backend/
+frontend validation was required for this specific change (no source
+touched), though the next commit's own focused validation will also
+implicitly re-confirm nothing regressed.
+
+### Stage status (unchanged by this corrective pass)
+Stage 16A: Completed. Stage 16B: Planned, feasibility-gated. Stage 16 as
+a whole: Incomplete. Stage 17: not started (this pass is the mandatory
+pre-implementation correction §3 of the Stage 17A task, before any
+Stage 17A product code is written).

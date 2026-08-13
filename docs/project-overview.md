@@ -1425,7 +1425,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: ten pieces of this section are real as of stage 15A - the
+**Status: eleven pieces of this section are real as of stage 16A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1449,20 +1449,30 @@ asset-free JSON import/export, and (14B) self-contained
 their own managed assets,
 with a strict draft-first application model (using a template only
 ever changes a Designer's own unsaved draft; the owner's saved design
-changes only through the Designer's own pre-existing Save) - and a
+changes only through the Designer's own pre-existing Save) - a
 second real inbound engagement connector, for YouTube (stage 15A),
 publishing onto that exact same Event Bus and reusing every pipeline
 above completely unchanged (never a parallel YouTube-only copy of
 operator chat, chat overlay, alerts, or outbound chat), plus this
 platform's first real monetary alert capability (Super Chat/Super
-Sticker, integer-micros money, no currency conversion). Every existing
-alert rule or chat overlay with no saved design still renders through
-its original fixed/legacy presentation unchanged; a chat overlay's own
-filtering, lifecycle, moderation and stack ownership (stage 10) stays
-entirely authoritative in both rendering modes. Stage 15 as a whole is
-**not** complete: stage 15B (a Kick engagement connector) remains
-feasibility-gated, not implemented (§13's own roadmap table). Everything
-else described below (TTS and goal/counter widgets) remains planned.**
+Sticker, integer-micros money, no currency conversion) - and a real
+external-donation connector, StreamElements (stage 16A), a
+provider-independent `donationsource` domain (deliberately separate
+from `connected_accounts`) publishing a real `donation` event onto that
+exact same Event Bus, reusing operator chat and alerts unchanged, with
+exact integer-micros money and moderation-aware publish semantics. Every
+existing alert rule or chat overlay with no saved design still renders
+through its original fixed/legacy presentation unchanged; a chat
+overlay's own filtering, lifecycle, moderation and stack ownership
+(stage 10) stays entirely authoritative in both rendering modes. Stage
+15 as a whole is **not** complete: stage 15B (a Kick engagement
+connector) remains feasibility-gated, not implemented (§13's own
+roadmap table). Stage 16 as a whole is **not** complete either: stage
+16B (Streamlabs, Ko-fi) remains feasibility-gated, not implemented, for
+its own separate reasons (see
+[external-donations.md](provider-integrations/external-donations.md)).
+Everything else described below (TTS and goal/counter widgets) remains
+planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1594,7 +1604,20 @@ counters, rolling send counts) stays in memory only, resetting cleanly
 on every backend restart with no missed-run catch-up, exactly like the
 Event Bus and the dispatcher it builds on. See the README's own
 [Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
-section for the full design and user-facing behavior. Everything else
-this section describes (alerts, TTS, goal widgets, further providers, a
-visual overlay designer, overlay templates) remains planned, unaffected
-by stage 9's, stage 10's, stage 11A's or stage 11B's own completion.
+section for the full design and user-facing behavior. At the time this
+sentence was first written (immediately after stage 11B), everything
+else this section describes (alerts, TTS, goal widgets, further
+providers, a visual overlay designer, overlay templates) remained
+planned, unaffected by stage 9's, stage 10's, stage 11A's or stage 11B's
+own completion.
+
+> **Factual status update (stage 16A, completed):** of that list,
+> alerts (stage 12A/12B), the visual overlay designer (stage 13A/13B),
+> overlay templates (stage 14A/14B), and a further provider - YouTube
+> engagement (stage 15A) and, since then, a first external-donation
+> provider, StreamElements (stage 16A) - are now real, exactly as
+> described earlier in this section's own "Status" paragraph. Only TTS,
+> goal/counter widgets, and additional providers (Kick engagement,
+> TikTok, Streamlabs, Ko-fi - all separately feasibility-gated or
+> conditional, see §13's roadmap table) remain planned as of this
+> writing.
