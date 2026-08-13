@@ -22467,3 +22467,109 @@ names as the prerequisite for every following Stage 17A commit.
 ### Next step
 Backend: persist Stage 17A settings (`internal/domain/audio`, migration
 `0021_audio_tts.sql`).
+
+## 2026-08-13 — feat(server): persist TTS configuration
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The Stage 17A settings singleton: domain model/validation, migration
+`0021_audio_tts.sql`, the SQLite repository, and their focused tests -
+persistence only. No runtime queue, provider, or HTTP surface yet.
+
+### Changes
+- `apps/server/internal/domain/audio/model.go` (new) - `ProviderMode`
+  (`disabled`/`system`/`local`/`cloud`, with `KnownProviderModes` vs.
+  the narrower `ImplementedProviderModes` Stage 17A actually accepts);
+  the full `Settings` struct per `docs/audio-tts.md` §12; `Default()`.
+- `apps/server/internal/domain/audio/errors.go` (new) - `ErrValidation`,
+  `ErrStorage` sentinels, mirroring every other domain package's own
+  convention.
+- `apps/server/internal/domain/audio/ids.go` (new) - `NewPublicSlug()`,
+  copied from `chatoverlay.NewPublicSlug()`'s exact high-entropy
+  construction.
+- `apps/server/internal/domain/audio/validation.go` (new) -
+  `ValidateSettings` and every bound constant from `docs/audio-tts.md`
+  §7 (queue capacity 10-500/default 100, max text 50-2000 code
+  points/default 500, per-user cooldown 0-3600s, global cooldown
+  0-300s, speed 0.5-2.0, volume 0-1); exact-currency threshold
+  validation reusing `internal/domain/alerts`'s own reasoning and
+  `maxAmountMicros` bound; `NormalizeCurrency`.
+- `apps/server/internal/domain/audio/repository.go` (new) - the
+  `Repository` port: `GetSettings`/`SetSettings`.
+- `apps/server/internal/domain/audio/service.go` (new) - `Service`:
+  `Get` (seeds `Default()` plus a freshly generated public slug on the
+  very first call, persisted once and never regenerated implicitly
+  afterward), `Update` (validates, then force-preserves `PublicSlug`
+  and `CreatedAt` from the current row regardless of what the caller
+  supplied - an update can never smuggle in a different slug),
+  `RotatePublicSlug` (changes only the slug).
+- `apps/server/internal/storage/sqlite/migrations/0021_audio_tts.sql`
+  (new) - the `audio_settings` singleton table (`id` fixed to
+  `'singleton'` via `CHECK`), `provider_mode` `CHECK`'d against all
+  four known modes (application-layer validation narrows further to
+  the two implemented ones), four JSON-array `TEXT` columns for the
+  list-shaped fields, nullable threshold/bits columns.
+- `apps/server/internal/storage/sqlite/audiosettings_repository.go`
+  (new) - `AudioSettingsRepository` implementing `audio.Repository`;
+  upsert via `INSERT ... ON CONFLICT (id) DO UPDATE`, matching
+  `operatorchatprefs_repository.go`'s own singleton-row idiom.
+- `apps/server/internal/storage/sqlite/audiosettings_repository_test.go`,
+  `apps/server/internal/domain/audio/validation_test.go`,
+  `apps/server/internal/domain/audio/service_test.go` (new) - see
+  "Automated validation".
+
+### Technical decisions
+- **`Service.Update` overwrites `PublicSlug`/`CreatedAt` from the
+  current stored row unconditionally**, rather than merely validating
+  that the caller didn't change them - a defense-in-depth choice so a
+  future HTTP handler bug (e.g. forgetting to strip those fields from
+  a request body) can never let a client-supplied value reach storage.
+- **The `provider_mode` `CHECK` constraint accepts all four known
+  modes, not just the two implemented ones** - the database schema
+  reflects the full future shape from `docs/audio-tts.md`; only
+  `ValidateSettings` (application layer) rejects `local`/`cloud` for
+  now, so enabling a future mode never requires a migration.
+- **List-shaped fields are JSON-encoded `TEXT` columns**, following
+  `visualdesign_repository.go`'s own precedent, not join tables -
+  justified identically: the table only ever has one row.
+
+### Automated validation
+- `gofmt -l` - clean on every new file.
+- `go vet ./...` - clean.
+- `go test ./...` - full suite passes, including:
+  - `internal/storage/sqlite`: 5 new tests - get-when-absent,
+    set-then-get round trip (every field, including all four JSON-list
+    columns and the nullable threshold/bits pointers), update replaces
+    the singleton row in place, the `provider_mode` `CHECK` constraint
+    itself rejects an unknown value inserted directly, and a schema
+    audit (`PRAGMA table_info`) proving `audio_settings` has no
+    runtime/content column (no queue, utterance, message text, audio
+    bytes, or cooldown timestamp - docs/audio-tts.md §12/governing task
+    §65).
+  - `internal/domain/audio`: 24 new tests - every validation bound
+    (provider mode known/implemented, event type known, no duplicate
+    event types/provider ids, source id count/emptiness/duplication/
+    length, exact-currency threshold with/without currency and its
+    range, negative Bits, text length/cooldown/blocked-word/queue-
+    capacity/voice-id/language bounds, speed/volume bounds including
+    NaN/±Inf) and `Service` use-case behavior (first `Get` seeds a slug
+    and stable defaults, repeated `Get` is stable, `Update` rejects
+    invalid input, `Update` preserves slug/created-at against a
+    deliberately hostile input, `RotatePublicSlug` changes only the
+    slug).
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Known limitations
+Persistence only. No runtime queue, no provider, no HTTP API, no
+frontend, no 19th integration script yet - all still pending per
+`docs/audio-tts.md`'s own implementation order. Stage 17A is not
+complete; Stage 17 as a whole is not complete.
+
+### Next step
+Backend: the shared audio runtime (`internal/audio`) - capability
+table, utterance builder, bounded preprocessing pipeline, cooldown
+tracker, bounded queue, and the Event-Bus-subscribing manager.
