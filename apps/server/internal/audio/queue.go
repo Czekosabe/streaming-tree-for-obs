@@ -173,6 +173,33 @@ func (q *Queue) Clear() int {
 	return n
 }
 
+// SetCapacity updates the queue's own capacity bound - never evicts an
+// item already queued, even if that leaves the queue temporarily over
+// the new, lower bound; only future Enqueue/EnqueuePending calls are
+// affected. Called whenever Stage 17A settings are (re)loaded, since
+// QueueCapacity is itself an operator-configurable setting.
+func (q *Queue) SetCapacity(capacity int) { q.capacity = capacity }
+
+// DiscardExpired removes every already-expired ready item without
+// promoting anything, counting each as expired - called by the poll
+// loop even while no renderer is connected, so a long renderer outage
+// never lets the queue fill up with items that are already expired
+// instead of naturally clearing (§7/§59: an hour-old chat message must
+// never suddenly speak once a renderer finally connects).
+func (q *Queue) DiscardExpired(now time.Time) (discarded int) {
+	kept := q.ready[:0]
+	for _, it := range q.ready {
+		if it.expired(now) {
+			discarded++
+			continue
+		}
+		kept = append(kept, it)
+	}
+	q.ready = kept
+	q.counters.TotalExpired += discarded
+	return discarded
+}
+
 // ReadyLen and PendingLen report the current length of each list.
 func (q *Queue) ReadyLen() int   { return len(q.ready) }
 func (q *Queue) PendingLen() int { return len(q.pending) }

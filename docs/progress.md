@@ -22789,3 +22789,153 @@ alongside this correction - `apps/server/internal/provider/tts/
 provider.go`: `Provider`/`Capabilities`/`Voice`/`SynthesizeInput`/
 `SynthesizeResult` and the sentinel errors every concrete
 implementation returns instead of a provider-specific error type).
+
+## 2026-08-13 — feat(server): add TTS runtime manager
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+`internal/audio.Manager`: the ONE Engagement Event Bus subscription
+every eligible event flows through, the full eligibility/filtering/
+preprocessing/cooldown pipeline, just-in-time provider synthesis, the
+single-active-renderer playback lease, acknowledgement validation, and
+Test Speak - the piece that ties together every runtime primitive the
+previous two commits already built and tested in isolation.
+
+### Changes
+- `apps/server/internal/audio/manager.go` (new) - `Manager`/`Options`/
+  `NewManager`/`Start(ctx) error`/`Shutdown(ctx) error`, mirroring
+  `internal/alerts.Manager`'s own exact shape (poll-loop + Event Bus
+  subscription goroutines, `Subscribed()` for test synchronization,
+  `inputGap`/`subscribed` atomics). `handleEvent` implements the full
+  pipeline in order: reject `Synthetic`; `Enabled`/`ProviderMode`
+  gate; `CapabilityFor` speakability; supporter-only-bypasses-
+  `EnabledEventTypes` semantics (§9); provider-id/source-id filters;
+  self-message suppression (`SelfUserIDLookup` closure) and bot-
+  message suppression (cached `operatorchatprefs.Service.BotUsers`
+  lookup), both `chat.message`-only; command-suppression detection
+  against the RAW `Message.Text` (not the wrapped utterance - see the
+  "add shared audio queue" commit's own technical-decision note this
+  resolves); Bits integer threshold and exact-currency Money
+  threshold; `BuildUtterance` then `Preprocess`; cooldown check; enqueue
+  (ready or pending per `ManualApproval`); cooldown reservation only
+  after a successful enqueue (§11). `tick()` (20ms poll, mirrors
+  `internal/alerts`'s own `alertsPollInterval` reasoning) discards
+  expired ready items every tick regardless of renderer presence, and
+  promotes+synthesizes the next eligible item only when no current
+  item exists AND a renderer is connected. `synthesize` runs in its own
+  goroutine per item (never blocks the poll loop), respects a per-item
+  context timeout, and safely discards a stale result if the item was
+  skipped/cleared while synthesis was in flight. `ConnectRenderer`/
+  `DisconnectRenderer`/`Ack` implement the single-active-renderer lease
+  and acknowledgement validation (§15-17): a disconnect while
+  genuinely playing marks the item interrupted and discards it
+  (counted, never auto-replayed); a disconnect before playback started
+  keeps the item for the next renderer; every `Ack` is checked against
+  both the exact active session token and the exact current item id,
+  and against a valid state transition, so a stale/duplicate/wrong-
+  session/wrong-item ACK is rejected outright and mutates nothing.
+  `TestSpeak` goes through preprocessing and the real queue but always
+  bypasses manual approval and never touches `CooldownTracker`.
+  `SkipCurrent`/`ClearQueue`/`Approve`/`Reject`/`Status`/
+  `PendingList`/`PublicCurrentSnapshot`/`CurrentAudioBytes` round out
+  the surface the future HTTP layer will call directly.
+- `apps/server/internal/audio/queue.go` - added `SetCapacity` (so
+  `ReloadSettings` can apply an operator-changed `QueueCapacity`
+  without rebuilding the queue and losing already-queued items) and
+  `DiscardExpired` (sweeps expired ready items even while no renderer
+  is connected, so a long outage cannot let the queue fill up with
+  items that are already expired instead of naturally clearing - §59).
+- `apps/server/internal/audio/manager_test.go` (new) - see "Automated
+  validation".
+
+### Technical decisions
+- **One mutex guards settings/queue/current-item/renderer-session
+  state**; the bot-user cache uses its own separate `sync.RWMutex`
+  since it is read on every `chat.message` event and written only on
+  an explicit refresh - kept independent so a bot-list refresh can
+  never contend with the hot eligibility path. `CooldownTracker`
+  remains self-locking internally (unchanged from the previous
+  commit), so `Manager` never double-guards it.
+- **The bot-user list is cached, not queried per message** - refreshed
+  once at `Start` and via an explicit `RefreshBotUsers(ctx)` the
+  future HTTP layer can call after an operator edits the shared
+  Stage 9 bot list. A live per-message SQLite read was rejected as
+  unnecessary load on the hot path; this mirrors
+  `internal/chatoverlay`'s own "resolved once per rebuild, not
+  re-read per item" convention, extended here from "per profile save"
+  to "per explicit refresh call" since Stage 17A owns no bot-list CRUD
+  of its own.
+- **A disconnect before playback started keeps the current item rather
+  than discarding it** - only a disconnect while `playbackState ==
+  "playing"` counts as a genuine interruption (discarded, counted,
+  never replayed). An item that was merely "ready" or
+  "waiting_for_renderer" when the renderer vanished has never been
+  heard, so handing it to the next renderer that connects loses
+  nothing and avoids re-synthesizing (and re-consuming a cooldown
+  reservation that was already spent) for no reason.
+- **`TestSpeak` always bypasses `ManualApproval`** rather than
+  offering a setting for it - docs/audio-tts.md §37/the governing
+  task's own §37 frames this as the expected default ("allow the
+  operator to enter bounded test text" to verify the pipeline
+  immediately); a synthetic item is already structurally marked and
+  never touches real cooldown state, so gating it behind approval too
+  would only slow down the one workflow Test Speak exists for.
+- **No manual "replay the interrupted item" feature** - the governing
+  task's own §32/§16 explicitly frames this as optional ("if that fits
+  the runtime design"). Omitted for Stage 17A per this task's own
+  "avoid overcomplication" instruction; the interrupted item is
+  discarded and counted, and the operator can always trigger Test
+  Speak or wait for the next real event instead.
+
+### Automated validation
+- `gofmt -l` - clean.
+- `go vet ./...` - clean.
+- `go test ./...` - full suite passes, including 34 new tests in
+  `internal/audio/manager_test.go` against a real `internal/engagement.Bus`
+  and a real `internal/domain/audio.Service` (backed by an in-memory
+  fake repository) - never a mocked Event Bus: eligible-event
+  enqueue; disabled settings; synthetic events never entering the real
+  queue; event-type/provider-id/source-id filtering; supporter-only
+  mode bypassing `EnabledEventTypes`; exact-currency threshold
+  same-currency-passes and different-currency-never-compared; Bits
+  integer threshold; command suppression for chat only (a donation
+  starting with "!" is never suppressed); self-message suppression
+  through a full `Start`-to-`Publish` flow; bot-message suppression
+  via `isBot` directly; manual-approval routing, approve, and reject;
+  Test Speak bypassing cooldown and approval and never mutating real
+  cooldown state (proven by publishing a real event afterward and
+  confirming it still enqueues); Test Speak requiring `Enabled` and
+  rejecting an empty-after-preprocessing result; per-user cooldown
+  independence across users and anonymous-uses-global-only; queue
+  capacity dropping and counting beyond bound; promotion + synthesis +
+  `Ack`(started)/`Ack`(ended) end to end with a real `PublicCurrentSnapshot`/
+  `CurrentAudioBytes` round trip; no promotion without a connected
+  renderer; `Ack` rejecting a wrong token, a stale superseded session,
+  and a duplicate `ended`; renderer disconnect while playing marking
+  interrupted and discarding, versus disconnect before playback
+  keeping the item for the next renderer; synthesis failure isolating
+  one item and letting the manager keep processing; oversized
+  synthesized output rejected; `SkipCurrent` cancelling an in-flight
+  synthesis; `ClearQueue` never touching the current item; clean
+  `Shutdown`. Two test-authoring mistakes were caught and fixed before
+  this commit: every hand-built `engagement.Event` needed an explicit
+  `PlatformTimestamp` (the Event Bus's own `Validate` rejects a zero
+  one) and one test's default 3-second global cooldown was silently
+  suppressing its own second assertion event.
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Known limitations
+No HTTP API (management or public), no frontend, no 19th integration
+script, no real TTS provider (Windows SAPI or otherwise) yet - every
+test above uses an in-process fake `tts.Provider`. Stage 17A is not
+complete; Stage 17 as a whole is not complete.
+
+### Next step
+Backend: the real system TTS provider - `internal/provider/tts`'s
+Windows SAPI implementation (build-tagged `windows`) and the
+non-Windows stub (build-tagged `!windows`) that honestly reports
+`Capabilities.Available == false`.
