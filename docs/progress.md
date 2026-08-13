@@ -22573,3 +22573,128 @@ complete; Stage 17 as a whole is not complete.
 Backend: the shared audio runtime (`internal/audio`) - capability
 table, utterance builder, bounded preprocessing pipeline, cooldown
 tracker, bounded queue, and the Event-Bus-subscribing manager.
+
+## 2026-08-13 — feat(server): add shared audio queue
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations"). This commit covers the
+provider-independent runtime primitives (capability table, utterance
+builder, preprocessing pipeline, cooldown tracker, bounded queue). The
+Event-Bus-subscribing orchestration manager that ties them together
+with a `tts.Provider` is a deliberately separate, still-pending next
+step - see "Next step".
+
+### Scope
+`internal/domain/audio`'s runtime primitives: the TTS capability table,
+the provider-independent utterance builder, the fixed ordered
+preprocessing pipeline, the cooldown tracker, and the bounded
+ready/pending-approval queue - each fully unit-tested in isolation,
+with no Event Bus, HTTP, or provider dependency yet.
+
+### Changes
+- `apps/server/internal/domain/audio/capability.go` (new) -
+  `Capability`/`Capabilities`/`CapabilityFor`, mirroring
+  `internal/domain/alerts/capability.go`'s own exact
+  `map[EventType]Capability` pattern (docs/audio-tts.md §9). Marks the
+  closed supporter-family set (`bits`, `subscription`,
+  `resubscription`, `gifted_subscription`,
+  `subscription_gift_batch`, `youtube.membership`,
+  `youtube.membership_milestone`, `youtube.super_chat`,
+  `youtube.super_sticker`, `donation`); `chat.message` and every other
+  known type is speakable but not supporter-family;
+  `chat.message_deleted`/`chat.cleared`/`moderation`/
+  `stream.online`/`stream.offline` are absent from the table entirely
+  (not speakable at all, via the zero-value safe default).
+- `apps/server/internal/domain/audio/utterance.go` (new) -
+  `BuildUtterance(engagement.Event) (string, bool)`: one
+  provider-independent plain-text sentence per speakable event type,
+  built only from fields the event actually carries (display name,
+  message text, `Money.DisplayAmount` with an integer-only fallback
+  render of `AmountMicros`, quantity, YouTube membership level via the
+  same `ProviderExtra["memberLevelName"]` key
+  `internal/alerts/matcher.go` already reads) - never inventing data,
+  never emitting SSML/HTML/Markdown.
+- `apps/server/internal/domain/audio/preprocess.go` (new) -
+  `Preprocess`: the fixed, ordered 8-step pipeline from
+  docs/audio-tts.md §10.2 (command suppression, URL removal, blocked
+  words, repeated-character normalization, whitespace normalization,
+  Unicode-code-point length cap, empty-result rejection) - every step
+  bounded, no regular expression, no HTML parser, no network lookup.
+- `apps/server/internal/domain/audio/cooldown.go` (new) -
+  `CooldownKey`/`NewCooldownKey`/`CooldownTracker`: global and
+  per-user cooldown windows against an explicit, caller-supplied
+  `now`, never wall-clock-only; `NewCooldownKey` refuses to build a key
+  without both a provider id and a stable user id, so an anonymous
+  event can never fabricate a per-user identity.
+- `apps/server/internal/domain/audio/queue.go` (new) -
+  `Queue`/`Item`/`ItemSnapshot`/`QueueCounters`: a bounded ready FIFO
+  plus a separate pending-approval FIFO sharing one total capacity
+  bound (§25), `PopNextEligible` dropping (and counting) expired items
+  without ever speaking them late, `Approve`/`Reject` preserving a
+  pending item's enqueue-time snapshot untouched (§26), `Clear`
+  reporting the count removed, `NewItemID` generating a fresh
+  high-entropy identifier never derived from event content.
+- `apps/server/internal/domain/audio/capability_test.go`,
+  `utterance_test.go`, `preprocess_test.go`, `cooldown_test.go`,
+  `queue_test.go` (new) - see "Automated validation".
+
+### Technical decisions
+- **Command suppression's `IsCommand` flag is computed by the caller,
+  not by `Preprocess` itself** - the pipeline operates on the
+  utterance builder's own wrapped sentence ("Name says ..."), which no
+  longer literally starts with `!` the way the original chat message
+  did. The future manager will check `chatoverlay`'s own
+  `isCommandMessage` idiom against the RAW `engagement.Message.Text`
+  before/alongside building the utterance, then pass the resulting
+  bool into `PreprocessConfig.IsCommand` - keeping `Preprocess` itself
+  a pure, easily-tested function with no knowledge of which text was
+  "the source."
+- **Blocked-word and URL removal both operate on whitespace-delimited
+  tokens, not a regular expression** - deliberately avoids any
+  catastrophic-backtracking risk (governing task §16/§18's own
+  explicit prohibition) while still giving whole-word blocked-word
+  semantics (a blocked "ass" never matches inside "class") and bounded
+  handling of a hostile, very long URL-shaped token.
+- **Repeated-character normalization and the code-point length cap
+  both operate on `[]rune`, never on UTF-8 bytes** - guarantees no
+  rune is ever split, satisfying §21's "hard length authority is
+  always the code-point count" requirement directly rather than by
+  convention.
+- **The cooldown tracker's per-user map is never pruned** - Stage 17A
+  has no stated bound on distinct users, and no prior package in this
+  codebase (chat overlay hidden-user lists, alert cooldowns) prunes an
+  analogous map either; revisit only if a real memory concern
+  surfaces, per this task's own "avoid overcomplication in 17A"
+  instruction.
+
+### Automated validation
+- `gofmt -l` - clean on every new file.
+- `go vet ./...` - clean (including two format-string argument-count
+  mistakes caught and fixed in the test files themselves before this
+  commit).
+- `go test ./...` - full suite passes, including 39 new tests across
+  the five new files: capability table membership/zero-value default
+  (4), utterance construction per event type including anonymous
+  fallbacks and the money-display-amount-missing fallback (17),
+  preprocessing every pipeline step in isolation plus a hostile
+  very-long-URL case and a 100,000-character repeated-run case (18),
+  cooldown global/per-user/anonymous-global-only/zero-duration-disables
+  semantics against a fake clock (5), and the bounded queue's
+  capacity/pending-approval/approve/reject/expiry/clear/defensive-copy/
+  counters behavior (13).
+- `go build ./...` - clean.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+
+### Known limitations
+No Event Bus subscription, no eligibility/filtering orchestration, no
+provider synthesis, no renderer lease, no playback acknowledgement, no
+HTTP API, no frontend, no 19th integration script yet. Stage 17A is
+not complete; Stage 17 as a whole is not complete.
+
+### Next step
+Backend: the Event-Bus-subscribing `internal/audio` manager (eligibility
+filtering, cooldown enforcement, preprocessing, enqueue, just-in-time
+synthesis via a `tts.Provider`, renderer lease, playback
+acknowledgement) plus the minimal `internal/provider/tts` interface it
+depends on.
