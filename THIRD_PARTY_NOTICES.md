@@ -67,6 +67,7 @@ toolchain. The notable direct dependencies are:
 | [`github.com/coder/websocket`](https://github.com/coder/websocket) v1.8.15 | ISC | WebSocket client used by the Stage 8A Twitch EventSub connector (`internal/runtime/twitchengagement`) and, reused unchanged, the Stage 16A StreamElements Astro connector (`internal/provider/streamelements`, `internal/runtime/streamelementsengagement`) |
 | [`google.golang.org/grpc`](https://github.com/grpc/grpc-go) v1.83.0 | Apache-2.0 | gRPC client used by the Stage 15A YouTube Live Chat connector's `streamList` server-streaming transport (`internal/provider/youtube`, `internal/runtime/youtubeengagement`) |
 | [`google.golang.org/protobuf`](https://github.com/protocolbuffers/protobuf-go) v1.36.12 | BSD-3-Clause | Protocol Buffers runtime for the generated `streamlistpb` client code (`internal/provider/youtube/streamlistpb`) |
+| [`github.com/go-ole/go-ole`](https://github.com/go-ole/go-ole) v1.3.0 | MIT | Go bindings for Windows COM Automation, used only by the Stage 17A Windows system text-to-speech provider (`internal/provider/tts/windows.go`, build-tagged `windows`) to call `SAPI.SpVoice`/`SAPI.SpMemoryStream`/`SAPI.SpAudioFormat` |
 
 `coder/websocket` (the maintained continuation of the formerly-popular
 `nhooyr.io/websocket`) was chosen after checking: actively maintained, pure Go
@@ -140,6 +141,22 @@ made to it, and `streamlistpb/README.md` for the maintainer-only
 regeneration procedure. The generated `.pb.go`/`_grpc.pb.go` files are
 Apache-2.0-licensed derivative output of that same proto, produced by
 Google's own `protoc-gen-go`/`protoc-gen-go-grpc` tools.
+
+`go-ole` was added in Stage 17A (docs/audio-tts.md §22) as the Go
+interoperability path for Windows SAPI, chosen after auditing its upstream
+source directly: no CGO ("Go bindings for Windows COM using shared libraries
+instead of cgo," consistent with `modernc.org/sqlite`'s own reason for
+existing in this project), MIT licensed, and its `IDispatch`/`VARIANT`/
+`oleutil` surface is exactly what calling a COM Automation object like
+`SAPI.SpVoice` from an ordinary unpackaged Win32 process needs - confirmed by
+using it to build the real provider, tested against the actual installed
+SAPI engine on a development machine (`internal/provider/tts/windows_test.go`).
+It is linked directly into the Windows build of `apps/server`; the
+non-Windows build (`internal/provider/tts/stub.go`, build-tagged `!windows`)
+does not import it at all, so `go-ole` never appears in a Linux/macOS binary.
+No voice model, engine, or other SAPI component is bundled by this
+project - `internal/provider/tts` only calls into whatever SAPI installation
+already exists on the machine running Streaming Tree.
 
 Full licence texts are available in the Go module cache
 (`go env GOMODCACHE`) and on each project's page.

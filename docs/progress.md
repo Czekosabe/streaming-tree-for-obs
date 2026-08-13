@@ -22939,3 +22939,143 @@ Backend: the real system TTS provider - `internal/provider/tts`'s
 Windows SAPI implementation (build-tagged `windows`) and the
 non-Windows stub (build-tagged `!windows`) that honestly reports
 `Capabilities.Available == false`.
+
+## 2026-08-13 — feat(server): add system TTS provider
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The real Windows SAPI implementation of `tts.Provider`
+(`internal/provider/tts/windows.go`, build-tagged `windows`) and the
+non-Windows stub (`stub.go`, build-tagged `!windows`) that honestly
+reports unavailability rather than faking a macOS/Linux provider. This
+development machine is itself Windows, so the SAPI implementation was
+built AND tested against the real, already-installed SAPI engine, not
+only compiled - see "Automated validation" for a real bug this caught
+and the fix.
+
+### Changes
+- `apps/server/go.mod`/`go.sum` - added `github.com/go-ole/go-ole`
+  v1.3.0 (MIT, no CGO) as a direct dependency, then `go mod tidy`.
+- `apps/server/internal/provider/tts/windows.go` (new) -
+  `SystemProvider` implementing `Provider` via `SAPI.SpVoice`/
+  `SAPI.SpMemoryStream`/`SAPI.SpAudioFormat` COM Automation objects.
+  Every `ListVoices`/`Synthesize` call runs on its own freshly
+  `runtime.LockOSThread`'d goroutine with its own
+  `CoInitialize`/`CoUninitialize` pair - no COM object or apartment-
+  threading assumption is ever shared across calls. `Synthesize` sets
+  `AudioOutputStream` to an in-memory `SpMemoryStream` (never plays
+  through speakers), calls `Speak` with `SVSFlagsAsync`, then polls
+  `WaitUntilDone` so a canceled `context.Context` can call SAPI's own
+  `Skip` method to stop synthesis promptly rather than abandoning the
+  OS thread mid-call. `speedToSAPIRate`/`volumeToSAPIVolume` translate
+  this package's canonical `Speed` (0.5-2.0)/`Volume` (0.0-1.0) ranges
+  into SAPI's own native `Rate` (-10..10)/`Volume` (0..100) ranges.
+  `ListVoices` enumerates `SpVoice.GetVoices`, reading each token's
+  `Id`/`GetDescription`/`GetAttribute("Language")`/
+  `GetAttribute("Gender")`, and marks the currently-selected token
+  `IsDefault`. Every error is mapped to this package's own sentinel
+  (`ErrUnavailable`/`ErrVoiceNotFound`/`ErrSynthesisFailed`) with a
+  `sanitize`d, length-capped diagnostic string - no HRESULT or COM
+  exception text ever crosses the `Provider` interface boundary.
+- `apps/server/internal/provider/tts/stub.go` (new) - the
+  `!windows` `SystemProvider`: `Capabilities().Available` is always
+  `false` with an honest reason string; `ListVoices`/`Synthesize`
+  always return `ErrUnavailable`. Never shells out to `say` or any
+  Linux/macOS command as fake parity (governing task §8's explicit
+  prohibition).
+- `apps/server/internal/provider/tts/windows_test.go` (new) -
+  deterministic unit tests for the rate/volume mapping and the
+  diagnostic sanitizer, plus best-effort local SAPI smoke tests (see
+  "Automated validation").
+- `apps/server/internal/provider/tts/stub_test.go` (new) - confirms
+  the non-Windows stub always reports unavailable and always returns
+  `ErrUnavailable`.
+- `THIRD_PARTY_NOTICES.md` - added `go-ole` to the Go dependencies
+  table plus a paragraph recording the audit (upstream source read
+  directly, MIT, no CGO, linked only into the Windows build, no voice
+  model bundled).
+
+### Technical decisions
+- **`AudioOutputStream`/`Voice` are set via `oleutil.PutPropertyRef`,
+  never plain `oleutil.PutProperty`** - discovered as a real bug while
+  running this code against the actual installed SAPI engine on this
+  development machine: `PutProperty` (COM's `DISPATCH_PROPERTYPUT`)
+  failed with "Member not found" against both object-reference
+  properties, while `PutPropertyRef` (`DISPATCH_PROPERTYPUTREF`, the
+  form COM requires for assigning an object reference to a property)
+  worked correctly. Numeric properties (`Rate`, `Volume`) remain plain
+  `PutProperty`, which is correct for value-typed properties.
+- **`SpMemoryStream.GetData` is wrapped in a hand-built RIFF/WAV
+  header, never returned as-is** - also discovered by inspecting the
+  real returned bytes: `GetData` returns raw PCM samples with no
+  self-describing container (confirmed the first bytes were never
+  `RIFF`), so returning them directly as `Content-Type: audio/wav`
+  would have shipped unplayable audio. The actual format is queried
+  from the stream's own `Format.GetWaveFormatEx` object
+  (`SamplesPerSec`/`BitsPerSample`/`Channels` - confirmed the correct
+  automation path from Microsoft's own `SpWaveFormatEx`/`SpAudioFormat`
+  reference documentation) rather than assuming a fixed format, with a
+  documented 22050 Hz/16-bit/mono fallback only if the format genuinely
+  cannot be queried.
+- **Every COM call for one request runs on its own dedicated,
+  freshly-locked OS thread with its own `CoInitialize` pair** - avoids
+  any risk of two concurrent `Manager.synthesize` goroutines (Stage
+  17A's own just-in-time-per-item synthesis) sharing one COM apartment
+  or racing on a shared `SpVoice`, at the cost of one new OS thread per
+  synthesis call - an accepted trade-off given Stage 17A's own bounded
+  cooldown/queue-capacity limits on how often synthesis can happen.
+- **Voice `Language` is stored as SAPI's own raw LCID hex string
+  (e.g. `"409"`), not normalized to a BCP-47 tag** - SAPI's
+  `GetAttribute("Language")` does not return a BCP-47 tag directly and
+  a full LCID-to-BCP-47 mapping table was judged out of scope for
+  Stage 17A; documented honestly in the field's own doc comment rather
+  than silently mistranslated. The frontend will show this raw value
+  as provider-reported metadata only, never as if it were normalized.
+
+### Automated validation
+- `gofmt -l` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` (native Windows) - clean.
+- `GOOS=linux GOARCH=amd64 go build ./...` and
+  `GOOS=darwin GOARCH=arm64 go build ./...` - both clean, confirming
+  the non-Windows stub compiles and the Windows-only file is correctly
+  excluded on every other platform.
+- `go build -tags integration ./cmd/testserver/...` - clean.
+- `go test ./...` - full suite passes, including:
+  - 4 deterministic unit tests (`internal/provider/tts`): rate/volume
+    bounds mapping, diagnostic-string sanitization/truncation.
+  - 4 best-effort local SAPI smoke tests, run for real against this
+    development machine's actual installed SAPI engine (never gated
+    behind a specific installed voice name - governing task §71):
+    enumerate installed voices, synthesize a short phrase to memory
+    and assert a valid `RIFF`/`WAVE`/`data` header is present (the
+    regression test for the WAV-wrapping bug above), synthesizing
+    against an unknown voice id returns `ErrVoiceNotFound`, and an
+    immediately-expired context returns a cancellation error. Every
+    one of these tests calls `Capabilities()` first and `t.Skip`s with
+    a logged reason if SAPI reports itself unavailable, so this file
+    can never fail a build merely because some other environment lacks
+    SAPI voices.
+  - 3 stub tests (`internal/provider/tts`, non-Windows build only -
+    compiled and vetted via cross-compilation from this Windows
+    machine, not run here): `Capabilities`/`ListVoices`/`Synthesize`
+    all report unavailable.
+- `go mod tidy` - clean, `go-ole` recorded as a direct dependency.
+
+### Known limitations
+No HTTP API (management or public) wires this provider into the
+running application yet, no frontend, no 19th integration script. The
+`internal/audio.Manager` built in the previous commit still only has
+test coverage against an in-process fake `tts.Provider` - wiring the
+real `SystemProvider` into `cmd/server`/`cmd/testserver` is the next
+step. Stage 17A is not complete; Stage 17 as a whole is not complete.
+
+### Next step
+Backend: the management HTTP API (`GET/PUT /api/audio/settings`,
+capabilities/voices/status, queue commands, Test Speak) and the public
+audio SSE/bytes/ack API, plus `cmd/server`/`cmd/testserver` wiring -
+this is where the real `SystemProvider` (Windows) or the non-Windows
+stub actually gets constructed and handed to `internal/audio.Manager`.

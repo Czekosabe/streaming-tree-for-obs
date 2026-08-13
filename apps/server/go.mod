@@ -8,6 +8,7 @@ go 1.25.0
 require (
 	github.com/99designs/keyring v1.2.2
 	github.com/coder/websocket v1.8.15
+	github.com/go-ole/go-ole v1.3.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.55.0
