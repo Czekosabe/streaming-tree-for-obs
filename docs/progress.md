@@ -22370,3 +22370,100 @@ Stage 16A: Completed. Stage 16B: Planned, feasibility-gated. Stage 16 as
 a whole: Incomplete. Stage 17: not started (this pass is the mandatory
 pre-implementation correction §3 of the Stage 17A task, before any
 Stage 17A product code is written).
+
+## 2026-08-13 — docs: define Stage 17A TTS and audio contract
+
+### Status
+Completed.
+
+### Scope
+The mandatory pre-implementation research and design contract for Stage
+17A (shared audio runtime + real text-to-speech foundation), written
+before any product code in this milestone - `docs/audio-tts.md`.
+
+### Changes
+- `docs/audio-tts.md` (new) - the canonical Stage 17A contract: the
+  17A/17B split and why it exists (Stage 14B's own
+  `internal/domain/visualasset` package doc comment already reserves
+  audio to "Stage 17"); a researched comparison of the two candidate
+  Windows system-TTS paths (WinRT `Windows.Media.SpeechSynthesis` vs.
+  SAPI `SpVoice`/COM), with the decision and its reasoning; the
+  platform matrix (Windows-real, non-Windows-honestly-unavailable,
+  `disabled` always works); the four provider modes and which two are
+  real in 17A; the provider abstraction shape; the shared audio runtime
+  ownership boundary; every numeric bound (queue capacity, max text
+  length, max audio bytes, synthesis timeout, cooldowns, item expiry);
+  the exact-currency threshold model (mirrors
+  `internal/domain/alerts.Rule` exactly); the supporter-only capability
+  table; the utterance builder and the fixed, ordered preprocessing
+  pipeline; cooldown identity/timing rules; the persistence boundary
+  (settings only, an exhaustive persisted-vs-never-persisted list); the
+  public audio output route and its SSE + narrow-POST protocol
+  (modeled directly on `internal/httpapi/alerts.go`'s own public alert
+  stream, confirmed by direct code audit); single-active-renderer
+  lease semantics; renderer-disconnect/ACK-validation rules; the
+  OBS autoplay/CEF-audio honesty statement; the public privacy
+  boundary; the management API route list; the integration-testing
+  approach; and the one new third-party dependency this stage adds.
+
+### Technical decisions
+- **SAPI (`ISpVoice`/`SpVoice` Automation object) chosen over WinRT
+  `Windows.Media.SpeechSynthesis`** - both fetched directly from
+  Microsoft Learn. WinRT's own docs are current (updated 2025) but
+  every example targets a packaged UWP/XAML app, and Go has no
+  first-party WinRT projection - using it would mean either a second,
+  non-Go toolchain (a C++/WinRT shim) or an unaudited third-party
+  binding. SAPI's own documentation is explicitly archived/legacy
+  status (recorded honestly, not hidden), but the API itself remains
+  present and functional on every supported Windows release, is
+  callable via ordinary COM Automation from an unpackaged process, and
+  - decisively - its own official reference explicitly documents
+    redirecting synthesis to an in-memory stream
+  (`AudioOutputStream`/`SpMemoryStream`) rather than speakers, exactly
+  matching this stage's "backend synthesizes bytes, output surface
+  plays them" architecture. Go interop: `github.com/go-ole/go-ole`
+  (MIT, no CGO, confirmed current `v1.3.0`) - audited before being
+  chosen, not picked because a snippet existed.
+- **Public audio protocol is SSE + narrow POST acknowledgements, not a
+  new WebSocket server** - a direct code audit of
+  `internal/httpapi/alerts.go`'s `handlePublicAlertStream` confirmed
+  this project already has exactly the needed shape (per-slug
+  connection limiter, Last-Event-ID replay, reset/gap/keepalive
+  events) working in production for an analogous "one current
+  authoritative item, never the future queue" public surface. A new
+  public WebSocket *server* would add a second listening surface this
+  protocol does not actually need, distinct from the project's
+  existing outbound WebSocket *client* dependency for Twitch/
+  StreamElements.
+- **Settings are one global row, not a multi-profile model** - unlike
+  alerts (many profiles, each its own OBS source), there is exactly
+  one audio output; `internal/domain/audio` deliberately does not copy
+  alerts' Profile+Rule split.
+- **`internal/domain/visualasset` is not extended** - its own package
+  doc comment already excludes audio explicitly, reserving the
+  decision to this stage; Stage 17A's own generated TTS audio stays
+  ephemeral (never a managed asset, never content-addressed,
+  never persisted), and Stage 14B's package v1 schema is not widened.
+- **Command suppression reuses `internal/chatoverlay/filtering.go`'s
+  own one-line `isCommandMessage` idiom, not
+  `internal/chatautomation`'s private command parser** - the latter is
+  tightly coupled to the automation dispatcher/cooldown/role model and
+  not safely reusable as a narrow interface; the former is a
+  dependency-free one-liner already proven as the right suppression
+  primitive by an existing consumer.
+- **Bot/self suppression depends on `internal/domain/operatorchatprefs.
+  Service.BotUsers` directly**, the same source `internal/chatoverlay`
+  itself reads from - `internal/operatorchat` does not own this
+  concept, confirmed by a full-package grep finding no bot-suppression
+  logic there at all.
+
+### Automated validation
+Documentation-only commit; no product code exists yet for this stage.
+
+### Known limitations
+None - this is the research/contract commit `docs/audio-tts.md` itself
+names as the prerequisite for every following Stage 17A commit.
+
+### Next step
+Backend: persist Stage 17A settings (`internal/domain/audio`, migration
+`0021_audio_tts.sql`).
