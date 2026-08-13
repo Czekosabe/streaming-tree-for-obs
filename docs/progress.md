@@ -22191,3 +22191,107 @@ follows this one for the full results.
 Stage 16A: **Completed**. Stage 16B: **Planned**, feasibility-gated
 (Streamlabs, Ko-fi). Stage 16 as a whole: **Incomplete**. Stage 17: not
 started.
+
+## 2026-08-13 — docs: record Stage 16A journal corrective regression
+
+### Status
+Completed. This is the dedicated closing-regression entry for the
+`fix(docs): reconcile Stage 16A journal order` corrective pass
+(commit `a2921bf`) - the full proof-not-promise regression that pass's
+own entry deferred to this one.
+
+### Audited Stage 16A historical commit count
+Unchanged from the corrective entry immediately above: Git-audited at
+**8** commits in `fbdebbd..9058984` (the milestone's own product/docs
+range, before this corrective pass began). The corrective pass itself
+added one further commit (`a2921bf`), and this entry's own commit adds
+one more - neither is part of the original 8-commit Stage 16A product
+milestone being recounted; they are this journal-integrity pass's own,
+separate, correctly-appended commits.
+
+### Journal-order incident - conclusion
+Reconfirmed unchanged since the entry above: `feat(server): integrate
+external donations with engagement` (`0e5855b`) was displaced to the
+physical end of the file by four later commits each inserting their own
+new entry at a stale anchor instead of the file's true end - its own
+entry content was never altered (byte-for-byte identical throughout),
+every commit still has exactly one corresponding entry, and no entry
+before it was involved. Left exactly where it was found; not moved by
+either corrective commit.
+
+### Corrective commit context
+`a2921bf` (`fix(docs): reconcile Stage 16A journal order`) appended the
+audit findings as a new entry at the file's true end (verified via
+`tail` before committing), plus one minimal, non-historical README
+correction ("stages 8A through 15A" -> "stages 8A through 16A", in the
+top-of-file living-state paragraph). No product code changed in that
+commit, and none has changed since - this entire corrective pass is
+docs/journal-only, confirmed by the focused and full validation below
+both passing without any source-tree changes in between.
+
+### Frontend test count
+89 test files, 1253 tests, all passing - unchanged from before this
+corrective pass (no frontend source changed).
+
+### Backend checks
+`gofmt -l .` (clean), `go vet ./...` (clean), `go test ./...` (all
+packages pass), `go build ./...` (clean), `go build -tags integration
+./cmd/testserver/...` (clean), `go build -tags integration
+./cmd/fakestreamelements/...` (clean) - run twice in this pass (once as
+focused validation before the corrective commit, once as part of the
+full regression below after it), identical results both times.
+
+### Full final regression - all 18 integration scripts, one clean sequence
+Run after `a2921bf`, in the exact documented order, from a clean tree,
+waited for autonomously (two backgrounded batches; each batch's own
+exit code was inspected, and every individual script's own pass line
+was independently verified in the captured output before proceeding -
+not inferred from the chain's exit code alone):
+
+1. `verify-persistence.mjs` — passed
+2. `verify-mediamtx-runtime.mjs` — passed (real local MediaMTX v1.19.3)
+3. `verify-ffmpeg-branches.mjs` — passed (real local FFmpeg + MediaMTX)
+4. `verify-twitch-account-integration.mjs` — passed
+5. `verify-youtube-account-integration.mjs` — passed
+6. `verify-twitch-engagement.mjs` — passed
+7. `verify-operator-chat.mjs` — passed
+8. `verify-chat-overlay.mjs` — passed
+9. `verify-twitch-outbound-chat.mjs` — passed
+10. `verify-chat-automation.mjs` — passed
+11. `verify-alerts.mjs` — passed
+12. `verify-alert-advanced-queue.mjs` — passed
+13. `verify-alert-designer.mjs` — passed
+14. `verify-chat-overlay-designer.mjs` — passed
+15. `verify-visual-templates.mjs` — passed
+16. `verify-visual-template-packages.mjs` — passed
+17. `verify-youtube-engagement.mjs` — passed
+18. `verify-streamelements-donations.mjs` — passed
+
+All 18 passed in this single sequence. No script was edited during this
+run. No source or product documentation was edited after it - this
+closing entry is the only change following it.
+
+### Real-provider/OBS status
+No real StreamElements, Twitch, YouTube, Streamlabs, Ko-fi, Kick,
+TikTok, or OBS instance was contacted anywhere in this corrective pass.
+MediaMTX and FFmpeg remain real, locally-installed/probed software,
+supervised as real child processes - never simulated; every other
+provider-facing scenario ran against a real local fake speaking the
+genuine wire protocol, exactly as in the original Stage 16A regression.
+
+### Stage status (final, unchanged by this entire corrective pass)
+- Stage 16A: **Completed**.
+- Stage 16B: **Planned**, feasibility-gated (Streamlabs, Ko-fi).
+- Stage 16 as a whole: **Incomplete**.
+- Stage 17: **not started**.
+- The application updater remains exclusively **Stage 20's own scope**
+  - nothing in this corrective pass, or in Stage 16A itself, touches
+    packaging, updates, or hardening.
+
+### Autonomy
+Every build, test run, and integration script in this corrective
+pass - including both backgrounded 10-script and 8-script batches of
+the final regression - was waited for autonomously to real completion,
+with each script's own pass/fail output inspected directly (not merely
+the batch's aggregate exit code), never by asking whether to continue
+waiting.
