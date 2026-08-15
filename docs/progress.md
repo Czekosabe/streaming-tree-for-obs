@@ -23768,3 +23768,128 @@ integration this project has shipped so far. Stage 17B is not started.
 ### Next step
 Push this branch's commits to `origin/main` and verify the remote is
 in sync, then close out Stage 17A with a final report.
+
+## 2026-08-15 — fix(docs): reconcile Stage 17A closing record
+
+### Status
+Completed. No product code changed.
+
+### Scope
+A small post-close corrective pass triggered by a post-report review
+that found two concrete documentation/journal issues plus one possible
+chat-report commit-range misstatement, all in the terminal report of
+the previous "Stage 17A closing regression" work. This entry records
+what Git and `docs/progress.md` themselves actually show, audited
+directly rather than trusted from the prior chat summary.
+
+### Git-audited Stage 17A commit range
+The prior chat report said "12 commits, `08b6652..e5b3be1`." Auditing
+directly: the pre-Stage-17A boundary commit is `8476f6a` ("docs:
+record Stage 16A journal corrective regression"), and
+`git rev-list --count 8476f6a..e5b3be1` returns exactly **12**. So the
+**commit count (12) was correct**. The **range notation was wrong**:
+`08b6652..e5b3be1` is git-exclusive of `08b6652` itself and only spans
+9 commits (`git rev-list --count 08b6652..e5b3be1` = 9), silently
+dropping `114141d` ("fix(docs): reconcile engagement platform current
+state") and `b32cda9` ("docs: define Stage 17A TTS and audio
+contract") - both genuinely part of this same Stage 17A session, as
+the prior report's own body text elsewhere already named them. The
+correct range for exactly these 12 commits is **`8476f6a..e5b3be1`**.
+This is a chat-report citation mistake, not a repository defect -
+nothing in Git itself was ever wrong. Chronological subjects, first to
+last:
+
+1. `114141d` fix(docs): reconcile engagement platform current state
+2. `b32cda9` docs: define Stage 17A TTS and audio contract
+3. `08b6652` feat(server): persist TTS configuration
+4. `ae4b3a9` feat(server): add shared audio queue
+5. `cd6749c` fix(server): relocate audio runtime to internal/audio
+6. `0745817` feat(server): add TTS runtime manager
+7. `0b0f015` feat(server): add system TTS provider
+8. `0313cb0` feat(server): expose TTS and public audio APIs
+9. `cf4ca29` feat(web): manage TTS and audio
+10. `cdaa000` test(server): verify TTS and audio locally
+11. `eee995b` docs: reflect Stage 17A completion across living docs
+12. `e5b3be1` docs: close out Stage 17A with a final regression
+
+### Journal-heading audit
+Every one of the 12 commit subjects above was compared against its
+corresponding `docs/progress.md` heading. **11 of 12 match exactly**
+(date prefix aside). **One mismatch found**: the final entry's heading
+reads `## 2026-08-15 — Stage 17A closing regression`, but `e5b3be1`'s
+actual, real commit subject is `docs: close out Stage 17A with a final
+regression`. The entry's own body content genuinely, accurately
+describes what `e5b3be1` did (the complete closing regression, all
+checks, all 19 scripts) - only its heading failed this journal's own
+"identified by the commit message" convention. No product behavior is
+affected by this. **No historical entry is edited, renamed, moved, or
+reordered by this correction** - the mismatched heading stays exactly
+as originally written; this new entry records the canonical
+commit-subject association going forward, the same append-only pattern
+already established for the Stage 15A and 16A journal-order
+incidents. No other Stage 17A entry has this problem - the audit
+compared all 12, not just the suspected one.
+
+### README corrections
+- `README.md`: "then each engagement piece above in order (stages 8A
+  through 16A)" was stale - Stage 17A (shared audio runtime and
+  text-to-speech) is itself one of the pieces the same paragraph now
+  describes as real, immediately above this sentence. Corrected to
+  "stages 8A through 17A." No other instance of this pattern was found
+  in any of the ten audited living docs.
+- `README.md`'s roadmap table had a compressed row, `| 17B, 18–19 |
+  Persistent alert sounds, per-rule TTS, visual-template audio assets,
+  goal/counter widgets | Planned |`, whose label included Stage 19
+  while its scope text omitted TikTok entirely - materially
+  misleading, since a reader would reasonably expect the row's scope
+  text to cover everything its label claims. Split into three rows
+  matching the canonical full roadmap already established in
+  `docs/project-overview.md` and `docs/engagement-architecture.md`:
+  `17B` (persistent alert sounds, per-rule TTS, visual-template audio
+  assets), `18` (goal/counter widgets), and `19` (TikTok LIVE
+  connector, retaining the exact conditional wording "only if an
+  official, permitted, sufficiently stable integration exists").
+  Stage 15B and 16B status were not touched.
+
+### Narrow stale-state audit
+Searched `README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md`, `docs/audio-tts.md`,
+`docs/obs-browser-source.md`, `docs/visual-template-packages.md`,
+`docs/visual-templates.md`, `docs/visual-designs.md`,
+`config/README.md` and `THIRD_PARTY_NOTICES.md` for "stages 8A through
+16A," "Stage 17 not started," "TTS unimplemented," "TTS planned," "18
+integration scripts," "18 scripts," "17B completed," "Stage 17
+completed," "template audio implemented," "alert sounds implemented,"
+and "per-rule TTS implemented" (plus case-insensitive near-variants).
+No further living-state drift found beyond the two items above -
+remaining "TTS is planned"/"not started" language in
+`docs/engagement-architecture.md` §12 is durable, pre-implementation
+design prose already followed by its own accurate stage-17A-completed
+status-update blockquote (the established pattern), and
+`docs/audio-tts.md`'s own "Expected status" line already correctly
+reads Stage 17A Completed / Stage 17B Planned, not started / Stage 17
+as a whole Incomplete.
+
+### Product-code audit
+No source defect was discovered during this pass. No product code was
+modified.
+
+### Automated validation
+Every changed file inspected (`git diff`), Markdown link targets
+touched by this commit re-verified as existing, the corrected stale
+phrases re-grepped to confirm they no longer appear, and every
+referenced script name (`scripts/verify-tts-audio.mjs` and the other
+18) confirmed still present in `scripts/`.
+
+### Known limitations
+None. This is a documentation/journal-integrity correction only.
+
+### Status recap
+Stage 17A: **Completed**. Stage 17B: **Planned, not started**. Stage
+17 as a whole: **Incomplete**.
+
+### Next step
+Run the complete post-close regression again (frontend + backend
+checks, then all 19 integration scripts in one clean sequence), since
+this commit touches living product documentation after the previous
+closing regression.

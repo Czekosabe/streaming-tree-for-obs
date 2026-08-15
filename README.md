@@ -64,7 +64,7 @@ packaging/updater/hardening work — detailed in
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 16A).
+engagement piece above in order (stages 8A through 17A).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
@@ -257,7 +257,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain, a real Astro WebSocket connector, exact integer-micros money conversion, and full reuse of the existing Event Bus/operator chat/alerts pipeline, see [external-donations.md](docs/provider-integrations/external-donations.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth token exchange requires a confidential client secret with no public-client alternative found; Ko-fi is webhook-only, requiring a public inbound endpoint this deployment target does not offer; see [external-donations.md](docs/provider-integrations/external-donations.md); Stage 16 as a whole is **not** complete |
 | 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a shared bounded audio queue consuming the Event Bus, and a public OBS Browser Source audio route, see [audio-tts.md](docs/audio-tts.md) | **Completed** — see [progress.md](docs/progress.md) |
-| 17B, 18–19 | Persistent alert sounds, per-rule TTS, visual-template audio assets, goal/counter widgets | Planned |
+| 17B | Persistent alert sounds, per-rule TTS, visual-template audio assets | Planned |
+| 18 | Goal/counter widgets | Planned |
+| 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
