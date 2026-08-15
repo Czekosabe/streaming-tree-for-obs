@@ -1064,6 +1064,28 @@ local voice engine or voice model must be evaluated on its own before
 bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 (project-overview.md §7.4).
 
+> **Factual status update (stage 17A, completed):** this section's design
+> is now real, with the scope split recorded up front and unchanged since:
+> a `Provider` abstraction (`internal/provider/tts`) with a real Windows
+> SAPI implementation (`SAPI.SpVoice`/`SpMemoryStream` via COM Automation,
+> `github.com/go-ole/go-ole` - non-Windows builds report themselves
+> honestly unavailable rather than faking success), a bounded runtime
+> audio queue (`internal/audio`) consuming the normalized Event Bus
+> exactly as planned above, and every setting in this section's own
+> "Planned settings" list except `local`/`cloud` provider modes (both
+> rejected by validation - no real engine exists yet for either). Synthesis
+> happens just in time, only once an item is promoted to "current" and a
+> renderer is connected, and generated audio is never persisted. **Not**
+> part of stage 17A, deliberately deferred to stage 17B: persistent
+> uploaded/alert-rule sound assets, per-alert-rule TTS, synchronization
+> with alert playback, and any audio extension of §13's own template-asset
+> format - stage 14B's own package doc comment already reserved that
+> boundary before this stage began (see [audio-tts.md](audio-tts.md) §1
+> for the exact stage 17A/17B split). See
+> [audio-tts.md](audio-tts.md) for the full researched contract, including
+> why SAPI was chosen over `Windows.Media.SpeechSynthesis` (WinRT), and
+> [progress.md](progress.md) for exactly what shipped.
+
 ## 13. Visual designers and templates
 
 > **Factual status update (stage 13A, completed, partial):** the **Alert
@@ -1455,7 +1477,8 @@ that table.
 | 15B | Kick engagement connector, and Kick account integration if not already done in 7C — **Deferred**, feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer (see [kick-engagement.md](provider-integrations/kick-engagement.md)). Stage 15 as a whole is not complete |
 | 16A | External donation foundation + StreamElements donations connector (§15) — **Completed** |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) (§15) — **Deferred**, feasibility-gated |
-| 17 | TTS and audio queue (§12) |
+| 17A | Shared audio runtime and text-to-speech foundation (§12) — **Completed** |
+| 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12) — Planned |
 | 18 | Goals, counters and event widgets (§14) |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |

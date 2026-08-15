@@ -42,10 +42,18 @@ therefore rejects audio assets, sound layers, and arbitrary audio files
 outright - there is no `audio` asset kind. A video asset may contain an
 audio track internally (most real-world WebM/MP4 clips do), but the
 renderer **always** renders package video muted, with no controls and no
-audio output, regardless of what the container holds. Stage 17 may later
-decide whether alert sounds can reference the same managed blob/storage
-infrastructure through a separate, audio-safe domain; that decision is not
-made here and nothing in Stage 14B should be read as having made it. The
+audio output, regardless of what the container holds.
+
+**Factual status update (stage 17A, completed):** Stage 17A shipped that
+one audio/playback subsystem - a provider-independent TTS `Provider`, a
+bounded runtime audio queue, and a public audio Browser Source route (see
+[audio-tts.md](audio-tts.md)) - and, per its own §1, deliberately did
+**not** decide whether alert sounds can reference the same managed
+blob/storage infrastructure through a separate, audio-safe domain.
+Persistent alert sound assets, per-alert-rule TTS, and any audio
+extension of this package format remain Stage 17B's own, later,
+separately-scoped decision; nothing in Stage 14B or Stage 17A should be
+read as having made it. The
 same statement appears in
 [`docs/visual-templates.md`](visual-templates.md) and
 [`docs/engagement-architecture.md`](engagement-architecture.md) so the

@@ -46,8 +46,14 @@ and a real external-donation connector (stage 16A): a provider-independent
 `donationsource` domain and a real **StreamElements** Astro WebSocket
 connector, publishing real donations onto that same Event Bus with exact
 integer-micros money and full reuse of operator chat/chat overlay/alerts —
-see [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
-**Still planned**: text-to-speech, goal/counter widgets, a **Kick**
+see [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md) —
+and a real **shared audio runtime and text-to-speech foundation**
+(stage 17A): a provider-independent `Provider` abstraction with a real
+Windows SAPI implementation, a shared bounded audio queue consuming that
+same Event Bus (cooldowns, manual approval, per-source/per-currency/
+per-bits filtering, text preprocessing), and a real public OBS Browser
+Source audio route — see [`docs/audio-tts.md`](docs/audio-tts.md).
+**Still planned**: goal/counter widgets, a **Kick**
 engagement connector (feasibility-gated — see
 [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
 TikTok LIVE support (conditional on an official, permitted integration
@@ -181,9 +187,9 @@ engagement piece above in order (stages 8A through 16A).
 >
 > Kick/TikTok account integration, additional donation providers
 > (Streamlabs, Ko-fi — stage 16B, feasibility-gated), and everything else
-> still built **on top of** the operator chat, outbound chat, alert engine
-> and visual-design/template/package engine — TTS, goal widgets, and
-> Stage 20's own packaging/updater/hardening work — are
+> still built **on top of** the operator chat, outbound chat, alert engine,
+> visual-design/template/package engine, and shared audio/TTS runtime —
+> goal widgets, and Stage 20's own packaging/updater/hardening work — are
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -212,6 +218,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Sending Twitch chat manually](#sending-twitch-chat-manually)
 - [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
 - [Alerts](#alerts)
+- [Text-to-speech and audio](#text-to-speech-and-audio)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -249,7 +256,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 15B | Kick engagement connector | Deferred — feasibility-gated: Kick's currently-documented event delivery is webhook-only, requiring a public inbound endpoint this deployment target does not offer, see [kick-engagement.md](docs/provider-integrations/kick-engagement.md); Stage 15 as a whole is **not** complete |
 | 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain, a real Astro WebSocket connector, exact integer-micros money conversion, and full reuse of the existing Event Bus/operator chat/alerts pipeline, see [external-donations.md](docs/provider-integrations/external-donations.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth token exchange requires a confidential client secret with no public-client alternative found; Ko-fi is webhook-only, requiring a public inbound endpoint this deployment target does not offer; see [external-donations.md](docs/provider-integrations/external-donations.md); Stage 16 as a whole is **not** complete |
-| 17–19 | TTS, goal widgets | Planned |
+| 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a shared bounded audio queue consuming the Event Bus, and a public OBS Browser Source audio route, see [audio-tts.md](docs/audio-tts.md) | **Completed** — see [progress.md](docs/progress.md) |
+| 17B, 18–19 | Persistent alert sounds, per-rule TTS, visual-template audio assets, goal/counter widgets | Planned |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in
@@ -987,10 +995,12 @@ real bounded alert grouping and mid-alert preemption — see
 [Sending Twitch chat manually](#sending-twitch-chat-manually),
 [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
 and [Alerts](#alerts).
-What remains planned, unaffected by any of that: the full visual
-alert/overlay designer, text-to-speech, donations from external
-services, viewer counts, and analytics — see
+Since then, the visual alert/overlay designer (stage 13), donations
+from external services (stage 16A), and a shared audio/text-to-speech
+runtime (stage 17A) have all shipped as well — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
+What remains planned: goal/counter widgets, viewer counts, and
+analytics.
 
 ### Registering a Twitch application and configuring a Client ID
 
@@ -1371,9 +1381,10 @@ the full target design and
 for the fully researched Twitch EventSub contract.
 
 **What this stage does not implement.** This stage is *inbound* only:
-reading chat and events, never sending anything to Twitch. TTS and
+reading chat and events, never sending anything to Twitch.
 Kick/TikTok engagement are still unimplemented (YouTube's own
-engagement connector is real as of Stage 15A — see
+engagement connector is real as of Stage 15A, and TTS is real as of
+Stage 17A — see
 [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents)
 below) — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md). A
@@ -1621,8 +1632,9 @@ healthy." Neither replaces the other.
 At stage 9, sending chat, chat commands, scheduled bot messages,
 alerts, TTS, remote moderation actions (bans/timeouts/message deletion
 sent *to* Twitch), and YouTube/Kick/TikTok chat all remained exactly as
-planned. That is still true for alerts, TTS, remote moderation actions
-and YouTube/Kick/TikTok chat — but stage 11A added real **manual**
+planned. Alerts shipped in stage 12A and TTS in stage 17A; remote
+moderation actions and YouTube/Kick/TikTok chat sending are still
+unimplemented — but stage 11A added real **manual**
 sending and replying, from a composer built into this same Chat page,
 and stage 11B added real **scheduled messages and chat commands** on
 top of that same foundation, managed from a separate Automation page —
@@ -1732,8 +1744,10 @@ overlay's own public URL points at `/overlay/chat/{publicSlug}`. See
 underlying OBS Browser Source research (setup, recommended dimensions,
 the shutdown/refresh checkbox trade-off) this feature is built on.
 
-**What this stage does not implement.** TTS and Kick/TikTok overlay
-support are still unimplemented. YouTube chat *does* reach the overlay,
+**What this stage does not implement.** Kick/TikTok overlay
+support is still unimplemented (a public audio overlay route shipped
+in stage 17A — see [Text-to-speech and audio](#text-to-speech-and-audio)).
+YouTube chat *does* reach the overlay,
 same as Twitch's — this stage's own filtering/lifecycle/moderation
 stayed entirely authoritative when Stage 15A added the YouTube connector
 underneath it, exactly like the operator Chat page above (see
@@ -2098,13 +2112,19 @@ second outbound pipeline, no separate bot identity, and no new Twitch
 scope. Everything here is managed from its own **Automation** page,
 separate from Chat and Overlays.
 
-**What this stage does not implement.** Alerts, donations, Bits/sub
-alert rendering, sounds, TTS, goals/counters, a visual overlay
-designer, Kick/TikTok outbound chat, a separate bot account, IRC,
-whispers, announcements, pinned messages, and any remote moderation
-action (bans, timeouts, message deletion) remain exactly as planned.
-YouTube scheduled messages and chat commands *are* implemented, as of
-Stage 15A, through this exact same dispatcher — see
+**What this stage (11B) did not implement, and what has changed
+since.** At stage 11B, alerts, donations, Bits/sub alert rendering,
+sounds, TTS, goals/counters, a visual overlay designer, Kick/TikTok
+outbound chat, a separate bot account, IRC, whispers, announcements,
+pinned messages, and any remote moderation action (bans, timeouts,
+message deletion) all remained exactly as planned. Alerts and Bits/sub
+alert rendering shipped in stage 12A, a visual overlay designer in
+stage 13, donations in stage 16A, and TTS in stage 17A; goals/counters,
+Kick/TikTok outbound chat, a separate bot account, IRC, whispers,
+announcements, pinned messages, and remote moderation actions are
+still unimplemented. YouTube scheduled messages and chat commands
+*are* implemented, as of Stage 15A, through this exact same
+dispatcher — see
 [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
 See
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
@@ -2276,11 +2296,13 @@ added deliberately, as their own dedicated stage — see
 new Twitch scope and no new EventSub subscription type were added for
 12A, 12B or 13A: alerts only ever match events already reaching the
 Event Bus, and the alert engine never talks to Twitch directly.
-Text-to-speech and goal/counter widgets remain unimplemented; a real
-external donation-service connector (StreamElements) was added later,
-as its own dedicated stage — see
+Goal/counter widgets remain unimplemented; a real
+external donation-service connector (StreamElements) and, later, a
+shared audio/text-to-speech runtime were added as their own dedicated
+stages — see
 [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)
-(Stage 16A). Real alert-event history, queue
+(Stage 16A) and [Text-to-speech and audio](#text-to-speech-and-audio)
+(Stage 17A). Real alert-event history, queue
 contents, and every counter (including the grouping/preemption ones)
 are **runtime-only** — never persisted — exactly like the automation
 runtime above. Saved visual designs and their revisions **are**
@@ -2515,6 +2537,88 @@ backend restart — run at least twice per change, needing no fake
 Twitch server at all. See [`docs/progress.md`](docs/progress.md) for
 exactly which scenarios this covers versus a specific named Go/frontend
 test instead.
+
+---
+
+## Text-to-speech and audio
+
+Stage 17A adds a real **shared audio runtime and text-to-speech
+foundation**: a provider-independent `Provider` abstraction
+(`internal/provider/tts`), a real Windows SAPI implementation
+(`SAPI.SpVoice`/`SpMemoryStream` via COM Automation, using
+`github.com/go-ole/go-ole`), a bounded runtime audio queue
+(`internal/audio`) consuming the same Engagement Event Bus every other
+stage does, and a public OBS Browser Source audio route. Managed from
+a new **Audio** page, separate from Alerts, Chat, Overlays and
+Automation.
+
+Only one global audio configuration exists — unlike alerts' many
+profiles — covering: provider mode (`disabled`/`system`/`local`/`cloud`;
+only `disabled` and `system` are real, `local`/`cloud` are rejected by
+validation until a real engine exists), voice selection, speed/volume,
+which event types trigger speech (or supporter-only mode, reusing the
+same closed capability-table pattern alerts already established),
+per-source/per-provider filtering, an exact-currency monetary
+threshold (never compared across currencies, mirroring alerts' own
+rule), a Bits threshold, blocked words, URL removal, manual-approval
+mode, cooldowns (global and stable per-user, never a fabricated
+identity for an anonymous event), queue capacity, and max spoken text
+length.
+
+Every eligible event goes through a fixed text-preprocessing pipeline
+(command suppression, URL removal, blocked-word filtering, repeated-
+character normalization, whitespace normalization, max-length
+enforcement) before being enqueued; synthesis happens **just in
+time**, only once an item is promoted to "current" and a renderer is
+actually connected — never for the whole queue up front. Generated
+audio is ephemeral: never written to SQLite, never becomes a
+template/visual asset, and the queue itself never survives a backend
+restart.
+
+The public route (`/overlay/audio/{publicSlug}`) uses the same SSE +
+narrow-POST-acknowledgement protocol the alert overlay established:
+`audio.current`/`audio.idle`/`audio.reset`/`audio.gap` events carrying
+only a short-lived playback token/URL, volume and sequencing — never
+the original event, username, donor email, or message text — plus a
+single-active-renderer lease (a new connection immediately supersedes
+the previous one; a stale session's acknowledgement is rejected) and
+honest `waiting_for_renderer`/interrupted states rather than silent
+auto-replay. See [`docs/audio-tts.md`](docs/audio-tts.md) for the full
+researched contract, including why SAPI was chosen over WinRT and the
+OBS Browser Source audio-support research.
+
+**What this stage does not implement.** Persistent alert sound
+assets, per-alert-rule TTS/sound, synchronization with alert playback,
+a local or cloud TTS engine (both rejected by validation, not silently
+accepted), and any audio extension of the Stage 14B template-asset
+format — all deliberately deferred to Stage 17B. Non-Windows builds
+compile and run identically; the `system` provider honestly reports
+itself unavailable there rather than faking success.
+
+### Verifying it for real
+
+`scripts/verify-tts-audio.mjs` exercises the whole feature end to end
+against the real backend, a real fake StreamElements Astro connector
+(reused as the one real Event-Bus-triggering donation source, since
+donations are already supporter-family-eligible), and a real
+integration-build-only deterministic fake TTS provider (valid
+WAV/PCM, no ffmpeg, no network, no dependency on installed voices) —
+settings persistence, the runtime queue never surviving a restart,
+Test Speak through the real preprocessing pipeline and bounded queue,
+source/currency/threshold filtering through the real Event Bus,
+manual approval (pending/approve/reject, proving a rejected item is
+never synthesized), just-in-time promotion requiring a connected
+renderer, the generated URL leaking no source text, playback
+acknowledgement lifecycle (including stale/duplicate/wrong-session
+rejection and session supersession), renderer disconnect while
+playing, skip-current cancelling an in-flight synthesis, forced
+synthesis failure/oversize isolating one item, provider-unavailable
+and unknown-voice honesty, slug rotation, route strictness, backend
+shutdown cancelling in-flight synthesis, and a full PII/secret scan of
+every audio-surface payload plus the raw SQLite file — run at least
+twice per change. See [`docs/progress.md`](docs/progress.md) for
+exactly which scenarios this covers versus a specific named Go test
+instead.
 
 ---
 
@@ -2874,6 +2978,7 @@ node scripts/verify-visual-templates.mjs          # Stage 14A visual-template li
 node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 node scripts/verify-youtube-engagement.mjs        # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 node scripts/verify-streamelements-donations.mjs  # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
+node scripts/verify-tts-audio.mjs                 # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -3219,6 +3324,7 @@ rest of the repository.
 │   ├── project-overview.md     # Full project description
 │   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10, manual outbound chat as of stage 11A, scheduled messages and chat commands as of stage 11B)
 │   ├── obs-browser-source.md   # Researched OBS Browser Source contract and Stage 10 recommendations
+│   ├── audio-tts.md            # Researched Windows SAPI TTS contract, the shared audio runtime/queue design, and the public audio overlay protocol (Stage 17A)
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
@@ -3246,7 +3352,8 @@ rest of the repository.
 │   ├── verify-visual-templates.mjs # Stage 14A visual-template library: built-ins, compatibility, JSON import/export - no fake servers needed
 │   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 │   ├── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
-│   └── verify-streamelements-donations.mjs # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
+│   ├── verify-streamelements-donations.mjs # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
+│   └── verify-tts-audio.mjs        # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -3265,7 +3372,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| TTS, goal/counter widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), and a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (TTS, goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Goal/counter widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline), and a real **shared audio runtime and text-to-speech foundation** (stage 17A: a real Windows SAPI provider, a bounded audio queue consuming that same Event Bus, and a public OBS Browser Source audio route) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents), [Text-to-speech and audio](#text-to-speech-and-audio) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3402,6 +3509,19 @@ directly next to the control.
   monetary value (integer micros, uppercased currency, no FX
   conversion) — see
   [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents).
+- **A real external-donation connector** (stage 16A) — a
+  provider-independent `donationsource` domain and a real
+  **StreamElements** Astro WebSocket connector, publishing real
+  donations onto that same Event Bus with exact integer-micros money
+  and full reuse of operator chat/chat overlay/alerts — see
+  [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
+- **A real shared audio runtime and text-to-speech foundation**
+  (stage 17A) — a provider-independent `Provider` abstraction with a
+  real Windows SAPI implementation; a bounded audio queue consuming
+  that same Event Bus with cooldowns, manual approval, per-source/
+  per-currency/per-Bits filtering and text preprocessing; and a real,
+  public, unauthenticated OBS Browser Source audio route — see
+  [Text-to-speech and audio](#text-to-speech-and-audio).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3414,7 +3534,7 @@ API does not report them, so showing a number would mean inventing it.
   capability-gated (stage 7C). Kick's own engagement adapter (stage 15B)
   remains separately feasibility-gated - see
   [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md).
-- **TTS and goal widgets** — architecture only so far, see
+- **Goal/counter widgets** — architecture only so far, see
   [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
   Portable archive template packages and managed template assets shipped
   in Stage 14B — see
@@ -3426,7 +3546,11 @@ API does not report them, so showing a number would mean inventing it.
   gated — Streamlabs' documented OAuth token exchange requires a
   confidential client secret with no public-client alternative found;
   Ko-fi is webhook-only and needs a public inbound endpoint this
-  deployment target does not offer.
+  deployment target does not offer. A real shared audio runtime and
+  text-to-speech foundation shipped in Stage 17A — see
+  [`docs/audio-tts.md`](docs/audio-tts.md). Persistent alert sound
+  assets, per-alert-rule TTS, and any audio extension of the template
+  format remain Stage 17B's own, later, separately-scoped decision.
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---

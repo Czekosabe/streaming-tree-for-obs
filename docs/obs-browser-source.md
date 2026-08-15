@@ -417,22 +417,61 @@ overlay React components still render both the public route and the
 Overlays management page's own preview identically, branching
 internally on `renderingMode`.
 
+## Stage 17A: the audio Browser Source route
+
+The audio route (`/overlay/audio/{publicSlug}`) reuses the exact same
+URL-not-local-file, transparent-background, FPS/permissions and
+shutdown/refresh guidance this document already established, with one
+genuinely new consideration the chat and alert routes never had: **the
+source must actually be able to make sound.** Both the OBS Knowledge
+Base (<https://obsproject.com/kb/browser-source>) and the
+`obsproject/obs-browser` GitHub repository confirm Browser Source is
+CEF-based and explicitly documented as supporting "custom layout,
+image, video, and even audio tasks" - but neither official source
+documents an autoplay policy, a "Control audio via OBS" property
+behavior, or CEF's own audio-routing/mixing configuration. That gap is
+recorded honestly here rather than guessed at: **this document makes
+no claim that OBS's first programmatic audio play is always accepted,
+and no claim that real OBS mixer routing has been manually verified**
+(see [audio-tts.md](audio-tts.md) §18 for the full research and the
+same caveat recorded at the product-design level).
+
+The application-level hydration/reset shape mirrors the alert route
+one layer over: the audio page opens `GET
+/api/public/audio/{slug}/stream` directly (no separate config fetch -
+there is no theme/position to hydrate for an audio-only source),
+whose events are `audio.reset` (fresh-connection snapshot),
+`audio.current` (a safe summary: a short-lived playback token/URL,
+content type, volume - never the original event, username, donor
+email, or message text), `audio.idle` (no active item) and `audio.gap`
+(evicted/slow-consumer, mirrors `alert.gap`), with `Last-Event-ID`
+replay exactly like the other two overlay routes. Unlike the alert and
+chat renderers, the audio renderer is a single `<audio>` element with
+no visible layout at all - the Browser Source can be sized arbitrarily
+small, since nothing is ever drawn to it. The renderer establishes
+itself as the sole active playback session on connect (§15 of
+[audio-tts.md](audio-tts.md)); a second Browser Source pointed at the
+same slug immediately supersedes the first rather than doubling audio,
+and reports `playback_started`/`playback_ended`/`playback_failed` back
+through a narrow `POST .../ack` rather than a second SSE stream.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's, 12B's, 13A's, 13B's or 14B's own
-verification.** Every finding above comes from reading the official
+verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's or 17A's
+own verification.** Every finding above comes from reading the official
 pages listed, not from observing a live Browser Source. The local
 integration scripts (`scripts/verify-chat-overlay.mjs`,
 `scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
 `scripts/verify-alert-designer.mjs`,
 `scripts/verify-chat-overlay-designer.mjs`,
-`scripts/verify-visual-template-packages.mjs`) exercise the same
-HTTP/SSE contract a real Browser Source would consume, from a plain
-Node.js HTTP client - they prove the backend's contract is correct, not
-that OBS's own CEF decodes an image/video asset, seeks a video via
-Range requests, or renders a custom `FontFace` identically to a
-headless test environment. Re-verify this document's recommendations
-manually the first time any of these features is actually used inside
-real OBS, and re-check it entirely if OBS changes Browser Source's
-documented behavior in a future release.
+`scripts/verify-visual-template-packages.mjs`,
+`scripts/verify-tts-audio.mjs`) exercise the same HTTP/SSE contract a
+real Browser Source would consume, from a plain Node.js HTTP client -
+they prove the backend's contract is correct, not that OBS's own CEF
+decodes an image/video asset, seeks a video via Range requests, renders
+a custom `FontFace`, or actually produces audible speech through its
+own mixer, identically to a headless test environment. Re-verify this
+document's recommendations manually the first time any of these
+features is actually used inside real OBS, and re-check it entirely if
+OBS changes Browser Source's documented behavior in a future release.

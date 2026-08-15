@@ -23587,3 +23587,96 @@ Documentation pass across README.md, docs/project-overview.md,
 docs/engagement-architecture.md, docs/obs-browser-source.md,
 docs/visual-template-packages.md, and config/README.md, followed by a
 final stale-claims search and the complete closing regression.
+
+## 2026-08-15 — docs: reflect Stage 17A completion across living docs
+
+### Status
+Completed.
+
+### Scope
+A documentation pass across every living doc that described TTS/audio
+as unimplemented or planned, now that Stage 17A has shipped and been
+verified twice. `config/README.md` was checked and needed no change
+(no TTS/audio mentions at all). `docs/visual-templates.md` was checked
+and needed no change (its own audio-exclusion statement is a stage
+14A/14B scope note, not a staleness issue).
+
+### Changes
+- `README.md` - the biggest set of changes: moved TTS/audio out of
+  every "still planned"/"not implemented" list (long-term-vision intro,
+  the bolded status blockquote, the roadmap table - split into a new
+  `17A` **Completed** row and a `17B` `Planned` row - the "what remains
+  planned" paragraph after the alerts/chat summary, three per-stage
+  "what this stage does not implement" historical notes for stages 8A,
+  9 and 10, each corrected the same way this doc's own established
+  convention already handles superseded historical claims: the original
+  sentence is left in place and a forward-looking correction is added
+  immediately after it, mirroring the existing "YouTube's own
+  engagement connector is real as of Stage 15A" pattern rather than
+  rewriting history); added a new **Text-to-speech and audio** section
+  (structure and length matching the existing **Alerts** section: what
+  the runtime does, its settings, the preprocessing pipeline, the
+  public SSE/ack protocol, what Stage 17B still owns, and a "Verifying
+  it for real" subsection describing `scripts/verify-tts-audio.mjs`),
+  linked from a new Table of Contents entry; added the 19th script to
+  both integration-script listings (the `node scripts/verify-*.mjs`
+  command block and the repository directory-structure tree), and
+  `docs/audio-tts.md` to the directory-structure tree's own `docs/`
+  listing; updated the "What is currently demo-only" table row and
+  added matching "What is real"/"What will be added later" bullets.
+- `docs/project-overview.md` - roadmap table split into `17A`
+  **Completed** / `17B` Planned rows (mirroring README.md); the §16
+  "Engagement and overlay platform" status paragraph's piece count
+  went from eleven to twelve, gained a full description of the new
+  audio/TTS piece, and its closing "remains planned" sentence dropped
+  TTS; a new "Factual status update (stage 17A, completed)" blockquote
+  was added immediately after the existing stage-16A one, following
+  this doc's own established pattern of appending forward-looking
+  corrections after a preserved historical paragraph rather than
+  rewriting it.
+- `docs/engagement-architecture.md` - §13's roadmap table row for
+  stage 17 split into `17A` **Completed** / `17B` Planned; a new
+  "Factual status update (stage 17A, completed)" blockquote added at
+  the end of §12 (Text-to-speech), the same pattern §13.1's own status
+  updates already established, describing what actually shipped versus
+  what stays Stage 17B's decision. The "per-rule TTS" mentions in §9's
+  alert-rule field list and the alert-rule capability note were left
+  unchanged - per-rule TTS is genuinely still Stage 17B scope, not a
+  stale claim.
+- `docs/obs-browser-source.md` - added a new "Stage 17A: the audio
+  Browser Source route" section (matching the existing "Stage 12A: the
+  alert Browser Source route" section's structure), covering the one
+  genuinely new OBS-level consideration audio has that chat/alert
+  overlays never did (the source must actually produce sound, and
+  neither official source documents an autoplay policy or OBS's own
+  audio-routing/mixing behavior - the same honest gap already recorded
+  in `docs/audio-tts.md` §18) and the application-level SSE/ack
+  protocol; updated the closing "What was not tested" section's stage
+  list and script list to include Stage 17A and
+  `scripts/verify-tts-audio.mjs`.
+- `docs/visual-template-packages.md` - added a "Factual status update
+  (stage 17A, completed)" note to §2 ("Sound and audio are explicitly
+  out of scope"), the same pattern used elsewhere in this session's
+  changes, confirming Stage 17A shipped the one audio subsystem §2
+  anticipated while explicitly not deciding whether alert sounds will
+  ever share its managed-asset infrastructure - that remains Stage
+  17B's own, later, separately-scoped decision, exactly as §2 already
+  said before this stage began.
+
+### Automated validation
+Prose-only changes; no code was touched. Every new/edited cross-
+reference link target (`docs/audio-tts.md`, the new README
+`#text-to-speech-and-audio` anchor, `scripts/verify-tts-audio.mjs`) was
+checked to actually exist before linking to it.
+
+### Known limitations
+None specific to this commit. Stage 17A as a whole is not yet fully
+closed - the final stale-claims search (a broader sweep beyond TTS/
+audio specifically) and the complete closing regression across all 19
+integration scripts have not run yet.
+
+### Next step
+A final, broader stale-claims search across the same living docs (not
+limited to TTS/audio), then the complete closing regression: every
+backend/frontend check plus all 19 integration scripts run in sequence
+from a clean state.
