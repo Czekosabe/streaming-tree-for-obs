@@ -23893,3 +23893,128 @@ Run the complete post-close regression again (frontend + backend
 checks, then all 19 integration scripts in one clean sequence), since
 this commit touches living product documentation after the previous
 closing regression.
+
+## 2026-08-15 — docs: record Stage 17A corrective regression
+
+### Status
+Completed. No product source behavior changed.
+
+### Corrective commit
+`9a2c607` ("fix(docs): reconcile Stage 17A closing record") is the
+corrective commit this entry closes out. Stage 17A's own final commit
+remains `e5b3be1` ("docs: close out Stage 17A with a final
+regression") - unchanged, not amended, not moved.
+
+### Journal-heading incident, final conclusion
+Confirmed by direct Git audit (see `9a2c607`'s own entry above): of
+the 12 real Stage 17A session commits, 11 progress.md headings match
+their commit subjects exactly; only `e5b3be1`'s heading ("Stage 17A
+closing regression") does not match its real subject ("docs: close
+out Stage 17A with a final regression"). That historical entry's
+heading and body were **not** edited, renamed, moved, or reordered by
+either corrective commit - the mismatch is recorded, not rewritten,
+consistent with this journal's own append-only rule.
+
+### Stage 17A session commit count and range
+**12 commits**, exact range **`8476f6a..e5b3be1`** (first commit
+`114141d`, last commit `e5b3be1`). The prior chat report's "12
+commits" figure was correct; its cited range "`08b6652..e5b3be1`" was
+a citation mistake (git-exclusive of `08b6652` itself, spanning only 9
+commits) - not a repository defect.
+
+### README fixes
+"stages 8A through 16A" corrected to "stages 8A through 17A" (Stage
+17A is itself one of the pieces the same paragraph describes as real
+immediately above that sentence); the ambiguous roadmap row "17B,
+18-19" (label implying Stage 19/TikTok while its scope text omitted
+TikTok entirely) split into three rows - 17B, 18, 19 - matching the
+canonical roadmap in `docs/project-overview.md` and
+`docs/engagement-architecture.md`, with Stage 19's conditional wording
+preserved exactly. No product source code was touched by either
+corrective commit.
+
+### Full post-close regression
+Frontend: `npm run i18n:check` (2 languages, 18 namespaces, no
+differences), `npm run typecheck` (clean), `npm run lint` (clean),
+`npm run test -- --run` (**92 test files, 1289 tests, all passing**),
+`npm run build` (clean). Backend: `gofmt -l .` (clean), `go vet ./...`
+and `go vet -tags integration ./...` (clean), `go test ./...` (all
+packages pass), `go build ./...` and `go build -tags integration
+./...` (clean).
+
+All 19 integration scripts, in the repository's documented order:
+`verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+`verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`,
+`verify-twitch-engagement.mjs`, `verify-operator-chat.mjs`,
+`verify-chat-overlay.mjs`, `verify-twitch-outbound-chat.mjs`,
+`verify-chat-automation.mjs`, `verify-alerts.mjs`,
+`verify-alert-advanced-queue.mjs`, `verify-alert-designer.mjs`,
+`verify-chat-overlay-designer.mjs`, `verify-visual-templates.mjs`,
+`verify-visual-template-packages.mjs`, `verify-youtube-engagement.mjs`,
+`verify-streamelements-donations.mjs`, `verify-tts-audio.mjs`.
+
+**One transient failure occurred and is recorded honestly**: on the
+first attempt, `verify-streamelements-donations.mjs` step 06 failed
+one assertion ("the subscribe request carried the source's own
+remoteChannelId as room") with an empty `room` and `hasToken: false`
+captured. Diagnosis before acting (per this project's own standing
+autonomy rule): the script's own `waitForConnection` helper resolves
+as soon as the fake Astro server registers a WebSocket connection,
+before the real connector's own subsequent subscribe frame is
+necessarily processed - a read-before-write race in the test's own
+polling condition, not in the product connector. This was corroborated
+by three facts: the corrective commit touched only `README.md` and
+`docs/progress.md` (no code capable of affecting StreamElements
+donations), this exact script had passed cleanly minutes earlier in
+the immediately-prior regression attempt, and the captured payload
+(`subscribedTopics: null`, `hasToken: false`, empty `room`) is exactly
+what an unprocessed just-opened connection looks like. Per this
+corrective pass's own scope (documentation only - no unrelated script
+was modified), the complete regression was restarted from the
+beginning rather than patched: frontend checks, backend checks, and
+all 19 scripts in sequence, run a second time, start to finish. All 19
+passed cleanly on this second attempt, including
+`verify-streamelements-donations.mjs`'s previously-flaky assertion
+now passing outright - confirming the diagnosis. **No script was
+modified** at any point, in either attempt.
+
+No real Twitch, YouTube, StreamElements, Kick, Streamlabs, Ko-fi, or
+TikTok service was ever contacted - every provider-facing scenario
+used this repository's own local fake servers, exactly as in every
+prior regression. `verify-mediamtx-runtime.mjs` and
+`verify-ffmpeg-branches.mjs` exercised this machine's real, locally
+installed MediaMTX and FFmpeg binaries (not fakes, and not a remote
+service) - unchanged from every previous run. No real OBS installation
+and no manual browser verification were performed at any point in this
+corrective pass. The Windows SAPI provider's own status is unchanged
+from prior entries: verified earlier this stage via a manual `curl`
+smoke test against this machine's real installed voices, not by an
+automated script (voices are machine-dependent).
+
+No product source code and no product documentation were modified
+after this regression completed - only this journal entry was added
+afterward.
+
+### Autonomous waiting
+Every long-running command (each script build, each of the 19
+integration scripts, both regression attempts in full) was waited for
+autonomously to its real process exit status; no operator confirmation
+was requested or required at any point.
+
+### Status recap
+Stage 17A: **Completed**. Stage 17B: **Planned, not started**. Stage
+17 as a whole: **Incomplete**. Stage 18 (goal/counter widgets):
+**Planned, not started**. Stage 19 (TikTok LIVE, conditional on an
+official, permitted, sufficiently stable integration existing): **not
+started**. Stage 20 (logs, diagnostics, packaging, updater,
+remote-server hardening): **not started** - the updater remains
+unimplemented.
+
+### Known limitations
+None beyond what is already recorded in the Stage 17A closing entries.
+Stage 17B implementation was not begun by this corrective pass.
+
+### Next step
+None outstanding for Stage 17A. Awaiting the next explicitly scoped
+task.
