@@ -24018,3 +24018,65 @@ Stage 17B implementation was not begun by this corrective pass.
 ### Next step
 None outstanding for Stage 17A. Awaiting the next explicitly scoped
 task.
+
+## 2026-08-15 — test: remove StreamElements subscription wait race
+
+### Status
+Completed. Test-harness-only change; no product code modified.
+
+### Scope
+Deterministically removes the transient timing race recorded in the
+Stage 17A corrective regression's own journal entry
+(`docs: record Stage 17A corrective regression`), where
+`scripts/verify-streamelements-donations.mjs` occasionally observed an
+empty `room`, `hasToken: false`, and `subscribedTopics: null`
+immediately after a fake-Astro-server connection was accepted.
+
+### Root cause, confirmed by direct audit
+`apps/server/cmd/fakestreamelements`'s own `fakeConn` struct
+(`room`/`hasToken`/`subscribedTopics` fields) is registered in the
+server's connection map at WebSocket-accept time, before the client's
+subscribe frame is necessarily parsed - those three fields are only
+populated later, when the subscribe message actually arrives (see
+`fc.room = sub.Room` / `fc.hasToken = sub.Token != ""` /
+`fc.subscribedTopics = append(...)` in the fake server's message
+handler). The script's own `waitForConnection` helper only ever
+polled `/control/connections` until `items.length > 0` - satisfied the
+instant the connection is accepted, not once its subscribe state is
+populated. This is a read-before-write race in the test script's own
+polling condition, confirmed **not** a StreamElements product
+connector defect - the real connector always did subscribe correctly,
+the test merely sometimes read the snapshot before that subscribe
+frame had been processed.
+
+### Fix
+`waitForConnection` now accepts an optional predicate. With no
+predicate, its behavior is unchanged (existing call sites at the
+reconnect-after-gap and restart-persistence scenarios keep working
+identically, since neither reads `room`/`hasToken`/`subscribedTopics`
+immediately after the call). The one call site that immediately reads
+those three fields (`Enable the source` in the donation-source
+lifecycle scenario) now passes a predicate requiring
+`room === 'chan_1' && hasToken === true && subscribedTopics` including
+both `channel.tips` and `channel.tips.moderation` - the exact
+condition the following assertions need, not a fixed sleep. On
+timeout, the last observed connection snapshots (`id`/`room`/
+`hasToken`/`subscribedTopics` only - never the raw credential, which
+was never present in this struct to begin with) are attached to the
+error for diagnostics. The existing `POLL_TIMEOUT_MS` bound (20s)
+still applies - no new unbounded wait was introduced. No assertion was
+weakened; every previously-checked condition is still checked, just
+waited-for correctly instead of raced.
+
+### Automated validation
+`node scripts/verify-streamelements-donations.mjs` run **5 consecutive
+times**, all clean passes, including the previously-flaky assertion
+("the subscribe request carried the source's own remoteChannelId as
+room") passing outright every time.
+
+### Known limitations
+None. No product code was touched.
+
+### Next step
+Read the real Stage 17A/alerts/Stage 14 implementation in full before
+designing the Stage 17B contract (`docs/alert-audio.md`).

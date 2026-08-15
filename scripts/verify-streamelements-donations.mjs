@@ -264,11 +264,35 @@ async function control(controlBaseUrl, method, path, body) {
   return { status: res.status, body: parsed };
 }
 
-async function waitForConnection(controlBaseUrl, label) {
-  return waitUntil(async () => {
-    const res = await control(controlBaseUrl, 'GET', '/control/connections');
-    return res.body.items.length > 0 ? res.body : false;
-  }, POLL_TIMEOUT_MS, label);
+// An optional predicate lets a caller wait for a specific connection state
+// (e.g. "the subscribe frame has actually been processed: room/hasToken/
+// subscribedTopics are populated") rather than merely "a WebSocket
+// connection has been accepted" - the fake server registers a connection
+// entry at accept time, before its subscribe message is parsed, so reading
+// room/hasToken/subscribedTopics immediately after the bare
+// items.length > 0 condition is a genuine read-before-write race, not a
+// StreamElements product-connector defect. On timeout, the last observed
+// connection snapshots are attached to the error for diagnostics - safe to
+// include since hasToken is only ever a boolean, never the raw credential.
+async function waitForConnection(controlBaseUrl, label, predicate) {
+  let lastObserved = null;
+  try {
+    return await waitUntil(async () => {
+      const res = await control(controlBaseUrl, 'GET', '/control/connections');
+      lastObserved = res.body.items;
+      if (res.body.items.length === 0) return false;
+      if (!predicate) return res.body;
+      return res.body.items.some(predicate) ? res.body : false;
+    }, POLL_TIMEOUT_MS, label);
+  } catch (error) {
+    if (predicate && lastObserved) {
+      const safe = lastObserved.map((item) => ({
+        id: item.id, room: item.room, hasToken: item.hasToken, subscribedTopics: item.subscribedTopics,
+      }));
+      throw new Error(`${error.message} - last observed connections: ${JSON.stringify(safe)}`);
+    }
+    throw error;
+  }
 }
 
 async function waitForNoConnection(controlBaseUrl, label) {
@@ -518,7 +542,14 @@ async function main() {
     const enable = await request(baseUrl, 'PUT', `/api/donation-sources/${source.id}/engagement`, { enabled: true });
     expect(enable.status === 200 && enable.body.enabled === true, 'the enable request succeeds', enable.body);
 
-    const conn1 = await waitForConnection(controlBaseUrl, 'the fake Astro server to accept a connection');
+    const conn1 = await waitForConnection(
+      controlBaseUrl,
+      'the fake Astro server to observe a fully subscribed connection (room=chan_1, credential present, both tip topics)',
+      (item) => item.room === 'chan_1' && item.hasToken === true
+        && Array.isArray(item.subscribedTopics)
+        && item.subscribedTopics.includes('channel.tips')
+        && item.subscribedTopics.includes('channel.tips.moderation'),
+    );
     const info1 = conn1.items[0];
     expect(info1.room === 'chan_1', 'the subscribe request carried the source\'s own remoteChannelId as room', info1);
     expect(info1.hasToken === true, 'a credential was supplied on subscribe', info1);
