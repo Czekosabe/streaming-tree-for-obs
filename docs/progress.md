@@ -24192,3 +24192,110 @@ Implement the contract: managed audio assets
 `internal/audio`/`internal/alerts` synchronization wiring,
 per-alert-rule TTS, package v2, frontend UI, and the 20th integration
 script, in that order.
+
+## 2026-08-15 — feat(server): add managed alert audio assets
+
+### Status
+Completed (this commit's scope only - Stage 17B as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The first Stage 17B backend piece per `docs/alert-audio.md` §5/§6:
+`internal/domain/audioasset`, a new managed persistent audio asset
+domain mirroring `internal/domain/visualasset`'s own proven shape
+(blob/metadata split, content-addressed storage, reference tracking,
+delayed orphan GC), plus its SQLite persistence and its management
+HTTP API. No alert-rule wiring yet - this is the standalone asset
+domain only.
+
+### Changes
+- `apps/server/internal/domain/audioasset/{asset.go,errors.go,
+  validation.go,repository.go,service.go}` (new) - `Kind`/`MediaType`
+  (one closed value each: `sound`/`audio/wav`), `Blob`/`Asset` models,
+  a hand-rolled RIFF/WAVE chunk-walking validator (`ValidateWAV`) that
+  never decodes audio samples and never shells out to FFmpeg/ffprobe,
+  a `Repository` port, and a `Service` façade. Deliberately reuses
+  `internal/domain/visualasset.FileStore`'s own generic content-
+  addressed blob-storage primitive directly (a second instance, rooted
+  at a sibling `assets/audio` directory) rather than duplicating it -
+  translates that package's own sentinel errors into this package's
+  own at the `Service` boundary. `ResolveSoundAsset` is the concrete
+  method `internal/audio`'s own injected asset resolver will call in
+  the next commit.
+- `apps/server/internal/domain/audioasset/{validation_test.go,
+  service_test.go}` (new) - 22 validation tests (every accepted
+  channel/sample-rate combination, every rejected format/malformed/
+  truncated/oversized-duration case, a panic-safety sweep over
+  adversarial byte sequences) and 13 service tests (upload, SHA-256
+  dedup with distinct metadata preserved, oversized/unsupported/
+  overlong-metadata rejection, delete-in-use guard, delete-never-
+  physically-removes-the-blob, `Reconcile` orphan cleanup and
+  referenced-blob safety, `ResolveSoundAsset`, metadata update never
+  touching the blob/kind).
+- `apps/server/internal/storage/sqlite/migrations/0022_audio_assets.sql`
+  (new) - confirmed `0021_audio_tts.sql` is the true current highest
+  migration by direct directory listing before writing this file, per
+  `docs/alert-audio.md` §11. Four tables mirroring
+  `0018_visual_assets.sql`'s own shape: `audioasset_blobs`,
+  `audioasset_assets`, `alert_rule_audio_asset_refs` (FK to
+  `alert_rules`, `ON DELETE CASCADE`), `alert_template_audio_asset_refs`
+  (FK to `visual_templates`, `ON DELETE CASCADE`).
+- `apps/server/internal/storage/sqlite/audioasset_repository.go` (new)
+  - `AudioAssetRepository`, mirroring `visualasset_repository.go`'s own
+  structure exactly.
+- `apps/server/internal/storage/sqlite/audioasset_repository_test.go`
+  (new) - 4 tests: blob/asset round trip, reference-count/full-
+  replacement semantics (seeding real `alert_profiles`/`alert_rules`
+  rows, since this project's SQLite connection enforces foreign keys),
+  `ON DELETE CASCADE` clearing a template's audio refs automatically,
+  orphan/known blob-hash listing.
+- `apps/server/internal/httpapi/audioasset.go` (new) -
+  `registerAudioAssetRoutes`: `GET/POST /api/audio-assets`,
+  `GET/DELETE /api/audio-assets/{id}`, each with a 405+`Allow`
+  fallback, per `docs/alert-audio.md` §7. Upload reuses Stage 14B's own
+  strict streaming multipart contract verbatim
+  (`http.MaxBytesReader` first, `multipart.Reader` streaming, exactly
+  one file part, one bounded `displayName` field, unrecognized-part
+  rejection) - never base64-in-JSON. Deliberately **no** public
+  content-serving route and no content URL in the management DTO:
+  unlike a visual asset, audio bytes are only ever reachable through
+  `internal/audio`'s own existing public bytes-URL route, once a
+  rule's sound actually becomes the current playing item - never by
+  local ID or blob hash directly.
+- `apps/server/internal/httpapi/audioasset_test.go` (new) - 8 handler
+  tests (valid upload, unsupported-format/missing-file/unrecognized-
+  field rejection, list/get/404, delete-unreferenced-succeeds,
+  delete-referenced-409, method-not-allowed+`Allow` header) - seeds
+  real `alert_profiles`/`alert_rules` rows for the same FK-enforcement
+  reason the repository test does.
+- `apps/server/internal/httpapi/router.go` - new `AudioAssets
+  AudioAssetService` `Options` field, nil-guarded conditional
+  `registerAudioAssetRoutes` call, following the exact convention
+  every other domain's routes already use.
+- `apps/server/cmd/server/main.go` /
+  `apps/server/cmd/testserver/main.go` - wire a second
+  `visualasset.FileStore` rooted at `<DataDir>/assets/audio`,
+  `audioasset.NewService`, and a startup `Reconcile` call (logged, not
+  fatal, mirroring the existing visual-asset-store wiring immediately
+  above it in both files) - `AudioAssets: audioAssetService` added to
+  both `httpapi.NewRouter` calls.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean.
+- `go test ./...` - full suite passes, including all new tests above.
+
+### Known limitations
+No alert rule can reference an audio asset yet - `internal/domain/
+alerts.Rule` gains no fields in this commit. No wiring into
+`internal/audio`'s runtime yet - `ResolveSoundAsset` exists but
+nothing calls it. Stage 17B as a whole is not complete; Stage 17 as a
+whole is not complete.
+
+### Next step
+Extend `internal/domain/alerts.Rule`/`RuleInput` with the bounded
+`RuleAudio` configuration (docs/alert-audio.md §6/§7): sound enabled/
+asset/volume, TTS enabled/template/volume, validated against the real
+managed audio asset store and the existing alert placeholder/
+capability tables.

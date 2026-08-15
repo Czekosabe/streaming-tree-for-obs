@@ -150,6 +150,12 @@ type Options struct {
 	// (/api/public/audio/{slug}/...). When nil, none of those routes are
 	// registered.
 	Audio AudioService
+	// AudioAssets serves the Stage 17B managed persistent-audio-asset
+	// management API (/api/audio-assets/...) - no public route of its
+	// own; audio bytes are always served through Audio's own existing
+	// public bytes-URL route (docs/alert-audio.md §5.2/§7). When nil,
+	// none of those routes are registered.
+	AudioAssets AudioAssetService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -238,6 +244,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Audio != nil {
 		registerAudioRoutes(mux, logger, opts.Audio)
+	}
+
+	if opts.AudioAssets != nil {
+		registerAudioAssetRoutes(mux, logger, opts.AudioAssets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

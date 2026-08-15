@@ -24,6 +24,7 @@ import (
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
 	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
@@ -328,6 +329,28 @@ func run() error {
 		)
 	}
 
+	// Stage 17B: the managed persistent alert-audio asset store
+	// (docs/alert-audio.md §5) - a second, independent
+	// *visualasset.FileStore instance rooted at a sibling directory,
+	// reusing that type's own generic content-addressed blob primitive
+	// directly rather than duplicating it (docs/alert-audio.md §5.1).
+	// Reconcile runs once, here, on every clean startup, exactly like
+	// the visual asset store above.
+	audioAssetStore := visualasset.NewFileStore(filepath.Join(cfg.DataDir, "assets", "audio"))
+	if err := audioAssetStore.EnsureDirs(); err != nil {
+		return err
+	}
+	audioAssetService := audioasset.NewService(sqlite.NewAudioAssetRepository(db.DB), audioAssetStore, nil)
+	if reconciled, err := audioAssetService.Reconcile(ctx); err != nil {
+		logger.Error("audio asset store reconciliation failed", slog.Any("error", err))
+	} else {
+		logger.Info("audio asset store reconciled",
+			slog.Int("orphan_blob_files_removed", reconciled.OrphanBlobFilesRemoved),
+			slog.Int("orphan_blob_rows_removed", reconciled.OrphanBlobRowsRemoved),
+			slog.Int("missing_blob_files", len(reconciled.MissingBlobFiles)),
+		)
+	}
+
 	// Stage 10: the chat-overlay profile store and its live public
 	// projection. The projection's own bounded revision buffer is
 	// independent from both the Event Bus's and operator-chat's own -
@@ -546,7 +569,8 @@ func run() error {
 		DonationSources:    donationSourceService,
 		DonationConnectors: streamElementsEngagementManager,
 
-		Audio: audioManager,
+		Audio:       audioManager,
+		AudioAssets: audioAssetService,
 	})
 
 	server := &http.Server{
