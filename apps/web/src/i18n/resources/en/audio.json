@@ -1,0 +1,128 @@
+{
+  "page": {
+    "title": "Audio",
+    "description": "Text-to-speech settings, the runtime queue, and the OBS Browser Source audio output - built on the same normalized Engagement Event Bus as Alerts and Chat."
+  },
+  "capabilities": {
+    "title": "Text-to-speech engine",
+    "available": "System voice engine available",
+    "unavailable": "System voice engine unavailable",
+    "unavailableReason": "Reason: {{reason}}"
+  },
+  "settings": {
+    "title": "Settings",
+    "fields": {
+      "enabled": "Enabled",
+      "enabledHint": "When off, no event is ever spoken and the Browser Source stays silent.",
+      "providerMode": "Provider",
+      "supporterOnlyMode": "Supporters only",
+      "supporterOnlyModeHint": "When on, only supporter-family events (bits, subscriptions, gifted subs, memberships, Super Chat/Sticker, donations) are eligible, regardless of the event types selected below.",
+      "eventTypes": "Event types",
+      "eventTypesHint": "Empty means none - text-to-speech is opt-in per event type, never everything by default.",
+      "providers": "Providers",
+      "providersHint": "Leave empty to match every provider.",
+      "sources": "Accounts / donation sources",
+      "sourcesHint": "Leave empty to match every connected account and donation source.",
+      "thresholdCurrency": "Currency",
+      "thresholdAmount": "Minimum amount",
+      "thresholdHint": "An event in a different currency is never compared against this threshold.",
+      "minimumBits": "Minimum Bits",
+      "maxTextLength": "Maximum spoken text length (characters)",
+      "maxTextLengthHint": "50-2000 Unicode characters.",
+      "perUserCooldown": "Per-user cooldown (seconds)",
+      "perUserCooldownHint": "0-3600. Applies only to events with a stable identity - never an anonymous donation.",
+      "globalCooldown": "Global cooldown (seconds)",
+      "globalCooldownHint": "0-300. Applies to every eligible event regardless of who triggered it.",
+      "blockedWords": "Blocked words",
+      "removeUrls": "Remove URLs from spoken text",
+      "normalizeRepeatedChars": "Normalize repeated characters",
+      "normalizeRepeatedCharsHint": "\"sooooo\" becomes \"sooo\" - never a multi-second elongated pronunciation.",
+      "suppressCommands": "Suppress recognized chat commands",
+      "suppressCommandsHint": "Only applies to chat messages - a donation message starting with \"!\" is still spoken.",
+      "queueCapacity": "Queue capacity",
+      "queueCapacityHint": "10-500 items.",
+      "manualApproval": "Require manual approval",
+      "manualApprovalHint": "A real eligible event waits for Approve/Reject instead of speaking immediately.",
+      "voice": "Voice",
+      "voiceSystemDefault": "System default",
+      "language": "Language",
+      "speed": "Speed",
+      "volume": "Volume"
+    },
+    "providerMode": {
+      "disabled": "Disabled",
+      "system": "System",
+      "local": "Local (not available)",
+      "cloud": "Cloud (not available)"
+    }
+  },
+  "browserSource": {
+    "title": "Browser Source",
+    "url": "Browser Source URL",
+    "copyUrl": "Copy URL",
+    "copied": "Copied",
+    "openUrl": "Open URL",
+    "rotateAction": "Rotate URL",
+    "rotateConfirmTitle": "Rotate the Browser Source URL?",
+    "rotateConfirmMessage": "The current URL will stop working immediately. Update the Browser Source in OBS with the new URL afterward.",
+    "hint": "Add this URL once as a Browser Source in OBS. It renders no visible content of its own - only audio."
+  },
+  "status": {
+    "title": "Status",
+    "renderer": "Browser Source connection",
+    "rendererConnected": "Connected",
+    "rendererDisconnected": "Not connected",
+    "current": "Current item",
+    "currentNone": "Nothing playing right now.",
+    "currentSynthetic": "Test",
+    "waitingForRenderer": "Waiting for the Browser Source to connect.",
+    "inputGapWarning": "The Event Bus connection was briefly lost and later reconnected - some events during that window may not have been matched.",
+    "counters": {
+      "totalEnqueued": "Enqueued",
+      "totalPlayed": "Played",
+      "totalExpired": "Expired",
+      "totalCapacityDropped": "Dropped (full)",
+      "totalManuallySkipped": "Skipped",
+      "totalSynthetic": "Test items",
+      "totalRejected": "Rejected",
+      "totalPlaybackFailed": "Playback failed",
+      "totalSynthesisFailed": "Synthesis failed",
+      "totalInterrupted": "Interrupted"
+    }
+  },
+  "queue": {
+    "title": "Queue",
+    "queuedCount": "{{count}} queued (capacity {{capacity}})",
+    "skipAction": "Skip current",
+    "clearAction": "Clear queue",
+    "clearConfirmTitle": "Clear the queue?",
+    "clearConfirmMessage": "Every queued (not yet playing) item is removed. The item currently playing, if any, is not affected."
+  },
+  "pending": {
+    "title": "Pending approval",
+    "empty": "Nothing waiting for approval.",
+    "approveAction": "Approve",
+    "rejectAction": "Reject"
+  },
+  "testSpeak": {
+    "title": "Test Speak",
+    "placeholder": "Type text to test the pipeline...",
+    "action": "Speak",
+    "hint": "Goes through the real preprocessing pipeline and the real queue, but never touches real cooldowns and never contacts Twitch, YouTube, or StreamElements."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "errors": {
+    "audio_disabled": "Audio/TTS is currently disabled.",
+    "audio_text_empty": "The text is empty after preprocessing.",
+    "audio_queue_full": "The audio queue is currently full.",
+    "audio_voice_not_found": "The selected voice is not available.",
+    "audio_provider_unavailable": "The text-to-speech provider is not available.",
+    "audio_settings_invalid": "The settings failed validation.",
+    "audio_item_not_found": "This item no longer exists.",
+    "generic": "Something went wrong. Please try again."
+  }
+}

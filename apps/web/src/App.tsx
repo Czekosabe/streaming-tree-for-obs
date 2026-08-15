@@ -6,6 +6,7 @@ import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
 import { AlertDesignerPage } from '@/pages/AlertDesignerPage';
 import { AlertsPage } from '@/pages/AlertsPage';
+import { AudioPage } from '@/pages/AudioPage';
 import { AutomationPage } from '@/pages/AutomationPage';
 import { ChatOverlayDesignerPage } from '@/pages/ChatOverlayDesignerPage';
 import { ChatPage } from '@/pages/ChatPage';
@@ -16,6 +17,7 @@ import { OverlayChatPage } from '@/pages/OverlayChatPage';
 import { OverlaysPage } from '@/pages/OverlaysPage';
 import { LogsPage, MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
 import { PublicAlertPage } from '@/pages/PublicAlertPage';
+import { PublicAudioPage } from '@/pages/PublicAudioPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StreamsPage } from '@/pages/StreamsPage';
 
@@ -34,6 +36,7 @@ export function App() {
             <Route path="/overlays" element={<OverlaysPage />} />
             <Route path="/automation" element={<AutomationPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/audio" element={<AudioPage />} />
             {/* No AppShell: the Designer wants full control of the
                 viewport for its own canvas/panel layout and top bar -
                 see AlertDesignerPage's own doc comment. */}
@@ -50,6 +53,9 @@ export function App() {
             {/* No AppShell here either - see PublicAlertPage's own doc
                 comment. */}
             <Route path="/overlay/alerts/:publicSlug" element={<PublicAlertPage />} />
+            {/* No AppShell here either - see PublicAudioPage's own doc
+                comment. */}
+            <Route path="/overlay/audio/:publicSlug" element={<PublicAudioPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>

@@ -11,6 +11,7 @@ import {
   Settings,
   SlidersHorizontal,
   Tv,
+  Volume2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/overlays', labelKey: 'items.overlays', icon: MonitorPlay, planned: false },
   { to: '/automation', labelKey: 'items.automation', icon: Bot, planned: false },
   { to: '/alerts', labelKey: 'items.alerts', icon: Bell, planned: false },
+  { to: '/audio', labelKey: 'items.audio', icon: Volume2, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];

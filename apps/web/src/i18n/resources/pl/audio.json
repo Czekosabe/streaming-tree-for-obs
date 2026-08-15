@@ -1,0 +1,128 @@
+{
+  "page": {
+    "title": "Dźwięk",
+    "description": "Ustawienia syntezy mowy, kolejka odtwarzania i wyjście dźwiękowe źródła przeglądarki OBS - zbudowane na tej samej znormalizowanej szynie zdarzeń zaangażowania co Alerty i Czat."
+  },
+  "capabilities": {
+    "title": "Silnik syntezy mowy",
+    "available": "Systemowy silnik głosowy dostępny",
+    "unavailable": "Systemowy silnik głosowy niedostępny",
+    "unavailableReason": "Powód: {{reason}}"
+  },
+  "settings": {
+    "title": "Ustawienia",
+    "fields": {
+      "enabled": "Włączone",
+      "enabledHint": "Gdy wyłączone, żadne zdarzenie nie jest odczytywane, a źródło przeglądarki pozostaje ciche.",
+      "providerMode": "Dostawca",
+      "supporterOnlyMode": "Tylko wspierający",
+      "supporterOnlyModeHint": "Gdy włączone, kwalifikują się tylko zdarzenia z rodziny wspierających (bity, subskrypcje, podarowane suby, członkostwa, Super Chat/Sticker, darowizny), niezależnie od typów zdarzeń wybranych poniżej.",
+      "eventTypes": "Typy zdarzeń",
+      "eventTypesHint": "Puste oznacza żadne - synteza mowy jest opcjonalna dla każdego typu zdarzenia, nigdy nie jest włączona domyślnie dla wszystkich.",
+      "providers": "Dostawcy",
+      "providersHint": "Pozostaw puste, aby dopasować każdego dostawcę.",
+      "sources": "Konta / źródła darowizn",
+      "sourcesHint": "Pozostaw puste, aby dopasować każde połączone konto i źródło darowizn.",
+      "thresholdCurrency": "Waluta",
+      "thresholdAmount": "Minimalna kwota",
+      "thresholdHint": "Zdarzenie w innej walucie nigdy nie jest porównywane z tym progiem.",
+      "minimumBits": "Minimalna liczba bitów",
+      "maxTextLength": "Maksymalna długość odczytywanego tekstu (znaki)",
+      "maxTextLengthHint": "50-2000 znaków Unicode.",
+      "perUserCooldown": "Odstęp dla użytkownika (sekundy)",
+      "perUserCooldownHint": "0-3600. Dotyczy tylko zdarzeń ze stabilną tożsamością - nigdy anonimowej darowizny.",
+      "globalCooldown": "Odstęp globalny (sekundy)",
+      "globalCooldownHint": "0-300. Dotyczy każdego kwalifikującego się zdarzenia, niezależnie od tego, kto je wywołał.",
+      "blockedWords": "Zablokowane słowa",
+      "removeUrls": "Usuwaj adresy URL z odczytywanego tekstu",
+      "normalizeRepeatedChars": "Normalizuj powtarzające się znaki",
+      "normalizeRepeatedCharsHint": "\"sooooo\" staje się \"sooo\" - nigdy kilkusekundowa, wydłużona wymowa.",
+      "suppressCommands": "Pomijaj rozpoznane komendy czatu",
+      "suppressCommandsHint": "Dotyczy tylko wiadomości czatu - wiadomość z darowizną zaczynająca się od \"!\" nadal jest odczytywana.",
+      "queueCapacity": "Pojemność kolejki",
+      "queueCapacityHint": "10-500 elementów.",
+      "manualApproval": "Wymagaj ręcznej akceptacji",
+      "manualApprovalHint": "Prawdziwe kwalifikujące się zdarzenie czeka na akceptację/odrzucenie zamiast być odczytane od razu.",
+      "voice": "Głos",
+      "voiceSystemDefault": "Domyślny systemowy",
+      "language": "Język",
+      "speed": "Szybkość",
+      "volume": "Głośność"
+    },
+    "providerMode": {
+      "disabled": "Wyłączony",
+      "system": "Systemowy",
+      "local": "Lokalny (niedostępny)",
+      "cloud": "Chmurowy (niedostępny)"
+    }
+  },
+  "browserSource": {
+    "title": "Źródło przeglądarki",
+    "url": "Adres URL źródła przeglądarki",
+    "copyUrl": "Kopiuj adres URL",
+    "copied": "Skopiowano",
+    "openUrl": "Otwórz adres URL",
+    "rotateAction": "Wymień adres URL",
+    "rotateConfirmTitle": "Wymienić adres URL źródła przeglądarki?",
+    "rotateConfirmMessage": "Bieżący adres URL przestanie działać natychmiast. Zaktualizuj potem źródło przeglądarki w OBS o nowy adres URL.",
+    "hint": "Dodaj ten adres URL raz jako źródło przeglądarki w OBS. Nie renderuje własnej widocznej treści - tylko dźwięk."
+  },
+  "status": {
+    "title": "Stan",
+    "renderer": "Połączenie źródła przeglądarki",
+    "rendererConnected": "Połączone",
+    "rendererDisconnected": "Niepołączone",
+    "current": "Bieżący element",
+    "currentNone": "Nic teraz nie gra.",
+    "currentSynthetic": "Test",
+    "waitingForRenderer": "Oczekiwanie na połączenie źródła przeglądarki.",
+    "inputGapWarning": "Połączenie z szyną zdarzeń zostało chwilowo utracone i później przywrócone - niektóre zdarzenia z tego okresu mogły nie zostać dopasowane.",
+    "counters": {
+      "totalEnqueued": "Dodane do kolejki",
+      "totalPlayed": "Odtworzone",
+      "totalExpired": "Wygasłe",
+      "totalCapacityDropped": "Odrzucone (pełna kolejka)",
+      "totalManuallySkipped": "Pominięte",
+      "totalSynthetic": "Elementy testowe",
+      "totalRejected": "Odrzucone",
+      "totalPlaybackFailed": "Błąd odtwarzania",
+      "totalSynthesisFailed": "Błąd syntezy",
+      "totalInterrupted": "Przerwane"
+    }
+  },
+  "queue": {
+    "title": "Kolejka",
+    "queuedCount": "{{count}} w kolejce (pojemność {{capacity}})",
+    "skipAction": "Pomiń bieżący",
+    "clearAction": "Wyczyść kolejkę",
+    "clearConfirmTitle": "Wyczyścić kolejkę?",
+    "clearConfirmMessage": "Każdy element oczekujący w kolejce (jeszcze nie odtwarzany) zostanie usunięty. Element aktualnie odtwarzany, jeśli istnieje, nie jest zmieniany."
+  },
+  "pending": {
+    "title": "Oczekujące na akceptację",
+    "empty": "Nic nie oczekuje na akceptację.",
+    "approveAction": "Akceptuj",
+    "rejectAction": "Odrzuć"
+  },
+  "testSpeak": {
+    "title": "Test odczytu",
+    "placeholder": "Wpisz tekst, aby przetestować proces...",
+    "action": "Odczytaj",
+    "hint": "Przechodzi przez prawdziwy proces wstępnego przetwarzania i prawdziwą kolejkę, ale nigdy nie dotyka prawdziwych odstępów czasowych ani nie kontaktuje się z Twitch, YouTube ani StreamElements."
+  },
+  "common": {
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "close": "Zamknij"
+  },
+  "errors": {
+    "audio_disabled": "Dźwięk/synteza mowy jest obecnie wyłączona.",
+    "audio_text_empty": "Tekst jest pusty po wstępnym przetworzeniu.",
+    "audio_queue_full": "Kolejka dźwięku jest obecnie pełna.",
+    "audio_voice_not_found": "Wybrany głos jest niedostępny.",
+    "audio_provider_unavailable": "Dostawca syntezy mowy jest niedostępny.",
+    "audio_settings_invalid": "Ustawienia nie przeszły walidacji.",
+    "audio_item_not_found": "Ten element już nie istnieje.",
+    "generic": "Coś poszło nie tak. Spróbuj ponownie."
+  }
+}

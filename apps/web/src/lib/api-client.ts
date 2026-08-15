@@ -273,3 +273,10 @@ export async function apiPut<TSchema extends z.ZodType>(
 export async function apiDelete(path: string): Promise<void> {
   await send(path, { method: 'DELETE' });
 }
+
+/** POST with a request body whose response is 204 with no body (the
+ * public audio ack endpoint) - apiPost always parses a JSON response,
+ * which a 204 never has. */
+export async function apiPostNoContent(path: string, body: unknown): Promise<void> {
+  await send(path, { method: 'POST', body });
+}

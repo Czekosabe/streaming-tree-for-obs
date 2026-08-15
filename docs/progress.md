@@ -23269,3 +23269,194 @@ automated Go test suite has exercised it so far.
 ### Next step
 Frontend: TTS/audio Zod schemas, API client, and React Query hooks -
 the first frontend piece for Stage 17A.
+
+## 2026-08-15 — feat(web): manage TTS and audio
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The full Stage 17A frontend: Zod schemas, transport, React Query
+hooks, the SSE stream hook, the management page (settings, provider
+capabilities/voices, Browser Source URL, live queue/status, pending
+approval, Test Speak), and the public Browser Source audio route - the
+first frontend piece for this stage, and the piece that makes the
+already-complete, already-verified backend actually reachable from the
+operator dashboard and from OBS.
+
+### Note on the previous entry's "Known limitations"
+The previous entry ("expose TTS and public audio APIs") stated the
+real product "has never yet been started end-to-end... only the
+automated Go test suite has exercised it so far." Shortly after that
+commit landed (same session, before this one), the running server WAS
+in fact smoke-tested for real: `go run ./cmd/server` against a real
+data directory, then real HTTP requests via `curl` - `GET /api/audio/
+settings` (returned real generated defaults and a real slug), `GET
+/api/audio/capabilities`/`voices` (returned the three real voices
+actually installed on this machine - "Microsoft Paulina/Zira/David
+Desktop"), `PUT /api/audio/settings` (enabled it for real), `POST /api/
+audio/test-speak` (real item enqueued), and connecting to `GET /api/
+public/audio/{slug}/stream` (received a real `audio.reset` then a real
+`audio.current` event once the poll loop promoted and synthesized the
+item), then `GET .../bytes/{token}` (returned a genuine, valid
+141,778-byte RIFF/WAVE file with `Accept-Ranges: bytes`). That
+historical "known limitations" sentence is left exactly as written,
+per this journal's own append-only/never-rewrite-backward rule
+(established after the Stage 16A journal-integrity incident) - this
+note documents the fact forward instead.
+
+### Changes
+- `apps/web/src/models/audio.ts` (new) - pure, backend-mirroring
+  bounds/validators (queue capacity 10-500, max text 50-2000 code
+  points, cooldowns, speed 0.5-2.0, volume 0-1, blocked-word/voice-id/
+  language/currency/source-id length caps, the exact-currency
+  threshold rule) plus the closed provider-mode/provider-id/speakable-
+  event-type lists - mirrors `models/alerts.ts`'s own established
+  shape and reasoning.
+- `apps/web/src/api/audio-schemas.ts` (new) - Zod response contracts
+  (`audioSettingsSchema`, `audioCapabilitiesSchema`, `audioVoiceSchema`,
+  `audioStatusSchema`, `audioPendingItemSchema`, the three public SSE
+  payload schemas, `audioErrorCodeSchema`) and the hand-written
+  `AudioSettingsInput` request type that deliberately omits
+  `publicSlug`/`createdAt`/`updatedAt` - mirrors `api/alerts-schemas.ts`'s
+  own request-vs-response asymmetry exactly.
+- `apps/web/src/api/audio-schemas.test.ts` (new) - 20 tests.
+- `apps/web/src/api/audio.ts` (new) - transport functions for every
+  management and public endpoint.
+- `apps/web/src/lib/api-client.ts` - added `apiPostNoContent` (POST
+  with a body whose response is 204 with no content) - the existing
+  `apiPost` always parses a JSON response body, which the public ack
+  endpoint never has.
+- `apps/web/src/hooks/use-audio.ts` (new) - React Query hooks;
+  `audioKeys`; the settings GET/PUT pair uses `setQueryData` with the
+  PUT response (mirrors `use-output.ts`'s own singleton-settings
+  convention, not `invalidateQueries`, since the response already IS
+  the new state); status/pending poll every 5s while mounted (matches
+  this project's existing polling precedent).
+- `apps/web/src/hooks/use-audio-stream.ts` (new) - the public SSE
+  consumer, built on the browser-native `EventSource`, mirroring
+  `use-alert-stream.ts`'s own exact shape (named-event listeners only,
+  every payload through `schema.safeParse` and silently dropped on
+  failure, a `gapDetected` boolean that is never cleared, full
+  reset-on-slug-change via a `useEffect` keyed only on `[publicSlug]`).
+  Simpler than the alerts stream in one respect: no `Last-Event-ID`/
+  `?after=` replay, because the public audio protocol only ever has
+  ONE meaningful state (the current item), never a history to replay
+  (matches the backend's own `internal/audio.changeBroadcaster` design
+  from the "expose TTS and public audio APIs" commit).
+- `apps/web/src/components/audio/AudioSettingsPanel.tsx` (new) - the
+  settings form: enable/provider/voice selection, supporter-only mode,
+  event-type/provider checkboxes, exact-currency threshold, Bits
+  threshold, preprocessing toggles, cooldowns, blocked words (reusing
+  `TagInput`), queue capacity, manual approval, speed/volume, and the
+  Browser Source URL panel (copy/open/rotate with a confirmation
+  dialog) - mirrors `ProfileManager.tsx`'s own draft-state/dirty-check/
+  disabled-until-valid-and-dirty Save button pattern exactly.
+- `apps/web/src/components/audio/AudioQueuePanel.tsx` (new) - runtime
+  status (renderer connection, current item, every counter from
+  governing task §46's own bounded list), queue commands (skip
+  current/clear, clear behind a confirmation dialog), the pending-
+  approval list (approve/reject), and Test Speak.
+- `apps/web/src/components/audio/AudioRenderer.tsx` (new) - the actual
+  `<audio>` element: imperatively sets `src`/`volume` from the stream's
+  current item, attempts `play()`, and reports `playback_started`/
+  `playback_ended`/`playback_failed` acknowledgements from the DOM
+  `play`/`ended`/`error` events (plus a caught `play()` rejection) -
+  renders no visible content, matches docs/audio-tts.md §53.
+- `apps/web/src/pages/AudioPage.tsx` (new) - wraps the two panels in
+  `AppShell`, mirrors `AlertsPage.tsx`'s own thin-page convention.
+- `apps/web/src/pages/PublicAudioPage.tsx` (new) - the public Browser
+  Source route, no `AppShell`, mirrors `PublicAlertPage.tsx`'s own
+  structure - reads `publicSlug` from the URL, drives `useAudioStream`
+  and `AudioRenderer`.
+- `apps/web/src/App.tsx` - registered `/audio` (inside the normal
+  layout routes) and `/overlay/audio/:publicSlug` (outside every
+  layout wrapper, alongside the other public overlay routes).
+- `apps/web/src/components/layout/nav-items.ts` - added the Audio nav
+  entry (`Volume2` icon) between Alerts and the still-planned Settings
+  entry.
+- `apps/web/src/i18n/resources/{en,pl}/audio.json` (new),
+  `apps/web/src/i18n/config.ts` (`audio` added to `NAMESPACES`),
+  `apps/web/src/i18n/resources.ts` (both language bundles wired in),
+  `apps/web/src/i18n/resources/{en,pl}/navigation.json` (`items.audio`
+  added to both).
+- `apps/web/src/pages/AudioPage.test.tsx`,
+  `apps/web/src/pages/PublicAudioPage.test.tsx` (new) - see "Automated
+  validation".
+
+### Technical decisions
+- **The blocked-words editor reuses `TagInput` as-is**, even though its
+  own internal strings (`tags.placeholder`/`tags.remove`/etc.) are
+  sourced from the `metadata` namespace rather than a new `audio`-
+  scoped duplicate - the strings are generic enough ("Add a tag...",
+  "Remove {{tag}}") that duplicating the whole component and its
+  namespace-specific copy for one field was judged unnecessary
+  reuse-over-duplication, consistent with this project's own anti-
+  overengineering instruction.
+- **Event-type and provider filters are plain checkbox chips, not a new
+  shared multi-select component** - there is no existing multi-select
+  primitive in `components/ui/`, and building one for this single use
+  site would be premature abstraction; the closed lists themselves
+  come from `models/audio.ts`'s own backend-mirroring constants, never
+  hand-typed inline.
+- **`AudioRenderer.play()`'s return value is defensively checked with
+  `instanceof Promise` before calling `.catch()`** - discovered while
+  writing this component's own tests: `HTMLMediaElement.prototype.play`
+  always returns a `Promise` per the real spec, but jsdom's test
+  environment does not implement it and returns `undefined`, which
+  would otherwise throw `Cannot read properties of undefined (reading
+  'catch')` inside the effect. Guarding is correct defensive practice
+  in production too (an environment with an incomplete media
+  implementation is not purely hypothetical for an embedded CEF
+  browser like OBS's own Browser Source), not merely a test-only
+  workaround.
+- **No `Last-Event-ID`/`?after=` replay in `useAudioStream`** - see the
+  file's own changes entry above; the backend's own change-broadcaster
+  design (previous commit) never retains history, so there is nothing
+  to replay, and adding client-side replay logic for a server that can
+  never satisfy it would be dead code.
+
+### Automated validation
+- `npm run typecheck` - clean (including two `exactOptionalPropertyTypes`
+  fixes: an optional `PanelHeader.description` prop conditionally
+  spread instead of ever assigned `undefined`, and an unnecessary empty
+  `<PanelBody />` removed).
+- `npm run lint` - clean.
+- `npm run i18n:check` - clean, 18 namespaces, `audio` included, no
+  differences between `en` and `pl`.
+- `npm test` (`vitest run`) - full suite passes: 92 files, 1289 tests
+  total, including 36 new tests across the 3 new test files this
+  commit adds (20 in `audio-schemas.test.ts`, 10 in `AudioPage.test.tsx`,
+  6 in `PublicAudioPage.test.tsx`). New coverage: schema
+  parsing/rejection for every response shape and the three public SSE
+  payloads; `AudioPage` - settings load, capabilities available/
+  unavailable-with-reason, the Save button's disabled-until-dirty-and-
+  valid gate and a real save round trip, Browser Source URL copy
+  (using the same `navigator.clipboard` stub pattern
+  `TwitchDeviceFlowModal.test.tsx` already established, defined AFTER
+  `userEvent.setup()` since that call installs its own stub first),
+  pending-item approve, Test Speak submit-and-clear, skip-current, and
+  the clear-queue confirmation dialog; `PublicAudioPage` - never
+  renders `role="navigation"`, the audio element starts with no `src`,
+  `audio.reset`+`audio.current` sets a real `src`, `audio.idle` clears
+  it again, and the stream connects to the exact expected per-slug URL
+  - using the same hand-rolled `FakeEventSource` test double
+  `PublicAlertPage.test.tsx` already established.
+- `npm run build` - clean (the pre-existing "chunk larger than 500 kB"
+  warning is unrelated to this change and was already present).
+
+### Known limitations
+No live click-through in a real browser (only Vitest/Testing Library)
+and no real OBS Browser Source has been added yet to confirm actual
+audible playback/autoplay/mixer routing - this remains, as with every
+other provider integration this project has shipped, a final manual
+verification step (docs/audio-tts.md §18/§33's own honesty
+requirement). No 19th integration script yet, and `cmd/testserver`'s
+audio manager still has no TTS provider at all. Stage 17A is not
+complete; Stage 17 as a whole is not complete.
+
+### Next step
+Backend: the integration-build-only deterministic fake `tts.Provider`
+(WAV/PCM, no ffmpeg, no network) and the 19th integration script,
+`scripts/verify-tts-audio.mjs`.
