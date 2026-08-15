@@ -413,15 +413,6 @@ func run() error {
 	// visualDesignService constructed above - identical wiring to
 	// cmd/server, see its own comment.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, donationSourceService, audioAssetService)
-	alertsManager := alerts.NewManager(alerts.ManagerOptions{
-		DomainService:       alertsDomainService,
-		VisualDesignService: visualDesignService,
-		AssetService:        visualAssetService,
-		Bus:                 eventBus,
-	})
-	if err := alertsManager.Start(ctx); err != nil {
-		return err
-	}
 
 	// Stage 17A: the shared audio/text-to-speech runtime - identical
 	// wiring to cmd/server, EXCEPT Provider is the integration-build-
@@ -431,7 +422,9 @@ func run() error {
 	// particular installed voice name (governing task §71). The 19th
 	// integration script controls this fake's behavior (unavailable,
 	// fail-next, oversize-next, synthesis delay) through the
-	// integration-only control routes registered below.
+	// integration-only control routes registered below. Constructed
+	// before alertsManager below (Stage 17B) since alertsManager links
+	// to it as its AudioLink.
 	audioSettingsService := audiodomain.NewService(audiodomain.Options{
 		Repository: sqlite.NewAudioSettingsRepository(db.DB),
 	})
@@ -444,13 +437,27 @@ func run() error {
 	}
 	audioFakeProvider := tts.NewFakeProvider()
 	audioManager := audiort.NewManager(audiort.Options{
-		SettingsService:   audioSettingsService,
-		Bus:               eventBus,
-		Provider:          audioFakeProvider,
-		OperatorChatPrefs: operatorChatPrefsService,
-		SelfLookup:        audioSelfLookup,
+		SettingsService:    audioSettingsService,
+		Bus:                eventBus,
+		Provider:           audioFakeProvider,
+		OperatorChatPrefs:  operatorChatPrefsService,
+		SelfLookup:         audioSelfLookup,
+		AudioAssetResolver: audioAssetService,
 	})
 	if err := audioManager.Start(ctx); err != nil {
+		return err
+	}
+
+	// AudioLink wires Stage 17B rule-owned sound/TTS playback through
+	// the same audioManager instance above - never a second engine.
+	alertsManager := alerts.NewManager(alerts.ManagerOptions{
+		DomainService:       alertsDomainService,
+		VisualDesignService: visualDesignService,
+		AssetService:        visualAssetService,
+		Bus:                 eventBus,
+		AudioLink:           audioManager,
+	})
+	if err := alertsManager.Start(ctx); err != nil {
 		return err
 	}
 

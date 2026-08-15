@@ -77,7 +77,7 @@ func soundRequest(assetID string, volume float64) AlertAudioRequest {
 }
 
 func ttsRequest(text string, volume float64) AlertAudioRequest {
-	return AlertAudioRequest{Source: SourceAlertTTS, Text: text, Volume: volume, VoiceID: "voice-1"}
+	return AlertAudioRequest{Source: SourceAlertTTS, Text: text, Volume: volume}
 }
 
 func TestEnqueueAlertAudioPromotesImmediatelyWhenIdle(t *testing.T) {
@@ -297,6 +297,22 @@ func TestAlertAudioVolumeIsCarriedVerbatimOnPublicSnapshot(t *testing.T) {
 
 	if got := mgr.PublicCurrentSnapshot().Volume; got != 0.42 {
 		t.Errorf("Volume = %v, want 0.42 (already-combined value, never recombined)", got)
+	}
+}
+
+func TestAlertAudioVolumeCombinesWithGlobalVolumeExactlyOnce(t *testing.T) {
+	resolver := newFakeAssetResolver()
+	resolver.addAsset("audioasset_1", "audio/wav", "sound-bytes")
+	settings := baseTestSettings()
+	settings.Volume = 0.5 // global output volume, distinct from the rule's own
+	mgr, _ := newTestManagerWithResolver(t, availableProvider(), resolver, settings)
+	mgr.ConnectRenderer()
+
+	mgr.EnqueueAlertAudio("profile_1", "inst_1", []AlertAudioRequest{soundRequest("audioasset_1", 0.8)})
+	waitUntil(t, time.Second, func() bool { return mgr.PublicCurrentSnapshot().HasItem })
+
+	if got := mgr.PublicCurrentSnapshot().Volume; got != 0.4 {
+		t.Errorf("Volume = %v, want 0.4 (global 0.5 * rule-owned 0.8, combined exactly once)", got)
 	}
 }
 

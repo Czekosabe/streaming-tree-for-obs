@@ -9,12 +9,37 @@ import (
 	"sync/atomic"
 	"time"
 
+	audio "github.com/streaming-tree/server/internal/audio"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	bus "github.com/streaming-tree/server/internal/engagement"
 )
+
+// AlertAudioLink is internal/alerts's own narrow view of what it needs
+// from internal/audio (docs/alert-audio.md §8.4) - never the reverse:
+// internal/audio never imports internal/alerts, so there is no
+// dependency cycle risk in importing internal/audio's own exported
+// request/state types directly here, rather than re-declaring parallel
+// ones. Optional (nil-safe) on ManagerOptions/profileRuntime, exactly
+// like VisualDesignService/AssetService above - a nil link degrades to
+// "no rule ever produces audio through this Manager" rather than
+// panicking, so every pre-Stage-17B test/caller keeps working
+// unchanged.
+type AlertAudioLink interface {
+	EnqueueAlertAudio(profileID, instanceID string, items []audio.AlertAudioRequest)
+	CancelAlertAudio(instanceID string)
+	AlertAudioState(instanceID string) audio.AlertAudioState
+}
+
+// maxAudioHoldDuration bounds how much longer than a rule's own
+// configured DurationMS the visual alert may stay on screen waiting for
+// its still-playing linked audio to finish (docs/alert-audio.md §8.5) -
+// generous enough to cover a real sound+short-TTS combination, but
+// always finite, so the alert queue can never freeze indefinitely on
+// renderer absence/disconnect/failure.
+const maxAudioHoldDuration = 15 * time.Second
 
 // AssetRefTracker is the narrow subset of visualasset.Service a visual
 // design that references a Stage 14B managed asset needs: existence/
@@ -66,6 +91,11 @@ type ManagerOptions struct {
 	// through this Manager may reference a managed asset" rather than
 	// panicking.
 	AssetService AssetRefTracker
+	// AudioLink is Stage 17B's own bridge into the internal/audio
+	// runtime (docs/alert-audio.md §8.4) - optional, exactly like
+	// AssetService: nil means no rule's audio configuration is ever
+	// enqueued through this Manager, rather than panicking.
+	AudioLink AlertAudioLink
 	// Now is a test-only fake-clock override; production code leaves it
 	// nil.
 	Now clock
@@ -82,6 +112,7 @@ type Manager struct {
 	domainSvc       *domain.Service
 	visualDesignSvc *visualdesign.Service
 	assetSvc        AssetRefTracker
+	audioLink       AlertAudioLink
 	source          *bus.Bus
 	now             clock
 
@@ -106,7 +137,8 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		domainSvc: opts.DomainService, visualDesignSvc: opts.VisualDesignService, assetSvc: opts.AssetService, source: opts.Bus, now: now,
+		domainSvc: opts.DomainService, visualDesignSvc: opts.VisualDesignService, assetSvc: opts.AssetService,
+		audioLink: opts.AudioLink, source: opts.Bus, now: now,
 		profiles: make(map[string]*profileRuntime), ctx: ctx, cancel: cancel,
 	}
 }
@@ -120,7 +152,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	for _, p := range profiles {
-		m.profiles[p.ID] = newProfileRuntime(p.ID, p, newInstanceID)
+		m.profiles[p.ID] = newProfileRuntime(p.ID, p, newInstanceID, m.audioLink)
 	}
 	m.mu.Unlock()
 	for _, p := range profiles {
@@ -338,7 +370,7 @@ func (m *Manager) reloadProfileLocked(p domain.Profile) {
 	m.mu.Lock()
 	pr, ok := m.profiles[p.ID]
 	if !ok {
-		pr = newProfileRuntime(p.ID, p, newInstanceID)
+		pr = newProfileRuntime(p.ID, p, newInstanceID, m.audioLink)
 		m.profiles[p.ID] = pr
 	}
 	m.mu.Unlock()

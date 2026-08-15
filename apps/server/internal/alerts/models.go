@@ -143,4 +143,32 @@ type Instance struct {
 	// slot) - see internal/alerts.Manager's own rule/design cache and
 	// Part 22's own "snapshot semantics for queued/current alerts".
 	VisualDesign *visualdesign.PublicDocument
+
+	// Audio is Stage 17B's own immutable audio snapshot (docs/alert-
+	// audio.md §9.5) - resolved and rendered once at buildInstance time,
+	// exactly like VisualDesign above: a later rule edit never mutates
+	// an already-built Instance's own audio configuration. Nil means "no
+	// rule-owned audio configured for this rule" - never enqueued into
+	// internal/audio at all.
+	Audio *AlertAudioSnapshot
+}
+
+// AlertAudioSnapshot is a rule's Stage 17B persistent-sound/per-rule-TTS
+// configuration, resolved once per Instance (docs/alert-audio.md §6/
+// §9.5). TTSText is already fully rendered plain spoken text (the same
+// placeholder Context/Render call that produces RenderedText above,
+// applied to the rule's own TTSTemplate instead) - never the raw
+// template, and never re-rendered later. SoundVolume/TTSVolume are the
+// rule-owned multiplier alone (RuleAudio.SoundVolume/TTSVolume,
+// docs/alert-audio.md §6.3) - internal/audio.Manager.EnqueueAlertAudio
+// itself combines this with the current global output volume exactly
+// once; this snapshot never does that multiplication.
+type AlertAudioSnapshot struct {
+	SoundEnabled bool
+	SoundAssetID string
+	SoundVolume  float64
+
+	TTSEnabled bool
+	TTSText    string
+	TTSVolume  float64
 }

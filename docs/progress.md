@@ -24515,3 +24515,144 @@ existing placeholder grammar), calling `EnqueueAlertAudio` from the
 same locked transition that makes an instance current, `CancelAlertAudio`
 from preemption/skip/clear, and the bounded visual-hold poll in
 `profileRuntime.tick`.
+
+## 2026-08-15 — feat(server): add per-alert-rule TTS
+
+### What changed
+Completed Stage 17B's own §8/§9 wiring (docs/alert-audio.md): the
+`internal/audio` synchronization primitives committed previously
+(`8e5b3e5`) were real but unreachable - nothing in `internal/alerts`
+called them yet. This entry wires the two together end to end and
+fixes the production construction order that makes it work outside of
+unit tests.
+
+- `apps/server/internal/alerts/models.go` - new `Instance.Audio
+  *AlertAudioSnapshot` and `AlertAudioSnapshot{SoundEnabled,
+  SoundAssetID, SoundVolume, TTSEnabled, TTSText, TTSVolume}`. `TTSText`
+  is already fully rendered plain text - never the raw template, never
+  re-rendered later, exactly like `RenderedText`'s own snapshot
+  semantics (Part 22).
+- `apps/server/internal/alerts/matcher.go` - `buildInstance` now builds
+  `inst.Audio` from `rule.Audio` whenever either half is enabled,
+  rendering `rule.Audio.TTSTemplate` through the *same* `Context` value
+  already built for `RenderedText` - one placeholder grammar, one
+  render call site duplicated for a second template, never a second
+  grammar. A render failure (e.g. a malformed template that somehow
+  reached this point despite save-time validation) leaves `TTSText`
+  empty rather than panicking or aborting the rest of the Instance.
+- `apps/server/internal/alerts/playback.go` - `profileRuntime` gained
+  an `audioLink AlertAudioLink` field (nil-safe throughout);
+  `newProfileRuntime` takes it as a 4th parameter.
+  `startCurrentLocked` calls `audioLink.EnqueueAlertAudio(profileID,
+  inst.ID, alertAudioRequestsFor(inst.Audio))` immediately after making
+  `inst` current - the same authoritative transition, never the raw
+  Event Bus event independently of the queue, and never for a
+  still-queued instance (so grouping, per §9.1, can never restart
+  audio - nothing has been enqueued yet for a queued instance to
+  restart). New `alertAudioRequestsFor(snap) []audio.AlertAudioRequest`
+  builds the sound-then-TTS chain order (docs/alert-audio.md §6.2).
+  `completeCurrentLocked` now calls `audioLink.CancelAlertAudio(
+  completed.ID)` unconditionally whenever `completed.Audio != nil`,
+  before the `switch reason` - covering skip/clear/preemption/natural
+  completion/reset all through this one method, unconditional,
+  idempotent, never resumed (docs/alert-audio.md §9.2/§9.3). New
+  `shouldHoldForAudioLocked(now)` gates `tick()`'s existing deadline
+  check: once `DurationMS` has elapsed, the alert stays visible only
+  while `audioLink.AlertAudioState(current.ID)` reports
+  `Started`/`Playing`, bounded by `maxAudioHoldDuration` (15s) - reaching
+  the bound force-cancels the audio and lets the alert complete on the
+  very next check; `NeverRequested`/`Ended`/`Failed`/`NoRenderer` all
+  proceed on normal timing immediately, and a nil `audioLink` or nil
+  `current.Audio` is always false (normal timing, unaffected).
+- `apps/server/internal/alerts/manager.go` - new `AlertAudioLink`
+  interface (`EnqueueAlertAudio`, `CancelAlertAudio`, `AlertAudioState`
+  - internal/alerts's own narrow view of what it needs from
+  `internal/audio.Manager`, imported directly since `internal/audio`
+  never imports `internal/alerts` back), `const maxAudioHoldDuration =
+  15 * time.Second`, `ManagerOptions.AudioLink AlertAudioLink`,
+  `Manager.audioLink` wired through both `newProfileRuntime` call sites.
+  Optional/nil-safe throughout - a `Manager` built without `AudioLink`
+  behaves exactly as it did before Stage 17B.
+- `apps/server/internal/audio/manager.go` - a design correction to the
+  `EnqueueAlertAudio`/`AlertAudioRequest` primitives from the previous
+  entry, made before either was ever called by production code: removed
+  the `VoiceID`/`Language`/`Speed` fields from `AlertAudioRequest`
+  entirely, and changed `Volume` to mean the rule-owned multiplier
+  alone (`RuleAudio.SoundVolume`/`TTSVolume`) rather than an
+  already-combined value. `EnqueueAlertAudio` itself now reads its own
+  already-cached `m.settings.VoiceID/Language/Speed/Volume` and
+  performs the combination (`globalVolume * req.Volume`) exactly once,
+  under its own existing lock - `internal/alerts` never needs to know
+  about or hold a `domain/audio.Settings` reference at all, keeping the
+  two packages decoupled exactly as intended.
+- `apps/server/cmd/server/main.go` / `cmd/testserver/main.go` - the
+  actual production wiring: `audioManager := audiort.NewManager(...)`
+  is now constructed *before* `alertsManager := alerts.NewManager(...)`
+  (the reverse of its previous position) since `alertsManager` now
+  needs a live reference to it for `AudioLink: audioManager` -
+  `internal/audio` never depends on `internal/alerts`, only the
+  reverse, so this reordering has no other effect. `audiort.Options`
+  also gained `AudioAssetResolver: audioAssetService` (the
+  `*audioasset.Service` constructed in the previous `479618e` entry,
+  already structurally satisfying `audiort.AudioAssetResolver` with no
+  adapter needed) - without this, `EnqueueAlertAudio` for a
+  `SourceAlertSound` item would always fail with "no resolver
+  configured" in the real server, not just in tests.
+- `apps/server/internal/alerts/audio_link_test.go` (new) - a
+  `fakeAudioLink` double (never touches `internal/audio.Manager` at
+  all) plus 12 tests covering: `alertAudioRequestsFor`'s sound-then-TTS
+  ordering (both/sound-only/nil/neither-enabled), `EnqueueAlertAudio`
+  called exactly once from `startCurrentLocked` with the right
+  profile/instance ID (and never called for an instance with no
+  configured audio), `CancelAlertAudio` called on natural completion
+  and on skip (and never re-enqueued by skip), the bounded hold keeping
+  an alert visible while `Playing` and releasing it once `Ended`, the
+  15s bound force-cancelling and completing regardless of a still-
+  `Playing` report, `NoRenderer` proceeding immediately without ever
+  holding, and a nil `audioLink` behaving exactly like Stage 17A's own
+  pre-audio timing.
+- `apps/server/internal/alerts/matcher_test.go` - 4 new tests: no
+  `RuleAudio` configured leaves `Instance.Audio` nil; a fully-configured
+  `RuleAudio` copies every sound/TTS field onto the snapshot verbatim
+  and renders `TTSTemplate` through the same `Context` `RenderedText`
+  uses; a TTS-only rule (`SoundEnabled` false) still produces a
+  snapshot with `TTSText` rendered; a malformed `TTSTemplate` (unmatched
+  `{`) leaves `TTSText` empty rather than panicking.
+- `apps/server/internal/alerts/advanced_queue_test.go`,
+  `apps/server/internal/alerts/playback_test.go` - the 5 pre-existing
+  direct `newProfileRuntime(...)` call sites updated for the new 4th
+  parameter (passing `nil` - unrelated to audio, these tests exercise
+  grouping/eviction/synthetic-counter behavior that has nothing to do
+  with the audio link).
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean (the
+  reordered `cmd/server/main.go`/`cmd/testserver/main.go` construction
+  compiles and starts identically otherwise).
+- `go test ./...` and `go test -tags integration ./...` - full suite
+  passes, including all 16 new tests above and every pre-existing test
+  in `internal/alerts`/`internal/audio` unchanged.
+- `go test -race` remains unavailable in this repository (CGO is
+  disabled project-wide for the CGO-free SQLite driver) - the new
+  `audioLink`/`shouldHoldForAudioLocked` code was reviewed by hand
+  against `profileRuntime`'s own existing single-mutex-per-runtime
+  locking convention, unchanged by this entry.
+
+### Known limitations
+Stage 17B's backend synchronization/TTS work (§6-§9) is now complete
+and reachable end to end in the real server, but Stage 17B as a whole
+is still not complete: package v2 + template audio (§10), the frontend
+alert-rule audio editor (§11), the frontend template-gallery/designer
+package-audio UX (§12), the 20th integration script (§14), and the
+documentation/regression/closing passes (§15-§19) remain. Stage 17 as a
+whole remains incomplete; Stage 18 has not been started.
+
+### Next step
+Design and implement Stage 17B §10: the package v2 manifest schema
+(explicit, versioned, audio legal only under v2 rules, v1 packages
+staying valid unchanged), extending `internal/domain/visualpackage`
+to carry alert-rule audio configuration and managed audio assets
+through the exact same `internal/domain/audioasset` validator manual
+uploads already use.

@@ -19,7 +19,7 @@ func testProfile() domain.Profile {
 func staticID() (string, error) { return "alinst_test", nil }
 
 func newTestRuntime() *profileRuntime {
-	return newProfileRuntime("alprof_1", testProfile(), staticID)
+	return newProfileRuntime("alprof_1", testProfile(), staticID, nil)
 }
 
 func TestProfileRuntimeTickPromotesHighestPriority(t *testing.T) {
@@ -272,7 +272,7 @@ func TestProfileRuntimeDisabledNeverTicks(t *testing.T) {
 func TestProfileRuntimeCapacityDroppedCounted(t *testing.T) {
 	p := testProfile()
 	p.MaxQueueItems = 1
-	pr := newProfileRuntime("alprof_1", p, staticID)
+	pr := newProfileRuntime("alprof_1", p, staticID, nil)
 	now := time.Now()
 	pr.enqueueMatched([]Instance{mkInstance("a", 50, now), mkInstance("b", 40, now)}, now, staticID)
 	st := pr.status()
@@ -289,7 +289,7 @@ func TestProfileRuntimeCapacityDroppedCounted(t *testing.T) {
 func TestProfileRuntimeCapacityEvictionCountedAsDropped(t *testing.T) {
 	p := testProfile()
 	p.MaxQueueItems = 1
-	pr := newProfileRuntime("alprof_1", p, staticID)
+	pr := newProfileRuntime("alprof_1", p, staticID, nil)
 	now := time.Now()
 	pr.enqueueMatched([]Instance{mkInstance("a", 50, now)}, now, staticID)
 	pr.enqueueMatched([]Instance{mkInstance("b", 90, now)}, now, staticID) // accepted, evicts "a"

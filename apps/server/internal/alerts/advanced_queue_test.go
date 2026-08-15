@@ -211,7 +211,7 @@ func TestTryGroupSecondCompatibleEventMergesWithoutNewQueueSlot(t *testing.T) {
 func TestTryGroupPreservesEarliestQueuedAtAndExpirationAnchor(t *testing.T) {
 	p := testProfile()
 	p.MaximumQueueAgeSeconds = 5
-	pr := newProfileRuntime("alprof_1", p, staticID)
+	pr := newProfileRuntime("alprof_1", p, staticID, nil)
 	first := time.Now()
 	pr.enqueueMatched([]Instance{mkGroupable("a", "u1", 50, 1, first)}, first, staticID)
 	pr.enqueueMatched([]Instance{mkGroupable("b", "u1", 50, 1, first.Add(3*time.Second))}, first.Add(3*time.Second), staticID)
@@ -293,7 +293,7 @@ func TestTryGroupLaterMemberNeverExtendsTheWindow(t *testing.T) {
 func TestTryGroupMaxGroupSizeStartsNewCandidate(t *testing.T) {
 	p := testProfile()
 	p.MaxQueueItems = 500
-	pr := newProfileRuntime("alprof_1", p, staticID)
+	pr := newProfileRuntime("alprof_1", p, staticID, nil)
 	now := time.Now()
 	first := mkGroupable("a", "u1", 50, 1, now)
 	first.GroupCount = domain.MaxGroupMembers // already at the bound

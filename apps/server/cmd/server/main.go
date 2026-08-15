@@ -450,26 +450,16 @@ func run() error {
 	// in their own migration; every queue/playback runtime value stays
 	// in memory only.
 	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, donationSourceService, audioAssetService)
-	// visualDesignService (the same shared instance the chat-overlay
-	// wiring above already received) is reused here unchanged - one
-	// design per alert rule, in the same shared visual_designs table.
-	alertsManager := alerts.NewManager(alerts.ManagerOptions{
-		DomainService:       alertsDomainService,
-		VisualDesignService: visualDesignService,
-		AssetService:        visualAssetService,
-		Bus:                 eventBus,
-	})
-	if err := alertsManager.Start(ctx); err != nil {
-		return err
-	}
 
 	// Stage 17A: the shared audio/text-to-speech runtime - the ONE
-	// Engagement Event Bus subscription for TTS-eligible events, exactly
-	// like alertsManager above. audioSettingsService persists only
-	// operator settings (docs/audio-tts.md §12); every queue/cooldown/
-	// playback value stays in memory only. audioSelfLookup mirrors
-	// internal/chatautomation's own self-message identity check exactly
-	// (a connected account's own ProviderUserID).
+	// Engagement Event Bus subscription for TTS-eligible events.
+	// audioSettingsService persists only operator settings
+	// (docs/audio-tts.md §12); every queue/cooldown/playback value stays
+	// in memory only. audioSelfLookup mirrors internal/chatautomation's
+	// own self-message identity check exactly (a connected account's own
+	// ProviderUserID). Constructed before alertsManager below (Stage
+	// 17B) since alertsManager links to it as its AudioLink - internal/
+	// audio never depends on internal/alerts, only the reverse.
 	audioSettingsService := audiodomain.NewService(audiodomain.Options{
 		Repository: sqlite.NewAudioSettingsRepository(db.DB),
 	})
@@ -481,13 +471,30 @@ func run() error {
 		return acc.ProviderUserID, true
 	}
 	audioManager := audiort.NewManager(audiort.Options{
-		SettingsService:   audioSettingsService,
-		Bus:               eventBus,
-		Provider:          tts.NewSystemProvider(),
-		OperatorChatPrefs: operatorChatPrefsService,
-		SelfLookup:        audioSelfLookup,
+		SettingsService:    audioSettingsService,
+		Bus:                eventBus,
+		Provider:           tts.NewSystemProvider(),
+		OperatorChatPrefs:  operatorChatPrefsService,
+		SelfLookup:         audioSelfLookup,
+		AudioAssetResolver: audioAssetService,
 	})
 	if err := audioManager.Start(ctx); err != nil {
+		return err
+	}
+
+	// visualDesignService (the same shared instance the chat-overlay
+	// wiring above already received) is reused here unchanged - one
+	// design per alert rule, in the same shared visual_designs table.
+	// AudioLink wires Stage 17B rule-owned sound/TTS playback through
+	// the same audioManager instance above - never a second engine.
+	alertsManager := alerts.NewManager(alerts.ManagerOptions{
+		DomainService:       alertsDomainService,
+		VisualDesignService: visualDesignService,
+		AssetService:        visualAssetService,
+		Bus:                 eventBus,
+		AudioLink:           audioManager,
+	})
+	if err := alertsManager.Start(ctx); err != nil {
 		return err
 	}
 

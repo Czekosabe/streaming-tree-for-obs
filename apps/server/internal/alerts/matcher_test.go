@@ -419,3 +419,74 @@ func TestMatchEventNoProviderHTTPCallEverPossible(t *testing.T) {
 	rule := baseRule("r1", domain.EventFollow)
 	_ = MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
 }
+
+func TestMatchEventNoAudioConfiguredLeavesInstanceAudioNil(t *testing.T) {
+	evt := baseEvent(engagement.TypeFollow)
+	rule := baseRule("r1", domain.EventFollow)
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+	}
+	if out[0].Audio != nil {
+		t.Errorf("Audio = %+v, want nil when RuleAudio has neither sound nor TTS enabled", out[0].Audio)
+	}
+}
+
+func TestMatchEventAudioSnapshotCopiesRuleAudioFields(t *testing.T) {
+	evt := baseEvent(engagement.TypeFollow)
+	rule := baseRule("r1", domain.EventFollow)
+	rule.Audio = domain.RuleAudio{
+		SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 0.75,
+		TTSEnabled: true, TTSTemplate: "{username} just followed", TTSVolume: 0.6,
+	}
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 {
+		t.Fatalf("MatchEvent() = %d instances, want 1", len(out))
+	}
+	snap := out[0].Audio
+	if snap == nil {
+		t.Fatal("Audio = nil, want a populated snapshot")
+	}
+	if !snap.SoundEnabled || snap.SoundAssetID != "audioasset_1" || snap.SoundVolume != 0.75 {
+		t.Errorf("sound fields = %+v, want SoundEnabled/SoundAssetID/SoundVolume copied from RuleAudio verbatim", snap)
+	}
+	if !snap.TTSEnabled || snap.TTSVolume != 0.6 {
+		t.Errorf("TTS fields = %+v, want TTSEnabled/TTSVolume copied from RuleAudio verbatim", snap)
+	}
+	if snap.TTSText != "Viewer just followed" {
+		t.Errorf("TTSText = %q, want %q (rendered through the same Context as RenderedText)", snap.TTSText, "Viewer just followed")
+	}
+}
+
+func TestMatchEventTTSOnlyStillProducesAudioSnapshot(t *testing.T) {
+	evt := baseEvent(engagement.TypeFollow)
+	rule := baseRule("r1", domain.EventFollow)
+	rule.Audio = domain.RuleAudio{TTSEnabled: true, TTSTemplate: "welcome {username}", TTSVolume: 1}
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 || out[0].Audio == nil {
+		t.Fatal("expected a populated Audio snapshot for a TTS-only rule")
+	}
+	if out[0].Audio.SoundEnabled {
+		t.Error("SoundEnabled = true, want false (rule never enabled sound)")
+	}
+	if out[0].Audio.TTSText != "welcome Viewer" {
+		t.Errorf("TTSText = %q, want %q", out[0].Audio.TTSText, "welcome Viewer")
+	}
+}
+
+func TestMatchEventTTSTemplateRenderFailureLeavesTTSTextEmpty(t *testing.T) {
+	// buildInstance must never let a malformed TTSTemplate panic or
+	// abort building the rest of the Instance (rule save-time validation
+	// is the real gate against this reaching here at all) - a Render
+	// error simply leaves TTSText at its zero value.
+	evt := baseEvent(engagement.TypeFollow)
+	rule := baseRule("r1", domain.EventFollow)
+	rule.Audio = domain.RuleAudio{TTSEnabled: true, TTSTemplate: "unmatched {brace", TTSVolume: 1}
+	out := MatchEvent(evt, []domain.Rule{rule}, nil, fixedNow, domain.LanguageEnglish)
+	if len(out) != 1 || out[0].Audio == nil {
+		t.Fatal("expected a populated Audio snapshot even when TTSTemplate fails to render")
+	}
+	if out[0].Audio.TTSText != "" {
+		t.Errorf("TTSText = %q, want empty string on a render failure", out[0].Audio.TTSText)
+	}
+}

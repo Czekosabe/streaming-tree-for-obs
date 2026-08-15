@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	audio "github.com/streaming-tree/server/internal/audio"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
@@ -151,15 +152,20 @@ type profileRuntime struct {
 
 	proj  *projection
 	newID func() (string, error)
+	// audioLink is Stage 17B's own bridge into internal/audio
+	// (docs/alert-audio.md §8.4) - nil means no rule's audio
+	// configuration is ever enqueued for this profile.
+	audioLink AlertAudioLink
 }
 
-func newProfileRuntime(profileID string, p domain.Profile, newID func() (string, error)) *profileRuntime {
+func newProfileRuntime(profileID string, p domain.Profile, newID func() (string, error), audioLink AlertAudioLink) *profileRuntime {
 	return &profileRuntime{
 		profileID: profileID, enabled: p.Enabled, language: p.Language,
-		maxAge: time.Duration(p.MaximumQueueAgeSeconds) * time.Second,
-		queue:  newQueue(p.MaxQueueItems, time.Duration(p.MaximumQueueAgeSeconds)*time.Second),
-		proj:   newProjectionRuntime(DefaultRevisionCapacity),
-		newID:  newID,
+		maxAge:    time.Duration(p.MaximumQueueAgeSeconds) * time.Second,
+		queue:     newQueue(p.MaxQueueItems, time.Duration(p.MaximumQueueAgeSeconds)*time.Second),
+		proj:      newProjectionRuntime(DefaultRevisionCapacity),
+		newID:     newID,
+		audioLink: audioLink,
 	}
 }
 
@@ -362,12 +368,38 @@ func (pr *profileRuntime) tick(now time.Time) {
 		return
 	}
 	if pr.current != nil && !now.Before(pr.currentDeadline) {
-		pr.completeCurrentLocked(now, HideReasonCompleted)
+		if !pr.shouldHoldForAudioLocked(now) {
+			pr.completeCurrentLocked(now, HideReasonCompleted)
+		}
 	}
 	if pr.paused || pr.current != nil {
 		return
 	}
 	pr.promoteNextLocked(now)
+}
+
+// shouldHoldForAudioLocked reports whether the current alert - already
+// past its own configured DurationMS - should keep being shown a little
+// longer because its linked audio is still genuinely playing
+// (docs/alert-audio.md §8.5). The configured duration remains the
+// minimum display time; this only ever extends it, bounded by
+// maxAudioHoldDuration so the queue can never freeze indefinitely on
+// renderer absence/disconnect/failure - reaching the bound cancels the
+// audio outright and lets the alert complete on the very next check.
+func (pr *profileRuntime) shouldHoldForAudioLocked(now time.Time) bool {
+	if pr.audioLink == nil || pr.current == nil || pr.current.Audio == nil {
+		return false
+	}
+	if now.Sub(pr.currentDeadline) >= maxAudioHoldDuration {
+		pr.audioLink.CancelAlertAudio(pr.current.ID)
+		return false
+	}
+	switch pr.audioLink.AlertAudioState(pr.current.ID) {
+	case audio.AlertAudioStarted, audio.AlertAudioPlaying:
+		return true
+	default: // NeverRequested, Ended, Failed, NoRenderer - proceed on normal timing.
+		return false
+	}
 }
 
 func (pr *profileRuntime) promoteNextLocked(now time.Time) {
@@ -391,6 +423,36 @@ func (pr *profileRuntime) startCurrentLocked(inst Instance, now time.Time) {
 	t := now
 	pr.lastAlertAt = &t
 	pr.proj.publish(OpShow, toPublicAlert(inst), pr.paused)
+
+	// Stage 17B (docs/alert-audio.md §9, first bullet): rule-owned audio
+	// is created from this exact same authoritative transition that
+	// makes inst current - never from the raw Event Bus event
+	// independently of the alert queue, and never for a queued-but-not-
+	// yet-current instance (grouping, §9.1, therefore never restarts
+	// audio - nothing has been enqueued for a still-queued instance to
+	// restart).
+	if pr.audioLink != nil && inst.Audio != nil {
+		pr.audioLink.EnqueueAlertAudio(pr.profileID, inst.ID, alertAudioRequestsFor(inst.Audio))
+	}
+}
+
+// alertAudioRequestsFor builds the ordered chain internal/audio.Manager
+// plays for one alert instance's own audio snapshot - sound first, then
+// TTS, when both are configured (docs/alert-audio.md §6.2); either alone
+// when only one is. Returns nil (a no-op EnqueueAlertAudio call) when
+// snap is nil or neither half is enabled.
+func alertAudioRequestsFor(snap *AlertAudioSnapshot) []audio.AlertAudioRequest {
+	if snap == nil {
+		return nil
+	}
+	var items []audio.AlertAudioRequest
+	if snap.SoundEnabled {
+		items = append(items, audio.AlertAudioRequest{Source: audio.SourceAlertSound, AssetID: snap.SoundAssetID, Volume: snap.SoundVolume})
+	}
+	if snap.TTSEnabled {
+		items = append(items, audio.AlertAudioRequest{Source: audio.SourceAlertTTS, Text: snap.TTSText, Volume: snap.TTSVolume})
+	}
+	return items
 }
 
 // completeCurrentLocked ends the current alert for reason. In every case
@@ -404,6 +466,15 @@ func (pr *profileRuntime) completeCurrentLocked(now time.Time, reason HideReason
 	completed := *pr.current
 	pr.current = nil
 	pr.lastCompleted = &completed
+	// Stage 17B (docs/alert-audio.md §9.2/§9.3): skip/clear/preemption/
+	// reset all route through this one method, so cancelling linked
+	// audio here unconditionally covers every one of those cases at
+	// once - unconditional and immediate, never resumed. A safe no-op
+	// when completed.Audio is nil or the audio already finished on its
+	// own (CancelAlertAudio is idempotent).
+	if pr.audioLink != nil && completed.Audio != nil {
+		pr.audioLink.CancelAlertAudio(completed.ID)
+	}
 	switch reason {
 	case HideReasonSkipped:
 		pr.totalSkipped++

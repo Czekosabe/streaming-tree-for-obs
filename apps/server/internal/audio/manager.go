@@ -107,16 +107,17 @@ type AlertAudioRequest struct {
 	// spoken text (placeholders expanded, preprocessing already
 	// applied) by the caller.
 	Text string
-	// Volume is the already-combined globalVolume * rule-owned-volume
-	// value (docs/alert-audio.md §6.3) - never recombined here.
+	// Volume is the rule-owned multiplier alone (RuleAudio.SoundVolume/
+	// TTSVolume) - EnqueueAlertAudio itself combines this with the
+	// current global output volume exactly once (docs/alert-audio.md
+	// §6.3); the caller never needs to know or apply the global value.
 	Volume float64
-	// VoiceID/Language/Speed are meaningful only for SourceAlertTTS -
-	// the current global provider/voice/speed foundation
-	// (docs/alert-audio.md §6.6), resolved by the caller from the same
-	// settings snapshot global TTS itself uses.
-	VoiceID  string
-	Language string
-	Speed    float64
+	// Voice/language/speed for a SourceAlertTTS item are never supplied
+	// by the caller - EnqueueAlertAudio itself resolves the current
+	// global provider/voice/speed foundation (docs/alert-audio.md §6.6)
+	// from its own already-cached Settings, exactly like Volume above;
+	// internal/alerts never needs to know or hold a domain/audio.Settings
+	// reference at all.
 }
 
 // AlertAudioState is Manager's own read-only projection of a linked
@@ -942,20 +943,31 @@ func (m *Manager) Ack(token, itemID string, kind AckKind) error {
 // EnqueueAlertAudio is internal/alerts's own entry point for rule-owned
 // audio (docs/alert-audio.md §8.4) - built from one alert instance's own
 // already-immutable snapshot fields (sound then TTS, per §6.2, when both
-// are configured) and handed to Manager as one linked chain. Arbitration
-// (docs/alert-audio.md §8.3): a currently-playing/synthesizing
-// SourceGlobalTTS item is always preempted (cancelled outright, never
-// resumed) and the chain's first item promoted immediately in its
-// place; a currently-current alert-owned item (this or another
-// instance) is never preempted - the new chain's first item is appended
-// to the ordinary bounded ready queue instead, subject to the same
-// capacity bound as any other item. A no-op if items is empty (no
-// rule-owned audio was actually configured for this instance).
+// are configured) and handed to Manager as one linked chain. req.Volume
+// is the rule-owned multiplier alone (RuleAudio.SoundVolume/TTSVolume) -
+// EnqueueAlertAudio itself multiplies by the current global output
+// volume (docs/alert-audio.md §6.3) exactly once, here, since Manager
+// already holds that setting and is the one place both global-TTS and
+// alert-owned volume combination happen; internal/alerts never needs to
+// know the global value at all. Arbitration (docs/alert-audio.md §8.3):
+// a currently-playing/synthesizing SourceGlobalTTS item is always
+// preempted (cancelled outright, never resumed) and the chain's first
+// item promoted immediately in its place; a currently-current
+// alert-owned item (this or another instance) is never preempted - the
+// new chain's first item is appended to the ordinary bounded ready
+// queue instead, subject to the same capacity bound as any other item.
+// A no-op if items is empty (no rule-owned audio was actually
+// configured for this instance).
 func (m *Manager) EnqueueAlertAudio(profileID, instanceID string, items []AlertAudioRequest) {
 	if len(items) == 0 {
 		return
 	}
 	now := m.now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	globalVolume := m.settings.Volume
 	built := make([]Item, 0, len(items))
 	for _, req := range items {
 		id, err := NewItemID()
@@ -964,7 +976,7 @@ func (m *Manager) EnqueueAlertAudio(profileID, instanceID string, items []AlertA
 		}
 		built = append(built, Item{
 			ID: id, Source: req.Source, AssetID: req.AssetID, Text: req.Text,
-			Snapshot:   ItemSnapshot{VoiceID: req.VoiceID, Language: req.Language, Speed: req.Speed, Volume: req.Volume},
+			Snapshot:   ItemSnapshot{VoiceID: m.settings.VoiceID, Language: m.settings.Language, Speed: m.settings.Speed, Volume: globalVolume * req.Volume},
 			EnqueuedAt: now,
 			AlertLink:  &AlertLink{ProfileID: profileID, InstanceID: instanceID},
 		})
@@ -976,9 +988,6 @@ func (m *Manager) EnqueueAlertAudio(profileID, instanceID string, items []AlertA
 		built[i].AlertLink.ChainNext = &next
 	}
 	first := built[0]
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if m.current != nil && m.current.item.Source == SourceGlobalTTS {
 		if m.currentSynthCancel != nil {

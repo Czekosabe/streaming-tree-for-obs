@@ -269,5 +269,18 @@ func buildInstance(rule domain.Rule, evt engagement.Event, eventType domain.Even
 		inst.RenderedText = result.Text
 	}
 
+	if rule.Audio.SoundEnabled || rule.Audio.TTSEnabled {
+		snap := &AlertAudioSnapshot{
+			SoundEnabled: rule.Audio.SoundEnabled, SoundAssetID: rule.Audio.SoundAssetID, SoundVolume: rule.Audio.SoundVolume,
+			TTSEnabled: rule.Audio.TTSEnabled, TTSVolume: rule.Audio.TTSVolume,
+		}
+		if rule.Audio.TTSEnabled {
+			if result, err := Render(rule.Audio.TTSTemplate, ctx); err == nil {
+				snap.TTSText = result.Text
+			}
+		}
+		inst.Audio = snap
+	}
+
 	return inst
 }
