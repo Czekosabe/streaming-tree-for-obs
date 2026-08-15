@@ -24080,3 +24080,115 @@ None. No product code was touched.
 ### Next step
 Read the real Stage 17A/alerts/Stage 14 implementation in full before
 designing the Stage 17B contract (`docs/alert-audio.md`).
+
+## 2026-08-15 — docs: define Stage 17B alert audio contract
+
+### Status
+Completed. No product code changed - this is the pre-implementation
+design contract, written before any Stage 17B product code, exactly
+as `docs/audio-tts.md` preceded Stage 17A.
+
+### Scope
+`docs/alert-audio.md` (new), the canonical Stage 17B contract:
+persistent alert audio, per-alert-rule TTS, alert/audio
+synchronization, and package-schema audio extension. Written only
+after a full audit of the real Stage 17A audio runtime, the real
+alerts engine, and the real Stage 14A/14B visual-template/asset/
+package system - never designed from memory where the existing
+implementation could answer the question.
+
+### Research
+- OBS's own knowledge base (`https://obsproject.com/kb/browser-
+  source`) re-fetched: confirms Browser Source is CEF-based and
+  supports "custom layout, image, video, and even audio tasks," with
+  no documented codec/format list, autoplay policy, or audio-routing
+  configuration - the same honest gap already recorded in Stage 17A.
+- The Chromium project's own media-support documentation
+  (`https://www.chromium.org/audio-video/`) - the decisive source:
+  confirms WAV/PCM (8-bit unsigned, 16-bit signed, 32-bit float,
+  µ-law) is in Chromium's own **default** codec set, while MP3/AAC
+  are explicitly gated behind a `ffmpeg_branding=Chrome` build flag
+  ("Proprietary Audio Codecs (Limited to Google Chrome)") not present
+  in the open-source `Chromium` branding CEF is built from. Since
+  OBS's own specific CEF build configuration is not documented
+  anywhere OBS publishes, claiming MP3 support would be exactly the
+  "every browser supports this" folklore this project's own research
+  method rejects.
+
+### Format decision
+Stage 17B accepts exactly one persistent audio format: WAV (RIFF/
+WAVE container, canonical 16-byte PCM `fmt ` chunk, `audioFormat==1`,
+16-bit signed samples, 1-2 channels, 8000-192000 Hz). Every other
+container/codec (MP3, AAC, Ogg/Vorbis, Ogg/Opus, WebM/Opus, FLAC,
+ADPCM, µ-law, 8-bit/float PCM) is explicitly rejected - narrower than
+what Chromium itself defaults to, deliberately, because canonical-PCM
+WAV needs no codec/entropy decoding to validate safely (a bounded
+RIFF-chunk walk suffices), needs no new dependency (it is exactly the
+shape `internal/provider/tts`'s own Windows SAPI provider and
+integration fake already generate today), and keeps every audio byte
+this whole subsystem ever serves - synthesized speech and persistent
+sound alike - in one homogeneous shape.
+
+### Contract highlights
+- One audio subsystem: Stage 17B extends `internal/audio`
+  (`Source` classification: `SourceGlobalTTS` / `SourceAlertSound` /
+  `SourceAlertTTS`), the one public Browser Source, and the existing
+  SSE/bytes-URL/ACK protocol - never a second runtime or renderer.
+- No audio visual-design layer: `visualdesign.Document` stays version
+  3; Stage 14A JSON stays permanently visual-only.
+- A new `internal/domain/audioasset` package, reusing
+  `visualasset.FileStore`'s own generic content-addressed blob
+  primitive directly (a second store instance, sibling directory) -
+  never widening `visualasset` itself into a vague "any asset"
+  package.
+- Per-rule audio config (`RuleAudio`: sound enabled/asset/volume, TTS
+  enabled/template/volume) reuses `internal/alerts/templates.go`'s
+  existing closed `{placeholder}` grammar for TTS text - not
+  `visualdesign.TextBinding` (a structurally different mechanism) and
+  not a new grammar - and bypasses Stage 17A's global Event-Bus
+  eligibility/cooldown/manual-approval gates entirely, since an alert
+  already matched before its audio is ever requested.
+- Exact volume combination rule (global x rule-owned, computed once
+  at enqueue, never double-applied) and deterministic sound-then-TTS
+  ordering.
+- Arbitration: alert-owned audio always preempts a currently-playing
+  global-TTS item (never the reverse); two alert profiles racing are
+  ordered by deterministic enqueue-call order under the existing
+  single-mutex `Manager`, never "whichever goroutine wins."
+- Synchronization defined honestly: linked by a stable
+  `AlertLink{ProfileID, InstanceID}` identity, started from the same
+  authoritative transition, cancelled together on skip/clear/
+  preemption, replayed from an immutable snapshot - explicitly
+  *not* claiming sample-accurate or frame-accurate sync, since the
+  alert and audio Browser Sources remain two separate pages/pipelines
+  (mirrors Stage 17A's own `docs/audio-tts.md` §18 honesty). A bounded
+  visual-hold window (15s) lets a normally-completing alert wait for
+  its still-playing linked audio without ever risking an indefinite
+  queue freeze on renderer absence/disconnect/failure.
+- Package manifest schema C moves 1 -> 2, additive and optional
+  (`alertAudio`/`audioAssets`), legal only for `alert`-target
+  packages; v1 packages and v1 export remain fully valid and
+  unchanged; a TTS-only preset (no sound asset) still forces package
+  export, since Stage 14A JSON has no audio field at all.
+- Migration: highest existing file confirmed by direct directory
+  listing is `0021_audio_tts.sql` (Stage 17A) - Stage 17B's own
+  migration(s) begin at `0022`, never assumed from memory.
+
+### Automated validation
+Every internal cross-reference this document makes to an existing
+type/function/file name was confirmed against the real, current
+source during the research pass (three parallel research agents plus
+direct reads of `internal/alerts/templates.go`,
+`internal/audio/manager.go`, `internal/audio/queue.go`, and the
+migrations directory) - not written from memory or assumption.
+
+### Known limitations
+This is a design document only; nothing described in it exists in
+product code yet. Stage 17 as a whole remains Incomplete.
+
+### Next step
+Implement the contract: managed audio assets
+(`internal/domain/audioasset`), alert-rule audio persistence, the
+`internal/audio`/`internal/alerts` synchronization wiring,
+per-alert-rule TTS, package v2, frontend UI, and the 20th integration
+script, in that order.
