@@ -69,6 +69,13 @@ type Options struct {
 	// SelfLookup is optional - nil means self-message suppression never
 	// triggers.
 	SelfLookup SelfUserIDLookup
+	// AudioAssetResolver is optional (docs/alert-audio.md §8.2) - a nil
+	// resolver means any SourceAlertSound item fails to resolve safely
+	// (counted as a synthesis failure), never a panic. Deliberately a
+	// narrow, primitive-typed interface this package defines itself -
+	// internal/audio never imports internal/domain/audioasset directly;
+	// *audioasset.Service already satisfies this signature structurally.
+	AudioAssetResolver AudioAssetResolver
 	// Now is a test-only fake-clock override; production code leaves it
 	// nil.
 	Now Clock
@@ -77,6 +84,57 @@ type Options struct {
 	ItemExpiry       time.Duration
 	MaxAudioBytes    int
 }
+
+// AudioAssetResolver resolves a Stage 17B managed sound asset's full
+// bytes and content type by its local asset ID (docs/alert-audio.md
+// §8.2) - the one call site SourceAlertSound synthesis ever needs.
+type AudioAssetResolver interface {
+	ResolveSoundAsset(ctx context.Context, assetID string) (data []byte, contentType string, ok bool)
+}
+
+// AlertAudioRequest is one item internal/alerts asks Manager to play on
+// behalf of a specific alert instance (docs/alert-audio.md §8.4) - built
+// from that instance's own already-immutable snapshot fields, never a
+// live rule re-read.
+type AlertAudioRequest struct {
+	// Source must be SourceAlertSound or SourceAlertTTS - never
+	// SourceGlobalTTS (that path is only ever reached through the
+	// Event-Bus pipeline in handleEvent).
+	Source Source
+	// AssetID is required for SourceAlertSound.
+	AssetID string
+	// Text is required for SourceAlertTTS - already rendered plain
+	// spoken text (placeholders expanded, preprocessing already
+	// applied) by the caller.
+	Text string
+	// Volume is the already-combined globalVolume * rule-owned-volume
+	// value (docs/alert-audio.md §6.3) - never recombined here.
+	Volume float64
+	// VoiceID/Language/Speed are meaningful only for SourceAlertTTS -
+	// the current global provider/voice/speed foundation
+	// (docs/alert-audio.md §6.6), resolved by the caller from the same
+	// settings snapshot global TTS itself uses.
+	VoiceID  string
+	Language string
+	Speed    float64
+}
+
+// AlertAudioState is Manager's own read-only projection of a linked
+// alert instance's current playback progress (docs/alert-audio.md §8.5)
+// - a live view of state Manager already tracks, never a second state
+// machine. AlertAudioNeverRequested is never returned by Manager itself
+// (a caller that never called EnqueueAlertAudio for an instance already
+// knows that locally) - it exists only as this type's safe zero value.
+type AlertAudioState int
+
+const (
+	AlertAudioNeverRequested AlertAudioState = iota
+	AlertAudioStarted
+	AlertAudioPlaying
+	AlertAudioEnded
+	AlertAudioFailed
+	AlertAudioNoRenderer
+)
 
 type playbackState string
 
@@ -140,8 +198,13 @@ type Status struct {
 	TotalPlaybackFailed  int
 	TotalSynthesisFailed int
 	TotalInterrupted     int
-	InputGap             bool
-	Subscribed           bool
+	// TotalInterruptedByAlert counts a global-TTS item cancelled because
+	// alert-owned audio preempted it (docs/alert-audio.md §8.3) - kept
+	// distinct from TotalInterrupted (renderer-disconnect interruptions)
+	// so the two causes are never conflated.
+	TotalInterruptedByAlert int
+	InputGap                bool
+	Subscribed              bool
 }
 
 // Manager is the Stage 17A audio runtime: the ONE Engagement Event Bus
@@ -152,12 +215,13 @@ type Status struct {
 // Mirrors internal/alerts.Manager's own Options/NewManager/Start/
 // Shutdown shape.
 type Manager struct {
-	settingsSvc *domain.Service
-	source      *bus.Bus
-	provider    tts.Provider
-	opPrefs     *operatorchatprefs.Service
-	selfLookup  SelfUserIDLookup
-	now         Clock
+	settingsSvc   *domain.Service
+	source        *bus.Bus
+	provider      tts.Provider
+	opPrefs       *operatorchatprefs.Service
+	selfLookup    SelfUserIDLookup
+	assetResolver AudioAssetResolver
+	now           Clock
 
 	synthesisTimeout time.Duration
 	itemExpiry       time.Duration
@@ -166,18 +230,26 @@ type Manager struct {
 	botMu    sync.RWMutex
 	botUsers map[string]struct{}
 
-	mu                   sync.Mutex
-	settings             domain.Settings
-	queue                *Queue
-	cooldowns            *CooldownTracker
-	current              *currentState
-	currentSynthCancel   context.CancelFunc
-	rendererSession      *rendererSession
-	sequence             uint64
-	totalPlayed          int
-	totalPlaybackFailed  int
-	totalSynthesisFailed int
-	totalInterrupted     int
+	mu                      sync.Mutex
+	settings                domain.Settings
+	queue                   *Queue
+	cooldowns               *CooldownTracker
+	current                 *currentState
+	currentSynthCancel      context.CancelFunc
+	rendererSession         *rendererSession
+	sequence                uint64
+	totalPlayed             int
+	totalPlaybackFailed     int
+	totalSynthesisFailed    int
+	totalInterrupted        int
+	totalInterruptedByAlert int
+
+	// alertAudioStates holds the terminal (Ended/Failed) state of an
+	// alert instance's linked audio once it stops being m.current - read
+	// once by AlertAudioState (docs/alert-audio.md §8.5), then deleted,
+	// since the caller (internal/alerts) only ever needs to observe a
+	// terminal state once before it stops polling for that instance.
+	alertAudioStates map[string]AlertAudioState
 
 	inputGap   atomic.Bool
 	subscribed atomic.Bool
@@ -212,12 +284,13 @@ func NewManager(opts Options) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
 		settingsSvc: opts.SettingsService, source: opts.Bus, provider: opts.Provider,
-		opPrefs: opts.OperatorChatPrefs, selfLookup: opts.SelfLookup, now: now,
+		opPrefs: opts.OperatorChatPrefs, selfLookup: opts.SelfLookup, assetResolver: opts.AudioAssetResolver, now: now,
 		synthesisTimeout: synthesisTimeout, itemExpiry: itemExpiry, maxAudioBytes: maxAudioBytes,
-		botUsers:  make(map[string]struct{}),
-		queue:     NewQueue(domain.DefaultQueueCapacity),
-		cooldowns: NewCooldownTracker(),
-		ctx:       ctx, cancel: cancel,
+		botUsers:         make(map[string]struct{}),
+		queue:            NewQueue(domain.DefaultQueueCapacity),
+		cooldowns:        NewCooldownTracker(),
+		alertAudioStates: make(map[string]AlertAudioState),
+		ctx:              ctx, cancel: cancel,
 	}
 }
 
@@ -348,22 +421,78 @@ func (m *Manager) promoteLocked(it Item) {
 	m.changes.notify()
 }
 
+// finishCurrentLocked clears the current item after it genuinely
+// finished (successfully or not) - caller must hold m.mu. If the
+// finished item was alert-owned and chained (docs/alert-audio.md §6.2,
+// sound-then-TTS), the chain's next item is promoted immediately in its
+// place, under the exact same promoteLocked path any other item uses;
+// otherwise, for an alert-owned item, terminalState is recorded for
+// AlertAudioState to observe once. Never called for an explicit
+// skip/clear/CancelAlertAudio - those own their own "abort the whole
+// chain, record nothing further" semantics instead (see
+// abortCurrentLocked).
+func (m *Manager) finishCurrentLocked(terminalState AlertAudioState) {
+	finished := m.current
+	m.current = nil
+	if finished == nil || finished.item.AlertLink == nil {
+		return
+	}
+	if next := finished.item.AlertLink.ChainNext; next != nil {
+		m.promoteLocked(*next)
+		return
+	}
+	m.alertAudioStates[finished.item.AlertLink.InstanceID] = terminalState
+}
+
+// abortCurrentLocked clears the current item outright - never continues
+// its own chain (docs/alert-audio.md §9.2/§9.3: preemption/skip/clear/
+// cancellation always win immediately and discard whatever remained,
+// never resuming or advancing to a "next" piece). If the aborted item
+// was alert-owned, terminalState is still recorded so a caller polling
+// AlertAudioState learns the outcome immediately rather than waiting
+// out the bounded hold window unnecessarily.
+func (m *Manager) abortCurrentLocked(terminalState AlertAudioState) {
+	finished := m.current
+	m.current = nil
+	if finished == nil || finished.item.AlertLink == nil {
+		return
+	}
+	m.alertAudioStates[finished.item.AlertLink.InstanceID] = terminalState
+}
+
 func (m *Manager) synthesize(ctx context.Context, it Item) {
 	defer m.wg.Done()
 
 	var result tts.SynthesizeResult
 	var synthErr error
-	switch {
-	case m.provider == nil:
-		synthErr = tts.ErrUnavailable
-	default:
-		if caps := m.provider.Capabilities(); !caps.Available {
+	switch it.Source {
+	case SourceAlertSound:
+		// A persistent sound never touches the TTS provider at all
+		// (docs/alert-audio.md §8.2) - resolved bytes served verbatim,
+		// no synthesis latency, no SynthesisTimeout involved.
+		if m.assetResolver == nil {
 			synthErr = tts.ErrUnavailable
-		} else {
-			result, synthErr = m.provider.Synthesize(ctx, tts.SynthesizeInput{
-				Text: it.Text, VoiceID: it.Snapshot.VoiceID, Language: it.Snapshot.Language,
-				Speed: it.Snapshot.Speed, Volume: it.Snapshot.Volume,
-			})
+			break
+		}
+		data, contentType, ok := m.assetResolver.ResolveSoundAsset(ctx, it.AssetID)
+		if !ok {
+			synthErr = tts.ErrUnavailable
+			break
+		}
+		result = tts.SynthesizeResult{ContentType: contentType, Audio: data}
+	default: // SourceGlobalTTS, SourceAlertTTS
+		switch {
+		case m.provider == nil:
+			synthErr = tts.ErrUnavailable
+		default:
+			if caps := m.provider.Capabilities(); !caps.Available {
+				synthErr = tts.ErrUnavailable
+			} else {
+				result, synthErr = m.provider.Synthesize(ctx, tts.SynthesizeInput{
+					Text: it.Text, VoiceID: it.Snapshot.VoiceID, Language: it.Snapshot.Language,
+					Speed: it.Snapshot.Speed, Volume: it.Snapshot.Volume,
+				})
+			}
 		}
 	}
 
@@ -379,18 +508,18 @@ func (m *Manager) synthesize(ctx context.Context, it Item) {
 	}
 	if synthErr != nil {
 		m.totalSynthesisFailed++
-		m.current = nil
+		m.finishCurrentLocked(AlertAudioFailed)
 		return
 	}
 	if m.maxAudioBytes > 0 && len(result.Audio) > m.maxAudioBytes {
 		m.totalSynthesisFailed++
-		m.current = nil
+		m.finishCurrentLocked(AlertAudioFailed)
 		return
 	}
 	token, err := newSessionToken()
 	if err != nil {
 		m.totalSynthesisFailed++
-		m.current = nil
+		m.finishCurrentLocked(AlertAudioFailed)
 		return
 	}
 
@@ -693,7 +822,7 @@ func (m *Manager) SkipCurrent() bool {
 		m.currentSynthCancel()
 	}
 	m.queue.RecordManualSkip()
-	m.current = nil
+	m.abortCurrentLocked(AlertAudioFailed)
 	m.changes.notify()
 	return true
 }
@@ -762,7 +891,7 @@ func (m *Manager) DisconnectRenderer(token string) {
 	}
 	if m.current.playbackState == playbackStatePlaying {
 		m.totalInterrupted++
-		m.current = nil
+		m.abortCurrentLocked(AlertAudioFailed)
 		return
 	}
 	m.current.playbackState = playbackStateWaitingForRenderer
@@ -796,18 +925,141 @@ func (m *Manager) Ack(token, itemID string, kind AckKind) error {
 			return ErrAckRejected
 		}
 		m.totalPlayed++
-		m.current = nil
+		m.finishCurrentLocked(AlertAudioEnded)
 	case AckFailed:
 		if m.current.playbackState != playbackStatePlaying && m.current.playbackState != playbackStateReady {
 			return ErrAckRejected
 		}
 		m.totalPlaybackFailed++
-		m.current = nil
+		m.finishCurrentLocked(AlertAudioFailed)
 	default:
 		return ErrAckRejected
 	}
 	m.changes.notify()
 	return nil
+}
+
+// EnqueueAlertAudio is internal/alerts's own entry point for rule-owned
+// audio (docs/alert-audio.md §8.4) - built from one alert instance's own
+// already-immutable snapshot fields (sound then TTS, per §6.2, when both
+// are configured) and handed to Manager as one linked chain. Arbitration
+// (docs/alert-audio.md §8.3): a currently-playing/synthesizing
+// SourceGlobalTTS item is always preempted (cancelled outright, never
+// resumed) and the chain's first item promoted immediately in its
+// place; a currently-current alert-owned item (this or another
+// instance) is never preempted - the new chain's first item is appended
+// to the ordinary bounded ready queue instead, subject to the same
+// capacity bound as any other item. A no-op if items is empty (no
+// rule-owned audio was actually configured for this instance).
+func (m *Manager) EnqueueAlertAudio(profileID, instanceID string, items []AlertAudioRequest) {
+	if len(items) == 0 {
+		return
+	}
+	now := m.now()
+	built := make([]Item, 0, len(items))
+	for _, req := range items {
+		id, err := NewItemID()
+		if err != nil {
+			return
+		}
+		built = append(built, Item{
+			ID: id, Source: req.Source, AssetID: req.AssetID, Text: req.Text,
+			Snapshot:   ItemSnapshot{VoiceID: req.VoiceID, Language: req.Language, Speed: req.Speed, Volume: req.Volume},
+			EnqueuedAt: now,
+			AlertLink:  &AlertLink{ProfileID: profileID, InstanceID: instanceID},
+		})
+	}
+	// Thread the chain: item i's own ChainNext points to item i+1 - in
+	// practice at most a two-item chain (sound then TTS, §6.2).
+	for i := 0; i < len(built)-1; i++ {
+		next := built[i+1]
+		built[i].AlertLink.ChainNext = &next
+	}
+	first := built[0]
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.current != nil && m.current.item.Source == SourceGlobalTTS {
+		if m.currentSynthCancel != nil {
+			m.currentSynthCancel()
+		}
+		m.current = nil
+		m.totalInterruptedByAlert++
+	}
+
+	if m.current == nil {
+		m.promoteLocked(first)
+		return
+	}
+	if !m.queue.Enqueue(first) {
+		// Capacity full - the alert-owned item is dropped exactly like
+		// any other over-capacity item (counted in QueueCounters); the
+		// caller learns this immediately rather than holding for it.
+		m.alertAudioStates[instanceID] = AlertAudioFailed
+	}
+	m.changes.notify()
+}
+
+// CancelAlertAudio cancels every item (current or still queued) linked
+// to instanceID - unconditional and immediate, never waiting for the
+// bounded hold window, and never resuming/continuing the chain
+// (docs/alert-audio.md §9.2/§9.3: preemption/skip/clear always win
+// immediately). A no-op if instanceID has no linked audio at all right
+// now.
+func (m *Manager) CancelAlertAudio(instanceID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.current != nil && m.current.item.AlertLink != nil && m.current.item.AlertLink.InstanceID == instanceID {
+		if m.currentSynthCancel != nil {
+			m.currentSynthCancel()
+		}
+		m.current = nil
+	}
+	m.queue.RemoveWhere(func(it Item) bool {
+		return it.AlertLink != nil && it.AlertLink.InstanceID == instanceID
+	})
+	delete(m.alertAudioStates, instanceID)
+	m.changes.notify()
+}
+
+// AlertAudioState reports instanceID's linked audio's current progress
+// (docs/alert-audio.md §8.4/§8.5) - a live read of state Manager already
+// tracks, never a second state machine. A terminal state (Ended/Failed)
+// is returned once, then forgotten - the caller only needs to observe a
+// terminal state once before it stops polling for that instance.
+// AlertAudioNeverRequested is returned only when instanceID names
+// nothing this Manager currently knows about (never enqueued, or its
+// terminal state was already consumed by an earlier call) - the caller
+// (internal/alerts) already knows locally whether it ever called
+// EnqueueAlertAudio for a given instance, so this case only matters as
+// a safe default, never as the primary signal driving its own logic.
+func (m *Manager) AlertAudioState(instanceID string) AlertAudioState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.current != nil && m.current.item.AlertLink != nil && m.current.item.AlertLink.InstanceID == instanceID {
+		switch m.current.playbackState {
+		case playbackStatePlaying:
+			return AlertAudioPlaying
+		case playbackStateWaitingForRenderer:
+			if m.rendererSession == nil {
+				return AlertAudioNoRenderer
+			}
+			return AlertAudioStarted
+		default: // synthesizing, ready
+			return AlertAudioStarted
+		}
+	}
+	if m.queue.ContainsWhere(func(it Item) bool { return it.AlertLink != nil && it.AlertLink.InstanceID == instanceID }) {
+		return AlertAudioStarted
+	}
+	if state, ok := m.alertAudioStates[instanceID]; ok {
+		delete(m.alertAudioStates, instanceID)
+		return state
+	}
+	return AlertAudioNeverRequested
 }
 
 // PublicCurrentSnapshot returns the safe public summary of the current
@@ -855,22 +1107,23 @@ func (m *Manager) Status() Status {
 	}
 
 	return Status{
-		Enabled:              m.settings.Enabled,
-		ProviderMode:         m.settings.ProviderMode,
-		ProviderAvailable:    providerAvailable,
-		RendererConnected:    m.rendererSession != nil,
-		HasCurrentItem:       m.current != nil,
-		CurrentSynthetic:     m.current != nil && m.current.item.Synthetic,
-		PendingApprovalCount: m.queue.PendingLen(),
-		ReadyQueueCount:      m.queue.ReadyLen(),
-		Capacity:             m.settings.QueueCapacity,
-		Counters:             m.queue.Counters(),
-		TotalPlayed:          m.totalPlayed,
-		TotalPlaybackFailed:  m.totalPlaybackFailed,
-		TotalSynthesisFailed: m.totalSynthesisFailed,
-		TotalInterrupted:     m.totalInterrupted,
-		InputGap:             m.inputGap.Load(),
-		Subscribed:           m.subscribed.Load(),
+		Enabled:                 m.settings.Enabled,
+		ProviderMode:            m.settings.ProviderMode,
+		ProviderAvailable:       providerAvailable,
+		RendererConnected:       m.rendererSession != nil,
+		HasCurrentItem:          m.current != nil,
+		CurrentSynthetic:        m.current != nil && m.current.item.Synthetic,
+		PendingApprovalCount:    m.queue.PendingLen(),
+		ReadyQueueCount:         m.queue.ReadyLen(),
+		Capacity:                m.settings.QueueCapacity,
+		Counters:                m.queue.Counters(),
+		TotalPlayed:             m.totalPlayed,
+		TotalPlaybackFailed:     m.totalPlaybackFailed,
+		TotalSynthesisFailed:    m.totalSynthesisFailed,
+		TotalInterrupted:        m.totalInterrupted,
+		TotalInterruptedByAlert: m.totalInterruptedByAlert,
+		InputGap:                m.inputGap.Load(),
+		Subscribed:              m.subscribed.Load(),
 	}
 }
 

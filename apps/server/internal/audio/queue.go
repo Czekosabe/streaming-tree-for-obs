@@ -30,19 +30,59 @@ type ItemSnapshot struct {
 	VoiceID      string
 	Language     string
 	Speed        float64
-	Volume       float64
+	// Volume is already the final, fully-combined value the public SSE
+	// payload serves verbatim - for SourceGlobalTTS this is simply the
+	// global output volume (unchanged Stage 17A behavior); for
+	// SourceAlertSound/SourceAlertTTS it is globalVolume multiplied by
+	// the rule's own SoundVolume/TTSVolume exactly once, computed at
+	// enqueue time (docs/alert-audio.md §6.3) - never recomputed or
+	// multiplied again anywhere downstream.
+	Volume float64
+}
+
+// Source classifies which of the three input paths produced a queued
+// item (docs/alert-audio.md §3/§8) - Stage 17A's original Event-Bus-
+// driven global TTS, or one of Stage 17B's two alert-owned kinds. The
+// zero value, SourceGlobalTTS, preserves every pre-Stage-17B call site's
+// existing behavior unchanged.
+type Source int
+
+const (
+	SourceGlobalTTS Source = iota
+	SourceAlertSound
+	SourceAlertTTS
+)
+
+// AlertLink ties a SourceAlertSound/SourceAlertTTS item back to the
+// exact alert instance that produced it (docs/alert-audio.md §8.1) - the
+// stable runtime identity the synchronization contract requires. Never
+// serialized to the public route; internal bookkeeping only. ChainNext
+// holds the queued "then TTS" half when a rule configures sound+TTS
+// together (docs/alert-audio.md §6.2) - nil for the final, or only, item
+// in the chain.
+type AlertLink struct {
+	ProfileID  string
+	InstanceID string
+	ChainNext  *Item
 }
 
 // Item is one accepted queue entry - waiting in the ready queue,
 // waiting for manual approval, or (once popped by the caller) about to
 // become the current item. Never persisted; gone on restart.
 type Item struct {
-	ID         string
-	Text       string
-	Synthetic  bool
+	ID        string
+	Source    Source
+	Text      string
+	Synthetic bool
+	// AssetID is meaningful only for SourceAlertSound - the managed
+	// audioasset.Asset local ID to resolve at promotion time
+	// (docs/alert-audio.md §8.2). Empty for every other Source.
+	AssetID    string
 	Snapshot   ItemSnapshot
 	EnqueuedAt time.Time
 	ExpiresAt  time.Time
+	// AlertLink is non-nil only for SourceAlertSound/SourceAlertTTS.
+	AlertLink *AlertLink
 }
 
 func (it Item) expired(now time.Time) bool {
@@ -220,3 +260,51 @@ func (q *Queue) Counters() QueueCounters { return q.counters }
 // this struct itself has no notion of, since the current item is not
 // part of Queue).
 func (q *Queue) RecordManualSkip() { q.counters.TotalManuallySkipped++ }
+
+// ContainsWhere reports whether any ready/pending item matches pred -
+// read-only, never mutates. Used by Manager.AlertAudioState to
+// distinguish "still queued, waiting its turn" from "no linked audio at
+// all" for an instance whose audio has not yet been promoted to current
+// (docs/alert-audio.md §8.5).
+func (q *Queue) ContainsWhere(pred func(Item) bool) bool {
+	for _, it := range q.ready {
+		if pred(it) {
+			return true
+		}
+	}
+	for _, it := range q.pending {
+		if pred(it) {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveWhere removes every ready/pending item matching pred, returning
+// the count removed - used by Manager.CancelAlertAudio (docs/alert-
+// audio.md §9.3) to drop a not-yet-promoted chained item belonging to a
+// cancelled alert instance. Never touches a separately tracked current
+// item, exactly like Clear.
+func (q *Queue) RemoveWhere(pred func(Item) bool) int {
+	removed := 0
+	keptReady := q.ready[:0]
+	for _, it := range q.ready {
+		if pred(it) {
+			removed++
+			continue
+		}
+		keptReady = append(keptReady, it)
+	}
+	q.ready = keptReady
+
+	keptPending := q.pending[:0]
+	for _, it := range q.pending {
+		if pred(it) {
+			removed++
+			continue
+		}
+		keptPending = append(keptPending, it)
+	}
+	q.pending = keptPending
+	return removed
+}

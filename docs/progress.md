@@ -24415,3 +24415,103 @@ Wire alert-owned playback into the `internal/audio` runtime
 TTS), the `AlertLink` identity, and the `internal/alerts` <->
 `internal/audio` coordination for start/cancel/bounded-hold on
 skip/clear/preemption/replay/grouping.
+
+## 2026-08-15 — feat(server): synchronize alert and audio playback
+
+### Status
+Completed (this commit's scope only - the `internal/audio`-side
+synchronization primitives; `internal/alerts` does not call any of
+them yet, see "Known limitations"). Stage 17B as a whole remains
+incomplete.
+
+### Scope
+The third Stage 17B backend piece per `docs/alert-audio.md` §8/§9:
+extends `internal/audio`'s own runtime with everything needed to play
+alert-owned sound/TTS through the *same* queue/promotion/synthesis/
+playback pipeline Stage 17A already built - a `Source` classification,
+an injected asset resolver, deterministic arbitration against global
+TTS, a stable `AlertLink` identity, sound-then-TTS chaining, and
+explicit cancellation - fully implemented and tested in isolation.
+`internal/alerts`'s own runtime does not call any of these new methods
+yet; that wiring, plus rendered per-rule TTS text, is the next commit.
+
+### Changes
+- `apps/server/internal/audio/queue.go` - `Source` (`SourceGlobalTTS`/
+  `SourceAlertSound`/`SourceAlertTTS`), `AlertLink{ProfileID,
+  InstanceID, ChainNext *Item}`, `Item` gains `Source`/`AssetID`/
+  `AlertLink`; `ItemSnapshot.Volume`'s own doc comment clarified as
+  "already the final combined value, never recombined downstream"
+  (docs/alert-audio.md §6.3) - no new field needed, Stage 17A's
+  existing field already carries exactly what's needed. New
+  `Queue.ContainsWhere`/`RemoveWhere` (read-only membership test /
+  predicate-based removal), used by the new Manager methods below.
+- `apps/server/internal/audio/manager.go` - `AudioAssetResolver`
+  interface (`ResolveSoundAsset`, structurally satisfied by
+  `*audioasset.Service` with no adapter needed - `internal/audio` still
+  never imports `internal/domain/audioasset` directly), optional
+  `Options.AudioAssetResolver`; `AlertAudioRequest`/`AlertAudioState`
+  (`Started`/`Playing`/`Ended`/`Failed`/`NoRenderer`/
+  `NeverRequested`) exported types; `synthesize` branches by `Source` -
+  `SourceAlertSound` resolves bytes directly (no provider call, no
+  `SynthesisTimeout`), `SourceGlobalTTS`/`SourceAlertTTS` synthesize via
+  the provider exactly as before. Three new public methods:
+  `EnqueueAlertAudio(profileID, instanceID, items)` (deterministic
+  arbitration - preempts a currently-playing/synthesizing
+  `SourceGlobalTTS` item outright, never preempts another alert
+  instance's own current audio, threads a sound-then-TTS chain),
+  `CancelAlertAudio(instanceID)` (unconditional, immediate, clears
+  current and any still-queued chain item, never continues the chain),
+  `AlertAudioState(instanceID)` (a live read of state Manager already
+  tracks; a terminal Ended/Failed is returned once then forgotten).
+  `finishCurrentLocked`/`abortCurrentLocked` split "natural completion,
+  continue the chain" (Ack ended/failed, synthesis failure) from
+  "explicit abort, never continue" (skip, renderer-disconnect
+  interruption, `CancelAlertAudio`) - `Ack`'s `AckEnded`/`AckFailed`,
+  `SkipCurrent`, and `DisconnectRenderer`'s interrupted path all route
+  through one or the other now. New `Status.TotalInterruptedByAlert`
+  counter, kept distinct from the existing `TotalInterrupted`
+  (renderer-disconnect) so the two causes are never conflated.
+- `apps/server/internal/audio/manager_alertaudio_test.go` (new) - 12
+  tests: immediate promotion when idle, sound bytes resolved without
+  ever calling the TTS provider, preempting a playing global-TTS item
+  (and counting it), never preempting another alert instance's own
+  current audio, the sound-then-TTS chain advancing automatically on
+  `AckEnded`, `CancelAlertAudio` clearing both a current and a
+  still-queued item, `AlertAudioState`'s `NeverRequested`/`NoRenderer`
+  cases, a resolver miss reporting `Failed`, `SkipCurrent` aborting a
+  chain without continuing it, the public snapshot's `Volume` carrying
+  the already-combined value verbatim, and a stale renderer session's
+  ACK still rejected for an alert-owned item. All pass reliably across
+  3 consecutive full runs.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean.
+- `go test ./...` - full suite passes, including every pre-existing
+  `internal/audio` test unchanged (`synthesize`'s new `Source` switch
+  falls through to the exact same provider-call code path for the
+  default case, so every Stage 17A scenario is untouched).
+- `go test -race` was attempted and is unavailable in this repository
+  (CGO is deliberately disabled project-wide for the CGO-free SQLite
+  driver, and the race detector requires it) - every new method's own
+  mutex discipline was instead reviewed by hand against the existing,
+  already-race-tested `Manager` locking convention (`m.mu` held for the
+  full duration of every state mutation, exactly like every pre-
+  existing method).
+
+### Known limitations
+`internal/alerts`'s own runtime does not call `EnqueueAlertAudio`/
+`CancelAlertAudio`/`AlertAudioState` anywhere yet - a rule's audio
+configuration still produces no sound end to end. The bounded visual-
+hold behavior (docs/alert-audio.md §8.5) is not implemented either;
+that lives on the `internal/alerts` side of the wiring. Stage 17B as a
+whole is not complete; Stage 17 as a whole is not complete.
+
+### Next step
+Wire `internal/alerts`'s own runtime to the primitives above: per-
+alert-rule TTS text rendering (reusing `internal/alerts/templates.go`'s
+existing placeholder grammar), calling `EnqueueAlertAudio` from the
+same locked transition that makes an instance current, `CancelAlertAudio`
+from preemption/skip/clear, and the bounded visual-hold poll in
+`profileRuntime.tick`.
