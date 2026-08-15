@@ -31,7 +31,8 @@ func visualTemplateStorageErr(op string, err error) error {
 	return fmt.Errorf("%w: %s: %v", visualtemplate.ErrStorage, op, err)
 }
 
-const visualTemplateColumns = `id, target_kind, name, description, author, license, template_schema_version, document_json, created_at, updated_at`
+const visualTemplateColumns = `id, target_kind, name, description, author, license, template_schema_version, document_json, created_at, updated_at,
+	audio_sound_enabled, audio_sound_asset_id, audio_sound_volume, audio_tts_enabled, audio_tts_template, audio_tts_volume`
 
 func scanVisualTemplate(scanner interface{ Scan(...any) error }) (visualtemplate.Template, error) {
 	var (
@@ -39,8 +40,15 @@ func scanVisualTemplate(scanner interface{ Scan(...any) error }) (visualtemplate
 		targetKind           string
 		documentJSON         string
 		createdAt, updatedAt string
+		soundEnabled         bool
+		soundAssetID         string
+		soundVolume          float64
+		ttsEnabled           bool
+		ttsTemplate          string
+		ttsVolume            float64
 	)
-	if err := scanner.Scan(&t.ID, &targetKind, &t.Name, &t.Description, &t.Author, &t.License, &t.TemplateSchemaVersion, &documentJSON, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&t.ID, &targetKind, &t.Name, &t.Description, &t.Author, &t.License, &t.TemplateSchemaVersion, &documentJSON, &createdAt, &updatedAt,
+		&soundEnabled, &soundAssetID, &soundVolume, &ttsEnabled, &ttsTemplate, &ttsVolume); err != nil {
 		return visualtemplate.Template{}, err
 	}
 	t.Target = visualtemplate.Target(targetKind)
@@ -58,6 +66,19 @@ func scanVisualTemplate(scanner interface{ Scan(...any) error }) (visualtemplate
 	if t.UpdatedAt, err = platform.ParseTimestamp(updatedAt); err != nil {
 		return visualtemplate.Template{}, fmt.Errorf("parse updated_at %q: %w", updatedAt, err)
 	}
+
+	// audio_sound_enabled/audio_tts_enabled both false and their string
+	// fields empty is the safe "no preset" zero value every pre-Stage-
+	// 17B row (and every template a plain JSON create/import ever
+	// produces) migrates to - AlertAudio stays nil rather than a
+	// populated-but-all-zero struct, mirroring Instance.Audio's own
+	// "nil means no rule-owned audio configured" convention exactly.
+	if soundEnabled || soundAssetID != "" || soundVolume != 0 || ttsEnabled || ttsTemplate != "" || ttsVolume != 0 {
+		t.AlertAudio = &visualtemplate.RuleAudioPreset{
+			SoundEnabled: soundEnabled, SoundAssetID: soundAssetID, SoundVolume: soundVolume,
+			TTSEnabled: ttsEnabled, TTSTemplate: ttsTemplate, TTSVolume: ttsVolume,
+		}
+	}
 	return t, nil
 }
 
@@ -69,10 +90,19 @@ func (r *VisualTemplateRepository) Create(ctx context.Context, t visualtemplate.
 	}
 	nowText := platform.FormatTimestamp(t.CreatedAt)
 	updatedText := platform.FormatTimestamp(t.UpdatedAt)
+	var soundEnabled, ttsEnabled bool
+	var soundAssetID, ttsTemplate string
+	var soundVolume, ttsVolume float64
+	if t.AlertAudio != nil {
+		soundEnabled, soundAssetID, soundVolume = t.AlertAudio.SoundEnabled, t.AlertAudio.SoundAssetID, t.AlertAudio.SoundVolume
+		ttsEnabled, ttsTemplate, ttsVolume = t.AlertAudio.TTSEnabled, t.AlertAudio.TTSTemplate, t.AlertAudio.TTSVolume
+	}
 	if _, err := r.db.ExecContext(ctx, `
-		INSERT INTO visual_templates (id, target_kind, name, description, author, license, template_schema_version, document_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO visual_templates (id, target_kind, name, description, author, license, template_schema_version, document_json, created_at, updated_at,
+			audio_sound_enabled, audio_sound_asset_id, audio_sound_volume, audio_tts_enabled, audio_tts_template, audio_tts_volume)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, string(t.Target), t.Name, t.Description, t.Author, t.License, t.TemplateSchemaVersion, string(raw), nowText, updatedText,
+		soundEnabled, soundAssetID, soundVolume, ttsEnabled, ttsTemplate, ttsVolume,
 	); err != nil {
 		return visualtemplate.Template{}, visualTemplateStorageErr("create visual template", err)
 	}

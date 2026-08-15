@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
@@ -76,7 +77,20 @@ type visualTemplatePackagePreviewDTO struct {
 	License     string                                 `json:"license"`
 	Document    visualDesignDocumentDTO                `json:"document"`
 	Assets      []visualTemplatePackagePreviewAssetDTO `json:"assets"`
-	ExpiresAt   string                                 `json:"expiresAt"`
+	// AlertAudio describes the package's own optional alert-audio
+	// preset (docs/alert-audio.md §12: "package preview identifies
+	// audio") - nil when the package carries none. Informational only;
+	// preview never stages or plays the sound bytes themselves.
+	AlertAudio *visualTemplatePackagePreviewAudioDTO `json:"alertAudio,omitempty"`
+	ExpiresAt  string                                `json:"expiresAt"`
+}
+
+type visualTemplatePackagePreviewAudioDTO struct {
+	SoundEnabled     bool   `json:"soundEnabled"`
+	SoundDisplayName string `json:"soundDisplayName,omitempty"`
+	SoundDurationMS  int64  `json:"soundDurationMs,omitempty"`
+	TTSEnabled       bool   `json:"ttsEnabled"`
+	TTSTemplate      string `json:"ttsTemplate,omitempty"`
 }
 
 func previewToDTO(p visualpackage.PreviewSession) visualTemplatePackagePreviewDTO {
@@ -88,11 +102,18 @@ func previewToDTO(p visualpackage.PreviewSession) visualTemplatePackagePreviewDT
 			URL: "/api/visual-template-packages/preview/" + p.Token + "/assets/" + a.LogicalName,
 		})
 	}
-	return visualTemplatePackagePreviewDTO{
+	dto := visualTemplatePackagePreviewDTO{
 		Token: p.Token, Target: string(p.Target), Name: p.Name, Description: p.Description,
 		Author: p.Author, License: p.License, Document: documentToDTO(p.Document),
 		Assets: assets, ExpiresAt: p.ExpiresAt.Format(rfc3339Milli),
 	}
+	if p.AlertAudio != nil {
+		dto.AlertAudio = &visualTemplatePackagePreviewAudioDTO{
+			SoundEnabled: p.AlertAudio.SoundEnabled, SoundDisplayName: p.AlertAudio.SoundDisplayName, SoundDurationMS: p.AlertAudio.SoundDurationMS,
+			TTSEnabled: p.AlertAudio.TTSEnabled, TTSTemplate: p.AlertAudio.TTSTemplate,
+		}
+	}
+	return dto
 }
 
 // --- handlers -------------------------------------------------------------
@@ -239,6 +260,20 @@ func writeVisualPackageError(w http.ResponseWriter, logger *slog.Logger, err err
 		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_asset_unsupported", "This asset type is not supported.")
 	case errors.Is(err, visualasset.ErrTooLarge):
 		writeError(w, logger, http.StatusRequestEntityTooLarge, "visual_template_package_too_large", "An asset in the package exceeds its size limit.")
+	case errors.Is(err, visualpackage.ErrAudioTargetInvalid):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_audio_target_invalid", "Alert-audio presets are only valid for an alert-target template.")
+	case errors.Is(err, audioasset.ErrUnsupported):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_asset_unsupported", "This audio asset type is not supported.")
+	case errors.Is(err, audioasset.ErrTooLarge):
+		writeError(w, logger, http.StatusRequestEntityTooLarge, "visual_template_package_too_large", "An audio asset in the package exceeds its size limit.")
+	case errors.Is(err, audioasset.ErrInvalid):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_manifest_invalid", "An audio asset in the package failed validation.")
+	case errors.Is(err, visualtemplate.ErrAudioAssetNotFound):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_asset_missing", "The package's alert-audio preset references an audio asset that was not found.")
+	case errors.Is(err, visualtemplate.ErrAudioNotAllowedForTarget):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_package_audio_target_invalid", "Alert-audio presets are only valid for an alert-target template.")
+	case errors.Is(err, visualtemplate.ErrValidation):
+		writeError(w, logger, http.StatusUnprocessableEntity, "visual_template_invalid", "The imported template failed validation.")
 	case errors.Is(err, visualtemplate.ErrNotFound):
 		writeError(w, logger, http.StatusNotFound, "visual_template_not_found", "The requested visual template does not exist.")
 	default:

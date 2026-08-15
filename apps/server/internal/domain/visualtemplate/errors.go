@@ -40,4 +40,14 @@ var (
 	// reference depends on (docs/visual-template-packages.md §21,
 	// stable error visual_template_assets_missing).
 	ErrAssetsMissing = errors.New("this template document references managed assets, which a standalone JSON file cannot carry")
+	// ErrAudioAssetNotFound means a package v2 import's own alertAudio
+	// preset names a sound asset id that does not resolve to a real
+	// managed audio asset (docs/alert-audio.md §10.2) - checked only
+	// when SoundEnabled, via the injected AudioAssetRefTracker.
+	ErrAudioAssetNotFound = errors.New("visual template alert-audio preset references an audio asset that was not found")
+	// ErrAudioNotAllowedForTarget means a TargetChat template carries a
+	// non-nil AlertAudio - alert-owned audio is only ever legal for a
+	// TargetAlert template (docs/alert-audio.md §10.2's own explicit
+	// "chat-target package containing this object is rejected").
+	ErrAudioNotAllowedForTarget = errors.New("alert-audio presets are only valid for an alert-target template")
 )

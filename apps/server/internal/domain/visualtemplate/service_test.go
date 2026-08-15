@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
@@ -203,4 +204,115 @@ func testServiceSimple(t *testing.T) (*Service, *fakeRepository) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	return svc, repo
+}
+
+// fakeAudioAssetTracker is a minimal in-memory double for
+// AudioAssetRefTracker.
+type fakeAudioAssetTracker struct {
+	assets  map[string]audioasset.Asset
+	refs    map[string][]string
+	cleared []string
+}
+
+func newFakeAudioAssetTracker() *fakeAudioAssetTracker {
+	return &fakeAudioAssetTracker{assets: map[string]audioasset.Asset{}, refs: map[string][]string{}}
+}
+
+func (f *fakeAudioAssetTracker) Get(_ context.Context, id string) (audioasset.Asset, error) {
+	a, ok := f.assets[id]
+	if !ok {
+		return audioasset.Asset{}, audioasset.ErrNotFound
+	}
+	return a, nil
+}
+
+func (f *fakeAudioAssetTracker) SetTemplateAssetRefs(_ context.Context, templateID string, assetIDs []string) error {
+	f.refs[templateID] = assetIDs
+	return nil
+}
+
+func (f *fakeAudioAssetTracker) ClearTemplateRefs(_ context.Context, templateID string) error {
+	f.cleared = append(f.cleared, templateID)
+	delete(f.refs, templateID)
+	return nil
+}
+
+func testServiceWithAudio(t *testing.T) (*Service, *fakeAudioAssetTracker) {
+	t.Helper()
+	svc, _ := testServiceSimple(t)
+	tracker := newFakeAudioAssetTracker()
+	svc.SetAudioAssetService(tracker)
+	return svc, tracker
+}
+
+func TestCreatePackagedPersistsAlertAudioPreset(t *testing.T) {
+	svc, tracker := testServiceWithAudio(t)
+	tracker.assets["audioasset_1"] = audioasset.Asset{ID: "audioasset_1", Kind: audioasset.KindSound}
+	audio := &RuleAudioPreset{SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 0.8, TTSEnabled: true, TTSTemplate: "{username}", TTSVolume: 0.5}
+	created, err := svc.CreatePackaged(context.Background(), TargetAlert, "Mine", "", "", "", validAlertDoc(), audio)
+	if err != nil {
+		t.Fatalf("CreatePackaged() error = %v", err)
+	}
+	if created.AlertAudio == nil || created.AlertAudio.SoundAssetID != "audioasset_1" || created.AlertAudio.TTSTemplate != "{username}" {
+		t.Errorf("AlertAudio = %+v, want the preset persisted verbatim", created.AlertAudio)
+	}
+	if refs := tracker.refs[created.ID]; len(refs) != 1 || refs[0] != "audioasset_1" {
+		t.Errorf("tracker.refs[%s] = %v, want [audioasset_1]", created.ID, refs)
+	}
+}
+
+func TestCreateNeverAttachesAudio(t *testing.T) {
+	svc, tracker := testServiceWithAudio(t)
+	created, err := svc.Create(context.Background(), TargetAlert, "Mine", "", "", "", validAlertDoc())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.AlertAudio != nil {
+		t.Errorf("AlertAudio = %+v, want nil - the plain JSON create path never carries audio", created.AlertAudio)
+	}
+	if refs := tracker.refs[created.ID]; len(refs) != 0 {
+		t.Errorf("tracker.refs[%s] = %v, want empty", created.ID, refs)
+	}
+}
+
+func TestCreatePackagedRejectsUnknownSoundAsset(t *testing.T) {
+	svc, _ := testServiceWithAudio(t)
+	audio := &RuleAudioPreset{SoundEnabled: true, SoundAssetID: "audioasset_missing", SoundVolume: 1}
+	if _, err := svc.CreatePackaged(context.Background(), TargetAlert, "Mine", "", "", "", validAlertDoc(), audio); !errors.Is(err, ErrAudioAssetNotFound) {
+		t.Fatalf("got %v, want ErrAudioAssetNotFound", err)
+	}
+}
+
+func TestCreatePackagedRejectsAudioForChatTarget(t *testing.T) {
+	svc, tracker := testServiceWithAudio(t)
+	tracker.assets["audioasset_1"] = audioasset.Asset{ID: "audioasset_1", Kind: audioasset.KindSound}
+	audio := &RuleAudioPreset{SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 1}
+	if _, err := svc.CreatePackaged(context.Background(), TargetChat, "Mine", "", "", "", validTemplate(TargetChat).Document, audio); !errors.Is(err, ErrAudioNotAllowedForTarget) {
+		t.Fatalf("got %v, want ErrAudioNotAllowedForTarget", err)
+	}
+}
+
+func TestCreatePackagedRejectsInvalidVolumeBounds(t *testing.T) {
+	svc, tracker := testServiceWithAudio(t)
+	tracker.assets["audioasset_1"] = audioasset.Asset{ID: "audioasset_1", Kind: audioasset.KindSound}
+	audio := &RuleAudioPreset{SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 1.5}
+	if _, err := svc.CreatePackaged(context.Background(), TargetAlert, "Mine", "", "", "", validAlertDoc(), audio); !errors.Is(err, ErrValidation) {
+		t.Fatalf("got %v, want ErrValidation", err)
+	}
+}
+
+func TestDeleteClearsAudioAssetRefs(t *testing.T) {
+	svc, tracker := testServiceWithAudio(t)
+	tracker.assets["audioasset_1"] = audioasset.Asset{ID: "audioasset_1", Kind: audioasset.KindSound}
+	audio := &RuleAudioPreset{SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 1}
+	created, err := svc.CreatePackaged(context.Background(), TargetAlert, "Mine", "", "", "", validAlertDoc(), audio)
+	if err != nil {
+		t.Fatalf("CreatePackaged() error = %v", err)
+	}
+	if err := svc.Delete(context.Background(), created.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if len(tracker.cleared) != 1 || tracker.cleared[0] != created.ID {
+		t.Errorf("tracker.cleared = %v, want [%s]", tracker.cleared, created.ID)
+	}
 }

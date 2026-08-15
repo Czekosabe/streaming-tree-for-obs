@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"image"
 	"image/color"
@@ -13,6 +14,42 @@ import (
 
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
+
+// buildWAV assembles a minimal, well-formed 16-bit PCM WAV file for
+// tests - mirrors internal/domain/audioasset's own identically-named
+// test helper exactly (numSamples is per channel), duplicated here
+// rather than exported/imported since it is test-only fixture code in
+// both packages.
+func buildWAV(t *testing.T, sampleRate uint32, channels uint16, bitsPerSample uint16, numSamples int) []byte {
+	t.Helper()
+	blockAlign := int(channels) * int(bitsPerSample) / 8
+	dataSize := numSamples * blockAlign
+	byteRate := sampleRate * uint32(blockAlign)
+
+	buf := make([]byte, 44+dataSize)
+	copy(buf[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(36+dataSize))
+	copy(buf[8:12], "WAVE")
+	copy(buf[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(buf[16:20], 16)
+	binary.LittleEndian.PutUint16(buf[20:22], 1) // PCM
+	binary.LittleEndian.PutUint16(buf[22:24], channels)
+	binary.LittleEndian.PutUint32(buf[24:28], sampleRate)
+	binary.LittleEndian.PutUint32(buf[28:32], byteRate)
+	binary.LittleEndian.PutUint16(buf[32:34], uint16(blockAlign))
+	binary.LittleEndian.PutUint16(buf[34:36], bitsPerSample)
+	copy(buf[36:40], "data")
+	binary.LittleEndian.PutUint32(buf[40:44], uint32(dataSize))
+	for i := 0; i < dataSize; i++ {
+		buf[44+i] = byte(i % 200)
+	}
+	return buf
+}
+
+func testWAV(t *testing.T) []byte {
+	t.Helper()
+	return buildWAV(t, 44100, 2, 16, 4410) // 100ms stereo
+}
 
 // validPNGBytes returns a tiny, well-formed 4x4 PNG - a real, valid
 // signature/container, not a hand-rolled byte literal, so every test
@@ -175,5 +212,84 @@ func validPackageZip(t *testing.T) []byte {
 		{name: "manifest.json", data: manifest},
 		{name: TemplatePath, data: template},
 		{name: "assets/pkgasset_0001.png", data: png},
+	})
+}
+
+// validPackageWithAudioParts returns a minimal, fully valid v2
+// manifest.json/template.json/wav triple - an alert-target template
+// with no visual asset (visual assets are already covered by
+// validPackageParts) but a fully configured alertAudio preset
+// referencing one audioAssets entry, everything within bounds.
+func validPackageWithAudioParts(t *testing.T) (manifestJSON, templateJSON, wavData []byte) {
+	t.Helper()
+	wav := testWAV(t)
+	hash := sha256Hex(wav)
+
+	manifest := `{
+		"format": "streaming-tree-template-package",
+		"schemaVersion": 2,
+		"templatePath": "template.json",
+		"assets": [],
+		"alertAudio": {
+			"soundEnabled": true,
+			"soundAssetId": "pkgaudio_0001",
+			"soundVolume": 0.8,
+			"ttsEnabled": true,
+			"ttsTemplate": "{username} says hi",
+			"ttsVolume": 0.5
+		},
+		"audioAssets": [{
+			"id": "pkgaudio_0001",
+			"path": "audio/pkgaudio_0001.wav",
+			"mediaType": "audio/wav",
+			"sha256": "` + hash + `",
+			"sizeBytes": ` + itoa(len(wav)) + `,
+			"durationMs": 100,
+			"displayName": "Coin chime"
+		}]
+	}`
+
+	template := `{
+		"format": "streaming-tree-visual-template",
+		"schemaVersion": 1,
+		"target": "alert",
+		"name": "Audio package test template",
+		"description": "",
+		"author": "",
+		"license": "",
+		"visualDesign": {
+			"version": 3,
+			"canvas": {"width": 1920, "height": 1080, "transparent": true},
+			"layers": [{
+				"id": "layer-1",
+				"name": "Text",
+				"kind": "text",
+				"visible": true,
+				"locked": false,
+				"order": 0,
+				"frame": {"x": 0, "y": 0, "width": 400, "height": 60},
+				"opacity": 1,
+				"text": {
+					"binding": "username", "missingValueBehavior": "hide",
+					"fontFamily": "system-ui", "fontSize": 32, "fontWeight": 400, "lineHeight": 1.2,
+					"textColor": "#FFFFFF", "horizontalAlign": "left", "verticalAlign": "top",
+					"outlineColor": "#000000", "shadowColor": "#000000"
+				},
+				"entryAnimation": "none",
+				"exitAnimation": "none",
+				"animationDurationMs": 0
+			}]
+		}
+	}`
+	return []byte(manifest), []byte(template), wav
+}
+
+func validPackageWithAudioZip(t *testing.T) []byte {
+	t.Helper()
+	manifest, template, wav := validPackageWithAudioParts(t)
+	return buildZipCustom(t, []zipEntry{
+		{name: "manifest.json", data: manifest},
+		{name: TemplatePath, data: template},
+		{name: "audio/pkgaudio_0001.wav", data: wav},
 	})
 }

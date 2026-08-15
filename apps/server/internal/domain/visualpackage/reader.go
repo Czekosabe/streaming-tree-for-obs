@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 )
 
@@ -23,6 +24,17 @@ type ValidatedAsset struct {
 	Kind      visualasset.Kind
 }
 
+// ValidatedAudioAsset is ValidatedAsset's own audio-asset counterpart
+// (docs/alert-audio.md §10.3) - streamed through the exact same
+// audioasset structural/type-agreement validator a manual upload uses,
+// never a separately-implemented, potentially weaker package-path
+// validator.
+type ValidatedAudioAsset struct {
+	Manifest  ManifestAudioAsset
+	Data      []byte
+	MediaType audioasset.MediaType
+}
+
 // Validated is the fully-checked result of ReadArchive - nothing has
 // been written to disk or to any database by this point; ReadArchive
 // performs validation only (docs/visual-template-packages.md §9's
@@ -32,6 +44,7 @@ type Validated struct {
 	Manifest     Manifest
 	TemplateJSON []byte
 	Assets       []ValidatedAsset
+	AudioAssets  []ValidatedAudioAsset
 }
 
 // ReadArchive validates data as a complete `.streaming-tree-template`
@@ -122,21 +135,32 @@ func ReadArchive(data []byte) (*Validated, error) {
 	for _, a := range manifest.Assets {
 		manifestPaths[a.Path] = a
 	}
+	manifestAudioPaths := make(map[string]ManifestAudioAsset, len(manifest.AudioAssets))
+	for _, a := range manifest.AudioAssets {
+		manifestAudioPaths[a.Path] = a
+	}
 
 	// Every real entry outside manifest.json/template.json must be a
-	// manifest-declared asset - "a package should contain exactly the
-	// bytes it needs" (docs/visual-template-packages.md §58): no hidden
-	// payload file is ever accepted.
+	// manifest-declared asset (visual or audio) - "a package should
+	// contain exactly the bytes it needs" (docs/visual-template-
+	// packages.md §58): no hidden payload file is ever accepted.
 	for name := range entries {
 		if name == "manifest.json" || name == TemplatePath {
 			continue
 		}
-		if _, ok := manifestPaths[name]; !ok {
+		_, isAsset := manifestPaths[name]
+		_, isAudioAsset := manifestAudioPaths[name]
+		if !isAsset && !isAudioAsset {
 			return nil, fmt.Errorf("%w: archive entry %q is not referenced by the manifest", ErrAssetUnreferenced, name)
 		}
 	}
 	// Every manifest-declared asset must correspond to a real entry.
 	for path := range manifestPaths {
+		if _, ok := entries[path]; !ok {
+			return nil, fmt.Errorf("%w: manifest references %q, which is not present in the archive", ErrAssetMissing, path)
+		}
+	}
+	for path := range manifestAudioPaths {
 		if _, ok := entries[path]; !ok {
 			return nil, fmt.Errorf("%w: manifest references %q, which is not present in the archive", ErrAssetMissing, path)
 		}
@@ -180,7 +204,38 @@ func ReadArchive(data []byte) (*Validated, error) {
 		assets = append(assets, ValidatedAsset{Manifest: a, Data: payload, MediaType: detected, Kind: kind})
 	}
 
-	return &Validated{Manifest: manifest, TemplateJSON: templateBytes, Assets: assets}, nil
+	audioAssets := make([]ValidatedAudioAsset, 0, len(manifest.AudioAssets))
+	for _, a := range manifest.AudioAssets {
+		f := entries[a.Path]
+		bound := audioasset.MaxBytesFor(audioasset.KindSound)
+		if f.UncompressedSize64 > uint64(bound) {
+			return nil, fmt.Errorf("%w: audio asset %q is larger than the %d byte limit", ErrTooLarge, a.ID, bound)
+		}
+		payload, err := readEntryBounded(f, bound)
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(payload)) != a.SizeBytes {
+			return nil, fmt.Errorf("%w: audio asset %q declared size %d does not match its actual size %d", audioasset.ErrUnsupported, a.ID, a.SizeBytes, len(payload))
+		}
+		sum := sha256.Sum256(payload)
+		if hex.EncodeToString(sum[:]) != a.SHA256 {
+			return nil, fmt.Errorf("%w: audio asset %q content does not match its declared sha256", ErrAssetHashMismatch, a.ID)
+		}
+		// Streamed through the exact same audioasset.VerifyTypeAgreement/
+		// ValidateWAV a manual upload uses (docs/alert-audio.md §10.3) -
+		// never a separately-implemented package-path validator.
+		detected, err := audioasset.VerifyTypeAgreement(payload, "", a.MediaType)
+		if err != nil {
+			return nil, fmt.Errorf("%w: audio asset %q: %v", ErrAssetTypeMismatch, a.ID, err)
+		}
+		if _, err := audioasset.ValidateWAV(payload); err != nil {
+			return nil, fmt.Errorf("%w: audio asset %q: %v", ErrAssetTypeMismatch, a.ID, err)
+		}
+		audioAssets = append(audioAssets, ValidatedAudioAsset{Manifest: a, Data: payload, MediaType: detected})
+	}
+
+	return &Validated{Manifest: manifest, TemplateJSON: templateBytes, Assets: assets, AudioAssets: audioAssets}, nil
 }
 
 // readEntryBounded opens and fully reads one already-validated ZIP entry,

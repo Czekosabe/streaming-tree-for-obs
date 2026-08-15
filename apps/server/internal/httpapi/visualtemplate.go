@@ -115,6 +115,21 @@ type visualTemplateDTO struct {
 	CreatedAt             string                    `json:"createdAt,omitempty"`
 	UpdatedAt             string                    `json:"updatedAt,omitempty"`
 	Compatibility         *templateCompatibilityDTO `json:"compatibility,omitempty"`
+	// AlertAudio is Stage 17B's own template-level persistent-sound/TTS
+	// preset (docs/alert-audio.md §10.5) - nil for every template with
+	// none. Read-only here: it is set only via a package v2 import,
+	// never through this management API directly (mirroring
+	// alertRuleAudioDTO's shape, internal/httpapi/alerts.go).
+	AlertAudio *visualTemplateAudioDTO `json:"alertAudio,omitempty"`
+}
+
+type visualTemplateAudioDTO struct {
+	SoundEnabled bool    `json:"soundEnabled"`
+	SoundAssetID string  `json:"soundAssetId,omitempty"`
+	SoundVolume  float64 `json:"soundVolume"`
+	TTSEnabled   bool    `json:"ttsEnabled"`
+	TTSTemplate  string  `json:"ttsTemplate,omitempty"`
+	TTSVolume    float64 `json:"ttsVolume"`
 }
 
 type templateCompatibilityDTO struct {
@@ -150,6 +165,12 @@ func templateToDTO(t visualtemplate.Template) visualTemplateDTO {
 	}
 	if !t.UpdatedAt.IsZero() {
 		dto.UpdatedAt = t.UpdatedAt.Format("2006-01-02T15:04:05.000Z")
+	}
+	if t.AlertAudio != nil {
+		dto.AlertAudio = &visualTemplateAudioDTO{
+			SoundEnabled: t.AlertAudio.SoundEnabled, SoundAssetID: t.AlertAudio.SoundAssetID, SoundVolume: t.AlertAudio.SoundVolume,
+			TTSEnabled: t.AlertAudio.TTSEnabled, TTSTemplate: t.AlertAudio.TTSTemplate, TTSVolume: t.AlertAudio.TTSVolume,
+		}
 	}
 	return dto
 }
@@ -377,7 +398,11 @@ func handleExportVisualTemplate(logger *slog.Logger, svc VisualTemplateService) 
 			writeVisualTemplateError(w, logger, err)
 			return
 		}
-		if len(t.Document.AssetReferences()) > 0 {
+		// docs/alert-audio.md §10.7: any configured alert-audio preset -
+		// sound, TTS, or both - forces package export exactly like a
+		// managed visual asset reference already does; the plain Stage
+		// 14A JSON schema never gains an audio field, now or later.
+		if len(t.Document.AssetReferences()) > 0 || t.AlertAudio.HasAudio() {
 			writeVisualTemplateError(w, logger, visualtemplate.ErrRequiresPackageExport)
 			return
 		}

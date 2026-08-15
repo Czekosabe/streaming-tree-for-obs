@@ -468,10 +468,11 @@ func run() error {
 		return err
 	}
 	visualTemplateService.SetAssetService(visualAssetService)
+	visualTemplateService.SetAudioAssetService(audioAssetService)
 
 	// Stage 14B: package import/preview/export - identical wiring to
 	// cmd/server, see its own comment.
-	visualPackageService := visualpackage.NewService(visualAssetService, visualTemplateService, nil)
+	visualPackageService := visualpackage.NewService(visualAssetService, audioAssetService, visualTemplateService, nil)
 
 	branchManager := branch.NewManager(branch.Options{
 		Platforms:   platformService,

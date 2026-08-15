@@ -21,6 +21,20 @@ func validatePackageAssetID(id string) error {
 	return nil
 }
 
+// packageAudioAssetIDPattern is packageAssetIDPattern's own audio-asset
+// counterpart (docs/alert-audio.md §10.2) - "pkgaudio_<short-random-or-
+// deterministic-id>", disjoint by construction from pkgasset_, so a
+// manifest-parsing bug can never accidentally cross-resolve a visual
+// reference against an audio entry or vice versa.
+var packageAudioAssetIDPattern = regexp.MustCompile(`^pkgaudio_[A-Za-z0-9]{1,64}$`)
+
+func validatePackageAudioAssetID(id string) error {
+	if !packageAudioAssetIDPattern.MatchString(id) {
+		return fmt.Errorf("%w: audio asset id %q is not a valid pkgaudio_ identifier", ErrManifestInvalid, id)
+	}
+	return nil
+}
+
 // assetSegmentPattern is the bounded ASCII filename grammar an
 // assets/<segment> entry's own segment must match (docs/visual-template-
 // packages.md §7) - letters, digits, dot, underscore, hyphen only,
@@ -77,36 +91,61 @@ func validateEntryPath(name string) error {
 		return nil
 	}
 
-	if len(segments) != 2 || segments[0] != "assets" {
+	if len(segments) != 2 {
 		return fmt.Errorf("%w: entry %q is outside the allowed root structure", ErrEntryInvalid, name)
 	}
-	return validateAssetPath(name)
+	switch segments[0] {
+	case "assets":
+		return validateAssetPath(name)
+	case "audio":
+		return validateAudioAssetPath(name)
+	default:
+		return fmt.Errorf("%w: entry %q is outside the allowed root structure", ErrEntryInvalid, name)
+	}
 }
 
-// validateAssetPath additionally checks the manifest-declared path of
-// one asset entry - reused both from validateEntryPath (real archive
-// entries) and from manifest validation (a manifest asset's own "path"
-// field, before any matching archive entry has even been located).
-func validateAssetPath(name string) error {
+// validateSegmentPath is the shared bounded-ASCII-filename grammar check
+// both validateAssetPath and validateAudioAssetPath apply to their own
+// respective root ("assets" or "audio") - one filename grammar, reused
+// under either legal root pattern (docs/alert-audio.md §10.2: "the
+// identical validateAssetPath machinery already used for assets/
+// <segment>, no new path-grammar code, one more accepted prefix").
+func validateSegmentPath(name, root string) error {
 	segments := strings.Split(name, "/")
-	if len(segments) != 2 || segments[0] != "assets" {
-		return fmt.Errorf("%w: asset path %q must be of the form assets/<file>", ErrEntryInvalid, name)
+	if len(segments) != 2 || segments[0] != root {
+		return fmt.Errorf("%w: path %q must be of the form %s/<file>", ErrEntryInvalid, name, root)
 	}
 	seg := segments[1]
 	if !assetSegmentPattern.MatchString(seg) {
-		return fmt.Errorf("%w: asset filename %q is not a valid bounded ASCII filename", ErrEntryInvalid, seg)
+		return fmt.Errorf("%w: filename %q is not a valid bounded ASCII filename", ErrEntryInvalid, seg)
 	}
 	if strings.HasSuffix(seg, ".") || strings.HasSuffix(seg, " ") {
-		return fmt.Errorf("%w: asset filename %q has an ambiguous trailing dot/space", ErrEntryInvalid, seg)
+		return fmt.Errorf("%w: filename %q has an ambiguous trailing dot/space", ErrEntryInvalid, seg)
 	}
 	base := seg
 	if i := strings.IndexByte(seg, '.'); i >= 0 {
 		base = seg[:i]
 	}
 	if reservedWindowsNames[strings.ToUpper(base)] {
-		return fmt.Errorf("%w: asset filename %q uses a reserved Windows device name", ErrEntryInvalid, seg)
+		return fmt.Errorf("%w: filename %q uses a reserved Windows device name", ErrEntryInvalid, seg)
 	}
 	return nil
+}
+
+// validateAssetPath additionally checks the manifest-declared path of
+// one visual asset entry - reused both from validateEntryPath (real
+// archive entries) and from manifest validation (a manifest asset's own
+// "path" field, before any matching archive entry has even been
+// located).
+func validateAssetPath(name string) error {
+	return validateSegmentPath(name, "assets")
+}
+
+// validateAudioAssetPath is validateAssetPath's own audio-asset
+// counterpart (docs/alert-audio.md §10.2), for the "audio/<segment>"
+// root pattern.
+func validateAudioAssetPath(name string) error {
+	return validateSegmentPath(name, "audio")
 }
 
 // normalizePath returns name's case-insensitive comparison key, used to

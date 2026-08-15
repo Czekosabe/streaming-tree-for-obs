@@ -19,6 +19,7 @@ import (
 	"github.com/streaming-tree/server/internal/alerts"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/account"
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -70,6 +71,12 @@ func newAssetTestServer(t *testing.T) *assetTestServer {
 	}
 	assetSvc := visualasset.NewService(sqlite.NewVisualAssetRepository(db.DB), store, nil)
 
+	audioStore := visualasset.NewFileStore(filepath.Join(t.TempDir(), "assets-audio"))
+	if err := audioStore.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs() (audio) error = %v", err)
+	}
+	audioAssetSvc := audioasset.NewService(sqlite.NewAudioAssetRepository(db.DB), audioStore, nil)
+
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
@@ -118,8 +125,9 @@ func newAssetTestServer(t *testing.T) *assetTestServer {
 		t.Fatalf("visualtemplate.NewService() error = %v", err)
 	}
 	templateSvc.SetAssetService(assetSvc)
+	templateSvc.SetAudioAssetService(audioAssetSvc)
 
-	pkgSvc := visualpackage.NewService(assetSvc, templateSvc, nil)
+	pkgSvc := visualpackage.NewService(assetSvc, audioAssetSvc, templateSvc, nil)
 
 	handler := NewRouter(Options{
 		Logger: logger, StartedAt: time.Now(), Accounts: accounts, Alerts: alertsManager,

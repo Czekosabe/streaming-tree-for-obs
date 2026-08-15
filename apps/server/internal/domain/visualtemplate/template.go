@@ -96,6 +96,14 @@ type Template struct {
 	Document              visualdesign.Document
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+
+	// AlertAudio is Stage 17B's own template-level persistent-sound/TTS
+	// preset (docs/alert-audio.md §10.5) - nil for every template that
+	// never went through a package v2 import (every built-in, every
+	// plain Stage 14A JSON create/import, and every existing template
+	// migrated by this stage). Never legal for a TargetChat template
+	// (validation.go).
+	AlertAudio *RuleAudioPreset
 }
 
 // NewTemplateID returns a fresh, opaque, random local database id

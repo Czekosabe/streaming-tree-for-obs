@@ -24,4 +24,9 @@ var (
 	ErrAssetUnsupported   = errors.New("visual template package asset type is not supported")
 	ErrPreviewExpired     = errors.New("visual template package preview session has expired")
 	ErrPreviewNotFound    = errors.New("visual template package preview session was not found")
+	// ErrAudioTargetInvalid means a package's manifest carries an
+	// alertAudio object while its own template.json target is not
+	// "alert" (docs/alert-audio.md §10.2) - rejected outright before any
+	// asset (visual or audio) is staged.
+	ErrAudioTargetInvalid = errors.New("visual template package audio is only valid for an alert-target template")
 )

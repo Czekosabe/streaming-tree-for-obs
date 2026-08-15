@@ -147,6 +147,51 @@ func TestVisualTemplateRepositoryDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestVisualTemplateRepositoryNoAudioScansAsNil(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewVisualTemplateRepository(db.DB)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, testTemplate("tpl_1")); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	got, err := repo.Get(ctx, "tpl_1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.AlertAudio != nil {
+		t.Errorf("AlertAudio = %+v, want nil for a template with no preset", got.AlertAudio)
+	}
+}
+
+func TestVisualTemplateRepositoryAlertAudioRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewVisualTemplateRepository(db.DB)
+	ctx := context.Background()
+
+	tpl := testTemplate("tpl_audio")
+	tpl.AlertAudio = &visualtemplate.RuleAudioPreset{
+		SoundEnabled: true, SoundAssetID: "audioasset_1", SoundVolume: 0.75,
+		TTSEnabled: true, TTSTemplate: "{username} says hi", TTSVolume: 0.4,
+	}
+	if _, err := repo.Create(ctx, tpl); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	got, err := repo.Get(ctx, "tpl_audio")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.AlertAudio == nil {
+		t.Fatal("AlertAudio = nil, want the persisted preset")
+	}
+	if !got.AlertAudio.SoundEnabled || got.AlertAudio.SoundAssetID != "audioasset_1" || got.AlertAudio.SoundVolume != 0.75 {
+		t.Errorf("sound fields = %+v, want round-tripped verbatim", got.AlertAudio)
+	}
+	if !got.AlertAudio.TTSEnabled || got.AlertAudio.TTSTemplate != "{username} says hi" || got.AlertAudio.TTSVolume != 0.4 {
+		t.Errorf("TTS fields = %+v, want round-tripped verbatim", got.AlertAudio)
+	}
+}
+
 func TestVisualTemplateRepositoryMigratesStoredVersion1Document(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewVisualTemplateRepository(db.DB)

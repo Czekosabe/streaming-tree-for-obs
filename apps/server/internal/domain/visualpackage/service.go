@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
@@ -62,7 +63,26 @@ type PreviewSession struct {
 	License     string
 	Document    visualdesign.Document
 	Assets      []PreviewAsset
-	ExpiresAt   time.Time
+	// AlertAudio describes the package's own optional alert-audio
+	// preset for display purposes only (docs/alert-audio.md §12:
+	// "package preview identifies audio") - nil when the package
+	// carries none. Preview never stages or plays the sound bytes
+	// themselves; only ImportPreview's own structural validation has
+	// already run against them by this point.
+	AlertAudio *PreviewAlertAudio
+	ExpiresAt  time.Time
+}
+
+// PreviewAlertAudio is a preview-only, read-only projection of a v2
+// package's own alertAudio configuration - never persisted, never
+// itself proof a later Import call reuses (mirrors PreviewSession's own
+// doc comment).
+type PreviewAlertAudio struct {
+	SoundEnabled     bool
+	SoundDisplayName string
+	SoundDurationMS  int64
+	TTSEnabled       bool
+	TTSTemplate      string
 }
 
 // Service orchestrates ReadArchive/WriteArchive against the managed
@@ -70,16 +90,17 @@ type PreviewSession struct {
 // actually becomes local rows, or local rows become a portable archive
 // (docs/visual-template-packages.md §20/§43).
 type Service struct {
-	assets    *visualasset.Service
-	templates *visualtemplate.Service
-	now       Clock
+	assets      *visualasset.Service
+	audioAssets *audioasset.Service
+	templates   *visualtemplate.Service
+	now         Clock
 }
 
-func NewService(assets *visualasset.Service, templates *visualtemplate.Service, now Clock) *Service {
+func NewService(assets *visualasset.Service, audioAssets *audioasset.Service, templates *visualtemplate.Service, now Clock) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{assets: assets, templates: templates, now: now}
+	return &Service{assets: assets, audioAssets: audioAssets, templates: templates, now: now}
 }
 
 func newPreviewToken() (string, error) {
@@ -146,6 +167,12 @@ func (s *Service) ImportPreview(ctx context.Context, raw []byte) (PreviewSession
 	if err != nil {
 		return PreviewSession{}, err
 	}
+	// docs/alert-audio.md §10.2: a chat-target package carrying an
+	// alertAudio object is rejected outright, before any asset (visual
+	// or audio) is even staged.
+	if validated.Manifest.AlertAudio != nil && target != visualtemplate.TargetAlert {
+		return PreviewSession{}, ErrAudioTargetInvalid
+	}
 	doc = visualdesign.MigrateToCurrentVersion(doc)
 	if err := crossCheckReferences(doc, validated.Manifest); err != nil {
 		return PreviewSession{}, err
@@ -176,10 +203,25 @@ func (s *Service) ImportPreview(ctx context.Context, raw []byte) (PreviewSession
 		})
 	}
 
+	var previewAudio *PreviewAlertAudio
+	if ma := validated.Manifest.AlertAudio; ma != nil {
+		pa := &PreviewAlertAudio{SoundEnabled: ma.SoundEnabled, TTSEnabled: ma.TTSEnabled, TTSTemplate: ma.TTSTemplate}
+		if ma.SoundEnabled {
+			for _, va := range validated.AudioAssets {
+				if va.Manifest.ID == ma.SoundAssetID {
+					pa.SoundDisplayName = va.Manifest.DisplayName
+					pa.SoundDurationMS = va.Manifest.DurationMS
+					break
+				}
+			}
+		}
+		previewAudio = pa
+	}
+
 	now := s.now()
 	return PreviewSession{
 		Token: token, Target: target, Name: name, Description: description, Author: author, License: license,
-		Document: doc, Assets: previewAssets, ExpiresAt: now.Add(PreviewTTL),
+		Document: doc, Assets: previewAssets, AlertAudio: previewAudio, ExpiresAt: now.Add(PreviewTTL),
 	}, nil
 }
 
@@ -206,6 +248,12 @@ func (s *Service) Import(ctx context.Context, raw []byte) (visualtemplate.Templa
 	if err != nil {
 		return visualtemplate.Template{}, err
 	}
+	// docs/alert-audio.md §10.2: a chat-target package carrying an
+	// alertAudio object is rejected outright, before any asset (visual
+	// or audio) is even staged/uploaded.
+	if validated.Manifest.AlertAudio != nil && target != visualtemplate.TargetAlert {
+		return visualtemplate.Template{}, ErrAudioTargetInvalid
+	}
 	doc = visualdesign.MigrateToCurrentVersion(doc)
 	if err := crossCheckReferences(doc, validated.Manifest); err != nil {
 		return visualtemplate.Template{}, err
@@ -225,7 +273,39 @@ func (s *Service) Import(ctx context.Context, raw []byte) (visualtemplate.Templa
 
 	doc = rewriteAssetRefs(doc, idMap)
 
-	tmpl, err := s.templates.Create(ctx, target, name, description, author, license, doc)
+	// docs/alert-audio.md §10.4: fresh local audioasset_ IDs for every
+	// accepted audioAssets entry, then the preset's own soundAssetId is
+	// rewritten to the real local ID before persistence - a package-
+	// supplied pkgaudio_ ID is never written into
+	// alert_template_audio_asset_refs/audioasset tables.
+	var audioPreset *visualtemplate.RuleAudioPreset
+	if ma := validated.Manifest.AlertAudio; ma != nil {
+		if s.audioAssets == nil {
+			return visualtemplate.Template{}, fmt.Errorf("%w: package audio import is not available", ErrAssetUnsupported)
+		}
+		audioIDMap := make(map[string]string, len(validated.AudioAssets))
+		for _, va := range validated.AudioAssets {
+			asset, err := s.audioAssets.Upload(ctx, va.Data, "", string(va.MediaType), va.Manifest.DisplayName, audioasset.SourcePackage)
+			if err != nil {
+				return visualtemplate.Template{}, err
+			}
+			audioIDMap[va.Manifest.ID] = asset.ID
+		}
+		preset := visualtemplate.RuleAudioPreset{
+			SoundEnabled: ma.SoundEnabled, SoundVolume: ma.SoundVolume,
+			TTSEnabled: ma.TTSEnabled, TTSTemplate: ma.TTSTemplate, TTSVolume: ma.TTSVolume,
+		}
+		if ma.SoundAssetID != "" {
+			mapped, ok := audioIDMap[ma.SoundAssetID]
+			if !ok {
+				return visualtemplate.Template{}, fmt.Errorf("%w: alertAudio references an unmapped audio asset", ErrAssetMissing)
+			}
+			preset.SoundAssetID = mapped
+		}
+		audioPreset = &preset
+	}
+
+	tmpl, err := s.templates.CreatePackaged(ctx, target, name, description, author, license, doc, audioPreset)
 	if err != nil {
 		return visualtemplate.Template{}, err
 	}
@@ -306,10 +386,57 @@ func (s *Service) ExportTemplate(ctx context.Context, templateID string) ([]byte
 		return nil, err
 	}
 
-	manifest := Manifest{Format: Format, SchemaVersion: CurrentManifestSchemaVersion, TemplatePath: TemplatePath, Assets: manifestAssets}
+	// docs/alert-audio.md §10.1: schemaVersion stays 1 for a purely
+	// visual template (never silently upgrading a visual-only export
+	// format) - v2, and the alertAudio/audioAssets manifest objects, are
+	// written only when the template actually carries a configured
+	// preset (sound or TTS or both).
+	schemaVersion := ManifestSchemaVersionV1
+	var manifestAudio *ManifestAlertAudio
+	var manifestAudioAssets []ManifestAudioAsset
+	var exportAudioAssets []ExportAudioAsset
+	if tmpl.AlertAudio.HasAudio() {
+		schemaVersion = ManifestSchemaVersionV2
+		ma := &ManifestAlertAudio{
+			SoundEnabled: tmpl.AlertAudio.SoundEnabled, SoundVolume: tmpl.AlertAudio.SoundVolume,
+			TTSEnabled: tmpl.AlertAudio.TTSEnabled, TTSTemplate: tmpl.AlertAudio.TTSTemplate, TTSVolume: tmpl.AlertAudio.TTSVolume,
+		}
+		if tmpl.AlertAudio.SoundEnabled {
+			if s.audioAssets == nil {
+				return nil, fmt.Errorf("%w: audio asset %q has no resolvable blob", ErrAssetMissing, tmpl.AlertAudio.SoundAssetID)
+			}
+			asset, err := s.audioAssets.Get(ctx, tmpl.AlertAudio.SoundAssetID)
+			if err != nil {
+				return nil, err
+			}
+			if asset.Blob == nil {
+				return nil, fmt.Errorf("%w: audio asset %q has no resolvable blob", ErrAssetMissing, tmpl.AlertAudio.SoundAssetID)
+			}
+			data, err := s.readAudioBlobBytes(asset.Blob.SHA256)
+			if err != nil {
+				return nil, err
+			}
+			pkgID := "pkgaudio_0001"
+			ma.SoundAssetID = pkgID
+			path := fmt.Sprintf("audio/%s.wav", pkgID)
+			maa := ManifestAudioAsset{
+				ID: pkgID, Path: path, MediaType: string(asset.Blob.MediaType),
+				SHA256: asset.Blob.SHA256, SizeBytes: asset.Blob.ByteSize, DurationMS: asset.Blob.DurationMS,
+				DisplayName: asset.DisplayName,
+			}
+			manifestAudioAssets = append(manifestAudioAssets, maa)
+			exportAudioAssets = append(exportAudioAssets, ExportAudioAsset{Manifest: maa, Data: data})
+		}
+		manifestAudio = ma
+	}
+
+	manifest := Manifest{
+		Format: Format, SchemaVersion: schemaVersion, TemplatePath: TemplatePath, Assets: manifestAssets,
+		AlertAudio: manifestAudio, AudioAssets: manifestAudioAssets,
+	}
 
 	var buf bytes.Buffer
-	if err := WriteArchive(&buf, manifest, templateFileBytes, exportAssets); err != nil {
+	if err := WriteArchive(&buf, manifest, templateFileBytes, exportAssets, exportAudioAssets); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -317,6 +444,15 @@ func (s *Service) ExportTemplate(ctx context.Context, templateID string) ([]byte
 
 func (s *Service) readBlobBytes(sha256Hex string) ([]byte, error) {
 	f, err := s.assets.OpenBlob(sha256Hex)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
+}
+
+func (s *Service) readAudioBlobBytes(sha256Hex string) ([]byte, error) {
+	f, err := s.audioAssets.OpenBlob(sha256Hex)
 	if err != nil {
 		return nil, err
 	}

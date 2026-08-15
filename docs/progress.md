@@ -24656,3 +24656,176 @@ staying valid unchanged), extending `internal/domain/visualpackage`
 to carry alert-rule audio configuration and managed audio assets
 through the exact same `internal/domain/audioasset` validator manual
 uploads already use.
+
+## 2026-08-16 — feat(server): add alert audio to template packages
+
+### What changed
+Implemented Stage 17B §10 in full: package manifest schema v2, the
+optional `alertAudio`/`audioAssets` manifest objects, and template-
+level alert-audio preset persistence (docs/alert-audio.md §10).
+
+- `apps/server/internal/domain/visualtemplate/audio.go` (new) -
+  `RuleAudioPreset{SoundEnabled, SoundAssetID, SoundVolume, TTSEnabled,
+  TTSTemplate, TTSVolume}`, a template-scoped variant of
+  `alerts.RuleAudio` kept as its own parallel-but-independent type
+  (this package may never import `internal/domain/alerts`, its own top
+  doc comment). `ValidateRuleAudioPreset` mirrors
+  `alerts.ValidateRuleAudio`'s own volume-bounds/mode-matrix rules
+  exactly. `RuleAudioPreset.HasAudio()` is the one shared "sound or TTS,
+  either forces package export" condition (§10.7), exported so both
+  this package's own export-format gate and
+  `visualpackage.Service.ExportTemplate`'s own manifest-schema-version
+  gate reuse the identical check.
+- `apps/server/internal/domain/visualtemplate/template.go` - new
+  `Template.AlertAudio *RuleAudioPreset` field - nil for every built-in,
+  every plain Stage 14A JSON create/import, and every pre-existing
+  template; only a package v2 import ever populates it.
+- `apps/server/internal/domain/visualtemplate/validation.go` - `Validate`
+  now also calls `ValidateRuleAudioPreset` and rejects a non-nil
+  `AlertAudio` on a `TargetChat` template (`ErrAudioNotAllowedForTarget`).
+- `apps/server/internal/domain/visualtemplate/errors.go` - new
+  `ErrAudioAssetNotFound`/`ErrAudioNotAllowedForTarget`.
+- `apps/server/internal/domain/visualtemplate/service.go` - new
+  `AudioAssetRefTracker` interface (`Get`/`SetTemplateAssetRefs`/
+  `ClearTemplateRefs`, satisfied directly by `*audioasset.Service` -
+  audio asset is not in this package's own forbidden-import list, so no
+  adapter is needed), wired via `SetAudioAssetService` after
+  construction exactly like `SetAssetService` already is. `Create`
+  refactored into a shared private `create(...)` plus a new
+  `CreatePackaged(ctx, target, name, description, author, license, doc,
+  audio *RuleAudioPreset)` - the one entry point that may attach a
+  preset (`visualpackage.Service.Import`'s only caller); `Create` itself
+  always passes `nil`, so the plain JSON path can never carry audio
+  (§10.7). `create` checks `SoundAssetID` existence via the injected
+  tracker when `SoundEnabled`, and tracks/clears the one-or-zero-entry
+  audio reference list on create/delete.
+- `apps/server/internal/storage/sqlite/migrations/0024_visual_template_
+  audio.sql` (new) - six `visual_templates` columns
+  (`audio_sound_enabled/sound_asset_id/sound_volume/tts_enabled/
+  tts_template/tts_volume`), safe zero-value defaults, no FK on
+  `audio_sound_asset_id` (mirrors migration `0023_alert_rule_audio.sql`'s
+  own rule-level columns exactly - the real reference lives in
+  `alert_template_audio_asset_refs`, migration `0022_audio_assets.sql`).
+- `apps/server/internal/storage/sqlite/visualtemplate_repository.go` -
+  `visualTemplateColumns`/`scanVisualTemplate`/`Create` extended; a row
+  with every audio column at its zero value scans back to
+  `AlertAudio == nil` (never a populated-but-all-zero struct), mirroring
+  `Instance.Audio`'s own "nil means none configured" convention.
+- `apps/server/internal/domain/visualpackage/manifest.go` -
+  `ManifestSchemaVersionV1`/`V2` (`CurrentManifestSchemaVersion` is now
+  the highest version this codebase ever *writes*, not the only one it
+  *accepts* - `ExportTemplate` still writes v1 for a purely visual
+  template, v2 only when a preset is present). New
+  `ManifestAlertAudio`/`ManifestAudioAsset` types, `Manifest.AlertAudio`/
+  `AudioAssets` fields (`omitempty`), `MaxAudioAssets = 4`. New
+  `validateManifestAudio`: v1 rejects any audio object outright;
+  `audioAssets` gets the same bounded count/id-pattern/path/hash/
+  metadata checks `assets` already has; `alertAudio` is validated by
+  converting it to a `visualtemplate.RuleAudioPreset` and calling
+  `visualtemplate.ValidateRuleAudioPreset` directly - literally the same
+  validator §7 uses for a live rule, not a reimplementation; the
+  `alertAudio.soundAssetId`<->`audioAssets` cross-reference is checked
+  bidirectionally (a package never contains audio bytes it doesn't use).
+- `apps/server/internal/domain/visualpackage/pathgrammar.go` -
+  `packageAudioAssetIDPattern`/`validatePackageAudioAssetID`
+  (`pkgaudio_`, disjoint by construction from `pkgasset_`).
+  `validateEntryPath`/`validateAssetPath` refactored around a shared
+  `validateSegmentPath(name, root)` helper so `audio/<segment>` reuses
+  the identical bounded-ASCII-filename/reserved-name/trailing-dot-space
+  grammar `assets/<segment>` already has - no new path-grammar code, one
+  more accepted root.
+- `apps/server/internal/domain/visualpackage/errors.go` - new
+  `ErrAudioTargetInvalid`.
+- `apps/server/internal/domain/visualpackage/reader.go` - `Validated`
+  gained `AudioAssets []ValidatedAudioAsset`; `ReadArchive`'s
+  unreferenced/missing-entry cross-checks now cover `audio/` paths too;
+  a new audio loop streams each `audioAssets` entry through the exact
+  same `audioasset.VerifyTypeAgreement`/`ValidateWAV` a manual upload
+  uses (§10.3) - never a separately-implemented, potentially weaker
+  package-path validator.
+- `apps/server/internal/domain/visualpackage/writer.go` - new
+  `ExportAudioAsset`; `WriteArchive` gained a `audioAssets
+  []ExportAudioAsset` parameter, written under `audio/<path>` in the
+  same stable-sorted-order style `assets/<path>` already uses.
+- `apps/server/internal/domain/visualpackage/service.go` - `NewService`
+  gained an `*audioasset.Service` parameter. `PreviewSession` gained
+  `AlertAudio *PreviewAlertAudio` (sound display name/duration, TTS
+  enabled/template - descriptive only, "package preview identifies
+  audio," §12; preview never stages or plays the sound bytes
+  themselves). `ImportPreview`/`Import` both reject an `alertAudio`
+  object on a non-`alert`-target package (`ErrAudioTargetInvalid`)
+  immediately after parsing `template.json`'s own target - before any
+  asset, visual or audio, is staged or uploaded. `Import` uploads every
+  accepted audio asset through `*audioasset.Service.Upload(...,
+  audioasset.SourcePackage)`, builds a package-local-id -> real-local-id
+  map exactly like the existing visual-asset path, remaps
+  `alertAudio.soundAssetId` before calling the new `s.templates.
+  CreatePackaged(...)`. `ExportTemplate` now writes schema v1 for a
+  template with no configured preset and v2 (with `alertAudio` plus the
+  one `audioAssets` entry, `pkgaudio_0001`) only when
+  `tmpl.AlertAudio.HasAudio()` - never silently upgrading a visual-only
+  export.
+- `apps/server/internal/httpapi/visualtemplate.go` - new
+  `visualTemplateAudioDTO`, `visualTemplateDTO.AlertAudio` (read-only -
+  never accepted on the create/update request DTOs, only ever set via a
+  package import). `handleExportVisualTemplate`'s existing
+  asset-reference JSON-export gate now also checks
+  `t.AlertAudio.HasAudio()` (§10.7: sound, TTS, or both forces package
+  export, exactly like a managed visual asset reference already does).
+- `apps/server/internal/httpapi/visualpackage.go` - new
+  `visualTemplatePackagePreviewAudioDTO`,
+  `visualTemplatePackagePreviewDTO.AlertAudio`. `writeVisualPackageError`
+  gained cases for `visualpackage.ErrAudioTargetInvalid` (stable code
+  `visual_template_package_audio_target_invalid`, matching docs/alert-
+  audio.md §10.2's own named error exactly),
+  `visualtemplate.ErrAudioAssetNotFound`/`ErrAudioNotAllowedForTarget`/
+  `ErrValidation`, and `audioasset.ErrUnsupported`/`ErrTooLarge`/
+  `ErrInvalid` - previously absent from this error writer entirely
+  (package import could not yet fail on any audio-specific condition
+  before this entry), so every one of these would otherwise have fallen
+  through to a generic 500.
+- `apps/server/cmd/server/main.go`/`cmd/testserver/main.go` -
+  `visualTemplateService.SetAudioAssetService(audioAssetService)` and
+  `audioAssetService` added as `visualpackage.NewService`'s new second
+  parameter (the same `*audioasset.Service` instance constructed in the
+  earlier `479618e` entry).
+- 13 new tests: `internal/domain/visualtemplate/service_test.go` (6 -
+  `CreatePackaged` persists/validates/tracks a preset, `Create` never
+  attaches one, unknown sound asset rejected, chat-target audio
+  rejected, invalid volume bounds rejected, delete clears audio refs);
+  `internal/storage/sqlite/visualtemplate_repository_test.go` (2 - no-
+  audio scans as nil, a full preset round-trips); `internal/domain/
+  visualpackage/service_test.go` (5 - importing a real v2 audio package
+  creates a template with a locally-remapped sound asset and a correct
+  reference count, preview describes audio without persisting or
+  uploading anything, a chat-target package carrying `alertAudio` is
+  rejected before any asset is staged, exporting an audio-bearing
+  template writes a v2 manifest that re-imports with a fresh local
+  asset id, exporting a template with no preset stays v1 with no audio
+  manifest objects at all).
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean.
+- `go test ./...` - full suite passes, including every pre-existing
+  `visualpackage`/`visualtemplate`/`httpapi` test unchanged (a v1
+  package with no audio object round-trips exactly as it did before
+  this entry - `TestService_Import_CreatesTemplateAndAsset`,
+  `TestService_ExportImportRoundTrip`, and every other pre-existing
+  package test still pass verbatim).
+
+### Known limitations
+Stage 17B's own backend audio work (§6-§10) is now complete. Still
+outstanding: the frontend alert-rule audio editor (§11), the frontend
+template-gallery/designer package-audio UX (§12) - `PreviewAlertAudio`/
+`visualTemplatePackagePreviewAudioDTO` describe a package's audio for
+this UI but nothing yet renders or applies it - the 20th integration
+script (§14), and the documentation/regression/closing passes
+(§15-§19). Stage 17B as a whole is not complete; Stage 17 as a whole is
+not complete.
+
+### Next step
+Stage 17B §11: extend the existing Alerts rule editor (never a
+disconnected page) with sound enabled/picker/upload/metadata/volume and
+TTS enabled/template-editor/placeholder-help controls, EN/PL parity.

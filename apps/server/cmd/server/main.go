@@ -509,11 +509,12 @@ func run() error {
 		return err
 	}
 	visualTemplateService.SetAssetService(visualAssetService)
+	visualTemplateService.SetAudioAssetService(audioAssetService)
 
 	// Stage 14B: the portable, secure `.streaming-tree-template` package
 	// import/preview/export domain - bridges visualAssetService and
 	// visualTemplateService (docs/visual-template-packages.md §20/§43).
-	visualPackageService := visualpackage.NewService(visualAssetService, visualTemplateService, nil)
+	visualPackageService := visualpackage.NewService(visualAssetService, audioAssetService, visualTemplateService, nil)
 
 	// Every branch begins with desiredRunning false: a backend restart never
 	// resumes a broadcast on its own, so nothing is started here.

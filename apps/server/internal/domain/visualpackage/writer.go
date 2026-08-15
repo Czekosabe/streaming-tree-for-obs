@@ -18,6 +18,15 @@ type ExportAsset struct {
 	Data     []byte
 }
 
+// ExportAudioAsset is ExportAsset's own audio-asset counterpart
+// (docs/alert-audio.md §10.4) - at most one in practice today (a
+// RuleAudioPreset carries a single SoundAssetID), written under
+// "audio/<path>" rather than "assets/<path>".
+type ExportAudioAsset struct {
+	Manifest ManifestAudioAsset
+	Data     []byte
+}
+
 // deterministicModTime is used for every archive entry's own timestamp,
 // rather than wall-clock time, so that exporting the same template twice
 // produces the same manifest/template bytes and the same per-entry
@@ -29,12 +38,14 @@ type ExportAsset struct {
 var deterministicModTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // WriteArchive writes a complete, valid `.streaming-tree-template`
-// package to w: manifest.json, template.json, and assets/<path> for
-// every asset, in a stable, sorted order (docs/visual-template-
-// packages.md §4/§20/§51). manifest.Assets is expected already sorted
-// and already describing exactly the assets slice passed in - callers
-// build both together (see service.go's ExportTemplate).
-func WriteArchive(w io.Writer, manifest Manifest, templateJSON []byte, assets []ExportAsset) error {
+// package to w: manifest.json, template.json, assets/<path> for every
+// visual asset, and audio/<path> for every audio asset, in a stable,
+// sorted order (docs/visual-template-packages.md §4/§20/§51, docs/
+// alert-audio.md §10.2/§10.4). manifest.Assets/manifest.AudioAssets are
+// expected already sorted and already describing exactly the assets/
+// audioAssets slices passed in - callers build both together (see
+// service.go's ExportTemplate).
+func WriteArchive(w io.Writer, manifest Manifest, templateJSON []byte, assets []ExportAsset, audioAssets []ExportAudioAsset) error {
 	zw := zip.NewWriter(w)
 
 	manifestJSON, err := json.Marshal(manifest)
@@ -53,6 +64,16 @@ func WriteArchive(w io.Writer, manifest Manifest, templateJSON []byte, assets []
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Manifest.Path < sorted[j].Manifest.Path })
 
 	for _, a := range sorted {
+		if err := writeZipEntry(zw, a.Manifest.Path, a.Data); err != nil {
+			return err
+		}
+	}
+
+	sortedAudio := make([]ExportAudioAsset, len(audioAssets))
+	copy(sortedAudio, audioAssets)
+	sort.Slice(sortedAudio, func(i, j int) bool { return sortedAudio[i].Manifest.Path < sortedAudio[j].Manifest.Path })
+
+	for _, a := range sortedAudio {
 		if err := writeZipEntry(zw, a.Manifest.Path, a.Data); err != nil {
 			return err
 		}

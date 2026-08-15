@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
@@ -16,6 +17,20 @@ import (
 // imported through this Service may reference a managed asset".
 type AssetRefTracker interface {
 	Get(ctx context.Context, id string) (visualasset.Asset, error)
+	SetTemplateAssetRefs(ctx context.Context, templateID string, assetIDs []string) error
+	ClearTemplateRefs(ctx context.Context, templateID string) error
+}
+
+// AudioAssetRefTracker is the identically-shaped Stage 17B counterpart
+// of AssetRefTracker, for a template's own optional AlertAudio preset
+// (docs/alert-audio.md §10.5) - satisfied by *internal/domain/
+// audioasset.Service's own already-matching methods. Optional: nil
+// degrades to "no template created or imported through this Service
+// may reference a managed audio asset" (ValidateRuleAudioPreset alone
+// still runs, so a caller cannot silently bypass volume/mode-matrix
+// validation by omitting this - only the existence check is skipped).
+type AudioAssetRefTracker interface {
+	Get(ctx context.Context, id string) (audioasset.Asset, error)
 	SetTemplateAssetRefs(ctx context.Context, templateID string, assetIDs []string) error
 	ClearTemplateRefs(ctx context.Context, templateID string) error
 }
@@ -43,12 +58,22 @@ type Service struct {
 	// SetAssetService so NewService's own signature/call sites never
 	// need to change.
 	assetSvc AssetRefTracker
+	// audioAssetSvc is Stage 17B's own managed audio-asset service -
+	// optional, see AudioAssetRefTracker's own doc comment, wired the
+	// same after-construction way as assetSvc.
+	audioAssetSvc AudioAssetRefTracker
 }
 
 // SetAssetService wires Stage 14B's managed-asset service in after
 // construction - call once, before serving any request.
 func (s *Service) SetAssetService(svc AssetRefTracker) {
 	s.assetSvc = svc
+}
+
+// SetAudioAssetService wires Stage 17B's managed audio-asset service in
+// after construction - call once, before serving any request.
+func (s *Service) SetAudioAssetService(svc AudioAssetRefTracker) {
+	s.audioAssetSvc = svc
 }
 
 func (s *Service) resolveAssetKind(ctx context.Context) visualdesign.AssetResolverFunc {
@@ -122,8 +147,27 @@ func (s *Service) Get(ctx context.Context, id string) (Template, error) {
 // directly"). The server always generates ID/CreatedAt/UpdatedAt; the
 // caller-provided target/name/description/author/license/document are
 // fully validated (including migrating the embedded document to the
-// current visual-design version) before anything is persisted.
+// current visual-design version) before anything is persisted. Never
+// carries an AlertAudio preset - the plain Stage 14A JSON create path
+// never gains an audio field (docs/alert-audio.md §10.7); see
+// CreatePackaged for the one caller (visualpackage.Service.Import) that
+// may attach one.
 func (s *Service) Create(ctx context.Context, target Target, name, description, author, license string, doc visualdesign.Document) (Template, error) {
+	return s.create(ctx, target, name, description, author, license, doc, nil)
+}
+
+// CreatePackaged is Create's own package-import variant (Stage 17B,
+// docs/alert-audio.md §10.5) - identical validation/persistence, plus
+// an optional AlertAudio preset a v2 package's own alertAudio manifest
+// object may carry, already remapped to a real local audio asset id by
+// the caller. visualpackage.Service.Import is this parameter's only
+// real-world source; every other caller passes nil, exactly like
+// Create does.
+func (s *Service) CreatePackaged(ctx context.Context, target Target, name, description, author, license string, doc visualdesign.Document, audio *RuleAudioPreset) (Template, error) {
+	return s.create(ctx, target, name, description, author, license, doc, audio)
+}
+
+func (s *Service) create(ctx context.Context, target Target, name, description, author, license string, doc visualdesign.Document, audio *RuleAudioPreset) (Template, error) {
 	normalized, err := NormalizeAndValidateDocument(doc)
 	if err != nil {
 		return Template{}, err
@@ -139,6 +183,7 @@ func (s *Service) Create(ctx context.Context, target Target, name, description, 
 		TemplateSchemaVersion: CurrentTemplateSchemaVersion,
 		Document:              normalized,
 		CreatedAt:             now, UpdatedAt: now,
+		AlertAudio: audio,
 	}
 	if err := Validate(t); err != nil {
 		return Template{}, err
@@ -146,12 +191,29 @@ func (s *Service) Create(ctx context.Context, target Target, name, description, 
 	if err := visualdesign.ValidateAssetReferences(t.Document, s.resolveAssetKind(ctx)); err != nil {
 		return Template{}, err
 	}
+	if audio != nil && audio.SoundEnabled {
+		if s.audioAssetSvc == nil {
+			return Template{}, ErrAudioAssetNotFound
+		}
+		if _, err := s.audioAssetSvc.Get(ctx, audio.SoundAssetID); err != nil {
+			return Template{}, fmt.Errorf("%w: %v", ErrAudioAssetNotFound, err)
+		}
+	}
 	created, err := s.repo.Create(ctx, t)
 	if err != nil {
 		return Template{}, err
 	}
 	if s.assetSvc != nil {
 		if err := s.assetSvc.SetTemplateAssetRefs(ctx, created.ID, created.Document.AssetReferences()); err != nil {
+			return Template{}, err
+		}
+	}
+	if s.audioAssetSvc != nil {
+		var audioRefs []string
+		if audio != nil && audio.SoundAssetID != "" {
+			audioRefs = []string{audio.SoundAssetID}
+		}
+		if err := s.audioAssetSvc.SetTemplateAssetRefs(ctx, created.ID, audioRefs); err != nil {
 			return Template{}, err
 		}
 	}
@@ -192,6 +254,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		// never cascade-deletes the assets it references - only its own
 		// reference rows are cleared.
 		if err := s.assetSvc.ClearTemplateRefs(ctx, id); err != nil {
+			return err
+		}
+	}
+	if s.audioAssetSvc != nil {
+		if err := s.audioAssetSvc.ClearTemplateRefs(ctx, id); err != nil {
 			return err
 		}
 	}

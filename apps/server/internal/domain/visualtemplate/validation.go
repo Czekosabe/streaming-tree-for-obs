@@ -71,6 +71,12 @@ func Validate(t Template) error {
 	if _, err := NormalizeAndValidateDocument(t.Document); err != nil {
 		return err
 	}
+	if err := ValidateRuleAudioPreset(t.AlertAudio); err != nil {
+		return err
+	}
+	if t.Target != TargetAlert && t.AlertAudio != nil {
+		return ErrAudioNotAllowedForTarget
+	}
 	// A target-generic (not owner-instance-specific) hard rule: Stage
 	// 12's own rendered-text template placeholder has no chat
 	// equivalent and is never legal for a chat-overlay design at all,
