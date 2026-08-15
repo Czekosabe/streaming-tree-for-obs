@@ -3,9 +3,11 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -271,6 +273,35 @@ type alertRuleRequest struct {
 	GroupWindowMS *int   `json:"groupWindowMs,omitempty"`
 	InterruptMode string `json:"interruptMode,omitempty"`
 	Interruptible *bool  `json:"interruptible,omitempty"`
+
+	// Audio: Stage 17B persistent-sound/per-rule-TTS configuration
+	// (docs/alert-audio.md §6/§7). Omitted entirely by a client that
+	// predates Stage 17B decodes to the zero value - "no rule-owned
+	// audio" - never producing sound after this stage, per §6.5.
+	Audio alertRuleAudioDTO `json:"audio"`
+}
+
+type alertRuleAudioDTO struct {
+	SoundEnabled bool    `json:"soundEnabled"`
+	SoundAssetID string  `json:"soundAssetId,omitempty"`
+	SoundVolume  float64 `json:"soundVolume"`
+	TTSEnabled   bool    `json:"ttsEnabled"`
+	TTSTemplate  string  `json:"ttsTemplate,omitempty"`
+	TTSVolume    float64 `json:"ttsVolume"`
+}
+
+func (a alertRuleAudioDTO) toDomain() domain.RuleAudio {
+	return domain.RuleAudio{
+		SoundEnabled: a.SoundEnabled, SoundAssetID: a.SoundAssetID, SoundVolume: a.SoundVolume,
+		TTSEnabled: a.TTSEnabled, TTSTemplate: a.TTSTemplate, TTSVolume: a.TTSVolume,
+	}
+}
+
+func alertRuleAudioDTOFromDomain(a domain.RuleAudio) alertRuleAudioDTO {
+	return alertRuleAudioDTO{
+		SoundEnabled: a.SoundEnabled, SoundAssetID: a.SoundAssetID, SoundVolume: a.SoundVolume,
+		TTSEnabled: a.TTSEnabled, TTSTemplate: a.TTSTemplate, TTSVolume: a.TTSVolume,
+	}
 }
 
 func (r alertRuleRequest) toInput() domain.RuleInput {
@@ -303,6 +334,7 @@ func (r alertRuleRequest) toInput() domain.RuleInput {
 		Currency: r.Currency, MinimumAmountMicros: r.MinimumAmountMicros, MaximumAmountMicros: r.MaximumAmountMicros, ShowAmount: r.ShowAmount,
 		AllowGrouping: r.AllowGrouping, GroupWindowMS: groupWindowMS,
 		InterruptMode: interruptMode, Interruptible: interruptible,
+		Audio: r.Audio.toDomain(),
 	}
 }
 
@@ -339,6 +371,8 @@ type alertRuleResponse struct {
 	InterruptMode string `json:"interruptMode"`
 	Interruptible bool   `json:"interruptible"`
 
+	Audio alertRuleAudioDTO `json:"audio"`
+
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
@@ -360,6 +394,7 @@ func toAlertRuleResponse(r domain.Rule) alertRuleResponse {
 		Currency: r.Currency, MinimumAmountMicros: r.MinimumAmountMicros, MaximumAmountMicros: r.MaximumAmountMicros, ShowAmount: r.ShowAmount,
 		AllowGrouping: r.AllowGrouping, GroupWindowMS: r.GroupWindowMS,
 		InterruptMode: string(r.InterruptMode), Interruptible: r.Interruptible,
+		Audio:     alertRuleAudioDTOFromDomain(r.Audio),
 		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
@@ -563,6 +598,32 @@ func handleListAlertRules(logger *slog.Logger, svc AlertsService) http.HandlerFu
 	}
 }
 
+// validateRuleTTSTemplate validates a rule's Stage 17B TTS text template
+// (docs/alert-audio.md §6.4) through the exact same runtime placeholder
+// parser/capability/grouping checks TextTemplate already uses - never a
+// second grammar - plus one additional rule specific to spoken text:
+// {groupCount} is always rejected here, regardless of whether grouping is
+// enabled, since grouping never restarts already-playing audio (docs/
+// alert-audio.md §9.1) and a spoken count could otherwise silently go
+// stale the moment a group updates after speech has already started. A
+// no-op when TTS is disabled - an empty/irrelevant template is not
+// validated as spoken text at all.
+func validateRuleTTSTemplate(audio alertRuleAudioDTO, eventType domain.EventType, allowGrouping bool) error {
+	if !audio.TTSEnabled {
+		return nil
+	}
+	if err := alerts.ValidateTemplateForEventType(audio.TTSTemplate, eventType); err != nil {
+		return err
+	}
+	if err := alerts.ValidateGroupingTemplate(audio.TTSTemplate, eventType, allowGrouping); err != nil {
+		return err
+	}
+	if strings.Contains(audio.TTSTemplate, "{groupCount}") {
+		return fmt.Errorf("%w: {groupCount} must not be used in a TTS template", alerts.ErrPlaceholderInvalid)
+	}
+	return nil
+}
+
 func handleCreateAlertRule(logger *slog.Logger, svc AlertsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		profileID := r.PathValue("id")
@@ -576,6 +637,10 @@ func handleCreateAlertRule(logger *slog.Logger, svc AlertsService) http.HandlerF
 			return
 		}
 		if err := alerts.ValidateGroupingTemplate(body.TextTemplate, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
+			writeAlertsError(w, logger, err)
+			return
+		}
+		if err := validateRuleTTSTemplate(body.Audio, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
 			writeAlertsError(w, logger, err)
 			return
 		}
@@ -613,6 +678,10 @@ func handleUpdateAlertRule(logger *slog.Logger, svc AlertsService) http.HandlerF
 			return
 		}
 		if err := alerts.ValidateGroupingTemplate(body.TextTemplate, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
+			writeAlertsError(w, logger, err)
+			return
+		}
+		if err := validateRuleTTSTemplate(body.Audio, domain.EventType(body.EventType), body.AllowGrouping); err != nil {
 			writeAlertsError(w, logger, err)
 			return
 		}
@@ -1062,6 +1131,8 @@ func writeAlertsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusNotFound, "alert_rule_not_found", "The requested alert rule does not exist.")
 	case errors.Is(err, domain.ErrAccountNotFound):
 		writeError(w, logger, http.StatusNotFound, "alert_rule_account_not_found", "One of the target connected accounts does not exist.")
+	case errors.Is(err, domain.ErrAudioAssetNotFound):
+		writeError(w, logger, http.StatusNotFound, "audio_rule_asset_not_found", "The selected sound asset does not exist.")
 	case errors.Is(err, domain.ErrThresholdInvalid):
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_threshold_invalid", "The quantity threshold is invalid.")
 	case errors.Is(err, domain.ErrMoneyThresholdInvalid):

@@ -24299,3 +24299,119 @@ Extend `internal/domain/alerts.Rule`/`RuleInput` with the bounded
 asset/volume, TTS enabled/template/volume, validated against the real
 managed audio asset store and the existing alert placeholder/
 capability tables.
+
+## 2026-08-15 — feat(server): persist alert rule audio
+
+### Status
+Completed (this commit's scope only - Stage 17B as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The second Stage 17B backend piece per `docs/alert-audio.md` §6/§7:
+`internal/domain/alerts.RuleAudio` (sound enabled/asset/volume, TTS
+enabled/template/volume) embedded on `Rule`/`RuleInput`, its migration,
+its SQLite persistence, its full-replacement reference tracking
+against the Stage 17A audio-asset store, and its HTTP management
+surface. No wiring into `internal/audio`'s playback runtime yet - a
+rule's audio configuration is fully save/load/validate-able but does
+not yet produce any sound.
+
+### Changes
+- `apps/server/internal/domain/alerts/model.go` - `RuleAudio` struct
+  and `DefaultRuleAudio()`, embedded as `Rule.Audio`. Zero value is "no
+  rule-owned audio," the default for every rule created or migrated
+  before this stage.
+- `apps/server/internal/domain/alerts/validation.go` - volume bounds
+  (`MinRuleAudioVolume`/`MaxRuleAudioVolume`), `ValidateRuleAudio`
+  (mode-matrix + bounds; deliberately does **not** validate TTS
+  placeholder syntax/capability - that split mirrors `ValidateTemplate`'s
+  own existing domain-layer-length-only vs. runtime-layer-placeholder-
+  syntax convention exactly), wired into `ValidateRuleFields`.
+- `apps/server/internal/domain/alerts/errors.go` - `ErrAudioAssetNotFound`.
+- `apps/server/internal/domain/alerts/service.go` - new
+  `AudioAssetLookup` interface (`AudioAssetExists`/
+  `SetRuleAudioAssetRefs`/`ClearRuleAudioAssetRefs`), deliberately
+  primitive-typed like the existing `AccountLookup` (this package still
+  never imports another domain package's concrete types); optional
+  (nil-safe) 4th `NewService` constructor parameter; existence check
+  and reference-tracking calls wired into `CreateRule`/`ReplaceRule`/
+  `DeleteRule`.
+- `apps/server/internal/storage/sqlite/migrations/0023_alert_rule_audio.sql`
+  (new) - six `alert_rules` columns, each defaulting to the safe
+  zero value with a `CHECK` constraint; no FK on `sound_asset_id`
+  itself (the reference is tracked transactionally via
+  `alert_rule_audio_asset_refs`, migration 0022).
+- `apps/server/internal/storage/sqlite/alerts_repository.go` -
+  `ruleColumns`/`scanRule`/`CreateRule`/`UpdateRule` extended for the
+  six new columns.
+- `apps/server/internal/alerts/wiring.go` - `AudioAssetLookupAdapter`
+  bridging `*audioasset.Service` to `domain.AudioAssetLookup`;
+  `NewDomainService` gains an `audioAssets *audioasset.Service`
+  parameter, converted to a genuinely nil interface when the pointer
+  is nil (see "Real bug found and fixed" below).
+- `apps/server/internal/httpapi/alerts.go` - `alertRuleAudioDTO`
+  nested `audio` object on both the create/update request and the rule
+  response; `validateRuleTTSTemplate` reuses `alerts.
+  ValidateTemplateForEventType`/`ValidateGroupingTemplate` (the exact
+  same runtime placeholder/capability/grouping validators
+  `TextTemplate` already uses) plus an unconditional `{groupCount}`
+  rejection specific to spoken text (docs/alert-audio.md §6.4 - a
+  spoken count could otherwise go stale the moment a group updates
+  after speech has already started); new `domain.ErrAudioAssetNotFound`
+  → `404 audio_rule_asset_not_found` mapping.
+- `apps/server/cmd/server/main.go` / `apps/server/cmd/testserver/main.go`
+  - pass the already-constructed `audioAssetService` into
+  `alerts.NewDomainService(...)`.
+- Tests: 17 new `internal/domain/alerts` tests (every `ValidateRuleAudio`
+  mode-matrix/bounds case, existence-check rejection/acceptance,
+  reference-tracking on create/replace/delete, nil-`AudioAssetLookup`
+  safety), 2 new `internal/storage/sqlite` round-trip tests (full Audio
+  round-trip including update-clears-it; the ordinary no-audio default),
+  5 new `internal/httpapi` tests (wire round-trip, omitted-audio
+  defaults safely, sound-without-asset rejection, `{groupCount}`
+  rejection, unknown-placeholder rejection).
+
+### Real bug found and fixed
+`internal/alerts.NewDomainService`'s first draft always wrapped
+`audioAssets *audioasset.Service` in a `AudioAssetLookupAdapter{}`
+struct value before passing it to `domain.NewService` - including when
+`audioAssets` was `nil`. That produced a **non-nil**
+`domain.AudioAssetLookup` interface wrapping a nil concrete pointer
+(Go's classic "typed nil" trap): `domain/alerts.Service`'s own `if
+s.audioAssets != nil` guard passed (the interface itself was non-nil),
+and the very next method call on it (`a.Assets.Get(...)` inside the
+adapter) panicked on the nil `*audioasset.Service` receiver. Found via
+a real, reproducible `TestCreateAlertRuleThenGet` panic ("panic
+recovered in handler") once `internal/httpapi/alerts_test.go`'s own
+logger was temporarily pointed at stderr to see past the generic
+500 `internal_error` response every unrecognized panic/error maps to.
+Fixed by only constructing the adapter when `audioAssets` is
+genuinely non-nil, leaving a true nil interface otherwise - the same
+"typed nil" pitfall this project's own `AccountLookupAdapter` already
+guards against for its own `DonationSources` field, just missed on
+the first pass for the new adapter.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean.
+- `go test ./...` - full suite passes, including all new tests above
+  and every pre-existing alerts/httpapi test (several of which needed
+  a mechanical 4th-argument update at their own `NewService`/
+  `NewDomainService` call sites for the new parameter, verified to
+  still exercise the exact same scenarios afterward).
+
+### Known limitations
+A rule's `Audio` configuration is fully persisted, validated, and
+exposed over HTTP, but **produces no sound yet** - nothing in
+`internal/audio` or `internal/alerts`'s runtime queue reads it. Stage
+17B as a whole is not complete; Stage 17 as a whole is not complete.
+
+### Next step
+Wire alert-owned playback into the `internal/audio` runtime
+(docs/alert-audio.md §8/§9): the `Source` classification
+(`SourceGlobalTTS`/`SourceAlertSound`/`SourceAlertTTS`), the injected
+`AudioAssetResolver`, arbitration (alert-owned audio preempts global
+TTS), the `AlertLink` identity, and the `internal/alerts` <->
+`internal/audio` coordination for start/cancel/bounded-hold on
+skip/clear/preemption/replay/grouping.

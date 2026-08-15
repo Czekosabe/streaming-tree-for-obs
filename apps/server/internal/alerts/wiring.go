@@ -6,6 +6,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/domain/account"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/audioasset"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
@@ -37,13 +38,53 @@ func (a AccountLookupAdapter) AccountExists(ctx context.Context, accountID strin
 	return a.DonationSources.SourceExists(ctx, accountID)
 }
 
+// AudioAssetLookupAdapter adapts *audioasset.Service to
+// domain/alerts.AudioAssetLookup (docs/alert-audio.md §5/§7) - the small,
+// concrete bridge between this package's own Stage 17B dependency and the
+// domain package's deliberately decoupled, primitive-typed interface,
+// mirroring AccountLookupAdapter's identical role above.
+type AudioAssetLookupAdapter struct {
+	Assets *audioasset.Service
+}
+
+func (a AudioAssetLookupAdapter) AudioAssetExists(ctx context.Context, assetID string) (bool, error) {
+	_, err := a.Assets.Get(ctx, assetID)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, audioasset.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (a AudioAssetLookupAdapter) SetRuleAudioAssetRefs(ctx context.Context, ruleID string, assetIDs []string) error {
+	return a.Assets.SetRuleAssetRefs(ctx, ruleID, assetIDs)
+}
+
+func (a AudioAssetLookupAdapter) ClearRuleAudioAssetRefs(ctx context.Context, ruleID string) error {
+	return a.Assets.ClearRuleRefs(ctx, ruleID)
+}
+
 // NewDomainService builds the domain/alerts Service over a sqlite
-// repository and the combined account/donation-source existence adapter
-// above - the one place this package's runtime and its sibling domain
-// packages are wired together, mirroring
+// repository, the combined account/donation-source existence adapter, and
+// the Stage 17B audio-asset adapter above - the one place this package's
+// runtime and its sibling domain packages are wired together, mirroring
 // internal/chatautomation.NewDomainService.
-func NewDomainService(repo domain.Repository, accounts *account.Service, donationSources *donationsource.Service) *domain.Service {
-	return domain.NewService(repo, AccountLookupAdapter{Accounts: accounts, DonationSources: donationSources}, nil)
+func NewDomainService(repo domain.Repository, accounts *account.Service, donationSources *donationsource.Service, audioAssets *audioasset.Service) *domain.Service {
+	// A nil audioAssets must become a genuinely nil domain.AudioAssetLookup
+	// interface, never a non-nil interface wrapping a nil
+	// *audioasset.Service - the classic Go "typed nil" trap, which would
+	// make domain/alerts's own `s.audioAssets != nil` guard pass and then
+	// panic on the nil pointer the moment a method is called on it.
+	var audioLookup domain.AudioAssetLookup
+	if audioAssets != nil {
+		audioLookup = AudioAssetLookupAdapter{Assets: audioAssets}
+	}
+	return domain.NewService(
+		repo, AccountLookupAdapter{Accounts: accounts, DonationSources: donationSources},
+		audioLookup, nil,
+	)
 }
 
 // NewVisualDesignService builds the Stage 13A shared visualdesign

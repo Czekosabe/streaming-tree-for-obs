@@ -53,7 +53,7 @@ func newAlertsTestServer(t *testing.T) *alertsTestServer {
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
-	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil)
+	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil, nil)
 	visualDesignSvc := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	manager := alerts.NewManager(alerts.ManagerOptions{DomainService: domainSvc, VisualDesignService: visualDesignSvc, Bus: eventBus})
 	if err := manager.Start(context.Background()); err != nil {
@@ -122,6 +122,96 @@ func validFollowRuleBody() map[string]any {
 		"textTemplate": "{username} just followed!", "entryAnimation": "fade", "exitAnimation": "fade",
 		"animationDurationMs": 400, "providers": []string{}, "accounts": []string{},
 		"allowGrouping": false, "groupWindowMs": 5000, "interruptMode": "never", "interruptible": true,
+	}
+}
+
+// --- Stage 17B: rule audio (docs/alert-audio.md §6/§7) -------------------
+
+func TestCreateAlertRuleRoundTripsAudio(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["audio"] = map[string]any{
+		"soundEnabled": true, "soundAssetId": "audioasset_abc", "soundVolume": 0.75,
+		"ttsEnabled": true, "ttsTemplate": "{username} just followed!", "ttsVolume": 0.5,
+	}
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	created := decodeAlertsBody(t, resp)
+	audio, ok := created["audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("response has no audio object: %+v", created)
+	}
+	if audio["soundEnabled"] != true || audio["soundAssetId"] != "audioasset_abc" || audio["soundVolume"] != 0.75 {
+		t.Errorf("audio sound fields = %+v, want soundEnabled=true soundAssetId=audioasset_abc soundVolume=0.75", audio)
+	}
+	if audio["ttsEnabled"] != true || audio["ttsTemplate"] != "{username} just followed!" || audio["ttsVolume"] != 0.5 {
+		t.Errorf("audio TTS fields = %+v, want ttsEnabled=true ttsTemplate={username} just followed! ttsVolume=0.5", audio)
+	}
+
+	id := created["id"].(string)
+	getResp := ts.do(t, http.MethodGet, "/api/alert-rules/"+id, nil)
+	got := decodeAlertsBody(t, getResp)
+	if gotAudio, _ := got["audio"].(map[string]any); gotAudio["soundAssetId"] != "audioasset_abc" {
+		t.Errorf("GET audio = %+v, want soundAssetId=audioasset_abc", gotAudio)
+	}
+}
+
+func TestCreateAlertRuleOmittedAudioDefaultsToNoAudio(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	// validFollowRuleBody() never sets "audio" at all - the pre-Stage-17B
+	// request shape - and must still succeed with the safe zero value
+	// (docs/alert-audio.md §6.5).
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", validFollowRuleBody())
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+	audio, _ := decodeAlertsBody(t, resp)["audio"].(map[string]any)
+	if audio["soundEnabled"] != false || audio["ttsEnabled"] != false {
+		t.Errorf("audio = %+v, want soundEnabled=false ttsEnabled=false", audio)
+	}
+}
+
+func TestCreateAlertRuleRejectsSoundEnabledWithoutAsset(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["audio"] = map[string]any{"soundEnabled": true, "soundVolume": 1.0}
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+}
+
+func TestCreateAlertRuleRejectsGroupCountInTTSTemplate(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["audio"] = map[string]any{
+		"ttsEnabled": true, "ttsTemplate": "{username} followed, group of {groupCount}!", "ttsVolume": 1.0,
+	}
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
+	}
+}
+
+func TestCreateAlertRuleRejectsUnknownTTSPlaceholder(t *testing.T) {
+	ts := newAlertsTestServer(t)
+	profileID := createTestProfile(t, ts)
+
+	body := validFollowRuleBody()
+	body["audio"] = map[string]any{"ttsEnabled": true, "ttsTemplate": "{notARealPlaceholder}", "ttsVolume": 1.0}
+	resp := ts.do(t, http.MethodPost, "/api/alert-profiles/"+profileID+"/rules", body)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %+v", resp.StatusCode, decodeAlertsBody(t, resp))
 	}
 }
 

@@ -158,7 +158,7 @@ var testRuleIDCounter int
 func newTestManager(t *testing.T, fc *fakeClock) (*Manager, *bus.Bus) {
 	t.Helper()
 	repo := newFakeDomainRepo()
-	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, fc.Now)
+	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, nil, fc.Now)
 	b := bus.New(bus.Options{Now: fc.Now})
 	mgr := NewManager(ManagerOptions{DomainService: domainSvc, Bus: b, Now: fc.Now})
 	if err := mgr.Start(context.Background()); err != nil {
@@ -381,7 +381,7 @@ func TestManagerTwoProfilesIsolated(t *testing.T) {
 func TestManagerRestartResetsRuntimeButKeepsDefinitions(t *testing.T) {
 	fc := newFakeClock()
 	repo := newFakeDomainRepo()
-	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, fc.Now)
+	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, nil, fc.Now)
 	b := bus.New(bus.Options{Now: fc.Now})
 	defer b.Shutdown()
 

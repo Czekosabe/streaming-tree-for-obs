@@ -38,4 +38,9 @@ var (
 	// ErrTemplateInvalid means a rule's text template is malformed or
 	// uses an unknown/unsupported placeholder - see templates.go.
 	ErrTemplateInvalid = errors.New("alert template is invalid")
+
+	// ErrAudioAssetNotFound means a rule's Stage 17B SoundAssetID names
+	// a managed audio asset that does not exist (docs/alert-audio.md
+	// §7) - stable API error audio_rule_asset_not_found.
+	ErrAudioAssetNotFound = errors.New("alert rule audio asset not found")
 )

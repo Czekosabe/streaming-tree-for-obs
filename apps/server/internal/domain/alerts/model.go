@@ -338,8 +338,37 @@ type Rule struct {
 	InterruptMode InterruptMode
 	Interruptible bool
 
+	// Audio is this rule's optional Stage 17B persistent-sound/per-rule-
+	// TTS configuration (docs/alert-audio.md §6) - the zero value means
+	// "no rule-owned audio," the default for every rule created or
+	// migrated before this stage.
+	Audio RuleAudio
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// RuleAudio is a rule's optional persistent-sound/per-rule-TTS
+// configuration (docs/alert-audio.md §6). SoundAssetID references a
+// managed audioasset.Asset by its opaque local ID - never a filesystem
+// path, never audio bytes. SoundVolume/TTSVolume are the rule-owned
+// volume multipliers combined with the global audio output volume at
+// enqueue time (docs/alert-audio.md §6.3) - never applied twice.
+type RuleAudio struct {
+	SoundEnabled bool
+	SoundAssetID string
+	SoundVolume  float64
+
+	TTSEnabled  bool
+	TTSTemplate string
+	TTSVolume   float64
+}
+
+// DefaultRuleAudio is the safe "no rule-owned audio" zero value, with
+// volume defaults populated so a UI never has to invent 0.0 as a
+// starting point once an operator enables sound or TTS.
+func DefaultRuleAudio() RuleAudio {
+	return RuleAudio{SoundVolume: DefaultRuleAudioVolume, TTSVolume: DefaultRuleAudioVolume}
 }
 
 // DefaultProfile returns a new profile's safe, validated defaults plus

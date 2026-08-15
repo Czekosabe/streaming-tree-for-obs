@@ -313,3 +313,96 @@ func baseValidRule() Rule {
 		GroupWindowMS: DefaultGroupWindowMS, InterruptMode: InterruptNever, Interruptible: true,
 	}
 }
+
+// --- Stage 17B: RuleAudio validation (docs/alert-audio.md §6/§7) -----------
+
+func TestValidateRuleAudioAcceptsZeroValue(t *testing.T) {
+	if err := ValidateRuleAudio(RuleAudio{}); err != nil {
+		t.Errorf("ValidateRuleAudio(zero value) error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleAudioAcceptsSoundOnly(t *testing.T) {
+	a := RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0}
+	if err := ValidateRuleAudio(a); err != nil {
+		t.Errorf("ValidateRuleAudio(sound only) error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleAudioAcceptsTTSOnly(t *testing.T) {
+	a := RuleAudio{TTSEnabled: true, TTSTemplate: "{username} followed!", TTSVolume: 0.5}
+	if err := ValidateRuleAudio(a); err != nil {
+		t.Errorf("ValidateRuleAudio(TTS only) error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleAudioAcceptsSoundAndTTSTogether(t *testing.T) {
+	a := RuleAudio{
+		SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0,
+		TTSEnabled: true, TTSTemplate: "{username} followed!", TTSVolume: 0.8,
+	}
+	if err := ValidateRuleAudio(a); err != nil {
+		t.Errorf("ValidateRuleAudio(sound+TTS) error = %v, want nil", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsSoundEnabledWithoutAsset(t *testing.T) {
+	a := RuleAudio{SoundEnabled: true, SoundVolume: 1.0}
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleAudio(sound enabled, no asset) error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsAssetSetWhileSoundDisabled(t *testing.T) {
+	a := RuleAudio{SoundEnabled: false, SoundAssetID: "audioasset_abc"}
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleAudio(asset set, sound disabled) error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsTTSEnabledWithoutTemplate(t *testing.T) {
+	a := RuleAudio{TTSEnabled: true, TTSVolume: 1.0}
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleAudio(TTS enabled, no template) error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsTemplateSetWhileTTSDisabled(t *testing.T) {
+	a := RuleAudio{TTSEnabled: false, TTSTemplate: "{username}"}
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleAudio(template set, TTS disabled) error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsOverlongTTSTemplate(t *testing.T) {
+	long := make([]byte, MaxTemplateCodePoints+1)
+	for i := range long {
+		long[i] = 'a'
+	}
+	a := RuleAudio{TTSEnabled: true, TTSTemplate: string(long)}
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleAudio(over-long TTS template) error = %v, want ErrValidation", err)
+	}
+}
+
+func TestValidateRuleAudioRejectsVolumeOutOfBounds(t *testing.T) {
+	cases := []RuleAudio{
+		{SoundVolume: -0.1},
+		{SoundVolume: 1.1},
+		{TTSVolume: -0.1},
+		{TTSVolume: 1.1},
+	}
+	for _, a := range cases {
+		if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
+			t.Errorf("ValidateRuleAudio(%+v) error = %v, want ErrValidation", a, err)
+		}
+	}
+}
+
+func TestValidateRuleFieldsIncludesAudioValidation(t *testing.T) {
+	r := baseValidRule()
+	r.Audio = RuleAudio{SoundEnabled: true} // enabled with no asset - invalid
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
+		t.Errorf("ValidateRuleFields() with invalid Audio error = %v, want ErrValidation", err)
+	}
+}

@@ -73,7 +73,7 @@ func newAssetTestServer(t *testing.T) *assetTestServer {
 	eventBus := bus.New(bus.Options{Capacity: 100})
 	t.Cleanup(eventBus.Shutdown)
 
-	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil)
+	domainSvc := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accounts, nil, nil)
 	visualDesignSvc := alerts.NewVisualDesignService(sqlite.NewVisualDesignRepository(db.DB))
 	alertsManager := alerts.NewManager(alerts.ManagerOptions{
 		DomainService: domainSvc, VisualDesignService: visualDesignSvc, AssetService: assetSvc, Bus: eventBus,

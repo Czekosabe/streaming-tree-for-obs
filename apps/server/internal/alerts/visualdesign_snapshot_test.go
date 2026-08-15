@@ -94,7 +94,7 @@ func testDesignDocument() visualdesign.Document {
 func newTestManagerWithVisualDesigns(t *testing.T, fc *fakeClock) (*Manager, *bus.Bus, *fakeVisualDesignRepo) {
 	t.Helper()
 	repo := newFakeDomainRepo()
-	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, fc.Now)
+	domainSvc := domain.NewService(repo, fakeDomainAccounts{}, nil, fc.Now)
 	vdRepo := newFakeVisualDesignRepo()
 	vdSvc := visualdesign.NewService(vdRepo, fc.Now)
 	b := bus.New(bus.Options{Now: fc.Now})

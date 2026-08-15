@@ -116,7 +116,7 @@ func (f fakeAccountLookup) AccountExists(_ context.Context, accountID string) (b
 func newTestService() (*Service, *fakeRepo) {
 	repo := newFakeRepo()
 	accounts := fakeAccountLookup{"acct_1": true, "acct_2": true}
-	return NewService(repo, accounts, nil), repo
+	return NewService(repo, accounts, nil, nil), repo
 }
 
 func baseRuleInput() RuleInput {
@@ -359,5 +359,141 @@ func TestServiceDeleteProfileCascadesRulesInFakeRepo(t *testing.T) {
 	}
 	if _, ok := repo.rules[r.ID]; ok {
 		t.Error("rule survived DeleteProfile() in the fake repo")
+	}
+}
+
+// --- Stage 17B: AudioAssetLookup existence check + reference tracking -----
+
+// fakeAudioAssetLookup is a minimal in-memory AudioAssetLookup, recording
+// every SetRuleAudioAssetRefs/ClearRuleAudioAssetRefs call it receives so
+// a test can assert exactly what the Service did.
+type fakeAudioAssetLookup struct {
+	known map[string]bool
+	refs  map[string][]string
+}
+
+func newFakeAudioAssetLookup(knownIDs ...string) *fakeAudioAssetLookup {
+	known := map[string]bool{}
+	for _, id := range knownIDs {
+		known[id] = true
+	}
+	return &fakeAudioAssetLookup{known: known, refs: map[string][]string{}}
+}
+
+func (f *fakeAudioAssetLookup) AudioAssetExists(_ context.Context, assetID string) (bool, error) {
+	return f.known[assetID], nil
+}
+
+func (f *fakeAudioAssetLookup) SetRuleAudioAssetRefs(_ context.Context, ruleID string, assetIDs []string) error {
+	f.refs[ruleID] = assetIDs
+	return nil
+}
+
+func (f *fakeAudioAssetLookup) ClearRuleAudioAssetRefs(_ context.Context, ruleID string) error {
+	delete(f.refs, ruleID)
+	return nil
+}
+
+func newTestServiceWithAudioAssets(audioAssets AudioAssetLookup) (*Service, *fakeRepo) {
+	repo := newFakeRepo()
+	accounts := fakeAccountLookup{"acct_1": true, "acct_2": true}
+	return NewService(repo, accounts, audioAssets, nil), repo
+}
+
+func TestServiceCreateRuleRejectsUnknownAudioAsset(t *testing.T) {
+	lookup := newFakeAudioAssetLookup() // no known assets
+	svc, _ := newTestServiceWithAudioAssets(lookup)
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_doesnotexist", SoundVolume: 1.0}
+	if _, err := svc.CreateRule(context.Background(), p.ID, in); !errors.Is(err, ErrAudioAssetNotFound) {
+		t.Errorf("CreateRule() error = %v, want ErrAudioAssetNotFound", err)
+	}
+}
+
+func TestServiceCreateRuleAcceptsKnownAudioAssetAndTracksReference(t *testing.T) {
+	lookup := newFakeAudioAssetLookup("audioasset_abc")
+	svc, _ := newTestServiceWithAudioAssets(lookup)
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0}
+	r, err := svc.CreateRule(context.Background(), p.ID, in)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if refs := lookup.refs[r.ID]; len(refs) != 1 || refs[0] != "audioasset_abc" {
+		t.Errorf("SetRuleAudioAssetRefs() was called with %v, want [audioasset_abc]", refs)
+	}
+}
+
+func TestServiceReplaceRuleUpdatesAudioAssetReference(t *testing.T) {
+	lookup := newFakeAudioAssetLookup("audioasset_abc", "audioasset_def")
+	svc, _ := newTestServiceWithAudioAssets(lookup)
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0}
+	r, err := svc.CreateRule(context.Background(), p.ID, in)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_def", SoundVolume: 1.0}
+	if _, err := svc.ReplaceRule(context.Background(), r.ID, in); err != nil {
+		t.Fatalf("ReplaceRule() error = %v", err)
+	}
+	if refs := lookup.refs[r.ID]; len(refs) != 1 || refs[0] != "audioasset_def" {
+		t.Errorf("SetRuleAudioAssetRefs() after replace = %v, want [audioasset_def]", refs)
+	}
+}
+
+func TestServiceReplaceRuleClearsAudioAssetReferenceWhenDisabled(t *testing.T) {
+	lookup := newFakeAudioAssetLookup("audioasset_abc")
+	svc, _ := newTestServiceWithAudioAssets(lookup)
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0}
+	r, err := svc.CreateRule(context.Background(), p.ID, in)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+
+	in.Audio = RuleAudio{}
+	if _, err := svc.ReplaceRule(context.Background(), r.ID, in); err != nil {
+		t.Fatalf("ReplaceRule() error = %v", err)
+	}
+	if refs := lookup.refs[r.ID]; len(refs) != 0 {
+		t.Errorf("SetRuleAudioAssetRefs() after disabling audio = %v, want empty", refs)
+	}
+}
+
+func TestServiceDeleteRuleClearsAudioAssetReference(t *testing.T) {
+	lookup := newFakeAudioAssetLookup("audioasset_abc")
+	svc, _ := newTestServiceWithAudioAssets(lookup)
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 1.0}
+	r, err := svc.CreateRule(context.Background(), p.ID, in)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if err := svc.DeleteRule(context.Background(), r.ID); err != nil {
+		t.Fatalf("DeleteRule() error = %v", err)
+	}
+	if _, ok := lookup.refs[r.ID]; ok {
+		t.Error("ClearRuleAudioAssetRefs() was not called on delete")
+	}
+}
+
+func TestServiceCreateRuleNilAudioAssetLookupSkipsChecks(t *testing.T) {
+	// A nil AudioAssetLookup (this project's own "optional dependency"
+	// convention) must never panic and must never block a rule save
+	// merely because no audio-asset backing is wired - existence
+	// checking and reference tracking are both best-effort skipped.
+	svc, _ := newTestService()
+	p, _ := svc.CreateProfile(context.Background(), "Main")
+	in := baseRuleInput()
+	in.Audio = RuleAudio{SoundEnabled: true, SoundAssetID: "audioasset_whatever", SoundVolume: 1.0}
+	if _, err := svc.CreateRule(context.Background(), p.ID, in); err != nil {
+		t.Errorf("CreateRule() with nil AudioAssetLookup error = %v, want nil", err)
 	}
 }

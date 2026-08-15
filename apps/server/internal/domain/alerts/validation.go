@@ -30,6 +30,13 @@ const (
 	MaxMaximumQueueAgeSeconds     = 3600
 
 	MaxTemplateCodePoints = 500
+
+	// Stage 17B (docs/alert-audio.md §6.3): rule-owned audio volume
+	// bounds. TTSTemplate reuses MaxTemplateCodePoints directly - the
+	// identical bound as the visual TextTemplate, never a separate one.
+	MinRuleAudioVolume     = 0.0
+	MaxRuleAudioVolume     = 1.0
+	DefaultRuleAudioVolume = 1.0
 )
 
 func validationErr(format string, args ...any) error {
@@ -93,6 +100,45 @@ func ValidateTemplate(template string) error {
 	}
 	if n > MaxTemplateCodePoints {
 		return validationErr("template must not exceed %d characters", MaxTemplateCodePoints)
+	}
+	return nil
+}
+
+// ValidateRuleAudio checks a rule's Stage 17B audio configuration's own
+// structural bounds (docs/alert-audio.md §6/§7): volume ranges, and the
+// enabled/required-field mode matrix (a sound asset id is required when
+// SoundEnabled, a TTS template is required when TTSEnabled). It does
+// **not** check that SoundAssetID actually names a real, existing audio
+// asset (that needs an injected lookup - see Service.validateRuleInput)
+// and does **not** check TTSTemplate's placeholder syntax/capability
+// availability (that lives in the sibling runtime package
+// internal/alerts's own template parser, validated at the HTTP boundary
+// - mirroring ValidateTemplate's own identical domain/runtime split,
+// see its own doc comment above).
+func ValidateRuleAudio(a RuleAudio) error {
+	if a.SoundVolume < MinRuleAudioVolume || a.SoundVolume > MaxRuleAudioVolume {
+		return validationErr("sound volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
+	}
+	if a.TTSVolume < MinRuleAudioVolume || a.TTSVolume > MaxRuleAudioVolume {
+		return validationErr("TTS volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
+	}
+	if a.SoundEnabled && a.SoundAssetID == "" {
+		return validationErr("a sound asset must be selected when sound is enabled")
+	}
+	if !a.SoundEnabled && a.SoundAssetID != "" {
+		return validationErr("a sound asset must not be set while sound is disabled")
+	}
+	if a.TTSEnabled {
+		n := codePointLen(a.TTSTemplate)
+		if n == 0 {
+			return validationErr("a TTS template must be set when rule-owned TTS is enabled")
+		}
+		if n > MaxTemplateCodePoints {
+			return validationErr("TTS template must not exceed %d characters", MaxTemplateCodePoints)
+		}
+	}
+	if !a.TTSEnabled && a.TTSTemplate != "" {
+		return validationErr("a TTS template must not be set while rule-owned TTS is disabled")
 	}
 	return nil
 }
@@ -263,6 +309,9 @@ func ValidateRuleFields(r Rule) error {
 		return validationErr("interrupt mode %q is not recognized", string(r.InterruptMode))
 	}
 	if err := ValidateTemplate(r.TextTemplate); err != nil {
+		return err
+	}
+	if err := ValidateRuleAudio(r.Audio); err != nil {
 		return err
 	}
 	if err := ValidateThresholds(r.MinimumQuantity, r.MaximumQuantity); err != nil {

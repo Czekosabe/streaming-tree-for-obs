@@ -173,6 +173,70 @@ func TestAlertsRuleCreateThenGetRoundTrips(t *testing.T) {
 	}
 }
 
+// TestAlertsRuleRoundTripsAudio pins Stage 17B's own migration
+// (0023_alert_rule_audio.sql) - every RuleAudio field round-trips through
+// the rebuilt alert_rules table exactly (docs/alert-audio.md §6/§11).
+func TestAlertsRuleRoundTripsAudio(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewAlertsRepository(db.DB)
+	if _, err := repo.CreateProfile(context.Background(), newTestProfile("alprof_2", "slug-audio")); err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+
+	r := testRule("alrule_2", "alprof_2")
+	r.Audio = alerts.RuleAudio{
+		SoundEnabled: true, SoundAssetID: "audioasset_abc", SoundVolume: 0.75,
+		TTSEnabled: true, TTSTemplate: "{username} just followed!", TTSVolume: 0.5,
+	}
+
+	saved, err := repo.CreateRule(context.Background(), r)
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if saved.Audio != r.Audio {
+		t.Errorf("saved.Audio = %+v, want %+v", saved.Audio, r.Audio)
+	}
+
+	got, found, err := repo.GetRule(context.Background(), "alrule_2")
+	if err != nil || !found {
+		t.Fatalf("GetRule() = %+v, found=%v, err=%v", got, found, err)
+	}
+	if got.Audio != r.Audio {
+		t.Errorf("GetRule().Audio = %+v, want %+v", got.Audio, r.Audio)
+	}
+
+	// UpdateRule replaces the full Audio configuration, exactly like
+	// every other field.
+	r.Audio = alerts.RuleAudio{}
+	updated, err := repo.UpdateRule(context.Background(), r)
+	if err != nil {
+		t.Fatalf("UpdateRule() error = %v", err)
+	}
+	if updated.Audio != (alerts.RuleAudio{}) {
+		t.Errorf("updated.Audio = %+v, want the zero value after clearing", updated.Audio)
+	}
+}
+
+// TestAlertsRuleDefaultsToNoAudio confirms a rule created with no Audio
+// configuration at all - the ordinary case for every rule created before
+// Stage 17B, and the default for a new rule that never touches these
+// fields - round-trips as the safe "no rule-owned audio" zero value
+// (docs/alert-audio.md §6.5).
+func TestAlertsRuleDefaultsToNoAudio(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewAlertsRepository(db.DB)
+	if _, err := repo.CreateProfile(context.Background(), newTestProfile("alprof_3", "slug-no-audio")); err != nil {
+		t.Fatalf("CreateProfile() error = %v", err)
+	}
+	saved, err := repo.CreateRule(context.Background(), testRule("alrule_3", "alprof_3"))
+	if err != nil {
+		t.Fatalf("CreateRule() error = %v", err)
+	}
+	if saved.Audio != (alerts.RuleAudio{}) {
+		t.Errorf("saved.Audio = %+v, want the zero value", saved.Audio)
+	}
+}
+
 // TestAlertsRuleRoundTripsYouTubeMoneyFields pins Stage 15A's own
 // migration (0019_alerts_youtube_events.sql) - currency/minimum_amount_
 // micros/maximum_amount_micros/show_amount, plus a YouTube event_type

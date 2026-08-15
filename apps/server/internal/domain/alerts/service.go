@@ -21,25 +21,48 @@ type AccountLookup interface {
 	AccountExists(ctx context.Context, accountID string) (bool, error)
 }
 
+// AudioAssetLookup is this package's own narrow, primitive-typed view of
+// Stage 17B's managed audio asset store (docs/alert-audio.md §5/§7) -
+// deliberately never importing internal/domain/audioasset's own concrete
+// types, mirroring AccountLookup's identical decoupling. Optional: a nil
+// AudioAssetLookup (e.g. in a test that never exercises rule-owned audio)
+// skips both the existence check and reference-tracking calls below
+// rather than panicking - a rule with no rule-owned audio configured
+// never needs either.
+type AudioAssetLookup interface {
+	// AudioAssetExists reports whether assetID names a real managed
+	// audio asset.
+	AudioAssetExists(ctx context.Context, assetID string) (bool, error)
+	// SetRuleAudioAssetRefs replaces the full set of audio-asset
+	// references ruleID carries - called on every rule save, mirroring
+	// visualasset's own SetDesignAssetRefs full-replacement convention.
+	SetRuleAudioAssetRefs(ctx context.Context, ruleID string, assetIDs []string) error
+	// ClearRuleAudioAssetRefs removes every reference row for ruleID -
+	// called when the rule itself is deleted.
+	ClearRuleAudioAssetRefs(ctx context.Context, ruleID string) error
+}
+
 // Service holds the alert-profile and alert-rule use cases: profile
 // CRUD (including public-slug rotation) and rule CRUD, with the
 // capability-driven condition validation and account-filter existence
 // checks the Stage 12A task requires. Never matches an event or runs a
 // queue itself - see internal/alerts's runtime Manager for that.
 type Service struct {
-	repo     Repository
-	accounts AccountLookup
-	now      Clock
-	newID    func() (string, error)
-	newSlug  func() (string, error)
+	repo        Repository
+	accounts    AccountLookup
+	audioAssets AudioAssetLookup
+	now         Clock
+	newID       func() (string, error)
+	newSlug     func() (string, error)
 }
 
-// NewService builds a Service.
-func NewService(repo Repository, accounts AccountLookup, now Clock) *Service {
+// NewService builds a Service. audioAssets may be nil (see
+// AudioAssetLookup's own doc comment).
+func NewService(repo Repository, accounts AccountLookup, audioAssets AudioAssetLookup, now Clock) *Service {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{repo: repo, accounts: accounts, now: now, newID: NewProfileID, newSlug: NewPublicSlug}
+	return &Service{repo: repo, accounts: accounts, audioAssets: audioAssets, now: now, newID: NewProfileID, newSlug: NewPublicSlug}
 }
 
 func mapRepoErr(err error) error {
@@ -221,6 +244,8 @@ type RuleInput struct {
 
 	InterruptMode InterruptMode
 	Interruptible bool
+
+	Audio RuleAudio
 }
 
 func (s *Service) validateRuleInput(ctx context.Context, profileID string, in RuleInput) error {
@@ -236,6 +261,7 @@ func (s *Service) validateRuleInput(ctx context.Context, profileID string, in Ru
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
 		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,
 		InterruptMode: in.InterruptMode, Interruptible: in.Interruptible,
+		Audio: in.Audio,
 	}
 	if err := ValidateRuleFields(r); err != nil {
 		return err
@@ -248,6 +274,25 @@ func (s *Service) validateRuleInput(ctx context.Context, profileID string, in Ru
 		if !exists {
 			return ErrAccountNotFound
 		}
+	}
+	if in.Audio.SoundEnabled && s.audioAssets != nil {
+		exists, err := s.audioAssets.AudioAssetExists(ctx, in.Audio.SoundAssetID)
+		if err != nil {
+			return fmt.Errorf("%w: %s", ErrStorage, err)
+		}
+		if !exists {
+			return ErrAudioAssetNotFound
+		}
+	}
+	return nil
+}
+
+// ruleAudioAssetRefs returns the (zero-or-one-element) set of audio asset
+// IDs r's own audio configuration references - a helper shared by
+// CreateRule/ReplaceRule's own reference-tracking calls.
+func ruleAudioAssetRefs(a RuleAudio) []string {
+	if a.SoundEnabled && a.SoundAssetID != "" {
+		return []string{a.SoundAssetID}
 	}
 	return nil
 }
@@ -272,6 +317,11 @@ func (s *Service) CreateRule(ctx context.Context, profileID string, in RuleInput
 	if err != nil {
 		return Rule{}, mapRepoErr(err)
 	}
+	if s.audioAssets != nil {
+		if err := s.audioAssets.SetRuleAudioAssetRefs(ctx, saved.ID, ruleAudioAssetRefs(saved.Audio)); err != nil {
+			return Rule{}, fmt.Errorf("%w: %s", ErrStorage, err)
+		}
+	}
 	return saved, nil
 }
 
@@ -288,6 +338,7 @@ func ruleFromInput(id, profileID string, in RuleInput) Rule {
 		AnimationDurationMS: in.AnimationDurationMS, Providers: in.Providers, Accounts: in.Accounts,
 		AllowGrouping: in.AllowGrouping, GroupWindowMS: in.GroupWindowMS,
 		InterruptMode: in.InterruptMode, Interruptible: in.Interruptible,
+		Audio: in.Audio,
 	}
 }
 
@@ -330,13 +381,24 @@ func (s *Service) ReplaceRule(ctx context.Context, id string, in RuleInput) (Rul
 	if err != nil {
 		return Rule{}, mapRepoErr(err)
 	}
+	if s.audioAssets != nil {
+		if err := s.audioAssets.SetRuleAudioAssetRefs(ctx, saved.ID, ruleAudioAssetRefs(saved.Audio)); err != nil {
+			return Rule{}, fmt.Errorf("%w: %s", ErrStorage, err)
+		}
+	}
 	return saved, nil
 }
 
-// DeleteRule removes a rule and its filters.
+// DeleteRule removes a rule and its filters, and releases its durable
+// audio-asset reference (docs/alert-audio.md §5.5/§7).
 func (s *Service) DeleteRule(ctx context.Context, id string) error {
 	if err := s.repo.DeleteRule(ctx, id); err != nil {
 		return mapRepoErr(err)
+	}
+	if s.audioAssets != nil {
+		if err := s.audioAssets.ClearRuleAudioAssetRefs(ctx, id); err != nil {
+			return fmt.Errorf("%w: %s", ErrStorage, err)
+		}
 	}
 	return nil
 }

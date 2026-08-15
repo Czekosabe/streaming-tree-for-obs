@@ -199,7 +199,9 @@ const ruleColumns = `id, profile_id, name, enabled, event_type, priority, durati
 	minimum_quantity, maximum_quantity, currency, minimum_amount_micros, maximum_amount_micros, required_role,
 	show_platform, show_username, show_message, show_quantity, show_amount,
 	text_template, entry_animation, exit_animation, animation_duration_ms,
-	allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at`
+	allow_grouping, group_window_ms, interrupt_mode, interruptible,
+	sound_enabled, sound_asset_id, sound_volume, tts_enabled, tts_template, tts_volume,
+	created_at, updated_at`
 
 func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	var (
@@ -209,6 +211,9 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 		minQty, maxQty, minAmount, maxAmount                           sql.NullInt64
 		allowGrouping, interruptible                                   int
 		interruptMode                                                  string
+		soundEnabled, ttsEnabled                                       int
+		soundAssetID, ttsTemplate                                      string
+		soundVolume, ttsVolume                                         float64
 		createdAt, updatedAt                                           string
 	)
 	if err := scanner.Scan(
@@ -216,7 +221,9 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 		&minQty, &maxQty, &currency, &minAmount, &maxAmount, &requiredRole,
 		&showPlatform, &showUsername, &showMsg, &showQty, &showAmt,
 		&ru.TextTemplate, &entryAnim, &exitAnim, &ru.AnimationDurationMS,
-		&allowGrouping, &ru.GroupWindowMS, &interruptMode, &interruptible, &createdAt, &updatedAt,
+		&allowGrouping, &ru.GroupWindowMS, &interruptMode, &interruptible,
+		&soundEnabled, &soundAssetID, &soundVolume, &ttsEnabled, &ttsTemplate, &ttsVolume,
+		&createdAt, &updatedAt,
 	); err != nil {
 		return alerts.Rule{}, err
 	}
@@ -234,6 +241,10 @@ func scanRule(scanner interface{ Scan(...any) error }) (alerts.Rule, error) {
 	ru.AllowGrouping = allowGrouping != 0
 	ru.InterruptMode = alerts.InterruptMode(interruptMode)
 	ru.Interruptible = interruptible != 0
+	ru.Audio = alerts.RuleAudio{
+		SoundEnabled: soundEnabled != 0, SoundAssetID: soundAssetID, SoundVolume: soundVolume,
+		TTSEnabled: ttsEnabled != 0, TTSTemplate: ttsTemplate, TTSVolume: ttsVolume,
+	}
 	if minQty.Valid {
 		v := minQty.Int64
 		ru.MinimumQuantity = &v
@@ -342,14 +353,19 @@ func (r *AlertsRepository) CreateRule(ctx context.Context, ru alerts.Rule) (aler
 			minimum_quantity, maximum_quantity, currency, minimum_amount_micros, maximum_amount_micros, required_role,
 			show_platform, show_username, show_message, show_quantity, show_amount,
 			text_template, entry_animation, exit_animation, animation_duration_ms,
-			allow_grouping, group_window_ms, interrupt_mode, interruptible, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			allow_grouping, group_window_ms, interrupt_mode, interruptible,
+			sound_enabled, sound_asset_id, sound_volume, tts_enabled, tts_template, tts_volume,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ru.ID, ru.ProfileID, ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
 		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity),
 		ru.Currency, nullableInt64(ru.MinimumAmountMicros), nullableInt64(ru.MaximumAmountMicros), string(ru.RequiredRole),
 		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity), boolToInt(ru.ShowAmount),
 		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
-		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, nowText,
+		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible),
+		boolToInt(ru.Audio.SoundEnabled), ru.Audio.SoundAssetID, ru.Audio.SoundVolume,
+		boolToInt(ru.Audio.TTSEnabled), ru.Audio.TTSTemplate, ru.Audio.TTSVolume,
+		nowText, nowText,
 	); err != nil {
 		if isForeignKeyViolation(err) {
 			return alerts.Rule{}, alerts.ErrProfileNotFound
@@ -448,14 +464,19 @@ func (r *AlertsRepository) UpdateRule(ctx context.Context, ru alerts.Rule) (aler
 			minimum_quantity = ?, maximum_quantity = ?, currency = ?, minimum_amount_micros = ?, maximum_amount_micros = ?, required_role = ?,
 			show_platform = ?, show_username = ?, show_message = ?, show_quantity = ?, show_amount = ?,
 			text_template = ?, entry_animation = ?, exit_animation = ?, animation_duration_ms = ?,
-			allow_grouping = ?, group_window_ms = ?, interrupt_mode = ?, interruptible = ?, updated_at = ?
+			allow_grouping = ?, group_window_ms = ?, interrupt_mode = ?, interruptible = ?,
+			sound_enabled = ?, sound_asset_id = ?, sound_volume = ?, tts_enabled = ?, tts_template = ?, tts_volume = ?,
+			updated_at = ?
 		WHERE id = ?`,
 		ru.Name, boolToInt(ru.Enabled), string(ru.EventType), ru.Priority, ru.DurationMS,
 		nullableInt64(ru.MinimumQuantity), nullableInt64(ru.MaximumQuantity),
 		ru.Currency, nullableInt64(ru.MinimumAmountMicros), nullableInt64(ru.MaximumAmountMicros), string(ru.RequiredRole),
 		boolToInt(ru.ShowPlatform), boolToInt(ru.ShowUsername), boolToInt(ru.ShowMessage), boolToInt(ru.ShowQuantity), boolToInt(ru.ShowAmount),
 		ru.TextTemplate, string(ru.EntryAnimation), string(ru.ExitAnimation), ru.AnimationDurationMS,
-		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible), nowText, ru.ID,
+		boolToInt(ru.AllowGrouping), ru.GroupWindowMS, string(ru.InterruptMode), boolToInt(ru.Interruptible),
+		boolToInt(ru.Audio.SoundEnabled), ru.Audio.SoundAssetID, ru.Audio.SoundVolume,
+		boolToInt(ru.Audio.TTSEnabled), ru.Audio.TTSTemplate, ru.Audio.TTSVolume,
+		nowText, ru.ID,
 	)
 	if err != nil {
 		return alerts.Rule{}, alertsStorageErr("update alert rule", err)

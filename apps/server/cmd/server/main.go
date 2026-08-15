@@ -449,7 +449,7 @@ func run() error {
 	// internal/provider/twitch. Persisted profile/rule definitions live
 	// in their own migration; every queue/playback runtime value stays
 	// in memory only.
-	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, donationSourceService)
+	alertsDomainService := alerts.NewDomainService(sqlite.NewAlertsRepository(db.DB), accountService, donationSourceService, audioAssetService)
 	// visualDesignService (the same shared instance the chat-overlay
 	// wiring above already received) is reused here unchanged - one
 	// design per alert rule, in the same shared visual_designs table.
