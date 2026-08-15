@@ -23680,3 +23680,91 @@ A final, broader stale-claims search across the same living docs (not
 limited to TTS/audio), then the complete closing regression: every
 backend/frontend check plus all 19 integration scripts run in sequence
 from a clean state.
+
+## 2026-08-15 — Stage 17A closing regression
+
+### Status
+Completed. **Stage 17A (shared audio runtime + text-to-speech
+foundation) is now complete.** Stage 17B (persistent alert sound
+assets, per-alert-rule TTS, synchronization with alert playback, any
+audio extension of the Stage 14B template-asset format) remains
+planned, not started, exactly as scoped in `docs/audio-tts.md` §1
+before this stage began. Stage 17 as a whole is **not** complete.
+
+### Scope
+The final two governing-task steps for this stage: a broader stale-
+claims search across the same living docs touched by the previous
+documentation-pass commit (not limited to TTS/audio this time), and
+the complete closing regression - every backend and frontend check,
+followed by all 19 integration scripts run in the exact documented
+order, in one clean sequence, from a clean state.
+
+### Stale-claims search
+Searched `README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md`, `docs/obs-browser-source.md`,
+`docs/visual-template-packages.md`, `docs/visual-templates.md`,
+`docs/visual-designs.md`, `config/README.md` and
+`THIRD_PARTY_NOTICES.md` for stale integration-script counts ("18
+scripts"/"18 integration scripts") and "TTS unimplemented"/"Stage 17
+not started" phrasing beyond what the previous commit already fixed.
+Found none outside `docs/progress.md`'s own historical entries (six
+occurrences of "18 integration scripts" and similar, all inside
+journal entries dated before this stage - correctly left untouched,
+per this journal's own append-only/never-rewrite-history rule; they
+were true when written). `docs/visual-templates.md`'s and
+`docs/visual-designs.md`'s own TTS/audio mentions are scope-boundary
+statements (audio is not a template/visual-design layer kind) that
+remain accurate today - Stage 17A did not add an audio layer to either
+format. `config/README.md` and `THIRD_PARTY_NOTICES.md` needed no
+change (the latter was already updated for `go-ole` in the Stage 17A
+provider commit).
+
+### The complete closing regression
+Backend: `gofmt -l .` (clean), `go vet ./...` and `go vet -tags
+integration ./...` (clean), `go build ./...` and `go build -tags
+integration ./...` (clean), `go test ./...` (all packages pass).
+Frontend: `npm run typecheck`, `npm run lint`, `npm run i18n:check` (18
+namespaces, en/pl, no differences), `npm test` (92 files, 1289 tests,
+all passing - the jsdom `HTMLMediaElement.prototype.load`/`play`
+"Not implemented" console errors are expected noise from
+`AudioRenderer`'s own defensive `instanceof Promise` guard, not
+failures), `npm run build` (clean).
+
+All 19 integration scripts, in the exact order documented in
+README.md's own "Integration checks" list, run as one clean sequence
+from a freshly built state (no reuse of a script's own leftover temp
+directory across runs): `verify-persistence.mjs`,
+`verify-mediamtx-runtime.mjs`, `verify-ffmpeg-branches.mjs`,
+`verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`,
+`verify-twitch-engagement.mjs`, `verify-operator-chat.mjs`,
+`verify-chat-overlay.mjs`, `verify-twitch-outbound-chat.mjs`,
+`verify-chat-automation.mjs`, `verify-alerts.mjs`,
+`verify-alert-advanced-queue.mjs`, `verify-alert-designer.mjs`,
+`verify-chat-overlay-designer.mjs`, `verify-visual-templates.mjs`,
+`verify-visual-template-packages.mjs`, `verify-youtube-engagement.mjs`,
+`verify-streamelements-donations.mjs`, `verify-tts-audio.mjs` - all 19
+passed with no failures and no retries needed. This was
+`verify-tts-audio.mjs`'s third consecutive clean pass this stage
+(after the two required by governing task §79 while it was first being
+written).
+
+### Automated validation
+See "The complete closing regression" above - this commit's own
+validation *is* the regression.
+
+### Known limitations
+Same honest limitation recorded since the fake-provider commit: the
+real Windows SAPI provider is verified only by an earlier manual
+`curl` smoke test against this machine's actual installed voices, not
+by an automated integration script (voices are machine-dependent and
+cannot be made deterministic the way the fake provider is). No real
+OBS installation has been used to confirm audible playback, autoplay
+behavior, or mixer routing for the new audio Browser Source - recorded
+honestly in `docs/audio-tts.md` §18 and `docs/obs-browser-source.md`'s
+own new Stage 17A section, exactly like every other provider
+integration this project has shipped so far. Stage 17B is not started.
+
+### Next step
+Push this branch's commits to `origin/main` and verify the remote is
+in sync, then close out Stage 17A with a final report.
