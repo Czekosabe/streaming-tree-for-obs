@@ -17,11 +17,13 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/alerts"
+	audiort "github.com/streaming-tree/server/internal/audio"
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
+	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
@@ -38,6 +40,7 @@ import (
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/outboundchat"
 	"github.com/streaming-tree/server/internal/provider/streamelements"
+	"github.com/streaming-tree/server/internal/provider/tts"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -437,6 +440,34 @@ func run() error {
 		return err
 	}
 
+	// Stage 17A: the shared audio/text-to-speech runtime - the ONE
+	// Engagement Event Bus subscription for TTS-eligible events, exactly
+	// like alertsManager above. audioSettingsService persists only
+	// operator settings (docs/audio-tts.md §12); every queue/cooldown/
+	// playback value stays in memory only. audioSelfLookup mirrors
+	// internal/chatautomation's own self-message identity check exactly
+	// (a connected account's own ProviderUserID).
+	audioSettingsService := audiodomain.NewService(audiodomain.Options{
+		Repository: sqlite.NewAudioSettingsRepository(db.DB),
+	})
+	audioSelfLookup := func(connectedAccountID string) (string, bool) {
+		acc, err := accountService.GetAccount(context.Background(), connectedAccountID)
+		if err != nil {
+			return "", false
+		}
+		return acc.ProviderUserID, true
+	}
+	audioManager := audiort.NewManager(audiort.Options{
+		SettingsService:   audioSettingsService,
+		Bus:               eventBus,
+		Provider:          tts.NewSystemProvider(),
+		OperatorChatPrefs: operatorChatPrefsService,
+		SelfLookup:        audioSelfLookup,
+	})
+	if err := audioManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// an independent management surface from visual_designs above; a
 	// template is never linked to any specific alert rule or chat
@@ -514,6 +545,8 @@ func run() error {
 
 		DonationSources:    donationSourceService,
 		DonationConnectors: streamElementsEngagementManager,
+
+		Audio: audioManager,
 	})
 
 	server := &http.Server{
@@ -557,6 +590,7 @@ func run() error {
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
+		_ = audioManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -597,6 +631,7 @@ func run() error {
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
+		_ = audioManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

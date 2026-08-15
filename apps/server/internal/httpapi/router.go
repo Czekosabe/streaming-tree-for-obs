@@ -145,6 +145,11 @@ type Options struct {
 	// EngagementConnectors/YouTubeEngagementConnectors. Required alongside
 	// DonationSources for the donation-source routes to register.
 	DonationConnectors DonationEngagementConnectorService
+	// Audio serves the Stage 17A TTS/audio management API
+	// (/api/audio/...) and the public Browser Source audio output API
+	// (/api/public/audio/{slug}/...). When nil, none of those routes are
+	// registered.
+	Audio AudioService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -229,6 +234,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.DonationSources != nil && opts.DonationConnectors != nil {
 		registerDonationSourceRoutes(mux, logger, opts.DonationSources, opts.DonationConnectors)
+	}
+
+	if opts.Audio != nil {
+		registerAudioRoutes(mux, logger, opts.Audio)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

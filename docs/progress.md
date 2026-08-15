@@ -23079,3 +23079,193 @@ capabilities/voices/status, queue commands, Test Speak) and the public
 audio SSE/bytes/ack API, plus `cmd/server`/`cmd/testserver` wiring -
 this is where the real `SystemProvider` (Windows) or the non-Windows
 stub actually gets constructed and handed to `internal/audio.Manager`.
+
+## 2026-08-13 — feat(server): expose TTS and public audio APIs
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The Stage 17A HTTP surface: the management API
+(`/api/audio/...`), the public Browser Source audio output API
+(`/api/public/audio/{slug}/...`), a small facade added to
+`internal/audio.Manager` for the parts the HTTP layer needs that the
+runtime commit did not yet expose, and `cmd/server`/`cmd/testserver`
+wiring that actually constructs and starts the audio runtime for the
+first time.
+
+### Changes
+- `apps/server/internal/audio/public.go` (new) - `changeBroadcaster`
+  (a minimal "something changed, go re-read the current snapshot"
+  signal - deliberately not a queue of past states, since the public
+  audio protocol only ever needs the CURRENT item, never a history,
+  unlike `internal/alerts`'s own Revision log) plus
+  `Manager.SubscribeCurrentChanges`/`UnsubscribeCurrentChanges`,
+  `GetSettings`/`UpdateSettings`/`RotatePublicSlug`/
+  `CurrentPublicSlug` (settings CRUD passthrough that also refreshes
+  the Manager's own cached settings/queue-capacity, mirroring
+  `internal/alerts.Manager`'s own "write then reload runtime cache"
+  convention), `ProviderCapabilities`/`ListVoices` (nil-Provider-safe
+  passthroughs).
+- `apps/server/internal/audio/manager.go` - added a `changes
+  changeBroadcaster` field and a `notify()` call at every point the
+  current item's public-facing state can change (promote, synthesis
+  success/failure, skip, renderer connect/disconnect, every `Ack`
+  branch).
+- `apps/server/internal/audio/queue.go` - (already had `SetCapacity`/
+  `DiscardExpired` from the previous commit; unchanged here).
+- `apps/server/internal/audio/public_test.go` (new) - 7 new tests for
+  the facade (see "Automated validation").
+- `apps/server/internal/httpapi/audio.go` (new) - `AudioService`
+  interface (the narrow subset of `*audio.Manager` this layer needs);
+  `registerAudioRoutes`; management handlers for
+  `GET/PUT /api/audio/settings`, `GET /api/audio/capabilities`,
+  `GET /api/audio/voices`, `GET /api/audio/status`,
+  `GET /api/audio/pending` (a reasonable addition beyond the governing
+  task's own named list, needed for the future approve/reject UI -
+  noted explicitly here per that task's own "use current repository
+  patterns" allowance), `POST /api/audio/queue/skip-current`,
+  `POST /api/audio/queue/clear`,
+  `POST /api/audio/pending/{id}/approve`,
+  `POST /api/audio/pending/{id}/reject`,
+  `POST /api/audio/rotate-slug`, `POST /api/audio/test-speak`; public
+  handlers for `GET /api/public/audio/{slug}/stream` (SSE: `audio.reset`
+  once per connection carrying an ephemeral `rendererToken`,
+  `audio.current`/`audio.idle` on every change plus periodic keepalive
+  comments, `audio.gap` for an unknown slug/stream-limit/renderer
+  failure), `GET /api/public/audio/{slug}/bytes/{token}` (serves the
+  current item's bytes via `http.ServeContent` for Range support - the
+  same stdlib mechanism `visualasset`'s own public route uses, per
+  docs/audio-tts.md §14's own note, even though this route is
+  hand-written against an in-memory buffer, never a file), and
+  `POST /api/public/audio/{slug}/ack`; `writeAudioError`'s funnel
+  (`ErrDisabled`→409, `ErrEmptyText`/`tts.ErrVoiceNotFound`→422,
+  `ErrQueueFull`→429, `tts.ErrUnavailable`→503,
+  `domain.ErrValidation`→422, default→500 - never a raw internal error
+  string).
+- `apps/server/internal/httpapi/router.go` - added `Options.Audio
+  AudioService` (nil-guarded, matching every other optional service)
+  and its registration call, placed after `DonationConnectors` and
+  before the `/api/` catch-all per the established ordering.
+- `apps/server/internal/httpapi/audio_test.go` (new) - 21 new tests
+  against a real `internal/audio.Manager` (backed by real SQLite and a
+  small local fake `tts.Provider`), mirroring
+  `internal/httpapi/alerts_test.go`'s own "real manager through the
+  real router" convention rather than a mocked service.
+- `apps/server/cmd/server/main.go` - constructs
+  `audiodomain.NewService` (backed by `sqlite.NewAudioSettingsRepository`),
+  an `audioSelfLookup` closure mirroring
+  `internal/chatautomation`'s own self-message identity check exactly
+  (`accountService.GetAccount(...).ProviderUserID`), and
+  `audiort.NewManager` with the real `tts.NewSystemProvider()` and
+  `operatorChatPrefsService` wired in; starts it alongside
+  `alertsManager`; adds `Audio: audioManager` to the router `Options`;
+  adds `audioManager.Shutdown` to both shutdown-sequence arms next to
+  `alertsManager.Shutdown`.
+- `apps/server/cmd/testserver/main.go` - identical wiring, EXCEPT
+  `Provider` is left nil (see "Technical decisions"); updated the
+  file's own top-of-file doc comment, which previously claimed the
+  integration binary "differs from the real server in exactly one
+  way," to acknowledge this second difference honestly.
+
+### Technical decisions
+- **`cmd/testserver` constructs the audio Manager with no
+  `tts.Provider`, not the real Windows `SystemProvider`** - governing
+  task §71 explicitly forbids making CI/repository automated tests
+  depend on one particular installed voice name; the Windows SAPI
+  provider is real, tested, and working on this development machine
+  (previous commit), but an automated integration script must never
+  silently depend on that fact being true wherever it happens to run.
+  The 19th integration script's own deterministic, integration-build-
+  only fake `tts.Provider` (governing task §66/§67 - still pending,
+  see "Known limitations") will be wired into `cmd/testserver`
+  separately when it exists, exactly the way this stage's own contract
+  describes, rather than reusing the real Windows provider by
+  convenience now.
+- **The public SSE stream re-emits `audio.current`/`audio.idle` via a
+  change-notification channel it polls in its own `select` loop,
+  rather than alerts' general append-only Revision log with replay-by-
+  sequence** - deliberately simpler, justified because the public
+  audio protocol only ever needs the CURRENT item (docs/audio-tts.md
+  §14's own explicit "never the future queue," and there is only ever
+  one meaningful past state to show: what is playing right now).
+  `Last-Event-ID`/`?after=`-style replay was judged unnecessary
+  complexity for a surface with no historical events to replay -
+  matches this task's own repeated "avoid overcomplication in 17A"
+  instruction.
+- **Connecting to the public SSE stream immediately establishes a
+  renderer lease (`ConnectRenderer`), and disconnecting
+  (`defer DisconnectRenderer`) releases it** - directly implements
+  docs/audio-tts.md §15's own "connecting to the SSE stream
+  establishes a new... session token" sentence; the renderer token is
+  sent to the client exactly once, in the initial `audio.reset` event
+  payload, kept only in the browser's own JS memory (never logged,
+  never persisted, matching every other ephemeral-session-token
+  convention already established in this task).
+- **`GET .../bytes/{token}` re-derives the current item id from a
+  fresh `PublicCurrentSnapshot()` call rather than taking it from the
+  URL** - keeps the URL to a single opaque segment (matching
+  docs/audio-tts.md §14's own `{token}`-only path shape) while still
+  reusing `Manager.CurrentAudioBytes`'s existing double-check
+  (item id AND token must both match the live current item) - the
+  token alone is already what authorizes the fetch; the item id
+  lookup is an internal implementation detail of that existing method,
+  not a second secret the client must supply.
+- **`GET /api/audio/pending` was added even though the governing
+  task's own §20 route list only explicitly named the approve/reject
+  actions** - a management UI cannot render an approve/reject
+  affordance without first knowing what is pending; this fits the
+  task's own "exact route names should follow current repository
+  patterns" allowance rather than inventing an undocumented shape.
+
+### Automated validation
+- `gofmt -l` - clean.
+- `go vet ./...` - clean.
+- `go build ./...` (native Windows) - clean.
+- `GOOS=linux GOARCH=amd64 go build ./...` /
+  `GOOS=darwin GOARCH=arm64 go build ./...` - both clean.
+- `go build -tags integration ./cmd/testserver/...` - clean, confirming
+  `*audio.Manager` satisfies `httpapi.AudioService` on every platform
+  (the Go compiler itself checks this at the `Audio: audioManager`
+  assignment site - no separate interface-satisfaction test needed).
+- `go test ./...` - full suite passes, including:
+  - `internal/audio`: 7 new facade tests -
+    `UpdateSettings`/`RotatePublicSlug` refreshing the Manager's own
+    cache, `ProviderCapabilities`/`ListVoices` against a nil Provider,
+    `ListVoices` proxying to a real fake provider, and
+    `SubscribeCurrentChanges` firing on promotion and its channel
+    closing on `UnsubscribeCurrentChanges`.
+  - `internal/httpapi`: 21 new tests against a real `audio.Manager`
+    through the real router (never a mocked `AudioService`) - settings
+    GET-returns-defaults/PUT-round-trips/422-on-invalid-provider-mode/
+    400-on-unknown-field(including a deliberately attempted
+    `publicSlug` smuggling attempt)/405 with the correct `Allow`
+    header; capabilities reflecting a real provider's
+    availability/reason; voices; status; Test Speak
+    enqueuing-bypassing-manual-approval and 409-when-disabled;
+    approve/reject 404 for an unknown id; skip-current/clear always
+    200; rotate-slug actually changing the slug; the public stream's
+    unknown-slug `audio.gap`, known-slug `audio.reset`-then-`audio.idle`
+    with an explicit assertion that no internal `"queue"`/`"settings"`
+    key ever leaks into the payload; bytes 404 while idle; ack 404 for
+    an unknown slug, 422 for an invalid kind, and 409 with no active
+    renderer session; and 405s for both public routes.
+- The exact object-reference-property (`PutPropertyRef`) and
+  WAV-header bugs found and fixed in the previous commit remain fixed
+  and covered - unaffected by this commit's changes, re-confirmed by
+  this same `go test ./...` run.
+
+### Known limitations
+No frontend, no 19th integration script, and the integration-build
+binary (`cmd/testserver`) currently has no TTS provider at all (real
+synthesis is always `tts.ErrUnavailable` there) until the dedicated
+deterministic fake `tts.Provider` for that binary is built. Stage 17A
+is not complete; Stage 17 as a whole is not complete. The real product
+has never yet been started end-to-end with this wiring in a live
+manual smoke test (`go run ./cmd/server` + a browser) - only the
+automated Go test suite has exercised it so far.
+
+### Next step
+Frontend: TTS/audio Zod schemas, API client, and React Query hooks -
+the first frontend piece for Stage 17A.

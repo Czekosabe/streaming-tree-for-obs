@@ -3,10 +3,14 @@
 // Command testserver is a build-tag-gated twin of cmd/server, used only by
 // scripts/verify-ffmpeg-branches.mjs.
 //
-// It differs from the real server in exactly one way: the destination
+// It differs from the real server in two ways: the destination
 // credential store is internal/secrets/secretstest's in-memory fake instead of
-// the real OS keychain (internal/secrets.NewKeyringStore). Everything else -
-// routing, MediaMTX supervision, branch supervision, SQLite - is identical.
+// the real OS keychain (internal/secrets.NewKeyringStore), and the Stage 17A
+// audio/TTS runtime is built with no Provider (real synthesis always safely
+// unavailable here - never a dependency on this build machine's installed
+// SAPI voices; see the audio wiring's own comment below for why). Everything
+// else - routing, MediaMTX supervision, branch supervision, SQLite - is
+// identical.
 //
 // The "integration" build tag is the safety boundary the task requires: this
 // file is invisible to `go build ./...`, `go vet ./...`, `go test ./...` and a
@@ -29,11 +33,13 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/alerts"
+	audiort "github.com/streaming-tree/server/internal/audio"
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
 	"github.com/streaming-tree/server/internal/domain/account"
+	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
@@ -395,6 +401,38 @@ func run() error {
 		return err
 	}
 
+	// Stage 17A: the shared audio/text-to-speech runtime - identical
+	// wiring to cmd/server, EXCEPT Provider is left nil here: the real
+	// Windows SAPI provider must never be a dependency of an automated
+	// integration script (governing task §71's own "never make CI/
+	// repository tests depend on one particular installed voice
+	// name"). The 19th integration script's own deterministic
+	// integration-build-only fake tts.Provider is wired in separately
+	// (see scripts/verify-tts-audio.mjs and its own setup) rather than
+	// here, so this binary's default behavior for every OTHER
+	// integration script stays "TTS synthesis always safely
+	// unavailable," never a flaky dependency on this machine's SAPI
+	// installation.
+	audioSettingsService := audiodomain.NewService(audiodomain.Options{
+		Repository: sqlite.NewAudioSettingsRepository(db.DB),
+	})
+	audioSelfLookup := func(connectedAccountID string) (string, bool) {
+		acc, err := accountService.GetAccount(context.Background(), connectedAccountID)
+		if err != nil {
+			return "", false
+		}
+		return acc.ProviderUserID, true
+	}
+	audioManager := audiort.NewManager(audiort.Options{
+		SettingsService:   audioSettingsService,
+		Bus:               eventBus,
+		OperatorChatPrefs: operatorChatPrefsService,
+		SelfLookup:        audioSelfLookup,
+	})
+	if err := audioManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// identical wiring to cmd/server, see its own comment.
 	visualTemplateService, err := visualtemplate.NewService(sqlite.NewVisualTemplateRepository(db.DB), visualtemplate.DefaultBuiltins(), nil)
@@ -457,6 +495,8 @@ func run() error {
 
 		DonationSources:    donationSourceService,
 		DonationConnectors: streamElementsEngagementManager,
+
+		Audio: audioManager,
 	})
 
 	server := &http.Server{
@@ -495,6 +535,7 @@ func run() error {
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
+		_ = audioManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -518,6 +559,7 @@ func run() error {
 		_ = outboundChatManager.Shutdown(shutdownCtx)
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
+		_ = audioManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

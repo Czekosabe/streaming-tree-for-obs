@@ -182,6 +182,8 @@ type Manager struct {
 	inputGap   atomic.Bool
 	subscribed atomic.Bool
 
+	changes changeBroadcaster
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -343,6 +345,7 @@ func (m *Manager) promoteLocked(it Item) {
 	m.currentSynthCancel = cancel
 	m.wg.Add(1)
 	go m.synthesize(ctx, it)
+	m.changes.notify()
 }
 
 func (m *Manager) synthesize(ctx context.Context, it Item) {
@@ -366,6 +369,7 @@ func (m *Manager) synthesize(ctx context.Context, it Item) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.changes.notify()
 	m.currentSynthCancel = nil
 
 	if m.current == nil || m.current.item.ID != it.ID {
@@ -690,6 +694,7 @@ func (m *Manager) SkipCurrent() bool {
 	}
 	m.queue.RecordManualSkip()
 	m.current = nil
+	m.changes.notify()
 	return true
 }
 
@@ -733,6 +738,7 @@ func (m *Manager) ConnectRenderer() (string, error) {
 	if m.current != nil && m.current.playbackState == playbackStateWaitingForRenderer {
 		m.current.playbackState = playbackStateReady
 	}
+	m.changes.notify()
 	return token, nil
 }
 
@@ -750,6 +756,7 @@ func (m *Manager) DisconnectRenderer(token string) {
 		return
 	}
 	m.rendererSession = nil
+	defer m.changes.notify()
 	if m.current == nil {
 		return
 	}
@@ -799,6 +806,7 @@ func (m *Manager) Ack(token, itemID string, kind AckKind) error {
 	default:
 		return ErrAckRejected
 	}
+	m.changes.notify()
 	return nil
 }
 
