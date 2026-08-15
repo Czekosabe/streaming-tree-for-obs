@@ -1,16 +1,18 @@
 //go:build integration
 
-// Command testserver is a build-tag-gated twin of cmd/server, used only by
-// scripts/verify-ffmpeg-branches.mjs.
+// Command testserver is a build-tag-gated twin of cmd/server, used by
+// every scripts/verify-*.mjs integration script (19 as of Stage 17A) -
+// not only scripts/verify-ffmpeg-branches.mjs, which first introduced it.
 //
 // It differs from the real server in two ways: the destination
 // credential store is internal/secrets/secretstest's in-memory fake instead of
 // the real OS keychain (internal/secrets.NewKeyringStore), and the Stage 17A
-// audio/TTS runtime is built with no Provider (real synthesis always safely
-// unavailable here - never a dependency on this build machine's installed
-// SAPI voices; see the audio wiring's own comment below for why). Everything
-// else - routing, MediaMTX supervision, branch supervision, SQLite - is
-// identical.
+// audio/TTS runtime is wired to the integration-build-only
+// tts.FakeProvider (internal/provider/tts/fake.go) instead of the real
+// Windows SAPI provider - never a dependency on this build machine's
+// installed SAPI voices; see audio_testonly.go for the fake's own HTTP
+// control surface. Everything else - routing, MediaMTX supervision,
+// branch supervision, SQLite - is identical.
 //
 // The "integration" build tag is the safety boundary the task requires: this
 // file is invisible to `go build ./...`, `go vet ./...`, `go test ./...` and a
@@ -56,6 +58,7 @@ import (
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/outboundchat"
 	"github.com/streaming-tree/server/internal/provider/streamelements"
+	"github.com/streaming-tree/server/internal/provider/tts"
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
@@ -402,17 +405,14 @@ func run() error {
 	}
 
 	// Stage 17A: the shared audio/text-to-speech runtime - identical
-	// wiring to cmd/server, EXCEPT Provider is left nil here: the real
-	// Windows SAPI provider must never be a dependency of an automated
-	// integration script (governing task §71's own "never make CI/
-	// repository tests depend on one particular installed voice
-	// name"). The 19th integration script's own deterministic
-	// integration-build-only fake tts.Provider is wired in separately
-	// (see scripts/verify-tts-audio.mjs and its own setup) rather than
-	// here, so this binary's default behavior for every OTHER
-	// integration script stays "TTS synthesis always safely
-	// unavailable," never a flaky dependency on this machine's SAPI
-	// installation.
+	// wiring to cmd/server, EXCEPT Provider is the integration-build-
+	// only tts.FakeProvider (internal/provider/tts/fake.go, itself
+	// `//go:build integration`), never the real Windows SAPI provider:
+	// an automated integration script must never depend on one
+	// particular installed voice name (governing task §71). The 19th
+	// integration script controls this fake's behavior (unavailable,
+	// fail-next, oversize-next, synthesis delay) through the
+	// integration-only control routes registered below.
 	audioSettingsService := audiodomain.NewService(audiodomain.Options{
 		Repository: sqlite.NewAudioSettingsRepository(db.DB),
 	})
@@ -423,9 +423,11 @@ func run() error {
 		}
 		return acc.ProviderUserID, true
 	}
+	audioFakeProvider := tts.NewFakeProvider()
 	audioManager := audiort.NewManager(audiort.Options{
 		SettingsService:   audioSettingsService,
 		Bus:               eventBus,
+		Provider:          audioFakeProvider,
 		OperatorChatPrefs: operatorChatPrefsService,
 		SelfLookup:        audioSelfLookup,
 	})
@@ -498,6 +500,9 @@ func run() error {
 
 		Audio: audioManager,
 	})
+	// Test-only fake-TTS-provider control routes - see
+	// audio_testonly.go's own doc comment; never present in cmd/server.
+	handler = wrapWithAudioTestonlyRoutes(handler, audioFakeProvider)
 
 	server := &http.Server{
 		Addr:              cfg.Address(),

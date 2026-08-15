@@ -23460,3 +23460,130 @@ complete; Stage 17 as a whole is not complete.
 Backend: the integration-build-only deterministic fake `tts.Provider`
 (WAV/PCM, no ffmpeg, no network) and the 19th integration script,
 `scripts/verify-tts-audio.mjs`.
+
+## 2026-08-15 — test(server): verify TTS and audio locally
+
+### Status
+Completed (this commit's scope only - Stage 17A as a whole remains
+incomplete; see "Known limitations").
+
+### Scope
+The integration-build-only deterministic fake `tts.Provider`, a small
+test-only HTTP control surface for it inside `cmd/testserver`, and the
+19th integration script, `scripts/verify-tts-audio.mjs` - the first
+end-to-end, real-process verification of the shared audio queue, the
+TTS management API, and the public Browser Source audio stream,
+without depending on ffmpeg, the network, or whatever OS voices happen
+to be installed on the machine running it.
+
+### Changes
+- `apps/server/internal/provider/tts/fake.go` (new, `//go:build
+  integration`) - `FakeProvider`: two fixed deterministic voices,
+  `Capabilities`/`SetAvailable`, `ListVoices`, and `Synthesize`
+  generating a small, valid, fully deterministic WAV/PCM buffer
+  in-process (duration and byte size are exact functions of input text
+  length). Runtime control knobs as plain methods: `FailNextSynthesis`,
+  `OversizeNextSynthesis`, `SetSynthesisDelay` (each a one-shot flag,
+  respects `ctx` cancellation while waiting), `SynthesizeCallCount`.
+  `wrapFakePCMAsWAV` is a deliberate duplicate of `windows.go`'s own
+  `wrapPCMAsWAV` under its own name, since both files compile together
+  in a Windows `-tags integration` build and a shared name would
+  collide.
+- `apps/server/internal/provider/tts/fake_test.go` (new, `//go:build
+  integration`) - 12 tests covering capabilities, voice listing,
+  deterministic/duration-scaling synthesis, unknown-voice rejection,
+  one-shot failure/oversize isolation, delay cancellation, and call
+  counting.
+- `apps/server/cmd/testserver/audio_testonly.go` (new, `//go:build
+  integration`) - `wrapWithAudioTestonlyRoutes` wraps the real router
+  with `/api/testonly/tts/{available,fail-next,oversize-next,delay}`
+  (POST) and `/api/testonly/tts/synthesize-calls` (GET), falling
+  through to the real router for everything else. Unlike the
+  StreamElements/YouTube fakes (separate processes with their own
+  `/control/*` API), `tts.FakeProvider` lives inside the same
+  `testserver` binary as the code under test, so the integration
+  script needs an HTTP surface to control it at all.
+- `apps/server/cmd/testserver/main.go` - wires `tts.NewFakeProvider()`
+  into the audio runtime's `Provider` option and layers
+  `wrapWithAudioTestonlyRoutes` around the handler; corrected two
+  stale doc-comment claims ("no Provider" and "used only by
+  verify-ffmpeg-branches.mjs") now that a real fake provider exists and
+  19 scripts depend on this binary.
+- `scripts/verify-tts-audio.mjs` (new, ~890 lines) - the 19th
+  integration script. Builds `fakestreamelements` and `testserver`;
+  starts a real backend against a real fake StreamElements Astro
+  server (`STREAMING_TREE_TEST_STREAMELEMENTS_WS_BASE_URL`) as the one
+  real Event-Bus-triggering mechanism (donations are already
+  supporter-family-eligible for TTS, and reusing the existing fake
+  cost 3 ports/~150 lines versus a full Twitch EventSub/OAuth harness's
+  4 ports/~250 lines). 34 numbered steps: defaults, capabilities/
+  voices, settings-persist-across-restart, queue-does-NOT-persist,
+  Test Speak (pipeline, empty-result rejection, capacity bound),
+  real-donation source/currency/threshold filtering through the real
+  Event Bus, manual-approval pending/approve/reject (proving a
+  rejected item is never synthesized), just-in-time promotion
+  requiring a connected renderer, generated-URL leaks nothing plus a
+  real WAV byte check, playback ack lifecycle (including stale/
+  duplicate/wrong-token rejection and session supersession), renderer
+  disconnect while playing, skip-current cancelling an in-flight
+  delayed synthesis, clear-queue never touching current, forced
+  synthesis failure/oversize isolating one item, provider-unavailable
+  and unknown-voice honesty, unknown-slug `audio.gap`, route
+  strictness, slug rotation, shutdown cancelling in-flight synthesis,
+  a PII/secret scan, and a raw SQLite byte scan proving no spoken text
+  is ever persisted. Scenarios already exhaustively covered by Go unit
+  tests (synthetic-event ignoring, per-user/anonymous cooldown
+  identity, item expiry, every preprocessing step, every settings
+  validation bound) are named in the script's own header and
+  deliberately not re-proven here. Run twice consecutively; both runs
+  passed cleanly with no flakes.
+
+### Bugs found and fixed while writing this script
+- The fake Astro server's real `/control/push-tip` returns `204 No
+  Content`, not `200` - the script's own first draft asserted the
+  wrong status.
+- `AudioStatus` counters (`totalEnqueued` etc.) are lifetime counters
+  that never reset on `queue/clear`; a scenario run later in the same
+  script execution cannot assert them equal to zero. Fixed by
+  capturing a baseline immediately before each action and asserting
+  against the baseline instead of an absolute value.
+- A stale/duplicate `audio.current` SSE frame, left in a long-lived
+  stream's unread buffer by the manager's own re-emission on
+  `Ack(playback_started)`, was matched by a predicate that only
+  checked the event name - returning data from an already-ended
+  previous item instead of the genuinely new promotion. Fixed by also
+  requiring the new frame's `itemId` to differ from the previously
+  observed one. This is a real, narrow gap in the manager's change-
+  notification design (it does not suppress no-op re-emissions), not
+  a bug in the manager's actual behavior - documented here rather than
+  changed, since the public SSE contract itself (§the public payload
+  shape) was never violated and a long-lived consumer that dedupes on
+  `itemId` handles it correctly.
+
+### Automated validation
+- `gofmt -l .` - clean.
+- `go vet ./...` and `go vet -tags integration ./...` - clean.
+- `go build ./...` and `go build -tags integration ./...` - clean.
+- `go test ./...` - full suite passes (unchanged packages plus
+  `internal/provider/tts`, which now also builds under the default
+  tag with the fake file excluded).
+- `go test -tags integration ./internal/provider/tts/... -run
+  TestFakeProvider` - all 12 new tests pass.
+- `node scripts/verify-tts-audio.mjs` - run twice consecutively, all
+  34 steps pass both times.
+
+### Known limitations
+This commit only verifies the fake-provider/local path; the real
+Windows SAPI provider is still only verified by its own earlier manual
+`curl` smoke test (previous entries), not by an automated integration
+script (SAPI voices are machine-dependent and cannot be made
+deterministic the way the fake provider is). Stage 17A is not yet
+fully closed - the remaining governing-task items (a documentation
+pass, a final stale-claims search, and the complete closing regression
+across all 19 integration scripts in sequence) have not run yet.
+
+### Next step
+Documentation pass across README.md, docs/project-overview.md,
+docs/engagement-architecture.md, docs/obs-browser-source.md,
+docs/visual-template-packages.md, and config/README.md, followed by a
+final stale-claims search and the complete closing regression.
