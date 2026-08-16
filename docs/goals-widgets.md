@@ -434,10 +434,20 @@ does not touch `Baseline`/`Currency` leaves `Current` untouched.
 ## 10. Event Bus subscription semantics
 
 The goals manager (`internal/goals.Manager`) subscribes to the Event Bus
-with `Subscribe(after=0)` - **current position, no replay** (confirmed
-directly in `internal/engagement/bus.go`: `after > 0` triggers replay;
-`after == 0` delivers only newly published events from that moment
-forward). There is no historical catch-up in Stage 18A.
+at **current position, zero replay** - by snapshotting the bus's own
+`NewestSequence` first and calling `Subscribe(snap.NewestSequence)`,
+exactly mirroring `internal/alerts.Manager`'s own identical reconnect
+logic. This is not a stylistic choice: `Bus.Subscribe(after)` calls
+`ring.after(after)` **unconditionally**, and `ring.after(0)` returns
+every retained event with `Sequence > 0` - i.e. everything still in the
+ring - so `Subscribe(0)` actually **replays retained history**, the
+opposite of "current position." This was confirmed the hard way, by a
+manager test that published an event before the manager ever
+subscribed and asserted it was never applied - the test genuinely
+failed against a first implementation that called `Subscribe(0)`
+directly, which is exactly why this document now states the mechanism precisely
+rather than the shorthand "Subscribe(after=0)" an earlier draft of this
+section used. There is no historical catch-up in Stage 18A.
 
 This matters for two concrete, tested scenarios:
 

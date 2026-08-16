@@ -25894,3 +25894,85 @@ same milestone.
 position (docs/goals-widgets.md §10), map `engagement.Event.Type` to
 `goals.Type`, apply contributions through `Service.ApplyContribution`,
 and enforce the Synthetic-event and current-position-only guarantees.
+
+## 2026-08-16 — feat(server): accumulate normalized goal contributions
+
+### Status
+Completed.
+
+### Scope
+The Stage 18A runtime (docs/goals-widgets.md §3-§16, §26): `internal/
+goals.Manager`, the ONE Engagement Event Bus subscription that turns real
+normalized events into atomic contributions against the previous
+commit's own persisted goals, and a periodic dedupe-ledger prune. No
+HTTP surface yet - that is the next commit.
+
+### Real bug found and fixed by this commit's own tests
+`docs/goals-widgets.md` §10, as originally written, said the manager
+would subscribe with `Subscribe(after=0)`, describing that as "current
+position, no replay." That is wrong: `internal/engagement/bus.go`'s
+`Bus.Subscribe(after)` calls `ring.after(after)` **unconditionally**,
+and `ring.after(0)` returns every retained event with `Sequence > 0` -
+i.e. everything still in the ring - so `Subscribe(0)` actually *replays*
+retained history, the opposite of the intended semantics. A test written
+for this exact scenario (`TestManagerRestartNeverReplaysRetainedEvents`:
+create a goal, publish an event, then start the manager and confirm that
+event is never applied) failed against the first implementation, exactly
+as intended - proving the bug before it ever shipped. Fixed by
+snapshotting the bus's own `NewestSequence` first and calling
+`Subscribe(snap.NewestSequence)`, mirroring `internal/alerts.Manager`'s
+own already-correct reconnect logic exactly (which does the identical
+snapshot-then-subscribe dance for the identical reason - `internal/
+alerts` never needed `Subscribe(0)` to mean anything special because it
+never assumed it did). `docs/goals-widgets.md` §10 corrected to describe
+the real mechanism and record how the error was caught, since this is a
+same-milestone contract refinement discovered by the very tests written
+against it, not a historical claim that was ever true.
+
+### Changes
+- `apps/server/internal/goals/manager.go` (new) - `Manager`/
+  `ManagerOptions`, `NewManager`/`Start`/`Shutdown`/`Subscribed`
+  (mirroring `internal/alerts.Manager`'s identical lifecycle shape), the
+  snapshot-then-subscribe reconnect loop, and a periodic (6-hourly)
+  dedupe-ledger prune against the 30-day retention bound (docs/goals-
+  widgets.md §11.5).
+- `apps/server/internal/goals/contribute.go` (new) - `typeMapping`
+  (the one place `engagement.Type` is translated to `goals.Type`),
+  `handleEvent` (Synthetic check first, then type/contribution lookup,
+  dedupe-identity computation, and per-goal matching: enabled, kind,
+  provider filter, account filter, currency match for donations),
+  `dedupeIdentity` (`ProviderEventID` when set, `DedupeKey` otherwise),
+  `providerMatches`/`accountMatches`/`contributionAmount`.
+- `docs/goals-widgets.md` §10 - corrected as described above.
+- 12 new tests in `apps/server/internal/goals/manager_test.go` (a local
+  `fakeDomainRepo`/`fakeClock`, mirroring `internal/alerts`'s own
+  identical test-double convention - never sharing a fake across package
+  boundaries): real follow increments a goal; duplicate delivery never
+  double-counts; an irrelevant event (chat message) never contributes;
+  a synthetic event is ignored (proven by publishing a real event
+  immediately after and confirming only it counted); two independently
+  configured goals both increment from one event; a disabled goal never
+  increments; provider and account filters each exclude a non-matching
+  event; a cross-currency donation never contributes to a differently-
+  currencied goal; Bits contributes its own exact quantity; a gift batch
+  plus its five individual gift-recipient events contribute exactly 5,
+  never 10 and never 0 (the no-double-count proof, end to end through
+  the real Bus); and the restart/current-position test described above.
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go vet -tags integration ./...`,
+`go build ./...`, `go build -tags integration ./...` - all clean.
+`go test ./...` - full suite passes, including all 12 new manager tests
+(after the Subscribe fix) and the previous commit's 51 persistence
+tests, unaffected.
+
+### Known limitations
+No HTTP surface yet (no `/api/goals`/`/api/widget-profiles` routes, no
+public widget route) and no frontend - both are later commits in this
+same milestone.
+
+### Next step
+`feat(server): expose goal management APIs` - `/api/goals` and
+`/api/widget-profiles` HTTP handlers (docs/goals-widgets.md §24), wired
+into `cmd/server/main.go`/`cmd/testserver/main.go` alongside the
+existing domain services.
