@@ -29,6 +29,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
+	domaingoals "github.com/streaming-tree/server/internal/domain/goals"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
@@ -37,6 +38,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
+	goalsrt "github.com/streaming-tree/server/internal/goals"
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/outboundchat"
@@ -498,6 +500,25 @@ func run() error {
 		return err
 	}
 
+	// Stage 18A: the persistent goals/counters foundation
+	// (docs/goals-widgets.md). goalsDomainService owns configuration/
+	// accumulated-state persistence; goalsManager is the ONE Engagement
+	// Event Bus subscription that applies real contributions to it -
+	// never a second accumulation engine, never a direct call into any
+	// provider package.
+	goalsDomainService := domaingoals.NewService(
+		sqlite.NewGoalsRepository(db.DB),
+		goalsrt.SourceLookupAdapter{Accounts: accountService, DonationSources: donationSourceService},
+		nil,
+	)
+	goalsManager := goalsrt.NewManager(goalsrt.ManagerOptions{
+		DomainService: goalsDomainService,
+		Bus:           eventBus,
+	})
+	if err := goalsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// an independent management surface from visual_designs above; a
 	// template is never linked to any specific alert rule or chat
@@ -579,6 +600,8 @@ func run() error {
 
 		Audio:       audioManager,
 		AudioAssets: audioAssetService,
+
+		Goals: goalsDomainService,
 	})
 
 	server := &http.Server{
@@ -623,6 +646,7 @@ func run() error {
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
+		_ = goalsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -664,6 +688,7 @@ func run() error {
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
+		_ = goalsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

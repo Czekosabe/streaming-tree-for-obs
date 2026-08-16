@@ -47,6 +47,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
+	domaingoals "github.com/streaming-tree/server/internal/domain/goals"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
@@ -55,6 +56,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
 	bus "github.com/streaming-tree/server/internal/engagement"
+	goalsrt "github.com/streaming-tree/server/internal/goals"
 	"github.com/streaming-tree/server/internal/httpapi"
 	oc "github.com/streaming-tree/server/internal/operatorchat"
 	"github.com/streaming-tree/server/internal/outboundchat"
@@ -461,6 +463,22 @@ func run() error {
 		return err
 	}
 
+	// Stage 18A: the persistent goals/counters foundation
+	// (docs/goals-widgets.md) - mirrors cmd/server/main.go's own
+	// identical wiring exactly.
+	goalsDomainService := domaingoals.NewService(
+		sqlite.NewGoalsRepository(db.DB),
+		goalsrt.SourceLookupAdapter{Accounts: accountService, DonationSources: donationSourceService},
+		nil,
+	)
+	goalsManager := goalsrt.NewManager(goalsrt.ManagerOptions{
+		DomainService: goalsDomainService,
+		Bus:           eventBus,
+	})
+	if err := goalsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// identical wiring to cmd/server, see its own comment.
 	visualTemplateService, err := visualtemplate.NewService(sqlite.NewVisualTemplateRepository(db.DB), visualtemplate.DefaultBuiltins(), nil)
@@ -527,6 +545,8 @@ func run() error {
 
 		Audio:       audioManager,
 		AudioAssets: audioAssetService,
+
+		Goals: goalsDomainService,
 	})
 	// Test-only fake-TTS-provider control routes - see
 	// audio_testonly.go's own doc comment; never present in cmd/server.
@@ -569,6 +589,7 @@ func run() error {
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
+		_ = goalsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -593,6 +614,7 @@ func run() error {
 		_ = chatAutomationManager.Shutdown(shutdownCtx)
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
+		_ = goalsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

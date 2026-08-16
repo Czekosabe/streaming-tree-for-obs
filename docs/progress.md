@@ -25976,3 +25976,67 @@ same milestone.
 `/api/widget-profiles` HTTP handlers (docs/goals-widgets.md §24), wired
 into `cmd/server/main.go`/`cmd/testserver/main.go` alongside the
 existing domain services.
+
+## 2026-08-16 — feat(server): expose goal management APIs
+
+### Status
+Completed.
+
+### Scope
+The Stage 18A management HTTP surface (docs/goals-widgets.md §24):
+`/api/goals/...` and `/api/widget-profiles/...`, wired into both
+`cmd/server/main.go` and `cmd/testserver/main.go`. No public widget
+route yet - that is the next commit.
+
+### Changes
+- `apps/server/internal/httpapi/goals.go` (new) - `GoalsService` (the
+  narrow interface `*domain/goals.Service` satisfies directly, exactly
+  like `DonationSources`/`VisualAssets` are satisfied by their own bare
+  domain services with no separate runtime façade - the runtime
+  `internal/goals.Manager` has no HTTP surface of its own);
+  `registerGoalRoutes` wiring `GET/POST /api/goals`, `GET/PUT/DELETE
+  /api/goals/{id}`, `POST /api/goals/{id}/set-current`, `POST
+  /api/goals/{id}/reset`, `GET/POST /api/widget-profiles` (list supports
+  `?goalId=` filtering), `GET/PUT/DELETE /api/widget-profiles/{id}`,
+  `POST /api/widget-profiles/{id}/rotate-public-slug`; request/response
+  DTOs; `writeGoalsError` mapping every domain sentinel to a stable code
+  (`goal_not_found`, `goal_widget_profile_not_found`,
+  `goal_account_not_found`, `goal_in_use` → 409, `goal_config_conflict`
+  → 409, `goal_invalid` → 422).
+- `apps/server/internal/httpapi/router.go` - `Options.Goals`,
+  registered when non-nil, mirroring every other optional-service
+  pattern in this file.
+- `apps/server/internal/goals/wiring.go` (new) - `SourceLookupAdapter`
+  (combines `*account.Service`/`*donationsource.Service` behind
+  `domain/goals.AccountLookup`), mirroring `internal/alerts.
+  AccountLookupAdapter` exactly.
+- `apps/server/cmd/server/main.go`, `cmd/testserver/main.go` - construct
+  `goalsDomainService` (SQLite-backed) and `goalsManager` (the Stage
+  18A Bus consumer from the previous commit) right after `alertsManager`,
+  wire `Goals: goalsDomainService` into the router, and add `goalsManager.
+  Shutdown` alongside every other manager's shutdown call on both exit
+  paths.
+- 18 new tests in `apps/server/internal/httpapi/goals_test.go` (a real
+  SQLite-backed `domain/goals.Service` through the real router, mirroring
+  `alerts_test.go`'s own identical precedent - never a fake service at
+  this layer): create/get/list/update/delete, revision-conflict 409,
+  in-use 409 (widget profile still referencing the goal), set-current,
+  reset, 405 with an `Allow` header, widget-profile create/list-filtered/
+  rotate/delete, and donation-goal currency requirement.
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go vet -tags integration ./...`,
+`go build ./...`, `go build -tags integration ./...` - all clean.
+`go test ./...` - full suite passes, including all 18 new HTTP tests.
+
+### Known limitations
+No public widget route yet (`/overlay/widgets/{publicSlug}`,
+`/api/public/widgets/{slug}/...`) and no frontend - both are later
+commits in this same milestone.
+
+### Next step
+`feat(server): add public goal widgets` - the public, unauthenticated
+`GET /api/public/widgets/{slug}/config` and `GET /api/public/widgets/
+{slug}/stream` routes (docs/goals-widgets.md §19-§20): a goal-snapshot-
+only SSE reusing the established per-slug overlay protocol (Last-
+Event-ID replay, gap/reset, keepalive, bounded clients per slug).
