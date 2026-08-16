@@ -25806,3 +25806,91 @@ None. Stage 18A product implementation begins with the next commit.
 `feat(server): persist goals and contribution state` - the `internal/
 domain/goals` model, validation, the four SQLite migrations (`0025`+),
 and the repository, per this contract's §8/§14/§25.
+
+## 2026-08-16 — feat(server): persist goals and contribution state
+
+### Status
+Completed.
+
+### Scope
+The persistence foundation for Stage 18A (docs/goals-widgets.md §8, §14,
+§25): the `internal/domain/goals` domain model, validation, the
+provider-independent contribution capability table, and the SQLite
+repository - no HTTP surface and no runtime Event Bus consumer yet
+(those are the next two commits).
+
+### Contract correction folded into this commit
+Discovered while writing the domain package that `docs/goals-
+widgets.md` §3, as originally written, said the contribution table would
+be keyed directly by `internal/domain/engagement.Type`. That contradicts
+this codebase's own explicit, already-established rule (stated verbatim
+in `internal/domain/alerts/model.go`'s own package doc comment): no
+domain package imports `internal/domain/engagement` or any other domain
+package's concrete types - each declares its own narrow, primitive-typed
+enum. Corrected `docs/goals-widgets.md` §3 (and its own table header) to
+describe `internal/domain/goals`'s own `Type` enum instead, mirroring
+`alerts.EventType` exactly, with the runtime layer (`internal/goals`,
+next commit) responsible for mapping a real `engagement.Event.Type` to
+it. This is a same-milestone contract refinement, not a historical
+correction - the contract was written immediately before this commit and
+had not yet been implemented against.
+
+### Changes
+- `apps/server/internal/domain/goals/` (new package): `types.go`
+  (ProviderID, Type, Kind, FontFamily, Orientation, TextAlign - every
+  enum its own narrow, primitive-typed set, never importing
+  `engagement`); `errors.go`; `ids.go` (`goal_`/`widget_`-prefixed
+  random ids, mirroring `alerts.NewRuleID`/`NewPublicSlug` exactly);
+  `model.go` (`Goal`, `WidgetProfile`, `ProgressBasisPoints`/`Completed`
+  helpers); `capability.go` (`Contribution`, the `Contributions` table -
+  `TypeResubscription`/`TypeYouTubeMembershipMilestone`/
+  `TypeSubscriptionGiftBatch` deliberately absent, per the contract's
+  §5.1/§5.2 no-double-count rule); `validation.go` (bounds, currency-code
+  shape check, hex-color check); `repository.go` (the `Repository`
+  interface, including `ApplyContribution`/`PruneAppliedEvents`);
+  `service.go` (`Service` - CRUD, the baseline/currency-change-resets-
+  current reconfigure rule from §9.3, `SetCurrent`/`ResetProgress`,
+  `ApplyContribution` passthrough, widget-profile CRUD/rotation).
+- `apps/server/internal/storage/sqlite/migrations/0025_goals.sql` (new)
+  - `goals`, `goal_providers`, `goal_accounts` (no table-level FK on
+    `account_id`, mirroring `0020_donation_sources.sql`'s own correction
+    to `alert_rule_accounts`), `goal_applied_events` (the durable dedupe
+    ledger, primary key is exactly the dedupe identity), `widget_
+    profiles` (`goal_id` references `goals(id)` with no `ON DELETE` -
+    the repository enforces the in-use rejection explicitly, never
+    relying on a raw FK-violation error).
+- `apps/server/internal/storage/sqlite/goals_repository.go` (new) - the
+  SQLite `Repository` implementation. `ApplyContribution` is one
+  transaction per call: insert the dedupe-ledger row (a `UNIQUE`/
+  `PRIMARY KEY` violation, detected via the existing shared
+  `isUniqueViolation` helper, means "already applied" and returns
+  `applied=false` with no error, no partial state) then an atomic `SET
+  current_value = current_value + ?` - never a Go-level read-then-write.
+- 39 new tests in `internal/domain/goals/{validation,service}_test.go`
+  (fake in-memory `Repository`, mirroring `alerts.fakeRepo`'s own
+  precedent) and 12 new tests in `internal/storage/sqlite/
+  goals_repository_test.go`, including a 25-goroutine concurrent-
+  contribution test proving the atomic SQL update never loses an update,
+  a restart-survival test (reopen a repository over the same DB handle),
+  a duplicate-dedupe test, a per-goal-never-global dedupe test, and a
+  migration-preservation test mirroring `platform_repository_test.go`'s
+  own `TestDeletedSeedDataIsNotRecreated` precedent.
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go vet -tags integration ./...`,
+`go build ./...`, `go build -tags integration ./...` - all clean.
+`go test ./...` - full suite passes, including all 51 new tests.
+
+### Known limitations
+No HTTP surface yet (no `/api/goals`/`/api/widget-profiles` routes) and
+no runtime Event Bus consumer yet - a goal can be persisted and its
+contributions applied directly through the `Service`, but nothing yet
+wires a real `engagement.Event` to it. Both are later commits in this
+same milestone.
+
+### Next step
+`feat(server): accumulate normalized goal contributions` - the
+`internal/goals.Manager` runtime: subscribe to the Event Bus at current
+position (docs/goals-widgets.md §10), map `engagement.Event.Type` to
+`goals.Type`, apply contributions through `Service.ApplyContribution`,
+and enforce the Synthetic-event and current-position-only guarantees.

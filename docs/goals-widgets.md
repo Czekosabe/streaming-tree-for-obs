@@ -127,14 +127,34 @@ confirm it.
 
 ## 3. Contribution capability table
 
-One provider-independent table, over `engagement.Type` directly (never a
-second, goals-specific event-type enum, and never scattered contribution
-logic in HTTP/frontend/provider code) - `internal/domain/goals.Contribution
-For(engagement.Type) Contribution`, mirroring `internal/domain/
-alerts.CapabilityFor` exactly in spirit. An unknown/future `engagement.Type`
-value contributes nothing (the zero `Contribution`) until this table is
-explicitly extended - a future provider event can never unexpectedly
-change persisted goal state.
+One provider-independent table, keyed by `internal/domain/goals`'s own
+`Type` enum - a small, closed set of string constants mirroring, as plain
+literals, the real `internal/domain/engagement.Type` values this
+application's connectors actually produce (`goals.TypeFollow =
+"follow"`, and so on). This is not a stylistic choice: it follows this
+codebase's own explicit, already-established architectural rule, stated
+verbatim in `internal/domain/alerts/model.go`'s own package doc comment -
+*"This package never imports internal/domain/engagement,
+internal/provider/twitch, or any other domain package's concrete types -
+it declares its own narrow, primitive-typed ProviderID/EventType, exactly
+like every other domain package in this project... no provider-id or
+event-type type is shared across domain packages here."* `internal/
+domain/goals` follows the identical rule for the identical reason -
+`internal/domain/alerts`, `internal/domain/chatoverlay`, and
+`internal/domain/chatautomation` all already do this, and Stage 18A does
+not introduce the first exception. Only the runtime layer,
+`internal/goals.Manager` (which - like `internal/alerts` and
+`internal/audio` - does import `internal/domain/engagement`, since it is
+the thing that actually reads events off the Bus), maps a real
+`engagement.Event.Type` to this package's own `goals.Type` before
+calling `goals.ContributionFor`.
+
+`internal/domain/goals.ContributionFor(Type) Contribution` mirrors
+`internal/domain/alerts.CapabilityFor` exactly in spirit: never scattered
+contribution logic in HTTP/frontend/provider code, and an unknown/future
+`Type` value contributes nothing (the zero `Contribution`) until this
+table is explicitly extended - a future provider event can never
+unexpectedly change persisted goal state.
 
 ```go
 type Contribution struct {
@@ -150,12 +170,15 @@ type Contribution struct {
 ```
 
 Full table, decided from the real normalizers audited in §0.1 (only the
-four goal-relevant columns are meaningful; every other `engagement.Type`
-not listed contributes nothing to any Stage 18A goal kind, including
+four goal-relevant columns are meaningful; every `goals.Type` value below
+mirrors the identically-named real `engagement.Type` value as a plain
+string literal, per §3's own architectural note; every other
+`engagement.Type` not listed here has no `goals.Type` counterpart at all
+and contributes nothing to any Stage 18A goal kind, including
 `chat.message`, `chat.message_deleted`, `chat.cleared`, `moderation`,
 `raid`, `channel_point_redemption`, `stream.online`, `stream.offline`):
 
-| `engagement.Type` | Followers | Subscriptions | Money | Bits | Reasoning |
+| `goals.Type` | Followers | Subscriptions | Money | Bits | Reasoning |
 | --- | --- | --- | --- | --- | --- |
 | `follow` | **yes (+1)** | | | | The only follow-shaped event; see §5. |
 | `subscription` | | **yes (+1)** | | | New, non-gift subscription (Twitch `channel.subscribe`, `is_gift=false`). |
