@@ -25570,3 +25570,140 @@ implemented, confirmed unaffected by this milestone.
 Push this entry to `origin/main`, verify the branch tracks
 `origin/main` with a clean working tree and 0/0 ahead/behind, then
 deliver the final Stage 17B closing report.
+
+## 2026-08-16 — fix(docs): reconcile Stage 17 closing record
+
+### Status
+Completed. A correction-only entry. Stage 17 remains **Completed** (no
+change to that status). Stage 18A begins after this entry, in a
+separate, later commit - not implemented by this correction.
+
+### Scope
+Before starting Stage 18A product work, this task's own instructions
+required auditing two concrete reporting concerns about the Stage 17
+closing chat report: an apparent commit-count discrepancy, and the
+Stage 19 wording used in the final Stage 17 closing journal entry
+("docs: record Stage 17 closing regression", appended 2026-08-16).
+Per this project's own append-only journal rule, no historical entry
+is edited by this correction - both findings are recorded here only.
+
+### Finding 1: commit-count audit (repo history was correct)
+Audited directly with `git rev-list --count 8535f45..9bba41c`,
+`git log --reverse --oneline 8535f45..9bba41c`, and
+`git log --reverse --format='%H %s' 8535f45..9bba41c`.
+
+Result: **exactly 13 commits** in that range, matching the closing
+report's own stated count. Full list, oldest to newest:
+
+1. `ff22bbfa0fb6606648adef2f21d2320a967c774a` test: remove
+   StreamElements subscription wait race
+2. `cfdf75f59d57ea0c7174eb5324950a67cb515131` docs: define Stage 17B
+   alert audio contract
+3. `479618e7b71048ae8127f88e0523f1c3c80f5c59` feat(server): add
+   managed alert audio assets
+4. `6e949f5559161613e18cd612aa47c4c1443eaf85` feat(server): persist
+   alert rule audio
+5. `8e5b3e5ac8559a7a32ecc2bf560b885dca9bd974` feat(server):
+   synchronize alert and audio playback
+6. `35575858a4746098915a9e5d337eeac5dee15232` feat(server): add
+   per-alert-rule TTS
+7. `ac20eafed1001937eb0b519c2a0ce484ce9590f2` feat(server): add alert
+   audio to template packages
+8. `0e3ad4d9a0f86a5b111797cdd2cfb7ff8c86692b` feat(web): add alert
+   audio controls to the rule editor
+9. `27baa2fb4a6ee4a32d7e87b401fba95d1f8908f5` feat(web): add package
+   audio UX to the template gallery and designer
+10. `022db87052356947a904abe79d143caf7d9ad679` test: verify alert
+    audio locally
+11. `4adb03668bd62aa8f0e825ebd8f97209ac827d56` docs: reflect Stage 17B
+    completion across living docs
+12. `a292092bdbea7ec02b58e53d5a2e4f9287aeadde` docs: fix stale Stage
+    17B forward-pointer in project-overview
+13. `9bba41cdd7c63a1cd9ed618654f1c38fb726ff76` docs: record Stage 17
+    closing regression
+
+**Missing hash from the prior chat report's printed list**:
+`ff22bbf` ("test: remove StreamElements subscription wait race",
+commit 1 of 13 above). The prior report correctly stated "13 commits
+this milestone" but its own printed hash list enumerated only 12,
+omitting this one - a report-formatting omission, not a repository
+defect. Every one of the 13 commits above has exactly one matching
+`docs/progress.md` heading (verified by grep, one match each, no
+duplicates, no gaps). Repository history itself was, and remains,
+correct.
+
+### Finding 2: Stage 19 wording error (confirmed, corrected here)
+The final Stage 17 closing entry ("docs: record Stage 17 closing
+regression") states, in its own "Status" paragraph: "Stage 19 (further
+engagement/donation providers): remains conditional/feasibility-gated
+... not started." This is **factually wrong** for Stage 19 as this
+project's own canonical roadmap actually defines it.
+
+The canonical definition, confirmed directly in the current living
+roadmap tables of `README.md`, `docs/project-overview.md`, and
+`docs/engagement-architecture.md` (§13), is: **Stage 19 is the TikTok
+LIVE connector, conditional on an official, permitted, sufficiently
+stable integration existing** - not a general label for "further
+engagement/donation providers." That phrase actually describes stage
+15B (Kick engagement) and stage 16B (Streamlabs/Ko-fi donations),
+which are separate, already feasibility-gated sub-stages of Stage 15
+and Stage 16, not Stage 19.
+
+Per this project's own append-only rule, the original closing entry is
+**not edited** - it remains exactly as written, since it was the
+author's genuine (if incorrect) statement at the time. This paragraph
+is the append-only correction of record: **Stage 19 = TikTok LIVE
+connector, conditional on an official, permitted, sufficiently stable
+integration existing (not "further engagement/donation providers");
+still not started, still conditional, as of this writing.**
+
+All three current living roadmap docs (`README.md`,
+`docs/project-overview.md`, `docs/engagement-architecture.md`) were
+re-read in full for their own Stage 19 row and already state the
+correct TikTok-conditional definition - **no living-doc edit was
+required** for this finding; only the journal wording itself needed
+this correction record.
+
+### Stage 18A/18B scope split
+Stage 18 begins now, split into two sub-stages per this task's own
+instruction, mirroring the Stage 17A/17B precedent:
+
+- **Stage 18A** (this task): a persistent, provider-independent
+  goal/counter accumulation engine; four core goal families
+  (followers, subscriptions, donations, Bits); explicit operator
+  baseline/current management; persisted state across restarts;
+  backend-authoritative contribution rules; real public OBS goal
+  widgets; a real Goals management page; the 21st integration script.
+- **Stage 18B** (deliberately not started here): latest
+  follower/subscriber/donation, largest donation, recent supporters,
+  event ticker, richer/platform-specific counters, multi-widget
+  composition, and any dedicated visual designer/template integration
+  for widgets, if justified once the foundation exists.
+
+The full contract is recorded in `docs/goals-widgets.md`, added by the
+next commit, before any Stage 18A product code. The living roadmap
+tables are updated to reflect this split during the Stage 18A
+documentation pass, once the foundation described above actually
+exists, mirroring exactly when the Stage 17A/17B roadmap split itself
+was introduced (at the "reflect completion" documentation pass, not
+before any product code existed) - the current single "18 | ... |
+Planned" row remains factually accurate in the meantime and is not
+edited by this correction-only commit.
+
+### Changes
+- `docs/progress.md` - this append-only correction entry only. No
+  other file changed. No historical entry edited, moved, or removed.
+
+### Automated validation
+Git-audit only (`git rev-list`/`git log` as recorded above); no code
+or other documentation was touched by this commit.
+
+### Known limitations
+None. Both audited concerns are now fully recorded. Stage 18A itself
+has not started yet.
+
+### Next step
+`docs: define Stage 18A goals and widgets contract` - write
+`docs/goals-widgets.md` (the full Stage 18A/18B contract) before any
+Stage 18A product code, after auditing the real current engagement/
+persistence/overlay implementation this milestone must build on.
