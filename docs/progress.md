@@ -25331,3 +25331,242 @@ build ×2), then all 20 integration scripts in the canonical order, run
 once cleanly from start to finish with no retries; any failure
 restarts the complete regression from the beginning per this
 project's own journal rule.
+
+## 2026-08-16 — docs: record Stage 17 closing regression
+
+### Status
+Completed. **Stage 17A: Completed. Stage 17B: Completed. Stage 17 as a
+whole: Completed.** Stage 18 (goal/counter widgets): Planned, not
+started. Stage 19 (further engagement/donation providers): remains
+conditional/feasibility-gated per `docs/engagement-architecture.md`
+§13, not started. Stage 20 (packaging/updater): documentation only
+(`docs/project-overview.md` §12.1.1), not implemented, confirmed
+untouched by this milestone. This entry closes Stage 17 as a whole;
+it does not start Stage 18.
+
+### Implementation summary
+Stage 17B extended the one shared audio/playback subsystem built in
+Stage 17A (`internal/audio`) - never a second playback engine - with:
+- A managed audio-asset domain (`internal/domain/audioasset`,
+  mirroring `internal/domain/visualasset`'s own established shape)
+  persisting uploaded alert sounds, with its own SQLite migrations
+  and an `assets/audio/` blob directory sibling to `assets/visual/`.
+- Per-alert-rule audio configuration (`RuleAudio`/`AlertRuleAudio` on
+  both backend and frontend): an optional persistent sound reference
+  plus volume, and an optional TTS text template plus volume, reusing
+  the rule's own existing template-placeholder and validation
+  machinery.
+- Three new `internal/audio.Source` values (`SourceGlobalTTS` renamed
+  from the implicit Stage 17A default, `SourceAlertSound`,
+  `SourceAlertTTS`) feeding the same queue, promotion, synthesis and
+  playback pipeline Stage 17A already built, distinguished only by
+  origin, never by a second pipeline.
+- `AlertLink{ProfileID, InstanceID, ChainNext}` - a stable identity
+  tying a queued/current audio item back to its owning alert instance
+  and threading an optional sound-then-TTS chain, so a rule with both
+  a sound and a TTS message plays the sound first, then the TTS,
+  automatically, exactly once, in order.
+- Deterministic arbitration: alert-owned audio always preempts a
+  currently playing/synthesizing `SourceGlobalTTS` item outright
+  (`TotalInterruptedByAlert`, now also exposed on `GET
+  /api/audio/status`), but never preempts another alert instance's
+  own current audio.
+- A bounded visual hold (`internal/alerts`, `maxAudioHoldDuration =
+  15s`): a duration-expired alert stays visible only while its linked
+  audio is genuinely started/playing; reaching `AlertAudioNoRenderer`
+  (synthesis finished, no renderer ever connected) releases the hold
+  immediately, and the 15s ceiling guarantees the queue can never
+  freeze indefinitely on abandoned audio.
+- Package manifest schema v2 (`internal/domain/visualpackage`):
+  optional, sibling `alertAudio`/`audioAssets` objects, legal only for
+  `target: alert`, with a disjoint `pkgaudio_`-prefixed ID namespace
+  and `audio/<segment>` path root (never widening the existing
+  `assets`/`pkgasset_` array or its closed `image`/`video`/`font`
+  kind set), validated by the exact same
+  `visualtemplate.ValidateRuleAudioPreset`/`audioasset.VerifyType
+  Agreement`/`ValidateWAV` a manual upload or a live rule uses. A
+  purely visual template still exports/imports as schema v1,
+  byte-shape-identical to before this stage.
+- Frontend: an "Alert audio" section in the rule editor
+  (`RuleManager.tsx`); package-audio badges/preview/import-preview in
+  the Template Gallery; a combined `DesignerDraft = {document, audio}`
+  widening the Alert Designer's existing generic `History<T>` so
+  undo/redo restores both halves atomically; a template applied via
+  "Use as draft" only ever changes the unsaved draft; the rule's own
+  pre-existing Save action remains the only thing that ever persists
+  either half (firing a second, audio-only mutation alongside the
+  existing revision-checked visual-design save, only when the audio
+  draft actually changed).
+
+### Exact audio format, and why
+Stage 17B accepts exactly one persistent audio format: **WAV
+(RIFF/WAVE container, canonical PCM format tag, 16-bit signed
+little-endian samples, 1 or 2 channels, 8000-192000 Hz)**. Every other
+container/codec (MP3, AAC, Ogg/Vorbis, Ogg/Opus, WebM/Opus, FLAC,
+ADPCM, mu-law, 8-bit PCM, 32-bit float PCM) is rejected, for three
+reasons recorded in `docs/alert-audio.md` §2.3: (1) a canonical-PCM
+WAV file is fully describable by its RIFF/`fmt `/`data` chunk headers
+alone, so validation and exact-duration computation never need codec
+decoding - a materially smaller safe-parsing surface than any
+Ogg/WebM-contained codec would require; (2) it is exactly the shape
+`internal/provider/tts`'s own Windows SAPI provider and integration
+fake already generate, so the new asset validator is a *reader* for a
+shape Stage 17A's provider already *writes*, needing only
+`encoding/binary` from the standard library, no new dependency; (3)
+homogeneity - every audio byte this subsystem ever serves, synthesized
+or persistent, is the same container/codec, so the public bytes route
+never needs format-specific branching. No FFmpeg/ffprobe shell-out is
+ever used for audio validation or transcoding; the plain RIFF/WAVE
+chunk parser is under ~150 lines of ordinary Go.
+
+### Security and bounds
+- Max persistent sound asset size: 8 MiB (`audioasset.MaxSoundBytes`).
+- Rule-level sound/TTS volume: `[0.0, 1.0]` inclusive
+  (`visualtemplate.MinRuleAudioVolume`/`MaxRuleAudioVolume`, mirrored
+  by the frontend's own bounds).
+- TTS template length: max 500 Unicode code points
+  (`visualtemplate.MaxTTSTemplateCodePoints`, mirroring the existing
+  alert-text-template limit).
+- Package manifest v2 `audioAssets` array: max 4 entries
+  (`visualpackage.MaxAudioAssets`) - a single alert preset needs at
+  most one sound today; four is deliberate headroom against a future
+  multi-preset feature, not an invitation to abuse, and the existing
+  aggregate package bounds (total uncompressed bytes, entry count,
+  decompression ratio, `MaxPackageBytes`) already cover the rest.
+- No arbitrary remote audio URL, no filesystem path, no HTML/JS/CSS/
+  SVG/XML active content, no playlist format, no archive-masquerading-
+  as-audio, no executable/shell script ever accepted as a playback
+  reference - the signature/chunk parser only recognizes the one
+  closed WAV shape above; anything else fails `audio_asset_unsupported`
+  or `audio_asset_type_mismatch` before a single byte is trusted.
+- No rule id, alert-profile id, or rendered/spoken TTS text is ever
+  exposed on the public audio SSE payload or written into SQLite in
+  rendered form - verified directly by `scripts/verify-alert-audio.mjs`
+  steps 14 and 20 (payload-leak and raw-database-byte scans).
+- No new Go or npm dependency was needed for this milestone's own
+  audio-format validation or package v2 ZIP handling (the latter
+  reuses the existing standard-library `archive/zip` reader Stage
+  14B's `visualpackage` already uses). `THIRD_PARTY_NOTICES.md` was
+  checked and needed no change; `git log` confirms no Stage 17B commit
+  touched `go.mod`.
+
+### Alert/audio synchronization semantics
+An alert instance and its own rule-owned audio are joined only by
+`AlertLink{ProfileID, InstanceID, ChainNext}`, never by audio owning
+alert-visibility logic directly. A sound-then-TTS chain advances
+automatically and exactly once, in order, on natural playback
+completion. Arbitration is deterministic and one-directional: alert
+audio always preempts a *currently playing/synthesizing* global-TTS
+item, but two alert instances' own audio never preempt each other. The
+bounded visual hold keeps a duration-expired alert visible only while
+its linked audio is `AlertAudioStarted`/`AlertAudioPlaying`, releases
+immediately on `AlertAudioNoRenderer` (no renderer ever connected), and
+force-cancels unconditionally at the 15-second ceiling regardless of
+audio state, so the alert queue can never freeze indefinitely on
+abandoned or renderer-less audio.
+
+### Package schema result
+Package manifest schema `C` (`streaming-tree-template-package`) is now
+versioned `1` or `2`: `1` unchanged since Stage 14B, `2` adds the
+optional, sibling `alertAudio`/`audioAssets` objects (Stage 17B, see
+`docs/visual-template-packages.md` §5a for the full contract). Export
+writes `schemaVersion: 2` only when the exported template actually
+carries a configured `alertAudio` preset; a purely visual template
+still exports as v1. Schema `A` (`visualdesign.Document.Version`) and
+schema `B` (Stage 14A template interchange) are unchanged by this
+milestone.
+
+### Test counts
+- Backend: `go test ./...` (fresh, `-count=1`) - all packages pass;
+  `go test ./... -list '.*'` enumerates 1906 total Go test
+  functions/examples across the whole repository (all stages, not
+  Stage 17B alone). Stage 17B itself added: 12 tests in the new
+  `internal/alerts/audio_link_test.go`, 4 new tests in
+  `internal/alerts/matcher_test.go`, 6 new tests in
+  `internal/domain/visualtemplate/service_test.go`, 2 new tests in
+  `internal/storage/sqlite/visualtemplate_repository_test.go`, 5 new
+  tests in `internal/domain/visualpackage/service_test.go` (plus a new
+  `testfixtures_test.go` helper file), and extensions to
+  `internal/domain/alerts/validation_test.go` (34 assertions migrated
+  from `ErrValidation` to the new `ErrRuleInvalid`) and
+  `internal/httpapi/audio_test.go` (`TotalInterruptedByAlert`
+  assertion).
+- Frontend: `npm run test` (Vitest) - 92 test files, 1299 tests, all
+  passing (whole repository, all stages). Stage 17B itself added
+  `AudioAssetPicker` coverage, `alerts-schemas.test.ts` (+1),
+  `TemplateGallery.test.tsx` (+4), `AlertDesignerWorkspace.test.tsx`
+  (+3), and 2 new `AlertsPage.test.tsx` tests, plus fixture updates
+  across every test file whose alert-rule/template fixtures needed a
+  new required `audio` field.
+- Integration: 20/20 scripts, see below.
+
+### All 20 integration scripts (canonical order, this closing run)
+1. `verify-persistence.mjs` 2. `verify-mediamtx-runtime.mjs`
+3. `verify-ffmpeg-branches.mjs` 4. `verify-twitch-account-integration.mjs`
+5. `verify-youtube-account-integration.mjs` 6. `verify-twitch-engagement.mjs`
+7. `verify-operator-chat.mjs` 8. `verify-chat-overlay.mjs`
+9. `verify-twitch-outbound-chat.mjs` 10. `verify-chat-automation.mjs`
+11. `verify-alerts.mjs` 12. `verify-alert-advanced-queue.mjs`
+13. `verify-alert-designer.mjs` 14. `verify-chat-overlay-designer.mjs`
+15. `verify-visual-templates.mjs` 16. `verify-visual-template-packages.mjs`
+17. `verify-youtube-engagement.mjs` 18. `verify-streamelements-donations.mjs`
+19. `verify-tts-audio.mjs` 20. `verify-alert-audio.mjs`
+
+### Real bugs found and fixed during this milestone
+- `alert_profile_invalid` returned for rule-level validation failures:
+  `domain.ErrValidation` was shared between profile-context and
+  rule-context validators, so `internal/httpapi/alerts.go` always
+  mapped a rule validation failure to the profile-shaped error code,
+  even though the frontend already carried a dedicated, never-actually
+  -reachable `alert_rule_invalid` key. Fixed by introducing
+  `ErrRuleInvalid` plus a `ruleValidationErr` helper used only by
+  rule-context validators, and a new httpapi mapping. Discovered by
+  `scripts/verify-alert-audio.mjs`, not present in any prior script.
+- `TotalInterruptedByAlert` (added to `internal/audio.Manager.Status`
+  in an earlier Stage 17B commit) was never exposed on `GET
+  /api/audio/status` at all, leaving arbitration invisible to any HTTP
+  client. Fixed by adding it to `audioStatusResponse` and
+  `toAudioStatusResponse`. Also discovered by
+  `scripts/verify-alert-audio.mjs`.
+- Both fixes were verified by the normal Go regression before the
+  integration script was re-run against them, and both are covered by
+  the closing regression recorded above.
+
+### Manual/real-provider testing
+No real OBS, no real manual browser testing, and no real TTS/cloud
+provider testing was performed for this milestone, consistent with
+this task's own explicit instruction that manual testing remains a
+later, separate product-stage step, not part of Stage 17B. Every
+integration script listed above runs the real `-tags integration`
+backend against fake providers (`tts.FakeProvider`, fake Twitch/
+Google/Astro servers as applicable) and real, locally-generated or
+in-process-built fixtures only.
+
+### Autonomous execution
+This entire closing regression (frontend checks, backend checks, all
+20 integration scripts) ran once, cleanly, start to finish, with no
+retries and no operator interaction requested at any point, per this
+task's own CRITICAL AUTONOMY RULE. No step was blocked on an external
+manual action, credential, or decision that could not be resolved from
+the repository itself.
+
+### Automated validation
+- Frontend: `npm run i18n:check`, `npm run typecheck`, `npm run lint`,
+  `npm run test`, `npm run build` - all clean.
+- Backend: `gofmt -l .` (empty), `go vet ./...`, `go vet -tags
+  integration ./...`, `go test -count=1 ./...`, `go build ./...`, `go
+  build -tags integration ./...` - all clean.
+- All 20 integration scripts, in the exact canonical order listed
+  above, run once from a clean state - all passed, no retries.
+
+### Known limitations
+None. Stage 17A, Stage 17B, and Stage 17 as a whole are all Completed.
+Stage 18 is Planned, not started, per this task's own binding
+instruction not to begin it. Stage 19 remains conditional/feasibility-
+gated, not started. Stage 20 remains documentation-only, not
+implemented, confirmed unaffected by this milestone.
+
+### Next step
+Push this entry to `origin/main`, verify the branch tracks
+`origin/main` with a clean working tree and 0/0 ahead/behind, then
+deliver the final Stage 17B closing report.
