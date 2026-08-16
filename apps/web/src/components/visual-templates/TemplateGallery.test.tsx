@@ -101,7 +101,7 @@ describe('TemplateGallery', () => {
     const { onUseAsDraft, onClose } = renderGallery({ draftIsDirty: false });
     await screen.findByText('My Template');
     fireEvent.click(screen.getByTestId('template-use-as-draft'));
-    expect(onUseAsDraft).toHaveBeenCalledWith(userTemplate().document);
+    expect(onUseAsDraft).toHaveBeenCalledWith(userTemplate().document, undefined);
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -231,6 +231,39 @@ describe('TemplateGallery', () => {
     expect(screen.getByTestId('template-export-package')).not.toBeDisabled();
   });
 
+  it('shows an audio badge and disables JSON Export for a template with an alert-audio preset (Stage 17B)', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([
+      userTemplate({
+        target: 'alert',
+        alertAudio: { soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
+      }),
+    ]);
+    renderGallery({ target: 'alert' });
+    await screen.findByText('My Template');
+    expect(screen.getByTestId('template-has-audio')).toBeInTheDocument();
+    const exportButton = screen.getByTestId('template-export');
+    expect(exportButton).toBeDisabled();
+    fireEvent.click(exportButton);
+    expect(vi.mocked(visualTemplateApi).exportVisualTemplate).not.toHaveBeenCalled();
+    expect(screen.getByTestId('template-export-package')).not.toBeDisabled();
+  });
+
+  it('never shows the audio badge for a template with no alert-audio preset', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([userTemplate()]);
+    renderGallery();
+    await screen.findByText('My Template');
+    expect(screen.queryByTestId('template-has-audio')).not.toBeInTheDocument();
+  });
+
+  it('Use as draft passes the template own alert-audio preset through to onUseAsDraft (Stage 17B)', async () => {
+    const audio = { soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 0.8, ttsEnabled: true, ttsTemplate: '{username}', ttsVolume: 0.5 };
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([userTemplate({ target: 'alert', alertAudio: audio })]);
+    const { onUseAsDraft } = renderGallery({ target: 'alert' });
+    await screen.findByText('My Template');
+    fireEvent.click(screen.getByTestId('template-use-as-draft'));
+    expect(onUseAsDraft).toHaveBeenCalledWith(userTemplate().document, audio);
+  });
+
   it('package import preview never persists until the operator explicitly confirms, and re-uploads the original bytes', async () => {
     vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
     const preview: VisualTemplatePackagePreview = {
@@ -256,6 +289,30 @@ describe('TemplateGallery', () => {
 
     fireEvent.click(screen.getByTestId('template-import-package-confirm'));
     await waitFor(() => expect(vi.mocked(visualPackageApi).importVisualTemplatePackage).toHaveBeenCalledWith(file));
+  });
+
+  it('package import preview shows the audio in the package before it is imported (Stage 17B)', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([]);
+    const preview: VisualTemplatePackagePreview = {
+      token: 'preview_tok_audio',
+      target: 'alert',
+      name: 'Coin Alert Package',
+      description: '',
+      author: '',
+      license: '',
+      document: chatDocument(),
+      assets: [],
+      alertAudio: { soundEnabled: true, soundDisplayName: 'Coin chime', soundDurationMs: 2500, ttsEnabled: true, ttsTemplate: '{username} triggered a coin' },
+      expiresAt: '2026-08-12T00:10:00.000Z',
+    };
+    vi.mocked(visualPackageApi).previewVisualTemplatePackageImport.mockResolvedValue(preview);
+    renderGallery({ target: 'alert' });
+    await screen.findByTestId('template-gallery-list');
+
+    const file = new File(['fake zip bytes'], 'template.streaming-tree-template');
+    fireEvent.change(screen.getByTestId('template-import-package-file-input'), { target: { files: [file] } });
+    const audioSection = await screen.findByTestId('template-package-audio');
+    expect(within(audioSection).getByText(/coin chime/i)).toBeInTheDocument();
   });
 
   it('canceling a package import preview releases the staged preview session', async () => {

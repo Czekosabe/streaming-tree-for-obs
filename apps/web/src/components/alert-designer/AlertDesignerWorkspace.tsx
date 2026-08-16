@@ -2,17 +2,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import type { AlertEventTypeCapability, AlertProfile, AlertRule } from '@/api/alerts-schemas';
+import type { AlertEventTypeCapability, AlertProfile, AlertRule, AlertRuleAudio } from '@/api/alerts-schemas';
+import type { VisualTemplateAlertAudio } from '@/api/visualtemplate-schemas';
 import type { VisualAsset } from '@/api/visualasset-schemas';
 import type { VisualDesignDocument, VisualDesignLayer, VisualDesignLayerKind, VisualDesignResponse } from '@/api/visualdesign-schemas';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { platformDisplayName } from '@/components/visual-design/text-binding';
 import { VisualAssetPicker } from '@/components/visual-design/VisualAssetPicker';
 import { TemplateGallery } from '@/components/visual-templates/TemplateGallery';
-import { useAlertPreviewMutation, useTestAlertRuleMutation } from '@/hooks/use-alerts';
+import { useAlertPreviewMutation, useTestAlertRuleMutation, useUpdateAlertRuleMutation } from '@/hooks/use-alerts';
 import { useVisualAssetMap } from '@/hooks/use-visual-assets';
 import { useDeleteVisualDesignMutation, useSaveVisualDesignMutation } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
+import { defaultRuleAudio, draftFromRule, normalizeRuleAudio, ruleAudioEqual } from '@/models/alerts';
 import {
   availableTextBindings,
   createHistory,
@@ -41,6 +43,13 @@ function documentsEqual(a: VisualDesignDocument, b: VisualDesignDocument): boole
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Stage 17B (docs/alert-audio.md §10.6): the Designer's own draft
+ * bundles the visual document and the rule's own alert-audio
+ * configuration together, so applying a template updates both through
+ * one `pushHistory` call - undo/redo restore both coherently as a
+ * single combined step, never independently. */
+type DesignerDraft = { document: VisualDesignDocument; audio: AlertRuleAudio };
+
 /**
  * The Alert Overlay Designer's own stateful editor (Stage 13A task
  * Part 26 onward). Owns the bounded undo/redo history, selection,
@@ -65,8 +74,11 @@ export function AlertDesignerWorkspace({
   const { t: tAlerts } = useTranslation('alerts');
   const navigate = useNavigate();
 
-  const [history, setHistory] = useState<History<VisualDesignDocument>>(() => createHistory(initialResponse.document));
+  const [history, setHistory] = useState<History<DesignerDraft>>(() =>
+    createHistory({ document: initialResponse.document, audio: normalizeRuleAudio(rule.audio) }),
+  );
   const [savedDocument, setSavedDocument] = useState(initialResponse.document);
+  const [savedAudio, setSavedAudio] = useState(() => normalizeRuleAudio(rule.audio));
   const [savedRevision, setSavedRevision] = useState(initialResponse.revision);
   const [persisted, setPersisted] = useState(initialResponse.persisted);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -79,12 +91,14 @@ export function AlertDesignerWorkspace({
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [pendingAssetLayerKind, setPendingAssetLayerKind] = useState<'image' | 'video' | null>(null);
 
-  const document_ = history.present;
-  const dirty = !documentsEqual(document_, savedDocument);
+  const document_ = history.present.document;
+  const audioDraft = history.present.audio;
+  const dirty = !documentsEqual(document_, savedDocument) || !ruleAudioEqual(audioDraft, savedAudio);
   const selectedLayer = document_.layers.find((l) => l.id === selectedLayerId) ?? null;
   const assetMap = useVisualAssetMap();
 
   const saveMutation = useSaveVisualDesignMutation('alert-rules', rule.id);
+  const saveAudioMutation = useUpdateAlertRuleMutation(rule.profileId);
   const deleteMutation = useDeleteVisualDesignMutation('alert-rules', rule.id);
   const testRuleMutation = useTestAlertRuleMutation();
   const previewMutation = useAlertPreviewMutation();
@@ -108,11 +122,22 @@ export function AlertDesignerWorkspace({
   }, [dirty]);
 
   function updateDraft(next: VisualDesignDocument) {
-    setHistory((h) => ({ ...h, present: next }));
+    setHistory((h) => ({ ...h, present: { ...h.present, document: next } }));
   }
 
   function commitDraft(next: VisualDesignDocument) {
-    setHistory((h) => pushHistory(h, next));
+    setHistory((h) => pushHistory(h, { ...h.present, document: next }));
+  }
+
+  // Stage 17B (docs/alert-audio.md §10.6): the one call site that ever
+  // changes the audio draft - applying a template/package updates the
+  // visual document and the alert-audio configuration together, as one
+  // combined undo step. audio is undefined for a template that carries
+  // none, which resets the draft to the safe "no rule-owned audio"
+  // default - exactly like switching templates already resets every
+  // other unsaved draft field.
+  function commitTemplateAndAudio(nextDocument: VisualDesignDocument, audio: VisualTemplateAlertAudio | undefined) {
+    setHistory((h) => pushHistory(h, { document: nextDocument, audio: audio === undefined ? defaultRuleAudio() : normalizeRuleAudio(audio) }));
   }
 
   function withLayers(mutator: (layers: VisualDesignLayer[]) => VisualDesignLayer[]) {
@@ -186,8 +211,20 @@ export function AlertDesignerWorkspace({
     commitDraft({ ...document_, layers: moveLayerOrder(document_.layers, id, direction) });
   }
 
+  // Stage 17B (docs/alert-audio.md §10.6): this one, pre-existing Save
+  // action remains the only thing that ever persists either half - the
+  // visual document through its own existing revision-checked
+  // `saveMutation`, and (only when actually changed) the audio draft
+  // through the rule's own `PUT /api/alert-rules/{id}`, reusing
+  // RuleManager's own draftFromRule to carry every other rule field
+  // through unchanged. draftFromRule(rule) reads this component's own
+  // `rule` prop, exactly like every other rule field this component
+  // already displays (e.g. rule.textTemplate in the preview effect
+  // above) - a stale snapshot from when the Designer was opened, not a
+  // live refetch.
   function handleSave() {
     setConflict(false);
+    const audioChanged = !ruleAudioEqual(audioDraft, savedAudio);
     saveMutation.mutate(
       { document: document_, expectedRevision: persisted ? savedRevision : 0 },
       {
@@ -195,7 +232,19 @@ export function AlertDesignerWorkspace({
           setSavedDocument(response.document);
           setSavedRevision(response.revision);
           setPersisted(true);
-          setHistory(createHistory(response.document));
+          if (!audioChanged) {
+            setHistory(createHistory({ document: response.document, audio: audioDraft }));
+            return;
+          }
+          saveAudioMutation.mutate(
+            { id: rule.id, input: { ...draftFromRule(rule), audio: audioDraft } },
+            {
+              onSuccess: () => {
+                setSavedAudio(audioDraft);
+                setHistory(createHistory({ document: response.document, audio: audioDraft }));
+              },
+            },
+          );
         },
         onError: (error) => {
           if (error instanceof ApiError && error.status === 409) setConflict(true);
@@ -247,7 +296,7 @@ export function AlertDesignerWorkspace({
         itemName={rule.name}
         backLabel={t('page.backToRules')}
         dirty={dirty}
-        saving={saveMutation.isPending}
+        saving={saveMutation.isPending || saveAudioMutation.isPending}
         canUndo={history.past.length > 0}
         canRedo={history.future.length > 0}
         zoom={zoom}
@@ -352,7 +401,7 @@ export function AlertDesignerWorkspace({
         ownerId={rule.id}
         draftIsDirty={dirty}
         currentDraftDocument={document_}
-        onUseAsDraft={(doc) => commitDraft(doc)}
+        onUseAsDraft={commitTemplateAndAudio}
       />
 
       {pendingAssetLayerKind !== null && (

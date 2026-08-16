@@ -24928,3 +24928,128 @@ previous entry), but nothing yet renders or applies it; "apply changes"
 must update both the visual and alert-audio drafts together as one
 combined undo step, and an audio-bearing template must be blocked from
 the asset-free JSON export path in the UI as well as the backend.
+
+## 2026-08-16 — feat(web): add package audio UX to the template gallery and designer
+
+### What changed
+Implemented Stage 17B §12: the shared Template Gallery and the Alert
+Designer now surface a template/package's own alert-audio preset, and
+applying one updates both the visual and audio drafts together as one
+combined action/undo step - closing the "nothing yet renders or applies
+it" gap the previous entry's own Known Limitations left open.
+
+- `apps/web/src/api/visualtemplate-schemas.ts` - new
+  `visualTemplateAlertAudioSchema`/`VisualTemplateAlertAudio`
+  (field-identical to `alertRuleAudioSchema`, kept as its own
+  independent type mirroring the backend's own `visualtemplate.
+  RuleAudioPreset` deliberately parallel-but-independent design),
+  `visualTemplateSchema.alertAudio` (optional - absent for a built-in
+  or plain JSON template, present only after a package v2 import).
+- `apps/web/src/api/visualpackage-schemas.ts` - new
+  `visualTemplatePackagePreviewAudioSchema`/
+  `VisualTemplatePackagePreviewAudio` (sound enabled/display-name/
+  duration, TTS enabled/template - descriptive only, matching the
+  backend's own `PreviewAlertAudio`), `visualTemplatePackagePreviewSchema
+  .alertAudio`.
+- `apps/web/src/models/visualtemplate.ts` - new `templateHasAudio(audio)`,
+  mirroring the backend's own `RuleAudioPreset.HasAudio()` exactly
+  ("sound or TTS, either forces package export").
+- `apps/web/src/models/alerts.ts` - three new exported helpers moved out
+  of `RuleManager.tsx` so the Designer can reuse them without importing
+  a component file purely for its plain data mappings:
+  `emptyRuleDraft`/`draftFromRule` (unchanged logic, relocated) and the
+  already-present `defaultRuleAudio`/`normalizeRuleAudio`/
+  `ruleAudioEqual` from the previous entry.
+- `apps/web/src/components/visual-templates/TemplateGallery.tsx` -
+  `onUseAsDraft`'s own signature gained a second parameter,
+  `audio: VisualTemplateAlertAudio | undefined`, threaded through both
+  "Use as draft" call sites (the card grid and the preview detail view)
+  and through the dirty-draft-replacement confirmation's own
+  `pendingDraft` state (now `{document, audio}` together, applied
+  atomically on confirm). A template/package with a configured preset
+  now shows a small "Audio" badge on its card and its own sound/TTS
+  summary in the preview detail view and the package-import preview
+  (`template-package-audio` panel, alongside the existing
+  `template-package-assets` one). The JSON `Export` button is now also
+  disabled - with an updated, reason-agnostic tooltip/message ("contains
+  assets or audio") - for a template whose `alertAudio` carries a
+  configured preset, mirroring `templateHasAssets`'s own existing gate.
+  The replace-draft confirmation shows an audio-aware message only for
+  `target === 'alert'` (`replaceDraft.messageWithAudio`) - a chat
+  overlay, which shares this exact same gallery component, has no
+  rule-owned-audio concept at all, so its own confirmation keeps the
+  original visual-only wording.
+- `apps/web/src/components/alert-designer/AlertDesignerWorkspace.tsx` -
+  the core of this entry. `History<VisualDesignDocument>` became
+  `History<DesignerDraft>` where `DesignerDraft = {document, audio}` -
+  `History<T>`'s own generic implementation (`models/visualdesign.ts`)
+  needed no changes at all, so undo/redo already restore both halves
+  together automatically. Every existing layer-mutation call site
+  (`updateDraft`/`commitDraft`) keeps its exact same
+  `(document) => void` signature, internally spreading the current
+  audio unchanged - zero call-site churn for anything that only ever
+  touched the visual document. The one new call site,
+  `commitTemplateAndAudio(document, audio)`, is `TemplateGallery`'s own
+  `onUseAsDraft` - pushes one combined history entry, resetting the
+  audio half to `defaultRuleAudio()` when the applied template carries
+  none (consistent with every other draft field template application
+  already resets). `handleSave` now also persists the audio half
+  through the rule's own pre-existing `PUT /api/alert-rules/{id}` (via
+  `useUpdateAlertRuleMutation` and `draftFromRule(rule)` to carry every
+  other rule field through unchanged) - but only when the audio draft
+  actually differs from `savedAudio`, so a purely-visual save never
+  fires a second request. `dirty`/`saving` both now account for both
+  halves. Never a third persistence path: the visual document's own
+  existing revision-checked save and the rule's own existing full-object
+  PUT are the exact two pre-existing mechanisms this reuses, matching
+  docs/alert-audio.md §10.6's own "the rule's own separate, pre-existing
+  Save action remains the only thing that ever persists either half."
+- `apps/web/src/i18n/resources/{en,pl}/visualTemplates.json` - new
+  `audio.*` (badge, badge hint, title, sound/TTS-included lines,
+  unnamed-sound fallback), `packageImport.audioTitle`/`audioSound`,
+  `replaceDraft.messageWithAudio`, and `actions.exportRequiresPackage`
+  updated to be reason-agnostic - full EN/PL parity, verified by
+  `npm run i18n:check`.
+- 7 new tests: `TemplateGallery.test.tsx` (4 - audio badge shown/not
+  shown, "Use as draft" carries the template's own `alertAudio` through
+  to `onUseAsDraft` verbatim, package-import preview shows the package's
+  own audio info before any import is confirmed) plus the pre-existing
+  "Use as draft calls onUseAsDraft" test updated for the new
+  two-argument call signature; `AlertDesignerWorkspace.test.tsx` (3 -
+  applying an audio-bearing template marks the draft dirty and Save
+  persists both the visual design and the rule's own audio in one
+  action, Save never calls `updateAlertRule` when only the visual
+  document changed, one Undo after applying an audio-bearing template
+  restores both halves together in a single step).
+
+### Automated validation
+- `npm run typecheck` - clean.
+- `npm run lint` - clean (no new react-refresh warnings - moving
+  `draftFromRule`/`emptyRuleDraft` out of `RuleManager.tsx` into
+  `models/alerts.ts` was itself driven by a real warning ESLint raised
+  when they were first exported from a component file).
+- `npm run i18n:check` - clean (2 languages, 18 namespaces, no
+  differences against `en`).
+- `npm run test` - full suite passes: 92 test files, 1299 tests (1292
+  pre-existing + 7 new), including every pre-existing `TemplateGallery`/
+  `AlertDesignerWorkspace`/`RuleManager`-adjacent test unchanged.
+- `npm run build` - clean production build.
+
+### Known limitations
+Stage 17B's own backend work (§6-§10) and both frontend UI pieces
+(§11's rule editor, §12's gallery/designer) are now complete. Still
+outstanding: the 20th integration script (§14) and the documentation/
+regression/closing passes (§15-§19). No real OBS/manual-browser/
+provider testing has been done for any of this (out of scope for this
+milestone, per the governing task's own explicit instruction) - this
+entry's own "Automated validation" list above is the full extent of
+what has been verified. Stage 17B as a whole is not complete; Stage 17
+as a whole is not complete.
+
+### Next step
+Write `scripts/verify-alert-audio.mjs`, the 20th integration script
+(§14) - local-deterministic only, reusing the existing fake TTS
+provider, exercising the real backend/runtime/API path for managed
+audio assets, rule-owned sound/TTS playback and arbitration, package v2
+audio import/export, and template-level audio persistence. Run it at
+least twice consecutively before moving on to the documentation pass.

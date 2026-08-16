@@ -29,7 +29,7 @@
     "preview": "Podgląd",
     "useAsDraft": "Użyj jako szkicu",
     "export": "Eksportuj",
-    "exportRequiresPackage": "Ten szablon zawiera zasoby. Wyeksportuj go jako pakiet.",
+    "exportRequiresPackage": "Ten szablon zawiera zasoby lub dźwięk. Wyeksportuj go jako pakiet.",
     "exportPackage": "Eksportuj pakiet",
     "delete": "Usuń",
     "import": "Importuj",
@@ -39,8 +39,18 @@
     "cancel": "Anuluj",
     "save": "Zapisz"
   },
+  "audio": {
+    "badge": "Dźwięk",
+    "badgeHint": "Ten szablon zawiera również ustawienia dźwięku i/lub odczytywanego tekstu (TTS).",
+    "title": "Dźwięk alertu",
+    "soundIncluded": "Zawiera dźwięk.",
+    "ttsIncluded": "Zawiera odczytywany tekst (TTS).",
+    "unnamedSound": "Dźwięk bez nazwy"
+  },
   "packageImport": {
-    "assetsTitle": "Zasoby w tym pakiecie"
+    "assetsTitle": "Zasoby w tym pakiecie",
+    "audioTitle": "Dźwięk w tym pakiecie",
+    "audioSound": "Dźwięk: {{name}}"
   },
   "import": {
     "tooLarge": "Ten plik jest zbyt duży, aby był prawidłowym szablonem.",
@@ -63,6 +73,7 @@
   "replaceDraft": {
     "title": "Zastąpić bieżący szkic?",
     "message": "Bieżący niezapisany szkic zostanie zastąpiony w edytorze. Nie wpływa to na zapisany projekt, dopóki nie klikniesz Zapisz.",
+    "messageWithAudio": "Spowoduje to zastąpienie niezapisanego projektu wizualnego i konfiguracji dźwięku w edytorze. Nie wpływa to na zapisaną regułę, dopóki nie klikniesz Zapisz.",
     "confirm": "Zastąp szkic"
   },
   "deleteConfirm": {

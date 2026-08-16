@@ -29,7 +29,7 @@
     "preview": "Preview",
     "useAsDraft": "Use as draft",
     "export": "Export",
-    "exportRequiresPackage": "This template contains assets. Export it as a package instead.",
+    "exportRequiresPackage": "This template contains assets or audio. Export it as a package instead.",
     "exportPackage": "Export package",
     "delete": "Delete",
     "import": "Import",
@@ -39,8 +39,18 @@
     "cancel": "Cancel",
     "save": "Save"
   },
+  "audio": {
+    "badge": "Audio",
+    "badgeHint": "This template also includes a sound and/or spoken-text (TTS) preset.",
+    "title": "Alert audio",
+    "soundIncluded": "Includes a sound.",
+    "ttsIncluded": "Includes spoken text (TTS).",
+    "unnamedSound": "Unnamed sound"
+  },
   "packageImport": {
-    "assetsTitle": "Assets in this package"
+    "assetsTitle": "Assets in this package",
+    "audioTitle": "Audio in this package",
+    "audioSound": "Sound: {{name}}"
   },
   "import": {
     "tooLarge": "This file is too large to be a valid template.",
@@ -63,6 +73,7 @@
   "replaceDraft": {
     "title": "Replace current draft?",
     "message": "Your current unsaved draft will be replaced in the editor. This does not affect the saved design until you Save.",
+    "messageWithAudio": "This will replace your unsaved visual design and audio configuration in the editor. This does not affect the saved rule until you Save.",
     "confirm": "Replace draft"
   },
   "deleteConfirm": {

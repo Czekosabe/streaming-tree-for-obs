@@ -6,6 +6,7 @@ import {
   VISUAL_TEMPLATE_IMPORT_MAX_BYTES,
   visualTemplateFileSchema,
   type VisualTemplate,
+  type VisualTemplateAlertAudio,
   type VisualTemplateTarget,
 } from '@/api/visualtemplate-schemas';
 import type { VisualTemplatePackagePreview } from '@/api/visualpackage-schemas';
@@ -27,7 +28,7 @@ import {
   useImportVisualTemplatePreviewMutation,
   useVisualTemplatesQuery,
 } from '@/hooks/use-visual-templates';
-import { downloadBlob, downloadVisualTemplateFile, templateHasAssets } from '@/models/visualtemplate';
+import { downloadBlob, downloadVisualTemplateFile, templateHasAssets, templateHasAudio } from '@/models/visualtemplate';
 
 import { templatePreviewDataContext } from './template-preview-context';
 
@@ -75,13 +76,22 @@ export function TemplateGallery({
   ownerId: string;
   draftIsDirty: boolean;
   currentDraftDocument: VisualDesignDocument;
-  onUseAsDraft: (document: VisualDesignDocument) => void;
+  // Stage 17B (docs/alert-audio.md §10.6): applying a template updates
+  // the visual draft and the alert-audio draft together, in this one
+  // call - audio is undefined for a template that carries none (the
+  // caller treats that as "reset to no rule-owned audio", exactly like
+  // switching to a visual-only template resets every other unsaved
+  // draft field).
+  onUseAsDraft: (document: VisualDesignDocument, audio: VisualTemplateAlertAudio | undefined) => void;
 }) {
   const { t } = useTranslation('visualTemplates');
   const { t: tOverlays } = useTranslation('overlays');
 
   const [mode, setMode] = useState<GalleryMode>({ kind: 'list' });
-  const [pendingDraft, setPendingDraft] = useState<VisualDesignDocument | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<{
+    document: VisualDesignDocument;
+    audio: VisualTemplateAlertAudio | undefined;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VisualTemplate | null>(null);
   const [importFile, setImportFile] = useState<{ raw: unknown; preview: VisualTemplate } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -105,18 +115,18 @@ export function TemplateGallery({
   const builtins = (listQuery.data ?? []).filter((tpl) => tpl.source === 'builtin');
   const userTemplates = (listQuery.data ?? []).filter((tpl) => tpl.source === 'user');
 
-  function requestUseAsDraft(document: VisualDesignDocument) {
+  function requestUseAsDraft(document: VisualDesignDocument, audio: VisualTemplateAlertAudio | undefined) {
     if (draftIsDirty) {
-      setPendingDraft(document);
+      setPendingDraft({ document, audio });
       return;
     }
-    onUseAsDraft(document);
+    onUseAsDraft(document, audio);
     onClose();
   }
 
   function confirmReplaceDraft() {
     if (pendingDraft !== null) {
-      onUseAsDraft(pendingDraft);
+      onUseAsDraft(pendingDraft.document, pendingDraft.audio);
       setPendingDraft(null);
       onClose();
     }
@@ -234,6 +244,7 @@ export function TemplateGallery({
 
   function renderCard(tpl: VisualTemplate) {
     const compatible = tpl.compatibility?.compatible ?? true;
+    const hasAudio = templateHasAudio(tpl.alertAudio);
     return (
       <div key={tpl.id} className="flex flex-col gap-2 rounded border border-line p-3" data-testid="template-card" data-template-id={tpl.id}>
         <div className="h-24 w-full overflow-hidden rounded bg-canvas-muted" data-testid="template-card-preview">
@@ -247,11 +258,22 @@ export function TemplateGallery({
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-ink">{tpl.name}</span>
-          <span
-            className="rounded bg-canvas-muted px-1.5 py-0.5 text-[10px] uppercase text-ink-muted"
-            data-testid="template-source"
-          >
-            {tpl.source === 'builtin' ? t('source.builtin') : t('source.user')}
+          <span className="flex items-center gap-1">
+            {hasAudio ? (
+              <span
+                className="rounded bg-canvas-muted px-1.5 py-0.5 text-[10px] uppercase text-ink-muted"
+                data-testid="template-has-audio"
+                title={t('audio.badgeHint')}
+              >
+                {t('audio.badge')}
+              </span>
+            ) : null}
+            <span
+              className="rounded bg-canvas-muted px-1.5 py-0.5 text-[10px] uppercase text-ink-muted"
+              data-testid="template-source"
+            >
+              {tpl.source === 'builtin' ? t('source.builtin') : t('source.user')}
+            </span>
           </span>
         </div>
         {tpl.description !== '' ? <p className="text-xs text-ink-muted">{tpl.description}</p> : null}
@@ -279,7 +301,7 @@ export function TemplateGallery({
             type="button"
             variant="primary"
             disabled={!compatible}
-            onClick={() => requestUseAsDraft(tpl.document)}
+            onClick={() => requestUseAsDraft(tpl.document, tpl.alertAudio)}
             data-testid="template-use-as-draft"
             title={compatible ? undefined : t('compatibility.disabledReason')}
           >
@@ -288,8 +310,8 @@ export function TemplateGallery({
           <Button
             type="button"
             onClick={() => handleExport(tpl)}
-            disabled={templateHasAssets(tpl.document)}
-            title={templateHasAssets(tpl.document) ? t('actions.exportRequiresPackage') : undefined}
+            disabled={templateHasAssets(tpl.document) || hasAudio}
+            title={templateHasAssets(tpl.document) || hasAudio ? t('actions.exportRequiresPackage') : undefined}
             data-testid="template-export"
           >
             {t('actions.export')}
@@ -388,6 +410,13 @@ export function TemplateGallery({
                 prefersReducedMotion
               />
             </div>
+            {templateHasAudio(mode.template.alertAudio) ? (
+              <div className="rounded border border-line p-2 text-xs text-ink-muted" data-testid="template-preview-audio">
+                <p className="mb-1 font-semibold uppercase text-ink-faint">{t('audio.title')}</p>
+                {mode.template.alertAudio?.soundEnabled === true ? <p>{t('audio.soundIncluded')}</p> : null}
+                {mode.template.alertAudio?.ttsEnabled === true ? <p>{t('audio.ttsIncluded')}</p> : null}
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button type="button" onClick={() => setMode({ kind: 'list' })}>
                 {t('actions.back')}
@@ -396,7 +425,7 @@ export function TemplateGallery({
                 type="button"
                 variant="primary"
                 disabled={mode.template.compatibility?.compatible === false}
-                onClick={() => requestUseAsDraft(mode.template.document)}
+                onClick={() => requestUseAsDraft(mode.template.document, mode.template.alertAudio)}
                 data-testid="template-preview-use-as-draft"
               >
                 {t('actions.useAsDraft')}
@@ -499,6 +528,21 @@ export function TemplateGallery({
                     </ul>
                   </div>
                 ) : null}
+                {packageFile.preview.alertAudio !== undefined ? (
+                  <div data-testid="template-package-audio">
+                    <p className="mb-1 text-xs font-semibold uppercase text-ink-muted">{t('packageImport.audioTitle')}</p>
+                    <ul className="space-y-1 text-xs text-ink-muted">
+                      {packageFile.preview.alertAudio.soundEnabled ? (
+                        <li>
+                          {t('packageImport.audioSound', {
+                            name: packageFile.preview.alertAudio.soundDisplayName || t('audio.unnamedSound'),
+                          })}
+                        </li>
+                      ) : null}
+                      {packageFile.preview.alertAudio.ttsEnabled ? <li>{t('audio.ttsIncluded')}</li> : null}
+                    </ul>
+                  </div>
+                ) : null}
               </>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -566,7 +610,11 @@ export function TemplateGallery({
       <ConfirmDialog
         open={pendingDraft !== null}
         title={t('replaceDraft.title')}
-        message={t('replaceDraft.message')}
+        // Stage 17B (docs/alert-audio.md §10.6): the alert-owned draft
+        // replaces both the visual design and the alert-audio
+        // configuration together as one action - a chat overlay has no
+        // audio concept at all, so its own message never claims one.
+        message={t(target === 'alert' ? 'replaceDraft.messageWithAudio' : 'replaceDraft.message')}
         confirmLabel={t('replaceDraft.confirm')}
         onConfirm={confirmReplaceDraft}
         onCancel={() => setPendingDraft(null)}

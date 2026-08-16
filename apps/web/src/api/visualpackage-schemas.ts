@@ -23,6 +23,22 @@ export const visualTemplatePackagePreviewAssetSchema = z.object({
 });
 export type VisualTemplatePackagePreviewAsset = z.infer<typeof visualTemplatePackagePreviewAssetSchema>;
 
+/** Stage 17B: describes a v2 package's own optional alertAudio preset
+ * for display purposes only (docs/alert-audio.md §12: "package preview
+ * identifies audio") - absent when the package carries none. Preview
+ * never stages or plays the sound bytes themselves, so this carries no
+ * asset id/volume, only what a human needs to see: whether sound/TTS
+ * is configured, the sound's own display name/duration, and the TTS
+ * template text. */
+export const visualTemplatePackagePreviewAudioSchema = z.object({
+  soundEnabled: z.boolean(),
+  soundDisplayName: z.string().optional(),
+  soundDurationMs: z.number().optional(),
+  ttsEnabled: z.boolean(),
+  ttsTemplate: z.string().optional(),
+});
+export type VisualTemplatePackagePreviewAudio = z.infer<typeof visualTemplatePackagePreviewAudioSchema>;
+
 /** The document here still carries package-local (`pkgasset_...`)
  * asset references, resolved against `assets[].packageAssetId`/`url` -
  * never a real local managed-asset id (docs/visual-template-
@@ -36,6 +52,7 @@ export const visualTemplatePackagePreviewSchema = z.object({
   license: z.string(),
   document: visualDesignDocumentSchema,
   assets: z.array(visualTemplatePackagePreviewAssetSchema),
+  alertAudio: visualTemplatePackagePreviewAudioSchema.optional(),
   expiresAt: z.string(),
 });
 export type VisualTemplatePackagePreview = z.infer<typeof visualTemplatePackagePreviewSchema>;

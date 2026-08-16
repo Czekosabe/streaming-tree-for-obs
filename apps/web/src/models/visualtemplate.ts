@@ -1,5 +1,10 @@
 import type { VisualDesignDocument } from '@/api/visualdesign-schemas';
-import { VISUAL_TEMPLATE_FORMAT, type VisualTemplate, type VisualTemplateFile } from '@/api/visualtemplate-schemas';
+import {
+  VISUAL_TEMPLATE_FORMAT,
+  type VisualTemplate,
+  type VisualTemplateAlertAudio,
+  type VisualTemplateFile,
+} from '@/api/visualtemplate-schemas';
 
 /**
  * Frontend-only helpers for Stage 14A's visual-template library - see
@@ -75,6 +80,17 @@ export function templateHasAssets(doc: VisualDesignDocument): boolean {
       (l.text?.fontAssetId ?? '') !== '' ||
       (l.messageFragments?.fontAssetId ?? '') !== '',
   );
+}
+
+/** Reports whether audio carries any actual configured audio - mirrors
+ * the backend's own `visualtemplate.RuleAudioPreset.HasAudio()` exactly
+ * (docs/alert-audio.md §10.7: "sound or TTS, either forces package
+ * export"). Also gates the JSON export/import path, alongside
+ * templateHasAssets above - a template with only a TTS preset (no sound
+ * asset at all) still cannot be represented in the Stage 14A JSON
+ * schema, which never gains an audio field. */
+export function templateHasAudio(audio: VisualTemplateAlertAudio | undefined): boolean {
+  return audio !== undefined && (audio.soundEnabled || audio.ttsEnabled);
 }
 
 /** Converts a management-shape VisualTemplate into the portable file

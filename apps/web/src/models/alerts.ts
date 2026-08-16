@@ -6,7 +6,7 @@
  * client-side feedback before a submit.
  */
 
-import type { AlertEventTypeCapability } from '@/api/alerts-schemas';
+import type { AlertEventTypeCapability, AlertRule, AlertRuleAudio, AlertRuleInput } from '@/api/alerts-schemas';
 
 /** Counts Unicode code points the same way the backend does - see
  * models/chat-automation.ts's own identical helper. */
@@ -270,6 +270,75 @@ export function insertPlaceholder(text: string, cursor: number, name: string): {
  * both halves share (internal/domain/alerts.ValidateRuleAudio). */
 export function isValidRuleAudioVolume(value: number): boolean {
   return Number.isFinite(value) && value >= MIN_RULE_AUDIO_VOLUME && value <= MAX_RULE_AUDIO_VOLUME;
+}
+
+/** The safe "no rule-owned audio" zero value - mirrors
+ * internal/domain/alerts.DefaultRuleAudio exactly. Shared by the rule
+ * editor's own empty draft and the Alert Designer's own template-apply
+ * flow (docs/alert-audio.md §10.6). */
+export function defaultRuleAudio(): AlertRuleAudio {
+  return {
+    soundEnabled: false, soundAssetId: '', soundVolume: DEFAULT_RULE_AUDIO_VOLUME,
+    ttsEnabled: false, ttsTemplate: '', ttsVolume: DEFAULT_RULE_AUDIO_VOLUME,
+  };
+}
+
+/** Fills in the optional `soundAssetId`/`ttsTemplate` fields a response
+ * may omit - the same `?? ''` normalization every draft-building call
+ * site needs, kept in one place. */
+export function normalizeRuleAudio(audio: AlertRuleAudio): AlertRuleAudio {
+  return {
+    soundEnabled: audio.soundEnabled, soundAssetId: audio.soundAssetId ?? '', soundVolume: audio.soundVolume,
+    ttsEnabled: audio.ttsEnabled, ttsTemplate: audio.ttsTemplate ?? '', ttsVolume: audio.ttsVolume,
+  };
+}
+
+/** Value equality for two rule-owned audio configurations - used by the
+ * Alert Designer's own combined visual+audio dirty check (docs/alert-
+ * audio.md §10.6), mirroring how `documentsEqual` compares the visual
+ * document. */
+export function ruleAudioEqual(a: AlertRuleAudio, b: AlertRuleAudio): boolean {
+  return JSON.stringify(normalizeRuleAudio(a)) === JSON.stringify(normalizeRuleAudio(b));
+}
+
+/** The rule editor's own empty-draft starting point for a brand-new
+ * rule - moved here (rather than staying a RuleManager.tsx-local
+ * function) so the Alert Designer's own combined visual+audio save
+ * (docs/alert-audio.md §10.6) can reuse draftFromRule below without
+ * importing a component file purely for its plain data helpers. */
+export function emptyRuleDraft(defaultEventType: AlertRuleInput['eventType']): AlertRuleInput {
+  return {
+    name: '', enabled: true, eventType: defaultEventType, priority: 50, durationMs: 5000,
+    minimumQuantity: null, maximumQuantity: null, requiredRole: 'everyone',
+    showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
+    textTemplate: '', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
+    providers: [], accounts: [],
+    currency: '', minimumAmountMicros: null, maximumAmountMicros: null, showAmount: false,
+    allowGrouping: false, groupWindowMs: DEFAULT_GROUP_WINDOW_MS,
+    interruptMode: 'never', interruptible: true,
+    audio: defaultRuleAudio(),
+  };
+}
+
+/** Converts a persisted AlertRule into its own editable AlertRuleInput
+ * shape - used both by the rule editor's own edit-mode draft and by
+ * the Alert Designer's combined save, which needs every other field
+ * carried through unchanged while only the audio half is replaced with
+ * the current audio draft. */
+export function draftFromRule(rule: AlertRule): AlertRuleInput {
+  return {
+    name: rule.name, enabled: rule.enabled, eventType: rule.eventType, priority: rule.priority,
+    durationMs: rule.durationMs, minimumQuantity: rule.minimumQuantity ?? null, maximumQuantity: rule.maximumQuantity ?? null,
+    requiredRole: rule.requiredRole, showPlatform: rule.showPlatform, showUsername: rule.showUsername,
+    showMessage: rule.showMessage, showQuantity: rule.showQuantity, textTemplate: rule.textTemplate,
+    entryAnimation: rule.entryAnimation, exitAnimation: rule.exitAnimation, animationDurationMs: rule.animationDurationMs,
+    providers: rule.providers, accounts: rule.accounts,
+    currency: rule.currency ?? '', minimumAmountMicros: rule.minimumAmountMicros ?? null,
+    maximumAmountMicros: rule.maximumAmountMicros ?? null, showAmount: rule.showAmount,
+    allowGrouping: rule.allowGrouping, groupWindowMs: rule.groupWindowMs,
+    interruptMode: rule.interruptMode, interruptible: rule.interruptible,
+    audio: normalizeRuleAudio(rule.audio),
+  };
 }
 
 /** Stage 17B: a rule's own TTS template - the same length bound as the

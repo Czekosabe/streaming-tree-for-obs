@@ -35,6 +35,23 @@ export const visualTemplateCompatibilitySchema = z.object({
 });
 export type VisualTemplateCompatibility = z.infer<typeof visualTemplateCompatibilitySchema>;
 
+/** Stage 17B: a template's own optional persistent-sound/TTS preset
+ * (docs/alert-audio.md §10.5) - field-identical to alertRuleAudioSchema
+ * (`api/alerts-schemas.ts`) but kept as its own independent type, since
+ * this package mirrors the backend's own `visualtemplate.RuleAudioPreset`
+ * (deliberately parallel-but-independent from `internal/domain/alerts.
+ * RuleAudio`, never importing it). Only ever set via a package v2
+ * import - absent for a built-in or plain JSON-imported template. */
+export const visualTemplateAlertAudioSchema = z.object({
+  soundEnabled: z.boolean(),
+  soundAssetId: z.string().optional(),
+  soundVolume: z.number(),
+  ttsEnabled: z.boolean(),
+  ttsTemplate: z.string().optional(),
+  ttsVolume: z.number(),
+});
+export type VisualTemplateAlertAudio = z.infer<typeof visualTemplateAlertAudioSchema>;
+
 export const VISUAL_TEMPLATE_FORMAT = 'streaming-tree-visual-template';
 export const CURRENT_TEMPLATE_SCHEMA_VERSION = 1;
 
@@ -52,6 +69,7 @@ export const visualTemplateSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   compatibility: visualTemplateCompatibilitySchema.optional(),
+  alertAudio: visualTemplateAlertAudioSchema.optional(),
 });
 export type VisualTemplate = z.infer<typeof visualTemplateSchema>;
 

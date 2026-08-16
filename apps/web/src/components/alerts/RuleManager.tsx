@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import type { AlertEventTypeCapability, AlertRule, AlertRuleAudio, AlertRuleInput } from '@/api/alerts-schemas';
+import type { AlertEventTypeCapability, AlertRule, AlertRuleInput } from '@/api/alerts-schemas';
 import { AlertRenderer } from '@/components/alerts/AlertRenderer';
 import { AudioAssetPicker } from '@/components/alerts/AudioAssetPicker';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -33,9 +33,9 @@ import {
   ALERT_ANIMATIONS,
   ALERT_EVENT_TYPES,
   ALERT_ROLES,
-  DEFAULT_GROUP_WINDOW_MS,
-  DEFAULT_RULE_AUDIO_VOLUME,
   codePointLength,
+  draftFromRule,
+  emptyRuleDraft,
   extractPlaceholderNames,
   formatAmountMicros,
   insertPlaceholder,
@@ -54,15 +54,6 @@ import {
   unknownPlaceholderNames,
   unsupportedPlaceholderNames,
 } from '@/models/alerts';
-
-/** The safe "no rule-owned audio" zero value - mirrors
- * internal/domain/alerts.DefaultRuleAudio exactly. */
-function emptyAudio(): AlertRuleAudio {
-  return {
-    soundEnabled: false, soundAssetId: '', soundVolume: DEFAULT_RULE_AUDIO_VOLUME,
-    ttsEnabled: false, ttsTemplate: '', ttsVolume: DEFAULT_RULE_AUDIO_VOLUME,
-  };
-}
 
 /** Providers alert rules can currently filter on - mirrors
  * internal/domain/alerts.ValidateProviders' own closed accept list
@@ -92,39 +83,6 @@ function errorMessage(t: TFunction<'alerts'>, error: unknown): string {
     return translated === '' ? t('errors.generic') : translated;
   }
   return t('errors.generic');
-}
-
-function emptyDraft(defaultEventType: AlertRuleInput['eventType']): AlertRuleInput {
-  return {
-    name: '', enabled: true, eventType: defaultEventType, priority: 50, durationMs: 5000,
-    minimumQuantity: null, maximumQuantity: null, requiredRole: 'everyone',
-    showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
-    textTemplate: '', entryAnimation: 'fade', exitAnimation: 'fade', animationDurationMs: 400,
-    providers: [], accounts: [],
-    currency: '', minimumAmountMicros: null, maximumAmountMicros: null, showAmount: false,
-    allowGrouping: false, groupWindowMs: DEFAULT_GROUP_WINDOW_MS,
-    interruptMode: 'never', interruptible: true,
-    audio: emptyAudio(),
-  };
-}
-
-function draftFromRule(rule: AlertRule): AlertRuleInput {
-  return {
-    name: rule.name, enabled: rule.enabled, eventType: rule.eventType, priority: rule.priority,
-    durationMs: rule.durationMs, minimumQuantity: rule.minimumQuantity ?? null, maximumQuantity: rule.maximumQuantity ?? null,
-    requiredRole: rule.requiredRole, showPlatform: rule.showPlatform, showUsername: rule.showUsername,
-    showMessage: rule.showMessage, showQuantity: rule.showQuantity, textTemplate: rule.textTemplate,
-    entryAnimation: rule.entryAnimation, exitAnimation: rule.exitAnimation, animationDurationMs: rule.animationDurationMs,
-    providers: rule.providers, accounts: rule.accounts,
-    currency: rule.currency ?? '', minimumAmountMicros: rule.minimumAmountMicros ?? null,
-    maximumAmountMicros: rule.maximumAmountMicros ?? null, showAmount: rule.showAmount,
-    allowGrouping: rule.allowGrouping, groupWindowMs: rule.groupWindowMs,
-    interruptMode: rule.interruptMode, interruptible: rule.interruptible,
-    audio: {
-      soundEnabled: rule.audio.soundEnabled, soundAssetId: rule.audio.soundAssetId ?? '', soundVolume: rule.audio.soundVolume,
-      ttsEnabled: rule.audio.ttsEnabled, ttsTemplate: rule.audio.ttsTemplate ?? '', ttsVolume: rule.audio.ttsVolume,
-    },
-  };
 }
 
 export function RuleManager({ profileId }: { profileId: string }) {
@@ -234,7 +192,7 @@ export function RuleManager({ profileId }: { profileId: string }) {
       {editingId !== null && eventTypes.length > 0 && (
         <RuleFormModal
           profileId={profileId}
-          initial={editingRule !== null ? draftFromRule(editingRule) : emptyDraft(eventTypes[0]!.eventType)}
+          initial={editingRule !== null ? draftFromRule(editingRule) : emptyRuleDraft(eventTypes[0]!.eventType)}
           title={editingRule !== null ? t('rules.editTitle') : t('rules.createTitle')}
           eventTypes={eventTypes}
           onCancel={() => setEditingId(null)}

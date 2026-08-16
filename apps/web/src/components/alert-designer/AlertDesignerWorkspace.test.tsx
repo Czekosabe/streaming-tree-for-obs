@@ -305,4 +305,78 @@ describe('AlertDesignerWorkspace', () => {
     expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'true');
     expect(vi.mocked(visualDesignApi).saveVisualDesign).not.toHaveBeenCalled();
   });
+
+  function templateWithAudio() {
+    return {
+      id: 'tpl_audio', target: 'alert' as const, source: 'user' as const, name: 'Coin Template', description: '', author: '', license: '',
+      templateSchemaVersion: 1,
+      document: {
+        version: 2 as const, canvas: { width: 1920, height: 1080, transparent: true },
+        layers: [
+          {
+            id: 'layer_from_template', name: 'Text', kind: 'text' as const, visible: true, locked: false, order: 0,
+            frame: { x: 0, y: 0, width: 400, height: 100 }, opacity: 1,
+            text: {
+              binding: 'username' as const, missingValueBehavior: 'hide' as const, fontFamily: 'system-ui' as const, fontSize: 32, fontWeight: 700,
+              lineHeight: 1.2, letterSpacing: 0, textColor: '#FFFFFF', horizontalAlign: 'center' as const, verticalAlign: 'middle' as const,
+              outlineWidth: 0, outlineColor: '#000000',
+              shadowEnabled: false, shadowOffsetX: 0, shadowOffsetY: 0, shadowBlur: 0, shadowColor: '#000000',
+            },
+            entryAnimation: 'none' as const, exitAnimation: 'none' as const, animationDurationMs: 0,
+          },
+        ],
+      },
+      compatibility: { compatible: true },
+      alertAudio: { soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 0.8, ttsEnabled: false, ttsVolume: 1 },
+    };
+  }
+
+  it('using a template with an alert-audio preset marks the draft dirty, and Save persists both halves (Stage 17B)', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([templateWithAudio()]);
+    vi.mocked(visualDesignApi).saveVisualDesign.mockResolvedValue({ persisted: true, revision: 1, document: draftResponse().document });
+    vi.mocked(alertsApi).updateAlertRule.mockResolvedValue(rule);
+    renderWorkspace();
+    await screen.findByTestId('alert-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-open-templates'));
+    await screen.findByTestId('template-gallery-list');
+    fireEvent.click(await screen.findByTestId('template-use-as-draft'));
+    await waitFor(() => expect(screen.queryByTestId('template-gallery-list')).not.toBeInTheDocument());
+    expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'true');
+
+    fireEvent.click(screen.getByTestId('designer-save'));
+    await waitFor(() => expect(vi.mocked(visualDesignApi).saveVisualDesign).toHaveBeenCalled());
+    await waitFor(() => expect(vi.mocked(alertsApi).updateAlertRule).toHaveBeenCalled());
+    const [, input] = vi.mocked(alertsApi.updateAlertRule).mock.calls[0]!;
+    expect(input.audio).toEqual({ soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 0.8, ttsEnabled: false, ttsTemplate: '', ttsVolume: 1 });
+    // Every other field is carried through from the rule prop unchanged.
+    expect(input.name).toBe(rule.name);
+    await waitFor(() => expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'false'));
+  });
+
+  it('Save never calls updateAlertRule when only the visual document changed (audio untouched)', async () => {
+    vi.mocked(visualDesignApi).saveVisualDesign.mockResolvedValue({ persisted: true, revision: 1, document: draftResponse().document });
+    renderWorkspace();
+    await screen.findByTestId('alert-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-add-shape'));
+    fireEvent.click(screen.getByTestId('designer-save'));
+    await waitFor(() => expect(vi.mocked(visualDesignApi).saveVisualDesign).toHaveBeenCalled());
+    expect(vi.mocked(alertsApi).updateAlertRule).not.toHaveBeenCalled();
+  });
+
+  it('undo after applying an audio-bearing template restores both the visual document and the audio draft together (Stage 17B)', async () => {
+    vi.mocked(visualTemplateApi).fetchVisualTemplates.mockResolvedValue([templateWithAudio()]);
+    renderWorkspace();
+    await screen.findByTestId('alert-designer-workspace');
+    fireEvent.click(screen.getByTestId('designer-open-templates'));
+    await screen.findByTestId('template-gallery-list');
+    fireEvent.click(await screen.findByTestId('template-use-as-draft'));
+    await waitFor(() => expect(screen.queryByTestId('template-gallery-list')).not.toBeInTheDocument());
+    expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'true');
+
+    fireEvent.click(screen.getByTestId('designer-undo'));
+    // One combined undo step restores the original document AND the
+    // original (no-audio) rule.audio together - dirty goes back to
+    // false, not just the visual half.
+    await waitFor(() => expect(screen.getByTestId('designer-dirty-indicator')).toHaveAttribute('data-dirty', 'false'));
+  });
 });
