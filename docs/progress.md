@@ -25707,3 +25707,102 @@ has not started yet.
 `docs/goals-widgets.md` (the full Stage 18A/18B contract) before any
 Stage 18A product code, after auditing the real current engagement/
 persistence/overlay implementation this milestone must build on.
+
+## 2026-08-16 — docs: define Stage 18A goals and widgets contract
+
+### Status
+Completed. Contract only - no product code in this commit.
+
+### Scope
+Wrote `docs/goals-widgets.md`, the canonical Stage 18A contract, before
+any Stage 18A product code, per this task's own instruction and mirroring
+`docs/alert-audio.md`'s own precedent ahead of Stage 17B.
+
+### Source audit performed first
+Read in full before writing anything: `internal/domain/engagement/
+{event,types,money,user,message,validation}.go`; `internal/engagement/
+{bus,dedupe,subscription,buffer}.go`; `internal/provider/twitch/
+eventsub_normalize.go`; `internal/provider/youtube/livechat_normalize.go`;
+`internal/provider/streamelements/normalize.go`; `internal/domain/alerts/
+{model,capability,validation}.go` and `internal/alerts/wiring.go`;
+`internal/domain/chatoverlay/model.go`; the SQLite migration/repository
+conventions (`0013_alerts.sql`, `0018_visual_assets.sql`,
+`0020_donation_sources.sql`, `0022_audio_assets.sql`, `database.go`'s
+pragma configuration); `internal/httpapi/chatoverlay.go`'s public SSE
+handler; and `apps/web/src/components/alerts/RuleManager.tsx`'s existing
+provider/account filter UI.
+
+### Key audit findings that shaped the design
+- **Event Bus subscriptions can begin at current position with zero
+  replay** (`Subscribe(after=0)`), and the bus is confirmed in-memory-
+  only, lost on every backend restart - so a manager restart can never
+  double-apply an already-observed event via bus replay.
+- **`ProviderEventID` stability differs sharply by provider** for every
+  goal-relevant event type: Twitch's `follow`/`subscription`/
+  `gifted_subscription`/`subscription_gift_batch`/`bits` events never
+  carry one (only `chat.message` and channel-point redemption do, and
+  neither is goal-relevant) - only the EventSub delivery's own
+  `message_id` (`DedupeKey`) is available. YouTube and StreamElements,
+  by contrast, set a genuine `ProviderEventID` on every goal-relevant
+  event. This directly shapes §11's durable-dedupe design (fall back to
+  `DedupeKey` only when `ProviderEventID` is empty) and its honestly
+  documented residual limitation for Twitch.
+- **Confirmed, in this repository's own `docs/engagement-architecture.md`
+  §5.4 mapping table**, that Twitch (and YouTube via the same reused
+  types) delivers both a `subscription_gift_batch` summary event and N
+  individual `gifted_subscription` events for the same underlying gift
+  operation - the exact double-count risk this task's own instructions
+  anticipated. The contract's safe rule: count only individual
+  `gifted_subscription` events, never the batch's own `Quantity`.
+- Exactly three `engagement.Type` values ever carry a real `Money` value
+  anywhere in the current provider code (`donation`, `youtube.super_
+  chat`, `youtube.super_sticker`), confirmed by grepping every `.Money =`
+  assignment across every provider package.
+- `internal/alerts/wiring.go`'s `AccountLookupAdapter` (combining
+  `*account.Service` and `*donationsource.Service` behind one
+  `AccountExists` call) and `internal/storage/sqlite/migrations/
+  0020_donation_sources.sql`'s correction dropping `alert_rule_accounts`'
+  own single-table foreign key are the exact precedent Stage 18A's own
+  provider/source filters reuse.
+
+### Contract highlights
+- Goals mean "events observed since this goal's own baseline," never a
+  provider-canonical total - no hidden provider fetch, no scraping, ever.
+- Four closed goal kinds: followers, subscriptions, donations, bits.
+- One provider-independent contribution capability table over
+  `engagement.Type` directly, mirroring `alerts.CapabilityFor`.
+- Subscription goal: resubscription/membership-milestone excluded
+  (continuing, not new); gift batch excluded, only individual gift-
+  recipient events counted (no double-count).
+- Donation goal: exact integer micros, one configured currency per goal,
+  a mismatched-currency event contributes zero, no FX ever.
+- Durable, per-goal dedupe ledger keyed on `ProviderEventID` when
+  present, `DedupeKey` otherwise, bounded to 30 days retention.
+- Atomic, transactional contribution application; a dedicated single-
+  consumer goroutine plus an atomic SQL `current_value = current_value +
+  ?` update guarantee exact totals under concurrency.
+- Baseline/current/target model with explicit, audited JS-safe-integer
+  bounds (`MaxGoalCountValue = 1e8`, `MaxGoalAmountMicros = 1e14`), both
+  with wide headroom under `Number.MAX_SAFE_INTEGER`.
+- Manual Set-current/Reset actions never publish a fake event, never
+  mutate provider state, never trigger an alert/TTS.
+- One generic public route (`/overlay/widgets/{publicSlug}`), goal-
+  snapshot-only SSE reusing the existing per-slug overlay protocol
+  (Last-Event-ID replay, gap/reset, keepalive, bounded clients).
+- No free-form designer, no `visualdesign.Document` bump, no widget
+  template/package this stage - closed presentation enums only.
+
+### Changes
+- `docs/goals-widgets.md` (new) - the full contract.
+- `docs/progress.md` - this entry only.
+
+### Automated validation
+Documentation-only commit; no code exists yet to build or test.
+
+### Known limitations
+None. Stage 18A product implementation begins with the next commit.
+
+### Next step
+`feat(server): persist goals and contribution state` - the `internal/
+domain/goals` model, validation, the four SQLite migrations (`0025`+),
+and the repository, per this contract's §8/§14/§25.
