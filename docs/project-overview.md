@@ -1648,3 +1648,13 @@ own completion.
 > conditional providers remain planned as of this writing (persistent
 > alert sound assets and per-alert-rule TTS are Stage 17B's own, later,
 > separately-scoped decision - see [audio-tts.md](audio-tts.md)).
+>
+> **Factual status update (stage 17B, completed):** that decision has
+> since been made - persistent alert sound assets, per-alert-rule TTS,
+> deterministic arbitration against the global TTS queue, a bounded
+> visual hold, and a Stage 14B package manifest v2 audio extension are
+> all real now too, on that exact same audio subsystem, exactly as
+> described earlier in this section's own "Status" paragraph. Stage 17
+> as a whole is complete. Only goal/counter widgets and the same
+> feasibility-gated/conditional providers remain planned as of this
+> writing - see [alert-audio.md](alert-audio.md).

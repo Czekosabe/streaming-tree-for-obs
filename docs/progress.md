@@ -25263,3 +25263,71 @@ docs (not limited to audio/TTS phrasing), confirming the Stage 20
 updater documentation remains intact and doc-only, then §17: the
 complete closing regression - every backend/frontend check plus all 20
 integration scripts run in the canonical order from a clean state.
+
+## 2026-08-16 — docs: fix stale Stage 17B forward-pointer in project-overview
+
+### Status
+Completed.
+
+### Scope
+The Stage 17B stale-claim audit (§16): a broader search across every
+living doc (not limited to the audio/TTS phrasing already checked
+during the completion pass) for leftover "Planned"/"not started"/
+"remains Stage 17B's own... decision" claims, plus confirmation that
+the Stage 20 application-update-system documentation
+(`docs/project-overview.md` §12.1.1) remains entirely intact and
+doc-only, unaffected by this milestone.
+
+### Findings
+- Roadmap tables in `README.md`, `docs/project-overview.md` and
+  `docs/engagement-architecture.md` all correctly show `17B` as
+  **Completed** with no stray duplicate or stale row; `18` correctly
+  still shows `Planned`.
+- `docs/project-overview.md` §16 ("Engagement and overlay platform")
+  contained a genuinely stale nested blockquote: a "Factual status
+  update (stage 17A, completed)" note (added during the earlier
+  Stage 17A documentation pass) still stated "persistent alert sound
+  assets and per-alert-rule TTS are Stage 17B's own, later,
+  separately-scoped decision" - true when written, stale now that
+  17B has shipped. Fixed the same way this document's own established
+  convention already handles every other superseded status note: the
+  original blockquote was left in place (still historically accurate
+  for when it was written) and a new "Factual status update (stage
+  17B, completed)" blockquote was appended immediately after it,
+  never rewriting the original.
+- `docs/project-overview.md` §12.1.1 (Stage 20 application update
+  system) was re-read in full and confirmed unchanged and unaffected:
+  it still states nothing described there is implemented, still
+  scoped as "documentation only," and no Stage 17B commit touched
+  `apps/server` update/installer/release code.
+- No other stale "not yet implemented"/"remains planned"/TODO/FIXME
+  phrasing referencing Stage 17B, alert audio, or per-rule TTS was
+  found anywhere else in `README.md`, `docs/alert-audio.md`,
+  `docs/audio-tts.md`, `docs/engagement-architecture.md`,
+  `docs/obs-browser-source.md`, `docs/visual-designs.md`,
+  `docs/visual-template-packages.md`, `docs/visual-templates.md`, or
+  `config/README.md`.
+- Every `scripts/verify-*.mjs` enumeration in `README.md` (the
+  integration-checks command block and the repository directory-
+  structure tree) already lists all 20 scripts, including
+  `verify-alert-audio.mjs`, in the correct canonical order.
+
+### Changes
+- `docs/project-overview.md` - appended the one corrective blockquote
+  described above. No other file needed a change.
+
+### Automated validation
+Prose-only change; no code was touched.
+
+### Known limitations
+None specific to this commit. Stage 17 as a whole is not yet fully
+closed - the complete closing regression across all backend/frontend
+checks and all 20 integration scripts (§17) has not run yet.
+
+### Next step
+Stage 17B §17: the full closing regression - frontend checks
+(i18n/typecheck/lint/test/build), backend checks (gofmt/vet ×2/test/
+build ×2), then all 20 integration scripts in the canonical order, run
+once cleanly from start to finish with no retries; any failure
+restarts the complete regression from the beginning per this
+project's own journal rule.
