@@ -257,6 +257,7 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Goals != nil {
 		registerGoalRoutes(mux, logger, opts.Goals)
+		registerPublicWidgetRoutes(mux, logger, opts.Goals)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

@@ -734,15 +734,26 @@ GET /api/public/widgets/{slug}/config   -- presentation config snapshot (not SSE
 GET /api/public/widgets/{slug}/stream   -- SSE: goal snapshot only
 ```
 
-reusing the exact established overlay conventions (`internal/httpapi/
-chatoverlay.go`'s public-stream handler, §0.1): Last-Event-ID replay
-against a bounded ring, an explicit `widget.gap` event on eviction/slow-
-consumer/stream-limit (never a silently-understated resync), a
-`widget.reset` event carrying the full current snapshot on every fresh
-connect or gap, periodic SSE keepalive comments, and a bounded live-
-client count per slug (mirrors `maxChatOverlaySSEClientsPerOverlay`).
-Rotating a profile's `publicSlug` invalidates the old URL immediately -
-mirrors every existing overlay's rotation behavior.
+**Implementation note (simplified from an earlier draft of this
+section):** an earlier draft of this section described reusing
+`internal/httpapi/chatoverlay.go`'s full Last-Event-ID/ring-buffer/gap
+machinery verbatim. That machinery exists to let a chat-overlay client
+replay a *sequence of discrete items* (upserts/removes) it may have
+missed. A goal widget never has that problem - §19 already establishes
+that this stream carries **only the current snapshot, never a delta
+sequence or event history** - so replaying "missed" snapshots is
+meaningless: the only snapshot that ever matters is the latest one, and
+a fresh connection always gets exactly that. Implemented instead as: on
+every fresh connection, send one `widget.reset` with the goal's current
+snapshot immediately; a lightweight internal poll (~1.5s) re-reads the
+goal and its widget profile and sends a new `widget.reset` (with an
+incrementing, connection-local `revision`) only when something actually
+changed; periodic SSE keepalive comments; and a bounded live-client
+count per slug (mirrors `maxChatOverlaySSEClientsPerOverlay`). No
+Last-Event-ID handling and no `widget.gap` event - there is nothing to
+gap on when every message is already a complete, self-sufficient
+snapshot. Rotating a profile's `publicSlug` invalidates the old URL
+immediately - mirrors every existing overlay's rotation behavior.
 
 **Stage 18A's own stream sends the current goal snapshot only** - never
 raw Engagement Events, never a queue, never event history. A widget

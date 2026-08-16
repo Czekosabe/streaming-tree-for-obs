@@ -26040,3 +26040,73 @@ commits in this same milestone.
 {slug}/stream` routes (docs/goals-widgets.md §19-§20): a goal-snapshot-
 only SSE reusing the established per-slug overlay protocol (Last-
 Event-ID replay, gap/reset, keepalive, bounded clients per slug).
+
+## 2026-08-16 — feat(server): add public goal widgets
+
+### Status
+Completed.
+
+### Contract simplification folded into this commit
+`docs/goals-widgets.md` §19, as originally written, described reusing
+`internal/httpapi/chatoverlay.go`'s full Last-Event-ID/ring-buffer/gap
+machinery verbatim for the public widget stream. That machinery exists
+so a chat-overlay client can replay a *sequence of discrete items* it
+may have missed. A goal widget never has that problem: §19 already
+established the stream carries only the current snapshot, never a
+delta sequence or event history, so replaying "missed" snapshots is
+meaningless - only the latest one ever matters, and a fresh connection
+always gets exactly that. Implemented, and the contract corrected to
+describe, a simpler mechanism instead: one `widget.reset` on connect,
+a lightweight internal poll (1.5s) that re-reads the goal/widget
+profile and sends another `widget.reset` (with an incrementing,
+connection-local revision) only when something actually changed,
+periodic keepalive, and a bounded live-client count per slug. No
+Last-Event-ID handling and no `widget.gap` event - there is nothing to
+gap on when every message is already a complete, self-sufficient
+snapshot. This is the third same-milestone contract refinement this
+stage has needed (after §3's event-type architecture note and §10's
+Subscribe mechanism), each caught by writing the real implementation
+and its tests against the contract rather than shipping it unverified.
+
+### Changes
+- `apps/server/internal/httpapi/public_widgets.go` (new) -
+  `registerPublicWidgetRoutes` wiring `GET /api/public/widgets/{slug}/
+  config` and `GET /api/public/widgets/{slug}/stream`; `widgetStream
+  Limiter` (mirrors `chatOverlayStreamLimiter`/`alertStreamLimiter`
+  exactly); `resolvePublicWidget` (unknown/disabled slug and a goal
+  that no longer exists are never distinguished in the response, same
+  as every other public overlay route); `publicWidgetSnapshotResponse`/
+  `publicWidgetPresentationDTO` (the only shape ever sent to a public
+  viewer - no id, no account/source id, no `providerEventId`, no
+  provider user identity); `defaultPublicWidgetSnapshot` (the safe,
+  never-a-hard-error response for an unknown/disabled slug, mirroring
+  `handleGetPublicAlertProfileConfig`'s identical convention, `Target:
+  1` so `ProgressBasisPoints` never implies a division by zero);
+  `handlePublicWidgetStream` (SSE: initial reset, poll-and-diff via a
+  cheap `UpdatedAt`-based fingerprint, keepalive, bounded clients).
+- `apps/server/internal/httpapi/router.go` - registers the public
+  widget routes alongside the management ones whenever `Goals` is set.
+- `docs/goals-widgets.md` §19 - corrected as described above.
+- 12 new tests in `apps/server/internal/httpapi/public_widgets_test.go`:
+  config returns a safe snapshot with no internal id/account/provider
+  fields leaked; unknown slug and disabled widget profile both return
+  200 with a safe empty default, never a hard error; the stream sends
+  an initial `widget.reset`; an unknown slug still gets a safe reset,
+  never an error; a real `set-current` contribution is picked up by the
+  poll and reflected in a fresh SSE event within the request's own
+  timeout; the bounded-client-count path never crashes or hangs under
+  over-subscription.
+
+### Automated validation
+`gofmt -l .` (empty), `go vet ./...`, `go vet -tags integration ./...`,
+`go build ./...`, `go build -tags integration ./...` - all clean.
+`go test ./...` - full suite passes, including all 12 new tests.
+
+### Known limitations
+No frontend yet - the Goals management page and the public
+`GoalWidgetRenderer`/`PublicWidgetPage` are the next two commits.
+
+### Next step
+`feat(web): manage goals` - the Goals page: goal CRUD, kind-specific
+forms, Set current/Reset, provider/source filters, and widget-profile
+management (docs/goals-widgets.md §27).
