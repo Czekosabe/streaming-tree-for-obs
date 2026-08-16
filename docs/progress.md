@@ -26110,3 +26110,87 @@ No frontend yet - the Goals management page and the public
 `feat(web): manage goals` - the Goals page: goal CRUD, kind-specific
 forms, Set current/Reset, provider/source filters, and widget-profile
 management (docs/goals-widgets.md §27).
+
+## 2026-08-16 — feat(web): manage goals
+
+### Status
+Completed.
+
+### Scope
+The Stage 18A Goals management page (`/goals`, docs/goals-widgets.md
+§27): goal CRUD, kind-specific create/edit forms, manual Set current/
+Reset actions, provider/source filters, and per-goal widget-profile
+management (create/edit/rotate/delete/Copy URL). Also introduces the
+shared `GoalWidgetRenderer` (used here for the in-editor preview; the
+next commit reuses it unchanged for the real public route, per this
+task's own "one renderer, two call sites" requirement).
+
+### Changes
+- `apps/web/src/api/goals-schemas.ts`/`goals.ts` (new) - Zod contracts
+  and the fetch/create/update/delete/set-current/reset/widget-profile
+  transport, mirroring `api/alerts-schemas.ts`/`alerts.ts`'s own
+  conventions exactly.
+- `apps/web/src/hooks/use-goals.ts` (new) - React Query hooks, mirroring
+  `hooks/use-alerts.ts`.
+- `apps/web/src/models/goals.ts` (new) - client-side mirrors of the
+  backend's own bounds (`MAX_GOAL_COUNT_VALUE`/`MAX_GOAL_AMOUNT_MICROS`,
+  currency-code shape, hex-color shape), default drafts, and
+  `errorMessage` (kept here rather than in a component file so both
+  `GoalManager.tsx` and `WidgetProfileManager.tsx` can import it without
+  either one exporting a non-component value - the exact same
+  `react-refresh/only-export-components` fix already applied to
+  `RuleManager.tsx`'s own `draftFromRule` in Stage 17B).
+- `apps/web/src/components/goals/GoalManager.tsx` (new) - goal list,
+  create modal (name + kind, kind locked after creation), and the
+  editor: name/enabled, kind-conditional target/baseline (exact decimal-
+  string-to-micros parsing via the existing `models/alerts.ts`
+  `parseAmountMicros`/`formatAmountMicros` for donation goals, plain
+  integers otherwise, never `parseFloat`), currency (donations only),
+  provider checkboxes, and a combined connected-account/donation-source
+  filter picker (reusing `RuleManager.tsx`'s own established pattern).
+  The "Observed progress" panel makes the non-canonical-total semantic
+  explicit in its own label and hint text (docs/goals-widgets.md §1),
+  and hosts the Set current/Reset actions - deliberately separate from
+  the main Save button, since they are manual data-layer actions, never
+  a configuration edit.
+- `apps/web/src/components/goals/WidgetProfileManager.tsx` (new) - per-
+  goal widget-profile list, create modal, and an expandable editor:
+  presentation toggles, closed orientation/text-align/font enums, hex-
+  color fields, Copy/Open/Rotate URL actions, and a live preview using
+  `GoalWidgetRenderer`.
+- `apps/web/src/components/goals/GoalWidgetRenderer.tsx` (new) - the
+  shared, presentation-only renderer (docs/goals-widgets.md §22-§23):
+  title, current/target (money formatted via the same
+  `formatAmountMicros` the rest of the app uses), a progress bar
+  clamped to 100% visually while the current value stays the real,
+  potentially-over-target number, percent label, and a completed
+  checkmark - styled entirely from the snapshot's own `presentation`
+  fields, never arbitrary CSS. Respects `prefers-reduced-motion`
+  (mirrors `AlertRenderer`/`ChatOverlayRenderer`'s identical hook).
+- `apps/web/src/pages/GoalsPage.tsx` (new) - thin `AppShell` wrapper,
+  mirroring `AlertsPage.tsx`/`AudioPage.tsx`.
+- Nav: `components/layout/nav-items.ts` gains a real (non-`planned`)
+  `/goals` entry; `App.tsx` registers the route.
+- i18n: new `goals` namespace (`i18n/config.ts`, `resources.ts`,
+  `resources/{en,pl}/goals.json`), plus a `navigation.json` entry in
+  both languages.
+- Tests: `api/goals-schemas.test.ts` (6), `models/goals.test.ts` (16),
+  `pages/GoalsPage.test.tsx` (7, real components through the real
+  router, mirroring `AlertsPage.test.tsx`'s own precedent) - create,
+  list/select, Set current, Reset, delete-with-confirmation, and
+  widget-profile creation.
+
+### Automated validation
+`npm run i18n:check`, `npm run typecheck`, `npm run lint`, `npm run
+build` - all clean. `npm run test -- --run` - full suite passes (95
+files, 1336 tests, +40 new).
+
+### Known limitations
+No public `/overlay/widgets/:publicSlug` route yet - `GoalWidgetRenderer`
+exists but nothing consumes the real public SSE stream yet. Next commit.
+
+### Next step
+`feat(web): add public goal widget renderer` - `PublicWidgetPage`
+consuming `GET /api/public/widgets/{slug}/stream` via SSE, wired to
+`GoalWidgetRenderer` unchanged, and the `/overlay/widgets/:publicSlug`
+route (docs/goals-widgets.md §19-§20).

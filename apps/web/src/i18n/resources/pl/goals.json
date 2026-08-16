@@ -1,0 +1,116 @@
+{
+  "page": {
+    "title": "Cele",
+    "description": "Trwałe cele i publiczne widżety celów OBS - obserwowany postęp od ustalonego przez Ciebie punktu startowego, nigdy wartość zgłoszona przez platformę."
+  },
+  "common": {
+    "save": "Zapisz",
+    "create": "Utwórz",
+    "delete": "Usuń",
+    "cancel": "Anuluj",
+    "noAccounts": "Żadne połączone konto ani źródło dotacji nie jest jeszcze gotowe - najpierw je połącz."
+  },
+  "errors": {
+    "goal_not_found": "Ten cel już nie istnieje.",
+    "goal_widget_profile_not_found": "Ten widżet już nie istnieje.",
+    "goal_account_not_found": "Jedno z wybranych kont lub źródeł dotacji już nie istnieje.",
+    "goal_in_use": "Ten cel ma nadal co najmniej jeden widżet - najpierw go usuń.",
+    "goal_config_conflict": "Ktoś inny właśnie zmienił ten cel - odśwież i spróbuj ponownie.",
+    "goal_invalid": "Ustawienia celu nie przeszły walidacji.",
+    "not_found": "Ten zasób już nie istnieje.",
+    "generic": "Coś poszło nie tak. Spróbuj ponownie."
+  },
+  "goals": {
+    "empty": "Brak celów - utwórz jeden, aby zacząć śledzić obserwowany postęp.",
+    "createTitle": "Utwórz cel",
+    "deleteConfirmTitle": "Usuń cel",
+    "deleteConfirmMessage": "Usunąć \"{{name}}\"? Usuwa to również jego zgromadzony postęp i historię deduplikacji.",
+    "kind": {
+      "followers": "Obserwujący",
+      "subscriptions": "Subskrypcje",
+      "donations": "Dotacje",
+      "bits": "Bity"
+    },
+    "provider": {
+      "twitch": "Twitch",
+      "youtube": "YouTube",
+      "streamelements": "StreamElements"
+    },
+    "progress": {
+      "label": "Obserwowany postęp",
+      "hint": "Zdarzenia zaobserwowane od ustalonego punktu startowego tego celu - nigdy wartość zgłoszona przez platformę.",
+      "completed": "Cel osiągnięty"
+    },
+    "actions": {
+      "setCurrent": "Ustaw bieżącą wartość",
+      "apply": "Zastosuj",
+      "reset": "Zresetuj do punktu startowego"
+    },
+    "fields": {
+      "name": "Nazwa",
+      "kind": "Rodzaj",
+      "kindHint": "Nie można zmienić po utworzeniu celu.",
+      "enabled": "Włączony",
+      "enabledHint": "Wyłączony cel nigdy nie gromadzi nowych wkładów.",
+      "target": "Cel",
+      "baseline": "Punkt startowy",
+      "baselineHint": "Ustalony przez Ciebie punkt startowy. Zmiana resetuje obserwowany postęp do nowego punktu startowego.",
+      "moneyHint": "Dokładna kwota, np. 100.00 - bez symbolu waluty.",
+      "currency": "Waluta",
+      "currencyHint": "Kod z 3-8 liter, np. USD. Nie można cicho zmienić, gdy istnieją już wkłady.",
+      "providers": "Platformy",
+      "providersHint": "Pozostaw puste, aby dopasować dowolną platformę.",
+      "accounts": "Konta / źródła",
+      "accountsHint": "Pozostaw puste, aby dopasować dowolne połączone konto lub źródło dotacji.",
+      "addAccount": "Dodaj konto",
+      "selectAccount": "Wybierz konto lub źródło"
+    }
+  },
+  "widgets": {
+    "title": "Widżety publiczne",
+    "add": "Dodaj widżet",
+    "empty": "Ten cel nie ma jeszcze żadnych publicznych widżetów.",
+    "createTitle": "Utwórz widżet",
+    "deleteConfirmTitle": "Usuń widżet",
+    "deleteConfirmMessage": "Usunąć \"{{name}}\"? Jego adres URL źródła przeglądarki przestanie działać natychmiast.",
+    "copyUrl": "Kopiuj adres URL",
+    "copied": "Skopiowano",
+    "openUrl": "Otwórz",
+    "rotateAction": "Zmień adres URL",
+    "rotateConfirmTitle": "Zmień publiczny adres URL",
+    "rotateConfirmMessage": "Bieżący adres URL źródła przeglądarki przestanie działać natychmiast - zaktualizuj go potem w OBS.",
+    "preview": "Podgląd",
+    "previewTitle": "Przykładowy cel",
+    "orientation": {
+      "horizontal": "Poziomo",
+      "vertical": "Pionowo"
+    },
+    "textAlign": {
+      "left": "Do lewej",
+      "center": "Do środka",
+      "right": "Do prawej"
+    },
+    "fontFamily": {
+      "sans_serif": "Bezszeryfowa",
+      "serif": "Szeryfowa",
+      "monospace": "Monospace",
+      "rounded": "Zaokrąglona"
+    },
+    "fields": {
+      "name": "Nazwa",
+      "titleOverride": "Zastąpienie tytułu",
+      "titleOverrideHint": "Pokazywane zamiast nazwy celu na publicznym widżecie - pozostaw puste, aby użyć nazwy celu.",
+      "enabled": "Włączony",
+      "showCurrent": "Pokaż bieżącą wartość",
+      "showTarget": "Pokaż cel",
+      "showPercent": "Pokaż procent",
+      "orientation": "Orientacja",
+      "textAlign": "Wyrównanie tekstu",
+      "fontFamily": "Czcionka",
+      "backgroundColor": "Kolor tła",
+      "foregroundColor": "Kolor tekstu",
+      "fillColor": "Kolor wypełnienia paska postępu",
+      "borderColor": "Kolor obramowania"
+    }
+  }
+}

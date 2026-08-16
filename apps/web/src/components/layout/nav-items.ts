@@ -10,6 +10,7 @@ import {
   Radio,
   Settings,
   SlidersHorizontal,
+  Target,
   Tv,
   Volume2,
   type LucideIcon,
@@ -35,6 +36,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/automation', labelKey: 'items.automation', icon: Bot, planned: false },
   { to: '/alerts', labelKey: 'items.alerts', icon: Bell, planned: false },
   { to: '/audio', labelKey: 'items.audio', icon: Volume2, planned: false },
+  { to: '/goals', labelKey: 'items.goals', icon: Target, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
 ];

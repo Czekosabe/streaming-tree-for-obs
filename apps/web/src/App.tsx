@@ -12,6 +12,7 @@ import { ChatOverlayDesignerPage } from '@/pages/ChatOverlayDesignerPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
+import { GoalsPage } from '@/pages/GoalsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { OverlayChatPage } from '@/pages/OverlayChatPage';
 import { OverlaysPage } from '@/pages/OverlaysPage';
@@ -37,6 +38,7 @@ export function App() {
             <Route path="/automation" element={<AutomationPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/audio" element={<AudioPage />} />
+            <Route path="/goals" element={<GoalsPage />} />
             {/* No AppShell: the Designer wants full control of the
                 viewport for its own canvas/panel layout and top bar -
                 see AlertDesignerPage's own doc comment. */}

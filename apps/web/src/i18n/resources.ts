@@ -9,6 +9,7 @@ import enCommon from './resources/en/common.json';
 import enDashboard from './resources/en/dashboard.json';
 import enEngagement from './resources/en/engagement.json';
 import enErrors from './resources/en/errors.json';
+import enGoals from './resources/en/goals.json';
 import enMetadata from './resources/en/metadata.json';
 import enNavigation from './resources/en/navigation.json';
 import enOverlays from './resources/en/overlays.json';
@@ -27,6 +28,7 @@ import plCommon from './resources/pl/common.json';
 import plDashboard from './resources/pl/dashboard.json';
 import plEngagement from './resources/pl/engagement.json';
 import plErrors from './resources/pl/errors.json';
+import plGoals from './resources/pl/goals.json';
 import plMetadata from './resources/pl/metadata.json';
 import plNavigation from './resources/pl/navigation.json';
 import plOverlays from './resources/pl/overlays.json';
@@ -64,6 +66,7 @@ export const enResources = {
   chatOverlayDesigner: enChatOverlayDesigner,
   visualTemplates: enVisualTemplates,
   audio: enAudio,
+  goals: enGoals,
 } as const;
 
 const plResources = {
@@ -85,6 +88,7 @@ const plResources = {
   chatOverlayDesigner: plChatOverlayDesigner,
   visualTemplates: plVisualTemplates,
   audio: plAudio,
+  goals: plGoals,
 } as const;
 
 export const resources = {

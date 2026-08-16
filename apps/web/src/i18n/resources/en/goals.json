@@ -1,0 +1,116 @@
+{
+  "page": {
+    "title": "Goals",
+    "description": "Persistent goals and public OBS goal widgets - observed progress since a baseline you set, never a provider-reported total."
+  },
+  "common": {
+    "save": "Save",
+    "create": "Create",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "noAccounts": "No connected account or donation source is ready yet - connect one first."
+  },
+  "errors": {
+    "goal_not_found": "This goal no longer exists.",
+    "goal_widget_profile_not_found": "This widget profile no longer exists.",
+    "goal_account_not_found": "One of the selected accounts or donation sources no longer exists.",
+    "goal_in_use": "This goal still has one or more widget profiles - delete them first.",
+    "goal_config_conflict": "Another save already changed this goal - reload and try again.",
+    "goal_invalid": "The goal settings failed validation.",
+    "not_found": "This resource no longer exists.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "goals": {
+    "empty": "No goals yet - create one to start tracking observed progress.",
+    "createTitle": "Create goal",
+    "deleteConfirmTitle": "Delete goal",
+    "deleteConfirmMessage": "Delete \"{{name}}\"? This also removes its own accumulated progress and dedupe history.",
+    "kind": {
+      "followers": "Followers",
+      "subscriptions": "Subscriptions",
+      "donations": "Donations",
+      "bits": "Bits"
+    },
+    "provider": {
+      "twitch": "Twitch",
+      "youtube": "YouTube",
+      "streamelements": "StreamElements"
+    },
+    "progress": {
+      "label": "Observed progress",
+      "hint": "Events observed since this goal's own baseline - never a provider-reported total.",
+      "completed": "Target reached"
+    },
+    "actions": {
+      "setCurrent": "Set current value",
+      "apply": "Apply",
+      "reset": "Reset to baseline"
+    },
+    "fields": {
+      "name": "Name",
+      "kind": "Kind",
+      "kindHint": "Cannot be changed after the goal is created.",
+      "enabled": "Enabled",
+      "enabledHint": "A disabled goal never accumulates new contributions.",
+      "target": "Target",
+      "baseline": "Baseline",
+      "baselineHint": "The starting point you set. Changing it resets the observed progress to the new baseline.",
+      "moneyHint": "Exact amount, e.g. 100.00 - no currency symbol.",
+      "currency": "Currency",
+      "currencyHint": "A 3-8 letter code, e.g. USD. Cannot silently change once contributions exist.",
+      "providers": "Providers",
+      "providersHint": "Leave empty to match any provider.",
+      "accounts": "Accounts / sources",
+      "accountsHint": "Leave empty to match any connected account or donation source.",
+      "addAccount": "Add account",
+      "selectAccount": "Select an account or source"
+    }
+  },
+  "widgets": {
+    "title": "Public widgets",
+    "add": "Add widget",
+    "empty": "No public widgets yet for this goal.",
+    "createTitle": "Create widget",
+    "deleteConfirmTitle": "Delete widget",
+    "deleteConfirmMessage": "Delete \"{{name}}\"? Its own Browser Source URL stops working immediately.",
+    "copyUrl": "Copy URL",
+    "copied": "Copied",
+    "openUrl": "Open",
+    "rotateAction": "Rotate URL",
+    "rotateConfirmTitle": "Rotate public URL",
+    "rotateConfirmMessage": "The current Browser Source URL stops working immediately - update it in OBS afterward.",
+    "preview": "Preview",
+    "previewTitle": "Example goal",
+    "orientation": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "textAlign": {
+      "left": "Left",
+      "center": "Center",
+      "right": "Right"
+    },
+    "fontFamily": {
+      "sans_serif": "Sans-serif",
+      "serif": "Serif",
+      "monospace": "Monospace",
+      "rounded": "Rounded"
+    },
+    "fields": {
+      "name": "Name",
+      "titleOverride": "Title override",
+      "titleOverrideHint": "Shown instead of the goal's own name on the public widget - leave empty to use the goal's name.",
+      "enabled": "Enabled",
+      "showCurrent": "Show current",
+      "showTarget": "Show target",
+      "showPercent": "Show percent",
+      "orientation": "Orientation",
+      "textAlign": "Text align",
+      "fontFamily": "Font",
+      "backgroundColor": "Background color",
+      "foregroundColor": "Text color",
+      "fillColor": "Progress fill color",
+      "borderColor": "Border color"
+    }
+  }
+}
