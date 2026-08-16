@@ -25156,3 +25156,110 @@ NOTICES - updating script count 19→20 and every stage-status marker to
 reflect Stage 17A/17B/17-whole Completed, in each doc's own current
 living section only, never touching an earlier historical progress.md
 entry.
+
+## 2026-08-16 — docs: reflect Stage 17B completion across living docs
+
+### Status
+Completed.
+
+### Scope
+A documentation pass across every living doc carrying a Stage 17B
+"Planned"/"not started" status marker or a stale forward-pointer to
+Stage 17B as future work, now that Stage 17B has shipped and been
+verified by `scripts/verify-alert-audio.mjs`. `docs/visual-designs.md`
+and `THIRD_PARTY_NOTICES.md` were both checked and needed no change:
+the former's audio-out-of-scope statement is still true (Stage 17B
+added no `visualdesign.Document` audio layer), and `git log` confirms
+no Stage 17B commit touched `go.mod` (the one audio-related dependency,
+`go-ole` v1.3.0, remains solely attributed to Stage 17A's SAPI
+provider).
+
+### Changes
+- `docs/audio-tts.md` - added an **Update** paragraph after the
+  original "Expected status after this task" line (left unchanged as
+  historically accurate for the document as originally written),
+  stating Stage 17A/17B/17-whole are now all Completed and
+  cross-referencing `alert-audio.md`; explicitly notes that every
+  "deliberately not implemented here"/"Stage 17B's own, later,
+  separately-scoped decision" phrase elsewhere in the document
+  describes Stage 17A's scope at the time it was written and remains
+  historically accurate, not a claim the work never happened.
+- `docs/project-overview.md` - roadmap table row `17B` changed to
+  **Completed**; §16 "Engagement and overlay platform" piece count
+  went from twelve to thirteen with a new clause describing 17B's own
+  additions (per-rule TTS, alert/audio synchronization, package
+  manifest v2 audio); replaced the "Stage 17 as a whole is not
+  complete either" sentence with "Stage 17 as a whole is now
+  complete"; fixed a stale "as of stage 17A" reference in the closing
+  summary paragraph to "as of stage 17B".
+- `docs/engagement-architecture.md` - roadmap table row `17B` changed
+  to **Completed** with a cross-reference to `alert-audio.md`; added a
+  new "Factual status update (stage 17B, completed)" blockquote
+  immediately after the existing Stage 17A one, describing the managed
+  audio-asset domain, deterministic arbitration, the sound-then-TTS
+  chain, the bounded visual hold, and the package manifest v2
+  extension.
+- `docs/obs-browser-source.md` - heading "Stage 17A: the audio Browser
+  Source route" widened to "Stage 17A/17B: the audio Browser Source
+  route" with a sentence noting Stage 17B reuses the exact same route/
+  payload/ack protocol introduced by 17A; "What was not tested" list
+  and script list extended to include Stage 17B and
+  `scripts/verify-alert-audio.mjs`.
+- `docs/visual-template-packages.md` - added a "Factual status update
+  (stage 17B, completed)" paragraph in §2 immediately after the
+  existing Stage 17A one, clarifying the decision was made without
+  widening the `assets`/`pkgasset_` kind; updated the §3 schema table's
+  manifest-version row to read "1 or 2"; inserted a new "§5a. Package
+  manifest v2 - the optional `alertAudio`/`audioAssets` objects (Stage
+  17B)" section between the former §5 and §6, covering the manifest
+  JSON shape, optionality under `schemaVersion: 2`, the disjoint
+  `pkgaudio_`-prefixed sibling array and `audio/<segment>` path root,
+  the bidirectional cross-check, bounds, ID rewrite on import/export,
+  and v1/v2 export gating; corrected §25's stale "no ... audio asset
+  kind" bullet (the one narrow `sound` kind now exists, in its own
+  separate `audioAssets` array, never widening `assets[]`) and updated
+  its "Stage 17's decision to make" bullet to note the decision has
+  been made.
+- `docs/visual-templates.md` - two forward-pointer fixes (§2 and §12):
+  "stays Stage 17's own subsystem" changed to "became Stage 17's own
+  subsystem, completed in Stage 17B", each cross-referencing
+  `alert-audio.md` §10.
+- `config/README.md` - appended rule 19 (Stage 17A, `audio_settings`
+  singleton table, no file storage, in-memory runtime queue) and rule
+  20 (Stage 17B, four new tables across migrations `0022`/`0023`/
+  `0024`, the `assets/audio/` sibling blob directory to
+  `assets/visual/`, reconciliation behavior mirroring visual assets)
+  after the previous last rule (18, Stage 16A).
+- `README.md` - the largest set of changes: roadmap table row `17B`
+  changed to **Completed** with a link to `alert-audio.md`; the
+  top-of-file summary's "stages 8A through 17A" widened to "stages 8A
+  through 17B"; the **Text-to-speech and audio** section's "does not
+  implement" paragraph updated to note Stage 17B has since shipped;
+  new "Persistent alert audio and per-rule TTS (Stage 17B)" subsection
+  added (managed audio-asset domain, rule config, arbitration/chain/
+  bounded-hold, package manifest v2, draft-first Designer application);
+  "Verifying it for real" extended with a paragraph on
+  `scripts/verify-alert-audio.mjs`; the integration-checks script list
+  and the repository directory-structure tree both gained the 20th
+  script and `docs/alert-audio.md`; "What is currently demo-only"
+  table cell and "What is real"/"What will be added later" bullet
+  lists updated to reflect Stage 17 as a whole being complete.
+
+### Automated validation
+Prose-only changes; no code was touched. Every new/edited cross-
+reference link and anchor was checked to actually exist, including the
+new README `#persistent-alert-audio-and-per-rule-tts-stage-17b` anchor
+against its own heading slug.
+
+### Known limitations
+None specific to this commit. Stage 17 as a whole is not yet fully
+closed - the stale-claim audit (§16, a broader sweep beyond the
+audio-specific phrasing already checked here) and the complete closing
+regression across all 20 integration scripts have not run yet.
+
+### Next step
+Stage 17B §16: a broader stale-claims search across the same living
+docs (not limited to audio/TTS phrasing), confirming the Stage 20
+updater documentation remains intact and doc-only, then §17: the
+complete closing regression - every backend/frontend check plus all 20
+integration scripts run in the canonical order from a clean state.

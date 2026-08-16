@@ -372,3 +372,42 @@ with no transcoding, is this stage's deliberate scope.
     provider's event does, and a backend restart never replays donation
     history. See
     [external-donations.md](../docs/provider-integrations/external-donations.md).
+19. Stage 17A (shared audio runtime and text-to-speech foundation) adds
+    **one** new **persisted** table in one migration
+    (`0021_audio_tts.sql`): a `audio_settings` singleton row (enabled,
+    provider mode, filtering/cooldown/text-preprocessing settings, voice/
+    language/speed/volume, and the public slug). No audio *bytes* are
+    ever persisted anywhere, in this directory or in SQLite - generated
+    speech is synthesized just in time, held only in memory for the
+    duration of one playback, and never written to disk. The runtime
+    audio queue itself (pending items, current item, playback state,
+    renderer session token) is **runtime state, kept in memory only**
+    and never survives a restart. Stage 17A added **no new environment
+    variable**. See [audio-tts.md](../docs/audio-tts.md).
+20. Stage 17B (persistent alert sound assets, per-alert-rule TTS,
+    synchronization with alert playback, and portable-package audio,
+    Stage 17 as a whole now complete) adds four new **persisted**
+    tables across three migrations: `0022_audio_assets.sql`
+    (content-addressed audio-blob metadata, logical audio-asset
+    metadata, and two reference-tracking join tables - alert-rule and
+    template audio references to an asset, the exact same shape item 17
+    above already established for visual assets), `0023_alert_rule_
+    audio.sql` (six new columns on the existing `alert_rules` table -
+    sound/TTS enabled flags, the sound asset id, and both volumes; no
+    FK on the asset id column itself, the real reference is tracked
+    transactionally through `alert_rule_audio_asset_refs`), and
+    `0024_visual_template_audio.sql` (the identical six-column shape on
+    `visual_templates`, for a template's own optional audio preset -
+    only ever populated by a package v2 import, never by the plain
+    Stage 14A JSON create/import path). The blob *bytes* themselves are
+    never stored in SQLite or in this directory - they live as plain
+    16-bit PCM WAV files under `<application data directory>/
+    assets/audio/`, a sibling directory to item 17's own
+    `assets/visual/`, addressed by SHA-256 digest exactly the same way,
+    one file per unique blob regardless of how many logical assets or
+    references point at it. Startup reconciliation removes an orphaned
+    blob (zero references in either reference table) and reports, but
+    never removes, a database row whose backing file is missing -
+    mirroring the visual-asset store's own `Reconcile` convention
+    exactly. Stage 17B added **no new environment variable**. See
+    [alert-audio.md](../docs/alert-audio.md).

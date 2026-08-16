@@ -1086,6 +1086,25 @@ bundling**, exactly as MediaMTX's licence was reviewed before it was bundled
 > why SAPI was chosen over `Windows.Media.SpeechSynthesis` (WinRT), and
 > [progress.md](progress.md) for exactly what shipped.
 
+> **Factual status update (stage 17B, completed):** every item stage 17A
+> deferred above has since shipped, on top of that exact same audio
+> subsystem - never a second engine. A managed audio-asset domain
+> (`internal/domain/audioasset`, 16-bit PCM WAV only, its own
+> content-addressed blob store sibling to `internal/domain/visualasset`'s
+> own), rule-owned sound/TTS configuration on `alert_rules` validated the
+> same way every other rule field already is, deterministic arbitration
+> (a rule-owned item always preempts a currently-playing global-TTS item
+> outright, never the reverse, never preempting another alert instance's
+> own audio), a sound-then-TTS chain that advances automatically on
+> natural completion and never on grouping, a bounded (15s) visual hold
+> so an alert stays visible while its own linked audio is still playing,
+> and a Stage 14B package manifest v2 extension
+> (`alertAudio`/`audioAssets`) carrying that same configuration through a
+> portable `.streaming-tree-template` archive, validated through the
+> exact same managed-asset validator a manual upload uses. See
+> [alert-audio.md](alert-audio.md) for the full contract and
+> [progress.md](progress.md) for exactly what shipped.
+
 ## 13. Visual designers and templates
 
 > **Factual status update (stage 13A, completed, partial):** the **Alert
@@ -1478,7 +1497,7 @@ that table.
 | 16A | External donation foundation + StreamElements donations connector (§15) — **Completed** |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) (§15) — **Deferred**, feasibility-gated |
 | 17A | Shared audio runtime and text-to-speech foundation (§12) — **Completed** |
-| 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12) — Planned |
+| 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12, see [alert-audio.md](alert-audio.md)) — **Completed**, stage 17 as a whole is now complete |
 | 18 | Goals, counters and event widgets (§14) |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |

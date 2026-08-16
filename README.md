@@ -52,7 +52,14 @@ and a real **shared audio runtime and text-to-speech foundation**
 Windows SAPI implementation, a shared bounded audio queue consuming that
 same Event Bus (cooldowns, manual approval, per-source/per-currency/
 per-bits filtering, text preprocessing), and a real public OBS Browser
-Source audio route — see [`docs/audio-tts.md`](docs/audio-tts.md).
+Source audio route — see [`docs/audio-tts.md`](docs/audio-tts.md) —
+and, on top of that exact same runtime, real **persistent alert sound
+assets and per-alert-rule TTS** (stage 17B; Stage 17 as a whole is now
+complete): a managed audio-asset library (16-bit PCM WAV only),
+rule-owned sound/TTS with deterministic arbitration against the global
+TTS queue and a bounded visual hold, and a Stage 14B package manifest
+v2 extension carrying that configuration through a portable template
+package — see [`docs/alert-audio.md`](docs/alert-audio.md).
 **Still planned**: goal/counter widgets, a **Kick**
 engagement connector (feasibility-gated — see
 [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
@@ -64,7 +71,7 @@ packaging/updater/hardening work — detailed in
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 17A).
+engagement piece above in order (stages 8A through 17B).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
@@ -257,7 +264,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain, a real Astro WebSocket connector, exact integer-micros money conversion, and full reuse of the existing Event Bus/operator chat/alerts pipeline, see [external-donations.md](docs/provider-integrations/external-donations.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth token exchange requires a confidential client secret with no public-client alternative found; Ko-fi is webhook-only, requiring a public inbound endpoint this deployment target does not offer; see [external-donations.md](docs/provider-integrations/external-donations.md); Stage 16 as a whole is **not** complete |
 | 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a shared bounded audio queue consuming the Event Bus, and a public OBS Browser Source audio route, see [audio-tts.md](docs/audio-tts.md) | **Completed** — see [progress.md](docs/progress.md) |
-| 17B | Persistent alert sounds, per-rule TTS, visual-template audio assets | Planned |
+| 17B | Persistent alert sounds, per-rule TTS, visual-template audio assets, see [alert-audio.md](docs/alert-audio.md) | **Completed** — see [progress.md](docs/progress.md); Stage 17 as a whole is now complete |
 | 18 | Goal/counter widgets | Planned |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
@@ -2593,9 +2600,50 @@ OBS Browser Source audio-support research.
 assets, per-alert-rule TTS/sound, synchronization with alert playback,
 a local or cloud TTS engine (both rejected by validation, not silently
 accepted), and any audio extension of the Stage 14B template-asset
-format — all deliberately deferred to Stage 17B. Non-Windows builds
-compile and run identically; the `system` provider honestly reports
-itself unavailable there rather than faking success.
+format — all deliberately deferred to Stage 17B (since shipped — see
+below). Non-Windows builds compile and run identically; the `system`
+provider honestly reports itself unavailable there rather than faking
+success.
+
+### Persistent alert audio and per-rule TTS (Stage 17B)
+
+Built directly on that same shared audio runtime — never a second
+playback engine. A managed **audio asset** domain
+(`internal/domain/audioasset`) accepts exactly one closed format, 16-bit
+PCM WAV (RIFF/WAVE, mono or stereo, 8–192 kHz sample rate), verified by
+an independent structural signature parser — never a filename
+extension, never a caller-declared media type alone, never FFmpeg/
+ffprobe. Blobs are content-addressed and deduplicated in a second
+`FileStore` instance, a sibling of Stage 14B's own managed-visual-asset
+store.
+
+An alert rule may now configure a persistent **sound** (chosen from
+that managed library, with its own volume) and/or rule-owned **TTS**
+(reusing the exact same `{placeholder}` grammar/renderer the rule's
+own visual text template already uses — never a second grammar), each
+validated the same way every other rule field already is. Playback is
+synchronized with the shared `internal/audio` queue: a rule-owned
+item always preempts a currently-playing global-TTS item outright, but
+never preempts another alert instance's own current audio; a
+configured sound plays, then TTS, automatically on natural completion
+(never on grouping, since grouping only ever merges still-queued
+instances); and the alert stays visible for a bounded extra hold
+(capped at 15 seconds) while its own linked audio is still genuinely
+playing, rather than hiding the instant its own fixed duration elapses.
+
+The Stage 14B package format also gained an optional **manifest schema
+v2**: two new sibling objects, `alertAudio` and `audioAssets`, carrying
+a template's own sound/TTS preset and its bundled WAV file through a
+portable `.streaming-tree-template` archive — legal only for an
+alert-target package, validated through the exact same managed-asset
+validator a manual upload uses. A purely visual template still exports
+as schema v1, byte-shape-identical to before this stage; v2 is written
+only when a template actually carries a configured audio preset.
+Applying such a template in the Alert Designer updates the visual
+draft and the alert-audio draft together, as one combined, one-undo-
+step action — never auto-saving the rule.
+
+See [`docs/alert-audio.md`](docs/alert-audio.md) for the full contract.
 
 ### Verifying it for real
 
@@ -2621,6 +2669,18 @@ every audio-surface payload plus the raw SQLite file — run at least
 twice per change. See [`docs/progress.md`](docs/progress.md) for
 exactly which scenarios this covers versus a specific named Go test
 instead.
+
+`scripts/verify-alert-audio.mjs` exercises Stage 17B the same
+representative-subset way: managed audio-asset upload/list/delete-
+guard, rule-audio persistence and validation, the bounded visual hold
+with zero renderer ever connected, the real sound-then-TTS chain over
+the real public audio/alert SSE streams (ordered items, correct
+per-item combined volume, no alert/rule identifier or spoken text ever
+in the public payload), arbitration against a real global-TTS item,
+package v2 audio import/export (a fresh local asset id every time, a
+chat-target package carrying `alertAudio` rejected before any asset is
+staged, a plain v1 package unaffected), and a final SQLite scan — also
+run at least twice per change.
 
 ---
 
@@ -2981,6 +3041,7 @@ node scripts/verify-visual-template-packages.mjs  # Stage 14B managed assets and
 node scripts/verify-youtube-engagement.mjs        # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 node scripts/verify-streamelements-donations.mjs  # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
 node scripts/verify-tts-audio.mjs                 # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
+node scripts/verify-alert-audio.mjs               # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -3327,6 +3388,7 @@ rest of the repository.
 │   ├── engagement-architecture.md # Engagement platform architecture (operator chat implemented as of stage 9, the OBS chat overlay as of stage 10, manual outbound chat as of stage 11A, scheduled messages and chat commands as of stage 11B)
 │   ├── obs-browser-source.md   # Researched OBS Browser Source contract and Stage 10 recommendations
 │   ├── audio-tts.md            # Researched Windows SAPI TTS contract, the shared audio runtime/queue design, and the public audio overlay protocol (Stage 17A)
+│   ├── alert-audio.md          # Persistent alert sound assets, per-alert-rule TTS, synchronization, and package v2 audio (Stage 17B)
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
@@ -3355,7 +3417,8 @@ rest of the repository.
 │   ├── verify-visual-template-packages.mjs # Stage 14B managed assets and portable .streaming-tree-template packages - no fake servers needed
 │   ├── verify-youtube-engagement.mjs # Stage 15A YouTube Live Chat connector, alerts, outbound chat, chat automation - fake Google/YouTube only
 │   ├── verify-streamelements-donations.mjs # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
-│   └── verify-tts-audio.mjs        # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
+│   ├── verify-tts-audio.mjs        # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
+│   └── verify-alert-audio.mjs      # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -3374,7 +3437,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Goal/counter widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline), and a real **shared audio runtime and text-to-speech foundation** (stage 17A: a real Windows SAPI provider, a bounded audio queue consuming that same Event Bus, and a public OBS Browser Source audio route) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents), [Text-to-speech and audio](#text-to-speech-and-audio) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Goal/counter widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline), and a real **shared audio runtime and text-to-speech foundation** (stage 17A: a real Windows SAPI provider, a bounded audio queue consuming that same Event Bus, and a public OBS Browser Source audio route), plus real **persistent alert sound assets and per-alert-rule TTS** on top of that exact same runtime (stage 17B: a managed audio-asset library, rule-owned sound/TTS with deterministic arbitration and a bounded visual hold, and a Stage 14B package manifest v2 audio extension) — Stage 17 as a whole is now complete — (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents), [Text-to-speech and audio](#text-to-speech-and-audio) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3524,6 +3587,15 @@ directly next to the control.
   per-currency/per-Bits filtering and text preprocessing; and a real,
   public, unauthenticated OBS Browser Source audio route — see
   [Text-to-speech and audio](#text-to-speech-and-audio).
+- **Real persistent alert sound assets and per-alert-rule TTS** (stage
+  17B, Stage 17 as a whole now complete) — built on that exact same
+  audio runtime: a managed audio-asset library (16-bit PCM WAV only),
+  rule-owned sound/TTS with deterministic arbitration against the
+  global TTS queue, a bounded visual hold so an alert stays visible
+  while its own audio is still playing, and a Stage 14B package
+  manifest v2 extension carrying that configuration through a portable
+  template package — see
+  [Persistent alert audio and per-rule TTS (Stage 17B)](#persistent-alert-audio-and-per-rule-tts-stage-17b).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3551,8 +3623,9 @@ API does not report them, so showing a number would mean inventing it.
   deployment target does not offer. A real shared audio runtime and
   text-to-speech foundation shipped in Stage 17A — see
   [`docs/audio-tts.md`](docs/audio-tts.md). Persistent alert sound
-  assets, per-alert-rule TTS, and any audio extension of the template
-  format remain Stage 17B's own, later, separately-scoped decision.
+  assets, per-alert-rule TTS, and the template-manifest audio extension
+  shipped in Stage 17B, on that same runtime — Stage 17 as a whole is
+  now complete — see [`docs/alert-audio.md`](docs/alert-audio.md).
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---

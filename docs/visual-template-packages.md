@@ -59,6 +59,21 @@ same statement appears in
 [`docs/engagement-architecture.md`](engagement-architecture.md) so the
 boundary is visible from every entry point.
 
+**Factual status update (stage 17B, completed):** that decision has
+since been made, and it did **not** widen the `assets`/`pkgasset_` kind
+this section describes. Package **manifest schema v2** (§3) adds two
+new, entirely separate, sibling top-level objects - `alertAudio` and
+`audioAssets` - never a new `assets[].kind` value, so every rule this
+section states about `assets` (no URL field, no local path, bounded
+ASCII paths under `assets/<segment>` only, muted video, no `audio`
+asset kind) remains true of that array unchanged. Audio's own package-
+local IDs use a disjoint `pkgaudio_` prefix and live under their own
+`audio/<segment>` path root, streamed through the exact same
+`internal/domain/audioasset` structural/signature validator a manual
+upload uses - never a second, weaker, package-path-specific validator.
+See [alert-audio.md](alert-audio.md) §10 for the full manifest v2
+contract and the new §5a below for its own shape.
+
 ## 3. Four independently versioned schemas
 
 Stage 14B raises the schema count from two to four. Each has its own
@@ -68,7 +83,7 @@ version counter; none is reused for another concern.
 | - | ------ | -------------- | -------------- | ----- |
 | A | `visualdesign.Document` | `Version` | 3 (raised from 2 by this stage) | The shared, provider-independent layer tree - what a design/template/package ultimately renders. |
 | B | Stage 14A template interchange (`streaming-tree-visual-template`) | `schemaVersion` | 1 (unchanged) | A single asset-free JSON file wrapping one Document. |
-| C | Stage 14B package manifest (`streaming-tree-template-package`) | `schemaVersion` | 1 (new) | The archive-level manifest describing a `.streaming-tree-template` package's contents. |
+| C | Stage 14B package manifest (`streaming-tree-template-package`) | `schemaVersion` | 1 or 2 (1 new this stage; 2 added by Stage 17B, §5a, for the optional `alertAudio`/`audioAssets` objects - never required, a purely visual package still exports/imports as v1) | The archive-level manifest describing a `.streaming-tree-template` package's contents. |
 | D | Managed-asset SQLite persistence | migration number | new migrations, this stage | A local implementation detail - never a portable file format, never shipped inside a package. |
 
 Document schema B (Stage 14A's JSON template file) is unchanged by this
@@ -130,6 +145,80 @@ Strict JSON, unknown fields rejected. Top-level shape:
   outside the archive.
 - `displayName`/`author`/`license`/`notice` are bounded plain text (§16) -
   never URLs, never HTML.
+
+## 5a. Package manifest v2 - the optional `alertAudio`/`audioAssets` objects (Stage 17B)
+
+Legal **only** when `schemaVersion` is `2`, and **only** when the sibling
+`template.json`'s own `target` is `alert` - a `chat`-target package
+carrying either object is rejected outright, before any asset (visual or
+audio) is even staged, with the stable error
+`visual_template_package_audio_target_invalid`. A v1 manifest that
+somehow carries either object is rejected the same way an unrecognized
+field always is (§5's own strict-JSON rule).
+
+```json
+{
+  "format": "streaming-tree-template-package",
+  "schemaVersion": 2,
+  "templatePath": "template.json",
+  "assets": [ /* unchanged v1 shape, image/video/font entries as before */ ],
+  "alertAudio": {
+    "soundEnabled": true,
+    "soundAssetId": "pkgaudio_a1b2c3d4",
+    "soundVolume": 1.0,
+    "ttsEnabled": true,
+    "ttsTemplate": "{username} says: {message}",
+    "ttsVolume": 0.8
+  },
+  "audioAssets": [
+    {
+      "id": "pkgaudio_a1b2c3d4",
+      "path": "audio/pkgaudio_a1b2c3d4.wav",
+      "mediaType": "audio/wav",
+      "sha256": "…64 hex chars…",
+      "sizeBytes": 654321,
+      "durationMs": 4200,
+      "displayName": "Coin chime"
+    }
+  ]
+}
+```
+
+- `alertAudio` is entirely optional even under `schemaVersion: 2` (a
+  template author may bump the version for some future unrelated v2
+  field and carry no audio at all). When present, its own bounds/mode
+  matrix (a sound asset id required exactly when `soundEnabled`, a TTS
+  template required exactly when `ttsEnabled`, both volumes in `[0,
+  1]`) are checked by the identical validator §7 of
+  [alert-audio.md](alert-audio.md) uses for a live rule's own `audio`
+  object - never a second, weaker validator.
+- `audioAssets` is a **separate sibling array** from `assets` above, with
+  its own disjoint `pkgaudio_`-prefixed ID namespace (never `pkgasset_`,
+  so a manifest-parsing bug can never cross-resolve a visual reference
+  against an audio entry or vice versa) and its own `audio/<segment>`
+  path root, validated by the identical bounded-ASCII-filename grammar
+  §7 already defines for `assets/<segment>` - one more accepted root
+  prefix, no new path-grammar code.
+- `alertAudio.soundAssetId`, when set, must reference an entry in
+  `audioAssets`, and every `audioAssets` entry must be referenced by
+  `alertAudio` - the same bidirectional cross-check §6/§20 already apply
+  to `assets`, extended to this sibling array (a package never contains
+  audio bytes it doesn't use).
+- Bounds (§10): max one audio asset entry per package today (a preset
+  carries at most one sound), max single audio asset size 8 MiB
+  (matching `audioasset.MaxSoundBytes`) - the existing aggregate bounds
+  (total uncompressed bytes, entry count, decompression ratio) already
+  cover the rest without a separate audio-specific aggregate bound.
+- **ID rewrite** mirrors §6 exactly: import generates a fresh local
+  `audioasset_<random>` ID for every accepted `audioAssets` entry and
+  rewrites the imported template's own stored `soundAssetId` to it
+  before persistence; export remaps back to deterministic
+  `pkgaudio_%04d` IDs. A package-supplied `pkgaudio_` ID is never
+  written into a database table.
+- Export writes `schemaVersion: 2` **only** when the template being
+  exported actually carries a configured `alertAudio` preset (sound or
+  TTS or both) - a purely visual template still exports as v1,
+  byte-shape-identical to before this stage.
 
 ## 6. Package logical asset IDs are archive-local, never trusted as database IDs
 
@@ -674,13 +763,21 @@ directly.
 ## 25. What Stage 14B explicitly does not implement
 
 - No template/visual-layer sound or audio playback of any kind (§2) - that
-  is Stage 17's decision to make, on its own audio subsystem.
+  was Stage 17's decision to make, on its own audio subsystem. That
+  decision has since been made (stage 17B, completed, §5a) - rule-owned
+  sound/TTS through the package's own `alertAudio`/`audioAssets`
+  manifest v2 objects, never a `visualdesign.Document` audio layer, and
+  never widening `assets[]`'s own closed `image`/`video`/`font` kind
+  set.
 - No update checking, GitHub networking, release download, installer
   launch, or restart logic - that is the Stage 20 target documented in
   `docs/project-overview.md` §12.1.1, written alongside this stage but not
   built by it.
-- No SVG, HTML, CSS, JavaScript, or any executable/archive/audio asset
-  kind, in a package or via manual upload (§11).
+- No SVG, HTML, CSS, JavaScript, or any executable/archive asset kind, in
+  a package or via manual upload (§11) - unchanged by Stage 17B (§5a):
+  the one narrow `sound` audio asset kind it added lives in its own
+  separate `audioAssets` array with its own validator, never inside
+  `assets[]`.
 - No public exposure of asset attribution metadata (author/license/notice)
   on the public overlay surface - management-only for this stage.
 - No content-delivery network, no remote asset fetching of any kind - every

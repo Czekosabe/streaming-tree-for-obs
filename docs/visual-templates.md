@@ -60,9 +60,11 @@ primitive - see §12 for exactly what is deliberately deferred to Stage 14B.
 
 The architecture wanted template *packages* capable of carrying real assets
 (custom images, fonts - sound/audio was, once actually decided, deliberately
-excluded from a visual template or asset entirely; see §12 and
+excluded from a visual template *layer* or *asset* entirely; see §12 and
 [`docs/visual-template-packages.md`](visual-template-packages.md) §2 - that
-stays Stage 17's own subsystem). That was a substantially larger untrusted-
+became Stage 17's own subsystem, completed in Stage 17B: rule-owned sound/
+TTS travels through its own package manifest v2 extension instead, see
+[`docs/alert-audio.md`](alert-audio.md) §10). That was a substantially larger untrusted-
 input security boundary than anything this project had built before Stage
 14B: archive extraction, path-traversal protection, symlink/hard-link
 rejection, decompression-ratio limits, per-asset and total-package size
@@ -384,7 +386,10 @@ garbage-collection policy deferred to next clean startup for playback
 safety; public asset serving over a per-blob unguessable token; and archive
 import/export, including a two-step, never-trust-the-preview import flow.
 Stage 14B decided sound/audio remains entirely out of scope for a visual
-template or asset - that stays Stage 17's own subsystem. See
+template *layer* or *asset* - that became Stage 17's own subsystem,
+completed in Stage 17B on top of a package's own manifest v2 extension
+(never a new `visualdesign.Document` layer kind or a new `assets[]`
+kind - see [`docs/alert-audio.md`](alert-audio.md) §10). See
 [`docs/visual-template-packages.md`](visual-template-packages.md) for the
 full contract; note that document also records one deliberately deferred
 item of its own (a repo-wide `Content-Security-Policy` header, tracked as a

@@ -417,7 +417,7 @@ overlay React components still render both the public route and the
 Overlays management page's own preview identically, branching
 internally on `renderingMode`.
 
-## Stage 17A: the audio Browser Source route
+## Stage 17A/17B: the audio Browser Source route
 
 The audio route (`/overlay/audio/{publicSlug}`) reuses the exact same
 URL-not-local-file, transparent-background, FPS/permissions and
@@ -453,20 +453,27 @@ itself as the sole active playback session on connect (§15 of
 [audio-tts.md](audio-tts.md)); a second Browser Source pointed at the
 same slug immediately supersedes the first rather than doubling audio,
 and reports `playback_started`/`playback_ended`/`playback_failed` back
-through a narrow `POST .../ack` rather than a second SSE stream.
+through a narrow `POST .../ack` rather than a second SSE stream. Stage
+17B's own rule-owned sound/TTS items flow through this exact same
+route, the exact same three-event public payload shape, and the exact
+same single-renderer-session/ack protocol - never a second audio route
+or a second public payload shape for alert-owned audio (see
+[alert-audio.md](alert-audio.md) §8 for the synchronization contract on
+top of this route).
 
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's or 17A's
-own verification.** Every finding above comes from reading the official
-pages listed, not from observing a live Browser Source. The local
-integration scripts (`scripts/verify-chat-overlay.mjs`,
+verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's, 17A's or
+17B's own verification.** Every finding above comes from reading the
+official pages listed, not from observing a live Browser Source. The
+local integration scripts (`scripts/verify-chat-overlay.mjs`,
 `scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
 `scripts/verify-alert-designer.mjs`,
 `scripts/verify-chat-overlay-designer.mjs`,
 `scripts/verify-visual-template-packages.mjs`,
-`scripts/verify-tts-audio.mjs`) exercise the same HTTP/SSE contract a
+`scripts/verify-tts-audio.mjs`, `scripts/verify-alert-audio.mjs`)
+exercise the same HTTP/SSE contract a
 real Browser Source would consume, from a plain Node.js HTTP client -
 they prove the backend's contract is correct, not that OBS's own CEF
 decodes an image/video asset, seeks a video via Range requests, renders

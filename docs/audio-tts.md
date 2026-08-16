@@ -55,6 +55,16 @@ Stage 17B's own, later, separately-scoped decision.
 Expected status after this task: **Stage 17A = Completed. Stage 17B =
 Planned, not started. Stage 17 as a whole = Incomplete.**
 
+**Update**: Stage 17B has since shipped - see
+[alert-audio.md](alert-audio.md) for its own canonical contract
+(persistent alert sound assets, per-alert-rule TTS, synchronization with
+alert playback, and the Stage 14B package manifest v2 audio extension).
+**Stage 17A = Completed. Stage 17B = Completed. Stage 17 as a whole =
+Completed.** Every "deliberately not implemented here"/"Stage 17B's own,
+later, separately-scoped decision" reference in this document describes
+Stage 17A's own scope at the time it was written and remains historically
+accurate as such - it does not mean the referenced work never happened.
+
 ## 2. Windows system-TTS path comparison
 
 Two real candidate APIs exist. Both were checked against Microsoft's own

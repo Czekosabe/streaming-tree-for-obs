@@ -1109,7 +1109,7 @@ it is architected; this table only tracks status and dependencies.
 | 16A | External donation foundation and a real StreamElements donations connector: a provider-independent `donationsource` domain (deliberately separate from `connected_accounts`), a real Astro WebSocket connector, exact integer-micros money conversion, moderation-aware (pending/allowed/rejected) publish semantics, and full reuse of the existing Event Bus/operator chat/alerts pipeline (see [external-donations.md](provider-integrations/external-donations.md)) | **Completed** |
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth2 token exchange requires a confidential `client_secret` with no public/native-client alternative found, and unapproved apps are capped at 10 whitelisted users; Ko-fi is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer (see [external-donations.md](provider-integrations/external-donations.md)). Stage 16 as a whole is **not** complete until this is resolved or explicitly re-scoped |
 | 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a bounded audio queue consuming the same Event Bus (cooldowns, manual approval, per-source/per-currency/per-Bits filtering, text preprocessing), and a public OBS Browser Source audio route (see [audio-tts.md](audio-tts.md)) | **Completed** |
-| 17B | Persistent alert sound assets, per-alert-rule TTS/sound, synchronization with alert playback, and any audio extension of the Stage 14B template-asset format | Planned |
+| 17B | Persistent alert sound assets, per-alert-rule TTS/sound, synchronization with alert playback, and any audio extension of the Stage 14B template-asset format (see [alert-audio.md](alert-audio.md)) | **Completed** — stage 17 as a whole is now complete |
 | 18 | Goals, counters and event widgets | Planned |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening | Planned |
@@ -1426,7 +1426,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: twelve pieces of this section are real as of stage 17A - the
+**Status: thirteen pieces of this section are real as of stage 17B - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1468,7 +1468,17 @@ Windows SAPI implementation, a bounded audio queue consuming that same
 Event Bus (cooldowns, manual approval, per-source/per-currency/
 per-Bits filtering, text preprocessing), and a real, public,
 unauthenticated OBS Browser Source audio route (see
-[audio-tts.md](audio-tts.md)). Every
+[audio-tts.md](audio-tts.md)) - and, on top of that exact same audio
+subsystem, persistent alert sound assets, per-alert-rule TTS, and
+synchronization between rule-owned audio and alert visibility (stage
+17B, stage 17 as a whole complete): a managed audio-asset domain
+(16-bit PCM WAV only), rule-owned sound/TTS configuration validated the
+same way every other rule field is, deterministic arbitration against
+the global TTS queue, a bounded visual hold so an alert stays visible
+while its own audio is still playing, and a Stage 14B package manifest
+v2 extension (`alertAudio`/`audioAssets`) carrying that same
+configuration through a portable template package (see
+[alert-audio.md](alert-audio.md)). Every
 existing alert rule or chat overlay with no saved design still renders
 through its original fixed/legacy presentation unchanged; a chat
 overlay's own filtering, lifecycle, moderation and stack ownership
@@ -1479,10 +1489,8 @@ roadmap table). Stage 16 as a whole is **not** complete either: stage
 16B (Streamlabs, Ko-fi) remains feasibility-gated, not implemented, for
 its own separate reasons (see
 [external-donations.md](provider-integrations/external-donations.md)).
-Stage 17 as a whole is **not** complete either: stage 17B (persistent
-alert sound assets, per-alert-rule TTS, template-asset audio) remains
-planned, not started. Everything else described below (goal/counter
-widgets) remains planned.**
+Stage 17 as a whole is now complete. Everything else described below
+(goal/counter widgets) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1491,7 +1499,7 @@ operator chat, OBS Browser Source overlays, outbound chat with scheduled
 bot messages and commands, alerts and an alert queue, visual overlay
 designers with a safe template format, text-to-speech, and goal/counter
 widgets. Of that list, only goal/counter widgets remain unimplemented
-as of stage 17A.
+as of stage 17B.
 
 The full architecture — the normalized event model, the connector interface
 and capability model, deduplication and ordering rules, the operator-chat vs.
