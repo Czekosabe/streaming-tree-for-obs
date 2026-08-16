@@ -19,6 +19,7 @@ import { OverlaysPage } from '@/pages/OverlaysPage';
 import { LogsPage, MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
 import { PublicAlertPage } from '@/pages/PublicAlertPage';
 import { PublicAudioPage } from '@/pages/PublicAudioPage';
+import { PublicWidgetPage } from '@/pages/PublicWidgetPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StreamsPage } from '@/pages/StreamsPage';
 
@@ -58,6 +59,9 @@ export function App() {
             {/* No AppShell here either - see PublicAudioPage's own doc
                 comment. */}
             <Route path="/overlay/audio/:publicSlug" element={<PublicAudioPage />} />
+            {/* No AppShell here either - see PublicWidgetPage's own doc
+                comment. */}
+            <Route path="/overlay/widgets/:publicSlug" element={<PublicWidgetPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>

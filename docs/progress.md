@@ -26194,3 +26194,60 @@ exists but nothing consumes the real public SSE stream yet. Next commit.
 consuming `GET /api/public/widgets/{slug}/stream` via SSE, wired to
 `GoalWidgetRenderer` unchanged, and the `/overlay/widgets/:publicSlug`
 route (docs/goals-widgets.md §19-§20).
+
+## 2026-08-16 — feat(web): add public goal widget renderer
+
+### Status
+Completed. This closes out Stage 18A's own frontend work.
+
+### Scope
+The public, unauthenticated Browser Source route for a Stage 18A goal
+widget (`/overlay/widgets/:publicSlug`, docs/goals-widgets.md §19-§20),
+completing the "one renderer, two call sites" requirement the previous
+commit's `GoalWidgetRenderer` was already built for.
+
+### Changes
+- `apps/web/src/hooks/use-widget-stream.ts` (new) - consumes `GET
+  /api/public/widgets/{slug}/stream`, mirroring `use-audio-stream.ts`/
+  `use-alert-stream.ts`'s own identical "one hook per public SSE
+  stream" shape, simplified because the stream carries only one event
+  type (`widget.reset`, always the full current snapshot - no delta
+  sequence, no gap event, no renderer-session handshake). Relies on the
+  browser's own native `EventSource` reconnect for a dropped
+  connection and the server's own "always answer a fresh connection
+  with an immediate reset, never a hard error" convention - no manual
+  reconnect loop needed.
+- `apps/web/src/pages/PublicWidgetPage.tsx` (new) - the standalone
+  route: no `AppShell`, no navigation, no management controls: renders
+  nothing until the first snapshot arrives, then the exact same
+  `GoalWidgetRenderer` the management page's own in-editor preview
+  already uses.
+- `apps/web/src/App.tsx` - registers `/overlay/widgets/:publicSlug`
+  outside every layout wrapper, mirroring `/overlay/audio/:publicSlug`/
+  `/overlay/alerts/:publicSlug` exactly.
+- 6 new tests in `apps/web/src/pages/PublicWidgetPage.test.tsx`
+  (a fake `EventSource`, mirroring `PublicAudioPage.test.tsx`'s own
+  identical precedent): no application shell ever renders; nothing
+  renders before the first `widget.reset`; title/progress render once
+  it arrives; a second `widget.reset` updates the displayed values; no
+  internal `goal_`/`widget_` id ever appears in the rendered DOM; the
+  `EventSource` connects to the exact expected per-slug URL.
+
+### Automated validation
+`npm run i18n:check`, `npm run typecheck`, `npm run lint`, `npm run
+build` - all clean. `npm run test -- --run` - full suite passes (96
+files, 1342 tests, +6 new).
+
+### Known limitations
+None specific to this commit. Stage 18A's full implementation (backend
+persistence/runtime/HTTP/public-widget, frontend management/public
+renderer) is now complete. Remaining for this milestone: the 21st
+integration script, the documentation pass, the stale-claim audit, and
+the closing regression.
+
+### Next step
+`test: verify goals and widgets locally` - `scripts/verify-goals-
+widgets.mjs`, the 21st integration script, driving real Twitch/YouTube/
+StreamElements fakes through the real Event Bus into real persisted
+goals and the real public widget SSE stream end to end (docs/goals-
+widgets.md §17, this task's own §44-§45).
