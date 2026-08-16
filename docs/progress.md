@@ -24829,3 +24829,102 @@ not complete.
 Stage 17B §11: extend the existing Alerts rule editor (never a
 disconnected page) with sound enabled/picker/upload/metadata/volume and
 TTS enabled/template-editor/placeholder-help controls, EN/PL parity.
+
+## 2026-08-16 — feat(web): add alert audio controls to the rule editor
+
+### What changed
+Implemented Stage 17B §11: the existing Alert Rule editor (`RuleManager.
+tsx`'s `RuleFormModal`) gains a persistent-sound/TTS section - never a
+disconnected page, extending the same modal every other rule field
+already lives in.
+
+- `apps/web/src/api/audioasset-schemas.ts`/`audioasset.ts` (new) -
+  Zod contracts and transport for the Stage 17B managed audio asset API
+  (`/api/audio-assets`), mirroring `visualasset-schemas.ts`/
+  `visualasset.ts` exactly. `audioAssetSchema` deliberately has no
+  content `url` field, matching the backend's own `audioAssetDTO` -
+  unlike a visual asset, an audio asset's bytes are never served
+  directly by local id.
+- `apps/web/src/hooks/use-audio-assets.ts` (new) - `useAudioAssetsQuery`/
+  `useUploadAudioAssetMutation`/`useDeleteAudioAssetMutation`, mirroring
+  `use-visual-assets.ts`'s own shape.
+- `apps/web/src/components/alerts/AudioAssetPicker.tsx` (new) - mirrors
+  `VisualAssetPicker.tsx`'s own upload-button-plus-gallery shape for UX
+  consistency across every managed-asset kind; each entry shows display
+  name and duration (`M:SS`) rather than an image thumbnail, since there
+  is nothing to preview inline. Always offers a real file-picker upload,
+  never a URL import.
+- `apps/web/src/api/alerts-schemas.ts` - new `alertRuleAudioSchema`/
+  `AlertRuleAudio` (mirrors the backend's `alertRuleAudioDTO` field-for-
+  field), `alertRuleSchema.audio`/`AlertRuleInput.audio` (always present,
+  never optional - the backend always includes a zero-value object
+  rather than omitting the field), and the new
+  `audio_rule_asset_not_found` stable error code.
+- `apps/web/src/models/alerts.ts` - `MIN/MAX/DEFAULT_RULE_AUDIO_VOLUME`
+  (mirrors `internal/domain/alerts`'s own bounds exactly),
+  `isValidRuleAudioVolume`, and `isValidTTSTemplate` (the same length
+  bound the visual text template uses, plus an unconditional rejection
+  of the literal `{groupCount}` substring - mirrors
+  `internal/httpapi/alerts.go`'s own `validateRuleTTSTemplate` exactly,
+  since grouping never restarts already-playing audio).
+- `apps/web/src/components/alerts/RuleManager.tsx` - `emptyDraft`/
+  `draftFromRule` now carry `audio` (a new `emptyAudio()` helper mirrors
+  `domain.DefaultRuleAudio`'s own zero value). A new "Alert audio"
+  section, inserted directly after the existing visual text-template
+  block: a sound toggle plus `AudioAssetPicker` button/selected-name
+  display/volume field, and a TTS toggle plus a template `TextArea`
+  reusing the exact same placeholder infrastructure the visual template
+  field already uses (`insertPlaceholder`/`unknownPlaceholderNames`/
+  `unsupportedPlaceholderNames`) - filtered to exclude `groupCount` from
+  the TTS row's own placeholder buttons - plus its own volume field.
+  Validation (`soundVolumeValid`/`soundAssetValid`/`ttsVolumeValid`/
+  `ttsTemplateValid`/TTS placeholder checks) folds into the existing
+  `formValid`, gating Save exactly like every other field already does.
+- `apps/web/src/i18n/resources/{en,pl}/alerts.json` - new
+  `rules.audio.*` (title, both toggles, sound picker button/empty-state
+  labels, both volume labels, the TTS-groupCount-unsafe message) and
+  `audioAssetPicker.*` sections, plus the new
+  `audio_rule_asset_not_found` error message - full EN/PL parity,
+  verified by `npm run i18n:check`.
+- Test fixtures updated for the now-required `audio` field:
+  `alerts-schemas.test.ts` (plus a new dedicated "fully configured audio
+  preset" parse test), `AlertDesignerWorkspace.test.tsx`,
+  `AlertDesignerPage.test.tsx`, `AlertsPage.test.tsx`'s own `baseRule`
+  builder.
+- `AlertsPage.test.tsx` - 2 new tests: the audio section reveals its
+  sound/TTS controls only once each toggle is enabled and the TTS
+  placeholder row never offers `{groupCount}` even though the visual
+  template's own row does (bits' capability includes it); choosing a
+  sound from the picker selects it and the create request's own `audio`
+  object carries the chosen asset id verbatim.
+
+### Automated validation
+- `npm run typecheck` - clean.
+- `npm run lint` - clean.
+- `npm run i18n:check` - clean (2 languages, 18 namespaces, no
+  differences against `en`).
+- `npm run test` - full suite passes: 92 test files, 1292 tests
+  (1290 pre-existing + 2 new), including every pre-existing
+  `AlertsPage`/`AlertDesignerPage`/`AlertDesignerWorkspace` test
+  unchanged.
+- `npm run build` - clean production build.
+
+### Known limitations
+Stage 17B's own backend audio work (§6-§10) and the alert-rule audio
+editor (§11) are both complete. Still outstanding: the frontend
+template-gallery/designer package-audio UX (§12), the 20th integration
+script (§14), and the documentation/regression/closing passes
+(§15-§19). No real OBS/manual-browser/provider testing has been done for
+any of this (out of scope for this milestone, per the governing task's
+own explicit instruction) - this entry's own "Automated validation"
+list above is the full extent of what has been verified. Stage 17B as a
+whole is not complete; Stage 17 as a whole is not complete.
+
+### Next step
+Stage 17B §12: extend the Template Gallery/Designer with package-audio
+UX - package preview already identifies audio
+(`PreviewAlertAudio`/`visualTemplatePackagePreviewAudioDTO` from the
+previous entry), but nothing yet renders or applies it; "apply changes"
+must update both the visual and alert-audio drafts together as one
+combined undo step, and an audio-bearing template must be blocked from
+the asset-free JSON export path in the UI as well as the backend.

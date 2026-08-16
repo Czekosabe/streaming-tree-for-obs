@@ -115,6 +115,21 @@ export type AlertProfileInput = {
   maximumQueueAgeSeconds: number;
 };
 
+/** Stage 17B: a rule's own optional persistent-sound/TTS configuration
+ * (`internal/httpapi/alerts.go`'s own alertRuleAudioDTO) - never
+ * absent from a response (the backend always includes a zero-value
+ * object rather than omitting the field), so this is never optional
+ * here either. */
+export const alertRuleAudioSchema = z.object({
+  soundEnabled: z.boolean(),
+  soundAssetId: z.string().optional(),
+  soundVolume: z.number(),
+  ttsEnabled: z.boolean(),
+  ttsTemplate: z.string().optional(),
+  ttsVolume: z.number(),
+});
+export type AlertRuleAudio = z.infer<typeof alertRuleAudioSchema>;
+
 export const alertRuleSchema = z.object({
   id: z.string(),
   profileId: z.string(),
@@ -147,6 +162,7 @@ export const alertRuleSchema = z.object({
   groupWindowMs: z.number(),
   interruptMode: alertInterruptModeSchema,
   interruptible: z.boolean(),
+  audio: alertRuleAudioSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -179,6 +195,7 @@ export type AlertRuleInput = {
   groupWindowMs: number;
   interruptMode: AlertInterruptMode;
   interruptible: boolean;
+  audio: AlertRuleAudio;
 };
 
 export const alertOverlapWarningSchema = z.object({
@@ -322,6 +339,10 @@ export const alertErrorCodeSchema = z.enum([
   'alert_rule_account_not_found',
   'alert_rule_threshold_invalid',
   'alert_rule_amount_invalid',
+  /** Stage 17B: a rule's audio.soundAssetId does not name a real,
+   * existing managed audio asset - internal/httpapi/alerts.go's own
+   * domain.ErrAudioAssetNotFound mapping. */
+  'audio_rule_asset_not_found',
   'alert_template_invalid',
   'alert_template_unresolved',
   'alert_queue_paused',

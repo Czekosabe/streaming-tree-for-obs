@@ -127,6 +127,19 @@
     "interruption": {
       "title": "Interruption"
     },
+    "audio": {
+      "title": "Alert audio",
+      "soundEnabled": "Play a sound",
+      "chooseSound": "Choose sound",
+      "changeSound": "Change sound",
+      "noSoundSelected": "No sound selected",
+      "soundAssetRequired": "Choose a sound, or turn this off.",
+      "soundVolume": "Sound volume",
+      "ttsEnabled": "Speak this alert aloud (text-to-speech)",
+      "ttsTemplate": "Spoken text",
+      "ttsGroupCountUnsafe": "The spoken text cannot use {groupCount} - grouping never restarts audio that has already started playing.",
+      "ttsVolume": "Speech volume"
+    },
     "groupingUnavailableHint": "No safe way to group this event type exists - merging different people's events, or aggregating a value that would become misleading, is never attempted.",
     "eventType": {
       "follow": "Follow",
@@ -161,6 +174,14 @@
   },
   "renderer": {
     "groupCountLabel": "{{count}} grouped alerts"
+  },
+  "audioAssetPicker": {
+    "title": "Choose a sound",
+    "uploadNew": "Upload new sound",
+    "uploading": "Uploading…",
+    "uploadLabel": "Upload a sound file",
+    "loading": "Loading sounds…",
+    "empty": "No sounds uploaded yet."
   },
   "test": {
     "scenarioDefault": "Representative fixture",
@@ -199,6 +220,7 @@
     "alert_rule_account_not_found": "One of the selected accounts no longer exists.",
     "alert_rule_threshold_invalid": "The quantity threshold is invalid.",
     "alert_rule_amount_invalid": "The amount threshold is invalid.",
+    "audio_rule_asset_not_found": "The selected sound no longer exists - choose another one.",
     "alert_template_invalid": "The alert text uses an unknown or malformed placeholder.",
     "alert_template_unresolved": "The alert text uses a placeholder that cannot currently be resolved.",
     "alert_queue_paused": "The queue is currently paused.",

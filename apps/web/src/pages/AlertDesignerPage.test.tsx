@@ -19,6 +19,7 @@ const rule: AlertRule = {
   exitAnimation: 'fade', animationDurationMs: 400, providers: [], accounts: [],
   showAmount: false,
   allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+  audio: { soundEnabled: false, soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
   createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
 };
 

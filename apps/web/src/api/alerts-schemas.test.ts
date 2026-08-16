@@ -115,6 +115,7 @@ describe('alertRuleSchema', () => {
       animationDurationMs: 400, providers: [], accounts: [],
       showAmount: false,
       allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+      audio: { soundEnabled: false, soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.minimumQuantity).toBeNull();
@@ -129,6 +130,7 @@ describe('alertRuleSchema', () => {
       animationDurationMs: 400, providers: ['youtube'], accounts: [],
       currency: 'USD', minimumAmountMicros: 1_000_000, maximumAmountMicros: null, showAmount: true,
       allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+      audio: { soundEnabled: false, soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.currency).toBe('USD');
@@ -146,12 +148,33 @@ describe('alertRuleSchema', () => {
       animationDurationMs: 400, providers: ['twitch'], accounts: ['acct_1'],
       showAmount: false,
       allowGrouping: true, groupWindowMs: 8000, interruptMode: 'lower_priority', interruptible: false,
+      audio: { soundEnabled: false, soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     });
     expect(parsed.minimumQuantity).toBe(100);
     expect(parsed.accounts).toEqual(['acct_1']);
     expect(parsed.allowGrouping).toBe(true);
     expect(parsed.interruptMode).toBe('lower_priority');
+  });
+
+  it('parses a rule with a fully configured audio preset', () => {
+    const parsed = alertRuleSchema.parse({
+      id: 'alrule_1', profileId: 'alprof_1', name: 'Follow', enabled: true,
+      eventType: 'follow', priority: 50, durationMs: 5000,
+      requiredRole: 'everyone', showPlatform: true, showUsername: true, showMessage: false, showQuantity: false,
+      textTemplate: '{username} followed!', entryAnimation: 'fade', exitAnimation: 'fade',
+      animationDurationMs: 400, providers: [], accounts: [],
+      showAmount: false,
+      allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+      audio: {
+        soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 0.8,
+        ttsEnabled: true, ttsTemplate: '{username} just followed', ttsVolume: 0.5,
+      },
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+    });
+    expect(parsed.audio.soundEnabled).toBe(true);
+    expect(parsed.audio.soundAssetId).toBe('audioasset_1');
+    expect(parsed.audio.ttsTemplate).toBe('{username} just followed');
   });
 });
 

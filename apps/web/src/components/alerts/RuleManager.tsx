@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import type { AlertEventTypeCapability, AlertRule, AlertRuleInput } from '@/api/alerts-schemas';
+import type { AlertEventTypeCapability, AlertRule, AlertRuleAudio, AlertRuleInput } from '@/api/alerts-schemas';
 import { AlertRenderer } from '@/components/alerts/AlertRenderer';
+import { AudioAssetPicker } from '@/components/alerts/AudioAssetPicker';
 import { Button, IconButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
@@ -24,6 +25,7 @@ import {
   useTestAlertRuleMutation,
   useUpdateAlertRuleMutation,
 } from '@/hooks/use-alerts';
+import { useAudioAssetsQuery } from '@/hooks/use-audio-assets';
 import { useDonationSourcesQuery } from '@/hooks/use-donationsources';
 import { useVisualDesignQuery } from '@/hooks/use-visual-design';
 import { ApiError } from '@/lib/api-client';
@@ -32,6 +34,7 @@ import {
   ALERT_EVENT_TYPES,
   ALERT_ROLES,
   DEFAULT_GROUP_WINDOW_MS,
+  DEFAULT_RULE_AUDIO_VOLUME,
   codePointLength,
   extractPlaceholderNames,
   formatAmountMicros,
@@ -43,12 +46,23 @@ import {
   isValidDurationMs,
   isValidGroupWindowMs,
   isValidPriority,
+  isValidRuleAudioVolume,
   isValidThresholdRange,
+  isValidTTSTemplate,
   normalizeCurrencyCode,
   parseAmountMicros,
   unknownPlaceholderNames,
   unsupportedPlaceholderNames,
 } from '@/models/alerts';
+
+/** The safe "no rule-owned audio" zero value - mirrors
+ * internal/domain/alerts.DefaultRuleAudio exactly. */
+function emptyAudio(): AlertRuleAudio {
+  return {
+    soundEnabled: false, soundAssetId: '', soundVolume: DEFAULT_RULE_AUDIO_VOLUME,
+    ttsEnabled: false, ttsTemplate: '', ttsVolume: DEFAULT_RULE_AUDIO_VOLUME,
+  };
+}
 
 /** Providers alert rules can currently filter on - mirrors
  * internal/domain/alerts.ValidateProviders' own closed accept list
@@ -90,6 +104,7 @@ function emptyDraft(defaultEventType: AlertRuleInput['eventType']): AlertRuleInp
     currency: '', minimumAmountMicros: null, maximumAmountMicros: null, showAmount: false,
     allowGrouping: false, groupWindowMs: DEFAULT_GROUP_WINDOW_MS,
     interruptMode: 'never', interruptible: true,
+    audio: emptyAudio(),
   };
 }
 
@@ -105,6 +120,10 @@ function draftFromRule(rule: AlertRule): AlertRuleInput {
     maximumAmountMicros: rule.maximumAmountMicros ?? null, showAmount: rule.showAmount,
     allowGrouping: rule.allowGrouping, groupWindowMs: rule.groupWindowMs,
     interruptMode: rule.interruptMode, interruptible: rule.interruptible,
+    audio: {
+      soundEnabled: rule.audio.soundEnabled, soundAssetId: rule.audio.soundAssetId ?? '', soundVolume: rule.audio.soundVolume,
+      ttsEnabled: rule.audio.ttsEnabled, ttsTemplate: rule.audio.ttsTemplate ?? '', ttsVolume: rule.audio.ttsVolume,
+    },
   };
 }
 
@@ -260,10 +279,12 @@ function RuleFormModal({
   const { t } = useTranslation('alerts');
   const accountsQuery = useAccountsQuery();
   const donationSourcesQuery = useDonationSourcesQuery();
+  const audioAssetsQuery = useAudioAssetsQuery();
   const createMutation = useCreateAlertRuleMutation(profileId);
   const updateMutation = useUpdateAlertRuleMutation(profileId);
   const previewMutation = useAlertPreviewMutation();
   const [draft, setDraft] = useState<AlertRuleInput>(initial);
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false);
   // Local decimal-string display state for the amount thresholds - the
   // draft itself stores integer micros (parseAmountMicros/
   // formatAmountMicros are the exact inverse of each other, see
@@ -307,10 +328,21 @@ function RuleFormModal({
   const groupingTemplateUnsafe =
     draft.allowGrouping && capability?.groupingRequiresHiddenMessage === true &&
     extractPlaceholderNames(draft.textTemplate).includes('message');
+
+  const soundVolumeValid = isValidRuleAudioVolume(draft.audio.soundVolume);
+  const soundAssetValid = !draft.audio.soundEnabled || draft.audio.soundAssetId !== '';
+  const ttsVolumeValid = isValidRuleAudioVolume(draft.audio.ttsVolume);
+  const ttsTemplateValid = !draft.audio.ttsEnabled || isValidTTSTemplate(draft.audio.ttsTemplate ?? '');
+  const ttsUnsupported = draft.audio.ttsEnabled ? unsupportedPlaceholderNames(draft.audio.ttsTemplate ?? '', capability) : [];
+  const ttsUnknown = draft.audio.ttsEnabled ? unknownPlaceholderNames(draft.audio.ttsTemplate ?? '') : [];
+  const audioValid =
+    soundVolumeValid && soundAssetValid && ttsVolumeValid && ttsTemplateValid &&
+    ttsUnsupported.length === 0 && ttsUnknown.length === 0;
+
   const formValid =
     nameValid && priorityValid && durationValid && animationDurationValid && thresholdValid && amountValid &&
     templateValid && unsupported.length === 0 && unknown.length === 0 &&
-    groupWindowValid && !groupingTemplateUnsafe;
+    groupWindowValid && !groupingTemplateUnsafe && audioValid;
 
   const isPending = createMutation.isPending || updateMutation.isPending;
   const errorText = createMutation.isError
@@ -584,6 +616,105 @@ function RuleFormModal({
             </p>
           )}
         </div>
+
+        <div className="space-y-3 rounded-lg border border-line p-3">
+          <p className="text-xs font-medium text-ink-muted">{t('rules.audio.title')}</p>
+
+          <div className="space-y-2">
+            <ToggleSwitch
+              label={t('rules.audio.soundEnabled')}
+              checked={draft.audio.soundEnabled}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, audio: { ...d.audio, soundEnabled: v } }))}
+            />
+            {draft.audio.soundEnabled && (
+              <>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setAudioPickerOpen(true)}>
+                    {draft.audio.soundAssetId === '' ? t('rules.audio.chooseSound') : t('rules.audio.changeSound')}
+                  </Button>
+                  <span className="truncate text-sm text-ink-muted">
+                    {draft.audio.soundAssetId === ''
+                      ? t('rules.audio.noSoundSelected')
+                      : (audioAssetsQuery.data?.find((a) => a.id === draft.audio.soundAssetId)?.displayName ?? draft.audio.soundAssetId)}
+                  </span>
+                </div>
+                {!soundAssetValid && <p className="text-[11px] text-status-error">{t('rules.audio.soundAssetRequired')}</p>}
+                <FormField label={t('rules.audio.soundVolume')}>
+                  {({ inputId }) => (
+                    <TextInput id={inputId} type="number" step="0.05" min={0} max={1} value={draft.audio.soundVolume}
+                      onChange={(e) => setDraft((d) => ({ ...d, audio: { ...d.audio, soundVolume: Number(e.target.value) } }))} />
+                  )}
+                </FormField>
+              </>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <ToggleSwitch
+              label={t('rules.audio.ttsEnabled')}
+              checked={draft.audio.ttsEnabled}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, audio: { ...d.audio, ttsEnabled: v } }))}
+            />
+            {draft.audio.ttsEnabled && (
+              <>
+                <FormField
+                  label={t('rules.audio.ttsTemplate')}
+                  counter={t('common.renderedCount', { count: codePointLength(draft.audio.ttsTemplate ?? '') })}
+                >
+                  {({ inputId }) => (
+                    <TextArea id={inputId} value={draft.audio.ttsTemplate ?? ''}
+                      onChange={(e) => setDraft((d) => ({ ...d, audio: { ...d.audio, ttsTemplate: e.target.value } }))} />
+                  )}
+                </FormField>
+                <div className="flex flex-wrap gap-1">
+                  {(capability?.availablePlaceholders ?? [])
+                    .filter((name) => name !== 'groupCount')
+                    .map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] hover:bg-surface-hover"
+                        onClick={() =>
+                          setDraft((d) => {
+                            const current = d.audio.ttsTemplate ?? '';
+                            const { text } = insertPlaceholder(current, current.length, name);
+                            return { ...d, audio: { ...d.audio, ttsTemplate: text } };
+                          })
+                        }
+                      >
+                        {`{${name}}`}
+                      </button>
+                    ))}
+                </div>
+                {(ttsUnknown.length > 0 || ttsUnsupported.length > 0) && (
+                  <p className="text-[11px] text-status-error">
+                    {t('common.unresolvedWarning', { names: [...ttsUnknown, ...ttsUnsupported].join(', ') })}
+                  </p>
+                )}
+                {(draft.audio.ttsTemplate ?? '').includes('{groupCount}') && (
+                  <p className="text-[11px] text-status-error">{t('rules.audio.ttsGroupCountUnsafe')}</p>
+                )}
+                <FormField label={t('rules.audio.ttsVolume')}>
+                  {({ inputId }) => (
+                    <TextInput id={inputId} type="number" step="0.05" min={0} max={1} value={draft.audio.ttsVolume}
+                      onChange={(e) => setDraft((d) => ({ ...d, audio: { ...d.audio, ttsVolume: Number(e.target.value) } }))} />
+                  )}
+                </FormField>
+              </>
+            )}
+          </div>
+        </div>
+
+        {audioPickerOpen && (
+          <AudioAssetPicker
+            open={audioPickerOpen}
+            onClose={() => setAudioPickerOpen(false)}
+            onSelect={(asset) => {
+              setDraft((d) => ({ ...d, audio: { ...d.audio, soundAssetId: asset.id } }));
+              setAudioPickerOpen(false);
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FormField label={t('rules.fields.entryAnimation')}>

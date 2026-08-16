@@ -127,6 +127,19 @@
     "interruption": {
       "title": "Przerywanie"
     },
+    "audio": {
+      "title": "Dźwięk alertu",
+      "soundEnabled": "Odtwórz dźwięk",
+      "chooseSound": "Wybierz dźwięk",
+      "changeSound": "Zmień dźwięk",
+      "noSoundSelected": "Nie wybrano dźwięku",
+      "soundAssetRequired": "Wybierz dźwięk albo wyłącz tę opcję.",
+      "soundVolume": "Głośność dźwięku",
+      "ttsEnabled": "Odczytaj ten alert na głos (synteza mowy)",
+      "ttsTemplate": "Tekst do odczytania",
+      "ttsGroupCountUnsafe": "Odczytywany tekst nie może używać {groupCount} - grupowanie nigdy nie uruchamia ponownie dźwięku, który już się odtwarza.",
+      "ttsVolume": "Głośność mowy"
+    },
     "groupingUnavailableHint": "Nie istnieje bezpieczny sposób grupowania tego typu zdarzenia - łączenie zdarzeń różnych osób lub sumowanie wartości, która stałaby się myląca, nigdy nie jest podejmowane.",
     "eventType": {
       "follow": "Obserwacja",
@@ -161,6 +174,14 @@
   },
   "renderer": {
     "groupCountLabel": "{{count}} zgrupowanych alertów"
+  },
+  "audioAssetPicker": {
+    "title": "Wybierz dźwięk",
+    "uploadNew": "Prześlij nowy dźwięk",
+    "uploading": "Przesyłanie…",
+    "uploadLabel": "Prześlij plik dźwiękowy",
+    "loading": "Ładowanie dźwięków…",
+    "empty": "Nie przesłano jeszcze żadnego dźwięku."
   },
   "test": {
     "scenarioDefault": "Reprezentatywna fikstura",
@@ -199,6 +220,7 @@
     "alert_rule_account_not_found": "Jedno z wybranych kont już nie istnieje.",
     "alert_rule_threshold_invalid": "Próg ilości jest nieprawidłowy.",
     "alert_rule_amount_invalid": "Próg kwoty jest nieprawidłowy.",
+    "audio_rule_asset_not_found": "Wybrany dźwięk już nie istnieje - wybierz inny.",
     "alert_template_invalid": "Tekst alertu zawiera nieznany lub nieprawidłowy symbol zastępczy.",
     "alert_template_unresolved": "Tekst alertu zawiera symbol zastępczy, którego obecnie nie można rozwiązać.",
     "alert_queue_paused": "Kolejka jest obecnie wstrzymana.",

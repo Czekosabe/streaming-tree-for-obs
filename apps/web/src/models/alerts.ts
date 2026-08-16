@@ -43,6 +43,14 @@ export const MIN_GROUP_WINDOW_MS = 1000;
 export const MAX_GROUP_WINDOW_MS = 30000;
 export const DEFAULT_GROUP_WINDOW_MS = 5000;
 
+/** Stage 17B: a rule's own persistent-sound/TTS volume bounds - mirrors
+ * internal/domain/alerts.{Min,Max,Default}RuleAudioVolume exactly. The
+ * TTS template reuses MAX_TEMPLATE_CODE_POINTS above (the identical
+ * bound the visual text template already uses). */
+export const MIN_RULE_AUDIO_VOLUME = 0.0;
+export const MAX_RULE_AUDIO_VOLUME = 1.0;
+export const DEFAULT_RULE_AUDIO_VOLUME = 1.0;
+
 /** The closed alert placeholder vocabulary - see
  * internal/alerts/templates.go's own KnownPlaceholders. Deliberately a
  * different set from chat automation's (models/chat-automation.ts) -
@@ -256,4 +264,23 @@ export function insertPlaceholder(text: string, cursor: number, name: string): {
   const before = text.slice(0, cursor);
   const after = text.slice(cursor);
   return { text: before + token + after, cursor: cursor + token.length };
+}
+
+/** Stage 17B: a rule's own sound/TTS volume - the identical [0,1] bound
+ * both halves share (internal/domain/alerts.ValidateRuleAudio). */
+export function isValidRuleAudioVolume(value: number): boolean {
+  return Number.isFinite(value) && value >= MIN_RULE_AUDIO_VOLUME && value <= MAX_RULE_AUDIO_VOLUME;
+}
+
+/** Stage 17B: a rule's own TTS template - the same length bound as the
+ * visual text template, plus an unconditional rejection of the literal
+ * `{groupCount}` placeholder (internal/httpapi/alerts.go's own
+ * validateRuleTTSTemplate: grouping never restarts already-playing
+ * audio, so a TTS template can never meaningfully reflect a group
+ * count that may still change after the audio has already started). */
+export function isValidTTSTemplate(template: string): boolean {
+  const trimmed = template.trim();
+  if (trimmed === '') return false;
+  if (codePointLength(template) > MAX_TEMPLATE_CODE_POINTS) return false;
+  return !template.includes('{groupCount}');
 }

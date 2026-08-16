@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as accountsApi from '@/api/accounts';
 import * as alertsApi from '@/api/alerts';
 import type { AlertProfile, AlertQueueStatus, AlertRule } from '@/api/alerts-schemas';
+import * as audioAssetApi from '@/api/audioasset';
 import { renderWithProviders } from '@/test/render';
 
 import { AlertsPage } from './AlertsPage';
 
 vi.mock('@/api/accounts');
 vi.mock('@/api/alerts');
+vi.mock('@/api/audioasset');
 
 function renderPage() {
   return renderWithProviders(
@@ -62,6 +64,7 @@ function baseRule(overrides: Partial<AlertRule> = {}): AlertRule {
     providers: [], accounts: [],
     showAmount: false,
     allowGrouping: false, groupWindowMs: 5000, interruptMode: 'never', interruptible: true,
+    audio: { soundEnabled: false, soundVolume: 1, ttsEnabled: false, ttsVolume: 1 },
     createdAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z',
     ...overrides,
   };
@@ -103,6 +106,7 @@ beforeEach(() => {
   vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([twitchAccount]);
   vi.mocked(alertsApi).fetchAlertEventTypes.mockResolvedValue(eventTypes);
   vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([]);
+  vi.mocked(audioAssetApi).fetchAudioAssets.mockResolvedValue([]);
 });
 
 describe('AlertsPage', () => {
@@ -208,6 +212,98 @@ describe('AlertsPage', () => {
     await user.selectOptions(eventTypeSelect, 'bits');
 
     expect(await screen.findByText(/minimum quantity/i)).toBeInTheDocument();
+  });
+
+  it('the audio section reveals sound/TTS controls only once each is enabled, and TTS never offers the groupCount placeholder (Stage 17B)', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+
+    const dialog = await screen.findByRole('dialog', { name: /create alert rule/i });
+    await within(dialog).findByLabelText(/^name$/i);
+    expect(within(dialog).queryByRole('button', { name: /choose sound/i })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/spoken text/i)).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    // formValid also requires a name and the visual text template - fill
+    // both so the TTS-specific assertions below are the only thing
+    // gating Save.
+    await user.type(within(dialog).getByLabelText(/^name$/i), 'Bits alert');
+    await user.selectOptions(within(dialog).getByLabelText(/event type/i), 'bits');
+    await user.type(within(dialog).getByLabelText(/alert text/i), '{{username}} cheered!');
+    await user.click(within(dialog).getByRole('switch', { name: /play a sound/i }));
+    expect(await within(dialog).findByRole('button', { name: /choose sound/i })).toBeInTheDocument();
+    expect(within(dialog).getByText(/no sound selected/i)).toBeInTheDocument();
+    // Turn sound back off - a soundEnabled=true rule with no asset chosen
+    // is itself invalid and would otherwise block Save below for a
+    // reason unrelated to what this test is checking.
+    await user.click(within(dialog).getByRole('switch', { name: /play a sound/i }));
+
+    await user.click(within(dialog).getByRole('switch', { name: /speak this alert aloud/i }));
+    const ttsField = await within(dialog).findByLabelText(/spoken text/i);
+    // bits' own availablePlaceholders includes groupCount (used by the
+    // visual text-template's own placeholder row), but the TTS row must
+    // never offer it - grouping never restarts already-playing audio.
+    const ttsSection = ttsField.closest('div')!.parentElement!;
+    expect(within(ttsSection).queryByRole('button', { name: '{groupCount}' })).not.toBeInTheDocument();
+    expect(within(ttsSection).getByRole('button', { name: '{username}' })).toBeInTheDocument();
+
+    // Enabling TTS with an empty template must block Save.
+    const saveButton = within(dialog).getByRole('button', { name: /^save$/i });
+    expect(saveButton).toBeDisabled();
+    // userEvent.type reserves single braces for special key sequences -
+    // "{{" / "}}" is how it escapes a literal brace.
+    await user.type(ttsField, '{{username}} cheered!');
+    await waitFor(() => expect(saveButton).not.toBeDisabled());
+  });
+
+  it('choosing a sound from the picker selects it, and the create request carries the full audio object (Stage 17B)', async () => {
+    vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
+    vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
+    vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
+    vi.mocked(audioAssetApi).fetchAudioAssets.mockResolvedValue([
+      {
+        id: 'audioasset_1', kind: 'sound', mediaType: 'audio/wav', sizeBytes: 1000, durationMs: 2500,
+        displayName: 'Coin chime', source: 'upload', referenceCount: 0,
+        createdAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z',
+      },
+    ]);
+    vi.mocked(alertsApi).createAlertRule.mockResolvedValue(baseRule({ id: 'alrule_new' }));
+    renderPage();
+
+    (await screen.findByText('Main')).click();
+    await screen.findByText(/no alert rules yet/i);
+    const rulesPanel = (await screen.findByRole('heading', { name: 'Rules' })).closest('section')!;
+    within(rulesPanel).getByRole('button', { name: /^create$/i }).click();
+    const dialog = await screen.findByRole('dialog', { name: /create alert rule/i });
+    await within(dialog).findByLabelText(/^name$/i);
+
+    const user = userEvent.setup();
+    await user.type(within(dialog).getByLabelText(/^name$/i), 'Coin alert');
+    await user.type(within(dialog).getByLabelText(/alert text/i), '{{username}} triggered a coin!');
+    await user.click(within(dialog).getByRole('switch', { name: /play a sound/i }));
+    await user.click(await within(dialog).findByRole('button', { name: /choose sound/i }));
+
+    const item = await screen.findByTestId('audio-asset-picker-item-audioasset_1');
+    await user.click(item);
+
+    expect(await within(dialog).findByText('Coin chime')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /choose a sound/i })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(alertsApi.createAlertRule).toHaveBeenCalled());
+    const [, input] = vi.mocked(alertsApi.createAlertRule).mock.calls[0]!;
+    expect(input.audio).toEqual({
+      soundEnabled: true, soundAssetId: 'audioasset_1', soundVolume: 1,
+      ttsEnabled: false, ttsTemplate: '', ttsVolume: 1,
+    });
   });
 
   it('selecting a YouTube money event type shows the currency/amount fields and hides them again for follow (Stage 15A)', async () => {
