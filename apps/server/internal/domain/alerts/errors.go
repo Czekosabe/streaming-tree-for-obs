@@ -20,9 +20,20 @@ var (
 	// account that does not exist.
 	ErrAccountNotFound = errors.New("connected account not found")
 
-	// ErrValidation wraps any semantic validation failure (bounds,
-	// required fields) - see validation.go for the exact rules.
+	// ErrValidation wraps a profile-level semantic validation failure
+	// (bounds, required fields) - see validation.go for the exact rules.
+	// Never returned for a rule-level failure - see ErrRuleInvalid.
 	ErrValidation = errors.New("alert validation failed")
+	// ErrRuleInvalid wraps a rule-level semantic validation failure
+	// (bounds, required fields, enum values) that has no more specific
+	// sentinel of its own - see validation.go for the exact rules. Kept
+	// distinct from the profile-level ErrValidation above so
+	// internal/httpapi/alerts.go's own error mapping never reports a
+	// rule validation failure as "alert_profile_invalid" (a real,
+	// discovered bug: both used to share ErrValidation, so a rule-level
+	// 422 - e.g. Stage 17B's own RuleAudio bound checks - was reported
+	// with the wrong, profile-shaped stable error code and message).
+	ErrRuleInvalid = errors.New("alert rule validation failed")
 	// ErrConditionUnsupported means a rule set a condition (quantity
 	// threshold, role, a visibility toggle) that its own event type's
 	// capability does not support - see capability.go and the Stage 12A

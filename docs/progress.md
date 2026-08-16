@@ -25053,3 +25053,106 @@ provider, exercising the real backend/runtime/API path for managed
 audio assets, rule-owned sound/TTS playback and arbitration, package v2
 audio import/export, and template-level audio persistence. Run it at
 least twice consecutively before moving on to the documentation pass.
+
+## 2026-08-16 — test: verify alert audio locally
+
+### What changed
+Wrote and ran `scripts/verify-alert-audio.mjs`, the 20th integration
+script (§14) - local-deterministic only (the integration-build-only
+fake TTS provider, never real Windows SAPI voices), never real Twitch/
+YouTube/StreamElements/Kick/Streamlabs/Ko-fi/TikTok, never real OBS,
+never a manual browser. Every alert is triggered through the synthetic
+Test Rule path, never a fabricated Engagement Event Bus event. A
+representative subset (mirroring `verify-tts-audio.mjs`'s own explicit
+precedent), not a literal transcription of every scenario docs/alert-
+audio.md §13 lists - the exhaustive validation-bound/archive-security/
+WAV-signature matrices stay at the Go level.
+
+- 20 numbered steps against the real, wired-together HTTP/SSE surface:
+  managed audio-asset upload (valid WAV accepted, disguised non-WAV
+  rejected)/list/get; rule-audio persistence (create+GET round-trips
+  the exact sound+TTS config) and validation (unknown asset id,
+  `{groupCount}` in a TTS template, sound-enabled-without-an-asset -
+  each its own correct stable error code); delete-blocked-while-
+  referenced then succeeds once unreferenced; bounded visual hold
+  (a TTS item mid-synthesis holds the alert visible past its own
+  duration with zero renderer ever connected, then releases once
+  synthesis finishes and `AlertAudioNoRenderer` applies); the real
+  sound-then-TTS chain over the real public audio SSE stream in
+  lockstep with the real public alert SSE stream (ordered items,
+  correct per-item combined volume, natural-completion chain advance,
+  no alert/rule identifier or spoken text ever in the public payload,
+  exactly the 4 documented fields); arbitration (a rule-owned item
+  preempts a still-synthesizing global-TTS item outright,
+  `totalInterruptedByAlert` increments by exactly 1); package v2 audio
+  import (creates a real local audio asset, `source: "package"`,
+  referenced exactly once) and export (a real ZIP, re-imports with a
+  fresh local asset id, never reusing the original); a chat-target
+  package carrying `alertAudio` rejected with
+  `visual_template_package_audio_target_invalid` before any asset is
+  staged; a plain v1 package still imports with no `alertAudio` at all;
+  a final SQLite scan confirming no rendered/spoken text was ever
+  persisted.
+- Two real bugs found and fixed while building this script - both
+  pre-existing, both first actually exercised by Stage 17B's own new
+  rule-audio validation and status surface:
+  - `apps/server/internal/domain/alerts/{errors,validation}.go`: every
+    rule-level validation failure with no more specific sentinel of its
+    own (bounds, enum values, and now `ValidateRuleAudio`'s own checks)
+    shared the same `ErrValidation` sentinel `ValidateProfileFields`
+    uses, so `internal/httpapi/alerts.go`'s error switch reported it
+    with the wrong, profile-shaped stable code and message
+    (`alert_profile_invalid`, "The profile settings failed
+    validation.") even though the frontend already had a dedicated,
+    never-actually-reachable `alert_rule_invalid` key waiting for it.
+    Fixed by introducing `ErrRuleInvalid` and a new `ruleValidationErr`
+    helper, used by every rule-context validator
+    (`ValidateTemplate`/`ValidateRuleAudio`/`ValidateAccounts`/
+    `ValidateProviders`/`ValidateRuleConditions`/`ValidateRuleFields`),
+    keeping `ErrValidation`/`validationErr` exclusively for
+    `ValidateProfileName`/`ValidateProfileFields`; added the
+    `alert_rule_invalid` mapping to `internal/httpapi/alerts.go`. 18
+    existing Go test assertions in `validation_test.go` updated from
+    `ErrValidation` to `ErrRuleInvalid` (all rule-context; the one
+    genuine profile-context assertion in `service_test.go` was
+    correctly untouched). No frontend change needed - `alert_rule_invalid`
+    already had an EN/PL translation from the very first §11 entry.
+  - `apps/server/internal/httpapi/audio.go`: `Manager.Status`'s own
+    `TotalInterruptedByAlert` counter (added in the `8e5b3e5` entry) was
+    never exposed on `GET /api/audio/status` at all - a real, if minor,
+    observability gap that made arbitration invisible to any HTTP
+    client, including this very script. Added
+    `totalInterruptedByAlert` to `audioStatusResponse` and
+    `toAudioStatusResponse`; extended `TestGetAudioStatus`.
+- Both fixes verified by the normal Go regression (see below) before
+  the integration script was ever re-run against them.
+
+### Automated validation
+- `gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...`,
+  `go build ./...`, `go build -tags integration ./...` - all clean.
+- `go test ./...` - full suite passes, including the 18 updated
+  assertions and the new `TotalInterruptedByAlert` check.
+- `node scripts/verify-alert-audio.mjs` - run 3 consecutive times, all
+  20 steps passing cleanly every time (timing-sensitive scenarios -
+  bounded hold, arbitration, chain sequencing - specifically re-run an
+  extra time beyond the task's own "at least twice" for confidence).
+
+### Known limitations
+All 20 integration scripts now exist (19 pre-existing + this one).
+Stage 17B's own backend work (§6-§10), both frontend UI pieces (§11,
+§12), and the 20th integration script (§14) are all complete. Still
+outstanding: the documentation pass (§15), the stale-claim audit
+(§16), the full closing regression re-run in the canonical order
+(§17), and the final closing journal entry (§18). No real OBS/manual-
+browser/provider testing has been done for any of this (out of scope
+for this milestone). Stage 17B as a whole is not complete; Stage 17 as
+a whole is not complete.
+
+### Next step
+Stage 17B §15: the documentation pass - README, project-overview,
+engagement-architecture, audio-tts, alert-audio, obs-browser-source,
+visual-template-packages, visual-templates, config/README, THIRD_PARTY_
+NOTICES - updating script count 19→20 and every stage-status marker to
+reflect Stage 17A/17B/17-whole Completed, in each doc's own current
+living section only, never touching an earlier historical progress.md
+entry.

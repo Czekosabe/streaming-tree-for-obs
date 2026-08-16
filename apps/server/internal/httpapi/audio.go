@@ -360,8 +360,13 @@ type audioStatusResponse struct {
 	TotalPlaybackFailed  int    `json:"totalPlaybackFailed"`
 	TotalSynthesisFailed int    `json:"totalSynthesisFailed"`
 	TotalInterrupted     int    `json:"totalInterrupted"`
-	InputGap             bool   `json:"inputGap"`
-	Subscribed           bool   `json:"subscribed"`
+	// TotalInterruptedByAlert counts a global-TTS item cancelled because
+	// a rule-owned alert item preempted it (docs/alert-audio.md §8.3) -
+	// kept distinct from TotalInterrupted (renderer-disconnect) above so
+	// the two causes are never conflated.
+	TotalInterruptedByAlert int  `json:"totalInterruptedByAlert"`
+	InputGap                bool `json:"inputGap"`
+	Subscribed              bool `json:"subscribed"`
 }
 
 func toAudioStatusResponse(st audiort.Status) audioStatusResponse {
@@ -372,7 +377,8 @@ func toAudioStatusResponse(st audiort.Status) audioStatusResponse {
 		TotalEnqueued: st.Counters.TotalEnqueued, TotalCapacityDropped: st.Counters.TotalCapacityDropped, TotalExpired: st.Counters.TotalExpired,
 		TotalRejected: st.Counters.TotalRejected, TotalManuallySkipped: st.Counters.TotalManuallySkipped, TotalSynthetic: st.Counters.TotalSynthetic,
 		TotalPlayed: st.TotalPlayed, TotalPlaybackFailed: st.TotalPlaybackFailed, TotalSynthesisFailed: st.TotalSynthesisFailed, TotalInterrupted: st.TotalInterrupted,
-		InputGap: st.InputGap, Subscribed: st.Subscribed,
+		TotalInterruptedByAlert: st.TotalInterruptedByAlert,
+		InputGap:                st.InputGap, Subscribed: st.Subscribed,
 	}
 }
 

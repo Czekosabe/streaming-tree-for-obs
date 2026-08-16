@@ -1141,6 +1141,8 @@ func writeAlertsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_condition_unsupported", "This condition is not supported by the rule's event type.")
 	case errors.Is(err, alerts.ErrPlaceholderInvalid):
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_template_invalid", "The template uses an unknown or malformed placeholder.")
+	case errors.Is(err, domain.ErrRuleInvalid):
+		writeError(w, logger, http.StatusUnprocessableEntity, "alert_rule_invalid", "The rule failed validation.")
 	case errors.Is(err, domain.ErrValidation):
 		writeError(w, logger, http.StatusUnprocessableEntity, "alert_profile_invalid", "The request failed validation.")
 	case errors.Is(err, alerts.ErrQueueEmpty):

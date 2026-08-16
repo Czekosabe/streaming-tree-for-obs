@@ -37,12 +37,12 @@ func TestValidateThresholds(t *testing.T) {
 func TestValidateRuleFieldsDurationBounds(t *testing.T) {
 	r := baseValidRule()
 	r.DurationMS = 999
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("DurationMS=999 error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("DurationMS=999 error = %v, want ErrRuleInvalid", err)
 	}
 	r.DurationMS = 30001
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("DurationMS=30001 error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("DurationMS=30001 error = %v, want ErrRuleInvalid", err)
 	}
 	r.DurationMS = 30000
 	r.MinimumQuantity, r.MaximumQuantity = nil, nil
@@ -54,12 +54,12 @@ func TestValidateRuleFieldsDurationBounds(t *testing.T) {
 func TestValidateRuleFieldsPriorityBounds(t *testing.T) {
 	r := baseValidRule()
 	r.Priority = -1
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("Priority=-1 error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("Priority=-1 error = %v, want ErrRuleInvalid", err)
 	}
 	r.Priority = 101
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("Priority=101 error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("Priority=101 error = %v, want ErrRuleInvalid", err)
 	}
 }
 
@@ -70,16 +70,16 @@ func TestValidateRuleFieldsTemplateTooLong(t *testing.T) {
 		long[i] = 'a'
 	}
 	r.TextTemplate = string(long)
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("over-long template error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("over-long template error = %v, want ErrRuleInvalid", err)
 	}
 }
 
 func TestValidateRuleFieldsUnknownEventType(t *testing.T) {
 	r := baseValidRule()
 	r.EventType = EventType("streamelements_donation")
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("unknown event type error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("unknown event type error = %v, want ErrRuleInvalid", err)
 	}
 }
 
@@ -113,12 +113,12 @@ func TestValidateRuleConditionsRaidRejectsMessage(t *testing.T) {
 func TestValidateRuleFieldsGroupWindowBounds(t *testing.T) {
 	r := baseValidRule()
 	r.GroupWindowMS = MinGroupWindowMS - 1
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("GroupWindowMS below minimum error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("GroupWindowMS below minimum error = %v, want ErrRuleInvalid", err)
 	}
 	r.GroupWindowMS = MaxGroupWindowMS + 1
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("GroupWindowMS above maximum error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("GroupWindowMS above maximum error = %v, want ErrRuleInvalid", err)
 	}
 	r.GroupWindowMS = MinGroupWindowMS
 	if err := ValidateRuleFields(r); err != nil {
@@ -134,16 +134,16 @@ func TestValidateRuleFieldsGroupWindowBoundsEnforcedEvenWhenGroupingDisabled(t *
 	r := baseValidRule()
 	r.AllowGrouping = false
 	r.GroupWindowMS = 0
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("GroupWindowMS=0 with grouping disabled error = %v, want ErrValidation (bounds are unconditional)", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("GroupWindowMS=0 with grouping disabled error = %v, want ErrRuleInvalid (bounds are unconditional)", err)
 	}
 }
 
 func TestValidateRuleFieldsUnknownInterruptMode(t *testing.T) {
 	r := baseValidRule()
 	r.InterruptMode = InterruptMode("sometimes")
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("unknown interrupt mode error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("unknown interrupt mode error = %v, want ErrRuleInvalid", err)
 	}
 }
 
@@ -348,29 +348,29 @@ func TestValidateRuleAudioAcceptsSoundAndTTSTogether(t *testing.T) {
 
 func TestValidateRuleAudioRejectsSoundEnabledWithoutAsset(t *testing.T) {
 	a := RuleAudio{SoundEnabled: true, SoundVolume: 1.0}
-	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleAudio(sound enabled, no asset) error = %v, want ErrValidation", err)
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleAudio(sound enabled, no asset) error = %v, want ErrRuleInvalid", err)
 	}
 }
 
 func TestValidateRuleAudioRejectsAssetSetWhileSoundDisabled(t *testing.T) {
 	a := RuleAudio{SoundEnabled: false, SoundAssetID: "audioasset_abc"}
-	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleAudio(asset set, sound disabled) error = %v, want ErrValidation", err)
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleAudio(asset set, sound disabled) error = %v, want ErrRuleInvalid", err)
 	}
 }
 
 func TestValidateRuleAudioRejectsTTSEnabledWithoutTemplate(t *testing.T) {
 	a := RuleAudio{TTSEnabled: true, TTSVolume: 1.0}
-	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleAudio(TTS enabled, no template) error = %v, want ErrValidation", err)
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleAudio(TTS enabled, no template) error = %v, want ErrRuleInvalid", err)
 	}
 }
 
 func TestValidateRuleAudioRejectsTemplateSetWhileTTSDisabled(t *testing.T) {
 	a := RuleAudio{TTSEnabled: false, TTSTemplate: "{username}"}
-	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleAudio(template set, TTS disabled) error = %v, want ErrValidation", err)
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleAudio(template set, TTS disabled) error = %v, want ErrRuleInvalid", err)
 	}
 }
 
@@ -380,8 +380,8 @@ func TestValidateRuleAudioRejectsOverlongTTSTemplate(t *testing.T) {
 		long[i] = 'a'
 	}
 	a := RuleAudio{TTSEnabled: true, TTSTemplate: string(long)}
-	if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleAudio(over-long TTS template) error = %v, want ErrValidation", err)
+	if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleAudio(over-long TTS template) error = %v, want ErrRuleInvalid", err)
 	}
 }
 
@@ -393,8 +393,8 @@ func TestValidateRuleAudioRejectsVolumeOutOfBounds(t *testing.T) {
 		{TTSVolume: 1.1},
 	}
 	for _, a := range cases {
-		if err := ValidateRuleAudio(a); !errors.Is(err, ErrValidation) {
-			t.Errorf("ValidateRuleAudio(%+v) error = %v, want ErrValidation", a, err)
+		if err := ValidateRuleAudio(a); !errors.Is(err, ErrRuleInvalid) {
+			t.Errorf("ValidateRuleAudio(%+v) error = %v, want ErrRuleInvalid", a, err)
 		}
 	}
 }
@@ -402,7 +402,7 @@ func TestValidateRuleAudioRejectsVolumeOutOfBounds(t *testing.T) {
 func TestValidateRuleFieldsIncludesAudioValidation(t *testing.T) {
 	r := baseValidRule()
 	r.Audio = RuleAudio{SoundEnabled: true} // enabled with no asset - invalid
-	if err := ValidateRuleFields(r); !errors.Is(err, ErrValidation) {
-		t.Errorf("ValidateRuleFields() with invalid Audio error = %v, want ErrValidation", err)
+	if err := ValidateRuleFields(r); !errors.Is(err, ErrRuleInvalid) {
+		t.Errorf("ValidateRuleFields() with invalid Audio error = %v, want ErrRuleInvalid", err)
 	}
 }

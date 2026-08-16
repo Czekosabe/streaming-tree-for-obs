@@ -240,6 +240,9 @@ func TestGetAudioStatus(t *testing.T) {
 	if body["readyQueueCount"] != float64(0) {
 		t.Errorf("readyQueueCount = %v, want 0", body["readyQueueCount"])
 	}
+	if body["totalInterruptedByAlert"] != float64(0) {
+		t.Errorf("totalInterruptedByAlert = %v, want 0", body["totalInterruptedByAlert"])
+	}
 }
 
 func TestAudioTestSpeakThenPendingListAndApprove(t *testing.T) {

@@ -43,6 +43,15 @@ func validationErr(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrValidation, fmt.Sprintf(format, args...))
 }
 
+// ruleValidationErr is validationErr's own rule-context counterpart -
+// every rule-level check below (ValidateTemplate, ValidateRuleAudio,
+// ValidateAccounts, ValidateProviders, ValidateRuleConditions,
+// ValidateRuleFields) uses this, never validationErr, so a rule-level
+// 422 is never misreported as a profile-level one at the HTTP boundary.
+func ruleValidationErr(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrRuleInvalid, fmt.Sprintf(format, args...))
+}
+
 func codePointLen(s string) int {
 	n := 0
 	for range s {
@@ -96,10 +105,10 @@ func ValidateProfileFields(p Profile) error {
 func ValidateTemplate(template string) error {
 	n := codePointLen(template)
 	if n == 0 {
-		return validationErr("template must not be empty")
+		return ruleValidationErr("template must not be empty")
 	}
 	if n > MaxTemplateCodePoints {
-		return validationErr("template must not exceed %d characters", MaxTemplateCodePoints)
+		return ruleValidationErr("template must not exceed %d characters", MaxTemplateCodePoints)
 	}
 	return nil
 }
@@ -117,28 +126,28 @@ func ValidateTemplate(template string) error {
 // see its own doc comment above).
 func ValidateRuleAudio(a RuleAudio) error {
 	if a.SoundVolume < MinRuleAudioVolume || a.SoundVolume > MaxRuleAudioVolume {
-		return validationErr("sound volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
+		return ruleValidationErr("sound volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
 	}
 	if a.TTSVolume < MinRuleAudioVolume || a.TTSVolume > MaxRuleAudioVolume {
-		return validationErr("TTS volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
+		return ruleValidationErr("TTS volume must be between %.1f and %.1f", MinRuleAudioVolume, MaxRuleAudioVolume)
 	}
 	if a.SoundEnabled && a.SoundAssetID == "" {
-		return validationErr("a sound asset must be selected when sound is enabled")
+		return ruleValidationErr("a sound asset must be selected when sound is enabled")
 	}
 	if !a.SoundEnabled && a.SoundAssetID != "" {
-		return validationErr("a sound asset must not be set while sound is disabled")
+		return ruleValidationErr("a sound asset must not be set while sound is disabled")
 	}
 	if a.TTSEnabled {
 		n := codePointLen(a.TTSTemplate)
 		if n == 0 {
-			return validationErr("a TTS template must be set when rule-owned TTS is enabled")
+			return ruleValidationErr("a TTS template must be set when rule-owned TTS is enabled")
 		}
 		if n > MaxTemplateCodePoints {
-			return validationErr("TTS template must not exceed %d characters", MaxTemplateCodePoints)
+			return ruleValidationErr("TTS template must not exceed %d characters", MaxTemplateCodePoints)
 		}
 	}
 	if !a.TTSEnabled && a.TTSTemplate != "" {
-		return validationErr("a TTS template must not be set while rule-owned TTS is disabled")
+		return ruleValidationErr("a TTS template must not be set while rule-owned TTS is disabled")
 	}
 	return nil
 }
@@ -209,10 +218,10 @@ func ValidateAccounts(accountIDs []string) error {
 	seen := make(map[string]bool, len(accountIDs))
 	for _, id := range accountIDs {
 		if id == "" {
-			return validationErr("account id must not be empty")
+			return ruleValidationErr("account id must not be empty")
 		}
 		if seen[id] {
-			return validationErr("account %s is duplicated in the filter", id)
+			return ruleValidationErr("account %s is duplicated in the filter", id)
 		}
 		seen[id] = true
 	}
@@ -225,10 +234,10 @@ func ValidateProviders(providerIDs []ProviderID) error {
 	seen := make(map[ProviderID]bool, len(providerIDs))
 	for _, p := range providerIDs {
 		if p != ProviderTwitch && p != ProviderYouTube && p != ProviderStreamElements {
-			return validationErr("provider %q is not supported", string(p))
+			return ruleValidationErr("provider %q is not supported", string(p))
 		}
 		if seen[p] {
-			return validationErr("provider %s is duplicated in the filter", p)
+			return ruleValidationErr("provider %s is duplicated in the filter", p)
 		}
 		seen[p] = true
 	}
@@ -243,7 +252,7 @@ func ValidateProviders(providerIDs []ProviderID) error {
 // safe default, per the task's own stated preference.
 func ValidateRuleConditions(r Rule) error {
 	if !r.EventType.valid() {
-		return validationErr("event type %q is not a recognized alert event type", string(r.EventType))
+		return ruleValidationErr("event type %q is not a recognized alert event type", string(r.EventType))
 	}
 	capability := CapabilityFor(r.EventType)
 
@@ -266,7 +275,7 @@ func ValidateRuleConditions(r Rule) error {
 		return fmt.Errorf("%w: event type %q has no role data to condition on", ErrConditionUnsupported, string(r.EventType))
 	}
 	if !r.RequiredRole.valid() {
-		return validationErr("required role %q is not a recognized role", string(r.RequiredRole))
+		return ruleValidationErr("required role %q is not a recognized role", string(r.RequiredRole))
 	}
 	if r.AllowGrouping {
 		groupCapability := GroupingCapabilityFor(r.EventType)
@@ -285,28 +294,28 @@ func ValidateRuleConditions(r Rule) error {
 // ValidateRuleConditions/ValidateThresholds/ValidateTemplate.
 func ValidateRuleFields(r Rule) error {
 	if n := codePointLen(r.Name); n < 1 || n > MaxNameCodePoints {
-		return validationErr("name must be 1-%d characters", MaxNameCodePoints)
+		return ruleValidationErr("name must be 1-%d characters", MaxNameCodePoints)
 	}
 	if r.Priority < MinPriority || r.Priority > MaxPriority {
-		return validationErr("priority must be between %d and %d", MinPriority, MaxPriority)
+		return ruleValidationErr("priority must be between %d and %d", MinPriority, MaxPriority)
 	}
 	if r.DurationMS < MinDurationMS || r.DurationMS > MaxDurationMS {
-		return validationErr("duration must be between %d and %d milliseconds", MinDurationMS, MaxDurationMS)
+		return ruleValidationErr("duration must be between %d and %d milliseconds", MinDurationMS, MaxDurationMS)
 	}
 	if r.AnimationDurationMS < MinAnimationDurationMS || r.AnimationDurationMS > MaxAnimationDurationMS {
-		return validationErr("animation duration must be between %d and %d milliseconds", MinAnimationDurationMS, MaxAnimationDurationMS)
+		return ruleValidationErr("animation duration must be between %d and %d milliseconds", MinAnimationDurationMS, MaxAnimationDurationMS)
 	}
 	if !r.EntryAnimation.valid() {
-		return validationErr("entry animation %q is not recognized", string(r.EntryAnimation))
+		return ruleValidationErr("entry animation %q is not recognized", string(r.EntryAnimation))
 	}
 	if !r.ExitAnimation.valid() {
-		return validationErr("exit animation %q is not recognized", string(r.ExitAnimation))
+		return ruleValidationErr("exit animation %q is not recognized", string(r.ExitAnimation))
 	}
 	if r.GroupWindowMS < MinGroupWindowMS || r.GroupWindowMS > MaxGroupWindowMS {
-		return validationErr("group window must be between %d and %d milliseconds", MinGroupWindowMS, MaxGroupWindowMS)
+		return ruleValidationErr("group window must be between %d and %d milliseconds", MinGroupWindowMS, MaxGroupWindowMS)
 	}
 	if !r.InterruptMode.valid() {
-		return validationErr("interrupt mode %q is not recognized", string(r.InterruptMode))
+		return ruleValidationErr("interrupt mode %q is not recognized", string(r.InterruptMode))
 	}
 	if err := ValidateTemplate(r.TextTemplate); err != nil {
 		return err
