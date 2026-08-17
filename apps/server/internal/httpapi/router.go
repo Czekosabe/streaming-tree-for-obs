@@ -186,6 +186,11 @@ func NewRouter(opts Options) http.Handler {
 	// /api/ catch-all below.
 	mux.HandleFunc("/api/health", methodNotAllowed(logger, http.MethodGet))
 
+	// Product-identity/build metadata for the About & Legal UI. Like health,
+	// it needs no service dependency, so it is always registered.
+	mux.HandleFunc("GET /api/about", aboutHandler(logger))
+	mux.HandleFunc("/api/about", methodNotAllowed(logger, http.MethodGet))
+
 	if opts.Platforms != nil {
 		registerPlatformRoutes(mux, logger, opts.Platforms, opts.Credentials, opts.Outputs, opts.Branches)
 	}

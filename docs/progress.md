@@ -28426,3 +28426,59 @@ left open - see `docs/product-identity-legal.md` §5.
 Implement `GET /api/about` (`internal/buildinfo` extended with the
 product-identity constants, a new read-only handler) as the single
 backend source the frontend's About & Legal page will fetch from.
+
+## 2026-08-17 — feat(server): expose product information
+
+### Status
+Completed.
+
+### Scope
+Backend half of the pre-Stage-20 product-identity milestone, per
+`docs/product-identity-legal.md`.
+
+### Changes
+- `internal/buildinfo/buildinfo.go` - extended with `ProductName`,
+  `CreatorName` ("Czekosabe" - the only public creator identity),
+  `RepositoryURL`, `CreatorURL`, `SupportURL`,
+  `ApplicationLicenceStatus` ("unselected" - a stable status code, not
+  display prose), `IsReleaseBuild` (`false` until Stage 20A), and
+  `CommitInfo()` (wraps `runtime/debug.ReadBuildInfo`, returns `ok =
+  false` rather than a fabricated commit when no VCS revision is
+  available - e.g. `go run` or a non-git build). This package remains
+  the one place these constants are defined; nothing else in the
+  backend holds a second copy.
+- `internal/httpapi/about.go` (new) - `AboutResponse` and
+  `aboutHandler`. Needs no service dependency (every field is a
+  constant or something Go's build-info stamping already knows), so
+  unlike most handlers in this package it takes only the logger and is
+  always registered. Commit/commitDirty are omitted entirely (not sent
+  as empty/false) when no VCS revision is available, so an omitted
+  field can never be mistaken for a real empty commit. Display prose
+  ("Development build", licence status wording) is deliberately not
+  sent as English text - only status codes/booleans, so localization
+  stays entirely frontend-owned.
+- `internal/httpapi/router.go` - registers `GET /api/about` and its
+  405 companion route next to `GET /api/health`, following the exact
+  same unconditional-registration pattern.
+- `internal/httpapi/about_test.go` (new, 3 tests) -
+  `TestAboutReturnsFixedProductIdentity` (every field exactly matches
+  the canonical contract), `TestAboutNeverExposesPersonalOrLocalMetadata`
+  (scans the raw response for `@`, filesystem-path markers, and this
+  checkout's own real Git identity fragments, plus checks the decoded
+  JSON has no `email`/`username`/`hostname`/`path`/`token`/`credential`
+  field), `TestAboutWrongMethodReturns405`.
+
+### Automated validation
+`gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...` all
+clean. `go build ./...` and `go build -tags integration ./...` both
+clean. `go test ./internal/httpapi/... -run TestAbout -v`: 3/3 passing.
+Full `go test -count=1 ./...` (43 packages) run after the frontend
+commit below, as part of the milestone's closing regression.
+
+### Known limitations
+None.
+
+### Next step
+Build the frontend About & Legal surface (`GET /api/about` fetch, the
+About & Legal page reached from Settings, the support card, and the
+Legal & Privacy entries), with English/Polish localization throughout.
