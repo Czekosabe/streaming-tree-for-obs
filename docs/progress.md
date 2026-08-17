@@ -27689,3 +27689,55 @@ attempt, the first two each blocked by a pre-existing, Stage-18B-
 unrelated defect (a script missing the newly-required `kind` field,
 and this test's own tight timeout under full-suite contention),
 diagnosed and fixed before each restart.
+
+## 2026-08-17 — test(web): raise AlertsPage's suite-wide default test timeout
+
+### Status
+Completed.
+
+### Scope
+The third Stage 18B closing-regression attempt failed at the same
+`src/pages/AlertsPage.test.tsx` file, but on a *different* test this
+time: "choosing a sound from the picker selects it, and the create
+request carries the full audio object (Stage 17B)" timed out at
+Vitest's default 5000ms, under the same full ~1370-test parallel suite
+run. The second attempt had already fixed one straggling test in this
+same file with an individual per-test timeout override.
+
+### Root cause
+Same class of pre-existing, Stage-18B-unrelated flakiness identified
+during the second attempt (CPU contention under the full parallel
+suite occasionally pushing this file's longer real-`userEvent`
+sequences past the 5000ms default), not a new or different defect -
+confirmed again via `git status`/`git diff` (no alerts-related product
+file touched this session) and a standalone run of the file, which
+passed all 16 tests cleanly. Patching individual straggling tests one
+at a time each time a different one happens to be the one pushed over
+the line, each requiring a full closing-regression restart, is not a
+convergent strategy - any of this file's several comparably long
+`userEvent` sequences could be the next one to flake under contention.
+
+### Changes
+- `apps/web/src/pages/AlertsPage.test.tsx` - replaced the single
+  per-test `15000`ms override (added during the second attempt) with a
+  suite-wide default timeout of `15000`ms on the file's own `describe`
+  block (`describe(name, fn, 15000)`), with a comment explaining why.
+  This addresses the whole class of contention-sensitive tests in this
+  file at once rather than one straggler per regression attempt. No
+  other file's tests are affected - the suite-wide Vitest default
+  (5000ms) is unchanged everywhere else.
+
+### Automated validation
+`tsc -b`, `eslint .` both clean. `AlertsPage.test.tsx` run standalone,
+16/16 tests passing.
+
+### Known limitations
+None. This is a resource-contention mitigation for a pre-existing test
+file, not a product change.
+
+### Next step
+Restart the complete Stage 18B closing regression from the very
+beginning (frontend checks, backend checks, all 22 integration scripts
+in the canonical order, as one unbroken sequence) - this is the fourth
+attempt, the first three each blocked by a pre-existing, Stage-18B-
+unrelated defect, diagnosed and fixed before each restart.

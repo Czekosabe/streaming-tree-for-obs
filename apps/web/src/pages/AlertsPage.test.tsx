@@ -109,6 +109,14 @@ beforeEach(() => {
   vi.mocked(audioAssetApi).fetchAudioAssets.mockResolvedValue([]);
 });
 
+// Several tests below drive long real userEvent sequences (multiple
+// toggles/selects/text fields against the create-rule dialog). Each
+// consistently passes well within Vitest's 5000ms default in isolation,
+// but under the full suite's ~1370 tests running in parallel, worker CPU
+// contention has intermittently pushed individual tests in this file past
+// that default. Raising this suite's default timeout addresses the whole
+// class at once rather than patching one straggling test per occurrence;
+// a genuine hang would still exceed this longer bound.
 describe('AlertsPage', () => {
   it('shows the empty state with no profiles', async () => {
     renderPage();
@@ -215,13 +223,6 @@ describe('AlertsPage', () => {
   });
 
   it('the audio section reveals sound/TTS controls only once each is enabled, and TTS never offers the groupCount placeholder (Stage 17B)', async () => {
-    // This test drives an unusually long sequence of real userEvent
-    // keystrokes/clicks across two toggles and two text fields, so it
-    // is the one most exposed to worker CPU contention under the full
-    // suite's ~1370 tests running in parallel; it consistently passes
-    // in isolation. An explicit longer timeout (default 5000ms) avoids
-    // spurious failure under that legitimate contention without
-    // masking a genuine hang, which would still exceed even this.
     vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
     vi.mocked(alertsApi).fetchAlertRules.mockResolvedValue({ rules: [], overlapWarnings: [] });
     vi.mocked(alertsApi).fetchAlertQueueStatus.mockResolvedValue(baseQueueStatus());
@@ -268,7 +269,7 @@ describe('AlertsPage', () => {
     // "{{" / "}}" is how it escapes a literal brace.
     await user.type(ttsField, '{{username}} cheered!');
     await waitFor(() => expect(saveButton).not.toBeDisabled());
-  }, 15000);
+  });
 
   it('choosing a sound from the picker selects it, and the create request carries the full audio object (Stage 17B)', async () => {
     vi.mocked(alertsApi).fetchAlertProfiles.mockResolvedValue([baseProfile()]);
@@ -475,4 +476,4 @@ describe('AlertsPage', () => {
     // Each side of the overlapping pair shows its own warning.
     expect(warnings).toHaveLength(2);
   });
-});
+}, 15000);
