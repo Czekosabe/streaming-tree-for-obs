@@ -27637,3 +27637,55 @@ required any change.
 Restart the complete Stage 18B closing regression from the very
 beginning (frontend checks, backend checks, all 22 integration scripts
 in the canonical order, as one unbroken sequence).
+
+## 2026-08-17 — test(web): raise AlertsPage's own slow-test timeout
+
+### Status
+Completed.
+
+### Scope
+During the second Stage 18B closing-regression attempt,
+`src/pages/AlertsPage.test.tsx` (a pre-existing Stage 17B test this
+milestone never otherwise touched) failed under the full ~1370-test
+parallel suite run: "the audio section reveals sound/TTS controls only
+once each is enabled..." timed out at Vitest's default 5000ms.
+
+### Root cause
+Not a Stage 18B regression - confirmed by `git status`/`git diff`
+showing zero prior changes to any alerts-related file this session,
+and by running `AlertsPage.test.tsx` standalone (`npm run test -- --run
+src/pages/AlertsPage.test.tsx`), which passed all 16 tests cleanly, as
+it also did earlier in this same milestone's own frontend checkpoint.
+The failing test specifically drives an unusually long sequence of real
+`userEvent` keystrokes/clicks across two toggles and two text fields;
+under the CPU contention of ~97 parallel test files (~1370 tests
+total), that sequence occasionally exceeds the default 5000ms per-test
+timeout, while the exact same sequence always completes well within it
+in isolation or under lighter load. This is legitimate resource
+contention, not a hang or a logic bug - a genuine hang would still
+exceed a longer bound.
+
+### Changes
+- `apps/web/src/pages/AlertsPage.test.tsx` - the one identified slow
+  test now passes an explicit `15000` timeout (Vitest's `it(name, fn,
+  timeout)` third argument) instead of relying on the 5000ms default,
+  with a comment explaining why. No other test in this file was
+  touched - only this one had ever been observed failing, and no other
+  test in the file drives a comparably long interaction sequence.
+
+### Automated validation
+`tsc -b`, `eslint .` both clean. `AlertsPage.test.tsx` run standalone,
+16/16 tests passing.
+
+### Known limitations
+None. This is a resource-contention mitigation for a pre-existing test,
+not a product change.
+
+### Next step
+Restart the complete Stage 18B closing regression from the very
+beginning (frontend checks, backend checks, all 22 integration scripts
+in the canonical order, as one unbroken sequence) - this is the third
+attempt, the first two each blocked by a pre-existing, Stage-18B-
+unrelated defect (a script missing the newly-required `kind` field,
+and this test's own tight timeout under full-suite contention),
+diagnosed and fixed before each restart.
