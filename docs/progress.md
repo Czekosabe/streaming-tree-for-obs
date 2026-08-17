@@ -26440,3 +26440,89 @@ run yet.
 The complete Stage 18A closing regression: every backend/frontend check
 plus all 21 integration scripts run in the canonical order from a clean
 state, then the final closing journal entry.
+
+## 2026-08-17 — fix(scripts): fix stale audio SSE race in verify-alert-audio
+
+### Status
+Completed.
+
+### Scope
+During the Stage 18A closing regression (governing task §52), the
+complete 21-script sequence failed at script 20 of 21
+(`verify-alert-audio.mjs`, a pre-existing Stage 17B script this
+milestone never intentionally touched) on its own step 15:
+`totalInterruptedByAlert increased by exactly 1` reported
+`{"before":0,"after":0}`. The failure reproduced identically when the
+script was re-run in complete isolation (idle system, no other scripts
+running), ruling out simple system-load flakiness as the sole cause.
+
+### Root cause
+A genuine bug in the integration script itself, not in
+`internal/audio.Manager`. Diagnosed by temporarily instrumenting
+`Manager.EnqueueAlertAudio` with a debug print of `m.current`'s
+Source/nil-ness at the moment the alert's own audio arrives, rebuilding
+the integration test server, and re-running the script - then reverting
+the instrumentation once the cause was confirmed (`git diff --stat`
+confirmed `internal/audio/manager.go` was returned to its exact
+pre-instrumentation state; no product code was changed by this
+investigation).
+
+Step 13 (the sound-then-TTS chain test) ends by acking the chain's
+final TTS item's `playback_started` then `playback_ended`. Per this
+same script's own pre-existing comment further down (the "drain" step
+after the arbitration test), acking a renderer transition re-emits a
+duplicate `audio.current` for the same item on `playback_started`, then
+`audio.idle` on `playback_ended` - two frames step 13 itself never
+drains, because it reads from `alertStream` next, not `audioStream`.
+Those two stale frames were still sitting unconsumed in the
+`audioStream` async iterator's buffer when step 15 began.
+
+Step 15's own wait for "the global item to become current" accepted
+the first `audio.current` event unconditionally, with no itemId filter
+(unlike every other itemId-sensitive wait in this same script, e.g.
+`ttsCurrent`/`preempted`). It therefore resolved instantly on the stale
+leftover duplicate from step 13 - confirmed directly in a debug run,
+where the "new" global item's reported id
+(`auditem_43a30da80f23fe6b30a4e806`) was byte-for-byte the same id as
+step 13's own already-acked TTS item, which is cryptographically
+impossible for two genuinely distinct items (`NewItemID` draws 12
+random bytes via `crypto/rand`). Because this stale-event match
+resolved far faster than the real global item's own promotion (which
+only happens on the audio poll loop's next ~20ms tick), the script
+proceeded to trigger the alert's Test Rule before the real global TTS
+item had actually become `current`. `EnqueueAlertAudio` then found
+`m.current == nil` (never `Source == SourceGlobalTTS`), so it took the
+plain "promote into an idle slot" branch, never the
+interrupt-and-count branch - correctly leaving
+`totalInterruptedByAlert` unchanged, because nothing was actually
+interrupted. The alert's own sound item still became current
+immediately afterward regardless (an idle promotion looks identical to
+a preemption from the outside), which is why every other assertion in
+this scenario had already been passing.
+
+### Changes
+- `scripts/verify-alert-audio.mjs` - the `globalCurrent` wait in step
+  15 now requires `evt.data.itemId` to differ from both `soundItemId`
+  and `ttsCurrent.data.itemId` (step 13's own two chain item ids),
+  exactly mirroring the itemId-differencing pattern this same script
+  already uses for `ttsCurrent` and `preempted` a few lines away, so it
+  can no longer resolve on a stale leftover frame from an earlier step.
+
+### Automated validation
+`go build -tags integration ./cmd/testserver` rebuilt cleanly after the
+debug instrumentation was reverted (confirmed byte-identical to the
+pre-investigation state via `git diff --stat`). `node
+scripts/verify-alert-audio.mjs` run twice consecutively in isolation
+after the script fix, both passing cleanly end to end, including the
+previously-failing assertion (`ok totalInterruptedByAlert increased by
+exactly 1`).
+
+### Known limitations
+None. This was a test-script defect only; no product code required any
+change.
+
+### Next step
+Restart the complete Stage 18A closing regression from the very
+beginning (frontend checks, backend checks, all 21 integration scripts
+in the canonical order, as one unbroken sequence), per this task's own
+§52 "no selective retry accepted as the final regression" rule.

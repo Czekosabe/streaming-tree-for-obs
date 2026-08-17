@@ -759,9 +759,17 @@ async function main() {
     await request(baseUrl, 'POST', '/api/testonly/tts/delay', { milliseconds: 5000 });
     const globalSpeak = await request(baseUrl, 'POST', '/api/audio/test-speak', { text: 'a long global announcement' });
     expect(globalSpeak.status === 200, 'the global Test Speak item was accepted', globalSpeak.body);
+    // The stream's own buffer still holds stale frames from step 13's own
+    // final ack cycle (a duplicate audio.current re-emitted on
+    // playback_started, then audio.idle on playback_ended - see the same
+    // note further down) that step 13 itself never drained, since it read
+    // from alertStream next instead of audioStream. Require a genuinely
+    // new itemId, never soundItemId/ttsCurrent's own, so this wait cannot
+    // resolve on that leftover chain-test data instead of the real new
+    // global item.
     const globalCurrent = await waitUntil(async () => {
       const evt = await nextAudioEvent(audioStream, POLL_TIMEOUT_MS, 'the global item to become current (synthesizing)');
-      return evt.event === 'audio.current' ? evt : false;
+      return evt.event === 'audio.current' && evt.data.itemId !== soundItemId && evt.data.itemId !== ttsCurrent.data.itemId ? evt : false;
     }, POLL_TIMEOUT_MS, 'the slow global TTS item to become current');
     pass(`the global TTS item (${globalCurrent.data.itemId}) is current and still synthesizing`);
 
