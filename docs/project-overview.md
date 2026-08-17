@@ -13,6 +13,13 @@
 The name describes how the application works: a single stream leaving OBS is the
 "trunk", and every destination platform is an independent "branch".
 
+Created by **Czekosabe** (<https://github.com/Czekosabe>). Canonical
+repository: <https://github.com/Czekosabe/streaming-tree-for-obs>. The
+application's public creator identity, licence status, privacy posture and
+creator-support model are defined in
+[`docs/product-identity-legal.md`](product-identity-legal.md), and surfaced
+in-app via `Settings → About & Legal`.
+
 ---
 
 ## 2. The problem we are solving

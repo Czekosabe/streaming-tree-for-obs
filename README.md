@@ -255,6 +255,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Directory structure](#directory-structure)
 - [What is currently demo-only](#what-is-currently-demo-only)
 - [Stream key security](#stream-key-security)
+- [About, privacy and legal](#about-privacy-and-legal)
 - [Common problems](#common-problems)
 
 ---
@@ -3885,6 +3886,29 @@ contract, and the platform-deletion cleanup ordering - is in
 [`docs/project-overview.md`](docs/project-overview.md#10-stream-key-security)
 and the implementation notes in
 [`docs/progress.md`](docs/progress.md).
+
+---
+
+## About, privacy and legal
+
+Streaming Tree for OBS is an independent project created by **Czekosabe**
+(<https://github.com/Czekosabe>). The application's own in-app **About &
+Legal** page (`Settings → About & Legal`) shows product identity, the
+current build/version state, and a voluntary creator-support link, and
+links out to the canonical documents:
+
+- [`PRIVACY.md`](PRIVACY.md) - what is local application state versus
+  network activity the user explicitly enables.
+- [`LEGAL.md`](LEGAL.md) - a concise disclaimer, the current (unresolved)
+  application-licence status, and third-party service terms.
+- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) - bundled/dependency
+  third-party software notices.
+- [`docs/product-identity-legal.md`](docs/product-identity-legal.md) - the
+  canonical contract these surfaces were built from.
+
+No application-wide licence has been selected yet for the first public
+packaged release; this is a deliberate, unresolved decision, not an
+oversight - see `LEGAL.md`.
 
 ---
 

@@ -28344,3 +28344,85 @@ None.
 Audit current product identity/legal state (LICENSE, THIRD_PARTY_
 NOTICES.md, existing buildinfo, frontend Settings structure) before
 writing `docs/product-identity-legal.md`.
+
+## 2026-08-17 — docs: define product identity and legal surfaces
+
+### Status
+Completed.
+
+### Scope
+Pre-Stage-20 product-identity milestone. Audited the real repository
+before writing anything: no root `LICENSE`/`LICENSE.*`/`COPYING`/
+`NOTICE` file exists (confirmed by direct directory listing - only
+`THIRD_PARTY_NOTICES.md` and `README.md` sit at the repository root);
+neither `apps/web/package.json` nor `apps/server/go.mod` declares a
+licence field; the only licence text anywhere in the repository
+concerns MediaMTX's own third-party MIT licence, never Streaming
+Tree's own. Found an existing `internal/buildinfo` package
+(`ServiceName`, `Version = "0.1.0"`, used only by the health endpoint
+and log lines) and an existing frontend `apps/web/src/data/app-info.ts`
+(`APP_INFO.name`/`.version`, used only by the sidebar footer) - neither
+carries creator/repository/support identity today. Confirmed via
+`go build`/`go version -m` that Go's own automatic VCS build-info
+stamping (`runtime/debug.ReadBuildInfo`) reliably provides a real
+commit hash for any `go build` run inside this git checkout, with no
+`-ldflags` setup required - genuinely reliable backend-only build
+information the Vite frontend build has no equivalent for. Confirmed
+no telemetry/analytics/crash-reporting dependency exists anywhere in
+either `package.json`.
+
+### Changes
+- `docs/product-identity-legal.md` (new) - the canonical contract:
+  binding product identity (name, creator "Czekosabe", repository URL,
+  creator URL, support URL), the rule that Czekosabe is the only public
+  creator identity ever displayed (no real name/email/OS username/Git
+  identity), the single-canonical-source architecture
+  (`internal/buildinfo` → `GET /api/about` → frontend fetch, no
+  duplicated literal strings), the creator-support boundary from the
+  Stage 16 donation system, the future-proofing rule for the support
+  URL (one constant, no migration), the application-licence audit
+  result (unselected, deliberately not invented), and the version/
+  build-identity decision (honest "Development build" until Stage 20A,
+  commit info only because Go can provide it reliably).
+- `PRIVACY.md` (new) - local application state versus network activity
+  the user explicitly enables, sourced entirely from the audit above;
+  explicitly avoids "never connects to the internet"/"no data ever
+  leaves your computer" claims per the governing task's own warning,
+  since provider integrations necessarily do; a creator-support privacy
+  section stating no payment data is processed by the application.
+- `LEGAL.md` (new) - concise product identity, application-licence
+  status (unresolved, not invented), a pointer to
+  `THIRD_PARTY_NOTICES.md` rather than duplicating it, an independent-
+  project disclaimer naming OBS Studio/Twitch/YouTube/Kick/TikTok/
+  StreamElements without implying endorsement, third-party service
+  availability wording, user responsibility, and creator-support terms
+  (voluntary, no feature unlock, no licence purchase, no paid
+  entitlement). Deliberately not called "Terms of Service" and not
+  claimed to be lawyer-reviewed.
+- `README.md` - new "About, privacy and legal" section (added between
+  "Stream key security" and "Common problems", plus its own table-of-
+  contents entry) pointing to the three new documents and the in-app
+  About & Legal page; no donation banner, no large hero, kept concise.
+- `docs/project-overview.md` - §1 ("Project name") gained two sentences
+  naming the creator/repository and pointing to
+  `product-identity-legal.md`; no other section touched.
+- `THIRD_PARTY_NOTICES.md` - audited, found factually accurate and
+  consistent with the claims above; deliberately left unmodified per
+  the governing task's own instruction not to touch it without a real
+  factual problem.
+
+### Automated validation
+This is a documentation-only commit; validated via direct source audit
+(directory listing, `grep` across `package.json`/`go.mod`, `go build`/
+`go version -m` for the VCS-stamping claim) rather than a test suite.
+Full frontend/backend validation runs after the product-code commits
+below, as one closing regression.
+
+### Known limitations
+None. The application-licence question is explicitly, deliberately
+left open - see `docs/product-identity-legal.md` §5.
+
+### Next step
+Implement `GET /api/about` (`internal/buildinfo` extended with the
+product-identity constants, a new read-only handler) as the single
+backend source the frontend's About & Legal page will fetch from.
