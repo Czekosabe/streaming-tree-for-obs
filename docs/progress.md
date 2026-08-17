@@ -26526,3 +26526,94 @@ Restart the complete Stage 18A closing regression from the very
 beginning (frontend checks, backend checks, all 21 integration scripts
 in the canonical order, as one unbroken sequence), per this task's own
 §52 "no selective retry accepted as the final regression" rule.
+
+## 2026-08-17 — fix(scripts): close every fake provider server in verify-goals-widgets
+
+### Status
+Completed.
+
+### Scope
+While restarting the complete Stage 18A closing regression (governing
+task §52) after the previous entry's fix, the same regression run
+appeared to hang indefinitely at its own final step, script 21 of 21
+(`scripts/verify-goals-widgets.mjs`). Direct process inspection
+(`Get-Process`/`Get-CimInstance Win32_Process` via PowerShell) showed
+the script's own `node.exe` process was still alive with zero
+increasing CPU time (genuinely idle, not spinning) many minutes after
+its own log already showed every one of its 32 steps passing,
+`Stage 18A goals/widgets verification PASSED`, and its temp root
+removed - the verification content itself had already fully succeeded,
+but the process never exited on its own. The stray process was
+terminated by hand to unblock investigation; because that termination
+made the driver script's own `if node ...; then` see a killed process
+rather than a clean exit 0, that entire regression attempt was
+correctly treated as non-clean and discarded, never counted as a valid
+final run.
+
+### Root cause
+Two independent, additive causes, both genuine gaps in this script's
+own cleanup relative to every precedent script's established
+convention (compared directly against `scripts/verify-twitch-
+engagement.mjs`'s own `close(server)` helper and its finally block):
+
+1. `widgetIterator` (the public widget SSE connection opened at step
+   "Connect the public widget SSE stream", used twice) was never
+   closed - every other SSE iterator this script or any precedent
+   script opens is explicitly closed with `.return()` once the scenario
+   using it is done (e.g. `verify-alert-audio.mjs`'s own
+   `audioStream.return()`/`alertStream.return()`/`holdStream.return()`).
+   Left open, the generator stays parked on `await reader.read()`
+   forever, so its own `finally` (which cancels the underlying fetch
+   reader) never runs.
+2. None of the script's five in-process fake provider HTTP/WS servers
+   (`twitchOAuth`, `twitchHelix`, `twitchEventSub`, `ytOAuth`, `ytAPI`)
+   were ever `.close()`d, and the raw EventSub WebSocket sockets
+   collected in `wsState.connections` were never `.destroy()`d. Every
+   precedent script defines a `close(server)` helper
+   (`return new Promise((resolveClose) => server.close(() =>
+   resolveClose()))`) and calls it for every fake server it created, in
+   its own `finally` block, alongside destroying any lingering
+   `wsState.connections` sockets; this script defined `listen()` but
+   never defined or called an equivalent `close()` at all. Any one of
+   these five open listening sockets alone is enough to keep Node's
+   event loop non-empty indefinitely, exactly matching the observed
+   symptom (idle process, zero CPU growth, no natural exit).
+
+Fixing only the first cause (the `widgetIterator` leak) was verified
+insufficient on its own - the process still hung (confirmed by a
+direct standalone re-run that was still alive at the 3-minute mark).
+Only fixing both together let the process exit on its own.
+
+### Changes
+- `scripts/verify-goals-widgets.mjs` - added `await widgetIterator.
+  return();` immediately after its last read (mirroring the
+  itemId-scoped, close-when-done pattern used everywhere else); added
+  a `close(server)` helper identical to the one in every precedent
+  script; the `finally` block now destroys every still-open
+  `wsState.connections` socket and closes all five fake provider
+  servers (`twitchOAuth`, `twitchHelix`, `twitchEventSub`, `ytOAuth`,
+  `ytAPI`) before removing the temporary root, exactly matching
+  `verify-twitch-engagement.mjs`'s own established finally-block
+  convention.
+
+### Automated validation
+`node scripts/verify-goals-widgets.mjs` run standalone twice
+consecutively after the fix, each completing in ~34-35 seconds with a
+genuine process exit code 0 (verified via explicit wall-clock timing
+around each run, not merely reading the printed "PASSED" line) -
+confirming the process now exits on its own with no process left
+running afterward (`ps -ef` showed no leftover `node`/`testserver`/
+`fakeyoutubegrpc`/`fakestreamelements` process from either run).
+
+### Known limitations
+None. This was a test-script cleanup defect only; no product code
+required any change; the actual Stage 18A verification content itself
+was already correct both before and after this fix.
+
+### Next step
+Restart the complete Stage 18A closing regression from the very
+beginning (frontend checks, backend checks, all 21 integration scripts
+in the canonical order, as one unbroken sequence), per this task's own
+§52 "no selective retry accepted as the final regression" rule - this
+is now the second restart, both times triggered by a script-only defect
+diagnosed and fixed before restarting, never a product defect.

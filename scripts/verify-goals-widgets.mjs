@@ -243,6 +243,10 @@ function listen(server, port) {
   });
 }
 
+function close(server) {
+  return new Promise((resolveClose) => server.close(() => resolveClose()));
+}
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -873,6 +877,7 @@ async function main() {
     await waitForGoalCurrent(baseUrl, followerGoalId, 826);
     const followUpdate = await nextEvent(widgetIterator, POLL_TIMEOUT_MS, 'the widget.reset after the follow');
     expect(followUpdate.data.current === 826, 'the public widget stream reflects the new current value', followUpdate.data);
+    await widgetIterator.return();
 
     step('Redelivering the same EventSub message id never double-counts the follower goal');
     sendWS(twSocket, notificationEnvelope('channel.follow', { user_id: 'u_follower_1', user_login: 'a_follower', user_name: 'A Follower', followed_at: new Date().toISOString() }, 'msg_follow_1'));
@@ -1089,6 +1094,14 @@ async function main() {
     }
     try { await killTree(fakeGRPC); } catch { /* best-effort cleanup */ }
     try { await killTree(fakeAstro); } catch { /* best-effort cleanup */ }
+    for (const socket of wsState.connections) {
+      if (!socket.destroyed) socket.destroy();
+    }
+    await close(twitchOAuth);
+    await close(twitchHelix);
+    await close(twitchEventSub);
+    await close(ytOAuth);
+    await close(ytAPI);
     rmSync(tempDir, { recursive: true, force: true });
     console.log(`Removed the temporary root: ${tempDir}`);
   }
