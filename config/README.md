@@ -433,3 +433,31 @@ with no transcoding, is this stage's deliberate scope.
     accumulated state is a handful of small integers, never a managed
     asset. Stage 18A added **no new environment variable**. See
     [goals-widgets.md](../docs/goals-widgets.md).
+22. Stage 18B (supporter/activity widgets, richer session counters, and
+    bounded multi-widget dashboards) widens `widget_profiles` and adds
+    four new tables in one migration (`0026_supporter_widgets.sql`).
+    `widget_profiles` gains a `kind` column (nine values, `'goal'`
+    default for every existing row), a now-nullable `goal_id` (required
+    only for `kind = 'goal'`), and one column per new kind-specific
+    setting (`show_provider`, `show_time`, `show_message`, `max_items`,
+    `currency`, `metric`, `columns`) - SQLite cannot widen a `CHECK`
+    list or drop a `NOT NULL` via plain `ALTER TABLE`, so this follows
+    the same "rebuild the table, copy every row across unchanged, drop
+    the old one, rename the new one into place" pattern
+    `0020_donation_sources.sql` already established for `alert_rules`.
+    `widget_profile_providers`/`widget_profile_accounts` mirror
+    `goal_providers`/`goal_accounts` exactly, including the same
+    no-foreign-key-on-`account_id` reasoning. `widget_profile_
+    event_types` holds an event-ticker widget's own closed allowlist
+    subset. `widget_profile_dashboard_children` holds one row per
+    dashboard-child placement (bounded column/row/span integers);
+    `child_id` carries no `ON DELETE` clause - the application layer
+    explicitly rejects deleting a widget profile still referenced by a
+    dashboard, never a raw SQLite foreign-key error, mirroring
+    `widget_profiles.goal_id`'s own identical convention. No column or
+    table added by this migration ever stores event-derived content (a
+    display name, a donation message, a ticker/recent-supporter row) -
+    every such value is deliberately runtime-only, held only in memory,
+    and is gone the moment the backend restarts. No new filesystem blob
+    directory, no new environment variable. See
+    [supporter-widgets.md](../docs/supporter-widgets.md).

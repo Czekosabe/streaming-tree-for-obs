@@ -1354,6 +1354,31 @@ Widgets read the same Event Bus (§5–6) that alerts and TTS do; a goal is
 > list, the event ticker, richer platform-specific counters, and any
 > multi-widget composition remain Stage 18B's own, later, separately-
 > scoped decision - Stage 18 as a whole is not yet complete.
+>
+> **Factual status update (stage 18B, completed):** every widget kind
+> named above is now real too, on the same `internal/domain/goals.
+> WidgetProfile` model widened from one kind to nine, served by the
+> same generic public route and SSE mechanism. A closed subscription-
+> family decision (reused by latest subscriber, recent supporters, and
+> the new_subscriptions counter metric) distinguishes a genuinely new
+> subscriber/member from a continuing one exactly the way the goal
+> contribution table already did. Recent supporters and the event
+> ticker are each built from their own independently closed event-
+> family table, so a gift-batch summary can never duplicate its own
+> already-counted individual recipients in either. Largest donation
+> requires one configured comparison currency and compares exact
+> integer micros - a strictly larger amount replaces the current
+> session's winner, an exactly equal amount never does. Session
+> counters are one of eight closed metrics, explicitly distinct from a
+> Stage 18A goal's own persistent total. Dashboards compose 1-8
+> existing widget profiles by reference into a bounded 1-4 column grid
+> and can never contain another dashboard. Every event-derived field
+> above (a display name, a donation message, a recent-supporter row, a
+> ticker entry) is deliberately runtime-only - never written to SQLite,
+> clearing on backend restart or an explicit manual reset, preserving
+> this document's own established "never persist engagement content"
+> boundary. **Stage 18 as a whole is now complete.** See
+> [supporter-widgets.md](supporter-widgets.md) for the full contract.
 
 ## 15. External donations
 
@@ -1519,8 +1544,8 @@ that table.
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) (§15) — **Deferred**, feasibility-gated |
 | 17A | Shared audio runtime and text-to-speech foundation (§12) — **Completed** |
 | 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12, see [alert-audio.md](alert-audio.md)) — **Completed**, stage 17 as a whole is now complete |
-| 18A | Persistent goals/counters foundation and core public goal widgets (§14, see [goals-widgets.md](goals-widgets.md)) — **Completed**, stage 18 as a whole not yet complete |
-| 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer counters, multi-widget composition (§14) |
+| 18A | Persistent goals/counters foundation and core public goal widgets (§14, see [goals-widgets.md](goals-widgets.md)) — **Completed** |
+| 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer counters, multi-widget composition (§14, see [supporter-widgets.md](supporter-widgets.md)) — **Completed**, stage 18 as a whole now complete |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |
 

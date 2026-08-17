@@ -461,7 +461,7 @@ or a second public payload shape for alert-owned audio (see
 [alert-audio.md](alert-audio.md) §8 for the synchronization contract on
 top of this route).
 
-## Stage 18A: the goal widget Browser Source route
+## Stage 18A/18B: the goal and supporter-widget Browser Source route
 
 The goal-widget route (`/overlay/widgets/{publicSlug}`) reuses the same
 URL-not-local-file, transparent-background, and shutdown/refresh
@@ -484,19 +484,28 @@ a safe, empty default snapshot instead. Rotating a widget profile's
 public slug invalidates the old URL immediately, exactly like every
 other overlay's rotation behavior.
 
+Stage 18B widens the same `WidgetProfile` model from one kind to nine
+without touching any of the above: every new kind (latest follower/
+subscriber/donation, largest donation, recent supporters, event
+ticker, session counter, dashboard) is served by this exact same route,
+DTO shape, and poll-and-diff mechanism - a dashboard's own public
+snapshot simply composes its children's own snapshots inline, still one
+`widget.reset` per change, still no delta/replay machinery of any kind
+(docs/supporter-widgets.md §10). No per-kind route was ever considered.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
 verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's, 17A's,
-17B's, or 18A's own verification.** Every finding above comes from
-reading the official pages listed, not from observing a live Browser
-Source. The local integration scripts (`scripts/verify-chat-overlay.mjs`,
+17B's, 18A's, or 18B's own verification.** Every finding above comes
+from reading the official pages listed, not from observing a live
+Browser Source. The local integration scripts (`scripts/verify-chat-overlay.mjs`,
 `scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
 `scripts/verify-alert-designer.mjs`,
 `scripts/verify-chat-overlay-designer.mjs`,
 `scripts/verify-visual-template-packages.mjs`,
 `scripts/verify-tts-audio.mjs`, `scripts/verify-alert-audio.mjs`,
-`scripts/verify-goals-widgets.mjs`)
+`scripts/verify-goals-widgets.mjs`, `scripts/verify-supporter-widgets.mjs`)
 exercise the same HTTP/SSE contract a
 real Browser Source would consume, from a plain Node.js HTTP client -
 they prove the backend's contract is correct, not that OBS's own CEF

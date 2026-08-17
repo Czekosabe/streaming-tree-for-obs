@@ -27468,3 +27468,117 @@ canonical order) has not run yet.
 ### Next step
 Documentation pass across every living doc carrying a Stage 18/18B
 "planned"/"not implemented" marker, then the closing regression.
+
+## 2026-08-17 — docs: complete Stage 18B supporter widgets
+
+### Status
+Completed. Stage 18 as a whole is now marked **Completed** across
+every living document.
+
+### Scope
+The documentation pass across every living doc carrying a "Stage 18B
+planned"/"Stage 18 not yet complete" marker, now that Stage 18B has
+shipped and been verified twice by `scripts/verify-supporter-
+widgets.mjs`. `docs/audio-tts.md`, `docs/visual-template-packages.md`,
+`docs/visual-templates.md`, and `docs/visual-designs.md` were checked
+and needed no change (zero mentions of Stage 18/goals/supporter
+widgets in any of them - confirmed by direct search, not assumed).
+`docs/alert-audio.md`'s own two Stage 18 mentions (both scope-exclusion
+notes: "Stage 17B does not start Stage 18") remain factually true
+regardless of Stage 18B's own completion and were left untouched.
+`THIRD_PARTY_NOTICES.md` was checked against `apps/server/go.mod`/
+`go.sum` and `apps/web/package.json` - no dependency was added by this
+milestone, so no edit was needed. `docs/goals-widgets.md` (the Stage
+18A contract itself) was deliberately left untouched - it correctly
+describes Stage 18A's own scope as written at the time, exactly like
+`docs/audio-tts.md` was never rewritten once `docs/alert-audio.md`
+(Stage 17B) shipped on top of it.
+
+### Changes
+- `README.md` - roadmap table row `18B` now **Completed**, "Stage 18
+  as a whole is now complete"; the top-of-file summary's Stage 18A
+  clause widened to describe both sub-stages together; the "Still
+  planned" list's own Stage 18B bullet removed; the blockquote at the
+  top of the file updated; the "## Persistent goals and public goal
+  widgets (Stage 18A)" section renamed to "## Persistent goals and
+  supporter widgets (Stage 18A/18B)" (TOC entry and every cross-
+  reference updated to the new anchor) and gained a full new Stage 18B
+  subsection - each of the eight new widget kinds' own semantics, and
+  the runtime-only/never-persisted privacy boundary stated explicitly
+  - plus a "Verifying it for real" paragraph for the new 22nd script;
+  the integration-checks script list and the directory-structure tree
+  both gained `scripts/verify-supporter-widgets.mjs` and
+  `docs/supporter-widgets.md`; the "What is currently demo-only" table
+  row, the "What is real"/"What will be added later" bullet lists, and
+  the Alerts section's own "what this stage does not implement" note
+  all corrected to drop every stale "Stage 18B remains planned"
+  reference.
+- `docs/project-overview.md` - roadmap table row `18B` now
+  **Completed**, "stage 18 as a whole is now complete"; §16's own
+  "Status" paragraph piece count went from fourteen to fifteen with a
+  full description of the new supporter-widget piece; two sentences
+  correcting "Stage 18 as a whole is not complete"/"only stage 18B's
+  own richer goal widgets remain unimplemented" to reflect completion;
+  a new "Factual status update (stage 18B, completed)" blockquote
+  appended after the existing Stage 18A one, following this document's
+  own established append-only correction pattern - the original Stage
+  18A blockquote's own "not yet complete" wording was left untouched,
+  since it was true when written.
+- `docs/engagement-architecture.md` - §13's roadmap table row `18B`
+  now **Completed**, "stage 18 as a whole now complete"; a new
+  "Factual status update (stage 18B, completed)" blockquote added at
+  the end of §14 (Goals, counters and widgets), the same pattern §12/
+  §15's own status updates already established, describing the
+  subscription-family reuse, the two independently closed recent-
+  supporters/event-ticker families, the largest-donation tie rule, the
+  eight closed session-counter metrics, bounded non-nesting dashboards,
+  and the runtime-only privacy boundary.
+- `docs/obs-browser-source.md` - the "Stage 18A: the goal widget
+  Browser Source route" heading renamed to "Stage 18A/18B: the goal
+  and supporter-widget Browser Source route", with a new paragraph
+  explaining that every Stage 18B kind (including a dashboard composing
+  its own children inline) reuses the exact same route/DTO/poll
+  mechanism, never a per-kind route; the "What was not tested" section's
+  stage list and script list both extended to include Stage 18B and
+  `scripts/verify-supporter-widgets.mjs`.
+- `config/README.md` - appended rule 22 (Stage 18B, one migration
+  `0026_supporter_widgets.sql` widening `widget_profiles` via the same
+  SQLite table-rebuild pattern `0020_donation_sources.sql` already
+  established, plus four new child tables: `widget_profile_providers`/
+  `widget_profile_accounts`, `widget_profile_event_types`, and
+  `widget_profile_dashboard_children`; no event-derived content in any
+  new column/table; no new filesystem blob directory; no new
+  environment variable) after the previous last rule (21, Stage 18A).
+
+### Stale-claim audit
+Searched every edited living doc for `18B` co-occurring with
+`planned`/`not complete`/`not implement`/`remain` after making the
+edits above - the only remaining matches are the pre-existing,
+correctly-preserved historical "Factual status update (stage 18A,
+completed)" blockquotes in `project-overview.md`/
+`engagement-architecture.md`, which describe the true state as of
+*that* update and are immediately superseded by the new Stage 18B
+blockquotes appended directly after them.
+
+### Automated validation
+Prose-only changes; no code was touched. Every new/edited cross-
+reference link and anchor was checked to actually exist, including the
+renamed README `#persistent-goals-and-supporter-widgets-stage-18a18b`
+anchor against its own heading's real GitHub-slug form (verified at
+every one of its four backlink sites), and every `docs/supporter-
+widgets.md` relative link path checked against each file's own
+location (`docs/supporter-widgets.md` from the repo root,
+`supporter-widgets.md` from within `docs/`, `../docs/supporter-
+widgets.md` from `config/`) plus confirming the file itself exists on
+disk at each referenced path.
+
+### Known limitations
+None specific to this commit. Stage 18B as a whole is not yet fully
+closed - the complete closing regression across all backend/frontend
+checks and all 22 integration scripts in the canonical order has not
+run yet.
+
+### Next step
+The complete Stage 18B closing regression: every backend/frontend
+check plus all 22 integration scripts run in the canonical order from
+a clean state, then the final closing journal entry.

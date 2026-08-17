@@ -61,18 +61,23 @@ TTS queue and a bounded visual hold, and a Stage 14B package manifest
 v2 extension carrying that configuration through a portable template
 package — see [`docs/alert-audio.md`](docs/alert-audio.md) — and, as
 this project's newest addition, a real **persistent goals/counters
-foundation** (stage 18A; Stage 18 as a whole not yet complete): a
-provider-independent accumulation engine consuming that same Event Bus
-at current position, four core goal families (followers, subscriptions,
-donations, Bits) with a deterministic, provider-independent
-contribution table, operator-supplied baseline/current management (this
-application never claims to know a provider's own complete historical
-total), durable per-goal duplicate protection, and real public OBS goal
-widgets sharing one generic Browser Source route — see
-[`docs/goals-widgets.md`](docs/goals-widgets.md).
-**Still planned**: Stage 18B's own richer goal widgets (latest
-follower/subscriber/donation, largest donation, recent supporters,
-event ticker), a **Kick**
+foundation and supporter/activity widget suite** (stages 18A/18B; Stage
+18 as a whole is now complete): a provider-independent accumulation
+engine consuming that same Event Bus at current position, four core
+goal families (followers, subscriptions, donations, Bits) with a
+deterministic, provider-independent contribution table,
+operator-supplied baseline/current management (this application never
+claims to know a provider's own complete historical total), durable
+per-goal duplicate protection, real public OBS goal widgets, and, on
+top of that same foundation, eight further widget kinds (latest
+follower/subscriber/donation, largest donation, a recent-supporters
+list, an event ticker, richer session counters, and bounded
+multi-widget dashboards) whose own event-derived content is
+deliberately runtime-only and clears on every backend restart — all
+sharing one generic Browser Source route — see
+[`docs/goals-widgets.md`](docs/goals-widgets.md) and
+[`docs/supporter-widgets.md`](docs/supporter-widgets.md).
+**Still planned**: a **Kick**
 engagement connector (feasibility-gated — see
 [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
 TikTok LIVE support (conditional on an official, permitted integration
@@ -208,8 +213,8 @@ engagement piece above in order (stages 8A through 18A).
 > (Streamlabs, Ko-fi — stage 16B, feasibility-gated), and everything else
 > still built **on top of** the operator chat, outbound chat, alert engine,
 > visual-design/template/package engine, shared audio/TTS runtime, and
-> persistent goals foundation — Stage 18B's own richer goal widgets, and
-> Stage 20's own packaging/updater/hardening work — are
+> persistent goals/supporter-widgets foundation — Stage 20's own
+> packaging/updater/hardening work — is
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -239,7 +244,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 - [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands)
 - [Alerts](#alerts)
 - [Text-to-speech and audio](#text-to-speech-and-audio)
-- [Persistent goals and public goal widgets (Stage 18A)](#persistent-goals-and-public-goal-widgets-stage-18a)
+- [Persistent goals and supporter widgets (Stage 18A/18B)](#persistent-goals-and-supporter-widgets-stage-18a18b)
 - [REST API](#rest-api)
 - [Production build](#production-build)
 - [Lint, typecheck, tests and other checks](#lint-typecheck-tests-and-other-checks)
@@ -280,7 +285,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a shared bounded audio queue consuming the Event Bus, and a public OBS Browser Source audio route, see [audio-tts.md](docs/audio-tts.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 17B | Persistent alert sounds, per-rule TTS, visual-template audio assets, see [alert-audio.md](docs/alert-audio.md) | **Completed** — see [progress.md](docs/progress.md); Stage 17 as a whole is now complete |
 | 18A | Persistent goals/counters foundation: a provider-independent accumulation engine, four core goal families (followers, subscriptions, donations, Bits), operator baseline/current management, and real public OBS goal widgets, see [goals-widgets.md](docs/goals-widgets.md) | **Completed** — see [progress.md](docs/progress.md) |
-| 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer platform-specific counters, multi-widget composition | Planned; Stage 18 as a whole is **not** complete |
+| 18B | Latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](docs/supporter-widgets.md) | **Completed** — see [progress.md](docs/progress.md); Stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
@@ -1022,11 +1027,11 @@ and [Alerts](#alerts).
 Since then, the visual alert/overlay designer (stage 13), donations
 from external services (stage 16A), a shared audio/text-to-speech
 runtime (stage 17A), persistent alert audio/per-rule TTS (stage 17B),
-and a persistent goals/counters foundation with core public goal
-widgets (stage 18A) have all shipped as well — see
+and a persistent goals/counters foundation with the full supporter/
+activity widget suite (stages 18A/18B) have all shipped as well — see
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md).
-What remains planned: Stage 18B's own richer goal widgets, viewer
-counts, and analytics.
+What remains planned: live viewer counts and broader stream analytics
+(not part of any stage scoped so far).
 
 ### Registering a Twitch application and configuring a Client ID
 
@@ -2322,14 +2327,13 @@ added deliberately, as their own dedicated stage — see
 new Twitch scope and no new EventSub subscription type were added for
 12A, 12B or 13A: alerts only ever match events already reaching the
 Event Bus, and the alert engine never talks to Twitch directly.
-Stage 18B's own richer goal widgets remain unimplemented; a real
-external donation-service connector (StreamElements), a shared audio/
-text-to-speech runtime, and a persistent goals/counters foundation with
-core public goal widgets were added as their own dedicated
-stages — see
+A real external donation-service connector (StreamElements), a shared
+audio/text-to-speech runtime, and a persistent goals/counters
+foundation with the full public supporter/activity widget suite were
+added as their own dedicated stages — see
 [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)
 (Stage 16A), [Text-to-speech and audio](#text-to-speech-and-audio)
-(Stage 17A), and [Persistent goals and public goal widgets (Stage 18A)](#persistent-goals-and-public-goal-widgets-stage-18a).
+(Stage 17A), and [Persistent goals and supporter widgets (Stage 18A/18B)](#persistent-goals-and-supporter-widgets-stage-18a18b).
 Real alert-event history, queue
 contents, and every counter (including the grouping/preemption ones)
 are **runtime-only** — never persisted — exactly like the automation
@@ -2703,7 +2707,7 @@ run at least twice per change.
 
 ---
 
-## Persistent goals and public goal widgets (Stage 18A)
+## Persistent goals and supporter widgets (Stage 18A/18B)
 
 Stage 18A adds a persistent, provider-independent goal/counter
 accumulation engine on top of the same Engagement Event Bus every other
@@ -2768,6 +2772,50 @@ any user identity. A goal reaching its target keeps accumulating past
 it with no clamp on the stored value; only the rendered progress bar
 clamps visually.
 
+**Stage 18B: supporter/activity widgets, richer counters, and bounded
+dashboards.** Built directly on the same `WidgetProfile` model above,
+widened from one kind (`goal`) to nine. Full contract:
+[`docs/supporter-widgets.md`](docs/supporter-widgets.md).
+
+- **Latest follower / latest subscriber / latest donation** — the most
+  recent matching event's own display name (or "Anonymous"), provider,
+  and time; a latest subscriber specifically means the latest *new*
+  subscriber/member — a resubscription or a gift-batch summary never
+  overwrites it, only a genuinely new subscription, an individual gift
+  recipient, or a new YouTube membership does.
+- **Largest donation** — requires one configured comparison currency;
+  compares exact integer micros, never FX-converted; a strictly larger
+  amount replaces the current session's winner, an exactly equal amount
+  never does.
+- **Recent supporters** and **event ticker** — bounded, newest-first
+  lists (1–20 and 1–50 items respectively) built from two independently
+  closed event-family tables, so a gift-batch summary can never
+  duplicate its own already-counted individual recipients.
+- **Session counters** — one of eight closed metrics (follows, new
+  subscriptions, resubscriptions, gifted subscriptions, raids, Bits
+  quantity, support-event count, exact-currency support amount)
+  observed since the backend started or was last reset — explicitly
+  never confused with a Stage 18A goal's own persistent total.
+- **Dashboards** — a bounded grid (1–4 columns, 1–8 children) composing
+  *existing* widget profiles by reference, never copying their state; a
+  dashboard can never contain another dashboard, and deleting a widget
+  still referenced by one is rejected until it is removed first.
+
+**The event-derived content above is deliberately runtime-only.**
+Unlike a Stage 18A goal's own numeric `current`, a Stage 18B widget's
+own display names, donation messages, recent-supporter rows, and ticker
+entries are never written to SQLite — this project has always kept
+chat/engagement *content* out of persistent storage, and Stage 18B
+preserves that boundary exactly. Every such widget's own content starts
+empty again after a backend restart, or after an explicit manual reset
+— only its own bounded *configuration* (kind, filters, style, dashboard
+composition) survives. A donation message is shown publicly only when a
+widget's own `showMessage` setting is explicitly enabled (off by
+default). The public route, DTO shape, and 1.5-second poll-and-diff
+stream mechanism are all identical to Stage 18A's own — one generic
+`/overlay/widgets/{publicSlug}` route serves every kind, including a
+dashboard composing its own children's snapshots inline.
+
 ### Verifying it for real
 
 `scripts/verify-goals-widgets.mjs` (the 21st integration script) drives
@@ -2783,6 +2831,18 @@ accounts, multiple goals matching one real event, manual Set current/
 Reset never bumping the configuration revision, widget slug rotation,
 goal-in-use delete rejection, full backend-restart persistence, and a
 raw-SQLite privacy scan — run at least twice per change.
+
+`scripts/verify-supporter-widgets.mjs` (the 22nd integration script)
+extends the same real-fakes-only approach to every Stage 18B kind: the
+latest-subscriber "new only" rule, the largest-donation tie rule, the
+recent-supporters/event-ticker no-batch-duplication proof, exact
+session-counter metrics and cross-currency rejection, dashboard
+composition with zero internal id ever exposed publicly, nested-
+dashboard rejection, dashboard delete-protection, runtime reset, a full
+backend-restart proof that configuration survives while every runtime-
+only projection resets to empty, and a raw-SQLite scan proving no
+observed display name, donation message, or provider-private field was
+ever written to disk.
 
 ---
 
@@ -3145,6 +3205,7 @@ node scripts/verify-streamelements-donations.mjs  # Stage 16A StreamElements don
 node scripts/verify-tts-audio.mjs                 # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
 node scripts/verify-alert-audio.mjs               # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
 node scripts/verify-goals-widgets.mjs             # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
+node scripts/verify-supporter-widgets.mjs         # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
 ```
 
 The persistence script starts the backend against a temporary database,
@@ -3493,6 +3554,7 @@ rest of the repository.
 │   ├── audio-tts.md            # Researched Windows SAPI TTS contract, the shared audio runtime/queue design, and the public audio overlay protocol (Stage 17A)
 │   ├── alert-audio.md          # Persistent alert sound assets, per-alert-rule TTS, synchronization, and package v2 audio (Stage 17B)
 │   ├── goals-widgets.md        # Persistent goals/counters foundation and public OBS goal widgets (Stage 18A)
+│   ├── supporter-widgets.md    # Supporter/activity widgets, richer session counters, and bounded dashboards (Stage 18B)
 │   ├── provider-integrations/
 │   │   ├── twitch.md           # Researched Twitch metadata API contract: flow, scopes, capabilities, limits
 │   │   ├── twitch-engagement.md # Researched Twitch EventSub WebSocket contract (Stage 8A) + chat badge/emote contract (Stage 9)
@@ -3523,7 +3585,8 @@ rest of the repository.
 │   ├── verify-streamelements-donations.mjs # Stage 16A StreamElements donations: Astro connector, money, moderation, alerts, operator chat - fake Astro WebSocket only
 │   ├── verify-tts-audio.mjs        # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
 │   ├── verify-alert-audio.mjs      # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
-│   └── verify-goals-widgets.mjs    # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
+│   ├── verify-goals-widgets.mjs    # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
+│   └── verify-supporter-widgets.mjs # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
@@ -3542,7 +3605,7 @@ directly next to the control.
 | CPU, memory, disk, network | Fixed demo values, clearly badged. The backend does not collect host metrics. |
 | Platform capability tables | Twitch's and YouTube's tables are now verified against their real APIs — see [`docs/provider-integrations/twitch.md`](docs/provider-integrations/twitch.md) and [`docs/provider-integrations/youtube.md`](docs/provider-integrations/youtube.md). Kick and TikTok remain an approximate configuration, **not** verified against their real APIs, and need re-checking when their own account integration is implemented (stage 7C). |
 | Kick and TikTok account connection and metadata publishing | **Not implemented.** Only Twitch and YouTube have a real provider integration at this stage; the destination-settings account section for these providers shows an honest "not implemented yet" state instead of a working selector. |
-| Stage 18B's own richer goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline), a real **shared audio runtime and text-to-speech foundation** (stage 17A: a real Windows SAPI provider, a bounded audio queue consuming that same Event Bus, and a public OBS Browser Source audio route), real **persistent alert sound assets and per-alert-rule TTS** on top of that exact same runtime (stage 17B: a managed audio-asset library, rule-owned sound/TTS with deterministic arbitration and a bounded visual hold, and a Stage 14B package manifest v2 audio extension) — Stage 17 as a whole is now complete — and a real **persistent goals/counters foundation** (stage 18A: a provider-independent accumulation engine, four core goal families, operator baseline/current management, and real public OBS goal widgets) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents), [Text-to-speech and audio](#text-to-speech-and-audio), [Persistent goals and public goal widgets](#persistent-goals-and-public-goal-widgets-stage-18a) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (Stage 18B's own richer goal widgets, Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
+| Kick/TikTok engagement, Streamlabs/Ko-fi donations | **Not implemented anywhere.** A real, unified operator chat is implemented as of stage 9, a real, public OBS Browser Source chat overlay built on top of it as of stage 10, real *manual* outbound chat sending/replying as of stage 11A, real *scheduled messages and chat commands* as of stage 11B, a real alert engine as of stage 12A/12B, a real, shared visual-design engine with a real **Alert Overlay Designer** (stage 13A) and a real **Chat Overlay Designer** reusing that same engine (stage 13B) — Stage 13 as a whole is complete — a real, shared **visual-template library** (built-ins, a persisted user gallery, asset-free JSON import/export) reused by both Designers (stage 14A), real **portable archive template packages with managed visual assets** (images, video, custom fonts; stage 14B) — Stage 14 as a whole is now complete — a real second **YouTube inbound connector** (stage 15A: Live Chat, Super Chat, Super Sticker, membership events, all served by that exact same pipeline, over YouTube's official `streamList` gRPC transport), a real **external-donation connector** (stage 16A: a provider-independent `donationsource` domain plus a real **StreamElements** Astro WebSocket connector, exact integer-micros money, moderation-aware handling, served by that exact same pipeline), a real **shared audio runtime and text-to-speech foundation** (stage 17A: a real Windows SAPI provider, a bounded audio queue consuming that same Event Bus, and a public OBS Browser Source audio route), real **persistent alert sound assets and per-alert-rule TTS** on top of that exact same runtime (stage 17B: a managed audio-asset library, rule-owned sound/TTS with deterministic arbitration and a bounded visual hold, and a Stage 14B package manifest v2 audio extension) — Stage 17 as a whole is now complete — and a real **persistent goals/counters foundation and full supporter/activity widget suite** (stages 18A/18B: a provider-independent accumulation engine, four core goal families, operator baseline/current management, real public OBS goal widgets, and eight further widget kinds — latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, all runtime-only for their own event-derived content) (see [Unified operator chat](#unified-operator-chat), [OBS Browser Source chat overlay](#obs-browser-source-chat-overlay), [Sending Twitch chat manually](#sending-twitch-chat-manually), [Scheduled messages and chat commands](#scheduled-messages-and-chat-commands), [Alerts](#alerts), [Visual Template Library (Stage 14A)](#visual-template-library-stage-14a), [Engagement Event Bus and YouTube chat/events](#engagement-event-bus-and-youtube-chatevents), [Text-to-speech and audio](#text-to-speech-and-audio), [Persistent goals and supporter widgets](#persistent-goals-and-supporter-widgets-stage-18a18b) and [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md)). Everything built on top of that engine and not yet listed as real above (Kick/TikTok engagement, Streamlabs/Ko-fi donations) remains planned; see [`docs/engagement-architecture.md`](docs/engagement-architecture.md). |
 | Platforms, Metadata, Logs pages | Informational views describing the planned scope. Not implemented. |
 
 ### What is real
@@ -3701,16 +3764,21 @@ directly next to the control.
   manifest v2 extension carrying that configuration through a portable
   template package — see
   [Persistent alert audio and per-rule TTS (Stage 17B)](#persistent-alert-audio-and-per-rule-tts-stage-17b).
-- **A real persistent goals/counters foundation and core OBS goal
-  widgets** (stage 18A) — a provider-independent accumulation engine
+- **A real persistent goals/counters foundation and the full
+  supporter/activity widget suite** (stages 18A/18B, Stage 18 as a
+  whole now complete) — a provider-independent accumulation engine
   consuming that same Event Bus at current position; four core goal
   families (followers, subscriptions, donations, Bits) with a
   deterministic, provider-independent contribution table; operator-
   supplied baseline/current management (this application never claims
   to know a provider's own complete historical total); durable per-goal
-  duplicate protection; and real public OBS goal widgets sharing one
-  generic Browser Source route — see
-  [Persistent goals and public goal widgets (Stage 18A)](#persistent-goals-and-public-goal-widgets-stage-18a).
+  duplicate protection; real public OBS goal widgets; and, on top of
+  that same foundation, eight further widget kinds (latest follower/
+  subscriber/donation, largest donation, a recent-supporters list, an
+  event ticker, richer session counters, and bounded multi-widget
+  dashboards) whose own event-derived content is runtime-only, all
+  sharing one generic Browser Source route — see
+  [Persistent goals and supporter widgets (Stage 18A/18B)](#persistent-goals-and-supporter-widgets-stage-18a18b).
 
 No bitrate, resolution or frame rate is displayed anywhere: the MediaMTX Control
 API does not report them, so showing a number would mean inventing it.
@@ -3723,28 +3791,20 @@ API does not report them, so showing a number would mean inventing it.
   capability-gated (stage 7C). Kick's own engagement adapter (stage 15B)
   remains separately feasibility-gated - see
   [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md).
-- **Stage 18B's own richer goal widgets** — latest follower/subscriber/
-  donation, largest donation, a recent-supporters list, an event
-  ticker, richer platform-specific counters, and multi-widget
-  composition. The persistent accumulation foundation and four core
-  goal widgets themselves shipped in Stage 18A — see
-  [`docs/goals-widgets.md`](docs/goals-widgets.md).
-  Portable archive template packages and managed template assets shipped
-  in Stage 14B — see
-  [`docs/visual-template-packages.md`](docs/visual-template-packages.md).
-  A real external-donation connector (StreamElements) shipped in Stage
-  16A — see
+- **Additional donation providers (Streamlabs, Ko-fi)** remain
+  feasibility-gated — Streamlabs' documented OAuth token exchange
+  requires a confidential client secret with no public-client
+  alternative found; Ko-fi is webhook-only and needs a public inbound
+  endpoint this deployment target does not offer — see
   [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
-  Additional donation providers (Streamlabs, Ko-fi) remain feasibility-
-  gated — Streamlabs' documented OAuth token exchange requires a
-  confidential client secret with no public-client alternative found;
-  Ko-fi is webhook-only and needs a public inbound endpoint this
-  deployment target does not offer. A real shared audio runtime and
-  text-to-speech foundation shipped in Stage 17A — see
-  [`docs/audio-tts.md`](docs/audio-tts.md). Persistent alert sound
-  assets, per-alert-rule TTS, and the template-manifest audio extension
-  shipped in Stage 17B, on that same runtime — Stage 17 as a whole is
-  now complete — see [`docs/alert-audio.md`](docs/alert-audio.md).
+  (Portable archive template packages and managed template assets
+  shipped in Stage 14B; a real external-donation connector,
+  StreamElements, shipped in Stage 16A; a shared audio/text-to-speech
+  runtime shipped in Stage 17A; persistent alert sound assets and
+  per-alert-rule TTS shipped in Stage 17B — Stage 17 as a whole is now
+  complete; and the full persistent goals/counters foundation plus
+  every supporter/activity widget kind shipped across Stages 18A/18B —
+  Stage 18 as a whole is now complete.)
 - **A log viewer** — the backend keeps a small diagnostic buffer already.
 
 ---
