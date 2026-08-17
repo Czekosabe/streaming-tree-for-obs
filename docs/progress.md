@@ -26951,3 +26951,80 @@ system): Planned, updater unimplemented.
 Push `main` to `origin` and perform the final repository-state
 verification (§54), then deliver the closing report for this
 milestone (§55).
+
+## 2026-08-17 — docs: define Stage 18B supporter widgets contract
+
+### Status
+Completed. Contract only - no product code changed by this commit.
+
+### Scope
+Stage 18B (supporter/activity widgets, richer counters, bounded
+multi-widget dashboards) begins now, intended to close Stage 18 as a
+whole. Before any product code, this task's own instructions required
+auditing the real Stage 18A implementation and writing the canonical
+contract, `docs/supporter-widgets.md`, which this commit adds.
+
+### Preflight and Stage 18A verification
+Confirmed starting `HEAD` `5bfb2a5` ("docs: record Stage 18A closing
+regression") matched `origin/main`, working tree clean, ahead/behind
+0/0, `git pull --ff-only origin main` a no-op. Re-verified (without a
+new corrective pass, since nothing contradicted the record): 21
+integration scripts present, `scripts/verify-goals-widgets.mjs`
+exists, Stage 18A Completed / Stage 18B Planned / Stage 18 whole
+Incomplete per the closing entry. No new contradiction was found, so
+no additional Stage 18A corrective entry was written.
+
+### Audit findings (docs/supporter-widgets.md §0)
+Read the real current code rather than designing from memory:
+`internal/domain/goals.WidgetProfile` has no `Kind` field today and
+`GoalID` is unconditionally required; the highest SQLite migration is
+`0025_goals.sql`, so Stage 18B's migration will be `0026_supporter_
+widgets.sql`; `internal/goals.Manager`'s `Snapshot().NewestSequence`-
+then-`Subscribe` pattern is the exact precedent Stage 18B's own
+runtime manager will copy; the full `engagement.Type` vocabulary,
+`User.Anonymous`, `Message.Text` (always plain), `Quantity` (bits/
+raid), and `Money` (donation/Super Chat/Super Sticker) were all read
+directly from `internal/domain/engagement` and the Twitch/
+StreamElements normalizers, not assumed; confirmed `evt.
+ConnectedAccountID` already doubles as either a connected-account id
+or a donation-source id, exactly the mechanism Stage 18B's own filters
+will reuse unchanged; confirmed the public widget stream is a
+deliberate 1.5s poll-and-diff, not a push/replay system.
+
+### Key decisions recorded in the contract
+No free-form widget designer, no widget template/package format
+(Stage 18A's own scope explicitly left this conditional on real need;
+every Stage 18B widget is a bounded semantic layout, not an arbitrary
+visual document). Event-derived presentation state (latest follower/
+subscriber/donation, largest donation, recent supporters, ticker rows,
+session counters) is runtime-only, never persisted, clears on restart
+and on explicit reset - preserving this project's existing chat/
+engagement-content privacy boundary. One provider-independent runtime
+manager, one Event Bus subscription at current position, never
+`Subscribe(0)`. Existing generic `/overlay/widgets/{publicSlug}` route
+remains the only public route - no per-kind route. Closed
+subscription-family/supporter-family/event-ticker-family tables
+(§6-§8) resolve every "what counts as X" ambiguity explicitly rather
+than leaving each widget kind to invent its own meaning. Largest-
+donation tie rule: strictly greater replaces, equal does not. Session
+counter is a closed 8-metric set, no formula language. Dashboards
+compose 1-8 existing widget profile ids by reference (never copy
+state), 1-4 columns, bounded spans, no nested dashboards (rejected
+outright, not merely discouraged). No push/broadcast SSE notifier
+added - the existing 1.5s poll is judged sufficient and documented as
+a deliberate decision, not an oversight.
+
+### Automated validation
+Documentation-only commit; no code changed. Every internal cross-
+reference (file paths, struct/field names, migration number, event
+type constants) was checked directly against the real source files
+read during the audit, not from memory.
+
+### Known limitations
+None specific to this commit. Product implementation (domain model
+widening, migration, runtime manager, HTTP API, frontend, integration
+script) begins next.
+
+### Next step
+Implement the Stage 18B backend domain model widening and the
+`0026_supporter_widgets.sql` migration.
