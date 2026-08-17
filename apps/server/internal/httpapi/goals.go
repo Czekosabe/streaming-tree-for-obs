@@ -8,6 +8,7 @@ import (
 	"time"
 
 	domain "github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/supporterwidgets"
 )
 
 // maxGoalsBodyBytes caps goal/widget-profile request bodies.
@@ -37,10 +38,28 @@ type GoalsService interface {
 	DeleteWidgetProfile(ctx context.Context, id string) error
 }
 
-// registerGoalRoutes wires the Stage 18A goal/widget-profile management
-// API (docs/goals-widgets.md §24). The public widget route is
-// registered separately (see public_widgets.go).
-func registerGoalRoutes(mux *http.ServeMux, logger *slog.Logger, svc GoalsService) {
+// SupporterWidgetsRuntime is the narrow view of *supporterwidgets.Manager
+// the HTTP layer needs (docs/supporter-widgets.md §14, §18-§19) - never
+// the concrete package directly, mirroring GoalsService's own "satisfied
+// directly by the real thing, no separate adapter" convention.
+type SupporterWidgetsRuntime interface {
+	// Snapshot returns profileID's own current runtime presentation
+	// state - the zero value (Revision 0) for a kind with nothing
+	// observed yet, or for a profile this runtime holds no state for at
+	// all (docs/supporter-widgets.md §12).
+	Snapshot(profileID string) supporterwidgets.Projection
+	// Reset clears profileID's own runtime state - manual action (docs/
+	// supporter-widgets.md §14) or an automatic semantic-edit reset
+	// (§16). Never touches persisted configuration.
+	Reset(profileID string)
+}
+
+// registerGoalRoutes wires the Stage 18A/18B goal/widget-profile
+// management API (docs/goals-widgets.md §24, docs/supporter-widgets.md
+// §19). The public widget route is registered separately (see
+// public_widgets.go). runtime may be nil in a test that never exercises
+// a Stage 18B kind.
+func registerGoalRoutes(mux *http.ServeMux, logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) {
 	mux.HandleFunc("GET /api/goals", handleListGoals(logger, svc))
 	mux.HandleFunc("POST /api/goals", handleCreateGoal(logger, svc))
 	mux.HandleFunc("/api/goals", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
@@ -61,12 +80,18 @@ func registerGoalRoutes(mux *http.ServeMux, logger *slog.Logger, svc GoalsServic
 	mux.HandleFunc("/api/widget-profiles", methodNotAllowed(logger, http.MethodGet, http.MethodPost))
 
 	mux.HandleFunc("GET /api/widget-profiles/{id}", handleGetWidgetProfile(logger, svc))
-	mux.HandleFunc("PUT /api/widget-profiles/{id}", handleUpdateWidgetProfile(logger, svc))
-	mux.HandleFunc("DELETE /api/widget-profiles/{id}", handleDeleteWidgetProfile(logger, svc))
+	mux.HandleFunc("PUT /api/widget-profiles/{id}", handleUpdateWidgetProfile(logger, svc, runtime))
+	mux.HandleFunc("DELETE /api/widget-profiles/{id}", handleDeleteWidgetProfile(logger, svc, runtime))
 	mux.HandleFunc("/api/widget-profiles/{id}", methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
 
 	mux.HandleFunc("POST /api/widget-profiles/{id}/rotate-public-slug", handleRotateWidgetProfileSlug(logger, svc))
 	mux.HandleFunc("/api/widget-profiles/{id}/rotate-public-slug", methodNotAllowed(logger, http.MethodPost))
+
+	mux.HandleFunc("POST /api/widget-profiles/{id}/reset-runtime", handleResetWidgetRuntime(logger, svc, runtime))
+	mux.HandleFunc("/api/widget-profiles/{id}/reset-runtime", methodNotAllowed(logger, http.MethodPost))
+
+	mux.HandleFunc("GET /api/widget-profiles/{id}/runtime-status", handleWidgetRuntimeStatus(logger, svc, runtime))
+	mux.HandleFunc("/api/widget-profiles/{id}/runtime-status", methodNotAllowed(logger, http.MethodGet))
 }
 
 func writeGoalsError(w http.ResponseWriter, logger *slog.Logger, err error) {
@@ -455,9 +480,20 @@ func handleGetWidgetProfile(logger *slog.Logger, svc GoalsService) http.HandlerF
 	}
 }
 
-func handleUpdateWidgetProfile(logger *slog.Logger, svc GoalsService) http.HandlerFunc {
+// handleUpdateWidgetProfile applies draft, then - if the change touched
+// a field the runtime manager's own projection depends on (docs/
+// supporter-widgets.md §16) - resets that profile's runtime state so it
+// never keeps incompatible old presentation content across a semantic
+// edit. A presentation-only edit (title, style, a lowered maxItems)
+// never resets anything.
+func handleUpdateWidgetProfile(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		existing, err := svc.GetWidgetProfile(r.Context(), id)
+		if err != nil {
+			writeGoalsError(w, logger, err)
+			return
+		}
 		var body widgetProfileRequest
 		if err := decodeJSONWithLimit(w, r, &body, maxGoalsBodyBytes); err != nil {
 			writeDecodeError(w, logger, err)
@@ -468,15 +504,22 @@ func handleUpdateWidgetProfile(logger *slog.Logger, svc GoalsService) http.Handl
 			writeGoalsError(w, logger, err)
 			return
 		}
+		if runtime != nil && domain.SemanticFieldsChanged(existing, p) {
+			runtime.Reset(p.ID)
+		}
 		writeJSON(w, logger, http.StatusOK, toWidgetProfileResponse(p))
 	}
 }
 
-func handleDeleteWidgetProfile(logger *slog.Logger, svc GoalsService) http.HandlerFunc {
+func handleDeleteWidgetProfile(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := svc.DeleteWidgetProfile(r.Context(), r.PathValue("id")); err != nil {
+		id := r.PathValue("id")
+		if err := svc.DeleteWidgetProfile(r.Context(), id); err != nil {
 			writeGoalsError(w, logger, err)
 			return
+		}
+		if runtime != nil {
+			runtime.Reset(id)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -490,5 +533,59 @@ func handleRotateWidgetProfileSlug(logger *slog.Logger, svc GoalsService) http.H
 			return
 		}
 		writeJSON(w, logger, http.StatusOK, toWidgetProfileResponse(p))
+	}
+}
+
+// handleResetWidgetRuntime clears profileID's own runtime-only
+// presentation state (docs/supporter-widgets.md §14) - the manual
+// counterpart to a goal's own Reset action, but never touches any
+// persisted configuration, never publishes an Engagement Event, and
+// never affects Stage 18A goal state. Rejected with 422 for kind='goal'
+// or 'dashboard', neither of which owns runtime state of its own.
+func handleResetWidgetRuntime(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		p, err := svc.GetWidgetProfile(r.Context(), id)
+		if err != nil {
+			writeGoalsError(w, logger, err)
+			return
+		}
+		if !p.Kind.HasOwnFilters() {
+			writeError(w, logger, http.StatusUnprocessableEntity, "widget_profile_no_runtime_state",
+				"This widget kind has no runtime presentation state to reset.")
+			return
+		}
+		if runtime != nil {
+			runtime.Reset(id)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleWidgetRuntimeStatus reports profileID's own current runtime
+// presentation state to the operator (docs/supporter-widgets.md §19) -
+// private/management-only, never reachable from the public route, but
+// carries no more than the public DTO eventually would (no raw provider
+// payload, no private donor field). Rejected with 422 for kind='goal'
+// (its own state is already visible through GET /api/goals/{id}) or
+// 'dashboard' (composed from its own children - see the public route).
+func handleWidgetRuntimeStatus(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		p, err := svc.GetWidgetProfile(r.Context(), id)
+		if err != nil {
+			writeGoalsError(w, logger, err)
+			return
+		}
+		if !p.Kind.HasOwnFilters() {
+			writeError(w, logger, http.StatusUnprocessableEntity, "widget_profile_no_runtime_state",
+				"This widget kind has no runtime presentation state.")
+			return
+		}
+		var proj supporterwidgets.Projection
+		if runtime != nil {
+			proj = runtime.Snapshot(id)
+		}
+		writeJSON(w, logger, http.StatusOK, toRuntimeStatusResponse(p.Kind, proj))
 	}
 }

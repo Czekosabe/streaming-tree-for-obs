@@ -57,6 +57,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
+	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 )
 
 func main() {
@@ -519,6 +520,21 @@ func run() error {
 		return err
 	}
 
+	// Stage 18B: supporter/activity widgets, richer counters, and
+	// bounded multi-widget dashboards (docs/supporter-widgets.md §4).
+	// One provider-independent runtime manager, one Event Bus
+	// subscription at current position - never a second engine, never
+	// one subscription per widget profile. goalsDomainService already
+	// satisfies WidgetProfileLister directly, exactly like it already
+	// satisfies GoalsService below.
+	supporterWidgetsManager := supporterwidgetsrt.NewManager(supporterwidgetsrt.ManagerOptions{
+		Profiles: goalsDomainService,
+		Bus:      eventBus,
+	})
+	if err := supporterWidgetsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// an independent management surface from visual_designs above; a
 	// template is never linked to any specific alert rule or chat
@@ -601,7 +617,8 @@ func run() error {
 		Audio:       audioManager,
 		AudioAssets: audioAssetService,
 
-		Goals: goalsDomainService,
+		Goals:            goalsDomainService,
+		SupporterWidgets: supporterWidgetsManager,
 	})
 
 	server := &http.Server{
@@ -647,6 +664,7 @@ func run() error {
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
 		_ = goalsManager.Shutdown(shutdownCtx)
+		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -689,6 +707,7 @@ func run() error {
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
 		_ = goalsManager.Shutdown(shutdownCtx)
+		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)

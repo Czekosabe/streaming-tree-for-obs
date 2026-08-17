@@ -156,11 +156,18 @@ type Options struct {
 	// public bytes-URL route (docs/alert-audio.md §5.2/§7). When nil,
 	// none of those routes are registered.
 	AudioAssets AudioAssetService
-	// Goals serves the Stage 18A goal/widget-profile management API
-	// (/api/goals/..., /api/widget-profiles/...) and the public goal
+	// Goals serves the Stage 18A/18B goal and widget-profile management
+	// API (/api/goals/..., /api/widget-profiles/...) and the public
 	// widget API (/api/public/widgets/{slug}/...). When nil, none of
 	// those routes are registered.
 	Goals GoalsService
+	// SupporterWidgets serves the Stage 18B runtime-only presentation
+	// state (latest/largest/recent/ticker/counter) every non-goal,
+	// non-dashboard widget kind needs (docs/supporter-widgets.md §4).
+	// When nil, every such kind renders its own well-defined empty state
+	// (docs/supporter-widgets.md §12) rather than failing - only a
+	// goal widget is unaffected by this being nil.
+	SupporterWidgets SupporterWidgetsRuntime
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -256,8 +263,8 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.Goals != nil {
-		registerGoalRoutes(mux, logger, opts.Goals)
-		registerPublicWidgetRoutes(mux, logger, opts.Goals)
+		registerGoalRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
+		registerPublicWidgetRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
 	}
 
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the

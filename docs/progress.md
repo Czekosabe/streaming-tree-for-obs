@@ -27140,3 +27140,119 @@ runtime-status endpoints don't exist yet. No frontend changes yet.
 The Stage 18B runtime manager (`internal/supporterwidgets`), the
 Event Bus subscription (current position only), and the presentation
 builder.
+
+## 2026-08-17 — feat(server): serve supporter widgets publicly
+
+### Status
+Completed.
+
+### Scope
+Implements docs/supporter-widgets.md §4, §9-§14, §17-§20: the new
+`internal/supporterwidgets` runtime manager (the ONE Event Bus
+subscription that turns real events into in-memory presentation
+projections), the management API's `reset-runtime`/`runtime-status`
+routes, and the widened public `/api/public/widgets/{slug}/config` and
+`/stream` routes now serving all nine widget kinds - including
+dashboard composition - from one generic route. Wires the new manager
+into both `cmd/server/main.go` and `cmd/testserver/main.go`.
+
+### Changes
+- `internal/supporterwidgets/manager.go` (new) - `Manager` subscribes
+  to the Event Bus at current position only (`Snapshot().
+  NewestSequence` then `Subscribe`, the exact `internal/goals.Manager`
+  precedent - never `Subscribe(0)`); re-reads
+  `ListWidgetProfiles(ctx, "")` on every event (mirrors
+  `internal/goals.Manager.handleEvent`'s own pattern, so a config
+  change takes effect on the next event with no separate invalidation
+  channel); one in-memory `map[string]*projectionState` keyed by
+  widget profile id, guarded by one mutex; a per-profile "last applied
+  Bus sequence" guard (docs/supporter-widgets.md §17) against an
+  internal double-apply, defensive since this single-subscriber design
+  never actually retries. `Snapshot`/`Reset` are the only two ways
+  anything outside this package ever touches a projection.
+- `internal/supporterwidgets/projection.go` (new) - `Projection`
+  (`Latest`/`Largest`/`Recent`/`Ticker`/`Counter`, the zero value being
+  every kind's own well-defined empty state), `SupporterItem`,
+  `TickerItem`, all deliberately holding only presentation-safe fields
+  (never a providerEventId or any other provider-private identifier).
+- `internal/supporterwidgets/presentation.go` (new) - the one closed
+  event-to-projection dispatcher (`applyEventToProjection`), the
+  subscription-family (`isNewSubscriber`) and supporter-family
+  (`isSupporterFamily`) closed decisions from docs/supporter-widgets.md
+  §6-§7, the event_ticker closed type mapping (§8), `counterDelta`'s
+  eight closed session_counter metrics (§13), and `buildItem`'s own
+  `showMessage` gate - applied consistently to every kind that could
+  carry a donation/cheer message (latest_donation, recent_supporters,
+  event_ticker), not only the one kind the contract text singled out,
+  after auditing that `recent_supporters`/`event_ticker` could
+  otherwise leak a message regardless of the profile's own
+  `ShowMessage` setting.
+- `internal/domain/goals/service.go` was NOT touched by this commit;
+  the runtime manager talks to it only through the already-existing
+  `ListWidgetProfiles` (satisfying a new narrow
+  `WidgetProfileLister` interface directly, mirroring `GoalsService`'s
+  own "satisfied by the real thing" convention).
+- `internal/httpapi/goals.go` - new `SupporterWidgetsRuntime`
+  interface (`Snapshot`, `Reset`); `handleUpdateWidgetProfile` now
+  diffs old vs. new via `domain.SemanticFieldsChanged` and resets the
+  profile's runtime state on a semantic edit (docs/supporter-widgets.md
+  §16); `handleDeleteWidgetProfile` also resets runtime state (bounded
+  memory - a deleted profile's own projection is never kept forever);
+  new `POST /api/widget-profiles/{id}/reset-runtime` (422 for `goal`/
+  `dashboard`, which own no runtime state) and
+  `GET /api/widget-profiles/{id}/runtime-status` (same 422 rule;
+  operator-only, never reachable from the public route).
+- `internal/httpapi/public_widgets.go` (rewritten) - the public DTO
+  becomes kind-discriminated: every Stage 18A goal field keeps its
+  exact original JSON tag (no new `omitempty` on `current`/`target`/
+  `progressBasisPoints`/`completed`/`goalKind`/`showCurrent`/
+  `showTarget`/`showPercent` - an existing goal widget's own response
+  is byte-for-byte unchanged; adding `omitempty` there would have
+  silently broken a strict, non-optional zod schema for `current: 0`
+  or `showCurrent: false`, caught and reverted before this commit
+  finished). Every new field is a pointer/slice with `omitempty`. A
+  dashboard's own snapshot composes each child's full snapshot
+  recursively one level deep (never more, since a dashboard can never
+  contain another dashboard), keyed by a synthetic
+  `dashboard_child_<position>` string - never the child's real
+  internal widget-profile id. `widgetFingerprint` extends the
+  Stage 18A change-detection idea to every kind (a runtime `Revision`
+  for an event-derived kind, every child's own fingerprint for a
+  dashboard) - the stream keeps the exact same 1.5s poll-and-diff
+  mechanism for every kind, including dashboard; no push/broadcast
+  notifier was added (docs/supporter-widgets.md §10's own documented
+  decision).
+- `cmd/server/main.go`, `cmd/testserver/main.go` - construct
+  `supporterWidgetsManager` right after `goalsManager` (`Profiles:
+  goalsDomainService`, since it already satisfies `WidgetProfileLister`
+  directly), start it, wire `SupporterWidgets: supporterWidgetsManager`
+  into both router `Options`, add its `Shutdown` call to every shutdown
+  path in both binaries (4 call sites total).
+
+### Automated validation
+`go build ./...`, `go vet ./...`, `go build -tags integration ./...`
+all clean. `go test -count=1 ./...` (full backend suite) passes,
+including 33 new tests: 24 in `internal/supporterwidgets/manager_test.go`
+(current-position subscription proven the same way Stage 18A's own
+regression test proved it - an event published before Start is never
+applied; every kind's own eligibility/exclusion rules; the largest-
+donation tie rule; bounded+newest-first ordering; multiple profiles
+updated independently from one event; a dashboard never getting a
+projection of its own) and 9 in `internal/httpapi/
+supporter_widgets_test.go` (a real Bus + real Manager wired alongside
+the real SQLite-backed service - management API validation errors,
+dashboard reference-integrity 409, reset-runtime's 422/204 split,
+runtime-status, and the public config actually reflecting a real
+published event end to end, including a dashboard composing a real
+child's snapshot with no internal id ever exposed).
+
+### Known limitations
+No frontend changes yet - every Stage 18B kind is fully functional
+end-to-end at the API layer (create, filter, observe a real event,
+read back publicly, reset, delete-protect) but has no UI. The 22nd
+integration script does not exist yet.
+
+### Next step
+Frontend: widen `api/goals-schemas.ts`/`models/goals.ts`, the
+management UI (Goals/Widgets/Dashboards), and the shared public
+renderer dispatching by kind.

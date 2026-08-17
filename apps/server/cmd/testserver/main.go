@@ -75,6 +75,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
+	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -479,6 +480,17 @@ func run() error {
 		return err
 	}
 
+	// Stage 18B: supporter/activity widgets, richer counters, and
+	// bounded multi-widget dashboards (docs/supporter-widgets.md §4) -
+	// mirrors cmd/server/main.go's own identical wiring exactly.
+	supporterWidgetsManager := supporterwidgetsrt.NewManager(supporterwidgetsrt.ManagerOptions{
+		Profiles: goalsDomainService,
+		Bus:      eventBus,
+	})
+	if err := supporterWidgetsManager.Start(ctx); err != nil {
+		return err
+	}
+
 	// Stage 14A: the reusable, portable visual-design template library -
 	// identical wiring to cmd/server, see its own comment.
 	visualTemplateService, err := visualtemplate.NewService(sqlite.NewVisualTemplateRepository(db.DB), visualtemplate.DefaultBuiltins(), nil)
@@ -546,7 +558,8 @@ func run() error {
 		Audio:       audioManager,
 		AudioAssets: audioAssetService,
 
-		Goals: goalsDomainService,
+		Goals:            goalsDomainService,
+		SupporterWidgets: supporterWidgetsManager,
 	})
 	// Test-only fake-TTS-provider control routes - see
 	// audio_testonly.go's own doc comment; never present in cmd/server.
@@ -590,6 +603,7 @@ func run() error {
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
 		_ = goalsManager.Shutdown(shutdownCtx)
+		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
@@ -615,6 +629,7 @@ func run() error {
 		_ = alertsManager.Shutdown(shutdownCtx)
 		_ = audioManager.Shutdown(shutdownCtx)
 		_ = goalsManager.Shutdown(shutdownCtx)
+		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
