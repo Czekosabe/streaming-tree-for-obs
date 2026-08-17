@@ -26339,3 +26339,104 @@ project-overview, engagement-architecture, goals-widgets, config/README,
 obs-browser-source, progress), updating script count 20->21 and every
 stage-status marker to reflect Stage 18A Completed / Stage 18B Planned /
 Stage 18 whole Incomplete.
+
+## 2026-08-17 — docs: complete Stage 18A goals foundation
+
+### Status
+Completed.
+
+### Scope
+The Stage 18A documentation pass across every living doc carrying a
+"Planned"/"not yet implemented" marker for goals/counter widgets or a
+stale forward-pointer to Stage 18 as entirely future work, now that
+Stage 18A has shipped and been verified twice by `scripts/verify-goals-
+widgets.mjs`. `docs/audio-tts.md`, `docs/alert-audio.md`, `docs/visual-
+template-packages.md`, `docs/visual-templates.md`, and `docs/visual-
+designs.md` were all checked and needed no change: Stage 18A introduced
+no new dependency, no new visual-design layer kind, and no widget
+template/package format, so none of those documents' own current-state
+boundaries are affected. `THIRD_PARTY_NOTICES.md` was checked via `git
+diff --stat` across the full Stage 18A commit range against `go.mod`/
+`go.sum`/`package.json`/`package-lock.json` and confirmed unchanged - no
+new dependency was added by this milestone.
+
+### Changes
+- `README.md` - roadmap table row `18` split into `18A` **Completed** /
+  `18B` Planned; the top-of-file summary gained a new clause for Stage
+  18A and "stages 8A through 17B" widened to "stages 8A through 18A";
+  a new "## Persistent goals and public goal widgets (Stage 18A)"
+  section added (the observed-progress-not-a-provider-total rule, the
+  four goal kinds and their contribution decisions, persistence/dedupe/
+  concurrency, manual baseline management, public widgets, and a
+  "Verifying it for real" subsection), linked from a new Table of
+  Contents entry; the integration-checks script list and the directory-
+  structure tree both gained the 21st script and `docs/goals-
+  widgets.md`; the "What is currently demo-only" table row, "What is
+  real"/"What will be added later" bullet lists, and three other stale
+  "goal/counter widgets remain planned" mentions (the project-state
+  blockquote, the Twitch-metadata section's own "what remains planned"
+  sentence, and the Alerts section's "what this stage does not
+  implement" note) all corrected to reflect Stage 18A shipping while
+  Stage 18B's own richer widgets remain planned.
+- `docs/project-overview.md` - roadmap table row `18` split into `18A`
+  **Completed** / `18B` Planned; §16's own "Status" paragraph piece
+  count went from thirteen to fourteen with a full description of the
+  new goals piece, and its closing "Stage 17 as a whole is now complete"
+  sentence extended with "Stage 18 as a whole is not complete: stage
+  18B ... remains planned"; a new "Factual status update (stage 18A,
+  completed)" blockquote appended after the existing Stage 17B one,
+  following this document's own established append-only correction
+  pattern; the "of that list, only goal/counter widgets remain
+  unimplemented" sentence corrected to name Stage 18B specifically.
+- `docs/engagement-architecture.md` - §13's roadmap table row `18`
+  split into `18A` **Completed** / `18B` Planned; a new "Factual status
+  update (stage 18A, completed)" blockquote added at the end of §14
+  (Goals, counters and widgets), the same pattern §12/§15's own status
+  updates already established, describing the real contribution table,
+  the gift-batch/resubscription no-double-count rules, durable dedupe,
+  and the public widget route, while explicitly naming Stage 18B's own
+  still-planned scope.
+- `docs/obs-browser-source.md` - a new "## Stage 18A: the goal widget
+  Browser Source route" section added (mirroring the "Stage 17A/17B:
+  the audio Browser Source route" section's structure), explaining why
+  the goal-widget stream deliberately has no `Last-Event-ID`/gap
+  machinery (it carries only the current snapshot, never a delta
+  sequence, so there is nothing to replay); the "What was not tested"
+  section's stage list and script list both extended to include Stage
+  18A and `scripts/verify-goals-widgets.mjs`.
+- `config/README.md` - appended rule 21 (Stage 18A, one migration
+  `0025_goals.sql` adding five tables: `goals`, `goal_providers`/
+  `goal_accounts`, the durable `goal_applied_events` dedupe ledger, and
+  `widget_profiles`; no new filesystem blob directory, no new
+  environment variable) after the previous last rule (20, Stage 17B).
+
+### Stale-claim audit (this task's own §51 checklist)
+Ran the exact phrase list this task specifies across every living doc:
+"Stage 18 not started", "Stage 18 planned", "Stage 18A planned", "goals
+not implemented", "goal widgets not implemented", "20 integration
+scripts", "20 scripts", "Stage 17 incomplete", "Stage 17B planned",
+"Stage 19 further engagement providers", "Stage 19 donation providers" -
+zero matches anywhere. Confirmed the Stage 20 application-update-system
+documentation (`docs/project-overview.md` §12.1.1) remains byte-for-byte
+untouched by this pass and still states nothing described there is
+implemented.
+
+### Automated validation
+Prose-only changes; no code was touched. Every new/edited cross-
+reference link and anchor was checked to actually exist, including the
+new README `#persistent-goals-and-public-goal-widgets-stage-18a` anchor
+against its own heading slug, and every `goals-widgets.md` relative
+link path checked against each file's own location (`docs/goals-
+widgets.md` from the repo root, `goals-widgets.md` from within `docs/`,
+`../docs/goals-widgets.md` from `config/`).
+
+### Known limitations
+None specific to this commit. Stage 18A as a whole is not yet fully
+closed - the complete closing regression across all backend/frontend
+checks and all 21 integration scripts in the canonical order has not
+run yet.
+
+### Next step
+The complete Stage 18A closing regression: every backend/frontend check
+plus all 21 integration scripts run in the canonical order from a clean
+state, then the final closing journal entry.

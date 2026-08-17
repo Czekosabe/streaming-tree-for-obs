@@ -1334,6 +1334,27 @@ counters.
 Widgets read the same Event Bus (§5–6) that alerts and TTS do; a goal is
 "alerts, integrated over time," not a separately fetched data source.
 
+> **Factual status update (stage 18A, completed):** the follower,
+> subscription, donation and Bits goals from the list above are now
+> real - a provider-independent accumulation engine (`internal/goals`)
+> subscribing to the same Event Bus at current position, a single
+> deterministic contribution table deciding how each normalized event
+> type feeds each goal kind (a gift-batch summary event never
+> double-counts against its own individual gift-recipient events; a
+> resubscription/membership-milestone never counts as a new
+> subscription; a cross-currency donation never contributes), operator-
+> supplied baseline/current management (this application never claims
+> to know a provider's own complete historical total, only "events
+> observed since this goal's own baseline"), a durable per-goal
+> duplicate-contribution ledger, and real public OBS goal widgets
+> sharing one generic `/overlay/widgets/{publicSlug}` route with the
+> same per-slug SSE conventions every other overlay already uses - see
+> [goals-widgets.md](goals-widgets.md) for the full contract. Latest
+> follower/subscriber/donation, largest donation, the recent-supporters
+> list, the event ticker, richer platform-specific counters, and any
+> multi-widget composition remain Stage 18B's own, later, separately-
+> scoped decision - Stage 18 as a whole is not yet complete.
+
 ## 15. External donations
 
 Donations are not assumed to originate only from Twitch, YouTube, Kick or
@@ -1498,7 +1519,8 @@ that table.
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) (§15) — **Deferred**, feasibility-gated |
 | 17A | Shared audio runtime and text-to-speech foundation (§12) — **Completed** |
 | 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12, see [alert-audio.md](alert-audio.md)) — **Completed**, stage 17 as a whole is now complete |
-| 18 | Goals, counters and event widgets (§14) |
+| 18A | Persistent goals/counters foundation and core public goal widgets (§14, see [goals-widgets.md](goals-widgets.md)) — **Completed**, stage 18 as a whole not yet complete |
+| 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer counters, multi-widget composition (§14) |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |
 

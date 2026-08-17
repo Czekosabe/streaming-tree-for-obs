@@ -1110,7 +1110,8 @@ it is architected; this table only tracks status and dependencies.
 | 16B | Additional external donation providers (Streamlabs, Ko-fi) | Deferred — feasibility-gated: Streamlabs' documented OAuth2 token exchange requires a confidential `client_secret` with no public/native-client alternative found, and unapproved apps are capped at 10 whitelisted users; Ko-fi is webhook-only, requiring a public inbound HTTPS endpoint this local-first deployment target does not offer (see [external-donations.md](provider-integrations/external-donations.md)). Stage 16 as a whole is **not** complete until this is resolved or explicitly re-scoped |
 | 17A | Shared audio runtime and text-to-speech foundation: a provider-independent `Provider` abstraction, a real Windows SAPI implementation, a bounded audio queue consuming the same Event Bus (cooldowns, manual approval, per-source/per-currency/per-Bits filtering, text preprocessing), and a public OBS Browser Source audio route (see [audio-tts.md](audio-tts.md)) | **Completed** |
 | 17B | Persistent alert sound assets, per-alert-rule TTS/sound, synchronization with alert playback, and any audio extension of the Stage 14B template-asset format (see [alert-audio.md](alert-audio.md)) | **Completed** — stage 17 as a whole is now complete |
-| 18 | Goals, counters and event widgets | Planned |
+| 18A | Persistent goals/counters foundation and core public OBS goal widgets (followers, subscriptions, donations, Bits), see [goals-widgets.md](goals-widgets.md) | **Completed** — stage 18 as a whole is not yet complete |
+| 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer platform-specific counters, multi-widget composition | Planned |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
 | 20 | Logs, diagnostics, packaging and remote-server hardening | Planned |
 
@@ -1426,7 +1427,7 @@ In practice this means:
 
 ## 16. Engagement and overlay platform (partly implemented)
 
-**Status: thirteen pieces of this section are real as of stage 17B - the
+**Status: fourteen pieces of this section are real as of stage 18A - the
 normalized Event Bus (stage 8A), a unified operator chat consuming it
 (stage 9), a public OBS Browser Source chat overlay consuming that same
 operator-chat projection (stage 10), manual outbound chat
@@ -1478,7 +1479,16 @@ the global TTS queue, a bounded visual hold so an alert stays visible
 while its own audio is still playing, and a Stage 14B package manifest
 v2 extension (`alertAudio`/`audioAssets`) carrying that same
 configuration through a portable template package (see
-[alert-audio.md](alert-audio.md)). Every
+[alert-audio.md](alert-audio.md)) - and, on top of the same normalized
+Event Bus, a persistent, provider-independent goals/counters foundation
+with four core goal families (followers, subscriptions, donations,
+Bits) and real public OBS goal widgets (stage 18A): a deterministic,
+provider-independent contribution table over the normalized event
+model, operator-supplied baseline/current management (this application
+never claims to know a provider's own complete historical total),
+durable per-goal duplicate protection, and one generic public widget
+route sharing the established overlay SSE conventions (see
+[goals-widgets.md](goals-widgets.md)). Every
 existing alert rule or chat overlay with no saved design still renders
 through its original fixed/legacy presentation unchanged; a chat
 overlay's own filtering, lifecycle, moderation and stack ownership
@@ -1489,8 +1499,10 @@ roadmap table). Stage 16 as a whole is **not** complete either: stage
 16B (Streamlabs, Ko-fi) remains feasibility-gated, not implemented, for
 its own separate reasons (see
 [external-donations.md](provider-integrations/external-donations.md)).
-Stage 17 as a whole is now complete. Everything else described below
-(goal/counter widgets) remains planned.**
+Stage 17 as a whole is now complete. Stage 18 as a whole is **not**
+complete: stage 18B (richer goal widgets - latest follower/subscriber/
+donation, largest donation, recent supporters, event ticker,
+multi-widget composition) remains planned.**
 
 The product's long-term scope is larger than a streaming router. Streaming
 Tree is also planned to become a **local streaming engagement and overlay
@@ -1498,8 +1510,8 @@ platform**: normalized chat and events from multiple platforms, a unified
 operator chat, OBS Browser Source overlays, outbound chat with scheduled
 bot messages and commands, alerts and an alert queue, visual overlay
 designers with a safe template format, text-to-speech, and goal/counter
-widgets. Of that list, only goal/counter widgets remain unimplemented
-as of stage 17B.
+widgets. Of that list, only stage 18B's own richer goal widgets remain unimplemented
+as of stage 18A.
 
 The full architecture — the normalized event model, the connector interface
 and capability model, deduplication and ordering rules, the operator-chat vs.
@@ -1658,3 +1670,15 @@ own completion.
 > as a whole is complete. Only goal/counter widgets and the same
 > feasibility-gated/conditional providers remain planned as of this
 > writing - see [alert-audio.md](alert-audio.md).
+>
+> **Factual status update (stage 18A, completed):** goal/counter
+> widgets' own persistent foundation is now real too - a provider-
+> independent accumulation engine on that same Event Bus, four core
+> goal families (followers, subscriptions, donations, Bits), operator
+> baseline/current management, and real public OBS goal widgets,
+> exactly as described earlier in this section's own "Status"
+> paragraph. Stage 18 as a whole is **not yet** complete: stage 18B's
+> own richer widgets (latest follower/subscriber/donation, largest
+> donation, recent supporters, event ticker, multi-widget composition)
+> and the same feasibility-gated/conditional providers remain planned
+> as of this writing - see [goals-widgets.md](goals-widgets.md).

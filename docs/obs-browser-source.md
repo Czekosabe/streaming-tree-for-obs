@@ -461,18 +461,42 @@ or a second public payload shape for alert-owned audio (see
 [alert-audio.md](alert-audio.md) §8 for the synchronization contract on
 top of this route).
 
+## Stage 18A: the goal widget Browser Source route
+
+The goal-widget route (`/overlay/widgets/{publicSlug}`) reuses the same
+URL-not-local-file, transparent-background, and shutdown/refresh
+guidance this document already established, but is simpler than the
+chat/alert/audio routes in one deliberate way: it carries **only the
+current snapshot, never a delta sequence or event history** (docs/
+goals-widgets.md §19). A chat-overlay or alert client needs `Last-
+Event-ID` replay because it must reconstruct a *sequence* of items it
+may have missed; a goal widget never has that problem, since the only
+snapshot that ever matters is the latest one, and a fresh connection
+always receives exactly that. The public stream (`GET /api/public/
+widgets/{slug}/stream`) therefore sends one `widget.reset` event
+immediately on connect, and another whenever a lightweight internal
+poll (~1.5s) detects the underlying goal or widget profile actually
+changed - no `Last-Event-ID` handling and no `widget.gap` event, since
+there is nothing to gap on when every message is already complete.
+Like every other public route here, an unknown or disabled slug never
+answers with a hard HTTP error - it opens a normal connection and sends
+a safe, empty default snapshot instead. Rotating a widget profile's
+public slug invalidates the old URL immediately, exactly like every
+other overlay's rotation behavior.
+
 ## What was not tested
 
 **No real OBS installation was used for this research, for any Stage 10
-verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's, 17A's or
-17B's own verification.** Every finding above comes from reading the
-official pages listed, not from observing a live Browser Source. The
-local integration scripts (`scripts/verify-chat-overlay.mjs`,
+verification, or for Stage 12A's, 12B's, 13A's, 13B's, 14B's, 17A's,
+17B's, or 18A's own verification.** Every finding above comes from
+reading the official pages listed, not from observing a live Browser
+Source. The local integration scripts (`scripts/verify-chat-overlay.mjs`,
 `scripts/verify-alerts.mjs`, `scripts/verify-alert-advanced-queue.mjs`,
 `scripts/verify-alert-designer.mjs`,
 `scripts/verify-chat-overlay-designer.mjs`,
 `scripts/verify-visual-template-packages.mjs`,
-`scripts/verify-tts-audio.mjs`, `scripts/verify-alert-audio.mjs`)
+`scripts/verify-tts-audio.mjs`, `scripts/verify-alert-audio.mjs`,
+`scripts/verify-goals-widgets.mjs`)
 exercise the same HTTP/SSE contract a
 real Browser Source would consume, from a plain Node.js HTTP client -
 they prove the backend's contract is correct, not that OBS's own CEF

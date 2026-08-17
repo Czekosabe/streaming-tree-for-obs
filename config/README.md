@@ -411,3 +411,25 @@ with no transcoding, is this stage's deliberate scope.
     mirroring the visual-asset store's own `Reconcile` convention
     exactly. Stage 17B added **no new environment variable**. See
     [alert-audio.md](../docs/alert-audio.md).
+21. Stage 18A (persistent goals/counters foundation and core public OBS
+    goal widgets) adds five new **persisted** tables in one migration
+    (`0025_goals.sql`): `goals` (name, kind, enabled, target, current
+    accumulated value, baseline, currency for a monetary goal,
+    timestamps, and a `config_revision` counter guarding only operator
+    configuration edits - never touched by contribution application),
+    `goal_providers`/`goal_accounts` (plain filter child tables,
+    mirroring `alert_rule_providers`/`alert_rule_accounts` exactly -
+    `goal_accounts` carries no table-level foreign key on `account_id`
+    for the same reason `alert_rule_accounts` does not, since an entry
+    may reference either a connected account or a donation source),
+    `goal_applied_events` (the durable, per-goal contribution dedupe
+    ledger - its own primary key is exactly the durable dedupe identity,
+    bounded to a 30-day retention window, pruned periodically), and
+    `widget_profiles` (one row per public goal-widget presentation, a
+    `goal_id` foreign key with no `ON DELETE` clause - the application
+    layer explicitly rejects deleting a goal still referenced by a
+    widget profile, never a raw SQLite foreign-key error). No file-
+    system blob directory is added by this stage - a goal's own
+    accumulated state is a handful of small integers, never a managed
+    asset. Stage 18A added **no new environment variable**. See
+    [goals-widgets.md](../docs/goals-widgets.md).
