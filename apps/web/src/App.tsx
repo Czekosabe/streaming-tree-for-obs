@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import { queryClient } from '@/app/query-client';
 import { i18n } from '@/i18n';
+import { AboutLegalPage } from '@/pages/AboutLegalPage';
 import { AlertDesignerPage } from '@/pages/AlertDesignerPage';
 import { AlertsPage } from '@/pages/AlertsPage';
 import { AudioPage } from '@/pages/AudioPage';
@@ -48,6 +49,7 @@ export function App() {
                 doc comment. */}
             <Route path="/overlays/:overlayId/designer" element={<ChatOverlayDesignerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/about" element={<AboutLegalPage />} />
             <Route path="/logs" element={<LogsPage />} />
             {/* No AppShell: a standalone Browser Source page, never the
                 operator dashboard's chrome - see OverlayChatPage's own

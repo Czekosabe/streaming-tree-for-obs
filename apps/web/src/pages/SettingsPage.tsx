@@ -1,5 +1,7 @@
+import { ChevronRight, Info } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { ConnectedAccountsPanel } from '@/components/settings/ConnectedAccountsPanel';
@@ -15,7 +17,7 @@ import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
  * credential-store view) is listed as such rather than implied to exist.
  */
 export function SettingsPage() {
-  const { t } = useTranslation(['pages']);
+  const { t } = useTranslation(['pages', 'about']);
   const labelId = useId();
 
   return (
@@ -37,6 +39,33 @@ export function SettingsPage() {
 
         <ConnectedAccountsPanel />
         <YouTubeAccountsPanel />
+
+        <Panel>
+          <PanelBody>
+            <Link
+              to="/settings/about"
+              className="flex items-center justify-between gap-3 rounded-lg -m-1 p-1 transition-colors hover:bg-surface-hover"
+            >
+              <span className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-raised text-accent-soft"
+                >
+                  <Info className="size-4" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold text-ink">
+                    {t('about:settingsCard.heading')}
+                  </span>
+                  <span className="block text-xs text-ink-muted">
+                    {t('about:settingsCard.description')}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-ink-faint" />
+            </Link>
+          </PanelBody>
+        </Panel>
       </div>
     </AppShell>
   );

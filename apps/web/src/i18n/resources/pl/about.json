@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Informacje i prawo",
+    "description": "Tożsamość produktu, prywatność i informacje prawne."
+  },
+  "settingsCard": {
+    "heading": "Informacje i prawo",
+    "description": "Tożsamość produktu, prywatność i informacje prawne.",
+    "action": "Zobacz Informacje i prawo"
+  },
+  "loading": "Wczytywanie informacji o produkcie…",
+  "error": "Nie udało się wczytać informacji o produkcie z backendu.",
+  "product": {
+    "createdByLabel": "Autor",
+    "description": "Lokalna aplikacja do multistreamingu, zaangażowania widzów i nakładek OBS.",
+    "versionLabel": "Wersja",
+    "developmentBuild": "Wersja rozwojowa",
+    "commit": "commit {{commit}}",
+    "commitDirty": "commit {{commit}} (zawiera niezacommitowane zmiany)"
+  },
+  "links": {
+    "sourceCode": "Kod źródłowy",
+    "creatorGithub": "Autor na GitHubie"
+  },
+  "support": {
+    "heading": "Wesprzyj twórcę",
+    "body": "Streaming Tree for OBS jest niezależnie rozwijany przez Czekosabe. Jeśli projekt jest dla Ciebie przydatny, możesz wesprzeć jego dalszy rozwój.",
+    "button": "Wesprzyj twórcę",
+    "disclosure": "Otwiera StreamElements w przeglądarce.",
+    "voluntary": "Wsparcie jest dobrowolne. Nie odblokowuje funkcji, nie jest zakupem licencji aplikacji ani nie tworzy płatnego uprawnienia do wsparcia technicznego.",
+    "noPaymentHandling": "Streaming Tree nie przetwarza danych płatności i nigdy nie otrzymuje danych karty ani danych płatniczych - transakcja odbywa się w całości na stronie StreamElements."
+  },
+  "legal": {
+    "heading": "Prawo i prywatność",
+    "licence": {
+      "heading": "Licencja aplikacji",
+      "unselected": "Licencja aplikacji na potrzeby pierwszego publicznego wydania nie została jeszcze wybrana."
+    },
+    "privacy": {
+      "heading": "Prywatność",
+      "summary": "Streaming Tree działa lokalnie. Konfiguracja i stan aplikacji znajdują się w lokalnej bazie SQLite; klucze transmisji i tokeny OAuth korzystają z magazynu poświadczeń systemu operacyjnego. Włączone integracje z dostawcami (Twitch, YouTube, StreamElements) komunikują się bezpośrednio z tymi usługami. Obecnie nie istnieje konto w chmurze Streaming Tree ani telemetria.",
+      "viewFull": "Zobacz PRIVACY.md"
+    },
+    "thirdPartyNotices": {
+      "heading": "Informacje o oprogramowaniu firm trzecich",
+      "summary": "Streaming Tree zawiera lub korzysta z oprogramowania open source firm trzecich, każde na własnej licencji.",
+      "viewFull": "Zobacz THIRD_PARTY_NOTICES.md"
+    },
+    "disclaimer": {
+      "heading": "Zastrzeżenie",
+      "summary": "Streaming Tree for OBS jest niezależnym projektem. Nie jest prowadzony przez, powiązany z ani przedstawiany jako oficjalna aplikacja OBS Studio, Twitcha, YouTube'a, Kicka, TikToka ani StreamElements - te nazwy należą do ich właścicieli.",
+      "viewFull": "Zobacz LEGAL.md"
+    }
+  }
+}

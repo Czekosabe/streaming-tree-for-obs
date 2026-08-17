@@ -1,3 +1,4 @@
+import enAbout from './resources/en/about.json';
 import enAccounts from './resources/en/accounts.json';
 import enAlertDesigner from './resources/en/alertDesigner.json';
 import enAlerts from './resources/en/alerts.json';
@@ -17,6 +18,7 @@ import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
 import enVisualTemplates from './resources/en/visualTemplates.json';
+import plAbout from './resources/pl/about.json';
 import plAccounts from './resources/pl/accounts.json';
 import plAlertDesigner from './resources/pl/alertDesigner.json';
 import plAlerts from './resources/pl/alerts.json';
@@ -67,6 +69,7 @@ export const enResources = {
   visualTemplates: enVisualTemplates,
   audio: enAudio,
   goals: enGoals,
+  about: enAbout,
 } as const;
 
 const plResources = {
@@ -89,6 +92,7 @@ const plResources = {
   visualTemplates: plVisualTemplates,
   audio: plAudio,
   goals: plGoals,
+  about: plAbout,
 } as const;
 
 export const resources = {

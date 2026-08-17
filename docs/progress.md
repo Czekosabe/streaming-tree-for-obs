@@ -28482,3 +28482,103 @@ None.
 Build the frontend About & Legal surface (`GET /api/about` fetch, the
 About & Legal page reached from Settings, the support card, and the
 Legal & Privacy entries), with English/Polish localization throughout.
+
+## 2026-08-17 — feat(web): add About and Legal settings
+
+### Status
+Completed.
+
+### Scope
+Frontend half of the pre-Stage-20 product-identity milestone. Audited
+the real frontend structure first: `SettingsPage.tsx` is a single flat
+page (language switcher, `ConnectedAccountsPanel`, `YouTubeAccountsPanel`
+as stacked `Panel`s, no existing tab/subsection pattern) - so per the
+governing task's own preference ordering, this milestone adds a small
+"About & Legal" entry card linking to a **nested Settings route**
+(`/settings/about`), not a new primary sidebar destination and not an
+overloaded flat page. `GET /api/about` is the single source for every
+product-identity value the page shows; nothing is duplicated as a
+literal string in the frontend.
+
+### Changes
+- `src/models/about.ts` (new) - `aboutResponseSchema`, mirroring the
+  Go contract; display prose is intentionally not part of it.
+- `src/api/about.ts` (new) - `fetchAbout`, following the existing
+  `fetchRuntime`/`fetchAlertProfiles`-style wrapper convention so the
+  page's own test can mock it the same way `AlertsPage.test.tsx`
+  already mocks `@/api/alerts`.
+- `src/hooks/use-about-query.ts` (new) - `useAboutQuery`, one-shot (no
+  `refetchInterval`) since product identity cannot change while the
+  backend process runs, unlike the polling `useRuntimeQuery`/
+  `useHealthQuery`.
+- `src/i18n/config.ts`, `src/i18n/resources.ts`,
+  `src/i18n/resources/{en,pl}/about.json` (new namespace, 20th) - every
+  new user-visible string in English and Polish: product/version/
+  development-build wording, "Created by", source-code/creator-GitHub
+  link labels, the full support card (heading, body, button,
+  disclosure, voluntary wording, no-payment-handling wording), and the
+  four Legal & Privacy entries (licence unselected state, Privacy,
+  Third-party notices, Disclaimer summaries).
+- `src/pages/AboutLegalPage.tsx` (new) - product identity (name,
+  development-build version + optional commit from the backend,
+  "Created by Czekosabe", source-code/creator-GitHub external links);
+  a quiet "Support the creator" card (external link only - no popup,
+  no form, no iframe, no embedded checkout, no donation-amount field,
+  no analytics); a "Legal & Privacy" panel with four entries (licence
+  status, Privacy, Third-party notices, Disclaimer), each a short
+  summary plus a link to the real file on GitHub
+  (`${repositoryUrl}/blob/main/<file>.md`) rather than duplicating the
+  full text or adding a Markdown renderer - the option B path from the
+  governing task's own third-party-notices delivery preference order.
+  Every external link uses `target="_blank" rel="noreferrer noopener"`,
+  matching the existing `TwitchDeviceFlowModal`/`YouTubeOAuthModal`
+  convention, with URLs sourced only from the fetched `AboutResponse` -
+  no user input is ever concatenated into a link, and no non-HTTPS
+  scheme is supported.
+- `src/pages/SettingsPage.tsx` - gained one new "About & Legal" entry
+  card (icon, heading, description, chevron) linking to
+  `/settings/about`, placed after the existing panels; no other section
+  changed.
+- `src/App.tsx` - registered `/settings/about` → `AboutLegalPage`.
+- `src/pages/AboutLegalPage.test.tsx` (new, 7 tests) - product name/
+  creator/development-build state; no real name, email, or other
+  personal/local identifier anywhere in rendered output; canonical
+  repository/creator/support URLs with `target="_blank"` and a `rel`
+  containing both `noopener` and `noreferrer`; the external-service
+  disclosure and voluntary/no-feature-unlock/no-payment-processing
+  wording; Privacy/Third-party notices/Disclaimer sections and the
+  unresolved application-licence state; no `<form>`, `<iframe>`, or
+  `<input>` anywhere on the page; representative Polish rendering of
+  the support card (`i18n.changeLanguage('pl')`, reset in `afterEach`).
+- `src/pages/SettingsPage.test.tsx` (new, 1 test) - the About & Legal
+  entry is reachable from Settings and navigates to a page showing the
+  product name and "Czekosabe".
+
+### Real issues found and fixed during development
+- The Polish "Support the creator" panel heading and button
+  intentionally share the same translated text ("Wesprzyj twórcę"),
+  which made the first draft of the Polish test's own `findByText`
+  query ambiguous (`Found multiple elements`) - not a product bug, the
+  UI is correct; fixed by querying the button via its `link` role
+  instead, which is unambiguous.
+- `lucide-react` (the version pinned in this repository) has no
+  `Github` icon export - discovered at typecheck time, not assumed;
+  used `Scale` for the Legal & Privacy panel instead.
+
+### Automated validation
+`npm run i18n:check` (20 namespaces, en/pl parity), `tsc -b`,
+`eslint .` all clean. `AboutLegalPage.test.tsx` and
+`SettingsPage.test.tsx` run standalone: 8/8 passing. Full suite,
+backend suite, and build run next as this milestone's closing
+regression.
+
+### Known limitations
+None new. The application-licence status remains deliberately
+unresolved (displayed honestly, not hidden) - see
+`docs/product-identity-legal.md` §5.
+
+### Next step
+Run the complete closing regression (frontend checks, backend checks,
+all 22 integration scripts - no 23rd script, since no integration-
+script-testable feature was added) as one unbroken sequence, then
+append the final closing journal entry.

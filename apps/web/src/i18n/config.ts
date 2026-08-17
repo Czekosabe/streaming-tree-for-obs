@@ -62,6 +62,7 @@ export const NAMESPACES = [
   'visualTemplates',
   'audio',
   'goals',
+  'about',
 ] as const;
 
 /** Namespace assumed when a component calls `t()` without naming one. */
