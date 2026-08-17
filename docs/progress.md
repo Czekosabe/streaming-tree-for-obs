@@ -28150,3 +28150,140 @@ re-check protocol).
 Run the existing 22 integration scripts once, in canonical order, as
 the post-research closing proof (no 23rd script - no product feature
 was added), then append the final Stage 19 closing journal entry.
+
+## 2026-08-17 — docs: record Stage 19 feasibility regression
+
+### Status
+Completed. Stage 19 is closed as a **research task**. Stage 19 as a
+**product stage remains Deferred / feasibility-gated / unimplemented.**
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `74f8617` ("docs: record Stage 18B closing regression"), clean
+tree, ahead/behind `0 0`. Stage 17/18 whole Completed, Stage 19
+conditional/not started, Stage 20 Planned/updater unimplemented, 22
+integration scripts.
+
+### Stage 18 closing-detail audit
+- README chronology corrected: "stages 8A through 18A" → "stages 8A
+  through 18B" (minimal, one-phrase edit; surrounding paragraph
+  untouched).
+- Final Stage 18 progress-heading audit: `74f8617`'s actual subject is
+  exactly `docs: record Stage 18B closing regression`, matching the
+  journal heading exactly. No journal defect found; all ten Stage 18B
+  commits cross-checked one-to-one against their own journal headings,
+  all matched. No correction manufactured.
+
+### Official TikTok research (2026-08-17)
+Full detail in [tiktok-live.md](provider-integrations/tiktok-live.md).
+Summary:
+- **Official product/API surface**: Login Kit, Share Kit, Content
+  Posting API, Embed, Webhooks, Data Portability, Green Screen Kit,
+  Display API, Research API, Commercial Content API, Monetization,
+  Minis, GO. No LIVE product of any kind.
+- **Scopes result**: complete scopes reference audited; no LIVE-related
+  scope exists.
+- **Embed LIVE result**: Embed Player is playback-only (postMessage
+  events are player-state telemetry only: ready/state-change/time/
+  mute/volume/image/error); does not document LIVE-stream embedding at
+  all; not treated as Stage 19 engagement.
+- **Desktop Login Kit result**: real, working OAuth flow -
+  `https://www.tiktok.com/v2/auth/authorize/`, loopback redirect
+  (`localhost`/`127.0.0.1` + port), PKCE required.
+- **PKCE result**: required (`S256`), but does not remove the
+  `client_secret` requirement below.
+- **Client-secret requirement**: `client_secret` is a required
+  parameter on both the authorization-code exchange and every
+  refresh-token exchange
+  (`POST https://open.tiktokapis.com/v2/oauth/token/`). No
+  public-client/secret-free desktop alternative is documented anywhere.
+- **Webhook finding**: real product, requires a publicly reachable
+  HTTPS callback URL (same class of blocker as Kick/Ko-fi); moot here
+  since the complete, enumerated webhook event list (four events:
+  `authorization.removed`, `video.upload.failed`,
+  `video.publish.completed`, `portability.download.ready`) contains no
+  LIVE-related event.
+- **Local-desktop compatibility conclusion**: incompatible even setting
+  the missing LIVE API aside - a vendor-wide `client_secret` required
+  on every token exchange cannot be confidential once shipped inside a
+  distributed, source-available desktop application; no TikTok-provided
+  public-client alternative exists.
+- **No unofficial protocol used, no scraping performed.** Several
+  actively-marketed reverse-engineered "TikTok LIVE API" libraries and
+  resale services were found during search and are named in
+  `tiktok-live.md` §H solely to record that they were recognized and
+  rejected; none was inspected as an implementation reference, used as
+  a dependency, or allowed to inform any conclusion in this document.
+- **Stage 7C/TikTok account decision**: folded into Stage 19's own
+  feasibility gate rather than pursued independently - no downstream
+  LIVE capability exists for a standalone TikTok account to power.
+  Kick's own Stage 7C status is unchanged.
+
+### Product code
+**None.** No TikTok LIVE provider adapter, OAuth flow, SQLite
+migration, UI account card, Event Bus normalizer, fake TikTok server,
+or 23rd integration script was created. TikTok's existing RTMP/RTMPS
+streaming-destination support is unrelated to this gate and unchanged.
+
+### Living documentation updated
+`README.md`, `docs/project-overview.md`, `docs/engagement-
+architecture.md` (Stage 7C/19 roadmap rows and adjacent prose), and the
+new `docs/provider-integrations/tiktok-live.md`. `config/README.md` had
+no TikTok content and needed no change. Historical "factual status
+update" blockquotes in `project-overview.md` were left untouched -
+already accurate as historical snapshots.
+
+### Frontend validation
+`npm run i18n:check`, `tsc -b`, `eslint .` all clean. Full test suite:
+**97 test files, 1367 tests, all passing.** `npm run build` clean.
+
+### Backend validation
+`gofmt -l .` clean. `go vet ./...` clean. `go vet -tags integration
+./...` clean. `go test -count=1 ./...`: **43 packages, 0 failures.**
+`go build ./...` clean. `go build -tags integration ./...` clean.
+
+### Integration regression
+All 22 existing integration scripts run once, in canonical order, in a
+single accepted sequence with no failures on the first attempt:
+verify-persistence.mjs, verify-mediamtx-runtime.mjs,
+verify-ffmpeg-branches.mjs, verify-twitch-account-integration.mjs,
+verify-youtube-account-integration.mjs, verify-twitch-engagement.mjs,
+verify-operator-chat.mjs, verify-chat-overlay.mjs,
+verify-twitch-outbound-chat.mjs, verify-chat-automation.mjs,
+verify-alerts.mjs, verify-alert-advanced-queue.mjs,
+verify-alert-designer.mjs, verify-chat-overlay-designer.mjs,
+verify-visual-templates.mjs, verify-visual-template-packages.mjs,
+verify-youtube-engagement.mjs, verify-streamelements-donations.mjs,
+verify-tts-audio.mjs, verify-alert-audio.mjs,
+verify-goals-widgets.mjs, verify-supporter-widgets.mjs. Final log:
+`=== ALL 22 SCRIPTS PASSED ===`. No 23rd script exists - no product
+feature was added to fake. All test-owned processes exited on their
+own; a post-run process check found only a pre-existing, unrelated
+`npm run dev`/Vite dev-server pair, left untouched.
+
+### No real provider or manual testing
+As with every prior provider-feasibility gate, all verification was via
+the existing fake-provider integration harness and automated unit/
+component tests. No real TikTok connection was attempted (none exists
+to attempt), and no manual/real OBS Browser Source testing was
+performed - this task added no browser-facing feature.
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: **Deferred / feasibility-gated / unimplemented.** The
+  research task is Completed; the product stage is not, and is not
+  marked Completed anywhere in this repository's living documentation.
+- Stage 20: Planned / next actionable stage (unchanged). Updater still
+  unimplemented.
+
+### Continuous-execution rule compliance
+Both background commands this task ran (the Stage 18 closing-detail
+audit required none; the 22-script regression here) were actively
+polled to completion via bounded-timeout blocking polls, inspected for
+their real exit status against the actual `SUMMARY.txt`/log content
+(not the wrapper's own trailing echo alone), and immediately followed
+by the next actionable step. No turn ended on passive waiting language,
+and no operator message was needed at any point to make this task
+inspect a completed background command and resume.
