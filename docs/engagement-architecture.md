@@ -1437,9 +1437,13 @@ verified** — this document names candidates, it does not commit to them.
   feasibility-gated before any adapter code was written - see
   [kick-engagement.md](provider-integrations/kick-engagement.md).
 - **TikTok LIVE chat/events are implemented only when an official, permitted,
-  and sufficiently stable integration exists.** As of this writing no such
-  integration is confirmed suitable; TikTok engagement support is listed in
-  the roadmap (§18) as conditional, not scheduled.
+  and sufficiently stable integration exists.** TikTok's own connector was
+  researched in stage 19 and found feasibility-gated before any adapter code
+  was written, for three independent reasons: no official LIVE engagement
+  event API/scope exists at all, Embed Player is playback-only, and Desktop
+  Login Kit's only documented token exchange requires a confidential
+  `client_secret` with no public-client alternative - see
+  [tiktok-live.md](provider-integrations/tiktok-live.md).
 - **The project does not depend on fragile scraping as a core product
   feature.** A scraping-based integration is not planned; if one were ever
   considered as a stop-gap, it would be clearly labelled experimental and kept
@@ -1525,7 +1529,7 @@ that table.
 | 5 | Secure credential-store foundation (this task's implementation part) |
 | 6 | FFmpeg destination branches (consumes the credential store for stream keys) |
 | 7A/7B | Connected accounts, OAuth, platform metadata publishing for Twitch and YouTube (consumes the credential store for tokens) |
-| 7C | Kick and TikTok account integration — **deferred**, capability-gated, not a prerequisite for stage 8A (see the factual note after this table) |
+| 7C | Kick and TikTok account integration — **deferred**, capability-gated, not a prerequisite for stage 8A (see the factual note after this table). TikTok's own account integration is now folded into stage 19's feasibility gate rather than pursued independently, since stage 19 found no downstream LIVE capability for such an account to power (see [tiktok-live.md](provider-integrations/tiktok-live.md) §G) |
 | 8A | Engagement Event Bus + Twitch inbound connector (first real implementation of §5–6) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set |
 | 9 | Unified operator chat (§7.2) — **Completed** |
@@ -1546,7 +1550,7 @@ that table.
 | 17B | Persistent alert sound assets, per-alert-rule TTS, template-asset audio (§12, see [alert-audio.md](alert-audio.md)) — **Completed**, stage 17 as a whole is now complete |
 | 18A | Persistent goals/counters foundation and core public goal widgets (§14, see [goals-widgets.md](goals-widgets.md)) — **Completed** |
 | 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer counters, multi-widget composition (§14, see [supporter-widgets.md](supporter-widgets.md)) — **Completed**, stage 18 as a whole now complete |
-| 19 | TikTok LIVE connector, conditional on an official integration existing (§16) |
+| 19 | TikTok LIVE connector, conditional on an official integration existing (§16) — **Deferred**, feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is not implemented |
 | 20 | Logs, diagnostics, packaging and remote-server hardening |
 
 > **Roadmap decision (recorded when stage 8A began):** stage 8A starts

@@ -80,15 +80,16 @@ sharing one generic Browser Source route — see
 **Still planned**: a **Kick**
 engagement connector (feasibility-gated — see
 [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md)),
-TikTok LIVE support (conditional on an official, permitted integration
-existing), additional external donation-service connectors (Streamlabs,
+TikTok LIVE support (feasibility-gated — see
+[`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
+additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's own
 packaging/updater/hardening work — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
-engagement piece above in order (stages 8A through 18A).
+engagement piece above in order (stages 8A through 18B).
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
@@ -209,11 +210,13 @@ engagement piece above in order (stages 8A through 18A).
 > pending/allowed/rejected handling, and full reuse of operator chat and
 > alerts. See [`docs/provider-integrations/external-donations.md`](docs/provider-integrations/external-donations.md).
 >
-> Kick/TikTok account integration, additional donation providers
-> (Streamlabs, Ko-fi — stage 16B, feasibility-gated), and everything else
-> still built **on top of** the operator chat, outbound chat, alert engine,
-> visual-design/template/package engine, shared audio/TTS runtime, and
-> persistent goals/supporter-widgets foundation — Stage 20's own
+> Kick/TikTok account integration (stage 7C, feasibility-gated alongside
+> Kick's own stage 15B and TikTok's own stage 19 engagement research),
+> additional donation providers (Streamlabs, Ko-fi — stage 16B,
+> feasibility-gated), and everything else still built **on top of** the
+> operator chat, outbound chat, alert engine, visual-design/template/
+> package engine, shared audio/TTS runtime, and persistent
+> goals/supporter-widgets foundation — Stage 20's own
 > packaging/updater/hardening work — is
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
@@ -265,7 +268,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 6 | FFmpeg destination branches | **Completed** |
 | 7A | Connected-account foundation and a first provider integration: Twitch device-code sign-in, account lifecycle, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
 | 7B | YouTube account integration: Authorization Code + PKCE sign-in, channel selection, broadcast selection, and explicit metadata publishing | **Completed** — see [progress.md](docs/progress.md) |
-| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick's own engagement feasibility was researched in Stage 15B and found feasibility-gated, TikTok remains conditional on a stable official integration |
+| 7C | Kick and TikTok account integration | Deferred — capability-gated, not a prerequisite for Stage 8; Kick's own engagement feasibility was researched in Stage 15B and found feasibility-gated. TikTok's own account integration is now folded into Stage 19's feasibility gate rather than pursued independently, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md) |
 | 8A | Engagement Event Bus and a real Twitch inbound connector | **Completed** — see [progress.md](docs/progress.md) |
 | 8B | Additional Twitch event coverage, reserved only if 8A cannot safely cover the full verified event set | Planned, conditional |
 | 9 | Unified operator chat: a real, merged Twitch chat view across connected accounts | **Completed** — see [progress.md](docs/progress.md) |
@@ -286,7 +289,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 17B | Persistent alert sounds, per-rule TTS, visual-template audio assets, see [alert-audio.md](docs/alert-audio.md) | **Completed** — see [progress.md](docs/progress.md); Stage 17 as a whole is now complete |
 | 18A | Persistent goals/counters foundation: a provider-independent accumulation engine, four core goal families (followers, subscriptions, donations, Bits), operator baseline/current management, and real public OBS goal widgets, see [goals-widgets.md](docs/goals-widgets.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 18B | Latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](docs/supporter-widgets.md) | **Completed** — see [progress.md](docs/progress.md); Stage 18 as a whole is now complete |
-| 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | Planned (conditional) |
+| 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential client secret with no public-client alternative found, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md); Stage 19 is **not** implemented |
 | 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
 
 The full table with dependencies is in

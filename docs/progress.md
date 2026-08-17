@@ -28012,3 +28012,141 @@ This milestone, including all four closing-regression attempts, their
 diagnosis, their fixes, and this closing entry, was carried out without
 any operator confirmation, approval, or "continue" message between the
 single governing task specification and this entry.
+
+## 2026-08-17 — docs: research and gate TikTok LIVE integration
+
+### Status
+Completed (research task). Stage 19 itself remains Deferred /
+feasibility-gated - see below. This entry does not close Stage 19 as a
+product stage.
+
+### Starting state
+Branch `main`, upstream `origin/main`, HEAD `74f8617` ("docs: record
+Stage 18B closing regression"), clean tree, ahead/behind `0 0`. Stage
+17/18 whole Completed, Stage 19 conditional/not started, Stage 20
+Planned/updater unimplemented, 22 integration scripts.
+
+### Stage 18 closing-detail audit (performed before any TikTok research)
+- **README chronology drift**: `README.md`'s opening chronology still
+  read "then each engagement piece above in order (stages 8A through
+  18A)" despite the same README already describing Stage 18B as
+  complete elsewhere. Corrected minimally to "stages 8A through 18B" -
+  no other wording in the surrounding paragraph touched.
+- **Stage 18 closing-heading audit**: `git show -s --format='%H%n%s%n
+  %an <%ae>' 74f8617` returned subject `docs: record Stage 18B closing
+  regression`, exactly matching the final `docs/progress.md` heading.
+  **No journal defect exists.** All ten Stage 18B commits
+  (`2396a9e` through `74f8617`) were additionally cross-checked against
+  their own journal headings for exact one-to-one subject matches;
+  every one matched. No correction was manufactured.
+
+### Official TikTok research
+Research date: 2026-08-17. Sources inspected (all official, directly
+from `developers.tiktok.com` and TikTok's own legal pages - no
+unofficial endpoint list, reverse-engineering writeup, or third-party
+"TikTok LIVE API" product consulted as a technical reference):
+portal homepage/product list, `doc/overview` (full navigation),
+`doc/webhooks-overview`, `doc/webhooks-events` (complete event
+enumeration), `doc/login-kit-desktop`, `doc/oauth-user-access-token-
+management`, `doc/tiktok-api-scopes`, `doc/embed-player`,
+`doc/changelog` (Feb 2025 - Jun 2026, every entry), and TikTok's
+Developer Terms of Service / Community Guidelines. Full detail and
+direct source URLs recorded in the new
+[tiktok-live.md](provider-integrations/tiktok-live.md).
+
+**Findings:**
+- **No official TikTok LIVE engagement API exists in any form.** The
+  complete product list (Login Kit, Share Kit, Content Posting API,
+  Embed, Webhooks, Data Portability, Green Screen Kit, Display API,
+  Research API, Commercial Content API, Monetization, Minis, GO)
+  contains nothing named or functioning as a LIVE API. The complete
+  webhook event list is exactly four events (`authorization.removed`,
+  `video.upload.failed`, `video.publish.completed`,
+  `portability.download.ready`) - none LIVE-related. The complete
+  scopes reference contains no LIVE-related scope. The complete
+  changelog (Feb 2025 - Jun 2026) contains no LIVE-related entry.
+- **Embed Player is playback-only.** Its full postMessage event list
+  (`onPlayerReady`, `onStateChange`, `onCurrentTime`, `onMute`,
+  `onVolumeChange`, `onImageChange`, `onPlayerError`) is player-state
+  telemetry, not engagement data, and it does not document LIVE-stream
+  embedding at all (only video/image posts). Not treated as Stage 19
+  engagement, and unneeded regardless since Streaming Tree already
+  receives the stream locally via OBS/MediaMTX.
+- **Desktop Login Kit OAuth is real** (loopback redirect,
+  `localhost`/`127.0.0.1` with port, PKCE `S256` required) but **the
+  only documented token-exchange path
+  (`POST https://open.tiktokapis.com/v2/oauth/token/`) requires
+  `client_secret` as a required parameter alongside PKCE, for both the
+  authorization-code exchange and every refresh-token exchange.** No
+  public-client/secret-free desktop flow is documented anywhere.
+- **Client-secret finding**: a vendor-wide confidential secret required
+  on every token exchange cannot be meaningfully confidential once
+  shipped inside a distributed, source-available desktop application -
+  every installation would carry the identical extractable value. OS
+  credential storage protects a *user's own* secret; it does not make a
+  *vendor-wide* application secret safe to distribute to every install.
+  This is the same class of blocker already recorded for Streamlabs in
+  `external-donations.md`.
+- **Webhook finding**: TikTok's webhook delivery requires a publicly
+  reachable HTTPS callback URL, the same class of blocker already
+  applied to Kick/Ko-fi - recorded for completeness only, moot here
+  since no LIVE-relevant webhook event exists to deliver via that
+  transport in the first place.
+- **No unofficial API or library was used or referenced as a technical
+  source.** Several actively-marketed reverse-engineered "TikTok LIVE
+  API" projects and resale services surfaced during search
+  (`TikTokLive`, `tiktok-live-connector`, and commercial wrappers around
+  them); their existence is recorded in `tiktok-live.md` §H solely to
+  document that they were recognized and rejected - none was inspected
+  as an implementation reference, none is a dependency, none informed
+  any conclusion here. TikTok's own Developer Terms of Service and
+  Community Guidelines explicitly prohibit reverse-engineering/
+  circumventing its systems, independently confirming this project's
+  own pre-existing policy against such libraries.
+
+### Stage 7C / TikTok account roadmap decision
+TikTok's standalone account integration (historically Stage 7C) is
+folded into Stage 19's own feasibility gate rather than pursued as an
+independent deliverable: with no official LIVE engagement capability
+found, and the desktop token-exchange model itself incompatible, a
+TikTok Login Kit account would have no current downstream product use -
+dead OAuth infrastructure. Kick's own Stage 7C status is unchanged.
+
+### Living documentation updated
+`README.md` (chronology fix, Stage 7C/19 roadmap rows, "still planned"
+prose block), `docs/project-overview.md` (Stage 7C/19 roadmap rows,
+§16-adjacent prose), `docs/engagement-architecture.md` (§16 TikTok
+bullet, §18 Stage 7C/19 roadmap rows), and the new
+`docs/provider-integrations/tiktok-live.md` (the canonical Stage 19
+research document, including a 14-row decision matrix and a re-check
+protocol mirroring `kick-engagement.md`'s own). Historical "factual
+status update" blockquotes in `project-overview.md` were deliberately
+left untouched - they already used generic "feasibility-gated/
+conditional" phrasing and remain accurate as historical snapshots.
+`config/README.md` has no TikTok-related content and needed no change.
+
+### Product code
+None. No TikTok provider adapter, OAuth flow, SQLite migration, UI
+account card, Event Bus normalizer, fake TikTok server, or integration
+script was added. The existing TikTok RTMP/RTMPS streaming-destination
+support (unrelated to LIVE engagement, see `tiktok-live.md` §F) is
+unchanged.
+
+### Automated validation (docs-only change; no product code touched)
+Frontend: `npm run i18n:check`, `tsc -b`, `eslint .`, full test suite
+(97 files / 1367 tests), and `npm run build` all clean. Backend:
+`gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...`,
+`go test -count=1 ./...` (43 packages, 0 failures), `go build ./...`,
+and `go build -tags integration ./...` all clean.
+
+### Exact Stage 19 status
+**Research task: Completed. Product stage: Deferred / feasibility-
+gated / unimplemented** - not Completed. No TikTok LIVE product code
+exists. Re-check required against then-current official documentation
+before any future implementation attempt (`tiktok-live.md`'s own
+re-check protocol).
+
+### Next step
+Run the existing 22 integration scripts once, in canonical order, as
+the post-research closing proof (no 23rd script - no product feature
+was added), then append the final Stage 19 closing journal entry.
