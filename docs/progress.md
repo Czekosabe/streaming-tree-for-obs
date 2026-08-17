@@ -26251,3 +26251,91 @@ widgets.mjs`, the 21st integration script, driving real Twitch/YouTube/
 StreamElements fakes through the real Event Bus into real persisted
 goals and the real public widget SSE stream end to end (docs/goals-
 widgets.md §17, this task's own §44-§45).
+
+## 2026-08-17 — test: verify goals and widgets locally
+
+### Status
+Completed.
+
+### Scope
+`scripts/verify-goals-widgets.mjs`, the 21st integration script
+(docs/goals-widgets.md §17, this task's own §44-§45). No separate fake
+goals event source was created - it drives real normalized events
+through the exact same local provider fakes `scripts/verify-twitch-
+engagement.mjs`, `scripts/verify-youtube-engagement.mjs`, and
+`scripts/verify-streamelements-donations.mjs` already established (a
+real Twitch EventSub WebSocket fake, the real fake YouTube streamList
+gRPC binary, the real fake StreamElements Astro binary), proving the
+Stage 18A contribution/dedupe/persistence/widget pipeline works end to
+end: real provider fake -> real connector -> real normalization -> real
+Event Bus -> real `internal/goals.Manager` -> real SQLite -> real public
+widget SSE stream. A representative subset of the task's own 45-
+scenario enumeration (32 numbered steps), not a literal one-assertion-
+per-item transcription - the same "representative subset" precedent
+`verify-tts-audio.mjs`/`verify-alert-audio.mjs` already established.
+Exhaustive per-provider connector correctness stays with the three
+scripts above and their own Go unit tests, per this script's own doc
+comment.
+
+### Real bugs found and fixed during development (test-script bugs, not product bugs)
+Three issues surfaced while writing this script - all three were
+verified to be genuine test-script mistakes, not product defects, by
+reading the actual backend behavior/response bodies:
+- A "disabled goal never increments" step tried to create a goal with
+  `enabled: false` directly, but `internal/domain/goals.Service.
+  CreateGoal` always forces `Enabled = true` on creation (mirroring
+  `alerts.CreateProfile`'s identical "always create enabled, disable
+  via a follow-up edit" convention) - fixed the script to create then
+  `PUT`-disable, exactly like an operator would.
+- An "account filter" step referenced a fabricated, never-created
+  account id; the backend correctly rejected the goal at creation
+  (`goal_account_not_found`, since a filter must reference a real
+  connected account or donation source, mirroring `alerts.
+  ValidateAccounts`) - fixed the script to use the real, by-then-linked
+  YouTube account id instead, moving the step to after YouTube linking.
+- A restart-persistence assertion expected a stale donation total: it
+  did not account for an earlier step's own StreamElements tip (pushed
+  to prove an account-filtered goal accepts a donation source) also
+  legitimately matching the unrestricted donation goal in the same run
+  (no account filter means "any", so both goals correctly receive the
+  same real event - docs/goals-widgets.md §14/§15's own "multiple
+  matching goals" rule, working exactly as designed) - fixed the
+  expected value.
+
+### Scenario coverage
+Goal/widget CRUD and public-config privacy leak scan; the initial
+`widget.reset` SSE snapshot; a real Twitch follow incrementing a goal
+with the public widget stream reflecting it; EventSub redelivery
+dedupe; an irrelevant event never contributing; a resubscription never
+contributing; the gift-batch-plus-five-individual-recipients no-double-
+count proof (exactly 5, never 10, never 0); exact Bits quantity; a
+disabled goal never accumulating; provider and account filters each
+excluding a non-matching real event; a real YouTube membership also
+contributing to the same provider-agnostic subscription goal; real
+YouTube Super Chat and Super Sticker exact integer micros; a real
+StreamElements donation aggregating into the same USD goal (multi-
+provider proof); a cross-currency donation never contributing;
+multiple matching goals both receiving one real event; goal completion
+with no clamp on the persisted value; Set current/Reset never bumping
+`configRevision` or publishing a fake event; widget slug rotation
+invalidating the old URL; goal deletion rejected while referenced then
+succeeding once the widget profile is removed; 405/404 handling; full
+backend restart preserving accumulated state and widget profiles; and
+a raw-SQLite-bytes scan for donor-sensitive fields.
+
+### Automated validation
+`node scripts/verify-goals-widgets.mjs` run twice consecutively (this
+task's own requirement) - both runs passed cleanly, all 32 steps, no
+retries needed on either final run.
+
+### Known limitations
+No real Twitch/YouTube/StreamElements/OBS testing (out of scope for
+this milestone, consistent with every other integration script). Every
+other pre-existing integration script remains untouched.
+
+### Next step
+The Stage 18A documentation pass across living docs (README,
+project-overview, engagement-architecture, goals-widgets, config/README,
+obs-browser-source, progress), updating script count 20->21 and every
+stage-status marker to reflect Stage 18A Completed / Stage 18B Planned /
+Stage 18 whole Incomplete.
