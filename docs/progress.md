@@ -28582,3 +28582,197 @@ Run the complete closing regression (frontend checks, backend checks,
 all 22 integration scripts - no 23rd script, since no integration-
 script-testable feature was added) as one unbroken sequence, then
 append the final closing journal entry.
+
+## 2026-08-17 — docs: record product identity and legal regression
+
+### Status
+Completed. This is a pre-Stage-20 milestone, not Stage 20 itself.
+Stage 20 remains not started.
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `88bb75a` ("docs: record Stage 19 feasibility regression"), clean
+tree, ahead/behind `0 0`.
+
+### TikTok README living-state reconciliation
+Audited `README.md`, `docs/project-overview.md`, and
+`docs/engagement-architecture.md` for stale "Kick and TikTok account
+integration" prose left over from before stage 19's own research. The
+latter two were already corrected during stage 19's closing pass.
+`README.md` still had two stale spots (its "Connected accounts and
+Twitch metadata" section and its "What will be added later" list),
+both bundling Kick and TikTok identically despite TikTok's account
+integration now being folded into stage 19's feasibility gate rather
+than "still planned." Fixed in commit `cc23b7f`
+("fix(docs): reconcile TikTok account roadmap state").
+
+### Product identity
+- Product name: **Streaming Tree for OBS**.
+- Public creator/author identity: **Czekosabe** - the only public
+  creator identity this application ever displays. Confirmed by direct
+  source audit that no real first name, surname, local Windows
+  username, Git commit email (this checkout's own is
+  `kacper2280@tlen.pl` - Git metadata about this development
+  environment, never product metadata), OS account name, or other
+  personal identity is exposed or inferable anywhere in `GET
+  /api/about`'s response or the About & Legal UI -
+  `TestAboutNeverExposesPersonalOrLocalMetadata` scans for exactly
+  this.
+- Canonical repository: <https://github.com/Czekosabe/streaming-tree-for-obs>.
+- Creator GitHub profile: <https://github.com/Czekosabe>.
+- Creator support URL: <https://streamelements.com/czekosabe/tip>.
+
+### Creator support
+Entirely separate from the Stage 16 external-donation system
+(`internal/domain/donationsource`, the StreamElements Astro connector,
+donation Event Bus events, alerts, TTS, goals, supporter widgets) - a
+person supporting Czekosabe through the About page can never become or
+feed an engagement donation event inside their own copy of the
+application; no code in this milestone connects the two. Support is
+voluntary, unlocks no feature, is not the purchase of an application
+licence, and creates no paid support entitlement. Streaming Tree for
+OBS performs no in-app payment processing of any kind - the support
+action is a single external HTTPS link
+(`target="_blank" rel="noreferrer noopener"`) to StreamElements, opened
+in the user's own browser; no popup, form, iframe, embedded checkout,
+donation-amount field, or click analytics exists anywhere in this
+milestone.
+
+### Privacy and legal documents
+- `PRIVACY.md` (new) - distinguishes local application state (SQLite
+  in the OS per-user application-data directory, OS credential store
+  for stream keys/OAuth tokens, no secrets in the browser beyond the
+  language preference) from network activity the user explicitly
+  enables (Twitch/YouTube/StreamElements integrations, on-request
+  MediaMTX download, outgoing FFmpeg streams). Confirms no first-party
+  telemetry/analytics/crash-reporting exists today (direct source
+  audit, not assumption) and that Stage 20's updater is not
+  implemented yet, so no update-check network activity exists either.
+  Deliberately avoids "never connects to the internet"/"no data ever
+  leaves your computer" absolutes.
+- `LEGAL.md` (new) - concise product identity, the application-licence
+  audit result (below), a pointer to `THIRD_PARTY_NOTICES.md` rather
+  than duplicating it, an independent-project disclaimer naming OBS
+  Studio/Twitch/YouTube/Kick/TikTok/StreamElements without implying
+  endorsement, third-party service availability and user-responsibility
+  wording, and the same creator-support terms as above. Not called
+  "Terms of Service"; not claimed to be lawyer-reviewed.
+- `docs/product-identity-legal.md` (new) - the canonical contract both
+  of the above, `internal/buildinfo`, and the About & Legal UI were
+  built from.
+
+### Application-licence audit result
+**No application-wide licence exists in this repository** - confirmed
+by direct directory listing (no root `LICENSE`/`LICENSE.*`/`COPYING`/
+`NOTICE`; only `THIRD_PARTY_NOTICES.md` and `README.md` at the
+repository root) and by grepping `apps/web/package.json`/
+`apps/server/go.mod` for a licence field (none). The only licence text
+in the repository concerns MediaMTX's own third-party MIT licence,
+never read as Streaming Tree's own. **No licence was invented, chosen,
+or guessed by this milestone.** `GET /api/about`'s
+`applicationLicenceStatus` field carries the stable status code
+`"unselected"`, and the About & Legal UI displays that unresolved state
+honestly rather than hiding it. **Application-licence decision remains
+required before the first public packaged release (Stage 20A)** - this
+is an explicit operator decision point, not an oversight.
+
+### Third-party notice handling
+`THIRD_PARTY_NOTICES.md` was audited and found factually accurate;
+deliberately left unmodified (no factual problem found). The About &
+Legal UI shows a short in-app summary plus a link to view the real file
+on GitHub (`${repositoryUrl}/blob/main/THIRD_PARTY_NOTICES.md`) rather
+than duplicating its content into i18n JSON or adding a Markdown-
+rendering dependency.
+
+### About & Legal UI location and build/version display
+Reached via `Settings → About & Legal` (a new entry card on the
+existing flat `SettingsPage`, linking to a new nested route
+`/settings/about`) rather than a new primary sidebar destination - the
+current Settings architecture has no existing tab pattern to reuse. The
+page shows an honest **"Development build"** identity (plus, when
+available, a real commit hash and a "includes uncommitted changes"
+flag from Go's own automatic VCS build-info stamping via
+`runtime/debug.ReadBuildInfo` - reliable without any `-ldflags` setup,
+and the one piece of build identity the Vite frontend build cannot
+determine on its own) rather than presenting `buildinfo.Version`
+("0.1.0", a hand-maintained internal identifier) as a fake release
+number. `buildinfo.IsReleaseBuild` is `false` today; Stage 20A will
+separately establish real release-version injection.
+
+### Localization
+Every new user-visible string exists in English and Polish (new
+`about` i18n namespace, the 20th namespace) - product/version/
+development-build wording, "Created by", external-link labels, the
+full support card, and the four Legal & Privacy entries. `npm run
+i18n:check` passes with 20 namespaces and no differences against
+English.
+
+### Test counts
+Frontend: 8 new dedicated tests
+(`AboutLegalPage.test.tsx` ×7, `SettingsPage.test.tsx` ×1). Full suite
+at closing: **99 test files, 1375 tests, all passing.** Backend: 3 new
+dedicated tests (`about_test.go`). Full suite at closing: **43
+packages, 0 failures.**
+
+### Backend validation
+`gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...` all
+clean. `go build ./...` and `go build -tags integration ./...` both
+clean.
+
+### Integration regression
+All 22 existing integration scripts run once, in canonical order, in a
+single accepted sequence with no failures on the first attempt:
+verify-persistence.mjs, verify-mediamtx-runtime.mjs,
+verify-ffmpeg-branches.mjs, verify-twitch-account-integration.mjs,
+verify-youtube-account-integration.mjs, verify-twitch-engagement.mjs,
+verify-operator-chat.mjs, verify-chat-overlay.mjs,
+verify-twitch-outbound-chat.mjs, verify-chat-automation.mjs,
+verify-alerts.mjs, verify-alert-advanced-queue.mjs,
+verify-alert-designer.mjs, verify-chat-overlay-designer.mjs,
+verify-visual-templates.mjs, verify-visual-template-packages.mjs,
+verify-youtube-engagement.mjs, verify-streamelements-donations.mjs,
+verify-tts-audio.mjs, verify-alert-audio.mjs,
+verify-goals-widgets.mjs, verify-supporter-widgets.mjs. Final log:
+`=== ALL CHECKS AND ALL 22 SCRIPTS PASSED ===`. **No 23rd script was
+created** - this milestone added a read-only, static-data API and a
+settings UI, not a provider integration, so there is nothing an
+integration script would meaningfully fake. All test-owned processes
+exited on their own; a post-run process check found only a
+pre-existing, unrelated `npm run dev`/Vite dev-server pair, left
+untouched.
+
+### No real provider/OBS/manual-browser testing
+As with every prior milestone, all verification was via the existing
+fake-provider integration harness and automated unit/component tests.
+No real Twitch/YouTube/StreamElements connection and no manual/real OBS
+Browser Source testing was performed - this milestone touched neither.
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated / unimplemented (unchanged).
+- Stage 20: Planned / not started (unchanged). **No packaging began, no
+  installer was created, and the updater remains unimplemented** - this
+  milestone was explicitly scoped to stop short of Stage 20A.
+
+### Commits this milestone (chronological)
+1. `cc23b7f` - `fix(docs): reconcile TikTok account roadmap state`
+2. `25cae4b` - `docs: define product identity and legal surfaces`
+3. `eb1928d` - `feat(server): expose product information`
+4. `aac3d4b` - `feat(web): add About and Legal settings`
+5. This entry - `docs: record product identity and legal regression`
+
+Every commit subject above exactly matches its own journal entry
+heading; verified by re-reading each entry against `git log` before
+writing this summary.
+
+### Continuous-execution rule compliance
+The one long-running background command this milestone required (the
+full closing regression) was actively polled to completion via
+bounded-timeout blocking polls, its real result verified against
+`SUMMARY.txt` rather than the wrapper's own trailing echo alone, and
+immediately followed by the next actionable step. No turn ended on
+passive-waiting language, and no operator message was needed at any
+point to make this task inspect a completed background command and
+resume.
