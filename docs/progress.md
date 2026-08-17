@@ -27582,3 +27582,58 @@ run yet.
 The complete Stage 18B closing regression: every backend/frontend
 check plus all 22 integration scripts run in the canonical order from
 a clean state, then the final closing journal entry.
+
+## 2026-08-17 — fix(scripts): add the required kind field in verify-goals-widgets
+
+### Status
+Completed.
+
+### Scope
+During the first Stage 18B closing-regression attempt, script 21 of 22
+(`scripts/verify-goals-widgets.mjs`, the pre-existing Stage 18A script)
+failed at its own step 05: `POST /api/widget-profiles` returned
+`422 goal_invalid` instead of `201`.
+
+### Root cause
+Widening `WidgetProfile` to nine kinds (this milestone's own `feat(server):
+widen widget profiles for supporter kinds` commit) made `kind` a
+required field on every `POST /api/widget-profiles` request -
+`internal/domain/goals.ValidateWidgetProfileFields` now rejects a
+request whose `Kind` is not one of the nine valid values, and an
+omitted JSON field decodes to the empty string, which is not one of
+them. `scripts/verify-goals-widgets.mjs`'s own single widget-profile
+creation call (written before this stage existed) never sent a `kind`
+field at all, since Stage 18A had only ever needed the implicit
+`"goal"` kind. This is expected, necessary integration-script
+maintenance, not a product bug - it is the exact real-world change an
+API consumer creating a goal widget would also need to make, and the
+governing task's own explicit requirement ("existing goal widget
+management continues working... verify-goals-widgets.mjs remains
+meaningful") is about behavior, not about the request wire shape being
+frozen forever against an intentional, documented API widening.
+`UpdateWidgetProfile` needed no equivalent fix - `internal/httpapi`'s
+own handler already forces `draft.Kind = existing.Kind` before
+validation runs on every `PUT`, exactly like it already does for
+`GoalID`, so an update request omitting `kind` was never affected.
+
+### Changes
+- `scripts/verify-goals-widgets.mjs` - its one `POST /api/widget-
+  profiles` request body now includes `kind: 'goal'`. Confirmed via
+  `grep -l "widget-profiles" scripts/*.mjs` that no other pre-existing
+  script (only this one and the new `verify-supporter-widgets.mjs`)
+  ever calls this API, so no other script needed the same fix.
+
+### Automated validation
+`node scripts/verify-goals-widgets.mjs` run standalone, all 32 steps
+passing cleanly end to end, including the previously-failing widget-
+profile creation and everything downstream of it (public config,
+rotation, restart persistence, the final SQLite privacy scan).
+
+### Known limitations
+None. This was a script-only compatibility gap; no product code
+required any change.
+
+### Next step
+Restart the complete Stage 18B closing regression from the very
+beginning (frontend checks, backend checks, all 22 integration scripts
+in the canonical order, as one unbroken sequence).

@@ -822,7 +822,7 @@ async function main() {
 
     step('Create a public widget profile for it and confirm the public config leaks no internal id');
     const widget = await request(baseUrl, 'POST', '/api/widget-profiles', {
-      goalId: followerGoalId, name: 'Follower widget', enabled: true, showCurrent: true, showTarget: true, showPercent: true,
+      kind: 'goal', goalId: followerGoalId, name: 'Follower widget', enabled: true, showCurrent: true, showTarget: true, showPercent: true,
       orientation: 'horizontal', textAlign: 'center', fontFamily: 'sans_serif',
       backgroundColor: '#000000', foregroundColor: '#ffffff', fillColor: '#7c3aed', borderColor: '#ffffff33', borderRadiusPx: 12, opacity: 1.0,
     });
