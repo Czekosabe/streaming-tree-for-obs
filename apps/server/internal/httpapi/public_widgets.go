@@ -316,6 +316,13 @@ func buildPublicSnapshot(ctx context.Context, svc GoalsService, runtime Supporte
 
 	default:
 		resp.Title = titleOrName(p)
+		// The widget's own configured comparison currency (largest_
+		// donation always; session_counter only for its own money
+		// metric) is presentation-relevant even before any matching
+		// event has been observed yet - e.g. "No matching donation
+		// observed yet (USD)" - so it is surfaced here regardless of
+		// whether Latest/Largest/Counter has any real content yet.
+		resp.Currency = p.Currency
 		var proj supporterwidgets.Projection
 		if runtime != nil {
 			proj = runtime.Snapshot(p.ID)

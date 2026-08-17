@@ -27377,3 +27377,94 @@ source/config-README) has not started.
 `scripts/verify-supporter-widgets.mjs` (docs/supporter-widgets.md §21),
 driving real events through the existing Twitch/YouTube/StreamElements
 fakes.
+
+## 2026-08-17 — test: verify supporter widgets locally
+
+### Status
+Completed.
+
+### Scope
+Implements docs/supporter-widgets.md §21: the 22nd integration script,
+`scripts/verify-supporter-widgets.mjs`, driving real events through
+the same existing Twitch/YouTube/StreamElements fakes
+`scripts/verify-goals-widgets.mjs` already established - no separate
+fake event source. Also fixes one genuine backend completeness gap
+this script's own development surfaced.
+
+### Backend fix: expose a widget's own configured currency before any matching event
+`internal/httpapi/public_widgets.go`'s `buildPublicSnapshot` never set
+`resp.Currency` for any non-goal kind - a fresh `largest_donation` or
+`session_counter` (support_amount metric) widget's own configured
+comparison currency was invisible in the public payload until its
+first matching event arrived, even though the currency is real,
+already-saved configuration a client could reasonably want to render
+in the empty state (e.g. "No matching donation observed yet (USD)").
+Fixed: the default (event-derived-kind) branch now also sets
+`resp.Currency = p.Currency`, reusing the same top-level field the
+goal-kind branch already populates from the goal's own currency -
+no DTO shape change, no new field, `omitempty` already makes this a
+no-op for the six kinds that carry no currency of their own.
+
+### Changes
+- `internal/httpapi/public_widgets.go` - the fix above.
+- `scripts/verify-supporter-widgets.mjs` (new, ~830 lines, 27 steps) -
+  reuses the exact Twitch OAuth/Helix/EventSub, YouTube OAuth/REST/gRPC,
+  and StreamElements Astro fake-provider harness `verify-goals-
+  widgets.mjs` already established (duplicated per this repo's own
+  "every script is fully self-contained" convention - never a shared
+  module). Covers: latest_follower (real event, irrelevant-event
+  isolation, no id leak); latest_subscriber's own "new only" rule
+  (resubscription and gift-batch summary both correctly excluded, the
+  individual gift recipient included); latest_donation's `showMessage`
+  gate (hidden by default, shown once explicitly enabled) and an
+  anonymous donor never getting a fabricated display name;
+  largest_donation's exact-micros tie rule (strictly larger replaces,
+  exactly equal does not, a numerically-larger foreign-currency
+  donation never matches); recent_supporters bounded at `maxItems`,
+  newest first, with the gift-batch summary itself never duplicating
+  its own already-counted individual recipient; event_ticker's closed
+  allowlist (an out-of-allowlist type never appears, even though the
+  event itself is real); session_counter's `bits_quantity` (exact sum)
+  and `support_amount` (exact-currency-match only) metrics; a provider
+  filter; a dashboard composing two real, differently-kinded children
+  with zero internal id ever appearing in the public payload; nested-
+  dashboard rejection (422); dashboard delete-protection (409, then
+  success once removed); `reset-runtime`'s 204/422 split; 405/404;
+  the public SSE stream reflecting a real projection change within one
+  poll interval; a full backend restart proving every runtime-only
+  projection resets to its own empty state while every widget
+  profile's persisted configuration (including a dashboard's own child
+  composition) survives unchanged; and a final SQLite byte-scan
+  proving no observed display name, donation message, or
+  provider-private field was ever written to disk - the concrete proof
+  of docs/supporter-widgets.md §3's own privacy boundary.
+
+### Script bugs found and fixed during development (not product bugs)
+Two assertions incorrectly assumed a JSON array field is always
+present: Go's `omitempty` on a slice omits it whenever length is 0,
+even for a deliberately-constructed non-nil empty slice, so `ticker`/
+`recent` are entirely absent from the response (not `[]`) until at
+least one matching event has been observed. Fixed both assertions to
+check `=== undefined` instead of `.length === 0`, matching the exact
+convention the frontend's own `snapshot.ticker ?? []` already uses.
+
+### Automated validation
+`go build ./...`, `go vet ./...`, `go build -tags integration ./...`,
+and `go test -count=1 ./...` (full backend suite, including
+`internal/httpapi`) all clean after the currency fix. `node scripts/
+verify-supporter-widgets.mjs` run twice consecutively per this task's
+own requirement: both a genuine process exit code 0 (~40s each), and
+`ps -ef` confirmed no lingering `node`/`testserver`/`fakeyoutubegrpc`/
+`fakestreamelements` process after either run - the exact teardown
+discipline the Stage 18A closing regression's own two script defects
+required this milestone to get right from the start.
+
+### Known limitations
+The documentation pass (README/project-overview/engagement-
+architecture/obs-browser-source/config-README) has not started. The
+closing regression (all 22 scripts + frontend/backend checks in the
+canonical order) has not run yet.
+
+### Next step
+Documentation pass across every living doc carrying a Stage 18/18B
+"planned"/"not implemented" marker, then the closing regression.
