@@ -26617,3 +26617,337 @@ in the canonical order, as one unbroken sequence), per this task's own
 §52 "no selective retry accepted as the final regression" rule - this
 is now the second restart, both times triggered by a script-only defect
 diagnosed and fixed before restarting, never a product defect.
+
+## 2026-08-17 — docs: record Stage 18A closing regression
+
+### Status
+Completed. Stage 18A (persistent goals/counters foundation + core OBS
+goal widgets) is now **Completed** in full. Stage 18B (latest
+follower/subscriber/donation, largest donation, recent supporters
+list, event ticker, richer/platform-specific counters, multi-widget
+composition, any dedicated visual designer/template integration if
+later justified) remains **Planned, not started** - Stage 18 as a
+whole is therefore **Incomplete**. Stage 19 (the TikTok LIVE connector,
+conditional on an official, permitted, sufficiently stable integration
+existing) remains not started. Stage 20 (the application-update
+system) remains Planned, updater unimplemented. This entry does not
+change any of those other stages' status; it only closes Stage 18A.
+
+### Starting point and the Stage 17 record audit
+This milestone's own starting `HEAD` was `9bba41c` ("docs: record
+Stage 17 closing regression"). Before any Stage 18A product work, this
+task's own instructions required auditing two concerns about that
+Stage 17 closing report, recorded in the correction-only entry
+"fix(docs): reconcile Stage 17 closing record" (`f4e3cc4`):
+
+- **Commit-count audit**: `git rev-list --count 8535f45..9bba41c` and
+  `git log --reverse` both confirmed **exactly 13 commits** in that
+  range, matching the prior chat report's own stated count. The prior
+  report's printed hash list enumerated only 12 of those 13 - a
+  report-formatting omission (missing `ff22bbf`, "test: remove
+  StreamElements subscription wait race"), never a repository defect.
+  Repository history itself was, and remains, correct.
+- **Stage 19 wording**: the original Stage 17 closing entry described
+  Stage 19 as "further engagement/donation providers," which is wrong.
+  Corrected (append-only, the original entry itself left untouched):
+  Stage 19 is specifically the **TikTok LIVE connector**, conditional
+  on an official, permitted, sufficiently stable integration existing
+  - still not started, still conditional.
+
+### The Stage 18A / 18B split
+Stage 18A (this milestone): a persistent, provider-independent goal/
+counter accumulation engine covering exactly four goal kinds
+(followers, subscriptions, donations, Bits), manual baseline/current/
+target management, and one fixed, robust public OBS Browser Source
+widget layout per goal. Stage 18B (explicitly deferred, not started by
+this milestone): latest follower/subscriber/donation, largest
+donation, recent supporters list, event ticker, richer/platform-
+specific counters, multi-widget composition, and any dedicated visual
+designer/template integration if later justified.
+
+### Core semantic: observed progress, never a provider total
+A goal's `current` value means "the sum of normalized events this
+goal has actually observed and accepted since its own baseline was
+last set," never a provider-canonical lifetime total. Nothing in this
+milestone ever fetches, scrapes, or imports a provider's own follower/
+subscriber/donation history - `current` only ever moves via a real,
+currently-flowing Event Bus event or an explicit operator Set-current/
+Reset action.
+
+### The four goal kinds and the contribution table
+Exactly four closed goal kinds exist - `followers`, `subscriptions`,
+`donations`, `bits` - deliberately no arbitrary formula/expression
+language. `internal/domain/goals.Type` is goals' own narrow, primitive
+enum mirroring `engagement.Type` as literals; it deliberately never
+imports `internal/domain/engagement`, matching this codebase's own
+explicit "no domain package imports another domain's types" rule
+(`internal/domain/alerts/model.go`'s own package doc comment). The
+`internal/domain/goals.Contribution` capability table
+(`capability.go`) is the one place contribution rules live, keyed by
+goals' own `Type`:
+
+- **Followers**: `TypeFollow` contributes `+1` to follower goals. No
+  unfollow event ever subtracts; `current` is never "current follower
+  count," only "follows observed since baseline."
+- **Subscriptions**: `TypeSubscription` (a new subscription),
+  `TypeGiftedSubscription` (one contribution per actual gifted
+  recipient), and `TypeYouTubeMembership` each contribute `+1`.
+  `TypeResubscription`, `TypeYouTubeMembershipMilestone`, and
+  `TypeSubscriptionGiftBatch` are deliberately **absent** from the
+  table - they contribute nothing, because Twitch (and YouTube via the
+  same event-type reuse) delivers both a gift-batch summary event and
+  one individual `TypeGiftedSubscription` event per actual recipient
+  for the same gift operation (confirmed directly against `docs/
+  engagement-architecture.md`'s own §5.4 mapping table); counting only
+  the individual recipient events is the one rule that cannot
+  double-count, chosen deliberately even at the cost of ignoring the
+  batch summary's own convenient total. `TypeResubscription` (a
+  continuing subscription, not a new one) and `TypeYouTubeMembership
+  Milestone` are excluded the same way, for the same "continuing, not
+  new" reason.
+- **Donations**: `TypeDonation` (Twitch/StreamElements monetary
+  events), `TypeYouTubeSuperChat`, and `TypeYouTubeSuperSticker` each
+  contribute their own exact `AmountMicros`, only when the event's
+  currency exactly matches the goal's own single configured currency
+  (no FX conversion, ever); a currency mismatch contributes nothing,
+  never a converted amount. Changing a donation goal's currency
+  requires an explicit operator Reset.
+- **Bits**: `TypeBits` contributes its own integer Bits quantity,
+  always as a plain count, never converted to or treated as money.
+
+Every event type absent from the table (including any future/unknown
+type) contributes nothing to any goal - the table is deliberately
+closed, not a default-allow list.
+
+### Money, Bits, and bounds
+Donation amounts are transported and persisted as `AmountMicros`
+(integer, exact currency units × 1,000,000), never a float, bounded by
+`MaxGoalAmountMicros = 100_000_000_000_000` (1e14). Count-based goals
+(followers/subscriptions/Bits) are bounded by `MaxGoalCountValue =
+100_000_000` (1e8). Both bounds were chosen with wide headroom under
+`Number.MAX_SAFE_INTEGER` (2^53−1) so every value the frontend ever
+receives round-trips exactly through JSON/JavaScript numbers - audited
+explicitly, not assumed.
+
+### Baseline, current, target, and manual actions
+Every goal persists an explicit `baseline`, `current`, and optional
+`target`, all operator-configurable. **Set current** and **Reset**
+(restore `current` to `baseline`) are the only two manual adjustment
+actions; neither ever publishes a synthetic Event Bus event, never
+mutates any provider connection state, and never triggers an alert or
+TTS side effect - confirmed by a dedicated integration-script scenario
+and unit tests. Neither manual action bumps `ConfigRevision` (the
+goal's own optimistic-concurrency counter for operator config edits
+via `PUT`) - only a real `PUT` config edit does that, a deliberate
+choice to prevent spurious conflicts between real-time contributions/
+manual actions and an in-flight operator edit. Goal completion
+(`current >= target`) never clamps the persisted `current` and never
+auto-resets or auto-deletes the goal - accumulation continues past
+100% indefinitely, proven by a dedicated "stays completed past target"
+scenario.
+
+### Persistence and restart behavior
+Goal configuration, `current`, `target`, `baseline`, and every widget
+profile all survive a full backend restart unchanged - proven directly
+by killing and restarting the real backend process mid-script and
+re-reading every value. Nothing about goals or widgets resets
+automatically on restart.
+
+### Event Bus subscription: current position only, never replay
+`internal/goals.Manager` subscribes to the Event Bus at its own
+current position only - `snap := bus.Snapshot(); bus.Subscribe(snap.
+NewestSequence)` - mirroring `internal/alerts.Manager`'s own identical
+reconnect pattern exactly. This was not the first implementation: the
+naive `bus.Subscribe(0)` call was written first, and a dedicated test
+(`TestManagerRestartNeverReplaysRetainedEvents`, publishing an event
+*before* starting the manager and asserting it is never applied) proved
+`ring.after(0)` actually replays every retained event with `Sequence >
+0` - the opposite of "current position only." The bug was fixed in
+product code (`internal/goals/manager.go`'s `runSubscription`) before
+this milestone's implementation was considered complete, and
+`docs/goals-widgets.md` §10 was corrected to describe the real
+mechanism and how the test caught it.
+
+### Durable dedupe
+Every applied contribution is keyed by `AppliedEventKey{ProviderID,
+AccountID, ProviderEventKey}`, where `ProviderEventKey` is
+`evt.ProviderEventID` when the connector sets one (YouTube and
+StreamElements always do), else `evt.DedupeKey` (always set by every
+connector's own `base()` - the EventSub/livechat delivery id). Twitch
+never sets `ProviderEventID` for goal-relevant events, so its own
+dedupe always falls back to `DedupeKey` - a real, intentional asymmetry
+confirmed by reading the actual normalizer code, not assumed. This is
+never based on display name, message text, amount, timestamp, email,
+or any other heuristic fingerprint. Residual limitation, honestly
+documented in `docs/goals-widgets.md`: if a provider ever delivered an
+event with genuinely no stable id of any kind, that one event could
+be double-counted or dropped - no such case exists today across
+Twitch/YouTube/StreamElements's own real delivery guarantees.
+
+### Atomicity and concurrency
+Each (event, goal) contribution is applied in one SQL transaction: an
+`INSERT` into the `goal_applied_events` dedupe ledger (primary key the
+dedupe identity; a `UNIQUE` violation via the pre-existing shared
+`isUniqueViolation` helper means "already applied," returning
+`applied=false, nil error`), then an atomic `UPDATE goals SET
+current_value = current_value + ?` - never a Go-level read-then-write.
+Proven exact under a dedicated 25-goroutine concurrent-contribution
+test in `goals_repository_test.go`.
+
+### Provider and source filters, synthetic isolation
+A goal may optionally restrict which connected accounts and/or
+donation sources contribute to it. Donation sources are validated the
+same way `internal/alerts.ValidateAccounts` validates alert-rule
+accounts, despite donation sources not being `connected_accounts`
+themselves - backend-authoritative, never trusting an unvalidated
+client-supplied id (confirmed the hard way: an early integration-
+script draft used a fabricated account id and was correctly rejected
+with `goal_account_not_found`). An empty filter means "any source can
+contribute." Multiple goals may legitimately match and independently
+accumulate the same single event - proven directly by an integration-
+script scenario where one unfiltered donation goal and one filtered
+goal both legitimately accumulate the same StreamElements tip.
+Synthetic events (`evt.Synthetic == true`, e.g. Test Rule / Test Speak
+paths elsewhere in the system) are unconditionally ignored by goal
+contribution, exactly like `internal/alerts`'s own matcher.
+
+### Widget profiles and the public route
+One widget profile references exactly one goal; deleting a goal still
+referenced by ≥1 widget profile is rejected outright with `409 goal_
+in_use` (explicit rejection, never a cascade). The public route is one
+generic path, `/overlay/widgets/{publicSlug}`, serving a public
+config endpoint plus a public SSE stream reusing the established SSE
+conventions from the chat/audio overlays, but deliberately simplified:
+because the stream only ever needs to carry the latest snapshot
+(never a delta history), it does a poll-and-diff (`changeFingerprint`
+keyed on the goal's own `UpdatedAt`) every 1.5s, plus one `widget.
+reset` on connect - no `Last-Event-ID`/ring-buffer/gap machinery, since
+replay/gap is meaningless when only the current state ever matters.
+(The contract was corrected to this simplified design before
+implementation began; the first draft had copied the full replay
+machinery from the chat overlay unnecessarily.) The public DTO never
+exposes internal ids, provider ids, dedupe keys, or any user identity -
+progress itself is served as an integer basis-points value, never a
+persisted float. Rotating a widget's public slug invalidates the old
+URL immediately (proven directly: the old slug resolves to a safe
+empty default, never an error that could leak whether a slug ever
+existed).
+
+### Visual scope (deliberately bounded)
+One fixed, robust widget layout per goal, honoring `prefers-reduced-
+motion`; no free-form visual designer, no `visualdesign.Document`
+version bump, no widget template/package format - all explicitly
+deferred to Stage 18B if later justified.
+
+### What this task confirms was never touched
+No real Twitch/YouTube/StreamElements account, no real OBS Browser
+Source, and no real Windows TTS voice was ever used - every
+integration script drives only local, deterministic, in-process or
+locally-spawned fakes (Twitch OAuth/Helix/EventSub, YouTube OAuth/
+REST/gRPC-control binary, StreamElements Astro-control binary),
+exactly like every prior stage's own scripts.
+
+### Test coverage added this milestone
+Backend (Go, `go test -count=1 ./...`, all passing): 88 new test
+functions across the goals domain/runtime/storage/HTTP layers - 26 in
+`internal/domain/goals/validation_test.go`, 13 in `internal/domain/
+goals/service_test.go`, 12 in `internal/storage/sqlite/goals_
+repository_test.go` (including the 25-goroutine concurrency proof and
+a migration-preservation test), 12 in `internal/goals/manager_test.go`
+(including the Subscribe-replay regression test above), 18 in
+`internal/httpapi/goals_test.go`, and 7 in `internal/httpapi/public_
+widgets_test.go`. Frontend (Vitest, `npm run test -- --run`, all
+passing): 43 new test cases - 7 in `src/api/goals-schemas.test.ts`, 23
+in `src/models/goals.test.ts`, 7 in `src/pages/GoalsPage.test.tsx`, and
+6 in `src/pages/PublicWidgetPage.test.tsx`.
+
+### The 21st integration script
+`scripts/verify-goals-widgets.mjs` drives real normalized events
+through the same existing Twitch/YouTube/StreamElements fakes every
+other script uses - it creates no separate fake goals event source of
+its own. It was run twice consecutively during development (per this
+task's own §44 requirement) before the closing regression began, and
+both runs passed cleanly.
+
+### The closing regression itself
+Per this task's own §52 ("no selective retry accepted as the final
+regression"), the complete sequence - every frontend check, every
+backend check, then all 21 integration scripts in the exact canonical
+order below - was run as one unbroken sequence from a clean tree
+**three times**, because the first two attempts each surfaced a real,
+pre-existing integration-script defect (never a product defect) that
+had to be diagnosed, fixed, journaled, and committed before the whole
+sequence could legitimately be restarted from the very beginning:
+
+1. **First attempt** failed at script 20/21 (`verify-alert-audio.
+   mjs`, a pre-existing Stage 17B script this milestone never
+   intentionally touched): its own step 15 assertion
+   (`totalInterruptedByAlert` increasing by exactly 1) failed
+   reproducibly, including in complete isolation. Root-caused (via
+   temporary, fully-reverted debug instrumentation of `internal/
+   audio.Manager.EnqueueAlertAudio`) to a script-only bug: an SSE wait
+   with no itemId filter resolved on a stale leftover `audio.current`
+   frame from an earlier step instead of the real new item, letting
+   the alert's Test Rule fire before the real global TTS item had
+   actually become current. Fixed and committed as `fix(scripts): fix
+   stale audio SSE race in verify-alert-audio` (`573fcb4`).
+2. **Second attempt** appeared to hang indefinitely at script 21/21
+   (`verify-goals-widgets.mjs`) even though its own log showed every
+   scenario had already passed. Root-caused (via direct OS process
+   inspection) to two additive script-only leaks: an unclosed public
+   widget SSE iterator, and none of the script's five in-process fake
+   Twitch/YouTube HTTP/WS servers ever being closed - both real gaps
+   against this repo's own established `close(server)`/iterator-
+   teardown convention (`scripts/verify-twitch-engagement.mjs`).
+   Fixed and committed as `fix(scripts): close every fake provider
+   server in verify-goals-widgets` (`1d4a3f3`).
+3. **Third attempt passed cleanly, end to end, in one unbroken run**,
+   confirmed directly from the driver's own summary: `web-i18n` (2s),
+   `web-typecheck` (17s), `web-lint` (15s), `web-test` (74s),
+   `web-build` (27s); `go-gofmt` (1s), `go-vet` (3s), `go-vet-
+   integration` (2s), `go-test` (80s), `go-build` (6s), `go-build-
+   integration` (3s); then all 21 integration scripts in the canonical
+   order, every one `PASS`: `verify-persistence.mjs` (8s), `verify-
+   mediamtx-runtime.mjs` (21s), `verify-ffmpeg-branches.mjs` (112s),
+   `verify-twitch-account-integration.mjs` (26s), `verify-youtube-
+   account-integration.mjs` (8s), `verify-twitch-engagement.mjs`
+   (12s), `verify-operator-chat.mjs` (13s), `verify-chat-overlay.mjs`
+   (34s), `verify-twitch-outbound-chat.mjs` (60s), `verify-chat-
+   automation.mjs` (35s), `verify-alerts.mjs` (41s), `verify-alert-
+   advanced-queue.mjs` (113s), `verify-alert-designer.mjs` (57s),
+   `verify-chat-overlay-designer.mjs` (31s), `verify-visual-
+   templates.mjs` (8s), `verify-visual-template-packages.mjs` (9s),
+   `verify-youtube-engagement.mjs` (37s), `verify-streamelements-
+   donations.mjs` (31s), `verify-tts-audio.mjs` (36s), `verify-alert-
+   audio.mjs` (43s), `verify-goals-widgets.mjs` (32s).
+
+No product code (`apps/server`, `apps/web`) required any change to
+reach this clean final pass - both defects that surfaced were entirely
+integration-script cleanup/timing bugs, each verified against real
+backend responses/process state before being called a bug, never
+assumed.
+
+### Autonomous execution
+Every wait on a build, test, or the closing regression itself (up to
+~35 minutes of continuous background execution across the three
+attempts) was handled autonomously per this task's own standing rule:
+no confirmation was requested before waiting, retrying, or restarting;
+the one apparent hang (attempt 2) was diagnosed via direct process
+inspection (`ps -ef`, PowerShell `Get-Process`/`Get-CimInstance
+Win32_Process`) rather than assumed or asked about, and a bounded
+manual termination was used only to unblock diagnosis - correctly
+recognized afterward as invalidating that attempt as a "clean" run,
+requiring the full restart §52 itself demands, not a shortcut around
+it.
+
+### Stage status summary
+Stage 17A: Completed. Stage 17B: Completed. Stage 17 (whole):
+Completed. **Stage 18A: Completed** (this entry). Stage 18B: Planned,
+not started. Stage 18 (whole): Incomplete. Stage 19 (TikTok LIVE
+connector, conditional): not started. Stage 20 (application-update
+system): Planned, updater unimplemented.
+
+### Next step
+Push `main` to `origin` and perform the final repository-state
+verification (§54), then deliver the closing report for this
+milestone (§55).
