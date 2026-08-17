@@ -990,8 +990,12 @@ category, language, tags). This was the first of several provider
 integrations (stage 7A of the roadmap); YouTube now has its own real
 integration too — see
 [Connected accounts and YouTube metadata](#connected-accounts-and-youtube-metadata)
-below (stage 7B). Kick and TikTok account integration are still planned
-(stage 7C).
+below (stage 7B). Kick account integration remains deferred/feasibility-
+gated (stage 7C, alongside Kick's own stage 15B engagement research).
+TikTok account integration is not pursued independently - it is folded
+into stage 19's own feasibility gate, which found no official TikTok
+LIVE engagement capability for such an account to power, see
+[`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md).
 
 **A connected account is not the same thing as a destination's stream
 key.** They are separate facts about a destination, tracked and shown
@@ -3788,12 +3792,17 @@ API does not report them, so showing a number would mean inventing it.
 
 ### What will be added later
 
-- **Kick and TikTok account integration** — sign-in and metadata
-  publishing for the remaining providers, reusing the same connected-account
-  foundation Twitch's and YouTube's integrations now provide - deferred,
-  capability-gated (stage 7C). Kick's own engagement adapter (stage 15B)
-  remains separately feasibility-gated - see
+- **Kick account integration** — sign-in and metadata publishing, reusing
+  the same connected-account foundation Twitch's and YouTube's
+  integrations now provide - deferred, capability-gated (stage 7C).
+  Kick's own engagement adapter (stage 15B) remains separately
+  feasibility-gated - see
   [`docs/provider-integrations/kick-engagement.md`](docs/provider-integrations/kick-engagement.md).
+- **TikTok account integration** is not pursued as an independent item -
+  it is folded into stage 19's own feasibility gate, which found no
+  official TikTok LIVE engagement capability for such an account to
+  power - see
+  [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md).
 - **Additional donation providers (Streamlabs, Ko-fi)** remain
   feasibility-gated — Streamlabs' documented OAuth token exchange
   requires a confidential client secret with no public-client

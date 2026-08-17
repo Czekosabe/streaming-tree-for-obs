@@ -28287,3 +28287,60 @@ their real exit status against the actual `SUMMARY.txt`/log content
 by the next actionable step. No turn ended on passive waiting language,
 and no operator message was needed at any point to make this task
 inspect a completed background command and resume.
+
+## 2026-08-17 — fix(docs): reconcile TikTok account roadmap state
+
+### Status
+Completed.
+
+### Scope
+Before starting the pre-Stage-20 product-identity/About/Legal
+milestone, audited `README.md`, `docs/project-overview.md`, and
+`docs/engagement-architecture.md` for stale "Kick and TikTok account
+integration" living-state prose left over from before stage 19's own
+research (`f1f0ed4`, `88bb75a`). `docs/project-overview.md` and
+`docs/engagement-architecture.md` were already corrected during stage
+19's own closing pass and needed no further change. `README.md` still
+had two stale spots.
+
+### Findings
+- `README.md` line ~993 ("Connected accounts and Twitch metadata"):
+  "Kick and TikTok account integration are still planned (stage 7C)."
+  bundled both providers identically, no longer accurate for TikTok -
+  stage 19 found no downstream LIVE capability for a standalone TikTok
+  account to power, so it is not "still planned" the same way Kick's
+  own deferred-but-conceptually-intact integration is.
+- `README.md` line ~3795 ("What will be added later"): the same
+  bundled bullet, same staleness.
+- A third occurrence at line ~3609 ("Platform capability tables...
+  need re-checking when their own account integration is implemented
+  (stage 7C)") was reviewed and left unchanged - it is a conditional
+  statement ("when... implemented") that remains true regardless of
+  whether that implementation ever happens, not a claim that
+  implementation is scheduled.
+- `docs/progress.md`'s own historical entries (e.g. line ~20641,
+  "YouTube/Kick/TikTok outbound chat... still planned") were correctly
+  left untouched - the append-only journal is never rewritten.
+
+### Changes
+- `README.md` - both stale spots reworded to split Kick (still
+  deferred/capability-gated, stage 7C, unaffected) from TikTok (folded
+  into stage 19's own feasibility gate, not pursued as an independent
+  item), each now linking
+  [tiktok-live.md](provider-integrations/tiktok-live.md) where
+  relevant. No other wording in either paragraph touched.
+
+### Automated validation
+Grepped README.md, project-overview.md, and engagement-architecture.md
+for remaining "Kick and TikTok"/"TikTok account integration"/"stage 7C"
+variants after the edit; no further stale occurrence found. This is a
+prose-only change; full frontend/backend validation runs later in this
+milestone's own closing regression.
+
+### Known limitations
+None.
+
+### Next step
+Audit current product identity/legal state (LICENSE, THIRD_PARTY_
+NOTICES.md, existing buildinfo, frontend Settings structure) before
+writing `docs/product-identity-legal.md`.
