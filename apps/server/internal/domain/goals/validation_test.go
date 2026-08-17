@@ -1,6 +1,9 @@
 package goals
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestValidateGoalFieldsAcceptsEachKind(t *testing.T) {
 	cases := []Goal{
@@ -148,6 +151,202 @@ func TestValidateWidgetProfileFieldsRejectsUnknownOrientation(t *testing.T) {
 	p.Orientation = "diagonal"
 	if err := ValidateWidgetProfileFields(p); err == nil {
 		t.Fatal("expected an error for an unsupported orientation")
+	}
+}
+
+// --- Stage 18B kind-specific validation (docs/supporter-widgets.md §5) ---
+
+func TestValidateWidgetProfileFieldsAcceptsEveryKindsOwnDefaults(t *testing.T) {
+	for _, kind := range ValidWidgetProfileKinds {
+		p := DefaultWidgetProfileOfKind(kind, "goal_1", "My Widget")
+		if kind == WidgetProfileKindLargestDonation {
+			p.Currency = "USD"
+		}
+		if kind == WidgetProfileKindSessionCounter {
+			p.Metric = MetricFollows
+		}
+		if kind == WidgetProfileKindDashboard {
+			p.Children = []DashboardChild{{WidgetProfileID: "widget_1", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+		}
+		if err := ValidateWidgetProfileFields(p); err != nil {
+			t.Errorf("kind %q: unexpected error: %v", kind, err)
+		}
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsUnknownKind(t *testing.T) {
+	p := DefaultWidgetProfile("goal_1", "My Widget")
+	p.Kind = "nonsense"
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for an unsupported kind")
+	}
+}
+
+func TestValidateWidgetProfileFieldsRequiresGoalIDForGoalKind(t *testing.T) {
+	p := DefaultWidgetProfile("", "My Widget")
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for an empty goalId on a goal widget")
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsGoalIDForNonGoalKind(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "My Widget")
+	p.GoalID = "goal_1"
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a goalId on a non-goal widget")
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsFiltersForGoalKind(t *testing.T) {
+	p := DefaultWidgetProfile("goal_1", "My Widget")
+	p.Providers = []ProviderID{ProviderTwitch}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for provider filters on a goal widget")
+	}
+}
+
+func TestValidateWidgetProfileFieldsAcceptsFiltersForLatestFollower(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "My Widget")
+	p.Providers = []ProviderID{ProviderTwitch}
+	p.Accounts = []string{"acct_1"}
+	if err := ValidateWidgetProfileFields(p); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsMaxItemsOutOfRange(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindRecentSupporters, "", "My Widget")
+	p.MaxItems = MaxRecentSupporters + 1
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for maxItems above the recent_supporters bound")
+	}
+}
+
+func TestValidateWidgetProfileFieldsEventTickerAllowsUpToItsOwnHigherBound(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindEventTicker, "", "My Widget")
+	p.MaxItems = MaxEventTickerItems
+	if err := ValidateWidgetProfileFields(p); err != nil {
+		t.Errorf("unexpected error at the event_ticker bound: %v", err)
+	}
+	p.MaxItems = MaxRecentSupporters + 1
+	if err := ValidateWidgetProfileFields(p); err != nil {
+		t.Errorf("event_ticker's own bound (50) must allow more than recent_supporters' bound (20): %v", err)
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsMaxItemsForKindWithoutOne(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "My Widget")
+	p.MaxItems = 5
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for maxItems on a kind with no bounded list")
+	}
+}
+
+func TestValidateWidgetProfileFieldsLargestDonationRequiresCurrency(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLargestDonation, "", "My Widget")
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for largest_donation with no currency")
+	}
+	p.Currency = "USD"
+	if err := ValidateWidgetProfileFields(p); err != nil {
+		t.Errorf("unexpected error once currency is set: %v", err)
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsCurrencyForKindThatDoesNotNeedIt(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLatestDonation, "", "My Widget")
+	p.Currency = "USD"
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a currency on latest_donation (any currency is shown as-is)")
+	}
+}
+
+func TestValidateWidgetProfileFieldsSessionCounterRequiresMetric(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindSessionCounter, "", "My Widget")
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for session_counter with no metric")
+	}
+}
+
+func TestValidateWidgetProfileFieldsSupportAmountMetricRequiresCurrency(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindSessionCounter, "", "My Widget")
+	p.Metric = MetricSupportAmount
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for support_amount with no currency")
+	}
+	p.Currency = "EUR"
+	if err := ValidateWidgetProfileFields(p); err != nil {
+		t.Errorf("unexpected error once currency is set: %v", err)
+	}
+}
+
+func TestValidateWidgetProfileFieldsNonMoneyMetricRejectsCurrency(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindSessionCounter, "", "My Widget")
+	p.Metric = MetricFollows
+	p.Currency = "USD"
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a currency on the follows metric")
+	}
+}
+
+func TestValidateWidgetProfileFieldsEventTickerRejectsUnknownEventType(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindEventTicker, "", "My Widget")
+	p.EventTypes = []SupporterEventType{"chat_message"}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for an event type outside the closed allowlist")
+	}
+}
+
+func TestValidateWidgetProfileFieldsEventTickerRejectsDuplicateEventType(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindEventTicker, "", "My Widget")
+	p.EventTypes = []SupporterEventType{EventTypeFollow, EventTypeFollow}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a duplicated event type")
+	}
+}
+
+func TestValidateWidgetProfileFieldsDashboardRequiresAtLeastOneChild(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "My Dashboard")
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a dashboard with zero children")
+	}
+}
+
+func TestValidateWidgetProfileFieldsDashboardRejectsTooManyChildren(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "My Dashboard")
+	for i := 0; i < MaxDashboardChildren+1; i++ {
+		p.Children = append(p.Children, DashboardChild{WidgetProfileID: fmt.Sprintf("widget_%d", i), Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1})
+	}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for more than the max dashboard children")
+	}
+}
+
+func TestValidateWidgetProfileFieldsDashboardRejectsDuplicateChild(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "My Dashboard")
+	p.Children = []DashboardChild{
+		{WidgetProfileID: "widget_1", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1},
+		{WidgetProfileID: "widget_1", Column: 2, ColumnSpan: 1, Row: 1, RowSpan: 1},
+	}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for the same widget listed twice in one dashboard")
+	}
+}
+
+func TestValidateWidgetProfileFieldsDashboardRejectsColumnSpanBeyondColumns(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "My Dashboard")
+	p.Columns = 2
+	p.Children = []DashboardChild{{WidgetProfileID: "widget_1", Column: 2, ColumnSpan: 2, Row: 1, RowSpan: 1}}
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for a child spanning past the dashboard's own column count")
+	}
+}
+
+func TestValidateWidgetProfileFieldsRejectsColumnsForNonDashboard(t *testing.T) {
+	p := DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "My Widget")
+	p.Columns = 2
+	if err := ValidateWidgetProfileFields(p); err == nil {
+		t.Fatal("expected an error for columns on a non-dashboard widget")
 	}
 }
 

@@ -46,7 +46,8 @@ func mapRepoErr(err error) error {
 	}
 	if errors.Is(err, ErrGoalNotFound) || errors.Is(err, ErrWidgetProfileNotFound) ||
 		errors.Is(err, ErrPublicSlugNotFound) || errors.Is(err, ErrAccountNotFound) ||
-		errors.Is(err, ErrGoalInUse) || errors.Is(err, ErrConfigConflict) {
+		errors.Is(err, ErrGoalInUse) || errors.Is(err, ErrConfigConflict) ||
+		errors.Is(err, ErrWidgetProfileInUse) {
 		return err
 	}
 	return fmt.Errorf("%w: %s", ErrStorage, err)
@@ -63,6 +64,42 @@ func (s *Service) validateAccounts(ctx context.Context, accounts []string) error
 		}
 		if !ok {
 			return fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+		}
+	}
+	return nil
+}
+
+// validateWidgetProfileRefs checks every reference draft.Kind implies
+// that only the repository can answer (docs/supporter-widgets.md §5,
+// §9, §15): a goal widget's own GoalID exists; an event-derived widget's
+// own Accounts filter names a real connected account/donation source; a
+// dashboard's own Children all exist and are not themselves a dashboard
+// (rejected outright - governing task §25's "prevents recursion/cycles
+// entirely").
+func (s *Service) validateWidgetProfileRefs(ctx context.Context, draft WidgetProfile) error {
+	if draft.Kind.RequiresGoal() {
+		if _, ok, err := s.repo.GetGoal(ctx, draft.GoalID); err != nil {
+			return mapRepoErr(err)
+		} else if !ok {
+			return ErrGoalNotFound
+		}
+		return nil
+	}
+	if draft.Kind.HasOwnFilters() {
+		return s.validateAccounts(ctx, draft.Accounts)
+	}
+	if draft.Kind.IsDashboard() {
+		for _, c := range draft.Children {
+			child, ok, err := s.repo.GetWidgetProfile(ctx, c.WidgetProfileID)
+			if err != nil {
+				return mapRepoErr(err)
+			}
+			if !ok {
+				return fmt.Errorf("%w: %s", ErrWidgetProfileNotFound, c.WidgetProfileID)
+			}
+			if child.Kind.IsDashboard() {
+				return validationErr("a dashboard cannot contain another dashboard (%s)", c.WidgetProfileID)
+			}
 		}
 	}
 	return nil
@@ -231,14 +268,15 @@ func (s *Service) PruneAppliedEvents(ctx context.Context, olderThan time.Time) (
 
 // --- widget profiles -------------------------------------------------------
 
-// CreateWidgetProfile creates a new widget profile for an existing goal.
+// CreateWidgetProfile creates a new widget profile of draft.Kind (docs/
+// supporter-widgets.md §5) - a goal widget for an existing goal, an
+// event-derived widget with its own filters, or a dashboard composing
+// existing, non-dashboard widget profiles.
 func (s *Service) CreateWidgetProfile(ctx context.Context, draft WidgetProfile) (WidgetProfile, error) {
-	if _, ok, err := s.repo.GetGoal(ctx, draft.GoalID); err != nil {
-		return WidgetProfile{}, mapRepoErr(err)
-	} else if !ok {
-		return WidgetProfile{}, ErrGoalNotFound
-	}
 	if err := ValidateWidgetProfileFields(draft); err != nil {
+		return WidgetProfile{}, err
+	}
+	if err := s.validateWidgetProfileRefs(ctx, draft); err != nil {
 		return WidgetProfile{}, err
 	}
 
@@ -295,9 +333,11 @@ func (s *Service) ListWidgetProfiles(ctx context.Context, goalID string) ([]Widg
 	return list, nil
 }
 
-// UpdateWidgetProfile replaces every editable field except GoalID,
-// PublicSlug, and CreatedAt - a widget profile is created for exactly
-// one goal and never reassigned to another.
+// UpdateWidgetProfile replaces every editable field except Kind, GoalID,
+// PublicSlug, and CreatedAt - a widget profile's kind (and, for a goal
+// widget, which goal it presents) is fixed at creation and never
+// reassigned (docs/supporter-widgets.md §16 - only fields *within* one
+// kind are ever edited).
 func (s *Service) UpdateWidgetProfile(ctx context.Context, draft WidgetProfile) (WidgetProfile, error) {
 	existing, ok, err := s.repo.GetWidgetProfile(ctx, draft.ID)
 	if err != nil {
@@ -306,10 +346,14 @@ func (s *Service) UpdateWidgetProfile(ctx context.Context, draft WidgetProfile) 
 	if !ok {
 		return WidgetProfile{}, ErrWidgetProfileNotFound
 	}
+	draft.Kind = existing.Kind
+	draft.GoalID = existing.GoalID
 	if err := ValidateWidgetProfileFields(draft); err != nil {
 		return WidgetProfile{}, err
 	}
-	draft.GoalID = existing.GoalID
+	if err := s.validateWidgetProfileRefs(ctx, draft); err != nil {
+		return WidgetProfile{}, err
+	}
 	draft.PublicSlug = existing.PublicSlug
 	draft.CreatedAt = existing.CreatedAt
 	draft.UpdatedAt = s.now()
@@ -319,6 +363,100 @@ func (s *Service) UpdateWidgetProfile(ctx context.Context, draft WidgetProfile) 
 		return WidgetProfile{}, mapRepoErr(err)
 	}
 	return updated, nil
+}
+
+// SemanticFieldsChanged reports whether updating from existing to draft
+// changes a field the runtime manager's projection depends on (docs/
+// supporter-widgets.md §16) - Providers, Accounts, EventTypes, Currency,
+// Metric, or (for a dashboard) Children/Columns. A presentation-only
+// change (title, style, show/hide toggles, a lowered MaxItems) never
+// triggers this. The HTTP layer calls this before/after UpdateWidgetProfile
+// to decide whether to reset that profile's runtime projection.
+func SemanticFieldsChanged(existing, updated WidgetProfile) bool {
+	if !equalProviderSlices(existing.Providers, updated.Providers) {
+		return true
+	}
+	if !equalStringSlices(existing.Accounts, updated.Accounts) {
+		return true
+	}
+	if !equalEventTypeSlices(existing.EventTypes, updated.EventTypes) {
+		return true
+	}
+	if existing.Currency != updated.Currency || existing.Metric != updated.Metric {
+		return true
+	}
+	if existing.Columns != updated.Columns {
+		return true
+	}
+	if !equalDashboardChildren(existing.Children, updated.Children) {
+		return true
+	}
+	return false
+}
+
+func equalProviderSlices(a, b []ProviderID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[ProviderID]bool, len(a))
+	for _, v := range a {
+		seen[v] = true
+	}
+	for _, v := range b {
+		if !seen[v] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]bool, len(a))
+	for _, v := range a {
+		seen[v] = true
+	}
+	for _, v := range b {
+		if !seen[v] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalEventTypeSlices(a, b []SupporterEventType) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[SupporterEventType]bool, len(a))
+	for _, v := range a {
+		seen[v] = true
+	}
+	for _, v := range b {
+		if !seen[v] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalDashboardChildren(a, b []DashboardChild) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	am := make(map[string]DashboardChild, len(a))
+	for _, c := range a {
+		am[c.WidgetProfileID] = c
+	}
+	for _, c := range b {
+		prev, ok := am[c.WidgetProfileID]
+		if !ok || prev != c {
+			return false
+		}
+	}
+	return true
 }
 
 // RotatePublicSlug replaces a widget profile's public slug - the

@@ -39,4 +39,10 @@ var (
 	// goals-widgets.md §8.1 - optimistic concurrency for configuration
 	// edits only, never for contribution application).
 	ErrConfigConflict = errors.New("goal configuration was changed by someone else")
+
+	// ErrWidgetProfileInUse means a widget profile cannot be deleted
+	// because one or more dashboard profiles still reference it (docs/
+	// supporter-widgets.md §9 - explicit rejection, never a silent
+	// cascade, mirroring ErrGoalInUse exactly).
+	ErrWidgetProfileInUse = errors.New("widget profile is referenced by one or more dashboards")
 )

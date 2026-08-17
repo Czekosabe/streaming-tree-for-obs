@@ -141,6 +141,13 @@ func (r *fakeRepo) DeleteWidgetProfile(_ context.Context, id string) error {
 	if _, ok := r.widgets[id]; !ok {
 		return ErrWidgetProfileNotFound
 	}
+	for _, p := range r.widgets {
+		for _, c := range p.Children {
+			if c.WidgetProfileID == id {
+				return ErrWidgetProfileInUse
+			}
+		}
+	}
 	delete(r.widgets, id)
 	return nil
 }
@@ -265,6 +272,129 @@ func TestDeleteGoalSucceedsOnceWidgetProfilesRemoved(t *testing.T) {
 	}
 	if err := svc.DeleteGoal(context.Background(), g.ID); err != nil {
 		t.Fatalf("DeleteGoal() error: %v", err)
+	}
+}
+
+// --- Stage 18B widget profile kinds (docs/supporter-widgets.md §5, §9) ---
+
+func TestCreateWidgetProfileEventDerivedKindNeverChecksGoalExistence(t *testing.T) {
+	svc, _ := newTestService(t)
+	p, err := svc.CreateWidgetProfile(context.Background(), DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "Latest Follower"))
+	if err != nil {
+		t.Fatalf("CreateWidgetProfile() error: %v", err)
+	}
+	if p.GoalID != "" {
+		t.Errorf("GoalID = %q, want empty for a non-goal widget", p.GoalID)
+	}
+}
+
+func TestCreateWidgetProfileRejectsUnknownAccountFilter(t *testing.T) {
+	svc, _ := newTestService(t)
+	draft := DefaultWidgetProfileOfKind(WidgetProfileKindLatestDonation, "", "Latest Donation")
+	draft.Accounts = []string{"nope"}
+	if _, err := svc.CreateWidgetProfile(context.Background(), draft); !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("error = %v, want ErrAccountNotFound", err)
+	}
+}
+
+func TestCreateWidgetProfileAcceptsDonationSourceAccountFilter(t *testing.T) {
+	svc, _ := newTestService(t)
+	draft := DefaultWidgetProfileOfKind(WidgetProfileKindRecentSupporters, "", "Recent Supporters")
+	draft.Accounts = []string{"src_se"}
+	p, err := svc.CreateWidgetProfile(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("CreateWidgetProfile() error: %v", err)
+	}
+	if len(p.Accounts) != 1 || p.Accounts[0] != "src_se" {
+		t.Errorf("Accounts = %v, want [src_se]", p.Accounts)
+	}
+}
+
+func TestCreateDashboardRejectsUnknownChild(t *testing.T) {
+	svc, _ := newTestService(t)
+	draft := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "Dashboard")
+	draft.Children = []DashboardChild{{WidgetProfileID: "widget_nope", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	if _, err := svc.CreateWidgetProfile(context.Background(), draft); !errors.Is(err, ErrWidgetProfileNotFound) {
+		t.Fatalf("error = %v, want ErrWidgetProfileNotFound", err)
+	}
+}
+
+func TestCreateDashboardRejectsNestedDashboard(t *testing.T) {
+	svc, _ := newTestService(t)
+	// Build a real (valid) inner dashboard first, referencing a genuine
+	// non-dashboard widget, then try to nest it inside an outer one.
+	leaf, err := svc.CreateWidgetProfile(context.Background(), DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "Leaf"))
+	if err != nil {
+		t.Fatalf("CreateWidgetProfile(leaf) error: %v", err)
+	}
+	innerDraft := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "Inner")
+	innerDraft.Children = []DashboardChild{{WidgetProfileID: leaf.ID, Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	innerDash, err := svc.CreateWidgetProfile(context.Background(), innerDraft)
+	if err != nil {
+		t.Fatalf("CreateWidgetProfile(inner dashboard) error: %v", err)
+	}
+
+	outerDraft := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "Outer")
+	outerDraft.Children = []DashboardChild{{WidgetProfileID: innerDash.ID, Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	if _, err := svc.CreateWidgetProfile(context.Background(), outerDraft); err == nil {
+		t.Fatal("expected an error nesting a dashboard inside another dashboard")
+	}
+}
+
+func TestDeleteWidgetProfileRejectedWhileReferencedByDashboard(t *testing.T) {
+	svc, _ := newTestService(t)
+	leaf, _ := svc.CreateWidgetProfile(context.Background(), DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "Leaf"))
+	dashDraft := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "Dashboard")
+	dashDraft.Children = []DashboardChild{{WidgetProfileID: leaf.ID, Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	if _, err := svc.CreateWidgetProfile(context.Background(), dashDraft); err != nil {
+		t.Fatalf("CreateWidgetProfile(dashboard) error: %v", err)
+	}
+	if err := svc.DeleteWidgetProfile(context.Background(), leaf.ID); !errors.Is(err, ErrWidgetProfileInUse) {
+		t.Fatalf("error = %v, want ErrWidgetProfileInUse", err)
+	}
+}
+
+func TestUpdateWidgetProfileNeverChangesKindOrGoalID(t *testing.T) {
+	svc, _ := newTestService(t)
+	g, _ := svc.CreateGoal(context.Background(), Goal{Name: "Followers", Kind: KindFollowers, Target: 100})
+	p, _ := svc.CreateWidgetProfile(context.Background(), DefaultWidgetProfile(g.ID, "Widget"))
+
+	draft := p
+	draft.Kind = WidgetProfileKindLatestFollower
+	draft.GoalID = ""
+	updated, err := svc.UpdateWidgetProfile(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("UpdateWidgetProfile() error: %v", err)
+	}
+	if updated.Kind != WidgetProfileKindGoal {
+		t.Errorf("Kind = %q, want it to stay %q (immutable after creation)", updated.Kind, WidgetProfileKindGoal)
+	}
+	if updated.GoalID != g.ID {
+		t.Errorf("GoalID = %q, want it to stay %q (immutable after creation)", updated.GoalID, g.ID)
+	}
+}
+
+func TestSemanticFieldsChangedDetectsFilterChangeNotStyleChange(t *testing.T) {
+	base := DefaultWidgetProfileOfKind(WidgetProfileKindLatestFollower, "", "Widget")
+	styled := base
+	styled.BackgroundColor = "#111111ff"
+	if SemanticFieldsChanged(base, styled) {
+		t.Error("a style-only change must not be reported as semantic")
+	}
+	filtered := base
+	filtered.Providers = []ProviderID{ProviderTwitch}
+	if !SemanticFieldsChanged(base, filtered) {
+		t.Error("a provider filter change must be reported as semantic")
+	}
+}
+
+func TestSemanticFieldsChangedDetectsDashboardChildChange(t *testing.T) {
+	base := DefaultWidgetProfileOfKind(WidgetProfileKindDashboard, "", "Dashboard")
+	base.Children = []DashboardChild{{WidgetProfileID: "widget_1", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	changed := base
+	changed.Children = []DashboardChild{{WidgetProfileID: "widget_2", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	if !SemanticFieldsChanged(base, changed) {
+		t.Error("a changed dashboard child must be reported as semantic")
 	}
 }
 

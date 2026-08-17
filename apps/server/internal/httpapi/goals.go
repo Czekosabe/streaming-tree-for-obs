@@ -79,6 +79,8 @@ func writeGoalsError(w http.ResponseWriter, logger *slog.Logger, err error) {
 		writeError(w, logger, http.StatusNotFound, "goal_account_not_found", "One of the target connected accounts or donation sources does not exist.")
 	case errors.Is(err, domain.ErrGoalInUse):
 		writeError(w, logger, http.StatusConflict, "goal_in_use", "This goal still has one or more widget profiles - delete them first.")
+	case errors.Is(err, domain.ErrWidgetProfileInUse):
+		writeError(w, logger, http.StatusConflict, "widget_profile_in_use", "This widget is still referenced by one or more dashboards - remove it from them first.")
 	case errors.Is(err, domain.ErrConfigConflict):
 		writeError(w, logger, http.StatusConflict, "goal_config_conflict", "Another save already changed this goal - reload and try again.")
 	case errors.Is(err, domain.ErrValidation):
@@ -256,29 +258,91 @@ func handleResetGoal(logger *slog.Logger, svc GoalsService) http.HandlerFunc {
 
 // --- widget profile DTOs ------------------------------------------------
 
+// dashboardChildRequest/dashboardChildResponse are one dashboard's own
+// bounded grid placement of an existing widget profile (docs/supporter-
+// widgets.md §9) - referenced by internal id in the management API
+// (never in the public one - see public_widgets.go's own presentation-
+// only child DTO).
+type dashboardChildRequest struct {
+	WidgetProfileID string `json:"widgetProfileId"`
+	Column          int    `json:"column"`
+	ColumnSpan      int    `json:"columnSpan"`
+	Row             int    `json:"row"`
+	RowSpan         int    `json:"rowSpan"`
+}
+
+func (r dashboardChildRequest) toDomain() domain.DashboardChild {
+	return domain.DashboardChild{WidgetProfileID: r.WidgetProfileID, Column: r.Column, ColumnSpan: r.ColumnSpan, Row: r.Row, RowSpan: r.RowSpan}
+}
+
+type dashboardChildResponse struct {
+	WidgetProfileID string `json:"widgetProfileId"`
+	Column          int    `json:"column"`
+	ColumnSpan      int    `json:"columnSpan"`
+	Row             int    `json:"row"`
+	RowSpan         int    `json:"rowSpan"`
+}
+
+func toDashboardChildResponse(c domain.DashboardChild) dashboardChildResponse {
+	return dashboardChildResponse{WidgetProfileID: c.WidgetProfileID, Column: c.Column, ColumnSpan: c.ColumnSpan, Row: c.Row, RowSpan: c.RowSpan}
+}
+
+// widgetProfileRequest is kind-aware (docs/supporter-widgets.md §19):
+// only the fields meaningful for the chosen Kind are ever validated as
+// non-empty/non-zero by the backend - every other field must be left at
+// its zero value or the request is rejected (see
+// domain/goals.ValidateWidgetProfileFields).
 type widgetProfileRequest struct {
-	GoalID          string  `json:"goalId"`
-	Name            string  `json:"name"`
-	Enabled         bool    `json:"enabled"`
-	TitleOverride   string  `json:"titleOverride,omitempty"`
-	ShowCurrent     bool    `json:"showCurrent"`
-	ShowTarget      bool    `json:"showTarget"`
-	ShowPercent     bool    `json:"showPercent"`
-	Orientation     string  `json:"orientation"`
-	TextAlign       string  `json:"textAlign"`
-	FontFamily      string  `json:"fontFamily"`
-	BackgroundColor string  `json:"backgroundColor"`
-	ForegroundColor string  `json:"foregroundColor"`
-	FillColor       string  `json:"fillColor"`
-	BorderColor     string  `json:"borderColor"`
-	BorderRadiusPx  int     `json:"borderRadiusPx"`
-	Opacity         float64 `json:"opacity"`
+	Kind            string                  `json:"kind"`
+	GoalID          string                  `json:"goalId,omitempty"`
+	Name            string                  `json:"name"`
+	Enabled         bool                    `json:"enabled"`
+	Providers       []string                `json:"providers,omitempty"`
+	Accounts        []string                `json:"accounts,omitempty"`
+	TitleOverride   string                  `json:"titleOverride,omitempty"`
+	ShowCurrent     bool                    `json:"showCurrent"`
+	ShowTarget      bool                    `json:"showTarget"`
+	ShowPercent     bool                    `json:"showPercent"`
+	ShowProvider    bool                    `json:"showProvider"`
+	ShowTime        bool                    `json:"showTime"`
+	ShowMessage     bool                    `json:"showMessage"`
+	MaxItems        int                     `json:"maxItems,omitempty"`
+	Currency        string                  `json:"currency,omitempty"`
+	Metric          string                  `json:"metric,omitempty"`
+	EventTypes      []string                `json:"eventTypes,omitempty"`
+	Columns         int                     `json:"columns,omitempty"`
+	Children        []dashboardChildRequest `json:"children,omitempty"`
+	Orientation     string                  `json:"orientation"`
+	TextAlign       string                  `json:"textAlign"`
+	FontFamily      string                  `json:"fontFamily"`
+	BackgroundColor string                  `json:"backgroundColor"`
+	ForegroundColor string                  `json:"foregroundColor"`
+	FillColor       string                  `json:"fillColor"`
+	BorderColor     string                  `json:"borderColor"`
+	BorderRadiusPx  int                     `json:"borderRadiusPx"`
+	Opacity         float64                 `json:"opacity"`
 }
 
 func (r widgetProfileRequest) toDomain(id string) domain.WidgetProfile {
+	providers := make([]domain.ProviderID, 0, len(r.Providers))
+	for _, p := range r.Providers {
+		providers = append(providers, domain.ProviderID(p))
+	}
+	eventTypes := make([]domain.SupporterEventType, 0, len(r.EventTypes))
+	for _, t := range r.EventTypes {
+		eventTypes = append(eventTypes, domain.SupporterEventType(t))
+	}
+	children := make([]domain.DashboardChild, 0, len(r.Children))
+	for _, c := range r.Children {
+		children = append(children, c.toDomain())
+	}
 	return domain.WidgetProfile{
-		ID: id, GoalID: r.GoalID, Name: r.Name, Enabled: r.Enabled, TitleOverride: r.TitleOverride,
+		ID: id, Kind: domain.WidgetProfileKind(r.Kind), GoalID: r.GoalID, Name: r.Name, Enabled: r.Enabled,
+		Providers: providers, Accounts: r.Accounts, TitleOverride: r.TitleOverride,
 		ShowCurrent: r.ShowCurrent, ShowTarget: r.ShowTarget, ShowPercent: r.ShowPercent,
+		ShowProvider: r.ShowProvider, ShowTime: r.ShowTime, ShowMessage: r.ShowMessage,
+		MaxItems: r.MaxItems, Currency: r.Currency, Metric: domain.SessionMetric(r.Metric), EventTypes: eventTypes,
+		Columns: r.Columns, Children: children,
 		Orientation: domain.Orientation(r.Orientation), TextAlign: domain.TextAlign(r.TextAlign), FontFamily: domain.FontFamily(r.FontFamily),
 		BackgroundColor: r.BackgroundColor, ForegroundColor: r.ForegroundColor, FillColor: r.FillColor, BorderColor: r.BorderColor,
 		BorderRadiusPx: r.BorderRadiusPx, Opacity: r.Opacity,
@@ -286,32 +350,60 @@ func (r widgetProfileRequest) toDomain(id string) domain.WidgetProfile {
 }
 
 type widgetProfileResponse struct {
-	ID              string  `json:"id"`
-	GoalID          string  `json:"goalId"`
-	Name            string  `json:"name"`
-	Enabled         bool    `json:"enabled"`
-	PublicSlug      string  `json:"publicSlug"`
-	TitleOverride   string  `json:"titleOverride,omitempty"`
-	ShowCurrent     bool    `json:"showCurrent"`
-	ShowTarget      bool    `json:"showTarget"`
-	ShowPercent     bool    `json:"showPercent"`
-	Orientation     string  `json:"orientation"`
-	TextAlign       string  `json:"textAlign"`
-	FontFamily      string  `json:"fontFamily"`
-	BackgroundColor string  `json:"backgroundColor"`
-	ForegroundColor string  `json:"foregroundColor"`
-	FillColor       string  `json:"fillColor"`
-	BorderColor     string  `json:"borderColor"`
-	BorderRadiusPx  int     `json:"borderRadiusPx"`
-	Opacity         float64 `json:"opacity"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	ID              string                   `json:"id"`
+	Kind            string                   `json:"kind"`
+	GoalID          string                   `json:"goalId,omitempty"`
+	Name            string                   `json:"name"`
+	Enabled         bool                     `json:"enabled"`
+	PublicSlug      string                   `json:"publicSlug"`
+	Providers       []string                 `json:"providers,omitempty"`
+	Accounts        []string                 `json:"accounts,omitempty"`
+	TitleOverride   string                   `json:"titleOverride,omitempty"`
+	ShowCurrent     bool                     `json:"showCurrent"`
+	ShowTarget      bool                     `json:"showTarget"`
+	ShowPercent     bool                     `json:"showPercent"`
+	ShowProvider    bool                     `json:"showProvider"`
+	ShowTime        bool                     `json:"showTime"`
+	ShowMessage     bool                     `json:"showMessage"`
+	MaxItems        int                      `json:"maxItems,omitempty"`
+	Currency        string                   `json:"currency,omitempty"`
+	Metric          string                   `json:"metric,omitempty"`
+	EventTypes      []string                 `json:"eventTypes,omitempty"`
+	Columns         int                      `json:"columns,omitempty"`
+	Children        []dashboardChildResponse `json:"children,omitempty"`
+	Orientation     string                   `json:"orientation"`
+	TextAlign       string                   `json:"textAlign"`
+	FontFamily      string                   `json:"fontFamily"`
+	BackgroundColor string                   `json:"backgroundColor"`
+	ForegroundColor string                   `json:"foregroundColor"`
+	FillColor       string                   `json:"fillColor"`
+	BorderColor     string                   `json:"borderColor"`
+	BorderRadiusPx  int                      `json:"borderRadiusPx"`
+	Opacity         float64                  `json:"opacity"`
+	CreatedAt       string                   `json:"createdAt"`
+	UpdatedAt       string                   `json:"updatedAt"`
 }
 
 func toWidgetProfileResponse(p domain.WidgetProfile) widgetProfileResponse {
+	providers := make([]string, 0, len(p.Providers))
+	for _, v := range p.Providers {
+		providers = append(providers, string(v))
+	}
+	eventTypes := make([]string, 0, len(p.EventTypes))
+	for _, v := range p.EventTypes {
+		eventTypes = append(eventTypes, string(v))
+	}
+	children := make([]dashboardChildResponse, 0, len(p.Children))
+	for _, c := range p.Children {
+		children = append(children, toDashboardChildResponse(c))
+	}
 	return widgetProfileResponse{
-		ID: p.ID, GoalID: p.GoalID, Name: p.Name, Enabled: p.Enabled, PublicSlug: p.PublicSlug, TitleOverride: p.TitleOverride,
+		ID: p.ID, Kind: string(p.Kind), GoalID: p.GoalID, Name: p.Name, Enabled: p.Enabled, PublicSlug: p.PublicSlug,
+		Providers: providers, Accounts: p.Accounts, TitleOverride: p.TitleOverride,
 		ShowCurrent: p.ShowCurrent, ShowTarget: p.ShowTarget, ShowPercent: p.ShowPercent,
+		ShowProvider: p.ShowProvider, ShowTime: p.ShowTime, ShowMessage: p.ShowMessage,
+		MaxItems: p.MaxItems, Currency: p.Currency, Metric: string(p.Metric), EventTypes: eventTypes,
+		Columns: p.Columns, Children: children,
 		Orientation: string(p.Orientation), TextAlign: string(p.TextAlign), FontFamily: string(p.FontFamily),
 		BackgroundColor: p.BackgroundColor, ForegroundColor: p.ForegroundColor, FillColor: p.FillColor, BorderColor: p.BorderColor,
 		BorderRadiusPx: p.BorderRadiusPx, Opacity: p.Opacity,

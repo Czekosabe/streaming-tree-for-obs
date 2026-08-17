@@ -291,3 +291,230 @@ func TestMigrationPreservesExistingRowsAcrossGoalsMigration(t *testing.T) {
 		t.Error("expected goals/widget_profiles tables to exist after migration")
 	}
 }
+
+// --- Stage 18B: supporter widgets, richer counters, dashboards
+// (docs/supporter-widgets.md §5, §9, §18) ---------------------------------
+
+// TestOldStyleWidgetProfileRowLoadsWithGoalKind proves a widget_profiles
+// row written using only the exact pre-Stage-18B column set (no kind, no
+// nullable goal_id, none of the new Stage 18B columns) still loads
+// correctly through the widened repository, with Kind defaulting to
+// "goal" and every new field at its safe zero value - the real-world
+// shape of every row Stage 18A ever wrote, proven directly rather than
+// only through the Go-layer defaults.
+func TestOldStyleWidgetProfileRowLoadsWithGoalKind(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+	repo.CreateGoal(context.Background(), newTestGoal("goal_1"))
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := db.DB.Exec(`
+		INSERT INTO widget_profiles (id, goal_id, name, enabled, public_slug, title_override,
+			show_current, show_target, show_percent, orientation, text_align, font_family,
+			background_color, foreground_color, fill_color, border_color, border_radius_px, opacity,
+			created_at, updated_at)
+		VALUES ('widget_old', 'goal_1', 'Old Widget', 1, 'oldstyleslugoldstyleslugoldstyleslug01', '',
+			1, 1, 1, 'horizontal', 'center', 'sans_serif',
+			'#00000080', '#ffffff', '#7c3aed', '#ffffff33', 12, 1.0,
+			?, ?)`, now, now)
+	if err != nil {
+		t.Fatalf("raw pre-Stage-18B insert failed: %v", err)
+	}
+
+	got, found, err := repo.GetWidgetProfile(context.Background(), "widget_old")
+	if err != nil || !found {
+		t.Fatalf("GetWidgetProfile() found=%v, err=%v", found, err)
+	}
+	if got.Kind != goals.WidgetProfileKindGoal {
+		t.Errorf("Kind = %q, want %q for an old-style row", got.Kind, goals.WidgetProfileKindGoal)
+	}
+	if got.GoalID != "goal_1" {
+		t.Errorf("GoalID = %q, want goal_1", got.GoalID)
+	}
+	if got.MaxItems != 0 || got.Currency != "" || got.Metric != "" || got.Columns != 0 || len(got.Children) != 0 {
+		t.Errorf("new Stage 18B fields not at zero value: %+v", got)
+	}
+	if !got.ShowProvider || !got.ShowTime {
+		t.Errorf("ShowProvider/ShowTime = %v/%v, want both true (column default)", got.ShowProvider, got.ShowTime)
+	}
+}
+
+func TestWidgetProfileEventDerivedFiltersRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+
+	p := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindLatestDonation, "", "Latest Donation")
+	p.ID, p.PublicSlug = "widget_latest_donation", "ldldldldldldldldldldldldldldldldldldld01"
+	p.Providers = []goals.ProviderID{goals.ProviderStreamElements}
+	p.Accounts = []string{"src_se"}
+	p.ShowMessage = true
+	p.CreatedAt, p.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), p); err != nil {
+		t.Fatalf("CreateWidgetProfile() error = %v", err)
+	}
+
+	got, found, err := repo.GetWidgetProfile(context.Background(), "widget_latest_donation")
+	if err != nil || !found {
+		t.Fatalf("GetWidgetProfile() found=%v, err=%v", found, err)
+	}
+	if got.Kind != goals.WidgetProfileKindLatestDonation {
+		t.Errorf("Kind = %q, want latest_donation", got.Kind)
+	}
+	if len(got.Providers) != 1 || got.Providers[0] != goals.ProviderStreamElements {
+		t.Errorf("Providers = %v, want [streamelements]", got.Providers)
+	}
+	if len(got.Accounts) != 1 || got.Accounts[0] != "src_se" {
+		t.Errorf("Accounts = %v, want [src_se]", got.Accounts)
+	}
+	if !got.ShowMessage {
+		t.Error("ShowMessage = false, want true")
+	}
+	if got.GoalID != "" {
+		t.Errorf("GoalID = %q, want empty for a non-goal widget", got.GoalID)
+	}
+}
+
+func TestSessionCounterAndLargestDonationRoundTripCurrencyAndMetric(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+
+	counter := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindSessionCounter, "", "Support Amount")
+	counter.ID, counter.PublicSlug = "widget_counter", "counterslugcounterslugcounterslugcount01"
+	counter.Metric = goals.MetricSupportAmount
+	counter.Currency = "EUR"
+	counter.CreatedAt, counter.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), counter); err != nil {
+		t.Fatalf("CreateWidgetProfile(counter) error = %v", err)
+	}
+	got, _, _ := repo.GetWidgetProfile(context.Background(), "widget_counter")
+	if got.Metric != goals.MetricSupportAmount || got.Currency != "EUR" {
+		t.Errorf("Metric/Currency = %q/%q, want support_amount/EUR", got.Metric, got.Currency)
+	}
+
+	largest := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindLargestDonation, "", "Largest Donation")
+	largest.ID, largest.PublicSlug = "widget_largest", "largestslugslargestslugslargestslugs01"
+	largest.Currency = "USD"
+	largest.CreatedAt, largest.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), largest); err != nil {
+		t.Fatalf("CreateWidgetProfile(largest) error = %v", err)
+	}
+	got2, _, _ := repo.GetWidgetProfile(context.Background(), "widget_largest")
+	if got2.Currency != "USD" || got2.Metric != "" {
+		t.Errorf("Currency/Metric = %q/%q, want USD/<empty>", got2.Currency, got2.Metric)
+	}
+}
+
+func TestEventTickerEventTypesRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+
+	p := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindEventTicker, "", "Ticker")
+	p.ID, p.PublicSlug = "widget_ticker", "tickerslugtickerslugtickerslugtickers01"
+	p.EventTypes = []goals.SupporterEventType{goals.EventTypeFollow, goals.EventTypeDonation, goals.EventTypeRaid}
+	p.CreatedAt, p.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), p); err != nil {
+		t.Fatalf("CreateWidgetProfile() error = %v", err)
+	}
+
+	got, _, _ := repo.GetWidgetProfile(context.Background(), "widget_ticker")
+	if len(got.EventTypes) != 3 {
+		t.Fatalf("EventTypes = %v, want 3 entries", got.EventTypes)
+	}
+
+	// An update replacing the allowlist must fully overwrite it, never
+	// merge with the previous set.
+	p.EventTypes = []goals.SupporterEventType{goals.EventTypeBits}
+	p.UpdatedAt = time.Now().UTC()
+	if _, err := repo.UpdateWidgetProfile(context.Background(), p); err != nil {
+		t.Fatalf("UpdateWidgetProfile() error = %v", err)
+	}
+	got2, _, _ := repo.GetWidgetProfile(context.Background(), "widget_ticker")
+	if len(got2.EventTypes) != 1 || got2.EventTypes[0] != goals.EventTypeBits {
+		t.Errorf("EventTypes after update = %v, want [bits]", got2.EventTypes)
+	}
+}
+
+func TestDashboardChildrenCreateThenGetRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+
+	leaf := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindLatestFollower, "", "Leaf")
+	leaf.ID, leaf.PublicSlug = "widget_leaf", "leafslugleafslugleafslugleafslugleaf01"
+	leaf.CreatedAt, leaf.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), leaf); err != nil {
+		t.Fatalf("CreateWidgetProfile(leaf) error = %v", err)
+	}
+
+	dash := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindDashboard, "", "Dashboard")
+	dash.ID, dash.PublicSlug = "widget_dash", "dashslugdashslugdashslugdashslugdashs01"
+	dash.Columns = 2
+	dash.Children = []goals.DashboardChild{{WidgetProfileID: "widget_leaf", Column: 1, ColumnSpan: 1, Row: 1, RowSpan: 1}}
+	dash.CreatedAt, dash.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), dash); err != nil {
+		t.Fatalf("CreateWidgetProfile(dashboard) error = %v", err)
+	}
+
+	got, found, err := repo.GetWidgetProfile(context.Background(), "widget_dash")
+	if err != nil || !found {
+		t.Fatalf("GetWidgetProfile() found=%v, err=%v", found, err)
+	}
+	if got.Columns != 2 {
+		t.Errorf("Columns = %d, want 2", got.Columns)
+	}
+	if len(got.Children) != 1 || got.Children[0].WidgetProfileID != "widget_leaf" {
+		t.Fatalf("Children = %+v, want one entry referencing widget_leaf", got.Children)
+	}
+
+	if err := repo.DeleteWidgetProfile(context.Background(), "widget_leaf"); err != goals.ErrWidgetProfileInUse {
+		t.Fatalf("error = %v, want ErrWidgetProfileInUse", err)
+	}
+
+	// UpdateWidgetProfile fully replaces the children set, never merges -
+	// mirrors writeWidgetProfileExtras' own delete-then-insert pattern.
+	dash.Children = nil
+	if _, err := repo.UpdateWidgetProfile(context.Background(), dash); err != nil {
+		t.Fatalf("UpdateWidgetProfile() error = %v", err)
+	}
+	gotAfter, _, _ := repo.GetWidgetProfile(context.Background(), "widget_dash")
+	if len(gotAfter.Children) != 0 {
+		t.Errorf("Children after clearing = %v, want none", gotAfter.Children)
+	}
+	if err := repo.DeleteWidgetProfile(context.Background(), "widget_leaf"); err != nil {
+		t.Errorf("DeleteWidgetProfile() error = %v, want nil now that no dashboard references it", err)
+	}
+}
+
+// TestMigrationPreservesExistingRowsAcrossSupporterWidgetsMigration
+// proves the Stage 18B migration (0026_supporter_widgets.sql) - the
+// widget_profiles rebuild in particular - never disturbs existing goal/
+// widget-profile data when re-applied, mirroring
+// TestMigrationPreservesExistingRowsAcrossGoalsMigration's own identical
+// precedent for 0025.
+func TestMigrationPreservesExistingRowsAcrossSupporterWidgetsMigration(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGoalsRepository(db.DB)
+	repo.CreateGoal(context.Background(), newTestGoal("goal_1"))
+	wp := goals.DefaultWidgetProfile("goal_1", "Widget")
+	wp.ID, wp.PublicSlug = "widget_1", "migratepreserveslugmigratepreserveslug01"
+	wp.CreatedAt, wp.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err := repo.CreateWidgetProfile(context.Background(), wp); err != nil {
+		t.Fatalf("CreateWidgetProfile() error = %v", err)
+	}
+
+	if _, err := Migrate(context.Background(), db.DB); err != nil {
+		t.Fatalf("re-running Migrate() failed: %v", err)
+	}
+
+	got, found, err := repo.GetWidgetProfile(context.Background(), "widget_1")
+	if err != nil || !found {
+		t.Fatalf("GetWidgetProfile() after re-migrate: found=%v, err=%v", found, err)
+	}
+	if got.Kind != goals.WidgetProfileKindGoal || got.GoalID != "goal_1" || got.Name != "Widget" {
+		t.Errorf("widget profile changed across re-migration: %+v", got)
+	}
+
+	if !tableExists(t, db, "widget_profile_providers") || !tableExists(t, db, "widget_profile_accounts") ||
+		!tableExists(t, db, "widget_profile_event_types") || !tableExists(t, db, "widget_profile_dashboard_children") {
+		t.Error("expected every new Stage 18B child table to exist after migration")
+	}
+}

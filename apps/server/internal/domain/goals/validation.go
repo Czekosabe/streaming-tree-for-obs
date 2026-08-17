@@ -21,6 +21,17 @@ const (
 	MaxBorderRadiusPx     = 32
 
 	MaxHexColorLength = 16
+
+	// MaxItems bounds (docs/supporter-widgets.md §9): recent_supporters
+	// 1-20 (default 5), event_ticker 1-50 (default 10).
+	MinMaxItems           = 1
+	MaxRecentSupporters   = 20
+	DefaultMaxItems       = 5
+	MaxEventTickerItems   = 50
+	DefaultTickerMaxItems = 10
+
+	// Dashboard grid bounds (docs/supporter-widgets.md §9).
+	DefaultDashboardColumns = MinDashboardColumns
 )
 
 func validationErr(format string, args ...any) error {
@@ -173,6 +184,137 @@ func ValidateWidgetProfileFields(p WidgetProfile) error {
 	}
 	if p.Opacity < 0.0 || p.Opacity > 1.0 {
 		return validationErr("opacity must be between 0.0 and 1.0")
+	}
+	if err := validateWidgetProfileKindFields(p); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateWidgetProfileKindFields checks every field whose meaning
+// depends on p.Kind (docs/supporter-widgets.md §5, §9, §13) - never
+// GoalID/child existence, which need repository access (see
+// Service.validateWidgetProfile).
+func validateWidgetProfileKindFields(p WidgetProfile) error {
+	if !p.Kind.valid() {
+		return validationErr("kind %q is not supported", string(p.Kind))
+	}
+
+	if p.Kind.RequiresGoal() {
+		if p.GoalID == "" {
+			return validationErr("a goal widget requires goalId")
+		}
+	} else if p.GoalID != "" {
+		return validationErr("goalId must be empty for a %s widget", string(p.Kind))
+	}
+
+	if p.Kind.HasOwnFilters() {
+		if err := ValidateProviders(p.Providers); err != nil {
+			return err
+		}
+		if err := validateNoDuplicateStrings("accounts", p.Accounts); err != nil {
+			return err
+		}
+	} else if len(p.Providers) > 0 || len(p.Accounts) > 0 {
+		return validationErr("provider/account filters are not supported for a %s widget", string(p.Kind))
+	}
+
+	if p.Kind.RequiresMaxItems() {
+		max := MaxRecentSupporters
+		if p.Kind == WidgetProfileKindEventTicker {
+			max = MaxEventTickerItems
+		}
+		if p.MaxItems < MinMaxItems || p.MaxItems > max {
+			return validationErr("maxItems must be %d-%d for a %s widget", MinMaxItems, max, string(p.Kind))
+		}
+	} else if p.MaxItems != 0 {
+		return validationErr("maxItems is not supported for a %s widget", string(p.Kind))
+	}
+
+	if err := validateWidgetProfileCurrencyAndMetric(p); err != nil {
+		return err
+	}
+
+	if p.Kind == WidgetProfileKindEventTicker {
+		seen := make(map[SupporterEventType]bool, len(p.EventTypes))
+		for _, t := range p.EventTypes {
+			if !t.valid() {
+				return validationErr("event type %q is not supported", string(t))
+			}
+			if seen[t] {
+				return validationErr("event type %q is listed more than once", string(t))
+			}
+			seen[t] = true
+		}
+	} else if len(p.EventTypes) > 0 {
+		return validationErr("eventTypes is not supported for a %s widget", string(p.Kind))
+	}
+
+	return validateDashboardFields(p)
+}
+
+func validateWidgetProfileCurrencyAndMetric(p WidgetProfile) error {
+	if p.Kind == WidgetProfileKindSessionCounter {
+		if !p.Metric.valid() {
+			return validationErr("metric %q is not supported", string(p.Metric))
+		}
+		if p.Metric.RequiresCurrency() {
+			if !validCurrencyCode(p.Currency) {
+				return validationErr("the %s metric requires a valid currency code", string(p.Metric))
+			}
+		} else if p.Currency != "" {
+			return validationErr("currency must be empty for the %s metric", string(p.Metric))
+		}
+		return nil
+	}
+	if p.Metric != "" {
+		return validationErr("metric is not supported for a %s widget", string(p.Kind))
+	}
+	if p.Kind.RequiresCurrency() {
+		if !validCurrencyCode(p.Currency) {
+			return validationErr("a %s widget requires a valid currency code", string(p.Kind))
+		}
+	} else if p.Currency != "" {
+		return validationErr("currency is not supported for a %s widget", string(p.Kind))
+	}
+	return nil
+}
+
+// validateDashboardFields checks Columns/Children's own bounds and
+// internal consistency (docs/supporter-widgets.md §9, governing task
+// §25) - never child existence or "no nested dashboard," which need
+// repository access.
+func validateDashboardFields(p WidgetProfile) error {
+	if !p.Kind.IsDashboard() {
+		if p.Columns != 0 {
+			return validationErr("columns is not supported for a %s widget", string(p.Kind))
+		}
+		if len(p.Children) > 0 {
+			return validationErr("children is not supported for a %s widget", string(p.Kind))
+		}
+		return nil
+	}
+	if p.Columns < MinDashboardColumns || p.Columns > MaxDashboardColumns {
+		return validationErr("columns must be %d-%d", MinDashboardColumns, MaxDashboardColumns)
+	}
+	if len(p.Children) < MinDashboardChildren || len(p.Children) > MaxDashboardChildren {
+		return validationErr("a dashboard requires %d-%d children", MinDashboardChildren, MaxDashboardChildren)
+	}
+	seen := make(map[string]bool, len(p.Children))
+	for _, c := range p.Children {
+		if c.WidgetProfileID == "" {
+			return validationErr("a dashboard child requires widgetProfileId")
+		}
+		if seen[c.WidgetProfileID] {
+			return validationErr("widget %q is listed more than once in this dashboard", c.WidgetProfileID)
+		}
+		seen[c.WidgetProfileID] = true
+		if c.Column < 1 || c.ColumnSpan < 1 || c.Column+c.ColumnSpan-1 > p.Columns {
+			return validationErr("widget %q has an invalid column placement", c.WidgetProfileID)
+		}
+		if c.Row < 1 || c.RowSpan < 1 {
+			return validationErr("widget %q has an invalid row placement", c.WidgetProfileID)
+		}
 	}
 	return nil
 }

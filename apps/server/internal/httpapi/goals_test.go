@@ -255,8 +255,9 @@ func TestGoalsMethodNotAllowed(t *testing.T) {
 
 func validWidgetProfileBody(goalID string) map[string]any {
 	return map[string]any{
-		"goalId": goalID, "name": "Widget", "enabled": true,
+		"kind": "goal", "goalId": goalID, "name": "Widget", "enabled": true,
 		"showCurrent": true, "showTarget": true, "showPercent": true,
+		"showProvider": true, "showTime": true,
 		"orientation": "horizontal", "textAlign": "center", "fontFamily": "sans_serif",
 		"backgroundColor": "#00000080", "foregroundColor": "#ffffff",
 		"fillColor": "#7c3aed", "borderColor": "#ffffff33", "borderRadiusPx": 12, "opacity": 1.0,

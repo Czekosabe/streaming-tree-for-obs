@@ -27028,3 +27028,115 @@ script) begins next.
 ### Next step
 Implement the Stage 18B backend domain model widening and the
 `0026_supporter_widgets.sql` migration.
+
+## 2026-08-17 — feat(server): widen widget profiles for supporter kinds
+
+### Status
+Completed.
+
+### Scope
+Implements docs/supporter-widgets.md §5, §9, §13, §16, §18: widens
+`internal/domain/goals.WidgetProfile` from its Stage 18A "always exactly
+one goal" shape into the full nine-kind Stage 18B model (`goal` plus
+eight new event-derived/composed kinds), the `0026_supporter_widgets.sql`
+migration, the SQLite repository implementation, and the management HTTP
+API's request/response DTOs. Deliberately backend-configuration only -
+no runtime manager, no event matching, and no frontend yet (next
+commits).
+
+### Changes
+- `internal/domain/goals/widget_kinds.go` (new) - `WidgetProfileKind`
+  (9 values), `SessionMetric` (8 closed values), `SupporterEventType`
+  (event_ticker's own 12-value closed allowlist, deliberately its own
+  type rather than `engagement.Type`), `DashboardChild`, and the
+  dashboard child-count/column bounds.
+- `internal/domain/goals/model.go` - `WidgetProfile` gained `Kind`,
+  `Providers`/`Accounts` (own filters for event-derived kinds),
+  `ShowProvider`/`ShowTime`/`ShowMessage`, `MaxItems`, `Currency`/
+  `Metric`, `EventTypes`, `Columns`/`Children`; `GoalID` is now
+  meaningful only when `Kind.RequiresGoal()`. `DefaultWidgetProfile`
+  is now a thin KindGoal-only wrapper around the new
+  `DefaultWidgetProfileOfKind`.
+- `internal/domain/goals/validation.go` - `ValidateWidgetProfileFields`
+  now also validates every kind-specific field
+  (`validateWidgetProfileKindFields`): goalId required/forbidden by
+  kind, filters only for kinds that own them, maxItems bounds (1-20
+  recent_supporters, 1-50 event_ticker), currency/metric requirements
+  (largest_donation always, session_counter only for the
+  support_amount metric), event_ticker's own closed allowlist, and
+  dashboard bounds/placement (1-8 children, 1-4 columns, no duplicate
+  child, in-bounds column/row spans).
+- `internal/domain/goals/service.go` - `CreateWidgetProfile`/
+  `UpdateWidgetProfile` now call the new `validateWidgetProfileRefs`
+  (goal existence for KindGoal, account/source existence for
+  event-derived kinds, child existence and "no nested dashboard" for
+  dashboards - the governing task's own "prevents recursion/cycles
+  entirely" requirement, enforced by rejecting a dashboard child whose
+  own Kind is itself a dashboard). `Kind` and `GoalID` are now
+  immutable after creation, exactly like `PublicSlug`/`CreatedAt`
+  already were. New `SemanticFieldsChanged(existing, updated)` helper
+  the HTTP layer will use to decide when to reset a profile's runtime
+  projection (docs/supporter-widgets.md §16 - implemented in a later
+  commit alongside the runtime manager).
+- `internal/domain/goals/errors.go` - new `ErrWidgetProfileInUse`
+  (dashboard reference integrity), mirroring `ErrGoalInUse` exactly.
+- `internal/storage/sqlite/migrations/0026_supporter_widgets.sql`
+  (new) - rebuilds `widget_profiles` (SQLite cannot widen a CHECK list
+  or drop NOT NULL via plain ALTER TABLE) adding `kind`, a nullable
+  `goal_id`, and every new scalar column; adds
+  `widget_profile_providers`/`widget_profile_accounts` (mirroring
+  `goal_providers`/`goal_accounts` exactly, including no FK on
+  `account_id`), `widget_profile_event_types`, and
+  `widget_profile_dashboard_children` (`child_id` carries no
+  `ON DELETE` - the repository explicitly checks for a referencing
+  dashboard before allowing a delete). No column added anywhere in
+  this migration ever stores event-derived content (docs/supporter-
+  widgets.md §3's privacy boundary) - configuration only.
+- `internal/storage/sqlite/goals_repository.go` - widened
+  `widgetProfileColumns`/`scanWidgetProfile` for every new column;
+  added `loadWidgetProfileExtras`/`writeWidgetProfileExtras` (filters,
+  event types, dashboard children - delete-then-insert on every write,
+  mirroring `writeGoalFilters`'s own pattern); `DeleteWidgetProfile`
+  now checks `widget_profile_dashboard_children` for a referencing
+  dashboard before deleting, returning `ErrWidgetProfileInUse`,
+  exactly mirroring `DeleteGoal`'s own existing `ErrGoalInUse` check.
+- `internal/httpapi/goals.go` - `widgetProfileRequest`/
+  `widgetProfileResponse` widened for every new field, including a
+  new `dashboardChildRequest`/`dashboardChildResponse` pair (dashboard
+  children are referenced by internal id in the management API only -
+  the public API's own DTO, added in a later commit, will never expose
+  that id). `writeGoalsError` maps `ErrWidgetProfileInUse` to
+  `409 widget_profile_in_use`.
+- `internal/httpapi/goals_test.go` - the shared
+  `validWidgetProfileBody` test fixture now includes
+  `"kind": "goal"` (now a required field) - fixes four tests that
+  regressed from `201`/`409`/`200` to `422`/`204`/panic once `Kind`
+  became mandatory validation, confirming they were exercising real
+  behavior, not accidentally passing.
+
+### Automated validation
+`go build ./...`, `go vet ./...`, `go build -tags integration ./...` all
+clean. `go test -count=1 ./...` (full backend suite) passes, including
+33 new tests added by this commit: 24 in `validation_test.go` (every
+kind's own defaults, goalId/filter/maxItems/currency/metric/eventTypes/
+dashboard-bounds rules), 9 in `service_test.go` (event-derived kinds
+skip goal-existence checks, account-filter validation, dashboard child
+existence, nested-dashboard rejection, dashboard-reference delete
+protection, Kind/GoalID immutability, `SemanticFieldsChanged`), and 8 in
+`goals_repository_test.go` (an old-style Stage 18A row - raw INSERT
+using only the pre-Stage-18B column list - still loads with
+`Kind == "goal"` and every new field at its zero value; filter/
+currency/metric/event-type/dashboard-child round trips; a migration-
+preservation test proving 0026 is safe to re-apply, mirroring 0025's
+own precedent test exactly).
+
+### Known limitations
+No runtime manager yet - every Stage 18B kind other than `goal` is
+fully configurable and persists correctly, but nothing yet turns a real
+Event Bus event into a live projection, and the public/management
+runtime-status endpoints don't exist yet. No frontend changes yet.
+
+### Next step
+The Stage 18B runtime manager (`internal/supporterwidgets`), the
+Event Bus subscription (current position only), and the presentation
+builder.
