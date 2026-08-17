@@ -36,7 +36,7 @@ function baseGoal(overrides: Partial<Goal> = {}): Goal {
 
 function baseWidgetProfile(overrides: Partial<WidgetProfile> = {}): WidgetProfile {
   return {
-    id: 'widget_1', goalId: 'goal_1', name: 'Widget', enabled: true, publicSlug: 'a'.repeat(40),
+    id: 'widget_1', kind: 'goal', goalId: 'goal_1', name: 'Widget', enabled: true, publicSlug: 'a'.repeat(40),
     showCurrent: true, showTarget: true, showPercent: true,
     orientation: 'horizontal', textAlign: 'center', fontFamily: 'sans_serif',
     backgroundColor: '#00000080', foregroundColor: '#ffffff', fillColor: '#7c3aed', borderColor: '#ffffff33',

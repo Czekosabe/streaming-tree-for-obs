@@ -35,8 +35,11 @@ function resolveWidgetUrl(publicSlug: string): string {
 
 function draftFromProfile(p: WidgetProfile): WidgetProfileInput {
   return {
-    goalId: p.goalId, name: p.name, enabled: p.enabled, titleOverride: p.titleOverride,
+    kind: 'goal', goalId: p.goalId, name: p.name, enabled: p.enabled,
+    providers: [], accounts: [], titleOverride: p.titleOverride,
     showCurrent: p.showCurrent, showTarget: p.showTarget, showPercent: p.showPercent,
+    showProvider: false, showTime: false, showMessage: false, maxItems: 0,
+    currency: undefined, metric: undefined, eventTypes: [], columns: 0, children: [],
     orientation: p.orientation, textAlign: p.textAlign, fontFamily: p.fontFamily,
     backgroundColor: p.backgroundColor, foregroundColor: p.foregroundColor, fillColor: p.fillColor, borderColor: p.borderColor,
     borderRadiusPx: p.borderRadiusPx, opacity: p.opacity,
@@ -46,7 +49,7 @@ function draftFromProfile(p: WidgetProfile): WidgetProfileInput {
 export function WidgetProfileManager({ goalId }: { goalId: string }) {
   const { t } = useTranslation('goals');
   const profilesQuery = useWidgetProfilesQuery(goalId);
-  const deleteMutation = useDeleteWidgetProfileMutation(goalId);
+  const deleteMutation = useDeleteWidgetProfileMutation();
 
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WidgetProfile | null>(null);
@@ -64,9 +67,9 @@ export function WidgetProfileManager({ goalId }: { goalId: string }) {
         }
       />
       <div className="space-y-3 p-4 sm:p-5">
-        {profiles.length === 0 && <p className="text-sm text-ink-muted">{t('widgets.empty')}</p>}
+        {profiles.length === 0 && <p className="text-sm text-ink-muted">{t('widgets.emptyForGoal')}</p>}
         {profiles.map((profile) => (
-          <WidgetProfileRow key={profile.id} goalId={goalId} profile={profile} onDeleteRequested={() => setDeleteTarget(profile)} />
+          <WidgetProfileRow key={profile.id} profile={profile} onDeleteRequested={() => setDeleteTarget(profile)} />
         ))}
       </div>
 
@@ -98,7 +101,7 @@ function CreateWidgetProfileModal({
   onCreated: () => void;
 }) {
   const { t } = useTranslation('goals');
-  const createMutation = useCreateWidgetProfileMutation(goalId);
+  const createMutation = useCreateWidgetProfileMutation();
   const [name, setName] = useState('');
 
   return (
@@ -136,17 +139,15 @@ function CreateWidgetProfileModal({
 }
 
 function WidgetProfileRow({
-  goalId,
   profile,
   onDeleteRequested,
 }: {
-  goalId: string;
   profile: WidgetProfile;
   onDeleteRequested: () => void;
 }) {
   const { t } = useTranslation('goals');
-  const updateMutation = useUpdateWidgetProfileMutation(goalId);
-  const rotateMutation = useRotateWidgetProfileSlugMutation(goalId);
+  const updateMutation = useUpdateWidgetProfileMutation();
+  const rotateMutation = useRotateWidgetProfileSlugMutation();
   const [draft, setDraft] = useState<WidgetProfileInput>(draftFromProfile(profile));
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const [copied, setCopied] = useState(false);

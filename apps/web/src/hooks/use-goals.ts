@@ -14,18 +14,25 @@ import {
   fetchGoal,
   fetchGoals,
   fetchWidgetProfiles,
+  fetchWidgetRuntimeStatus,
   resetGoal,
+  resetWidgetRuntime,
   rotateWidgetProfileSlug,
   setGoalCurrent,
   updateGoal,
   updateWidgetProfile,
 } from '@/api/goals';
-import type { Goal, GoalInput, WidgetProfile, WidgetProfileInput } from '@/api/goals-schemas';
+import type { Goal, GoalInput, RuntimeStatus, WidgetProfile, WidgetProfileInput } from '@/api/goals-schemas';
 
 export const goalsKeys = {
   goals: () => ['goals'] as const,
   goal: (id: string) => ['goals', id] as const,
+  // widgetProfiles: 'all' lists every profile (Widgets/Dashboards tabs -
+  // docs/supporter-widgets.md §20); a real goal id lists only that
+  // goal's own profiles (the existing Stage 18A per-goal list).
   widgetProfiles: (goalId: string) => ['widget-profiles', goalId] as const,
+  widgetProfilesAll: () => ['widget-profiles', 'all'] as const,
+  runtimeStatus: (id: string) => ['widget-profile-runtime-status', id] as const,
 };
 
 function useInvalidateGoals() {
@@ -33,9 +40,14 @@ function useInvalidateGoals() {
   return () => void queryClient.invalidateQueries({ queryKey: goalsKeys.goals() });
 }
 
-function useInvalidateWidgetProfiles(goalId: string) {
+/** Invalidates every widget-profile list query (both a specific goal's
+ * own list and the "all profiles" list Widgets/Dashboards use) - a
+ * single widget-profile mutation may affect what either view shows
+ * (e.g. creating a dashboard child doesn't change a goal's own list,
+ * but every other CRUD action should be visible everywhere). */
+function useInvalidateWidgetProfiles() {
   const queryClient = useQueryClient();
-  return () => void queryClient.invalidateQueries({ queryKey: goalsKeys.widgetProfiles(goalId) });
+  return () => void queryClient.invalidateQueries({ queryKey: ['widget-profiles'] });
 }
 
 export function useGoalsQuery(): UseQueryResult<Goal[], Error> {
@@ -83,28 +95,57 @@ export function useWidgetProfilesQuery(goalId: string | null): UseQueryResult<Wi
   });
 }
 
-export function useCreateWidgetProfileMutation(
-  goalId: string,
-): UseMutationResult<WidgetProfile, Error, WidgetProfileInput> {
-  const invalidate = useInvalidateWidgetProfiles(goalId);
+/** Lists every widget profile regardless of kind - the Widgets/
+ * Dashboards management tabs' own data source (docs/supporter-
+ * widgets.md §20), as opposed to useWidgetProfilesQuery's existing
+ * per-goal filter. */
+export function useAllWidgetProfilesQuery(): UseQueryResult<WidgetProfile[], Error> {
+  return useQuery({ queryKey: goalsKeys.widgetProfilesAll(), queryFn: ({ signal }) => fetchWidgetProfiles(undefined, signal) });
+}
+
+export function useCreateWidgetProfileMutation(): UseMutationResult<WidgetProfile, Error, WidgetProfileInput> {
+  const invalidate = useInvalidateWidgetProfiles();
   return useMutation({ mutationFn: (input: WidgetProfileInput) => createWidgetProfile(input), onSuccess: invalidate });
 }
 
-export function useUpdateWidgetProfileMutation(
-  goalId: string,
-): UseMutationResult<WidgetProfile, Error, { id: string; input: WidgetProfileInput }> {
-  const invalidate = useInvalidateWidgetProfiles(goalId);
+export function useUpdateWidgetProfileMutation(): UseMutationResult<
+  WidgetProfile,
+  Error,
+  { id: string; input: WidgetProfileInput }
+> {
+  const invalidate = useInvalidateWidgetProfiles();
   return useMutation({ mutationFn: ({ id, input }) => updateWidgetProfile(id, input), onSuccess: invalidate });
 }
 
-export function useDeleteWidgetProfileMutation(goalId: string): UseMutationResult<void, Error, string> {
-  const invalidate = useInvalidateWidgetProfiles(goalId);
+export function useDeleteWidgetProfileMutation(): UseMutationResult<void, Error, string> {
+  const invalidate = useInvalidateWidgetProfiles();
   return useMutation({ mutationFn: (id: string) => deleteWidgetProfile(id), onSuccess: invalidate });
 }
 
-export function useRotateWidgetProfileSlugMutation(
-  goalId: string,
-): UseMutationResult<WidgetProfile, Error, string> {
-  const invalidate = useInvalidateWidgetProfiles(goalId);
+export function useRotateWidgetProfileSlugMutation(): UseMutationResult<WidgetProfile, Error, string> {
+  const invalidate = useInvalidateWidgetProfiles();
   return useMutation({ mutationFn: (id: string) => rotateWidgetProfileSlug(id), onSuccess: invalidate });
+}
+
+/** Clears a Stage 18B widget's own runtime-only presentation state
+ * (docs/supporter-widgets.md §14) - a manual operator action, entirely
+ * separate from persisted configuration. */
+export function useResetWidgetRuntimeMutation(): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => resetWidgetRuntime(id),
+    onSuccess: (_data, id) => void queryClient.invalidateQueries({ queryKey: goalsKeys.runtimeStatus(id) }),
+  });
+}
+
+export function useWidgetRuntimeStatusQuery(id: string | null): UseQueryResult<RuntimeStatus, Error> {
+  return useQuery({
+    queryKey: goalsKeys.runtimeStatus(id ?? ''),
+    queryFn: ({ signal }) => fetchWidgetRuntimeStatus(id ?? '', signal),
+    enabled: id !== null,
+    // The runtime status can change from a real event at any moment
+    // outside any action this page takes - poll gently while a profile
+    // is expanded, mirroring the public route's own 1.5s poll interval.
+    refetchInterval: 1500,
+  });
 }

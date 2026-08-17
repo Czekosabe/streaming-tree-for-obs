@@ -27256,3 +27256,124 @@ integration script does not exist yet.
 Frontend: widen `api/goals-schemas.ts`/`models/goals.ts`, the
 management UI (Goals/Widgets/Dashboards), and the shared public
 renderer dispatching by kind.
+
+## 2026-08-17 — feat(web): manage and render supporter widgets
+
+### Status
+Completed.
+
+### Scope
+Implements docs/supporter-widgets.md §20, §29-§45: the frontend half of
+Stage 18B. Widens the goals/widget-profile API contract and client-side
+validation mirrors for all nine widget kinds, widens the one shared
+public renderer to dispatch by kind (including one level of dashboard
+composition), adds a new management surface for every non-goal kind
+(including dashboards), and restructures the Goals page into three
+sections. The existing Stage 18A goal-widget management UI
+(`GoalManager.tsx`, the per-goal `WidgetProfileManager.tsx`) keeps its
+own exact existing behavior - only its own internal DTO plumbing
+widened to satisfy the new required `kind` field.
+
+### Changes
+- `api/goals-schemas.ts` - `widgetProfileKindSchema` (9 values),
+  `sessionMetricSchema` (8), `supporterEventTypeSchema` (12),
+  `dashboardChildSchema`; `widgetProfileSchema`/`WidgetProfileInput`
+  widened with every new field, `kind` now required, `goalId` now
+  optional; `publicWidgetSnapshotSchema` becomes a
+  mutually-recursive (`z.lazy`) discriminated-by-kind schema - every
+  Stage 18A goal field keeps its exact original required/optional
+  shape (no accidental `omitempty`-style drift on the client side to
+  match the backend's own byte-for-byte-compatible response).
+- `api/goals.ts`, `hooks/use-goals.ts` - `resetWidgetRuntime`/
+  `fetchWidgetRuntimeStatus`; a new `useAllWidgetProfilesQuery` (lists
+  every profile regardless of kind, the Widgets/Dashboards tabs' own
+  data source) alongside the existing per-goal
+  `useWidgetProfilesQuery`; widget-profile mutation hooks
+  (`useCreateWidgetProfileMutation` etc.) no longer take a `goalId`
+  parameter - invalidation now covers every `widget-profiles`-prefixed
+  query key at once, since one mutation can affect both a goal's own
+  list and the all-profiles list.
+- `models/goals.ts` - `WIDGET_PROFILE_KINDS`/`SUPPORTER_WIDGET_KINDS`,
+  `SESSION_METRICS`, `SUPPORTER_EVENT_TYPES`, every dashboard/maxItems
+  bound constant, `widgetKindRequiresGoal`/`HasOwnFilters`/
+  `IsDashboard`/`RequiresMaxItems`/`RequiresCurrency` helpers mirroring
+  `internal/domain/goals.WidgetProfileKind`'s own methods;
+  `isValidWidgetProfileFields` widened to check every kind-specific
+  rule client-side (goalId, filters, maxItems bounds, currency/metric
+  requirements, event-type duplicates, dashboard bounds/placement) -
+  the backend remains authoritative, this only disables Save early;
+  `defaultWidgetProfileDraftOfKind` builds each kind's own safe
+  defaults.
+- `components/goals/GoalWidgetRenderer.tsx` (rewritten) - dispatches on
+  `snapshot.kind`: the original goal progress-bar presentation is
+  unchanged pixel-for-pixel; new presentations for latest_follower/
+  latest_subscriber/latest_donation (display name, provider, time,
+  message when enabled), largest_donation (explicit "this session"
+  wording), recent_supporters/event_ticker (bounded lists),
+  session_counter (a single large number), and dashboard (a CSS grid
+  recursing into this same component for each child - never more than
+  one level, since a dashboard can never contain another). Every kind
+  renders its own defined empty state rather than blank space.
+- `components/goals/SupporterWidgetManager.tsx` (new) - management UI
+  for every kind other than `goal`; a `dashboardsOnly` prop switches
+  between the "Widgets" list and the "Dashboards" list. Kind-specific
+  fields (maxItems, currency, metric, event-type checkboxes, dashboard
+  column/child editor) render conditionally from the widened model
+  helpers - never nine separate form components. Every event-derived
+  kind shows a persistent "observed during the current session, cleared
+  on restart" note plus a manual Reset action
+  (`useResetWidgetRuntimeMutation`); the in-editor preview composes a
+  `PublicWidgetSnapshot` from the live draft's own style fields plus
+  real runtime status when available, through the exact same
+  `GoalWidgetRenderer` the public route uses.
+- `pages/GoalsPage.tsx` - three sections (Goals/Widgets/Dashboards)
+  behind a lightweight tab switcher, still one page and one nav
+  destination - no new top-level nav items.
+- `components/goals/WidgetProfileManager.tsx` - `draftFromProfile` and
+  the in-editor preview's snapshot literal widened for the new required
+  `WidgetProfileInput` fields; otherwise unchanged behavior.
+- i18n (`en`/`pl` `goals.json`) - `widgets.kind.*` (9), `widgets.
+  empty.*` (9), `widgets.metric.*` (8), `widgets.eventType.*` (12),
+  every new field label/hint, a new top-level `dashboards` namespace,
+  and `sections.*` for the three tab labels.
+
+### Automated validation
+`tsc -b` (typecheck), `eslint .`, `npm run i18n:check` (19 namespaces,
+en/pl parity), and `npm run build` (vite production build) all clean.
+`npm run test -- --run`: 96/97 files and 1365/1367 tests pass; the one
+remaining failure (`AlertsPage.test.tsx`, an unrelated Stage 17B page
+this commit never touched) was confirmed pre-existing flakiness -
+passes 16/16 every time when run in isolation, only intermittently
+timing out under the full 97-file/~1370-test parallel run, and `git
+status` confirms no alerts-related file was ever modified this
+session. 51 new/changed test cases added by this commit: 5 in
+`api/goals-schemas.test.ts` (event-derived and dashboard kinds parse
+correctly, an out-of-enum kind is rejected), 24 in `models/goals.test.ts`
+(every kind-specific validation rule), 7 in the new
+`components/goals/SupporterWidgetManager.test.tsx` (create-with-kind,
+list filtering by kind, the runtime note/reset action, dashboard
+child-picker), and 5 new cases in `pages/PublicWidgetPage.test.tsx`
+(a real latest_follower display name, the kind-specific empty state,
+and a real dashboard composing a child's own snapshot with no internal
+id ever appearing in the DOM), plus the pre-existing fixtures in
+`pages/GoalsPage.test.tsx` updated for the now-required `kind` field.
+
+A dev server smoke check (`npm run dev`) confirmed a clean Vite compile
+with no runtime console errors reachable from the log. No real browser/
+screenshot verification was performed - this environment has no headless
+browser or screenshot tool available; UI correctness is verified
+through the testing-library component tests above (real DOM assertions
+against real user interactions), not a visual check, and this
+limitation is stated honestly rather than claiming a browser check that
+did not happen.
+
+### Known limitations
+The 22nd integration script does not exist yet - no backend+frontend
+integration has been proven with a real running server. Documentation
+pass (README/project-overview/engagement-architecture/obs-browser-
+source/config-README) has not started.
+
+### Next step
+`scripts/verify-supporter-widgets.mjs` (docs/supporter-widgets.md §21),
+driving real events through the existing Twitch/YouTube/StreamElements
+fakes.

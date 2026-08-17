@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
-import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPost, apiPostNoContent, apiPut } from '@/lib/api-client';
 
 import {
   goalSchema,
+  runtimeStatusSchema,
   widgetProfileSchema,
   type Goal,
   type GoalInput,
+  type RuntimeStatus,
   type WidgetProfile,
   type WidgetProfileInput,
 } from './goals-schemas';
@@ -66,4 +68,16 @@ export async function deleteWidgetProfile(id: string): Promise<void> {
 
 export async function rotateWidgetProfileSlug(id: string): Promise<WidgetProfile> {
   return apiPost(`/api/widget-profiles/${id}/rotate-public-slug`, undefined, widgetProfileSchema);
+}
+
+/** Clears a Stage 18B widget's own runtime-only presentation state
+ * (docs/supporter-widgets.md §14) - never touches persisted
+ * configuration. Rejected by the backend (422) for kind='goal'/
+ * 'dashboard', neither of which owns runtime state of its own. */
+export async function resetWidgetRuntime(id: string): Promise<void> {
+  return apiPostNoContent(`/api/widget-profiles/${id}/reset-runtime`, undefined);
+}
+
+export async function fetchWidgetRuntimeStatus(id: string, signal?: AbortSignal): Promise<RuntimeStatus> {
+  return apiGet(`/api/widget-profiles/${id}/runtime-status`, runtimeStatusSchema, { signal });
 }

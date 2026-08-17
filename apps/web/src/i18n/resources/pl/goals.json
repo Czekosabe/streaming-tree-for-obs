@@ -15,6 +15,8 @@
     "goal_widget_profile_not_found": "Ten widżet już nie istnieje.",
     "goal_account_not_found": "Jedno z wybranych kont lub źródeł dotacji już nie istnieje.",
     "goal_in_use": "Ten cel ma nadal co najmniej jeden widżet - najpierw go usuń.",
+    "widget_profile_in_use": "Ten widżet jest nadal używany przez co najmniej jeden pulpit - najpierw go z niego usuń.",
+    "widget_profile_no_runtime_state": "Ten rodzaj widżetu nie ma stanu działania do wyświetlenia.",
     "goal_config_conflict": "Ktoś inny właśnie zmienił ten cel - odśwież i spróbuj ponownie.",
     "goal_invalid": "Ustawienia celu nie przeszły walidacji.",
     "not_found": "Ten zasób już nie istnieje.",
@@ -69,7 +71,7 @@
   "widgets": {
     "title": "Widżety publiczne",
     "add": "Dodaj widżet",
-    "empty": "Ten cel nie ma jeszcze żadnych publicznych widżetów.",
+    "emptyForGoal": "Ten cel nie ma jeszcze żadnych publicznych widżetów.",
     "createTitle": "Utwórz widżet",
     "deleteConfirmTitle": "Usuń widżet",
     "deleteConfirmMessage": "Usunąć \"{{name}}\"? Jego adres URL źródła przeglądarki przestanie działać natychmiast.",
@@ -104,6 +106,16 @@
       "showCurrent": "Pokaż bieżącą wartość",
       "showTarget": "Pokaż cel",
       "showPercent": "Pokaż procent",
+      "showProvider": "Pokaż platformę",
+      "showTime": "Pokaż czas",
+      "showMessage": "Pokaż wiadomość dotacji",
+      "showMessageHint": "Domyślnie wyłączone - włącz tylko jeśli chcesz publicznie pokazywać wiadomości darczyńców.",
+      "maxItems": "Maks. liczba pozycji",
+      "currency": "Waluta",
+      "currencyHint": "Kod z 3-8 liter, np. USD. Porównywane są tylko zdarzenia w tej samej walucie.",
+      "metric": "Metryka",
+      "eventTypes": "Rodzaje zdarzeń",
+      "columns": "Kolumny",
       "orientation": "Orientacja",
       "textAlign": "Wyrównanie tekstu",
       "fontFamily": "Czcionka",
@@ -111,6 +123,73 @@
       "foregroundColor": "Kolor tekstu",
       "fillColor": "Kolor wypełnienia paska postępu",
       "borderColor": "Kolor obramowania"
+    },
+    "kind": {
+      "goal": "Cel",
+      "latest_follower": "Najnowszy obserwujący",
+      "latest_subscriber": "Najnowszy subskrybent",
+      "latest_donation": "Najnowsza dotacja",
+      "largest_donation": "Największa dotacja",
+      "recent_supporters": "Ostatni wspierający",
+      "event_ticker": "Pasek zdarzeń",
+      "session_counter": "Licznik sesji",
+      "dashboard": "Pulpit"
+    },
+    "empty": {
+      "goal": "Brak zaobserwowanego postępu.",
+      "latest_follower": "Nie zaobserwowano jeszcze obserwującego.",
+      "latest_subscriber": "Nie zaobserwowano jeszcze subskrybenta.",
+      "latest_donation": "Nie zaobserwowano jeszcze dotacji.",
+      "largest_donation": "Nie zaobserwowano jeszcze pasującej dotacji.",
+      "recent_supporters": "Nie zaobserwowano jeszcze wspierających.",
+      "event_ticker": "Nie zaobserwowano jeszcze żadnej aktywności.",
+      "session_counter": "Nic jeszcze nie zaobserwowano.",
+      "dashboard": "Ten pulpit nie ma jeszcze żadnych widżetów."
+    },
+    "anonymous": "Anonimowy",
+    "sessionScope": "Ta sesja - resetuje się przy ponownym uruchomieniu backendu",
+    "runtimeNote": "Zawartość tego widżetu jest obserwowana tylko podczas bieżącej sesji aplikacji i jest czyszczona przy ponownym uruchomieniu backendu.",
+    "resetRuntime": "Resetuj",
+    "resetRuntimeConfirmTitle": "Zresetuj zaobserwowaną zawartość tego widżetu",
+    "resetRuntimeConfirmMessage": "Czyści wszystko, co ten widżet dotychczas zaobserwował. Nigdy nie wpływa to na cele, platformy ani zapisane ustawienia.",
+    "metric": {
+      "follows": "Zaobserwowane obserwacje",
+      "new_subscriptions": "Zaobserwowane nowe subskrypcje",
+      "resubscriptions": "Zaobserwowane resubskrypcje",
+      "gifted_subscriptions": "Zaobserwowane podarowane subskrypcje",
+      "raids": "Zaobserwowane najazdy",
+      "bits_quantity": "Zaobserwowane bity",
+      "support_event_count": "Zaobserwowane zdarzenia wsparcia",
+      "support_amount": "Zaobserwowana kwota wsparcia"
+    },
+    "eventType": {
+      "follow": "zaobserwował(a)",
+      "subscription": "zasubskrybował(a)",
+      "resubscription": "przedłużył(a) subskrypcję",
+      "gifted_subscription": "otrzymał(a) podarowaną subskrypcję",
+      "subscription_gift_batch": "podarował(a) subskrypcje",
+      "bits": "użył(a) bitów",
+      "raid": "najechał(a)",
+      "donation": "przekazał(a) dotację",
+      "youtube_super_chat": "wysłał(a) Super Chat",
+      "youtube_super_sticker": "wysłał(a) Super Sticker",
+      "youtube_membership": "został(a) członkiem",
+      "youtube_membership_milestone": "rocznica członkostwa"
     }
+  },
+  "dashboards": {
+    "title": "Pulpity",
+    "add": "Dodaj pulpit",
+    "empty": "Brak pulpitów - połącz istniejące widżety w jedną ograniczoną siatkę.",
+    "createTitle": "Utwórz pulpit",
+    "children": "Widżety w tym pulpicie",
+    "addChild": "Dodaj widżet",
+    "noAvailableChildren": "Najpierw utwórz widżet, który nie jest pulpitem, a następnie dodaj go tutaj.",
+    "nestedDashboardBlocked": "Pulpit nie może zawierać innego pulpitu."
+  },
+  "sections": {
+    "goals": "Cele",
+    "widgets": "Widżety",
+    "dashboards": "Pulpity"
   }
 }

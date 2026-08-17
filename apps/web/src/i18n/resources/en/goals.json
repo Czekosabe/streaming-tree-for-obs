@@ -15,6 +15,8 @@
     "goal_widget_profile_not_found": "This widget profile no longer exists.",
     "goal_account_not_found": "One of the selected accounts or donation sources no longer exists.",
     "goal_in_use": "This goal still has one or more widget profiles - delete them first.",
+    "widget_profile_in_use": "This widget is still referenced by one or more dashboards - remove it from them first.",
+    "widget_profile_no_runtime_state": "This widget kind has no runtime presentation state.",
     "goal_config_conflict": "Another save already changed this goal - reload and try again.",
     "goal_invalid": "The goal settings failed validation.",
     "not_found": "This resource no longer exists.",
@@ -69,7 +71,7 @@
   "widgets": {
     "title": "Public widgets",
     "add": "Add widget",
-    "empty": "No public widgets yet for this goal.",
+    "emptyForGoal": "No public widgets yet for this goal.",
     "createTitle": "Create widget",
     "deleteConfirmTitle": "Delete widget",
     "deleteConfirmMessage": "Delete \"{{name}}\"? Its own Browser Source URL stops working immediately.",
@@ -104,6 +106,16 @@
       "showCurrent": "Show current",
       "showTarget": "Show target",
       "showPercent": "Show percent",
+      "showProvider": "Show provider",
+      "showTime": "Show time",
+      "showMessage": "Show donation message",
+      "showMessageHint": "Off by default - only enable if you want donor messages shown publicly.",
+      "maxItems": "Max items",
+      "currency": "Currency",
+      "currencyHint": "A 3-8 letter code, e.g. USD. Only matching-currency events are compared.",
+      "metric": "Metric",
+      "eventTypes": "Event types",
+      "columns": "Columns",
       "orientation": "Orientation",
       "textAlign": "Text align",
       "fontFamily": "Font",
@@ -111,6 +123,73 @@
       "foregroundColor": "Text color",
       "fillColor": "Progress fill color",
       "borderColor": "Border color"
+    },
+    "kind": {
+      "goal": "Goal",
+      "latest_follower": "Latest follower",
+      "latest_subscriber": "Latest subscriber",
+      "latest_donation": "Latest donation",
+      "largest_donation": "Largest donation",
+      "recent_supporters": "Recent supporters",
+      "event_ticker": "Event ticker",
+      "session_counter": "Session counter",
+      "dashboard": "Dashboard"
+    },
+    "empty": {
+      "goal": "No progress observed yet.",
+      "latest_follower": "No follower observed yet.",
+      "latest_subscriber": "No subscriber observed yet.",
+      "latest_donation": "No donation observed yet.",
+      "largest_donation": "No matching donation observed yet.",
+      "recent_supporters": "No supporters observed yet.",
+      "event_ticker": "No activity observed yet.",
+      "session_counter": "Nothing observed yet.",
+      "dashboard": "This dashboard has no widgets yet."
+    },
+    "anonymous": "Anonymous",
+    "sessionScope": "This session - resets on backend restart",
+    "runtimeNote": "This widget's own content is observed during the current application session only, and is cleared when the backend restarts.",
+    "resetRuntime": "Reset",
+    "resetRuntimeConfirmTitle": "Reset this widget's observed content",
+    "resetRuntimeConfirmMessage": "Clears everything this widget has observed so far. This never affects goals, providers, or persisted settings.",
+    "metric": {
+      "follows": "Follows observed",
+      "new_subscriptions": "New subscriptions observed",
+      "resubscriptions": "Resubscriptions observed",
+      "gifted_subscriptions": "Gifted subscriptions observed",
+      "raids": "Raids observed",
+      "bits_quantity": "Bits observed",
+      "support_event_count": "Support events observed",
+      "support_amount": "Support amount observed"
+    },
+    "eventType": {
+      "follow": "followed",
+      "subscription": "subscribed",
+      "resubscription": "resubscribed",
+      "gifted_subscription": "received a gifted sub",
+      "subscription_gift_batch": "gifted subs",
+      "bits": "cheered",
+      "raid": "raided",
+      "donation": "donated",
+      "youtube_super_chat": "sent a Super Chat",
+      "youtube_super_sticker": "sent a Super Sticker",
+      "youtube_membership": "became a member",
+      "youtube_membership_milestone": "membership milestone"
     }
+  },
+  "dashboards": {
+    "title": "Dashboards",
+    "add": "Add dashboard",
+    "empty": "No dashboards yet - combine existing widgets into one bounded grid.",
+    "createTitle": "Create dashboard",
+    "children": "Widgets in this dashboard",
+    "addChild": "Add widget",
+    "noAvailableChildren": "Create a non-dashboard widget first, then add it here.",
+    "nestedDashboardBlocked": "A dashboard cannot contain another dashboard."
+  },
+  "sections": {
+    "goals": "Goals",
+    "widgets": "Widgets",
+    "dashboards": "Dashboards"
   }
 }

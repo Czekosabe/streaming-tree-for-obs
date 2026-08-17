@@ -105,4 +105,54 @@ describe('PublicWidgetPage', () => {
     renderPage('my-slug-123');
     expect(FakeEventSource.instances[0]?.url).toContain('/api/public/widgets/my-slug-123/stream');
   });
+
+  it('renders a latest_follower widget\'s real display name once observed', async () => {
+    renderPage('slug_1');
+    const source = FakeEventSource.instances[0];
+    source?.emit('widget.reset', snapshot({
+      kind: 'latest_follower', goalKind: undefined, current: undefined, target: undefined,
+      progressBasisPoints: undefined, completed: undefined,
+      latest: { itemId: 'supitem_1', displayName: 'Ada', provider: 'twitch', observedAt: '2026-08-17T00:00:00Z' },
+    }));
+    await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument());
+  });
+
+  it('shows the kind-specific empty state before any event is observed', async () => {
+    renderPage('slug_1');
+    const source = FakeEventSource.instances[0];
+    source?.emit('widget.reset', snapshot({
+      kind: 'latest_follower', goalKind: undefined, current: undefined, target: undefined,
+      progressBasisPoints: undefined, completed: undefined,
+    }));
+    await waitFor(() => expect(screen.getByText(/no follower observed yet/i)).toBeInTheDocument());
+  });
+
+  it('renders a dashboard composing its own child snapshot, never an internal id', async () => {
+    renderPage('slug_1');
+    const source = FakeEventSource.instances[0];
+    source?.emit('widget.reset', snapshot({
+      kind: 'dashboard', goalKind: undefined, current: undefined, target: undefined,
+      progressBasisPoints: undefined, completed: undefined,
+      dashboard: [
+        {
+          key: 'dashboard_child_0', column: 1, columnSpan: 1, row: 1, rowSpan: 1,
+          snapshot: {
+            revision: 1, kind: 'latest_follower', title: 'Latest Follower',
+            latest: { itemId: 'supitem_1', displayName: 'Bea', provider: 'twitch', observedAt: '2026-08-17T00:00:00Z' },
+            presentation: {
+              showCurrent: false, showTarget: false, showPercent: false,
+              orientation: 'horizontal', textAlign: 'center', fontFamily: 'sans_serif',
+              backgroundColor: '#000', foregroundColor: '#fff', fillColor: '#fff', borderColor: '#fff',
+              borderRadiusPx: 0, opacity: 1,
+            },
+          },
+        },
+      ],
+      presentation: { showCurrent: false, showTarget: false, showPercent: false, columns: 1,
+        orientation: 'horizontal', textAlign: 'center', fontFamily: 'sans_serif',
+        backgroundColor: '#000', foregroundColor: '#fff', fillColor: '#fff', borderColor: '#fff', borderRadiusPx: 0, opacity: 1 },
+    }));
+    await waitFor(() => expect(screen.getByText('Bea')).toBeInTheDocument());
+    expect(document.body.textContent).not.toContain('widget_');
+  });
 });

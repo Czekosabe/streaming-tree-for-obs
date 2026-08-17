@@ -1,6 +1,14 @@
 import type { TFunction } from 'i18next';
 
-import type { GoalInput, GoalKind, WidgetProfileInput } from '@/api/goals-schemas';
+import type {
+  DashboardChild,
+  GoalInput,
+  GoalKind,
+  SessionMetric,
+  SupporterEventType,
+  WidgetProfileInput,
+  WidgetProfileKind,
+} from '@/api/goals-schemas';
 import { ApiError } from '@/lib/api-client';
 
 /** Maps a Stage 18A API error onto its own translated message - kept
@@ -94,26 +102,210 @@ export function isValidHexColor(value: string): boolean {
   return /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value);
 }
 
-export function isValidWidgetProfileFields(input: WidgetProfileInput): boolean {
-  return (
-    isValidGoalName(input.name) &&
-    (input.titleOverride === undefined || [...input.titleOverride].length <= MAX_NAME_CODE_POINTS) &&
-    isValidHexColor(input.backgroundColor) &&
-    isValidHexColor(input.foregroundColor) &&
-    isValidHexColor(input.fillColor) &&
-    isValidHexColor(input.borderColor) &&
-    input.borderRadiusPx >= 0 &&
-    input.borderRadiusPx <= MAX_WIDGET_BORDER_RADIUS_PX &&
-    input.opacity >= 0 &&
-    input.opacity <= 1
-  );
+// --- Stage 18B: widget-profile kinds (docs/supporter-widgets.md §5) ------
+// Client-side mirrors of internal/domain/goals/widget_kinds.go and
+// validation.go's own kind-specific rules - the backend remains
+// authoritative.
+
+export const WIDGET_PROFILE_KINDS: readonly WidgetProfileKind[] = [
+  'goal',
+  'latest_follower',
+  'latest_subscriber',
+  'latest_donation',
+  'largest_donation',
+  'recent_supporters',
+  'event_ticker',
+  'session_counter',
+  'dashboard',
+];
+
+/** Kinds a management "Widgets" list shows (everything but goal, which
+ * has its own per-goal management UI, and dashboard, which has its own
+ * "Dashboards" list). */
+export const SUPPORTER_WIDGET_KINDS: readonly WidgetProfileKind[] = [
+  'latest_follower',
+  'latest_subscriber',
+  'latest_donation',
+  'largest_donation',
+  'recent_supporters',
+  'event_ticker',
+  'session_counter',
+];
+
+export const SESSION_METRICS: readonly SessionMetric[] = [
+  'follows',
+  'new_subscriptions',
+  'resubscriptions',
+  'gifted_subscriptions',
+  'raids',
+  'bits_quantity',
+  'support_event_count',
+  'support_amount',
+];
+
+export const SUPPORTER_EVENT_TYPES: readonly SupporterEventType[] = [
+  'follow',
+  'subscription',
+  'resubscription',
+  'gifted_subscription',
+  'subscription_gift_batch',
+  'bits',
+  'raid',
+  'donation',
+  'youtube_super_chat',
+  'youtube_super_sticker',
+  'youtube_membership',
+  'youtube_membership_milestone',
+];
+
+export function widgetKindRequiresGoal(kind: WidgetProfileKind): boolean {
+  return kind === 'goal';
+}
+export function widgetKindIsDashboard(kind: WidgetProfileKind): boolean {
+  return kind === 'dashboard';
+}
+export function widgetKindHasOwnFilters(kind: WidgetProfileKind): boolean {
+  return !widgetKindRequiresGoal(kind) && !widgetKindIsDashboard(kind);
+}
+export function widgetKindRequiresMaxItems(kind: WidgetProfileKind): boolean {
+  return kind === 'recent_supporters' || kind === 'event_ticker';
+}
+export function widgetKindRequiresCurrency(kind: WidgetProfileKind): boolean {
+  return kind === 'largest_donation';
 }
 
+export const MIN_MAX_ITEMS = 1;
+export const MAX_RECENT_SUPPORTERS = 20;
+export const DEFAULT_MAX_ITEMS = 5;
+export const MAX_EVENT_TICKER_ITEMS = 50;
+export const DEFAULT_TICKER_MAX_ITEMS = 10;
+
+export const MIN_DASHBOARD_COLUMNS = 1;
+export const MAX_DASHBOARD_COLUMNS = 4;
+export const MIN_DASHBOARD_CHILDREN = 1;
+export const MAX_DASHBOARD_CHILDREN = 8;
+
+function maxItemsBoundFor(kind: WidgetProfileKind): number {
+  return kind === 'event_ticker' ? MAX_EVENT_TICKER_ITEMS : MAX_RECENT_SUPPORTERS;
+}
+
+/** Validates every bound/enum/required-field rule
+ * `internal/domain/goals.ValidateWidgetProfileFields` checks, except
+ * goalId/dashboard-child existence (only the backend can answer that).
+ * Used to disable Save before a round trip that would fail anyway. */
+export function isValidWidgetProfileFields(input: WidgetProfileInput): boolean {
+  if (
+    !isValidGoalName(input.name) ||
+    (input.titleOverride !== undefined && [...input.titleOverride].length > MAX_NAME_CODE_POINTS) ||
+    !isValidHexColor(input.backgroundColor) ||
+    !isValidHexColor(input.foregroundColor) ||
+    !isValidHexColor(input.fillColor) ||
+    !isValidHexColor(input.borderColor) ||
+    input.borderRadiusPx < 0 ||
+    input.borderRadiusPx > MAX_WIDGET_BORDER_RADIUS_PX ||
+    input.opacity < 0 ||
+    input.opacity > 1
+  ) {
+    return false;
+  }
+
+  if (widgetKindRequiresGoal(input.kind)) {
+    if (!input.goalId) return false;
+  } else if (input.goalId) {
+    return false;
+  }
+
+  if (widgetKindHasOwnFilters(input.kind)) {
+    if (new Set(input.accounts).size !== input.accounts.length) return false;
+  } else if (input.providers.length > 0 || input.accounts.length > 0) {
+    return false;
+  }
+
+  if (widgetKindRequiresMaxItems(input.kind)) {
+    const max = maxItemsBoundFor(input.kind);
+    if (!Number.isInteger(input.maxItems) || input.maxItems < MIN_MAX_ITEMS || input.maxItems > max) return false;
+  } else if (input.maxItems !== 0) {
+    return false;
+  }
+
+  if (input.kind === 'session_counter') {
+    if (input.metric === undefined) return false;
+    if (input.metric === 'support_amount') {
+      if (!input.currency || !isValidCurrencyCode(input.currency)) return false;
+    } else if (input.currency) {
+      return false;
+    }
+  } else {
+    if (input.metric !== undefined) return false;
+    if (widgetKindRequiresCurrency(input.kind)) {
+      if (!input.currency || !isValidCurrencyCode(input.currency)) return false;
+    } else if (input.currency) {
+      return false;
+    }
+  }
+
+  if (input.kind === 'event_ticker') {
+    if (new Set(input.eventTypes).size !== input.eventTypes.length) return false;
+  } else if (input.eventTypes.length > 0) {
+    return false;
+  }
+
+  if (widgetKindIsDashboard(input.kind)) {
+    if (input.columns < MIN_DASHBOARD_COLUMNS || input.columns > MAX_DASHBOARD_COLUMNS) return false;
+    if (input.children.length < MIN_DASHBOARD_CHILDREN || input.children.length > MAX_DASHBOARD_CHILDREN) return false;
+    const seen = new Set<string>();
+    for (const c of input.children) {
+      if (!c.widgetProfileId || seen.has(c.widgetProfileId)) return false;
+      seen.add(c.widgetProfileId);
+      if (c.column < 1 || c.columnSpan < 1 || c.column + c.columnSpan - 1 > input.columns) return false;
+      if (c.row < 1 || c.rowSpan < 1) return false;
+    }
+  } else if (input.columns !== 0 || input.children.length > 0) {
+    return false;
+  }
+
+  return true;
+}
+
+/** Default draft for a KindGoal widget profile (Stage 18A) - kept as
+ * its own function for every existing call site; see
+ * defaultWidgetProfileDraftOfKind for every Stage 18B kind. */
 export function defaultWidgetProfileDraft(goalId: string): WidgetProfileInput {
+  return defaultWidgetProfileDraftOfKind('goal', goalId);
+}
+
+export function defaultWidgetProfileDraftOfKind(kind: WidgetProfileKind, goalId?: string): WidgetProfileInput {
   return {
-    goalId, name: '', enabled: true, showCurrent: true, showTarget: true, showPercent: true,
-    orientation: 'horizontal', textAlign: 'center', fontFamily: 'sans_serif',
-    backgroundColor: '#00000080', foregroundColor: '#ffffff', fillColor: '#7c3aed', borderColor: '#ffffff33',
-    borderRadiusPx: DEFAULT_WIDGET_BORDER_RADIUS_PX, opacity: 1.0,
+    kind,
+    goalId: widgetKindRequiresGoal(kind) ? goalId : undefined,
+    name: '',
+    enabled: true,
+    providers: [],
+    accounts: [],
+    showCurrent: true,
+    showTarget: true,
+    showPercent: true,
+    showProvider: true,
+    showTime: true,
+    showMessage: false,
+    maxItems: widgetKindRequiresMaxItems(kind) ? (kind === 'event_ticker' ? DEFAULT_TICKER_MAX_ITEMS : DEFAULT_MAX_ITEMS) : 0,
+    currency: widgetKindRequiresCurrency(kind) ? 'USD' : undefined,
+    metric: kind === 'session_counter' ? 'follows' : undefined,
+    eventTypes: kind === 'event_ticker' ? ['follow'] : [],
+    columns: widgetKindIsDashboard(kind) ? MIN_DASHBOARD_COLUMNS : 0,
+    children: [],
+    orientation: 'horizontal',
+    textAlign: 'center',
+    fontFamily: 'sans_serif',
+    backgroundColor: '#00000080',
+    foregroundColor: '#ffffff',
+    fillColor: '#7c3aed',
+    borderColor: '#ffffff33',
+    borderRadiusPx: DEFAULT_WIDGET_BORDER_RADIUS_PX,
+    opacity: 1.0,
   };
+}
+
+export function emptyDashboardChild(widgetProfileId: string): DashboardChild {
+  return { widgetProfileId, column: 1, columnSpan: 1, row: 1, rowSpan: 1 };
 }
