@@ -27741,3 +27741,274 @@ beginning (frontend checks, backend checks, all 22 integration scripts
 in the canonical order, as one unbroken sequence) - this is the fourth
 attempt, the first three each blocked by a pre-existing, Stage-18B-
 unrelated defect, diagnosed and fixed before each restart.
+
+## 2026-08-17 — docs: record Stage 18B closing regression
+
+### Status
+Completed. Stage 18B is closed. Stage 18 as a whole (18A + 18B) is
+Completed.
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `5bfb2a5` ("docs: record Stage 18A closing regression"), clean
+tree, ahead/behind `0 0`. Stage 17A/17B/17-whole Completed, Stage 18A
+Completed, Stage 18B Planned/not started, Stage 18 whole Incomplete,
+Stage 19 TikTok LIVE conditional/not started, Stage 20 Planned/updater
+unimplemented, 21 integration scripts.
+
+### Design decisions and semantic rules established this milestone
+- Nine-kind `WidgetProfileKind`: `goal` (Stage 18A, unchanged),
+  `latest_follower`, `latest_subscriber`, `latest_donation`,
+  `largest_donation`, `recent_supporters`, `event_ticker`,
+  `session_counter`, `dashboard`.
+- Runtime-only privacy boundary: all Stage 18B event-derived content
+  (display names, donation messages, recent-supporter rows, ticker
+  entries) lives only in `internal/supporterwidgets.Manager`'s
+  in-memory projection map, never in SQLite. Only widget
+  configuration (kind, filters, style, public slug, dashboard layout,
+  counter/currency settings) persists. Proven by a raw-byte SQLite
+  scan in `verify-supporter-widgets.mjs`.
+- One Stage 18B runtime manager, provider-independent, subscribed at
+  the Event Bus's current position only (`Snapshot().NewestSequence`,
+  the same precedent `internal/goals.Manager` already established) -
+  no per-provider managers, no per-widget-profile subscriptions, no
+  Event Bus history replay.
+- Latest subscriber = latest NEW subscriber/member only (ordinary new
+  subscription, individual gifted-subscription recipient, new YouTube
+  membership). Resubscription, membership milestone, and gift-batch
+  summary are excluded and can never overwrite the real latest
+  individual recipient.
+- Supporter family (for `recent_supporters`): new
+  subscription/membership, gifted-subscription recipient,
+  resubscription, Bits, external donation, Super Chat, Super Sticker.
+  Follows, ordinary chat, moderation, and raids are excluded.
+- Event ticker family: a closed set of 12 publicly-appropriate
+  `engagement.Type` values (follow, subscription, resubscription,
+  gifted subscription, subscription gift batch, Bits, raid, donation,
+  YouTube Super Chat, YouTube Super Sticker, YouTube membership,
+  YouTube membership milestone). Ordinary chat, moderation/bans, and
+  provider-diagnostic events are never shown, now or if new event
+  types are added later.
+- Largest donation requires exactly one configured comparison
+  currency; only matching-currency events are candidates; comparison
+  is on exact integer `AmountMicros`, no floats, no FX; the tie rule
+  is deterministic - strictly greater replaces, exactly equal does
+  not.
+- Eight closed `SessionMetric` values: `follows`, `new_subscriptions`,
+  `resubscriptions`, `gifted_subscriptions`, `raids`, `bits_quantity`,
+  `support_event_count`, `support_amount` (only the last requires a
+  configured currency). No expression language, no arbitrary
+  event-field selection.
+- `showMessage` (default `false`) gates donor/supporter message text
+  consistently across `latest_donation`, `recent_supporters`, and
+  `event_ticker` - `largest_donation` never shows a message.
+- Dashboards compose existing widget profiles by reference (never
+  copy their state), recurse exactly one level, and reject any child
+  whose own kind is `dashboard` at save time - nested dashboards are
+  structurally impossible, not just discouraged. Bounds: 1-8 children,
+  1-4 columns. Public dashboard payloads expose only synthetic
+  `dashboard_child_<position>` keys, never real internal widget-profile
+  IDs.
+- Deleting a widget profile referenced by a dashboard is rejected with
+  `409 widget_profile_in_use`, mirroring Stage 18A's goal-deletion
+  discipline.
+- Semantic profile edits (kind, provider/source filters, event types,
+  largest-donation currency, counter metric/currency, dashboard
+  children) clear that profile's runtime projection; presentation-only
+  edits (title, colors, style, toggles, max visible count) keep
+  compatible runtime state. Enforced by
+  `SemanticFieldsChanged(existing, updated)`.
+- `Kind` and `GoalID` are immutable after creation - `UpdateWidgetProfile`
+  forces both from the existing row before validating every `PUT`.
+- Public widget streaming keeps Stage 18A's current-snapshot semantics
+  (no missed-delta replay); reconnects always receive a complete
+  current snapshot; no elaborate replay ring was built, per the
+  contract's own explicit "no elaborate replay ring unless there is a
+  real need" - none was found.
+- Restart semantics: Stage 18A persistent goals survive a backend
+  restart with their accumulated values; Stage 18B latest/recent/
+  ticker/largest/session-counter runtime state resets to empty/zero;
+  no provider-history fetch; no Event Bus retained-history replay; no
+  previous donor/supporter identity is ever restored after restart.
+- Existing Stage 18A goal widgets remain fully backward-compatible:
+  the public snapshot DTO's original goal fields keep their original
+  non-optional JSON shape (no new `omitempty`), existing widget-profile
+  rows and public slugs continue to work unchanged, and
+  `verify-goals-widgets.mjs` remains meaningful end to end.
+- No free-form widget designer and no new template/package schema were
+  introduced - Stage 18B's nine kinds are bounded, semantic layouts
+  configured through validated fields and a bounded style system, not
+  arbitrary visual documents. This was a deliberate decision, not an
+  omission; the audit found no real product need for one.
+
+### Contribution / eligibility tables (final, as implemented)
+- New-subscriber family: `TypeSubscription`, `TypeGiftedSubscription`,
+  `TypeYouTubeMembership` count as new. `TypeResubscription`,
+  `TypeYouTubeMembershipMilestone` do not. `TypeSubscriptionGiftBatch`
+  is a batch summary and never counts as an individual new subscriber.
+- Supporter family (`isSupporterFamily`): subscription, gifted
+  subscription, resubscription, YouTube membership, Bits, donation,
+  YouTube Super Chat, YouTube Super Sticker. Follow, chat, moderation,
+  raid, gift-batch summary, and membership milestone are excluded.
+- Donation family (`isDonationFamily`): external donation, YouTube
+  Super Chat, YouTube Super Sticker only.
+- Ticker family: the 12 types listed above under "event ticker
+  family".
+
+### Backend implementation summary
+- `internal/domain/goals`: `WidgetProfileKind` and helper methods,
+  `SessionMetric`, `SupporterEventType`, `DashboardChild`, dashboard
+  bound constants; `WidgetProfile` widened; kind-aware validation
+  (`validateWidgetProfileKindFields`,
+  `validateWidgetProfileCurrencyAndMetric`, `validateDashboardFields`);
+  `validateWidgetProfileRefs` (goal/account/dashboard-child existence,
+  no-nested-dashboard enforcement); `SemanticFieldsChanged`;
+  `ErrWidgetProfileInUse`.
+- `internal/storage/sqlite`: migration `0026_supporter_widgets.sql`
+  rebuilds `widget_profiles` (create/copy/drop/rename, mirroring
+  `0020_donation_sources.sql`'s own precedent) plus four new tables
+  for providers/accounts/event types/dashboard children -
+  configuration only, no event-derived content. Repository widened
+  and transactionalized; `DeleteWidgetProfile` checks dashboard
+  membership inside a transaction.
+- `internal/supporterwidgets` (new package): `Manager`, one Event Bus
+  subscription at current position, `Projection`/`SupporterItem`/
+  `TickerItem`, the closed presentation builder (`buildItem`,
+  `applyEventToProjection`, family/type-membership helpers), `Reset`.
+  23 tests in `manager_test.go`.
+- `internal/httpapi`: widget-profile routes widened for all nine
+  kinds plus `POST .../reset-runtime` and a private runtime-status
+  endpoint; public snapshot/DTO builder (`buildPublicSnapshot`,
+  `applyProjectionToDTO`, dashboard recursion, synthetic child keys);
+  `widget_profile_in_use` → `409` mapping. 9 tests in
+  `supporter_widgets_test.go`.
+- `cmd/server` and `cmd/testserver`: `supporterwidgets.Manager`
+  constructed and started alongside the existing goals manager, wired
+  into the router, and shut down at every existing shutdown call site.
+
+### Frontend implementation summary
+- Schemas/models/hooks/API client widened for all nine kinds,
+  including a recursive dashboard schema.
+- `GoalWidgetRenderer` now dispatches by kind; `SupporterWidgetManager`
+  (new, ~670 lines, 7 tests) provides creation/editing for all eight
+  non-goal kinds with kind-appropriate fields only.
+- `GoalsPage` restructured into a Goals/Widgets/Dashboards
+  experience under the existing "Goals" navigation entry.
+- i18n resources (`en`, `pl`) extended for every new kind and control.
+- Reduced-motion and bounded, non-marquee ticker/list presentation per
+  the contract.
+
+### Test counts added this milestone
+- Backend: 23 (`internal/supporterwidgets/manager_test.go`) + 9
+  (`internal/httpapi/supporter_widgets_test.go`) = 32 new dedicated
+  Go tests, plus widened coverage in `internal/httpapi/goals_test.go`
+  for the newly-required `kind` field.
+- Frontend: 7 new dedicated tests
+  (`components/goals/SupporterWidgetManager.test.tsx`), plus widened
+  coverage in `api/goals-schemas.test.ts`, `pages/GoalsPage.test.tsx`,
+  and `pages/PublicWidgetPage.test.tsx`.
+- Full suite at closing: 97 frontend test files / 1367 tests passing;
+  43 backend Go packages passing, 0 failing.
+
+### Integration scripts (22 total, canonical order, all passing at
+### closing)
+1. verify-persistence.mjs
+2. verify-mediamtx-runtime.mjs
+3. verify-ffmpeg-branches.mjs
+4. verify-twitch-account-integration.mjs
+5. verify-youtube-account-integration.mjs
+6. verify-twitch-engagement.mjs
+7. verify-operator-chat.mjs
+8. verify-chat-overlay.mjs
+9. verify-twitch-outbound-chat.mjs
+10. verify-chat-automation.mjs
+11. verify-alerts.mjs
+12. verify-alert-advanced-queue.mjs
+13. verify-alert-designer.mjs
+14. verify-chat-overlay-designer.mjs
+15. verify-visual-templates.mjs
+16. verify-visual-template-packages.mjs
+17. verify-youtube-engagement.mjs
+18. verify-streamelements-donations.mjs
+19. verify-tts-audio.mjs
+20. verify-alert-audio.mjs
+21. verify-goals-widgets.mjs (pre-existing Stage 18A script; needed
+    one line adding the newly-required `kind: 'goal'` field to its
+    widget-profile creation call, see the `fix(scripts)` entry above)
+22. verify-supporter-widgets.mjs (new, ~1145 lines, 27 steps; full
+    fake Twitch/YouTube/StreamElements provider harness; covers latest
+    follower/subscriber/donation, largest donation with the tie rule,
+    recent supporters, event ticker, session counters, dashboards,
+    reset semantics, restart semantics, `showMessage` gating across
+    all three message-carrying kinds, source-filter validation, and a
+    raw-byte SQLite scan proving no event-derived content is
+    persisted). Run standalone twice consecutively during development
+    with clean process teardown confirmed each time before being
+    folded into the canonical regression order.
+
+### Real gaps found and fixed during this milestone (beyond the two
+### closing-regression-only fixes journaled separately above)
+- `DefaultWidgetProfileOfKind` was setting `MaxItems` unconditionally
+  for every kind instead of only when `kind.RequiresMaxItems()` -
+  caught by regressed Stage 18A tests before any commit.
+- `showMessage` only gated `latest_donation`'s message text, leaving a
+  real privacy gap for `recent_supporters` and `event_ticker` - found
+  by code review, fixed by threading an explicit `showMessage bool`
+  through the one shared `buildItem` builder before any test exposed
+  it.
+- `buildPublicSnapshot`'s default branch never set `resp.Currency`,
+  so a fresh `largest_donation`/`session_counter` widget's own
+  configured currency was invisible in its public payload before any
+  matching event arrived - found by the new integration script,
+  confirmed as a genuine product completeness gap (not weakened away
+  in the script), and fixed in `internal/httpapi/public_widgets.go`.
+
+### Closing regression
+Four attempts were required to reach one complete, clean, unbroken
+pass, restarting the entire sequence (frontend checks, backend
+checks, all 22 scripts) from a clean tree each time per the
+no-selective-retry rule:
+1. Failed: `verify-goals-widgets.mjs` needed the `kind` field fix
+   (see `fix(scripts)` entry).
+2. Failed: `AlertsPage.test.tsx` hit a 5000ms default-timeout flake
+   under full-suite CPU contention on one test (see first
+   `test(web)` entry).
+3. Failed: a *different* test in the same file hit the same class of
+   flake (see second `test(web)` entry, which raised the whole file's
+   default timeout instead of patching another single straggler).
+4. Passed cleanly end to end: all frontend checks, all backend
+   checks, and all 22 integration scripts in the canonical order, in
+   one unbroken run. Final log:
+   `=== ALL CHECKS AND ALL 22 SCRIPTS PASSED ===`.
+
+After the passing run, three unrelated `node.exe` processes running
+`verify-goals-widgets.mjs` were found still resident - confirmed to be
+orphans left over from ad-hoc standalone verification runs earlier in
+this same milestone (hours old, holding no server ports, memory
+footprint consistent with an idle stuck event loop rather than active
+work), not from the passing regression run itself (whose own
+invocation of that script logged `PASS in 31s`, meaning its child
+process exited normally). Terminated; the only `node.exe` processes
+remaining afterward were an unrelated, pre-existing `npm run dev`/
+Vite dev-server pair not started by this work and left untouched.
+
+### No real provider/OBS testing performed
+As with Stage 18A, all verification was via the fake-provider
+integration-script harness and automated unit/component tests. No
+real Twitch/YouTube/StreamElements connection and no real OBS Browser
+Source were exercised.
+
+### Stage status after this entry
+- Stage 17A / 17B / 17 whole: Completed (unchanged).
+- Stage 18A: Completed (unchanged).
+- Stage 18B: Completed.
+- Stage 18 whole: Completed.
+- Stage 19 (TikTok LIVE): conditional / not started (unchanged).
+- Stage 20 (updater): Planned / unimplemented (unchanged).
+
+### Autonomous execution
+This milestone, including all four closing-regression attempts, their
+diagnosis, their fixes, and this closing entry, was carried out without
+any operator confirmation, approval, or "continue" message between the
+single governing task specification and this entry.
