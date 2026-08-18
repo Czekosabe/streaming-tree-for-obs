@@ -30182,3 +30182,79 @@ waiting language, and no operator message was needed to proceed from
 research into the contract document, the roadmap edits, staging,
 committing, pushing, and push-verification, all performed in the same
 continuous turn.
+
+## ci: add cross-platform portability workflow
+
+### Governing task
+§19-§28 of the CROSS-PLATFORM PORTABILITY BASELINE milestone: create
+`.github/workflows/cross-platform.yml` as a portability gate (not a
+release workflow), using the exact runner labels researched and
+recorded in `docs/platform-support.md` §6, with minimal permissions,
+no secrets, no release/tag/notarization/signing steps, then push and
+actively watch the resulting run to real completion.
+
+### What was added
+`.github/workflows/cross-platform.yml`: two jobs. `backend` is a
+5-entry matrix (`windows-amd64` on `windows-latest`, `linux-amd64` on
+`ubuntu-latest`, `linux-arm64` on `ubuntu-24.04-arm`, `macos-arm64` on
+`macos-latest`, `macos-amd64` on `macos-15-intel`) running `gofmt -l .`
+(failing the job on any diff), `go vet ./...`, `go test -count=1
+./...`, and `go build ./...` inside `apps/server`, with `CGO_ENABLED=0`
+on Windows/Linux and `CGO_ENABLED=1` (the default, left unset to `1`)
+on both macOS legs specifically so the real Keychain backend
+(`github.com/99designs/keyring`'s `//go:build darwin && cgo` file)
+actually compiles rather than being silently excluded - see the
+previous entry's §5.3 finding for why that distinction matters.
+`frontend` is a single Linux job running `npm ci`, `i18n:check`,
+`typecheck`, `lint`, `test -- --run`, and `build` inside `apps/web` -
+not duplicated across every OS, since the frontend build is
+platform-independent Node tooling. `permissions: contents: read` only.
+Triggers: `pull_request`, `push` to `main`, `workflow_dispatch` - no
+schedule, so no runner minutes (macOS/ARM64 included) are burned on a
+timer with no corresponding code change. No repository secret is
+referenced anywhere in the file, and nothing publishes a release,
+creates a tag, or performs code signing/notarization.
+
+### Local validation before pushing
+No local GitHub Actions runner exists to execute this workflow ahead
+of time, so it was validated the way that is actually available: `js-
+yaml` (already present transitively under `apps/web/node_modules`)
+was used to parse the file and confirm it is structurally valid YAML
+with the expected `backend`/`frontend` job keys and the expected
+5-entry matrix, and the file was manually re-read in full for content
+correctness (correct working directories, correct script names cross-
+checked against `apps/web/package.json`'s real script names, correct
+Go module path).
+
+### Note on run-result reporting
+This entry documents only the workflow file's creation and design, not
+its run result: no run can exist until this commit is pushed. Per
+`docs/platform-support.md` §6.4, the real run ID(s) and per-job
+pass/fail outcome (and any genuine failure diagnosed and fixed in
+response) are recorded in this milestone's closing journal entry
+instead, once the actual push has triggered a real run and it has been
+actively watched to completion via the GitHub REST API (no `gh` CLI is
+installed on this machine - confirmed via both Bash and PowerShell
+before falling back to the read-only API, matching the governing
+task's own documented fallback).
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20A: Completed (unchanged).
+- Stage 20 (whole): Incomplete (unchanged).
+- Cross-platform portability baseline milestone: in progress, third
+  logical commit; CI run observation still pending as of this entry.
+
+### Commits this milestone (chronological)
+1. `2b72fcb` - `fix(docs): reconcile Stage 20A living state`
+2. `0a1f627` - `docs: define cross-platform support roadmap`
+3. This entry - `ci: add cross-platform portability workflow`
+
+### Continuous-execution rule compliance
+No background command was run for this entry itself (YAML validation
+was a synchronous local Node script). The very next action after this
+commit is pushed is to actively poll the GitHub REST API for the
+triggered workflow run until it reaches a terminal state - this is
+explicitly not deferred or left for the operator to report back.
