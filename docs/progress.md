@@ -30983,3 +30983,64 @@ No background command was required for this unit - written, tested
 (including fixing the one real assertion bug the suite itself caught),
 and validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## feat(server): add persisted update preferences
+
+### What was built
+New `internal/domain/updatersettings` package (docs/updater.md §27),
+following the `operatorchatprefs`/`audio` settings-domain pattern this
+codebase already establishes exactly: `model.go` (`Preferences{AutoCheck
+bool, CreatedAt, UpdatedAt}`, `Default()` returning `AutoCheck: true`),
+`errors.go` (`ErrStorage`), `repository.go` (the `Repository` port),
+`service.go` (`Service.Preferences`/`ReplacePreferences`, wrapping
+unexpected persistence failures as `ErrStorage`). New migration
+`internal/storage/sqlite/migrations/0027_update_preferences.sql` (the
+next number after the current highest, `0026_supporter_widgets.sql`,
+confirmed during this milestone's own earlier audit) - a singleton
+`update_preferences` table, `id` fixed at 1, exactly mirroring
+`operator_chat_preferences`'s own shape. New
+`internal/storage/sqlite/updatersettings_repository.go` implementing
+the `Repository` port with the same scan/upsert idiom every other
+settings repository in this codebase already uses
+(`platform.ParseTimestamp`/`FormatTimestamp`, `boolToInt`, `ON CONFLICT
+(id) DO UPDATE`). Migrations are auto-discovered via
+`//go:embed migrations/*.sql` in `internal/storage/sqlite/migrations.go`
+- no manual registration step was needed.
+
+### Tests
+7 new test functions, all passing: a fake in-memory `Repository` for
+the domain `Service` (default-when-absent, replace-then-get round
+trip with a fixed injected clock, and repository-error wrapping into
+`ErrStorage`), plus real SQLite repository tests against a real
+migrated test database (not-found-when-absent, set-then-get round
+trip, and a singleton-row assertion literally counting rows after two
+writes to prove the second `SetPreferences` call replaces the same row
+rather than inserting a second one).
+
+### Validation
+`go vet ./internal/domain/updatersettings/... ./internal/storage/
+sqlite/...` clean. `go test ./internal/domain/updatersettings/... -v`
+and the new `UpdateSettings`-prefixed sqlite tests - all PASS. The
+full `go test ./internal/storage/sqlite/...` package suite (every
+existing repository, not just the new one) re-run afterward and still
+green, confirming the new migration did not disturb anything else.
+`go build ./...` clean. `gofmt -l` clean after one `gofmt -w` pass.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest schema/
+  validator, GitHub release client, and persisted update preferences
+  are done; no update manager/state machine, streaming-active guard,
+  HTTP API, Windows helper, or frontend yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. This entry - `feat(server): add persisted update preferences`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested,
+and validated synchronously in the same turn. No AskUserQuestion call
+was made.
