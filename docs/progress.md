@@ -31619,3 +31619,61 @@ Inno Setup compilation each) and two real integration-script runs
 were executed synchronously in the foreground and their real output
 inspected directly - not backgrounded, not assumed. No AskUserQuestion
 call was made.
+
+## test: verify Download detects a real hash mismatch
+
+### What was found and fixed
+While scoping the upcoming integration test script, a real gap was
+found: no existing test proved `Manager.Download` actually rejects a
+downloaded artifact whose real bytes disagree with the manifest's own
+SHA-256 (only lower-level pieces - `manifest.Validate`'s SHA-256
+*format* check and `CrossCheckDigest`'s GitHub-digest comparison -
+were covered, never the full `Download` pipeline against genuinely
+mismatching content). Added `tamperedReleaseServer` (a
+`simpleReleaseServer` variant serving installer bytes that differ from
+what its own manifest declares) and `TestDownloadDetectsHashMismatch`.
+
+The first version of this test itself caught a real, worth-recording
+subtlety: the initial tampered payload was a *different length* than
+the declared size, so the download aborted via the separate size-
+bound check (`ErrorCodeSizeExceeded`) before the SHA-256 comparison
+ever ran - a correct rejection, but not the one this test meant to
+isolate. Fixed by making the tampered payload the *same length* as
+the declared size with different content, so the test now genuinely
+isolates and proves the SHA-256 check specifically, with a comment
+explaining why a differently-sized tampered payload is a distinct,
+separately-covered case.
+
+### Validation
+`go test ./internal/updater/... -run TestDownloadDetectsHashMismatch -v`
+PASS, with the corrected assertion (`ErrorCodeHashMismatch`) and an
+`InstallBlocked`/no-candidate check. Full `go vet ./...`, `go build
+./...`, `go test ./internal/updater/...`, and `go test ./...` (whole
+repo) all clean afterward. `gofmt -l` clean.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (unchanged scope
+  from the previous entry; this is additional test coverage only, no
+  new product code).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. `7a4fac2` - `feat(server): add the Windows update-installer handoff`
+8. `4bbf685` - `feat(web): add the Updates settings panel and global
+   banner`
+9. `be6115f` - `build: generate the release manifest in the release
+   pipeline`
+10. This entry - `test: verify Download detects a real hash mismatch`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested
+(including diagnosing and fixing the test's own first-draft bug),
+and validated synchronously in the same turn. No AskUserQuestion call
+was made.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -312,4 +313,91 @@ func simpleReleaseServer(t *testing.T, version string) *httptest.Server {
 func shaSum(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// tamperedReleaseServer is simpleReleaseServer, except the installer
+// bytes actually served differ from what the manifest declares -
+// simulating corruption or tampering between manifest publication and
+// download (docs/updater.md §14).
+func tamperedReleaseServer(t *testing.T, version string) *httptest.Server {
+	t.Helper()
+	declaredPayload := []byte("fake installer bytes for " + version)
+	// Same length as declaredPayload, different content - isolates the
+	// SHA-256 check specifically. A differently-sized tampered payload
+	// would instead be caught by the separate size-bound check
+	// (docs/updater.md §13), which is real, correct, and intentional,
+	// but is not what this test exercises.
+	servedPayload := []byte(strings.Repeat("X", len(declaredPayload)))
+
+	installerSHA := shaSum(declaredPayload)
+	m := manifest.Manifest{
+		Format: manifest.Format, SchemaVersion: manifest.SchemaVersion,
+		Version: version, Channel: manifest.ChannelStable,
+		Artifacts: []manifest.Artifact{
+			{
+				OS: manifest.OSWindows, Arch: manifest.ArchAMD64, Kind: manifest.KindInstaller,
+				Name:      "StreamingTreeForOBS-Setup-" + version + ".exe",
+				SizeBytes: int64(len(declaredPayload)), SHA256: installerSHA,
+			},
+		},
+	}
+	manifestBytes := manifest.MustMarshal(m)
+
+	mux := http.NewServeMux()
+	var installerURL, manifestURL string
+	mux.HandleFunc("/repos/Czekosabe/streaming-tree-for-obs/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": 1, "tag_name": "v" + version, "name": version,
+			"draft": false, "prerelease": false, "body": "notes",
+			"published_at": time.Now().UTC().Format(time.RFC3339),
+			"assets": []map[string]any{
+				{"id": 1, "name": manifestAssetName, "size": len(manifestBytes), "url": manifestURL},
+				// size declared honestly matches the manifest, so the
+				// size-bound check alone would not catch this - only the
+				// SHA-256 check does.
+				{"id": 2, "name": m.Artifacts[0].Name, "size": len(declaredPayload), "url": installerURL},
+			},
+		})
+	})
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(manifestBytes)
+	})
+	mux.HandleFunc("/installer.exe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(servedPayload)
+	})
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	installerURL = server.URL + "/installer.exe"
+	manifestURL = server.URL + "/manifest.json"
+	return server
+}
+
+func TestDownloadDetectsHashMismatch(t *testing.T) {
+	server := tamperedReleaseServer(t, "0.2.0")
+	m := newTestManager(t, server, "0.1.0")
+
+	if err := m.CheckNow(context.Background()); err != nil {
+		t.Fatalf("CheckNow() error = %v", err)
+	}
+	if got := m.Status(context.Background()).State; got != StateAvailable {
+		t.Fatalf("State after CheckNow = %q, want %q", got, StateAvailable)
+	}
+
+	err := m.Download(context.Background())
+	if err == nil {
+		t.Fatal("Download() succeeded against tampered content, want a hash-mismatch failure")
+	}
+
+	status := m.Status(context.Background())
+	if status.State != StateError {
+		t.Fatalf("State after failed Download = %q, want %q", status.State, StateError)
+	}
+	if status.LastErrorCode != ErrorCodeHashMismatch {
+		t.Fatalf("LastErrorCode = %q, want %q", status.LastErrorCode, ErrorCodeHashMismatch)
+	}
+	if !status.InstallBlocked {
+		// No verified candidate exists - Install must remain blocked.
+		t.Fatal("InstallBlocked = false after a failed download, want true (no verified candidate)")
+	}
 }
