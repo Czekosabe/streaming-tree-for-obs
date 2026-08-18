@@ -3,7 +3,9 @@
     Builds a local Stage 20A Windows release: the production frontend
     embedded into a GUI-subsystem Go executable, staged with the four
     mandatory legal documents, and packaged by Inno Setup into a single
-    installer with a SHA-256 digest.
+    installer with a SHA-256 digest. When Version is a strict
+    major.minor.patch release version, also generates the Stage 20B
+    release manifest (docs/updater.md §5/§39) from the real installer.
 
 .DESCRIPTION
     See docs/windows-packaging.md for the full architecture this script
@@ -17,7 +19,9 @@
 
     A development/test package version (e.g. "0.1.0-dev+abc1234") is
     expected, never a real "1.0.0" public release - this is packaging
-    infrastructure, not the public 1.0 release.
+    infrastructure, not the public 1.0 release. A dev-suffixed version
+    never gets a release manifest (docs/updater.md §4's strict version
+    format does not accept one) - this is expected, not an error.
 
 .PARAMETER Version
     The application version to inject (internal/buildinfo.releaseVersion).
@@ -232,8 +236,42 @@ $Hash = Get-FileHash -Path $Installer.FullName -Algorithm SHA256
 $HashFile = "$($Installer.FullName).sha256"
 "$($Hash.Hash.ToLower())  $($Installer.Name)" | Out-File -FilePath $HashFile -Encoding ascii -NoNewline
 
+# --- 10. Generate the Stage 20B release manifest ----------------------------
+# Only attempted for a strict "major.minor.patch" version - see
+# docs/updater.md §4/§5's own strict version format, which a "-dev+..."
+# local/test build (this script's own everyday use, per its own doc comment
+# above) never matches. This is not a weaker guarantee: a version shaped
+# like a real release always gets a manifest, generated from the real
+# installer file and self-validated by the exact same validator the
+# runtime updater uses (docs/updater.md §39) - the pipeline fails loudly
+# only when it could have produced a manifest but produced an invalid one.
+$ManifestPath = Join-Path $OutputDir 'streaming-tree-release.json'
+if ($Version -match '^\d+\.\d+\.\d+$') {
+    Write-Step 'Generating the release manifest'
+    Push-Location $ServerDir
+    try {
+        go run ./cmd/releasemanifest `
+            -version $Version `
+            -artifact $Installer.FullName `
+            -artifact-name $Installer.Name `
+            -os windows -arch amd64 -kind installer `
+            -out $ManifestPath
+        if ($LASTEXITCODE -ne 0) { Fail 'Release manifest generation failed.' }
+    }
+    finally {
+        Pop-Location
+    }
+}
+else {
+    Write-Step "Skipping release manifest: '$Version' is not a strict major.minor.patch release version"
+    $ManifestPath = $null
+}
+
 Write-Host ''
 Write-Host 'Release build complete (UNSIGNED - see docs/windows-packaging.md §20).' -ForegroundColor Green
 Write-Host "  Executable: $ExePath"
 Write-Host "  Installer:  $($Installer.FullName)"
 Write-Host "  SHA-256:    $HashFile"
+if ($null -ne $ManifestPath) {
+    Write-Host "  Manifest:   $ManifestPath"
+}

@@ -31513,3 +31513,109 @@ No background command was required for this unit - written, tested
 one real test-isolation bug the suite itself would have hit), and
 validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## build: generate the release manifest in the release pipeline
+
+### What was built
+docs/updater.md §39's release-pipeline half:
+
+- `apps/server/cmd/releasemanifest/main.go` - a small first-party Go
+  tool: computes an artifact's real size and SHA-256 directly from the
+  file on disk (never hand-typed, never duplicated from another
+  source), builds a `manifest.Manifest`, and - critically - calls the
+  exact same `manifest.Validate` the runtime updater itself uses
+  before ever writing the output file, so the release pipeline and
+  the runtime updater can never disagree about what a valid manifest
+  looks like (this was the specific risk this design choice exists to
+  close).
+- `scripts/build-release.ps1` extended with a new step 10, generating
+  `build/release/output/streaming-tree-release.json` after the real
+  installer is built, via `go run ./cmd/releasemanifest` against the
+  real installer file - never a second, hand-assembled JSON path.
+  Deliberately gated on the version string matching a strict
+  `major.minor.patch` shape: this script's own everyday use is local/
+  test builds with a `-dev+<suffix>` version (its own doc comment
+  already says so), which docs/updater.md §4's strict version format
+  never accepts - generating no manifest for those builds is the
+  correct, honest behavior, not a bug, and is logged as a clear,
+  explicit skip rather than either silently doing nothing or failing
+  the whole release build over a version shape this script's own
+  normal callers use every day. A version that DOES look like a real
+  release always gets a manifest, and the pipeline fails loudly
+  (`Fail`, exit 1) if that manifest ever fails its own self-
+  validation - never a best-effort partial manifest.
+
+### Real end-to-end verification (not merely unit-tested)
+Ran the actual, complete release pipeline twice against this real
+Windows machine:
+1. `scripts/build-release.ps1 -Version "0.1.9"` (a real strict
+   version, never published) - full real frontend build, real Go
+   release-executable build, real Inno Setup compilation, and the new
+   manifest step, all the way through. The generated manifest's
+   `sizeBytes`/`sha256` were compared directly against the
+   independently-computed `.sha256` sidecar file `build-release.ps1`
+   already produces - both matched byte-for-byte
+   (`80c0f5c8...9b9805582`, 17186511 bytes), confirming the new Go
+   tool's own hashing agrees exactly with `Get-FileHash`'s.
+2. `scripts/build-release.ps1 -Version "0.1.0-dev+regressioncheck"
+   -SkipInstaller` - confirmed the existing dev-build workflow (the
+   one every prior milestone's own regression already relies on) is
+   completely unaffected; manifest generation is never reached in
+   `-SkipInstaller` mode, exactly as before this change.
+3. Directly verified the version-format gate itself in PowerShell
+   against five representative version strings (`0.1.9`, `1.2.3`,
+   `0.1.0-dev+abc`, `0.1.0-dev+regression`, `10.20.30`) - matched
+   exactly as intended in both directions.
+4. Re-ran `node scripts/verify-packaged-app.mjs` (18 steps) and
+   `node scripts/verify-installer.mjs` (10 steps) against the real
+   rebuilt artifacts from step 1 - both fully PASS. `verify-
+   installer.mjs`'s own step 08 ("uninstaller was created by the
+   installer") is, incidentally, direct real-world confirmation that
+   Inno Setup genuinely creates the `unins000.exe` marker
+   `WindowsHandoff.Available()` depends on (docs/updater.md §19) - not
+   only asserted in a unit test, but observed on a real, freshly-
+   installed copy.
+
+### Tests
+2 new test functions for `cmd/releasemanifest`'s own `hashFile`
+helper (real size/SHA-256 against a real temp file, and a missing-
+file error path) - the tool's higher-level behavior (flag validation,
+manifest construction, self-validation-before-write) is already
+exercised far more thoroughly by the real end-to-end pipeline run
+above than any mocked unit test could provide.
+
+### Validation
+`go build ./...`, `go vet ./...`, `go test ./cmd/releasemanifest/...`
+all clean. `gofmt -l cmd/releasemanifest/` - no output. `build/`
+remains git-ignored (`.gitignore` line 8/87, unchanged) - the real
+generated manifest from the verification runs above was never staged
+or committed, only the generator tool and its tests were.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest, GitHub
+  client, settings, the update-manager state machine, the full HTTP
+  API, the real Windows handoff, the full frontend, and the release-
+  pipeline manifest generator are all done and verified end to end; no
+  integration test script yet, no documentation pass yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. `7a4fac2` - `feat(server): add the Windows update-installer handoff`
+8. `4bbf685` - `feat(web): add the Updates settings panel and global
+   banner`
+9. This entry - `build: generate the release manifest in the release
+   pipeline`
+
+### Continuous-execution rule compliance
+Two real, multi-minute release builds (frontend build + Go build +
+Inno Setup compilation each) and two real integration-script runs
+were executed synchronously in the foreground and their real output
+inspected directly - not backgrounded, not assumed. No AskUserQuestion
+call was made.
