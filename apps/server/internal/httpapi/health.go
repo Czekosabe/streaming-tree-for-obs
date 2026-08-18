@@ -29,7 +29,7 @@ func healthHandler(logger *slog.Logger, startedAt time.Time) http.HandlerFunc {
 		writeJSON(w, logger, http.StatusOK, HealthResponse{
 			Status:        "ok",
 			Service:       buildinfo.ServiceName,
-			Version:       buildinfo.Version,
+			Version:       buildinfo.EffectiveVersion(),
 			UptimeSeconds: time.Since(startedAt).Seconds(),
 			Time:          time.Now().UTC().Format(time.RFC3339),
 		})

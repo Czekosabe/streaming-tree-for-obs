@@ -71,3 +71,17 @@ Thumbs.db
 .eslintcache
 .vite/
 coverage/
+
+# --- Stage 20A embedded release assets ---
+# The release build script stages the real production frontend build and
+# the canonical legal documents into these directories immediately before
+# building the release binary (see docs/windows-packaging.md §2/§16). Only
+# the tracked .gitkeep placeholder in each ships in source control - the
+# generated content must never be committed.
+apps/server/internal/webassets/embedded/*
+!apps/server/internal/webassets/embedded/.gitkeep
+apps/server/internal/webassets/legal/*
+!apps/server/internal/webassets/legal/.gitkeep
+
+# --- Stage 20A local release build output ---
+build/release/

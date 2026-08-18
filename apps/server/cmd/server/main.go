@@ -8,7 +8,11 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
+	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -48,9 +52,12 @@ import (
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
 	"github.com/streaming-tree/server/internal/runtime/branch"
+	"github.com/streaming-tree/server/internal/runtime/browserlaunch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
 	"github.com/streaming-tree/server/internal/runtime/ffmpeg"
 	"github.com/streaming-tree/server/internal/runtime/mediamtx"
+	"github.com/streaming-tree/server/internal/runtime/nativealert"
+	"github.com/streaming-tree/server/internal/runtime/singleinstance"
 	"github.com/streaming-tree/server/internal/runtime/streamelementsengagement"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
@@ -58,13 +65,44 @@ import (
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
+	"github.com/streaming-tree/server/internal/webassets"
 )
 
 func main() {
+	if handled := handleVersionFlag(); handled {
+		return
+	}
+
 	if err := run(); err != nil {
 		slog.Error("server terminated with an error", slog.Any("error", err))
+		if buildinfo.Packaged() {
+			// The release binary has no console window (docs/windows-
+			// packaging.md §7/§13) - a fatal startup error must not simply
+			// disappear. err's own text follows this codebase's existing
+			// convention of never including a secret/token/credential.
+			nativealert.ShowFatalError(buildinfo.ProductName, err.Error())
+		}
 		os.Exit(1)
 	}
+}
+
+// handleVersionFlag implements `--version`: prints product identity and
+// exits 0 without starting any application service (no database open, no
+// MediaMTX supervisor, no HTTP listener) - safe to run against an
+// installed release binary as a smoke-test check.
+func handleVersionFlag() bool {
+	versionFlag := flag.Bool("version", false, "print version information and exit")
+	flag.Parse()
+	if !*versionFlag {
+		return false
+	}
+
+	fmt.Printf("%s %s\n", buildinfo.ProductName, buildinfo.EffectiveVersion())
+	if commit, _, ok := buildinfo.CommitInfo(); ok {
+		fmt.Printf("commit %s\n", commit)
+	}
+	fmt.Printf("licence %s\n", buildinfo.ApplicationLicenseSPDX)
+	return true
 }
 
 // run holds the real main so that every exit path can return an error and still
@@ -78,6 +116,32 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+
+	// Packaged mode only (docs/windows-packaging.md §9): a second launch
+	// while an instance is already running must not open a second backend,
+	// bind the port again, or touch the database - it focuses the existing
+	// instance's management URL and exits cleanly instead.
+	if buildinfo.Packaged() {
+		acquired, release, instErr := singleinstance.Acquire()
+		if instErr != nil {
+			return instErr
+		}
+		if !acquired {
+			managementURL := "http://" + cfg.Address() + "/"
+			if cfg.TestNoUI {
+				logger.Info("another instance is already running (test mode, browser launch suppressed)",
+					slog.String("url", managementURL))
+			} else if openErr := browserlaunch.Open(managementURL); openErr != nil {
+				logger.Warn("another instance is already running, and opening its browser tab failed",
+					slog.Any("error", openErr), slog.String("url", managementURL))
+			} else {
+				logger.Info("another instance is already running; focused it and exiting",
+					slog.String("url", managementURL))
+			}
+			return nil
+		}
+		defer release()
 	}
 
 	startedAt := time.Now()
@@ -573,6 +637,21 @@ func run() error {
 		slog.Bool("compatible", ffmpegStatus.Compatible),
 	)
 
+	// Packaged/release builds only (docs/windows-packaging.md §1/§2/§8/§16):
+	// the embedded production frontend/legal documents and the real
+	// graceful-shutdown endpoint. Every development/test build leaves all
+	// three nil, exactly matching every prior stage's behavior.
+	var webAssets, legalAssets fs.FS
+	var shutdownCancel context.CancelFunc
+	if buildinfo.Packaged() {
+		webAssets = webassets.Frontend()
+		legalAssets = webassets.Legal()
+		// The same CancelFunc signal.NotifyContext already returned above -
+		// POST /api/system/shutdown reuses the exact existing
+		// <-ctx.Done() graceful-shutdown path rather than duplicating it.
+		shutdownCancel = stop
+	}
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:          logger,
 		AllowedOrigins:  cfg.AllowedOrigins,
@@ -619,6 +698,10 @@ func run() error {
 
 		Goals:            goalsDomainService,
 		SupporterWidgets: supporterWidgetsManager,
+
+		WebAssets:   webAssets,
+		LegalAssets: legalAssets,
+		Shutdown:    shutdownCancel,
 	})
 
 	server := &http.Server{
@@ -628,17 +711,68 @@ func run() error {
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 
+	// shutdownRuntime stops every runtime subsystem started above, in the
+	// same order regardless of which of the three paths below triggers it -
+	// branches before MediaMTX (an in-flight runtime request cannot restart
+	// MediaMTX on the way out, and no branch is left trying to reconnect to
+	// an input that is itself mid-shutdown), reaping every child process so
+	// the backend never leaves one behind.
+	shutdownRuntime := func(shutdownCtx context.Context) {
+		branchManager.Shutdown(shutdownCtx)
+		deviceFlowManager.Shutdown(shutdownCtx)
+		youtubeAuthManager.Shutdown(shutdownCtx)
+		twitchEngagementManager.Shutdown(shutdownCtx)
+		youtubeEngagementManager.Shutdown(shutdownCtx)
+		streamElementsEngagementManager.Shutdown(shutdownCtx)
+		operatorChatProjection.Shutdown(shutdownCtx)
+		chatOverlayManager.Shutdown(shutdownCtx)
+		_ = outboundChatManager.Shutdown(shutdownCtx)
+		_ = chatAutomationManager.Shutdown(shutdownCtx)
+		_ = alertsManager.Shutdown(shutdownCtx)
+		_ = audioManager.Shutdown(shutdownCtx)
+		_ = goalsManager.Shutdown(shutdownCtx)
+		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
+		eventBus.Shutdown()
+		accountService.ShutdownValidationWorker(shutdownCtx)
+		supervisor.Shutdown(shutdownCtx)
+	}
+
+	// The listener is created synchronously, before Serve, so packaged mode
+	// only ever opens the browser once the server is actually able to
+	// accept connections (docs/windows-packaging.md §6) - not merely once
+	// ListenAndServe has been called.
+	listener, listenErr := net.Listen("tcp", cfg.Address())
+	if listenErr != nil {
+		// Most often because the port is already taken. MediaMTX and any
+		// branch may already be running, so both are stopped before
+		// returning.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		shutdownRuntime(shutdownCtx)
+		cancel()
+		return listenErr
+	}
+
+	if buildinfo.Packaged() {
+		managementURL := "http://" + listener.Addr().String() + "/"
+		if cfg.TestNoUI {
+			logger.Info("browser launch suppressed (test mode)", slog.String("url", managementURL))
+		} else if openErr := browserlaunch.Open(managementURL); openErr != nil {
+			logger.Warn("failed to open the default browser",
+				slog.Any("error", openErr), slog.String("url", managementURL))
+		}
+	}
+
 	serverErrors := make(chan error, 1)
 
 	go func() {
 		logger.Info("http server listening",
 			slog.String("service", buildinfo.ServiceName),
-			slog.String("version", buildinfo.Version),
+			slog.String("version", buildinfo.EffectiveVersion()),
 			slog.String("address", cfg.Address()),
 			slog.Any("allowed_origins", cfg.AllowedOrigins),
 		)
 
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 			return
 		}
@@ -647,27 +781,10 @@ func run() error {
 
 	select {
 	case err := <-serverErrors:
-		// The listener failed outright, most often because the port is taken.
-		// MediaMTX and any branch may already be running, so both are
-		// stopped before returning - branches first, see below.
+		// Serve failed after the listener was already accepting connections
+		// (rare) - same cleanup as the bind-failure path above.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		branchManager.Shutdown(shutdownCtx)
-		deviceFlowManager.Shutdown(shutdownCtx)
-		youtubeAuthManager.Shutdown(shutdownCtx)
-		twitchEngagementManager.Shutdown(shutdownCtx)
-		youtubeEngagementManager.Shutdown(shutdownCtx)
-		streamElementsEngagementManager.Shutdown(shutdownCtx)
-		operatorChatProjection.Shutdown(shutdownCtx)
-		chatOverlayManager.Shutdown(shutdownCtx)
-		_ = outboundChatManager.Shutdown(shutdownCtx)
-		_ = chatAutomationManager.Shutdown(shutdownCtx)
-		_ = alertsManager.Shutdown(shutdownCtx)
-		_ = audioManager.Shutdown(shutdownCtx)
-		_ = goalsManager.Shutdown(shutdownCtx)
-		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
-		eventBus.Shutdown()
-		accountService.ShutdownValidationWorker(shutdownCtx)
-		supervisor.Shutdown(shutdownCtx)
+		shutdownRuntime(shutdownCtx)
 		cancel()
 		return err
 
@@ -676,41 +793,16 @@ func run() error {
 			slog.Duration("timeout", cfg.ShutdownTimeout))
 
 		// Stop intercepting signals: a second Ctrl+C should kill the process
-		// immediately instead of waiting for the drain to finish.
+		// immediately instead of waiting for the drain to finish. Also the
+		// same CancelFunc POST /api/system/shutdown calls, so both paths
+		// converge here - see httpapi.Options.Shutdown's own doc comment.
 		stop()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 
 		httpErr := server.Shutdown(shutdownCtx)
-
-		// Branches are stopped before MediaMTX, and MediaMTX is stopped
-		// after the HTTP server: an in-flight runtime request cannot
-		// restart MediaMTX on the way out, and no branch is left trying to
-		// reconnect to an input that is itself in the middle of shutting
-		// down. This also reaps every child process, so the backend never
-		// leaves one behind. The device-flow manager and the account
-		// validation worker are stopped alongside branches: both are
-		// background loops with no external process to reap, but stopping
-		// them before MediaMTX keeps the shutdown order easy to reason
-		// about as one group.
-		branchManager.Shutdown(shutdownCtx)
-		deviceFlowManager.Shutdown(shutdownCtx)
-		youtubeAuthManager.Shutdown(shutdownCtx)
-		twitchEngagementManager.Shutdown(shutdownCtx)
-		youtubeEngagementManager.Shutdown(shutdownCtx)
-		streamElementsEngagementManager.Shutdown(shutdownCtx)
-		operatorChatProjection.Shutdown(shutdownCtx)
-		chatOverlayManager.Shutdown(shutdownCtx)
-		_ = outboundChatManager.Shutdown(shutdownCtx)
-		_ = chatAutomationManager.Shutdown(shutdownCtx)
-		_ = alertsManager.Shutdown(shutdownCtx)
-		_ = audioManager.Shutdown(shutdownCtx)
-		_ = goalsManager.Shutdown(shutdownCtx)
-		_ = supporterWidgetsManager.Shutdown(shutdownCtx)
-		eventBus.Shutdown()
-		accountService.ShutdownValidationWorker(shutdownCtx)
-		supervisor.Shutdown(shutdownCtx)
+		shutdownRuntime(shutdownCtx)
 
 		if httpErr != nil {
 			logger.Error("graceful shutdown failed, closing forcefully",

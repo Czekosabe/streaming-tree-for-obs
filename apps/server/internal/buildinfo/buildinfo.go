@@ -11,12 +11,25 @@ import "runtime/debug"
 // ServiceName is reported by the health endpoint and used in log lines.
 const ServiceName = "streaming-tree-server"
 
-// Version is the application version. It is kept in sync with the web app's
-// package.json version by hand for now; a later stage can inject a real
-// release version at build time with -ldflags. Until then it is an internal
-// identifier only - user-facing surfaces show IsReleaseBuild()'s honest
-// "development build" state instead of presenting this as a release number.
+// Version is the hand-maintained internal identifier, kept in sync with the
+// web app's package.json version by hand. It is never shown to a user
+// directly - EffectiveVersion() is, since a release build overrides it via
+// -ldflags (see releaseVersion below).
 const Version = "0.1.0"
+
+// releaseVersion, releaseCommit and packagedFlag are set only by the
+// Stage 20A release build script (scripts/build-release.ps1), via
+// `-ldflags "-X .../buildinfo.releaseVersion=... -X
+// .../buildinfo.releaseCommit=... -X .../buildinfo.packagedFlag=true"`.
+// They are empty/false in every ordinary `go build`/`go run`/`go test` -
+// packaged mode is never inferred from the operating system alone, since
+// Windows developers also use the ordinary source/dev workflow (see
+// docs/windows-packaging.md §30).
+var (
+	releaseVersion string
+	releaseCommit  string
+	packagedFlag   string
+)
 
 // ProductName is the public product name, shown to end users.
 const ProductName = "Streaming Tree for OBS"
@@ -54,23 +67,50 @@ const ApplicationLicenseSPDX = "GPL-3.0-or-later"
 // text is the repository-root LICENSE file.
 const ApplicationLicenseName = "GNU General Public License v3 or later"
 
-// IsReleaseBuild reports whether Version above should be presented as a real
-// release. It is always false until Stage 20A establishes real
-// release-version injection; user-facing surfaces must show an honest
-// "development build" identity while this is false rather than inventing a
-// release number.
-const IsReleaseBuild = false
+// Packaged reports whether this binary was produced by the Stage 20A
+// release build script, as opposed to an ordinary developer/test build.
+func Packaged() bool {
+	return packagedFlag == "true"
+}
 
-// CommitInfo reports the VCS revision this binary was built from, using Go's
-// own automatic build-info stamping (available for any `go build`/`go
-// install` run inside a git checkout - no -ldflags setup required). This is
-// the one piece of build identity the frontend cannot reliably determine on
-// its own, since the Vite build has no equivalent automatic stamping.
+// EffectiveVersion returns the release build script's injected version
+// when present, otherwise the hand-maintained internal Version constant.
+// The frontend obtains this exclusively through GET /api/about - it never
+// invents its own version string.
+func EffectiveVersion() string {
+	if releaseVersion != "" {
+		return releaseVersion
+	}
+	return Version
+}
+
+// IsReleaseBuild reports whether EffectiveVersion() above should be
+// presented as a real release rather than an honest "development build"
+// identity. True only when the release build script actually injected a
+// version - never inferred from Packaged() alone, since a development
+// package build (see docs/windows-packaging.md §10) is packaged but still
+// not a public release.
+func IsReleaseBuild() bool {
+	return releaseVersion != ""
+}
+
+// CommitInfo reports the VCS revision this binary was built from. A release
+// build's injected commit (set by the build script from the exact commit it
+// built - reliable even when the release script builds from a staged copy
+// of the source rather than a live git checkout) takes precedence; every
+// other build falls back to Go's own automatic build-info stamping
+// (available for any `go build`/`go install` run inside a git checkout - no
+// -ldflags setup required). This is the one piece of build identity the
+// frontend cannot reliably determine on its own, since the Vite build has
+// no equivalent automatic stamping.
 //
 // ok is false when no VCS revision is available at all (e.g. `go run`, a
 // build outside a git checkout, or VCS stamping explicitly disabled) -
 // callers must not fabricate a commit value in that case.
 func CommitInfo() (commit string, dirty bool, ok bool) {
+	if releaseCommit != "" {
+		return releaseCommit, false, true
+	}
 	info, available := debug.ReadBuildInfo()
 	if !available {
 		return "", false, false

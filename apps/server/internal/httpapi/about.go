@@ -48,8 +48,8 @@ func aboutHandler(logger *slog.Logger) http.HandlerFunc {
 
 		resp := AboutResponse{
 			ProductName:            buildinfo.ProductName,
-			Version:                buildinfo.Version,
-			IsReleaseBuild:         buildinfo.IsReleaseBuild,
+			Version:                buildinfo.EffectiveVersion(),
+			IsReleaseBuild:         buildinfo.IsReleaseBuild(),
 			CreatorName:            buildinfo.CreatorName,
 			RepositoryURL:          buildinfo.RepositoryURL,
 			CreatorURL:             buildinfo.CreatorURL,

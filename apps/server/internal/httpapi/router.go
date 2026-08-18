@@ -6,6 +6,7 @@ package httpapi
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -168,6 +169,25 @@ type Options struct {
 	// (docs/supporter-widgets.md §12) rather than failing - only a
 	// goal widget is unaffected by this being nil.
 	SupporterWidgets SupporterWidgetsRuntime
+	// WebAssets is the embedded production frontend build
+	// (webassets.Frontend()). When nil (every development/test build
+	// today), the router keeps its existing tiny liveness JSON at "/" and
+	// serves no static files at all - unchanged from every prior stage.
+	// When set (packaged/release builds only), "/" and every other
+	// non-/api/ path are served from it, with an SPA fallback to
+	// index.html for client-side routes - see production.go.
+	WebAssets fs.FS
+	// LegalAssets is the embedded canonical legal documents
+	// (webassets.Legal()). When nil, the fixed /legal/* routes are not
+	// registered.
+	LegalAssets fs.FS
+	// Shutdown, when non-nil, is called by POST /api/system/shutdown to
+	// begin the application's real graceful-shutdown sequence - the exact
+	// same context.CancelFunc main.go already gets from
+	// signal.NotifyContext, so the shutdown endpoint reuses the existing,
+	// already-correct shutdown path rather than duplicating it. When nil
+	// (every development/test build today), the route is not registered.
+	Shutdown context.CancelFunc
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -272,20 +292,40 @@ func NewRouter(opts Options) http.Handler {
 		registerPublicWidgetRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
 	}
 
+	if opts.Shutdown != nil {
+		registerShutdownRoute(mux, logger, opts.Shutdown, opts.AllowedOrigins)
+	}
+
+	if opts.LegalAssets != nil {
+		registerLegalRoutes(mux, logger, opts.LegalAssets)
+	}
+
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
 	// default plain-text response, so the frontend can parse every failure.
+	// Registered before the production/liveness routes below so a real /api/
+	// path can never fall through to either of them.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, logger, http.StatusNotFound,
 			"not_found", "This API endpoint does not exist.")
 	})
 
-	// The root is a tiny liveness hint for someone opening the port in a browser.
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, logger, http.StatusOK, map[string]string{
-			"service": "streaming-tree-server",
-			"health":  "/api/health",
+	if opts.WebAssets != nil {
+		// Packaged/release mode: the embedded production frontend owns "/"
+		// and every other non-/api/ path (see production.go) - the tiny
+		// liveness JSON below is redundant once the real application is
+		// being served there.
+		registerProductionRoutes(mux, logger, opts.WebAssets)
+	} else {
+		// Development/test mode (every build today unless WebAssets was
+		// explicitly set): the root stays a tiny liveness hint for someone
+		// opening the port in a browser, exactly as before this stage.
+		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, logger, http.StatusOK, map[string]string{
+				"service": "streaming-tree-server",
+				"health":  "/api/health",
+			})
 		})
-	})
+	}
 
 	return chain(mux,
 		withRecovery(logger),

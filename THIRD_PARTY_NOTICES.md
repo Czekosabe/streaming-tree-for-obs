@@ -73,6 +73,7 @@ toolchain. The notable direct dependencies are:
 | [`google.golang.org/grpc`](https://github.com/grpc/grpc-go) v1.83.0 | Apache-2.0 | gRPC client used by the Stage 15A YouTube Live Chat connector's `streamList` server-streaming transport (`internal/provider/youtube`, `internal/runtime/youtubeengagement`) |
 | [`google.golang.org/protobuf`](https://github.com/protocolbuffers/protobuf-go) v1.36.12 | BSD-3-Clause | Protocol Buffers runtime for the generated `streamlistpb` client code (`internal/provider/youtube/streamlistpb`) |
 | [`github.com/go-ole/go-ole`](https://github.com/go-ole/go-ole) v1.3.0 | MIT | Go bindings for Windows COM Automation, used only by the Stage 17A Windows system text-to-speech provider (`internal/provider/tts/windows.go`, build-tagged `windows`) to call `SAPI.SpVoice`/`SAPI.SpMemoryStream`/`SAPI.SpAudioFormat` |
+| [`golang.org/x/sys`](https://pkg.go.dev/golang.org/x/sys) v0.46.0 | BSD-3-Clause | The Go project's own extended platform-syscall package (already an indirect dependency via other modules above); used directly since Stage 20A for the Windows-only `ShellExecuteW`/`CreateMutexW`/`MessageBoxW` calls behind `internal/runtime/browserlaunch`, `internal/runtime/singleinstance`, and `internal/runtime/nativealert` (each build-tagged `windows`, with a no-op/fallback `!windows` counterpart) |
 
 `coder/websocket` (the maintained continuation of the formerly-popular
 `nhooyr.io/websocket`) was chosen after checking: actively maintained, pure Go

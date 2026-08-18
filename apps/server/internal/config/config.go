@@ -71,6 +71,16 @@ type Config struct {
 	// EngagementBufferSize (the projection's own capacity, not the Event
 	// Bus's) and never persisted, for the same reason.
 	OperatorChatBufferSize int
+
+	// TestNoUI suppresses packaged-mode OS-level side effects (opening the
+	// default browser, showing a native fatal-startup-error dialog) that
+	// are unsafe/undesirable to trigger for real during an automated test
+	// (docs/windows-packaging.md §30). It has no effect at all unless the
+	// binary was also built packaged (buildinfo.Packaged()) - a
+	// development build never reads this differently, and it can never be
+	// set by an incoming HTTP request, only by the process's own
+	// environment at startup.
+	TestNoUI bool
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -253,6 +263,12 @@ func Load() (Config, error) {
 		}
 		cfg.OperatorChatBufferSize = size
 	}
+
+	testNoUI, err := lookupBool("STREAMING_TREE_TEST_NO_UI", false)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TestNoUI = testNoUI
 
 	return cfg, nil
 }

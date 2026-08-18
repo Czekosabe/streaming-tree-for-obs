@@ -577,7 +577,7 @@ func run() error {
 	go func() {
 		logger.Info("http server listening",
 			slog.String("service", buildinfo.ServiceName),
-			slog.String("version", buildinfo.Version),
+			slog.String("version", buildinfo.EffectiveVersion()),
 			slog.String("address", cfg.Address()),
 		)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

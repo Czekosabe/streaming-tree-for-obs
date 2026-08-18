@@ -29349,3 +29349,119 @@ None for this entry specifically - see the contract's own §24.
 Implement production static/SPA serving and the embedded-frontend
 placeholder scaffolding (`internal/webassets`), following the contract
 above.
+
+## 2026-08-18 — feat(server): add production serving and packaged lifecycle
+
+### Status
+Completed.
+
+### Scope
+Core backend implementation of the Stage 20A contract
+(`docs/windows-packaging.md`): production static/SPA frontend serving,
+embedded legal documents, and the packaged-mode application lifecycle
+(browser launch, single-instance detection, graceful shutdown via a
+protected HTTP endpoint, native fatal-startup-error dialog, version
+metadata, `--version`). Everything here is additive and inert unless a
+release build explicitly enables it - every field/behavior defaults to
+exactly today's development/test behavior.
+
+### Changes
+- `internal/webassets` (new package) - `//go:embed all:embedded`/
+  `//go:embed all:legal`, each rooted via `fs.Sub`. Both directories
+  contain only a tracked `.gitkeep` placeholder on a clean checkout
+  (`go build`/`go test` never require Node); `.gitignore` scopes the
+  generated content out. 1 test.
+- `internal/httpapi/production.go` (new) - `registerProductionRoutes`/
+  `productionHandler`: static-asset-like paths (a dotted final
+  segment) are served verbatim or 404 honestly, never silently
+  fall back to `index.html`; everything else falls back to
+  `index.html`, exactly matching Vite's dev-time SPA behavior for every
+  management and public-overlay React Router route. Hashed `assets/`
+  paths get a long immutable cache lifetime; `index.html` stays
+  `no-cache`. Registered as a bare `/` pattern (not `GET /`) because
+  Go's `ServeMux` refuses to register a method-restricted broad-path
+  pattern alongside the already-registered `/api/` catch-all - the
+  method check moved inside the handler instead. Path traversal
+  rejected via explicit `path.Clean`/prefix validation before any
+  filesystem lookup, on top of `fs.FS`'s own root confinement. 7 tests.
+- `internal/httpapi/legal.go` (new) - a fixed, closed allowlist of
+  4 same-origin routes (`/legal/license`, `/legal/privacy`,
+  `/legal/legal`, `/legal/third-party-notices`), each serving exactly
+  one hand-mapped embedded file as plain text - no `{name}` parameter
+  ever resolves an arbitrary filename. 4 tests.
+- `internal/httpapi/system.go` (new) - `POST /api/system/shutdown`:
+  requires an exact `{"confirm":true}` JSON body (strict decode,
+  unknown fields rejected, 256-byte cap) - an HTML `<form>` cannot
+  submit `application/json` at all, so this alone defeats a
+  cross-origin form-based attempt independent of Origin; an `Origin`
+  header, when present, must be in the existing CORS allowlist. Calls
+  the exact same `context.CancelFunc` `main.go` already gets from
+  `signal.NotifyContext`, so it reuses the existing, already-correct
+  `<-ctx.Done()` graceful-shutdown sequence rather than duplicating it;
+  idempotent via an atomic flag. 9 tests.
+- `internal/httpapi/router.go` - `Options` gained `WebAssets`/
+  `LegalAssets fs.FS` and `Shutdown context.CancelFunc`; all three nil
+  by default (every development/test build), reproducing exactly
+  today's tiny-liveness-JSON-at-`/` behavior unless a release build
+  sets them.
+- `internal/buildinfo/buildinfo.go` - `Version`/`IsReleaseBuild` split
+  into a hand-maintained internal constant plus new
+  `EffectiveVersion()`/`IsReleaseBuild()` functions that prefer a
+  release build's `-ldflags`-injected `releaseVersion`/`releaseCommit`
+  when present; new `Packaged()` (also ldflags-injected, `false` by
+  default - never inferred from the OS alone, since Windows developers
+  also use the ordinary source workflow). `CommitInfo()` now prefers an
+  injected commit before falling back to Go's own VCS build-info
+  stamping. `internal/httpapi/about.go`/`health.go` and both
+  `cmd/*/main.go` startup log lines switched to `EffectiveVersion()`.
+- `internal/runtime/browserlaunch` (new) - `ShellExecuteW` (Windows,
+  via `golang.org/x/sys/windows`, no shell involved) with an
+  `xdg-open`/`open`-based fallback for non-Windows developer builds.
+- `internal/runtime/singleinstance` (new) - `CreateMutexW`-based
+  detection (`Local\StreamingTreeForOBS.SingleInstance`), matching the
+  primary-sourced pattern in the contract exactly
+  (`ERROR_ALREADY_EXISTS` via the Go wrapper's own `err` return, not a
+  separate racy `GetLastError()` call); a Windows-only real
+  implementation plus an always-succeeds non-Windows stub.
+- `internal/runtime/nativealert` (new) - `MessageBoxW` (Windows) for a
+  fatal startup error when the release binary has no console; a
+  stderr-printing fallback elsewhere.
+- `cmd/server/main.go` - `--version` prints product/version/commit/
+  licence and exits before any service starts; a packaged-mode
+  single-instance check runs right after config load, before the
+  database opens; the listener is now created synchronously
+  (`net.Listen`) before the browser is opened, so packaged mode only
+  ever opens a browser tab once the server can actually accept
+  connections, not merely once `ListenAndServe` was called; the
+  previously twice-duplicated shutdown sequence was refactored into one
+  `shutdownRuntime` closure, now called from all three exit paths
+  (bind failure, `Serve` failure, graceful `<-ctx.Done()`); a fatal
+  `run()` error shows a native dialog in packaged mode via
+  `nativealert.ShowFatalError`.
+- `internal/config/config.go` - new `TestNoUI` field
+  (`STREAMING_TREE_TEST_NO_UI`), read once at process startup like
+  every other setting; has no effect unless the binary is also
+  packaged, and can never be influenced by an incoming HTTP request.
+- `cmd/testserver/main.go` - only its startup log line switched to
+  `EffectiveVersion()`, for consistency; the `integration`-tag-gated
+  test binary itself is otherwise unaffected (real packaged-mode
+  end-to-end proof is `scripts/verify-packaged-app.mjs` against a real
+  release-flagged build, not `testserver`).
+- `go.mod`/`go.sum` - `golang.org/x/sys` promoted from an existing
+  indirect dependency to direct (same version, same BSD-3-Clause
+  licence, no new audit needed); `THIRD_PARTY_NOTICES.md` gained one
+  new row documenting the new direct usage.
+
+### Automated validation
+`gofmt -l .` clean. `go vet ./...` and `go vet -tags integration ./...`
+both clean. `go build ./...` and `go build -tags integration ./...`
+both clean. `go test -count=1 ./...`: 43 packages, 0 failures (21 new
+tests across `production_test.go`/`legal_test.go`/`system_test.go`/
+`webassets_test.go`).
+
+### Known limitations
+None new - see the contract's own §24.
+
+### Next step
+Add the frontend "Quit Streaming Tree" action and local/offline legal-
+document links to the About & Legal page.
