@@ -30668,3 +30668,167 @@ real terminal state and its actual result inspected directly - never
 assumed from a wrapper's own echo. The one genuine deviation this
 milestone (four unnecessary AskUserQuestion checkpoints, corrected by
 the operator) is recorded plainly above rather than omitted.
+
+## docs: define Stage 20B updater contract
+
+### Governing task
+Begin STAGE 20B - APPLICATION UPDATER + GITHUB RELEASES INTEGRATION.
+Implements the real end-user application-update system for the
+actually-supported packaged platform (Windows x64), with a release-
+metadata/artifact-selection model generic enough for future 20C/20D
+platforms to extend without redesigning the updater core. Explicit
+absolute rule this turn onward: AskUserQuestion must never be used as
+a wait/checkpoint/placeholder mechanism - only for a genuine unresolved
+product decision or an unavoidable external/manual action. Starting
+state confirmed matching exactly: HEAD `9558f27` = `origin/main`,
+clean, `0 0`, effective identity `Czekosabe <kacper2280@tlen.pl>`,
+Stage 20A Completed, cross-platform portability baseline Completed,
+Stage 20B/20C/20D1/20D2/20E all Planned, 23 canonical integration
+scripts, current packaged platform windows/amd64, Stable-only release
+channel, GPL-3.0-or-later, public creator Czekosabe. `git pull
+--ff-only origin main` was a no-op.
+
+### Real-implementation audit (before any design)
+Directly inspected `cmd/server/main.go` (exact shutdown orchestration:
+`shutdownRuntime` stops branches, device-flow, YouTube auth,
+Twitch/YouTube/StreamElements engagement, operator-chat projection,
+chat-overlay, outbound-chat, chat-automation, alerts, audio, goals,
+supporter-widgets, the Event Bus, the account validation worker, then
+MediaMTX, in that fixed order; `shutdownCancel` is the same
+`context.CancelFunc` from `signal.NotifyContext`, already reused once
+by `POST /api/system/shutdown`), `internal/buildinfo` (`releaseVersion`/
+`releaseCommit`/`packagedFlag` set only via `-ldflags` from
+`scripts/build-release.ps1`; `IsReleaseBuild()` true only when a real
+release version was injected, never inferred from `Packaged()` alone),
+`internal/httpapi/system.go` (the exact shutdown protection: Origin
+allowlist + strict `{"confirm":true}` JSON body, defeating HTML-form
+CSRF since forms cannot submit `application/json`), `internal/httpapi/
+decode.go` (`decodeJSON`'s `DisallowUnknownFields` + single-JSON-value +
+body-size-limit convention, to be reused unchanged), `internal/config`
+(env-var loading pattern, `STREAMING_TREE_*` prefix, `DataDir`
+resolution), `internal/httpapi/router.go` (the `Options` struct +
+nil-gated conditional route registration convention). Delegated two
+read-only audits to Explore subagents in parallel to preserve context:
+(1) `internal/runtime/branch`'s exact state model - `branch.State`
+values `StateIdle/StateBlocked/StateWaitingForIngest/StateStarting/
+StateLive/StateRestarting/StateStopping/StateError`,
+`Manager.Snapshot(ctx)` returning `[]Snapshot` with `DesiredRunning
+bool` and `State`, and the existing (private) `StopAll` predicate
+(`desiredRunning || proc != nil || state == StateBlocked || state ==
+StateWaitingForIngest`) as the closest existing "is this branch active"
+logic, confirming no ready-made cross-branch aggregate boolean exists
+yet; (2) the `operatorchatprefs`/`audio` settings-domain pattern (model
+struct + SQLite repository + migration, currently highest at `0026_
+supporter_widgets.sql`, so a new domain starts at `0027`), the frontend
+Settings/`AboutLegalPage.tsx` structure (natural home for an Updates
+panel, next to the existing `QuitApplicationCard`), the `useRuntimeQuery`
+state-dependent `refetchInterval` polling idiom, the generic
+`ConfirmDialog` component `QuitApplicationCard` already uses, and the
+i18n namespace-per-JSON-file convention. Also directly read
+`scripts/build-release.ps1` and `scripts/installer/streaming-tree.iss`
+in full: installer output name `StreamingTreeForOBS-Setup-{version}.exe`,
+per-user install at `{localappdata}\Programs\Streaming Tree for OBS\`,
+fixed `AppId {{C067013C-D143-49F8-9510-D078482D6DA4}`, no `[Registry]`
+section, and confirmed Inno Setup automatically produces `unins000.exe`/
+`unins000.dat` beside the installed executable with zero script changes
+- the chosen installed-context marker for §19 of the new contract.
+
+### Official-source research performed (2026-08-18)
+- GitHub REST API Releases: fetched current official docs plus a live
+  call against a real public release (`cli/cli` `v2.97.0`) - confirmed
+  `GET /repos/{owner}/{repo}/releases/latest` semantics (most recent
+  non-draft, non-prerelease, sorted by `created_at`), the release/asset
+  object shapes, the `Accept: application/vnd.github+json` header, the
+  current `X-GitHub-Api-Version: 2026-03-10` header, unauthenticated
+  60/hour rate limit with real `x-ratelimit-*` headers observed live,
+  real `ETag` header observed live, and - critically - a real, current
+  `digest: "sha256:<hex>"` field on a live release asset object,
+  confirmed by parsing the actual JSON rather than trusting a
+  documentation summary alone.
+- Empirically verified the GitHub API's practical User-Agent
+  requirement (a request with no explicit `User-Agent` still succeeded
+  only because `curl` itself always sends a default one).
+- Inno Setup: fetched official current documentation for
+  `/VERYSILENT`/`/SILENT`/`/SUPPRESSMSGBOXES`/`/NORESTART`/`/DIR=`/
+  `/LOG=`, the complete official exit-code list (0 success through 8
+  restart-required), and `AppId`'s exact same-install-upgrade mechanism
+  (uninstall log/registry key `{AppId}_is1`, appended rather than
+  duplicated when the AppId matches).
+- Windows process-wait: researched and confirmed the standard
+  `OpenProcess(SYNCHRONIZE, ...)` + `WaitForSingleObject` technique via
+  `golang.org/x/sys/windows` (already a direct dependency since Stage
+  20A) as the race-free way to wait for a specific process object's
+  termination, opened while the parent is still alive to avoid any
+  PID-reuse ambiguity.
+
+### `docs/updater.md` created
+New canonical Stage 20B contract (42 numbered sections), covering:
+the fixed, non-configurable release source and why (§1/§15); the full
+GitHub API research (§2); Stable-only channel (§3); exact version
+format/normalization/no-downgrade comparison rules (§4); the
+project-controlled release manifest schema with no download-URL field
+and its full strict-validation rule set (§5); release-asset matching
+by exact name only (§6); the generic cross-platform `ArtifactIdentity`
+model reusing `platform-support.md`'s own vocabulary (§7); the bounded
+network client and its exact headers/exclusions (§8); ETag/rate-limit
+handling treating `304` as success (§9); the automatic hourly/jittered
+check schedule, metadata-only, streaming-safe by construction (§10);
+the update-manager state machine and safe status fields (§11); bounded
+plain-text release notes, never HTML (§12); the 300 MiB hard download-
+size ceiling with its reasoning (§13); mandatory SHA-256 verification
+plus the GitHub digest as an additional, never-silently-ignored
+cross-check (§14); verified download staging in an application-owned
+subtree (§16); the active-stream guard, defined as exactly the branch
+manager's own `StopAll` predicate broadened to name every transitional
+state explicitly (§17); the final-handoff race re-check and its
+narrow "update committing" gate (§18); the `unins000.exe`/`.dat`
+installed-context marker (§19); the full Inno Setup research (§20);
+the external helper-process handoff design end to end (§21); helper
+security/closed-argument-protocol (§22); the race-free parent-process
+wait (§23); reuse of the existing graceful-shutdown path unchanged
+(§24); the honest install-failure model (§25); post-install `--version`
+re-verification and the one-shot transient result record (§26);
+settings persistence following the established domain pattern (§27);
+the new `/api/updates/*` HTTP API (§28); the shared local-action
+Origin/JSON-body protection factored out of the existing shutdown
+handler without changing its own behavior (§29); status-API privacy
+exclusions (§30); frontend UX on `AboutLegalPage.tsx` (§31); the
+global update banner with session-scoped "Later" (§32); streaming-
+blocker UX (§33); the new `updates` i18n namespace, EN+PL (§34);
+honest development-build behavior (§35); the unchanged unsigned-
+Authenticode boundary (§36); the `PRIVACY.md` update this milestone
+still owes (§37); the full test strategy per component (§38); release-
+pipeline manifest generation reusing the same validator (§39); the
+documentation-pass list (§40); the new canonical integration script
+24, `scripts/verify-updater.mjs` (§41); and the known limitations
+remaining after Stage 20B (§42) - Windows-only, unsigned, Stable-only,
+no skip-version, no rollback, no telemetry, and the deliberate
+download-allowed-while-streaming/install-blocked-while-streaming
+distinction.
+
+No product code was written or changed in this commit - this is the
+contract only, committed and pushed before any implementation begins,
+per this project's own established Stage 20A precedent.
+
+### Stage status after this entry
+- Stage 17/18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20A: Completed (unchanged).
+- Cross-platform portability baseline: Completed (unchanged).
+- Stage 20B: Planned - contract defined, implementation not yet
+  started.
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. This entry - `docs: define Stage 20B updater contract`
+
+### Continuous-execution rule compliance
+Two Explore subagents were run in parallel in the background to audit
+the branch/MediaMTX runtime-state model and the settings/frontend
+conventions without consuming main-thread context on file-by-file
+reads; both were awaited via their own completion notifications and
+their findings directly informed this contract - no placeholder
+question was used to pass time while they ran. All research (GitHub
+API, Inno Setup, Windows process-wait) was performed synchronously via
+WebFetch/WebSearch/live `curl` calls in the same turn. No AskUserQuestion
+call was made this commit.
