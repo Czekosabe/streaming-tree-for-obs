@@ -33277,3 +33277,124 @@ for `linux/amd64` and `linux/arm64`; also confirmed the narrowed
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## build: add Linux release build script, package CI, and verification helper
+
+### What changed
+Implements the core of docs/linux-desktop-packaging.md §22-25/§15,
+native-CI-verified only (no local Linux desktop hardware was used for
+this milestone's own authoring - the same manual-verification boundary
+already stated for macOS applies here).
+
+1. **`scripts/build-release-linux.sh`** (§22): a Linux-only bash script
+   mirroring `scripts/build-release-macos.sh`'s own structure - verifies
+   a real Linux host and a supported architecture (`x86_64`/
+   `aarch64`->`amd64`/`arm64`) before doing anything else, validates a
+   strict version string, verifies required tools (`go`, `npm`,
+   `dpkg-deb`), builds the frontend with `npm ci`, stages the embedded
+   frontend/legal directories exactly like the other two scripts,
+   builds the Go executable natively with `CGO_ENABLED=0` (§6 of the
+   contract - the real Secret Service backend needs no CGO, confirmed
+   by direct source read of the vendored dependency), injects the same
+   canonical version/commit/packaged-mode `-ldflags` metadata every
+   platform uses, assembles the `.deb` staging layout (`/usr/bin`,
+   `/usr/share/applications/*.desktop`, `/usr/share/doc/...`, no
+   maintainer scripts), validates the `.desktop` file with
+   `desktop-file-validate` when present (non-fatal skip otherwise),
+   writes `DEBIAN/control` (Maintainer using GitHub's own noreply-email
+   convention for the real `Czekosabe` identity, never the Git commit
+   email; no `Depends` field, since the binary is fully static), builds
+   the package with `dpkg-deb --build --root-owner-group`, computes a
+   SHA-256 digest, and - only for a strict `major.minor.patch` version -
+   invokes `cmd/releasemanifest` (with the same `-in` pass-through
+   Stage 20C1 shipped). Never installs anything via `apt`, never
+   publishes, never signs, never creates a Git tag. Generated artifacts
+   are git-ignored, matching the existing `build/` convention.
+
+2. **`.github/workflows/linux-package.yml`** (§23): a dedicated
+   package-verification workflow, explicitly not a release workflow -
+   `contents: read` only, no secrets, no artifact upload of the built
+   `.deb`. Matrix over `ubuntu-latest` (x64) and `ubuntu-24.04-arm`
+   (ARM64) - the same labels `cross-platform.yml` already uses, re-
+   confirmed current during this milestone's own research. Triggered by
+   `workflow_dispatch` and by a push to `main` touching the shared Go
+   core, the shared frontend, the Linux build/verify scripts, the legal
+   documents, or the workflow file itself. Includes a dedicated real
+   Secret Service smoke test step: an ephemeral `dbus-run-session` plus
+   an ephemeral `gnome-keyring-daemon` unlock, running the existing
+   opt-in `TestKeyringStoreAgainstTheRealOSCredentialStore` for real
+   against a genuine (if throwaway) Secret Service - never a real user
+   credential, no committed secret, skipped (non-fatal) if the tooling
+   is unavailable on the runner rather than faking a pass. Runs the
+   real build-and-verify cycle **twice** per architecture in one job
+   (two independent rebuild+reverify passes, each its own version
+   string), matching the macOS workflow's own shape. A final
+   `if: always()` backstop step kills any leftover
+   `streaming-tree-server` process and force-removes any leftover
+   installed package - never itself relied on as evidence of a passing
+   verification.
+
+3. **`scripts/verify-linux-package.mjs`** (§24): a platform-specific CI
+   verification helper, explicitly NOT canonical local integration
+   script #25 - the canonical count remains 24. Mirrors
+   `scripts/verify-macos-package.mjs`'s own step/pass/fail/expect
+   style, adapted for the real `dpkg` install/remove lifecycle (using
+   `sudo dpkg -i`/`-r`, since installation intrinsically needs root -
+   the packaged application itself is always started and run as the
+   normal unprivileged invoking user, never as root). Verifies: `.deb`
+   control metadata (package name, architecture, Maintainer, no
+   `Depends`); a real `dpkg -i` install; the four legal documents under
+   `/usr/share/doc/streaming-tree-for-obs`; the `.desktop` file's fixed
+   `Exec` path with no shell metacharacters, validated with
+   `desktop-file-validate` when present; `--version` reporting real
+   packaged metadata as a normal user; the real installed executable
+   starting and becoming healthy with no Node/npm/Vite process
+   involved; health/About/production-frontend/SPA/legal-route serving;
+   honest TTS/updater unavailability; a real second-launch attempt
+   detected by the real `flock`-based single-instance mechanism; real
+   graceful shutdown; application data living outside every package-
+   owned path and surviving package removal; a real `dpkg -r` removal;
+   and no leftover `streaming-tree-server` process at the end.
+
+### Validation performed so far
+`node --check scripts/verify-linux-package.mjs` and
+`bash -n scripts/build-release-linux.sh` both pass.
+`.github/workflows/linux-package.yml` parsed successfully with
+`js-yaml` (structurally valid, 11 steps). None of the three files can
+be meaningfully executed on this Windows development machine (`dpkg`,
+`dpkg-deb`, `desktop-file-validate`, and real Linux `flock`/D-Bus
+semantics all require a real Linux host) - real verification is the
+native Linux CI run this commit triggers, actively observed to
+terminal state next, not merely started and left unwatched.
+
+### A recurring windows-amd64 CI flake, observed again
+The previous commit in this milestone (`ab09cba`,
+`feat(server): add Linux packaged lifecycle adapters`) produced a third
+occurrence of the same signature already documented twice before in
+this project's history (Stage 20B's `58464ee`/run `32118459362`, Stage
+20C1's `56dc658`/run `32159238543`): `backend (windows-amd64)`'s `go
+test` step failed with exit code 1 and no further diagnostic detail
+available (no `gh` CLI, no admin log access), while all five other
+`cross-platform.yml` jobs (frontend, linux-amd64, linux-arm64,
+macos-arm64, macos-amd64) passed, and the same commit's
+`macos-package.yml` run also passed both architectures in full.
+Investigated, not reflexively dismissed: that commit's own diff touches
+no code Windows ever compiles (two new `linux`-tagged files, two
+`_other.go` build-tag comment narrowings that Windows never compiles
+either way) except five lines of new, pure, deterministic test data
+appended to `internal/updater/manifest/parse_test.go` - and
+`go test -count=1 ./...` was re-run locally on this exact Windows
+machine immediately afterward, clean, zero failures, including that
+same package. This is now a well-established, recurring, environmental
+characteristic specific to the `backend (windows-amd64)` CI job's `go
+test` step under this workflow, not a code regression tied to any of
+the three commits it has now appeared on. No code change was made in
+response. Windows CI stability is re-confirmed by this commit's own
+`cross-platform.yml` run, observed next.
+
+### Commits (chronological, this entry)
+1. This entry - `build: add Linux release build script, package CI, and verification helper`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

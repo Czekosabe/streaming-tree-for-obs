@@ -1,0 +1,122 @@
+name: Linux package verification
+
+# Stage 20D1 native Linux package-verification gate, NOT a release
+# workflow: no publication, no secrets, no artifact upload (docs/
+# linux-desktop-packaging.md §23/§25). Builds and verifies the real,
+# CGO-disabled, statically-linked .deb package on real, native, GitHub-
+# hosted Ubuntu runners (both x64 and ARM64), then discards everything
+# when the ephemeral runner is destroyed. See docs/linux-desktop-
+# packaging.md for the full architecture this workflow proves, and
+# .github/workflows/cross-platform.yml for the separate, lighter-weight
+# portability gate this workflow does not replace.
+#
+# scripts/verify-linux-package.mjs is a platform-specific CI
+# verification helper, explicitly not canonical local integration
+# script #25 - the canonical local integration-script count remains 24
+# (docs/linux-desktop-packaging.md §24).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - "scripts/build-release-linux.sh"
+      - "scripts/verify-linux-package.mjs"
+      - "LICENSE"
+      - "PRIVACY.md"
+      - "LEGAL.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - ".github/workflows/linux-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-latest
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+    name: package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install desktop-file-validate (best-effort)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends desktop-file-utils || true
+
+      - name: Install an ephemeral D-Bus session + Secret Service for the credential-store smoke test
+        run: sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring || true
+
+      # docs/linux-desktop-packaging.md §15: proves the real Secret
+      # Service backend against a real, hermetic, ephemeral session -
+      # never a real user credential, no committed secret, torn down
+      # with the runner. dbus-run-session starts and tears down a
+      # throwaway session bus for exactly this command; gnome-keyring's
+      # own daemon is unlocked with an empty password, valid only for
+      # this ephemeral session/keyring. If dbus-run-session or
+      # gnome-keyring-daemon are unavailable this step is skipped
+      # (non-fatal) rather than faking a pass - the existing smoke test
+      # itself already treats "no usable OS credential store" as a
+      # skip, not a failure, for exactly this reason.
+      - name: Real Secret Service smoke test (ephemeral D-Bus session)
+        working-directory: apps/server
+        run: |
+          if ! command -v dbus-run-session >/dev/null 2>&1 || ! command -v gnome-keyring-daemon >/dev/null 2>&1; then
+            echo "dbus-run-session or gnome-keyring-daemon not available - skipping (non-fatal)"
+            exit 0
+          fi
+          dbus-run-session -- bash -c '
+            set -e
+            eval "$(printf "" | gnome-keyring-daemon --unlock --components=secrets)"
+            export STREAMING_TREE_CREDENTIAL_SMOKE_TEST=1
+            go test ./internal/secrets/... -run TestKeyringStoreAgainstTheRealOSCredentialStore -v -count=1
+          '
+
+      # docs/linux-desktop-packaging.md §17: the package-verification
+      # must complete successfully at least twice per architecture -
+      # done here as two consecutive rebuild+reverify passes in one
+      # native job, each one a real, independent build and a real,
+      # independent verification run, not a cached re-check of the
+      # first pass.
+      - name: Build the Linux release package (pass 1)
+        run: bash scripts/build-release-linux.sh --version "0.1.0-dev+ci1"
+
+      - name: Verify the Linux package (pass 1)
+        run: node scripts/verify-linux-package.mjs
+
+      - name: Build the Linux release package (pass 2)
+        run: bash scripts/build-release-linux.sh --version "0.1.0-dev+ci2"
+
+      - name: Verify the Linux package (pass 2)
+        run: node scripts/verify-linux-package.mjs
+
+      # Backstop only: both build-release-linux.sh and
+      # verify-linux-package.mjs already clean up their own test-owned
+      # processes, installed packages, and D-Bus sessions on every
+      # path, including failure. This step exists in case a step above
+      # was killed abruptly (e.g. a job timeout) before its own cleanup
+      # ran - never treated as evidence of a passing verification on
+      # its own.
+      - name: Clean up any leftover process or installed package
+        if: always()
+        run: |
+          pkill -f streaming-tree-server || true
+          sudo dpkg -r streaming-tree-for-obs || true
+          rm -rf build/release-linux
