@@ -10,7 +10,8 @@
     "neverChecked": "Never",
     "checkButton": "Check for updates",
     "checking": "Checking…",
-    "developmentBuildNotice": "Updates are available in packaged release builds."
+    "developmentBuildNotice": "Updates are available in packaged release builds.",
+    "platformUnsupportedNotice": "Automatic updates are not yet available on this platform. You can always download the latest release manually from GitHub."
   },
   "state": {
     "upToDate": "You're up to date.",

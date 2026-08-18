@@ -41,6 +41,23 @@ describe('UpdatesPanel', () => {
     expect(screen.queryByRole('button', { name: /check for updates/i })).not.toBeInTheDocument();
   });
 
+  it('shows the honest platform-unsupported notice and no check button on a platform with no install path', async () => {
+    updates.fetchUpdateStatus.mockResolvedValue(
+      status({ state: 'platform_unsupported', currentVersion: '0.2.0', installBlocked: true }),
+    );
+
+    renderWithProviders(<UpdatesPanel />);
+
+    expect(await screen.findByText('0.2.0')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Automatic updates are not yet available on this platform. You can always download the latest release manually from GitHub.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /check for updates/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /automatically check for updates/i })).not.toBeInTheDocument();
+  });
+
   it('shows the current version and up-to-date state in a release build', async () => {
     updates.fetchUpdateStatus.mockResolvedValue(status({ state: 'up_to_date', currentVersion: '0.2.0' }));
 

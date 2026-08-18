@@ -84,11 +84,13 @@ TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
-work (20C/20D's macOS/Linux portability and 20E's final hardening —
-Stage 20A's own Windows production runtime/installer and 20B's
-application updater are already complete, see
-[`docs/windows-packaging.md`](docs/windows-packaging.md) and
-[`docs/updater.md`](docs/updater.md)) — detailed in
+work (20C1's unsigned macOS packaged runtime in progress, 20C2's macOS
+signing/notarization/updater handoff, 20D's Linux portability, and 20E's
+final hardening — Stage 20A's own Windows production runtime/installer
+and 20B's application updater are already complete, see
+[`docs/windows-packaging.md`](docs/windows-packaging.md),
+[`docs/updater.md`](docs/updater.md), and
+[`docs/macos-packaging.md`](docs/macos-packaging.md)) — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
@@ -221,10 +223,11 @@ engagement piece above in order (stages 8A through 18B).
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
 > goals/supporter-widgets foundation — Stage 20's remaining work
-> (20C/20D's macOS/Linux portability and 20E's final hardening;
-> Stage 20A's own Windows production runtime/installer and 20B's
-> application updater are already complete) — is
-> still **planned**. Whatever remains a placeholder is marked with a
+> (20C1's unsigned macOS packaged runtime in progress, 20C2's macOS
+> signing/notarization/updater handoff, 20D's Linux portability, and
+> 20E's final hardening; Stage 20A's own Windows production
+> runtime/installer and 20B's application updater are already
+> complete) — is still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
 
@@ -299,7 +302,8 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential client secret with no public-client alternative found, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md); Stage 19 is **not** implemented |
 | 20A | Production runtime and Windows packaging foundation: embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown), release-injectable version metadata, and a per-user Inno Setup installer including the four legal documents, see [windows-packaging.md](docs/windows-packaging.md) | **Completed** |
 | 20B | Application update system (GitHub Releases check, update UI, real Windows installer/updater handoff), see [updater.md](docs/updater.md) | **Completed** |
-| 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification, see [platform-support.md](docs/platform-support.md) | Planned |
+| 20C1 | macOS packaged runtime: unsigned `.app`/DMG, real macOS lifecycle adapters (browser launch, single-instance via `flock`, native NSAlert fatal-startup UX), and native macOS CI package verification, see [macos-packaging.md](docs/macos-packaging.md) | In progress |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, and public/Beta readiness, see [macos-packaging.md](docs/macos-packaging.md) | Planned — externally gated on real Apple Developer credentials |
 | 20D1 | Linux local/desktop runtime and packaging, see [platform-support.md](docs/platform-support.md) | Planned |
 | 20D2 | Linux headless/self-hosted server mode and remote security, see [platform-support.md](docs/platform-support.md) | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
@@ -328,13 +332,23 @@ version:
   SHA-256 verification and a real Windows installer/restart handoff.
   Release artifacts remain honestly unsigned (no Authenticode certificate
   yet).
-- **macOS** — planned, not shipped. Native GitHub-hosted CI (both Apple
-  Silicon and Intel) compiles and tests the shared application core,
-  including a real, CGO-enabled build against the macOS Keychain backend —
-  but there is no `.app`/`.dmg`/`.pkg`, no code signing, no notarization,
-  and no real-hardware verification yet (the maintainer does not own a
-  Mac). System text-to-speech is unavailable today on macOS; the
-  application reports this honestly rather than faking it.
+- **macOS** — Stage 20C1 (in progress, see
+  [`docs/macos-packaging.md`](docs/macos-packaging.md)): a real,
+  **unsigned and not notarized** `.app` bundle inside a DMG, built and
+  verified natively on both Apple Silicon and Intel GitHub-hosted CI
+  runners (real `.app`/`Info.plist` structure, real CGO-enabled build
+  against the macOS Keychain backend, a real `flock`-based single-
+  instance mechanism, a real NSAlert fatal-startup-error bridge, and a
+  real DMG mount/copy/run/unmount cycle) - but still no code signing, no
+  notarization, no public release, and no real-hardware verification
+  (the maintainer does not own a Mac; native CI is real Apple hardware
+  but not a substitute for a human's Finder/Gatekeeper/OBS experience).
+  The updater honestly reports automatic updates as unavailable on
+  macOS rather than a false "up to date". System text-to-speech is
+  unavailable today on macOS; the application reports this honestly
+  rather than faking it. Stage 20C2 (signing, notarization, updater
+  install handoff, public readiness) is planned, externally gated on
+  real Apple Developer credentials.
 - **Linux (desktop/local)** — planned, not packaged. Native GitHub-hosted
   CI compiles and tests the shared core on Linux x64 and Linux ARM64. No
   `.deb`/`.rpm`/AppImage/Flatpak/Snap exists yet. System text-to-speech is

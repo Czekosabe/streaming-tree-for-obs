@@ -32671,3 +32671,93 @@ unwatched.
 No Apple signing/notarization credentials were needed for this work -
 Stage 20C1 packages are deliberately unsigned. No AskUserQuestion call
 was made.
+
+## feat: honest macOS updater wording and living-doc status updates
+
+### What changed
+Implements docs/macos-packaging.md §45/§46/§48 (frontend wording,
+privacy wording, README/platform-support status).
+
+1. **Frontend** (`apps/web/src/models/updates.ts`,
+   `components/about/UpdatesPanel.tsx`, EN+PL `updates.json`): the
+   `platform_unsupported` state (added to the backend in an earlier
+   commit this milestone) is added to the frontend's own status schema
+   and given an honest, dedicated panel branch - current version shown,
+   a plain-language notice ("Automatic updates are not yet available on
+   this platform...") in place of the check button/auto-check toggle,
+   which would otherwise always come back refused. `UpdateBanner.tsx`
+   needed no change: it already gates strictly on
+   `available`/`downloading`/`ready_to_install`, none of which this
+   state ever reaches. Added `UpdatesPanel.test.tsx` coverage proving
+   the notice renders and neither control is offered.
+2. **`PRIVACY.md`**: clarified that a packaged macOS build performs no
+   automatic *or* manual update-check network activity at all (unlike
+   Windows, which does check `api.github.com`) - macOS has no install
+   path to hand off to yet, so it never contacts GitHub for this
+   purpose; stated explicitly as an intentional platform-capability
+   limitation, not a privacy carve-out.
+3. **`docs/platform-support.md`** §5: rewritten from "Planned, nothing
+   implemented" to reflect Stage 20C1's actual current state - the
+   per-architecture component table now shows real, native-CI-verified
+   browser-launch/single-instance/fatal-startup-UX/package-format rows
+   instead of "compiles (stub)"; §5.4/§5.5 updated to separate what
+   Stage 20C1 actually implemented from what remains Stage 20C2
+   research-only (signing, notarization); the support-claim progression
+   now has a real "Unsigned package verified" rung between "Automated-
+   build/test verified" and "Beta / automated-test supported".
+4. **`README.md`**: the two narrative summaries of Stage 20's remaining
+   work now say "20C1 in progress, 20C2 planned" instead of a single
+   undifferentiated "20C/20D"; the roadmap table splits the single 20C
+   row into 20C1 (In progress) / 20C2 (Planned - externally gated); the
+   macOS bullet in the platform-support summary is rewritten to
+   describe the real unsigned `.app`/DMG native-CI verification instead
+   of "planned, not shipped", while still explicitly not claiming
+   signing, notarization, a public release, or real-hardware
+   verification.
+
+### Validation
+Frontend: `npm run i18n:check` (21 namespaces, no EN/PL differences),
+`npm run typecheck`, `npm run lint`, `npm run test -- --run` (101 test
+files / 1392 tests passed, including the new UpdatesPanel case) - all
+clean. `README.md`/`PRIVACY.md`/`docs/platform-support.md` are
+markdown-only changes, reviewed by re-reading the edited sections in
+full.
+
+### Native macOS CI evidence (this milestone, recorded here since it
+motivates the wording above)
+`.github/workflows/macos-package.yml`'s first-ever run (commit
+`56dc658`, run id `32159238567`) succeeded on both `package
+(macos-arm64)` and `package (macos-amd64)` on the first attempt, each
+completing two independent build-then-verify passes
+(docs/macos-packaging.md §56) - real `.app` assembly, real `Info.plist`
+generation/lint, real CGO-enabled Go build, real DMG creation via
+`hdiutil`, and the full `verify-macos-package.mjs` scenario list
+(bundle identity, architecture, legal documents, `--version`, health/
+About/frontend/SPA/legal routes, honest TTS/updater unavailability, the
+real `flock`-based second-launch detection, real graceful shutdown, and
+the real DMG mount/copy/run/unmount cycle) - twice per architecture,
+zero leftover processes or mounted images after either pass.
+
+The same commit's `cross-platform.yml` run (id `32159238543`) showed
+`backend (windows-amd64)`'s `go test` step fail with no further detail
+available (exit code 1, no admin log access) while the other five jobs
+(linux-amd64, linux-arm64, macos-arm64, macos-amd64, frontend) all
+passed. No Go source file changed in that commit (only
+`build-release-macos.sh`, `verify-macos-package.mjs`,
+`macos-package.yml`, and this journal) - the exact same Go source
+passed `go test` on `windows-amd64` in the immediately preceding run for
+commit `d51e51b` minutes earlier in this same session. This is
+first-hand, direct evidence (not an assumption) that the Go source
+itself did not regress between these two runs; the failure is assessed
+as a non-reproducible environmental flake, the same pattern already
+documented once before in this project's own history (`58464ee`/run
+`32118459362`). No code change was made in response. This will be
+re-confirmed by the next commit's `cross-platform.yml` run, which
+exercises the same unchanged Go test suite on `windows-amd64` again.
+
+### Commits (chronological, this entry)
+1. This entry - `feat: honest macOS updater wording and living-doc status updates`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.

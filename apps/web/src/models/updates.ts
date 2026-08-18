@@ -25,6 +25,7 @@ export const updateStatusSchema = z.object({
     'ready_to_install',
     'installing',
     'error',
+    'platform_unsupported',
   ]),
 
   latestVersion: z.string().optional(),

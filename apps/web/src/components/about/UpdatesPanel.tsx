@@ -47,6 +47,25 @@ export function UpdatesPanel() {
     );
   }
 
+  // docs/macos-packaging.md §20: a release build whose platform has no
+  // usable update-install path at all (macOS in Stage 20C1) reports this
+  // state permanently - shown honestly instead of a check button that
+  // would only ever come back refused, and never as a false "up to date".
+  if (status.state === 'platform_unsupported') {
+    return (
+      <Panel>
+        <PanelHeader title={t('panel.heading')} icon={<Download className="size-4" />} />
+        <PanelBody className="space-y-2">
+          <p className="text-sm text-ink">
+            <span className="text-ink-muted">{t('panel.currentVersionLabel')}: </span>
+            {status.currentVersion}
+          </p>
+          <p className="text-sm text-ink-muted">{t('panel.platformUnsupportedNotice')}</p>
+        </PanelBody>
+      </Panel>
+    );
+  }
+
   const isChecking = status.state === 'checking';
   const showAvailable =
     status.state === 'available' || status.state === 'downloading' || status.state === 'ready_to_install';

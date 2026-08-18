@@ -166,42 +166,50 @@ current status, it does not change it.
 | Application updater | Supported - Stage 20B, see [updater.md](updater.md) |
 | Real OBS/provider manual verification | Not verified by this project beyond developer use - out of scope for automated CI |
 
-## 5. macOS — planned desktop target
+## 5. macOS — Stage 20C1 in progress
 
-**Status: Planned.** No macOS package, signing, or notarization exists.
-The operator does not own a Mac; nothing here claims manual verification,
-and nothing here is implemented.
+**Status: Stage 20C1 in progress** (see
+[macos-packaging.md](macos-packaging.md) for the full contract). A real,
+**unsigned and not notarized** `.app` bundle inside a DMG is built and
+verified natively on both Apple Silicon and Intel GitHub-hosted CI
+runners. Stage 20C2 (Developer ID signing, hardened runtime, notarization,
+stapling, updater install handoff, public/Beta readiness) remains
+Planned, externally gated on real Apple Developer credentials this
+project does not have. The operator does not own a Mac; nothing here
+claims manual hardware/Finder/Gatekeeper/OBS verification.
 
 ### 5.1 Architecture preference
 
-Apple Silicon (`darwin/arm64`) is the preferred modern target. Intel
-(`darwin/amd64`) is not casually dropped: GitHub's currently-documented
-hosted runners still offer an Intel macOS label (`macos-15-intel` /
-`macos-26-intel` as of this research date, alongside Apple-Silicon `macos-
-latest`/`macos-15`/`macos-14`), so Intel remains at least Automated-build
-verifiable at no extra tooling cost today. A future decision to drop Intel
-belongs to Stage 20C, informed by real maintenance cost once packaging
-actually exists, not to this baseline.
+Both Apple Silicon (`darwin/arm64`, the preferred modern target) and Intel
+(`darwin/amd64`) are packaged. GitHub's currently-documented hosted
+runners offer an Intel macOS label (`macos-15-intel` / `macos-26-intel` as
+of this research date, alongside Apple-Silicon `macos-latest`/`macos-15`/
+`macos-14`), cross-checked against this repository's own real, already-
+green CI history for that label - Intel remains natively CI-verifiable at
+no extra tooling cost. No universal/fat binary is built; each architecture
+is a separate, independently identified release artifact (docs/
+macos-packaging.md §4).
 
 ### 5.2 Per-architecture component status
 
 | Component | `darwin/arm64` | `darwin/amd64` |
 | --- | --- | --- |
-| Go build | Native CI verified (see §6) | Native CI verified (see §6) |
+| Go build (CGO-enabled) | Native CI verified (see §6) | Native CI verified (see §6) |
 | Frontend build | Automated-build verified (platform-independent Node build, not architecture-specific) | same |
 | SQLite (CGO-free `modernc.org/sqlite`) | Native CI verified | Native CI verified |
 | Provider connectors | Automated-build verified (platform-independent HTTP/gRPC code) | same |
-| MediaMTX managed install | Planned - asset matrix already has `darwin-arm64`/`darwin-amd64` entries (§3), installer flow itself unexercised on macOS | Planned |
-| FFmpeg (operator-provided) | Planned - resolver logic is portable, no macOS install flow written | Planned |
+| MediaMTX managed install | Asset matrix has `darwin-arm64`/`darwin-amd64` entries (§3); managed-install/process lifecycle exercised as far as the existing test architecture allows | same |
+| FFmpeg (operator-provided) | Resolver logic is portable; the packaged app starts and runs without FFmpeg, streaming is unavailable until the operator supplies one | same |
 | OS credential store (Keychain, requires CGO) | Native CI verified — see §5.3, this requires the *real* runner, cross-compilation cannot verify it | Native CI verified |
-| Packaged browser launch | Compiles (uses `open`) - not packaged, not human-tested | Compiles |
-| Single-instance | Compiles (always-succeeds stub) - no real mechanism yet | Compiles |
-| Fatal-startup UX | Compiles (stderr fallback) - no native alert yet | Compiles |
-| Quit | Compiles (same shared HTTP endpoint) - no packaged lifecycle yet | Compiles |
+| Packaged browser launch | Real `browserlaunch_darwin.go` (uses `open`), native-CI-verified via the `STREAMING_TREE_TEST_NO_UI` seam | same |
+| Single-instance | Real `flock`-based mechanism (`singleinstance_darwin.go`), native-CI-verified with two real processes | same |
+| Fatal-startup UX | Real NSAlert/Cgo bridge (`nativealert_darwin.go`/`.m`); compiled and linked by native CI, never invoked live in CI (would block on a modal with no user present) | same |
+| Quit | Real shared HTTP shutdown endpoint, native-CI-verified | same |
 | System TTS | **Unavailable today** - `tts/stub.go` honestly reports `Capabilities.Available == false`; no macOS `AVSpeechSynthesizer`/`say` provider exists. This is an honest limitation, not a bug. | same |
-| Package format | Planned - `.app` bundle + DMG/ZIP/PKG researched at a high level (§5.4), not chosen | Planned |
-| Signing / notarization | Not implemented - no Apple Developer account exists for this project yet | Not implemented |
-| Automated CI | Native CI verified (build + `go vet` + `go test`, this milestone) | Native CI verified |
+| Updater | Recognized as a real release build, but automatic polling never starts (`platform_unsupported` state) - no macOS install path exists yet (Stage 20C2) | same |
+| Package format | Real `.app` bundle inside a DMG (`hdiutil`), native-CI-verified mount/copy/run/unmount cycle, twice per architecture | same |
+| Signing / notarization | **Not implemented** - no Apple Developer account exists for this project yet (Stage 20C2) | Not implemented |
+| Automated CI | Native CI verified: build + `go vet` + `go test` + full package build/verify, twice per architecture (`.github/workflows/macos-package.yml`) | Native CI verified |
 | Manual hardware/UX/OBS verification | Not verified - operator owns no Mac | Not verified |
 
 ### 5.3 Why the macOS Keychain build gate matters
@@ -230,40 +238,42 @@ why the macOS CI job (§6) is required to build with CGO enabled on a real
 macOS runner - proving the production binary compiles against the real
 platform backend, not a substitute.
 
-### 5.4 macOS packaging research (planning only, nothing implemented)
+### 5.4 macOS packaging - implemented in Stage 20C1, signing/notarization still research-only
 
-Per Apple's own current developer documentation: distribution outside the
-Mac App Store requires signing with a Developer ID Application certificate
+Package format, browser launch, single-instance, and fatal-startup UX are
+now real, implemented, native-CI-verified code - see
+[macos-packaging.md](macos-packaging.md) for the full contract. Per
+Apple's own current developer documentation, still research-only and
+explicitly NOT implemented in Stage 20C1: distribution outside the Mac
+App Store requires signing with a Developer ID Application certificate
 with the hardened runtime enabled, followed by submission to Apple's
 notarization service via `notarytool` (the modern replacement for the
 retired `altool`); Gatekeeper checks the notarization ticket (typically
 "stapled" to the artifact) at first launch and otherwise blocks or warns.
-Distribution formats in common use are a signed `.app` bundle inside a
-`.dmg` disk image, a `.pkg` installer, or a plain `.zip` of the `.app`.
 None of this requires Xcode itself for a Go binary, but it does require an
 Apple Developer Program membership, a real Apple ID with 2FA, and access to
-`codesign`/`notarytool` (available via Xcode Command Line Tools). Universal
-(arm64+amd64 combined) binaries are recorded here only as a future
-possibility once both architectures are individually working - not a
-decision made now. Default-browser launching on macOS uses the `open`
-command (already what `browserlaunch_other.go` does); Keychain is the
-native credential store (already what `internal/secrets` targets); macOS
-system TTS exists via `AVSpeechSynthesizer`/the `say` command, but building
-a real provider for it is separate future feature work, not part of this
-baseline.
+`codesign`/`notarytool` (available via Xcode Command Line Tools) - all of
+it is Stage 20C2's own scope, externally gated on credentials this project
+does not have. macOS system TTS exists via `AVSpeechSynthesizer`/the `say`
+command, but building a real provider for it is separate future feature
+work, not part of Stage 20C1/20C2.
 
 ### 5.5 macOS support-claim progression
 
 This project will not describe macOS as "supported" merely because CI goes
-green. The intended progression is: **Planned** (today) → **Automated-
-build/test verified** (this milestone, native CI compiles and tests the
-shared core and proves the Keychain build gate) → **Beta / automated-test
-supported** (once Stage 20C produces a real signed, notarized, installable
-package) → **Fully supported** after real-device/human validation of
-launch, browser-open, TTS-absence messaging, OBS Browser Source rendering,
-and Gatekeeper behavior. GitHub-hosted macOS runners execute on real Apple
-hardware/OS, which is meaningfully stronger than cross-compilation, but
-they still do not replace a human clicking through the installed app.
+green. The intended progression is: **Planned** → **Automated-build/test
+verified** (the cross-platform portability baseline: native CI compiles
+and tests the shared core and proves the Keychain build gate) →
+**Unsigned package verified** (Stage 20C1, current state: a real,
+unsigned, not-notarized `.app`/DMG built and verified twice per
+architecture on native CI, including real single-instance/browser-launch/
+DMG-lifecycle proof) → **Beta / automated-test supported** (once Stage
+20C2 produces a real signed, notarized, installable package) → **Fully
+supported** after real-device/human validation of launch, browser-open,
+TTS-absence messaging, OBS Browser Source rendering, and Gatekeeper
+behavior. GitHub-hosted macOS runners execute on real Apple hardware/OS,
+which is meaningfully stronger than cross-compilation, but they still do
+not replace a human clicking through the installed app.
 
 ## 6. GitHub Actions cross-platform CI baseline
 

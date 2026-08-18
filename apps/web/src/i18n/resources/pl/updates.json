@@ -10,7 +10,8 @@
     "neverChecked": "Nigdy",
     "checkButton": "Sprawdź aktualizacje",
     "checking": "Sprawdzanie…",
-    "developmentBuildNotice": "Aktualizacje są dostępne w spakowanych wersjach wydania."
+    "developmentBuildNotice": "Aktualizacje są dostępne w spakowanych wersjach wydania.",
+    "platformUnsupportedNotice": "Automatyczne aktualizacje nie są jeszcze dostępne na tej platformie. Najnowsze wydanie zawsze można pobrać ręcznie z GitHuba."
   },
   "state": {
     "upToDate": "Masz najnowszą wersję.",
