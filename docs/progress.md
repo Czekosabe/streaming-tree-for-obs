@@ -30329,3 +30329,58 @@ instruction that a genuine CI failure must be inspected and fixed,
 never worked around by weakening the check, and never left for the
 operator to report back. The next action after this commit is pushed
 is to resume active polling for the new run this push triggers.
+
+## fix(ci): run the line-ending step before checkout creates its directory
+
+### What happened
+`9c0f809` triggered a second real run (id 32113274837), actively
+watched the same way as the first. This time every `backend` matrix
+leg failed - including the two (`linux-arm64`, both macOS
+architectures) that had passed cleanly in the first run - while
+`frontend (linux-amd64)` still succeeded. Inspecting each job's step
+conclusions showed the same single step failing everywhere: the new
+"Disable line-ending conversion on checkout" step itself, not
+`gofmt`/`go vet`/`go test`/`go build`.
+
+### Root cause
+The `backend` job sets `defaults: run: working-directory: apps/server`
+at the job level, and GitHub Actions applies a job's `defaults.run`
+to every step unless a step overrides it - including a step placed
+before `actions/checkout@v4`. Before checkout has run, only the
+runner's workspace root exists; the `apps/server` subdirectory does
+not exist yet, so the shell for that first step failed trying to
+change into a nonexistent directory, uniformly on every OS. This was
+a real ordering bug introduced by the previous commit's own fix, not
+a flaky or environment-specific failure - the previous entry's root-
+cause diagnosis (Windows `core.autocrlf=true` producing CRLF checkouts
+that fail `gofmt`) remains correct, but its implementation was wrong.
+
+### Fix
+Added an explicit `working-directory: .` override to the line-ending-
+configuration step only, so it runs from the workspace root (which
+always exists) instead of inheriting the job-level `apps/server`
+default. No other step changed.
+
+### Validation
+Re-parsed the workflow with the same local `js-yaml` check used for
+every prior edit to this file, and directly re-read the step's
+resulting object (`shell`, `working-directory`, `run` fields) to
+confirm the override applies to exactly the intended step.
+
+### Stage status after this entry
+- Stage 20 (whole): Incomplete (unchanged).
+- Cross-platform portability baseline milestone: in progress, fifth
+  logical commit; still watching the same GitHub Actions run family.
+
+### Commits this milestone (chronological)
+1. `2b72fcb` - `fix(docs): reconcile Stage 20A living state`
+2. `0a1f627` - `docs: define cross-platform support roadmap`
+3. `00130e5` - `ci: add cross-platform portability workflow`
+4. `9c0f809` - `fix(ci): check out Go source with LF endings on Windows runner`
+5. This entry - `fix(ci): run the line-ending step before checkout creates its directory`
+
+### Continuous-execution rule compliance
+Diagnosed and fixed within the same continuous turn the second
+failure notification arrived in. No operator message was requested or
+required. The next action after this commit is pushed is to resume
+active polling for the resulting new run.

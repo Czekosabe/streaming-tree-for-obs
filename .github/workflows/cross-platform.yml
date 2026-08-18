@@ -55,6 +55,7 @@ jobs:
       # relaxing the gofmt check itself.
       - name: Disable line-ending conversion on checkout
         shell: bash
+        working-directory: .
         run: git config --global core.autocrlf false
 
       - uses: actions/checkout@v4
