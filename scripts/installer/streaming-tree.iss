@@ -55,7 +55,14 @@ PrivilegesRequiredOverridesAllowed=dialog
 ; Apps & Features entry - all Inno Setup defaults, not disabled.
 Uninstallable=yes
 OutputDir={#OutputDir}
-OutputBaseFilename=StreamingTreeForOBS-Setup-{#MyAppVersion}
+; Stage 20C1 cross-platform artifact naming (docs/macos-packaging.md
+; §21, docs/platform-support.md §16): now that a second platform (macOS)
+; produces a release artifact too, every artifact name encodes product,
+; version, OS, and architecture. scripts/build-release.ps1 discovers
+; this filename dynamically (Get-ChildItem -Filter '*.exe') and passes
+; it straight through to the release manifest - nothing else in the
+; pipeline hard-codes the old "-Setup-" spelling.
+OutputBaseFilename=StreamingTreeForOBS-{#MyAppVersion}-windows-amd64-setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

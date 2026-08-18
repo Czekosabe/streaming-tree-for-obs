@@ -32515,3 +32515,54 @@ automated suite.
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## feat: rename the Windows installer to the cross-platform artifact convention
+
+### What changed
+Implements docs/macos-packaging.md §21 / docs/platform-support.md §16:
+now that Stage 20C1 introduces a second platform's release artifact
+(macOS DMGs), the Windows installer is renamed from
+`StreamingTreeForOBS-Setup-<version>.exe` to
+`StreamingTreeForOBS-<version>-windows-amd64-setup.exe` -
+`scripts/installer/streaming-tree.iss`'s `OutputBaseFilename` is the
+only production file that needed to change: `scripts/build-release.ps1`
+already discovers the installer's real filename dynamically
+(`Get-ChildItem -Filter '*.exe' | Select-Object -First 1`) and passes it
+straight through to `cmd/releasemanifest -artifact-name`, so nothing
+else in the pipeline hard-coded the old spelling. The rename is safe
+because Stage 20B's updater always resolves a download through release-
+manifest metadata (exact name, exact size, exact SHA-256, matched
+against the same GitHub Release's own assets array) - confirmed by
+grepping the entire repository for the literal old filename and finding
+no runtime code path depending on it, only illustrative test fixtures
+and now-updated documentation examples.
+
+`docs/platform-support.md` §16 ("Current Windows artifact naming") is
+rewritten to describe the real, now-implemented multi-platform naming
+convention instead of the future-tense placeholder text the cross-
+platform portability baseline milestone originally left there
+(explicitly deferred to "whichever milestone actually introduces the
+second platform's artifact" - this is that milestone). §17's roadmap
+table is split into 20C1 (In progress) / 20C2 (Planned, externally
+gated), matching docs/macos-packaging.md §1. `docs/updater.md`'s
+example manifest JSON is updated to the new artifact-name spelling for
+consistency.
+
+### Validation
+Ran the real Windows closing regression required by
+docs/macos-packaging.md §43 (this is a shared release-artifact-naming
+change, not a macOS-only change) via
+`scripts/build-release.ps1 -Version "0.1.0-dev+rename"` followed by
+`verify-packaged-app.mjs`, `verify-installer.mjs`, and
+`verify-updater.mjs` (the real two-version end-to-end update cycle,
+using the newly-renamed installer for both the "old" and "new" release
+builds) - all four steps passed. Confirmed directly in the build log
+that the real installer produced is
+`StreamingTreeForOBS-0.1.0-dev+rename-windows-amd64-setup.exe`.
+
+### Commits (chronological, this entry)
+1. This entry - `feat: rename the Windows installer to the cross-platform artifact convention`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.

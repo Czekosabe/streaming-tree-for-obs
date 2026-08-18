@@ -520,25 +520,31 @@ whatever package kind 20D eventually chooses. No non-Windows package kind
 is chosen or installable yet - only the shape of the identity concept was
 required to be, and is, already multi-platform-ready.
 
-## 16. Current Windows artifact naming
+## 16. Current cross-platform artifact naming
 
-`scripts/installer/streaming-tree.iss` currently produces
-`StreamingTreeForOBS-Setup-<version>.exe` (e.g.
-`StreamingTreeForOBS-Setup-0.1.0.exe`), with no explicit OS/architecture
-token in the filename - acceptable today because Windows is the only
-platform that produces a release artifact at all, so there is nothing to
-disambiguate from. Renaming it now, before Stage 20B's updater or any
-multi-platform GitHub Release exists, would only churn the already-
-verified installer (`scripts/verify-installer.mjs`) for no present benefit
-and is deliberately not done by this milestone. The future naming contract
-for when a single GitHub Release carries multiple platforms' artifacts is
-recorded here instead: a name that encodes product, version, OS, and
-architecture together, for example (illustrative only, not a byte-exact
-final spelling) `StreamingTreeForOBS-<version>-windows-amd64-setup.exe`
-alongside a future `StreamingTreeForOBS-<version>-darwin-arm64.dmg` and
-`StreamingTreeForOBS-<version>-linux-amd64.<package-kind>`. Whichever
-milestone actually introduces the second platform's artifact should revisit
-the Windows name at that point, not before.
+Stage 20C1 is the point this document's own §16 (as originally written)
+said the Windows name should be revisited: macOS is now a second
+platform that produces a real release artifact, so every artifact name
+encodes product, version, OS, and architecture together.
+`scripts/installer/streaming-tree.iss` now produces
+`StreamingTreeForOBS-<version>-windows-amd64-setup.exe` (e.g.
+`StreamingTreeForOBS-0.1.0-windows-amd64-setup.exe`, renamed from the
+prior `StreamingTreeForOBS-Setup-<version>.exe`), and
+`scripts/build-release-macos.sh` (docs/macos-packaging.md §23) produces
+`StreamingTreeForOBS-<version>-darwin-arm64.dmg` and
+`StreamingTreeForOBS-<version>-darwin-amd64.dmg`. The rename is safe
+because Stage 20B's updater always resolves a download through release-
+manifest metadata (exact name, exact size, exact SHA-256, matched
+against the same GitHub Release's own assets array) - no updater code
+anywhere depends on the old literal filename; `scripts/build-release.ps1`
+discovers the installer's real filename dynamically
+(`Get-ChildItem -Filter '*.exe'`) rather than hard-coding it, so nothing
+there needed to change. `scripts/verify-installer.mjs` and
+`scripts/verify-updater.mjs` were re-run against the renamed artifact as
+part of Stage 20C1's own closing regression. A future Linux artifact
+would follow the same shape,
+`StreamingTreeForOBS-<version>-linux-amd64.<package-kind>`, when Stage
+20D introduces it.
 
 ## 17. Roadmap (Stage 20, expanded)
 
@@ -546,7 +552,8 @@ the Windows name at that point, not before.
 | --- | --- | --- |
 | 20A | Windows production runtime and installer (see [`windows-packaging.md`](windows-packaging.md)) | **Completed** |
 | 20B | Application updater (GitHub Releases check, update UI, download/verification, real Windows installer/updater handoff, see [updater.md](updater.md)) - uses the cross-platform artifact-identity concept in §15; Windows x64 remains the only platform it actually serves | **Completed** |
-| 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification | Planned |
+| 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | In progress |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
 | 20D | Linux platform support, split into: | Planned |
 | 20D1 | Linux local/desktop runtime and packaging (§8) | Planned |
 | 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |

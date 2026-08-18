@@ -149,7 +149,7 @@ Schema (versioned, strict):
       "os": "windows",
       "arch": "amd64",
       "kind": "installer",
-      "name": "StreamingTreeForOBS-Setup-0.2.0.exe",
+      "name": "StreamingTreeForOBS-0.2.0-windows-amd64-setup.exe",
       "sizeBytes": 12345678,
       "sha256": "<64 lowercase hex characters>"
     }
