@@ -29763,3 +29763,175 @@ Run the complete final regression: frontend checks, backend checks,
 and all 23 integration scripts (the existing 22 plus
 `verify-packaged-app.mjs`) in canonical order, as one unbroken
 sequence, then append the final closing journal entry.
+
+## 2026-08-18 — docs: record Stage 20A packaging regression
+
+### Status
+Completed. Stage 20A is closed.
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `e44d03a` ("docs: record GPL licence regression"), clean tree,
+ahead/behind `0 0`. Effective Git author `Czekosabe
+<kacper2280@tlen.pl>`, matching the expected identity exactly.
+
+### What Stage 20A establishes
+The current developer-only two-process workflow now has a real
+Windows-first packaged desktop application alongside it, unchanged and
+still fully supported: one Go process, the production React frontend
+embedded into that same process, and the user's own default browser -
+never Electron/WebView2/Tauri/another embedded browser shell.
+
+### Contract-first discipline
+`docs/windows-packaging.md` was audited/researched/written and
+committed before any product code (`docs: define Stage 20A Windows
+packaging contract`) - a real runtime audit (routing namespace,
+shutdown sequence, listen address, build tooling, all confirmed by
+direct source reading) and primary-source research (Go `embed`,
+official Microsoft `ShellExecuteW`/`CreateMutexW` documentation, the
+FSF's own GPL FAQ on corresponding-source obligations, and a
+documented WiX/NSIS/Inno Setup comparison won by Inno Setup - installed
+via `winget`, hash-verified against the official GitHub release).
+
+### Production serving and packaged lifecycle
+Embedded frontend/legal documents (`internal/webassets`, a tracked
+`.gitkeep` placeholder in each so `go build`/`go test` never require
+Node on a clean checkout); production static/SPA routing that never
+shadows `/api/`, never falls back to `index.html` for a missing
+static-asset-like path, rejects path traversal, and long-caches only
+hashed assets; a fixed `/legal/*` route allowlist; `POST
+/api/system/shutdown` reusing the exact same `context.CancelFunc`
+`main.go` already had from `signal.NotifyContext`, protected by a
+strict JSON-body-shape requirement no HTML form can submit;
+`ShellExecuteW` browser launch (once, after real listener readiness,
+non-fatal on failure); `CreateMutexW` single-instance detection;
+`MessageBoxW` for a fatal startup error in the no-console release
+binary; `--version`; release-injectable version/commit/packaged-mode
+metadata via `-ldflags`, never inferred from the OS alone.
+
+### Frontend
+A real "Quit Streaming Tree" action (About & Legal, behind explicit
+confirmation, with an honest error state when the endpoint does not
+exist in development mode) and the four legal-document links switched
+from GitHub blob URLs to the new local `/legal/*` routes, so an
+installed application works fully offline.
+
+### Windows installer
+Inno Setup, selected after the documented comparison: per-user
+install, no elevation, a fixed `AppId` for stable upgrade identity,
+Start Menu integration, no auto-startup registration, no service
+installation, no `[Registry]` section at all (a structural guarantee
+that install/uninstall can never touch `%AppData%\StreamingTree` or
+the OS credential store). `scripts/build-release.ps1` builds the
+production frontend, stages it and the four legal documents into
+`internal/webassets`, builds a GUI-subsystem release executable, and
+drives `ISCC.exe` to produce a local, unsigned installer plus a
+SHA-256 digest - real, end-to-end verified by actually running it, not
+merely written: the produced `--version` output showed the injected
+version and the real commit hash matching `git rev-parse HEAD` at
+build time.
+
+### GPL packaging
+`LICENSE`, `THIRD_PARTY_NOTICES.md`, `LEGAL.md`, and `PRIVACY.md` are
+embedded into the release executable and also staged as loose files
+beside it by the installer - both mechanisms independently satisfy the
+requirement. No GPL header was added to the vendored Apache-2.0
+YouTube material. FFmpeg and MediaMTX remain exactly as before -
+operator-provided and separately managed-installed respectively,
+neither bundled into the installer. `THIRD_PARTY_NOTICES.md` gained a
+new entry distinguishing Inno Setup's build-tool licence from what its
+compiled output actually contains (its own redistributable bootstrap/
+uninstaller stub code) - the "no third-party binary is committed to
+this repository" statement remains accurate for the repository itself.
+Authenticode: honestly unsigned throughout, a `SignTool=` hook
+prepared but inert - no certificate exists.
+
+### Real bug found and fixed during development
+`scripts/verify-packaged-app.mjs`'s first run crashed in its own
+`finally` cleanup (`TypeError: handle.hasExited is not a function`) -
+a genuine script-harness bug, found only because every functional
+scenario had already passed. Fixed by recognizing the second-launch
+process (proving single-instance detection) already exits on its own
+and needs no force-stop. The one orphaned temp directory this left
+before the fix was identified by timestamp and removed by hand; an
+unrelated three-day-old temp directory from earlier work was
+deliberately left untouched.
+
+### Frontend tests
+99 test files, 1379 tests, all passing at closing (4 new: legal-link
+routes, quit-and-confirm success, cancel-never-calls, honest error
+state).
+
+### Backend validation
+`gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...` all
+clean. `go build ./...` and `go build -tags integration ./...` both
+clean. `go test -count=1 ./...`: **44 packages, 0 failures** (up from
+43 - the new `internal/webassets` package).
+
+### Complete integration regression
+One release build (`scripts/build-release.ps1 -Version
+"0.1.0-dev+regression"`) followed by all 23 integration scripts, in
+canonical order, in a single accepted sequence with **no failures on
+the first attempt**: the existing 22
+(`verify-persistence.mjs` through `verify-supporter-widgets.mjs`) plus
+the new `verify-packaged-app.mjs`. Final log: `=== ALL CHECKS AND ALL
+23 SCRIPTS PASSED ===`. `scripts/verify-installer.mjs` (a separate
+helper, not part of this numbered sequence) was run once, separately,
+during its own development - a full real silent install/live-check/
+graceful-shutdown/silent-uninstall cycle, 10/10 steps passing.
+
+### Test-process cleanup
+A post-regression process check (`tasklist`) found zero lingering
+`streaming-tree-server.exe`/`node.exe`/`testserver.exe`/`go.exe`
+processes. The release build inside the regression again overwrote the
+tracked `.gitkeep` placeholders in `internal/webassets/{embedded,
+legal}` with real generated content (expected - the release script's
+own job); both were restored via `git checkout --` immediately
+afterward, confirmed by a clean `git status`.
+
+### No real provider/OBS/manual-browser testing
+As with every prior stage, all verification was via the existing
+fake-provider integration harness, the automated unit/component test
+suites, and real-but-hermetic packaged-runtime/installer smoke tests
+against temporary data directories and a throwaway install location -
+never the operator's real AppData, real per-user install path, or a
+real browser/OBS session.
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20A: **Completed.**
+- Stage 20 (whole): **Incomplete** - Stage 20B (the application update
+  system: GitHub Releases check, update UI, download/verification,
+  installer/updater handoff) and remaining logs/diagnostics/remote-
+  server hardening not covered by 20A/20B are still Planned, not
+  started. The updater remains entirely unimplemented.
+
+### Commits this milestone (chronological)
+1. `a43f1e0` - `fix(docs): reconcile post-GPL project wording`
+2. `2a7babc` - `docs: define Stage 20A Windows packaging contract`
+3. `4fcfd08` - `feat(server): add production serving and packaged lifecycle`
+4. `6ccb9ff` - `feat(web): add Quit action and offline legal links`
+5. `1587612` - `build: add Windows release packaging and installer`
+6. `76c958d` - `test: verify the packaged application`
+7. `5f2ba1e` - `docs: reflect Stage 20A Windows packaging`
+8. This entry - `docs: record Stage 20A packaging regression`
+
+Every commit subject above exactly matches its own journal entry
+heading. Every logical commit was pushed to `origin/main` immediately
+after being made, verified synchronized before the next one began -
+no commits were accumulated locally and pushed only at the end.
+
+### Continuous-execution rule compliance
+The one long-running background command this milestone required (the
+complete final regression, including a full release build) was
+actively polled to completion via bounded-timeout blocking polls, its
+real result verified against `SUMMARY.txt` rather than the wrapper's
+own trailing echo alone, and immediately followed by the next
+actionable step (placeholder restoration, process-cleanliness check,
+this entry). No turn ended on passive-waiting language, and no
+operator message was needed at any point to make this task inspect a
+completed background command and resume - autonomous execution is
+claimed on that basis.
