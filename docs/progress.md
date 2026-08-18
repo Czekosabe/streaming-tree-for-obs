@@ -29239,3 +29239,113 @@ architecture, then conduct primary-source research (Go embedding,
 Windows browser launch, single-instance, installer comparison,
 Authenticode, GPL/FFmpeg distribution) and write
 `docs/windows-packaging.md` before any product code.
+
+## 2026-08-18 — docs: define Stage 20A Windows packaging contract
+
+### Status
+Completed.
+
+### Scope
+Before any Stage 20A product code: audited the real current backend/
+frontend runtime and conducted primary-source research, then wrote
+`docs/windows-packaging.md` as the canonical contract for the
+production-serving/packaging architecture.
+
+### Runtime audit (direct source reading)
+`cmd/server/main.go`'s only shutdown trigger today is
+`signal.NotifyContext` (Ctrl+C/SIGTERM); a single, already-correct,
+carefully-ordered graceful-shutdown sequence already exists in its
+`<-ctx.Done()` branch. Default listen address is `127.0.0.1:8080`
+(already loopback-only); a taken port fails hard today, no silent
+refallback. Every real backend route is `GET /{$}` or begins with
+`/api/` (enumerated every `mux.HandleFunc` pattern in
+`internal/httpapi`) - a completely unambiguous namespace boundary, no
+static serving or SPA fallback exists yet. Every frontend management
+and public-overlay route is a React-Router client route with no
+backend counterpart. Vite already proxies `/api` in dev, so the
+frontend already only calls relative same-origin URLs. No browser-
+launch helper, no CLI flag parsing, no GitHub workflows, no release
+script exist yet. `internal/buildinfo` is confirmed as the reusable
+canonical version/identity source. The `integration` build-tag
+convention (`cmd/testserver`) and the Windows/`!windows` build-tag
+split (`internal/provider/tts`) are the established precedents this
+milestone's packaged-mode and OS-specific code both follow.
+
+### Primary-source research (2026-08-18)
+- `pkg.go.dev/embed` - confirmed `//go:embed all:dir` directory-
+  embedding semantics and the `http.FileServer(http.FS(...))` pattern.
+- `learn.microsoft.com/windows/win32/api/shellapi/nf-shellapi-
+  shellexecutew` - confirmed `ShellExecuteW` with the `"open"` verb as
+  the official mechanism to open a URL with its default handler.
+- `learn.microsoft.com/windows/win32/api/synchapi/nf-synchapi-
+  createmutexw` - confirmed the named-mutex single-instance pattern
+  (`GetLastError() == ERROR_ALREADY_EXISTS`).
+- `gnu.org/licenses/gpl-faq.html` - confirmed the GPL corresponding-
+  source obligation for distributed binaries.
+- Inno Setup's own official site (`jrsoftware.org`) and the current
+  WiX Toolset docs (`docs.firegiant.com`, following a redirect from
+  `wixtoolset.org`) - full comparison below.
+
+### Installer comparison and selection
+Compared WiX Toolset, NSIS, and Inno Setup against per-user install,
+elevation avoidance, silent install/uninstall, Start Menu integration,
+stable upgrade identity, code-signing hooks, build-tool dependencies,
+and CI suitability. WiX now requires a .NET SDK/MSBuild toolchain -
+confirmed absent on this development machine (`dotnet` reports no SDK
+installed) - and has the steepest learning curve. NSIS is viable but
+lower-level, requiring hand-rolled upgrade-identity/registry scripting
+to match what Inno Setup provides declaratively. **Selected: Inno
+Setup** - self-contained (~1.78 MB compiler), first-class per-user/
+silent/`AppId`-upgrade/code-signing-hook support, lowest complexity for
+a solo-maintained GPL project. Installed via `winget install --id
+JRSoftware.InnoSetup --scope user` (Microsoft's own official package
+manager, hash-verified by winget against the official `jrsoftware/
+issrc` GitHub release) - confirmed working at
+`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`.
+
+### Contract established
+`docs/windows-packaging.md` records: one-Go-process runtime model;
+embed-with-committed-placeholder frontend packaging (so `go build`/
+`go test` never require Node - a small `apps/server/internal/
+webassets/embedded/` directory with a tracked `.gitkeep` placeholder,
+overwritten only by the release script); preserved development mode;
+production routing (`/api/` untouched, everything else falls back to
+`index.html` exactly like Vite's dev-time behavior, hashed assets
+long-cacheable, `index.html` never stale, path traversal rejected, no
+directory listing); unchanged loopback-only origin; `ShellExecuteW`
+browser launch (once, packaged-mode-only, after readiness, failure
+non-fatal); a genuinely no-console GUI-subsystem release binary with a
+real in-app "Quit Streaming Tree" action (`POST /api/system/shutdown`,
+reusing the existing signal-driven shutdown sequence via the same
+`CancelFunc`, protected against cross-origin form submission by
+requiring a JSON body no HTML form can send as a simple request) and a
+native `MessageBoxW` fatal-startup-error path; `CreateMutexW` single-
+instance detection with focus-existing-instance-and-exit behavior on a
+second launch; `internal/buildinfo`-owned version metadata with a new
+`--version` flag; Czekosabe/GPL-3.0-or-later product identity in
+installer metadata; the full installer comparison above; per-user
+install with no elevation, program files only, persistent data
+preserved at its existing unchanged `%AppData%\StreamingTree` location;
+`AppId`-based stable upgrade identity; uninstall removes only program
+files, never touches application data or the OS credential store;
+`LICENSE`/`THIRD_PARTY_NOTICES.md`/`LEGAL.md`/`PRIVACY.md` embedded and
+served via a fixed same-origin route allowlist so the installed app
+works offline; unchanged GPL/FFmpeg/MediaMTX decisions (FFmpeg stays
+operator-provided, MediaMTX stays a separate managed-install download,
+neither bundled); honestly-unsigned Authenticode status with a future
+signing hook prepared; the updater boundary; and the automated
+packaged-runtime/installer-smoke test strategies, plus a known-
+limitations list (no signing, no final branding, no updater, no
+remote-server hardening, no real OBS/manual verification, non-Windows
+platforms not packaged).
+
+### Automated validation
+Documentation-only commit; no product code exists yet to validate.
+
+### Known limitations
+None for this entry specifically - see the contract's own §24.
+
+### Next step
+Implement production static/SPA serving and the embedded-frontend
+placeholder scaffolding (`internal/webassets`), following the contract
+above.
