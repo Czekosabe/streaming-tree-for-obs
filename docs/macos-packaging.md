@@ -393,10 +393,19 @@ Stage 20B's manifest schema already modeled a list of artifacts,
 does not change for this milestone; the existing schema already
 supports multiple entries, this milestone is the first to actually
 populate more than one. `cmd/releasemanifest` (Stage 20B's single-
-artifact generator) is extended to accept multiple `-artifact`
-descriptors and assemble one canonical manifest describing all of them
-- never a second, per-platform manifest format; the final public GitHub
-Release will eventually carry exactly one `streaming-tree-release.json`
+artifact generator) still describes exactly one artifact per
+invocation - Windows and macOS builds never run on the same machine, so
+a single invocation accepting several artifact descriptors at once
+could never actually be satisfied by one real release pipeline anyway.
+Instead, a new optional `-in <existing-manifest.json>` flag was added:
+when given, that manifest's own artifacts are carried over and the
+newly-described one is appended (and the whole result re-validated);
+omitting `-in` behaves exactly as it did in Stage 20B (a fresh, single-
+artifact manifest), so `scripts/build-release.ps1`'s own existing
+invocation needed no change. This is how one canonical manifest gets
+assembled across separate per-platform build invocations - never a
+second, per-platform manifest format; the final public GitHub Release
+will eventually carry exactly one `streaming-tree-release.json`
 covering every platform's artifact. No GitHub Release is created in
 20C1.
 
@@ -478,7 +487,7 @@ burn macOS runner time for no reason.
 
 ## 28. macOS package verification helper
 
-`scripts/verify-macos-package.sh` - a **platform-specific CI
+`scripts/verify-macos-package.mjs` - a **platform-specific CI
 verification helper**, explicitly not counted as canonical local
 integration script #25. The canonical local integration-script count
 remains **24** (Stage 20B's own count, unchanged) - this helper only

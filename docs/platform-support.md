@@ -575,15 +575,40 @@ gated on real Apple Developer signing/notarization credentials this
 project does not have - it is not blocked on any further engineering
 decision.
 
-## 18. What this milestone explicitly did not do
+## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)
 
-No macOS package (`.app`/`.dmg`/`.pkg`), no Linux package (`.deb`/`.rpm`/
-AppImage/Flatpak/Snap/systemd service), no code signing, no notarization
-submission, no Apple Developer account or certificate request, no Stage
-20B updater code, no GitHub Release, no Git tag, no binding of the
-management API to a non-loopback address, no weakening of MediaMTX's
-loopback-only RTMP/Control-API policy, no remote authentication system, no
-TLS termination, no headless secret-storage fallback of any kind, and no
-macOS/Linux TTS implementation. Every one of these remains exactly as
-future-scoped as it was before this milestone, with this document as the
-place their eventual design work should start from.
+This section is historical: it records the explicit exclusions of the
+*cross-platform portability baseline* milestone specifically (the one
+that first wrote this document, before Stage 20B or Stage 20C1
+existed). It is kept for the record rather than deleted, but several of
+these items have since been implemented by later milestones - reading
+it as still describing the *current* state would now be wrong. Kept
+current below, one line per original claim:
+
+- No macOS package (`.app`/`.dmg`/`.pkg`) - **since implemented**:
+  Stage 20C1 shipped a real, unsigned, not-notarized `.app`/DMG, native-
+  CI-verified on both architectures (see [macos-packaging.md](macos-packaging.md)).
+- No Linux package (`.deb`/`.rpm`/AppImage/Flatpak/Snap/systemd service)
+  - **still true**: Stage 20D1 is Planned, not started.
+- No code signing, no notarization submission, no Apple Developer
+  account or certificate request - **still true**: this is Stage 20C2's
+  own scope, externally gated on real Apple Developer credentials this
+  project does not have.
+- No Stage 20B updater code - **since implemented**: Stage 20B shipped
+  the real GitHub Releases update system (see [updater.md](updater.md)).
+- No GitHub Release, no Git tag - **still true**: no stage through
+  20C1 has published a public release.
+- No binding of the management API to a non-loopback address, no
+  weakening of MediaMTX's loopback-only RTMP/Control-API policy - **still
+  true and unconditional**: every stage through 20C1 preserved this,
+  and Stage 20D1 (Linux local/desktop mode) preserves it too; only a
+  future, separately-designed Stage 20D2 remote/headless mode could
+  ever revisit it, under its own distinct threat model.
+- No remote authentication system, no TLS termination, no headless
+  secret-storage fallback of any kind - **still true**: these remain
+  Stage 20D2's own unsolved scope, not addressed by 20C1 or by Stage
+  20D1's local/desktop-only Linux work.
+- No macOS/Linux TTS implementation - **still true**: both remain
+  honestly reported as unavailable (`Capabilities.Available == false`),
+  with a real native provider left as separate future feature work on
+  either platform.

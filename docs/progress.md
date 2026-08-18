@@ -32977,3 +32977,120 @@ rather than ignored or blindly retried. No Apple signing/notarization
 credentials were requested from, or needed from, the operator at any
 point - their absence is Stage 20C2's own external gate, not a blocker
 for this milestone. No AskUserQuestion call was made during Stage 20C1.
+
+## docs: reconcile Stage 20C1 closing record
+
+### Governing task
+Stage 20D1's own governing task required a narrow corrective pass on
+Stage 20C1's closing record before any Stage 20D1 product work began.
+Every discrepancy it named was independently verified against the real
+current tree, Git history, and GitHub Actions history rather than
+trusted at face value.
+
+### A. Closing-subject deviation (confirmed)
+The requested exact final subject for Stage 20C1 was
+`docs: record Stage 20C1 macOS packaging regression`. The actual final
+commit subject (5c8c0bb) is
+`docs: record Stage 20C1 macOS packaging milestone`. Confirmed via
+`git show --stat 5c8c0bb`. This is a historical process deviation with
+no product-code effect; the historical commit and journal entry are
+left unmodified.
+
+### B. Final closing-commit isolation deviation (confirmed)
+The governing task required the final Stage 20C1 closing commit to
+touch only docs/progress.md. `git show --stat 5c8c0bb` shows it also
+changed README.md, docs/platform-support.md, and
+docs/project-overview.md (the final "In progress" to "Completed"
+status-marker flips, deliberately held back until the CI evidence cited
+in that entry was in hand). This is a real deviation from the requested
+isolation, with no product-code effect - the historical commit is left
+unmodified.
+
+### C. macOS verification helper filename drift (confirmed and corrected)
+docs/macos-packaging.md section 28 named the helper
+`scripts/verify-macos-package.sh`; the actual, only, implementation is
+`scripts/verify-macos-package.mjs` (confirmed via a directory listing).
+The living contract is corrected in this commit to name the real file.
+No implementation change - Node/.mjs was always the actual shipped
+mechanism.
+
+### D. Release-manifest contract wording drift (confirmed and corrected)
+docs/macos-packaging.md section 22 described the multi-platform
+manifest mechanism as "extended to accept multiple -artifact
+descriptors [in one invocation]". The actual, tested, shipped
+mechanism (cmd/releasemanifest/main.go, its tests, and both
+build-release.ps1 and build-release-macos.sh) is: exactly one
+-artifact per invocation, plus a new optional
+-in <existing-manifest.json> flag that carries over an existing
+manifest's own artifacts and appends the newly-described one -
+because Windows and macOS builds never run on the same machine, a
+single invocation accepting several artifact descriptors at once could
+never actually be satisfied by one real release pipeline. The living
+contract is corrected in this commit to describe the real, already-
+shipped and already-tested -in mechanism instead of the earlier,
+never-implemented multi-artifact-per-invocation wording. No
+implementation change - the -in design was already correct and already
+covered by TestBaseManifestFreshWhenNoInPath,
+TestBaseManifestExtendsExistingFile, and
+TestBaseManifestRejectsVersionMismatch in
+cmd/releasemanifest/main_test.go.
+
+### Stale docs/platform-support.md section 18 (confirmed and corrected)
+Section 18 ("What this milestone explicitly did not do") was written
+by the cross-platform portability baseline milestone, before Stage 20B
+or Stage 20C1 existed, and had never been revisited since. Read as
+current-tense, it falsely claimed "no macOS package" and "no Stage 20B
+updater code" despite both now being Completed. Corrected in this
+commit: the section is retitled and reframed as an explicitly
+historical record of that one milestone's own exclusions, with each
+original claim annotated either "since implemented" (macOS package,
+Stage 20B updater) or "still true" (Linux package, signing/
+notarization, GitHub Release/tag, non-loopback binding, remote auth/
+TLS/headless secrets, macOS/Linux TTS) - each with a one-line current
+explanation rather than silently left to look current.
+
+### E. Final-HEAD (5c8c0bb) CI evidence
+`.github/workflows/cross-platform.yml` run 32163427746 (head_sha
+5c8c0bb) is confirmed via the GitHub REST API: status completed,
+conclusion success, all 6 jobs (frontend, backend windows-amd64/
+linux-amd64/linux-arm64/macos-arm64/macos-amd64) green - this run was
+actively observed to terminal state in the same session that produced
+the Stage 20C1 closing entry, immediately after the closing commit was
+pushed, so the closing entry's own citation of ff0807a as its evidence
+commit was not the true final-HEAD run; this corrects the record to
+also cite 5c8c0bb's own run explicitly. Both previously-cited macOS
+package workflow runs were re-confirmed still present with their
+original recorded conclusions: run 32159238567 (head_sha 56dc658,
+success) and run 32160291342 (head_sha 2ed17b4, success). No workflow
+was re-run solely because of this documentation correction.
+
+### F. Stage 20C1 autonomy evidence (audited precisely, not assumed)
+Zero AskUserQuestion calls were made during Stage 20C1 - confirmed by
+direct review of this session's own tool-call history. However, a
+literal operator follow-up message reading only "continue" was sent
+once during Stage 20C1, immediately after a background regression
+command (task b3i0y5jsz, the Windows installer-rename regression)
+reported completion via a task notification. This is exactly the kind
+of resume/follow-up intervention the continuous-execution rule exists
+to eliminate, and it did occur once. Recorded honestly rather than
+inferred as zero merely because AskUserQuestion was never called:
+
+Operator resume/follow-up interventions during Stage 20C1: 1 (a single
+"continue" message following a completed background task).
+
+### Product status after this correction
+Unchanged: Stage 20C1 remains **Completed**. This correction concerns
+only historical closing-record accuracy, two living-contract wording
+corrections (a filename and a mechanism description, both already
+matching the real shipped code), one stale historical-section reframe,
+confirmatory CI evidence for the true final HEAD, and precise autonomy
+accounting. No product code was changed by this commit.
+
+### Commits (chronological, this correction)
+1. This entry - `docs: reconcile Stage 20C1 closing record`
+
+### Continuous-execution rule compliance
+GitHub Actions history was audited via the read-only REST API
+synchronously in this turn; no run needed to be triggered since the
+cited runs already existed with the conclusions recorded above. No
+AskUserQuestion call was made during this corrective pass.
