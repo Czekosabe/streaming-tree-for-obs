@@ -32566,3 +32566,108 @@ that the real installer produced is
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## feat: add macOS release build script, package CI, and verification helper
+
+### What changed
+Implements the core of docs/macos-packaging.md §23/§27/§28/§37-40: the
+real macOS packaging pipeline, native-CI-verified only (no local macOS
+hardware exists for this project - the operator owns no Mac).
+
+1. **`scripts/build-release-macos.sh`** (§23): a Darwin-only bash
+   script mirroring `scripts/build-release.ps1`'s own structure and
+   safety discipline - verifies a real Darwin host and a supported
+   architecture (`arm64`/`x86_64`→`amd64`) before doing anything else,
+   validates a strict version string, verifies required tools (`go`,
+   `npm`, `plutil`, `hdiutil`), builds the frontend with `npm ci`, stages
+   the embedded frontend/legal directories exactly like the Windows
+   script does, builds the Go executable natively with
+   `CGO_ENABLED=1` (required for the real Keychain backend, per
+   docs/macos-packaging.md §16), injects the same canonical
+   version/commit/packaged-mode `-ldflags` metadata Windows uses,
+   assembles a real `.app` bundle (`Info.plist` with the stable bundle
+   identifier `io.github.czekosabe.streaming-tree-for-obs`,
+   `LSUIElement=true`, the four legal documents under `Resources`),
+   self-validates the plist with `plutil -lint`, builds a DMG via
+   `hdiutil` (`.app` + `Applications` symlink), computes a SHA-256
+   digest, and - only for a strict `major.minor.patch` version - invokes
+   `cmd/releasemanifest` (with an optional `-in` pass-through, so it can
+   fold into an existing Windows-built manifest per §22). Never installs
+   Homebrew, never installs Node at runtime, never publishes, never
+   signs, never notarizes, never creates a Git tag. Generated artifacts
+   are git-ignored, matching the existing `build/` convention.
+
+2. **`.github/workflows/macos-package.yml`** (§27/§34-36): a dedicated
+   package-verification workflow, explicitly not a release workflow -
+   `contents: read` only, no secrets, no artifact upload of the unsigned
+   DMG. Matrix over `macos-latest` (Apple Silicon) and `macos-15-intel`
+   (Intel) - the current official GitHub-hosted runner labels re-
+   confirmed during this milestone's own research (docs/macos-
+   packaging.md §2), cross-checked against this repository's own
+   already-green CI history for that Intel label. Triggered by
+   `workflow_dispatch` and by a push to `main` touching the shared Go
+   core, the shared frontend, the macOS build/verify scripts, the legal
+   documents, or the workflow file itself. Runs the real build-and-
+   verify cycle **twice** per architecture in one job (two independent
+   rebuild+reverify passes, each with its own version string so neither
+   reuses the other's output) - satisfying docs/macos-packaging.md §56's
+   "verified at least twice" requirement without needing two separate
+   workflow runs. A final `if: always()` step is a backstop only (kills
+   any leftover `streaming-tree-server` process, force-detaches any
+   leftover mounted volume) - the build/verify scripts already clean up
+   on every path, including failure, so this step is never itself relied
+   on as evidence of a passing verification.
+
+3. **`scripts/verify-macos-package.mjs`** (§28/§37-40): a platform-
+   specific CI verification helper, explicitly NOT canonical local
+   integration script #25 - the canonical count remains 24. Mirrors
+   `scripts/verify-packaged-app.mjs`'s own step/pass/fail/expect style.
+   Verifies: the real `.app` bundle and executable exist; `Info.plist`
+   parses (`plutil -lint`) and reports the correct stable bundle
+   identifier, executable name, version fields, and `LSUIElement`;
+   executable architecture matches the runner (`file`); the four legal
+   documents are present under `Resources`; `--version` reports real
+   packaged metadata without starting a service; the real executable
+   starts from inside the `.app` (no Node/npm/Vite process involved) and
+   becomes healthy; health/About/production-frontend-root/Settings-
+   About-SPA/public-overlay-SPA/all four legal routes all respond
+   correctly; creator/licence/support identity is unchanged; TTS
+   honestly reports unavailable (`GET /api/audio/capabilities`); the
+   updater reports the real `platform_unsupported` state and refuses a
+   manual check, rather than a false "up to date"; a second launch is
+   detected by the real `flock`-based single-instance mechanism and
+   does not start a second backend; the real browser-launch code path
+   was exercised (safely suppressed by the existing `STREAMING_TREE_
+   TEST_NO_UI` seam); graceful shutdown through the real shared
+   shutdown path actually exits the process; the DMG exists, mounts via
+   `hdiutil attach`, contains a `.app` whose bundle identity/version
+   metadata matches the staged app; the app can be copied to a hermetic
+   temporary "Applications-like" directory, started, and stays healthy
+   there; application data remains outside the app bundle and survives
+   removal of the copied app; the DMG unmounts cleanly; and no
+   `streaming-tree-server` process remains at the end. The real NSAlert/
+   Cgo fatal-startup bridge (`nativealert_darwin.go`/`.m`) is
+   deliberately never invoked live in this script - doing so would block
+   on a native modal dialog with no user present to dismiss it and hang
+   the CI job; its compilation is already proven by the same executable
+   existing and starting at all, since a broken Objective-C bridge would
+   have failed `go build -tags` with `CGO_ENABLED=1` before this script
+   ever ran.
+
+### Validation performed so far
+`node --check scripts/verify-macos-package.mjs` and
+`bash -n scripts/build-release-macos.sh` both pass. `.github/workflows/
+macos-package.yml` parsed successfully with `js-yaml` (structurally
+valid). None of the three files can be meaningfully executed on this
+Windows development machine - real verification is the native macOS CI
+run this commit triggers, which is actively observed to terminal state
+next (docs/macos-packaging.md §55), not merely started and left
+unwatched.
+
+### Commits (chronological, this entry)
+1. This entry - `feat: add macOS release build script, package CI, and verification helper`
+
+### Continuous-execution rule compliance
+No Apple signing/notarization credentials were needed for this work -
+Stage 20C1 packages are deliberately unsigned. No AskUserQuestion call
+was made.

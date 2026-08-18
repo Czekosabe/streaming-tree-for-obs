@@ -1,0 +1,91 @@
+name: macOS package verification
+
+# Stage 20C1 native macOS package-verification gate, NOT a release
+# workflow: no publication, no secrets, no Developer ID, no notarization,
+# no artifact upload (docs/macos-packaging.md §27/§32/§36). Builds and
+# verifies the real, unsigned, CGO-enabled .app bundle and DMG on real,
+# native, GitHub-hosted macOS runners (both Apple Silicon and Intel),
+# then discards everything when the ephemeral runner is destroyed. See
+# docs/macos-packaging.md for the full architecture this workflow
+# proves, and .github/workflows/cross-platform.yml for the separate,
+# lighter-weight portability gate this workflow does not replace.
+#
+# scripts/verify-macos-package.mjs is a platform-specific CI
+# verification helper, explicitly not canonical local integration
+# script #25 - the canonical local integration-script count remains 24
+# (docs/macos-packaging.md §28/§37).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - "scripts/build-release-macos.sh"
+      - "scripts/verify-macos-package.mjs"
+      - "LICENSE"
+      - "PRIVACY.md"
+      - "LEGAL.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - ".github/workflows/macos-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+          - name: macos-amd64
+            os: macos-15-intel
+    name: package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # docs/macos-packaging.md §56: the package verification must
+      # complete successfully at least twice per architecture - done
+      # here as two consecutive rebuild+reverify passes in one native
+      # job, each one a real, independent build and a real, independent
+      # verification run, not a cached re-check of the first pass.
+      - name: Build the macOS release package (pass 1)
+        run: bash scripts/build-release-macos.sh --version "0.1.0-dev+ci1"
+
+      - name: Verify the macOS package (pass 1)
+        run: node scripts/verify-macos-package.mjs
+
+      - name: Build the macOS release package (pass 2)
+        run: bash scripts/build-release-macos.sh --version "0.1.0-dev+ci2"
+
+      - name: Verify the macOS package (pass 2)
+        run: node scripts/verify-macos-package.mjs
+
+      # Backstop only: both build-release-macos.sh and
+      # verify-macos-package.mjs already clean up their own test-owned
+      # processes and mounted disk images on every path, including
+      # failure. This step exists in case a step above was killed
+      # abruptly (e.g. a job timeout) before its own cleanup ran -
+      # never treated as evidence of a passing verification on its own.
+      - name: Clean up any leftover process or mounted image
+        if: always()
+        run: |
+          pkill -f streaming-tree-server || true
+          for volume in /Volumes/"Streaming Tree for OBS"*; do
+            [ -e "$volume" ] && hdiutil detach "$volume" -force || true
+          done
+          rm -rf build/release-macos
