@@ -2,6 +2,8 @@ package updater
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -156,7 +158,12 @@ func (w wireRelease) toRelease() Release {
 // Client is a bounded GitHub Releases API client (docs/updater.md §8).
 // Zero value is not usable - construct with NewClient.
 type Client struct {
-	http      *http.Client
+	http *http.Client
+	// download is a second client with no fixed wall-clock Timeout,
+	// used only for the installer artifact transfer - that transfer is
+	// bounded by byte count (docs/updater.md §13) and the caller's own
+	// context deadline, not by a short metadata-request timeout.
+	download  *http.Client
 	baseURL   string
 	userAgent string
 }
@@ -176,6 +183,7 @@ func NewClient(installedVersion string) *Client {
 func newClient(baseURL, installedVersion string) *Client {
 	return &Client{
 		http:      &http.Client{Timeout: metadataRequestTimeout},
+		download:  &http.Client{},
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		userAgent: fmt.Sprintf("StreamingTreeForOBS/%s (+%s)", installedVersion, RepositoryURL),
 	}
@@ -257,10 +265,10 @@ func (c *Client) setCommonHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", c.userAgent)
 }
 
-// downloadBounded fetches an asset's raw bytes via its API resource URL
-// (docs/updater.md §6 - preferred over browser_download_url), bounded
-// by maxBytes.
-func (c *Client) downloadBounded(ctx context.Context, asset Asset, maxBytes int64) ([]byte, error) {
+// assetRequest builds a GET request for asset's own download location -
+// its API resource URL preferred over browser_download_url
+// (docs/updater.md §6).
+func (c *Client) assetRequest(ctx context.Context, asset Asset) (*http.Request, error) {
 	url := asset.APIURL
 	if url == "" {
 		url = asset.BrowserDownloadURL
@@ -276,6 +284,17 @@ func (c *Client) downloadBounded(ctx context.Context, asset Asset, maxBytes int6
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set(apiVersionHeader, apiVersionValue)
 	req.Header.Set("User-Agent", c.userAgent)
+	return req, nil
+}
+
+// downloadBounded fetches an asset's raw bytes entirely into memory,
+// bounded by maxBytes - used only for the small manifest asset, never
+// the installer artifact (see DownloadAssetTo for that).
+func (c *Client) downloadBounded(ctx context.Context, asset Asset, maxBytes int64) ([]byte, error) {
+	req, err := c.assetRequest(ctx, asset)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -291,6 +310,72 @@ func (c *Client) downloadBounded(ctx context.Context, asset Asset, maxBytes int6
 	}
 
 	return readBounded(resp.Body, maxBytes)
+}
+
+// downloadChunkSize is the buffer size DownloadAssetTo streams with.
+const downloadChunkSize = 32 * 1024
+
+// DownloadAssetTo streams asset's bytes to dest (a real file, in
+// production), bounded by maxBytes, and returns the lowercase-hex
+// SHA-256 of the downloaded bytes - computed in the same pass, no
+// second read of the file needed (docs/updater.md §14). onChunk, when
+// non-nil, is called after each write with the cumulative byte count
+// so far (docs/updater.md §11's downloadProgress status field).
+//
+// If the response declares a Content-Length exceeding maxBytes, the
+// download aborts before any body bytes are read. The bound is also
+// enforced while streaming, in case Content-Length was absent or
+// understated (docs/updater.md §13).
+func (c *Client) DownloadAssetTo(ctx context.Context, asset Asset, dest io.Writer, maxBytes int64, onChunk func(written int64)) (sha256Hex string, totalBytes int64, err error) {
+	req, err := c.assetRequest(ctx, asset)
+	if err != nil {
+		return "", 0, err
+	}
+
+	resp, err := c.download.Do(req)
+	if err != nil {
+		return "", 0, fmt.Errorf("%w: %s", ErrRequestFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if isRateLimited(resp) {
+		return "", 0, ErrRateLimited
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", 0, fmt.Errorf("%w: unexpected status %d downloading %q", ErrRequestFailed, resp.StatusCode, asset.Name)
+	}
+	if resp.ContentLength > 0 && resp.ContentLength > maxBytes {
+		return "", 0, ErrResponseTooLarge
+	}
+
+	hasher := sha256.New()
+	multi := io.MultiWriter(dest, hasher)
+
+	buf := make([]byte, downloadChunkSize)
+	var total int64
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			total += int64(n)
+			if total > maxBytes {
+				return "", 0, ErrResponseTooLarge
+			}
+			if _, writeErr := multi.Write(buf[:n]); writeErr != nil {
+				return "", 0, fmt.Errorf("%w: %s", ErrRequestFailed, writeErr)
+			}
+			if onChunk != nil {
+				onChunk(total)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return "", 0, fmt.Errorf("%w: %s", ErrRequestFailed, readErr)
+		}
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), total, nil
 }
 
 // isRateLimited reports whether resp looks like a GitHub rate-limit

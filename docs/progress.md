@@ -31044,3 +31044,131 @@ green, confirming the new migration did not disturb anything else.
 No background command was required for this unit - written, tested,
 and validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## feat(server): add the update-manager state machine
+
+### What was built
+The core Stage 20B runtime piece, still in `internal/updater`:
+
+- `state.go` - the `State` enum (`disabled/idle/checking/up_to_date/
+  available/downloading/ready_to_install/installing/error`), the
+  blocker-code and error-code closed vocabularies, and `Status` (the
+  safe HTTP-facing snapshot, docs/updater.md §11/§30 - deliberately
+  excludes any local path, GitHub asset id, download URL, SHA-256
+  value, or machine identity).
+- `guard.go` - `BranchSnapshotSource` (a narrow interface over
+  `branch.Manager.Snapshot`, so this package's own tests never need a
+  real branch manager) and `StreamingActive`, implementing
+  docs/updater.md §17's exact predicate: any branch with
+  `DesiredRunning == true` or `State` in `{Starting, Live, Restarting,
+  WaitingForIngest, Stopping}` counts as active - deliberately
+  broadened from the branch manager's own private `StopAll` predicate
+  to name every transitional state explicitly, so this can never
+  silently drift from what `StopAll` actually does.
+- `handoff.go`/`handoff_other.go` - the `Handoff` interface
+  (`Available`/`Begin`) the manager installs through, and the
+  non-Windows stub (always unavailable, `BlockerPlatformUnsupported`) -
+  the real Windows implementation is a later, dedicated commit.
+- `manager.go` - `Manager`, constructed via `NewManager(Options)`.
+  `Start`/`Shutdown` follow the exact same convention every other
+  runtime manager in `cmd/server/main.go` already uses. `Start` loads
+  the persisted auto-check preference and, only in a release build
+  with it enabled, launches the background schedule loop: a jittered
+  30-60s startup delay, then a jittered ~55-65 minute cadence
+  thereafter (docs/updater.md §10) - metadata-only, a failed automatic
+  check is logged and never surfaced as an application-level failure.
+  `SetAutoCheck` persists the preference and starts/stops the loop to
+  match. `Status` computes `InstallBlocked`/`BlockerCode` live on every
+  call (handoff availability, then a verified candidate, then the
+  streaming guard - in that order) rather than caching a stale guard
+  result.
+- `check.go` - `CheckNow`: in-flight-check dedup (a second concurrent
+  call is a no-op against the same check, docs/updater.md §11), ETag
+  round-trip (a `304` is a normal success, never an error), client-side
+  re-validation of `draft`/`prerelease` (never trusting the endpoint's
+  own filtering alone), manifest fetch + `manifest.Validate` against
+  the release's own tag, exact-integer version comparison with an
+  explicit no-downgrade rule (`current >= latest` is always
+  `up_to_date`, never offered as a downgrade), and a defensive
+  "no artifact for this platform's identity" path that also reports
+  `up_to_date` rather than dangling an unusable `available` state.
+  Bounded, honestly-truncated plain-text release notes
+  (`boundReleaseNotes`, 4000 runes).
+- `client.go` extended with `Client.DownloadAssetTo` - a genuinely
+  streamed download (32 KiB chunks straight to the destination writer,
+  never buffered whole in memory), computing the SHA-256 in the same
+  pass (no second read), enforcing the byte-count bound both from a
+  present `Content-Length` (aborts before any body bytes) and while
+  streaming (in case `Content-Length` was absent or understated) - and
+  a second, separately-configured `*http.Client` with no fixed
+  wall-clock timeout for this transfer specifically, since it is
+  governed by the byte bound and the caller's own context deadline
+  instead (docs/updater.md §8/§13).
+- `download.go` - `Manager.Download`: allowed regardless of streaming
+  state (only `Install` is gated, docs/updater.md §17), stages to
+  `DataDir/updates/artifact.part`, verifies exact size and SHA-256
+  against the manifest, then atomically renames to a verified
+  candidate name encoding its own version and a content-hash prefix
+  (`verified-<version>-<sha12>.exe`) so a stale candidate can never be
+  confused with a newer one (docs/updater.md §16/§18).
+- `install.go` - `Manager.Install`: re-checks every guard (handoff
+  availability, then the streaming-active guard) against the real,
+  current runtime state immediately before committing to shutdown -
+  never reusing the check that merely enabled the button
+  (docs/updater.md §18). Sets a short-lived `committing` flag,
+  queryable via `UpdateCommitInProgress()`, for the duration of that
+  critical section (intended to be consulted by the branch-start HTTP
+  handler once it exists, closing the narrow race where a stream
+  starts in the gap between the final guard check and the actual
+  shutdown signal). Calls `Handoff.Begin`, and only once that succeeds
+  invokes the injected `OnHandoffBegun` callback - production wiring
+  will point this at the exact same shutdown trigger
+  `POST /api/system/shutdown` already reuses, never a second shutdown
+  implementation.
+
+### Tests
+14 new test functions (65 total across `internal/updater/...` now, all
+passing): the streaming guard against every transitional
+`branch.State` value plus idle/empty/desired-running/mixed cases;
+`CheckNow` disabled in a development build, up-to-date, the explicit
+no-downgrade case (installed newer than "latest"), a genuinely
+available update, and draft-release rejection; and - the safety-
+critical group - `Status` reporting `installBlocked`/
+`BlockerStreamingActive` while a fake branch is live,
+`Install` refusing outright when a fake stream starts in the gap
+between `Download` and `Install` (asserting `handoff.Begin` is never
+even called, proving nothing was shut down), a full success path
+asserting the shutdown callback fires and `UpdateCommitInProgress()`
+becomes true, and `Install` refusing when the fake handoff reports
+itself unavailable. Manager tests run against a real local
+`httptest.Server` (via the same unexported `newClient` test seam the
+client's own tests already established) serving a real release +
+manifest + small fake installer payload - not mocked at the HTTP
+layer.
+
+### Validation
+`go vet ./...` (whole repo) clean. `go vet -tags integration ./...`
+clean. `go test ./internal/updater/...` - all tests PASS (65 total).
+`go build ./...` and `go build -tags integration ./...` both clean.
+`gofmt -l` clean after two `gofmt -w` passes (`manager.go`/`state.go`,
+then `manager_test.go`).
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest, GitHub
+  client, settings, and the full update-manager state machine
+  including the streaming-active guard are done; no HTTP API, no
+  Windows helper/real handoff, no frontend yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. This entry - `feat(server): add the update-manager state machine`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested,
+and validated synchronously in the same turn. No AskUserQuestion call
+was made.
