@@ -32250,3 +32250,123 @@ The GitHub Actions run history was audited via the read-only REST API
 synchronously in this turn; no run needed to be triggered since a
 suitable, already-green, current-HEAD run already existed. No
 AskUserQuestion call was made.
+
+## docs: define Stage 20C1 macOS packaging contract
+
+### Governing task
+Stage 20C1 - macOS packaged runtime + native package verification. This
+milestone splits the previously-combined Stage 20C ("macOS desktop
+portability + packaging + signing + notarization + automated
+verification") into Stage 20C1 (packaged runtime, `.app`/DMG, native CI
+package verification - unsigned, not notarized) and Stage 20C2
+(Developer ID signing, hardened runtime, notarization, stapling, macOS
+updater install handoff, public/Beta readiness - externally gated on
+real Apple Developer credentials the operator does not currently have).
+
+### Audit performed before writing the contract
+Directly re-read: `internal/runtime/browserlaunch/browserlaunch_other.go`
+(darwin+linux mixed in one file via a `runtime.GOOS` switch - needs
+splitting), `internal/runtime/singleinstance/singleinstance_other.go`
+(an "always succeeds" no-op stub - insufficient for a packaged app),
+`internal/runtime/nativealert/nativealert_other.go` (stderr-only -
+insufficient for a Finder-launched app with no visible console),
+`internal/runtime/branch/process_unix.go` and
+`internal/runtime/mediamtx/process_unix.go` (both already fully correct
+and portable for darwin - Setpgid process-group isolation + real
+SIGTERM graceful termination, no change needed),
+`internal/updater/handoff_other.go` / `helper_other.go` (unchanged
+since Stage 20B - `UnsupportedHandoff.Available()` already returns
+`false, BlockerPlatformUnsupported`, which the new updater
+platform-capability gate below builds on), `internal/config/config.go`
+(`resolveDataDir` already resolves correctly to `~/Library/Application
+Support/StreamingTree` via `os.UserConfigDir()` - no code change
+needed, only contract documentation), `internal/secrets/keyring_store.go`
+(Keychain backend already listed unconditionally, requires CGO),
+`internal/runtime/mediamtx/platform.go` (darwin/amd64 and darwin/arm64
+assets already present in the matrix), `internal/runtime/ffmpeg/resolver.go`
+(already portable - only `.exe` suffix and Unix executable-bit logic
+differ by platform, both already correct), `internal/provider/tts/stub.go`
+(already reports TTS unavailable honestly on non-Windows), and
+`.github/workflows/cross-platform.yml` in full (used as the direct
+style/label template for the new macOS packaging workflow).
+
+### Primary-source research (2026-08-18)
+Apple's official bundle-structure documentation (`Contents/MacOS`,
+`Contents/Resources`, `Info.plist` and its key fields, `LSUIElement`/
+`LSBackgroundOnly`); GitHub's own current hosted-runner reference,
+fetched directly rather than trusted from the prior milestone's own
+recorded labels - confirmed current Apple Silicon labels
+(`macos-latest`/`macos-14`/`macos-15`/`macos-26`) and current Intel
+labels (`macos-15-intel`/`macos-26-intel`), with `macos-15-intel`
+additionally cross-checked against this repository's own real,
+already-green CI history; this repository's own `go.mod` (`go 1.25.0`)
+and Go 1.25's release notes, establishing macOS 12 Monterey as the
+authoritative (non-guessed) minimum deployment target; Apple's Developer
+ID / hardened runtime / `codesign` / Gatekeeper documentation and
+`notarytool` notarization documentation, researched only to inform the
+Stage 20C2 boundary section - no signing or notarization is performed
+or attempted in Stage 20C1; `hdiutil` as Apple's own standard DMG
+creation/mount/unmount tool, already present on GitHub-hosted macOS
+runners.
+
+One conflicting secondary search result claiming `macos-15-intel` is
+unsupported was resolved by fetching GitHub's own official current
+documentation directly and cross-checking against this repository's own
+proven-working CI history, per the governing task's own explicit
+instruction not to blindly trust previously-recorded runner labels.
+
+### Contract written
+`docs/macos-packaging.md` - the full Stage 20C1 contract, covering: the
+20C1/20C2 split; architecture policy (one core, narrow darwin-tagged
+adapters, no `runtime.GOOS` scattered through domain code); target
+architectures (`darwin/arm64` + `darwin/amd64`, no universal binary);
+package format decision (`.app` in a `.dmg`, reasoned against `.zip`
+and `.pkg`); the stable bundle identifier
+(`io.github.czekosabe.streaming-tree-for-obs`); app bundle layout;
+icon status (none invented); packaged-mode identification (build-time,
+not `runtime.GOOS`-inferred); macOS browser launch (splitting the mixed
+`browserlaunch_other.go`); macOS single instance (a real `flock`-based
+mechanism replacing the no-op stub); macOS fatal-startup UX (a narrow
+`NSAlert` Cgo bridge replacing the stderr-only fallback); the
+Dock/background-agent decision (`LSUIElement = true`, matching
+Windows's own windowless packaged process); Quit/graceful shutdown
+(reusing the existing shared shutdown path, no second architecture);
+application data location (already correct, no migration); Keychain
+(CGO-enabled production builds, proven by CI); MediaMTX and FFmpeg
+status on macOS (both already portable / correctly unbundled); System
+TTS (honestly unavailable, no `say` shortcut); the new macOS updater
+platform-capability gate (`StatePlatformUnsupported`, preventing
+automatic polling from ever starting on a platform where install is
+structurally impossible); cross-platform artifact renaming (both
+Windows and macOS artifacts adopt one stable naming convention now that
+a second platform exists); the multi-artifact release-manifest
+extension; the new `scripts/build-release-macos.sh` release-build
+script; build tools (Apple-native tools only); the explicit
+unsigned/not-notarized truth; the Stage 20C2 boundary; the new
+`.github/workflows/macos-package.yml` native CI package-verification
+workflow (no signing, no notarization, no artifact upload); the
+`scripts/verify-macos-package.sh` platform-specific CI verification
+helper (explicitly not canonical script #25 - the canonical local
+integration-script count remains 24); package security (no packaging
+path ever reachable from a product API); the manual-verification
+limitation (no operator-owned physical Mac, native CI is not equivalent
+to real Finder/Gatekeeper/OBS/audio-device UX); and known limitations
+remaining after Stage 20C1.
+
+### Stage status after this entry
+Stage 20A: Completed. Stage 20B: Completed. **Stage 20C1: contract
+written, implementation not yet started.** Stage 20C2: Planned,
+externally gated on real Apple Developer signing/notarization
+credentials the operator does not currently have. Stage 20C as a whole:
+Incomplete. Stage 20D1/20D2/20E: Planned. Stage 20 as a whole:
+Incomplete.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: define Stage 20C1 macOS packaging contract`
+
+### Continuous-execution rule compliance
+No Apple signing/notarization credentials exist for this project; per
+the governing task's own explicit instruction, this is expected and is
+not a blocker for Stage 20C1 - it is recorded here as the Stage 20C2
+boundary rather than raised as a question. No AskUserQuestion call was
+made while writing this contract.
