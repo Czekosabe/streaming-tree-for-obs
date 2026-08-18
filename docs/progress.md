@@ -30900,3 +30900,86 @@ review).
 No background command was required for this unit (pure Go, no
 external I/O) - written, tested, and validated synchronously in the
 same turn. No AskUserQuestion call was made.
+
+## feat(server): add the GitHub release client
+
+### What was built
+New `internal/updater` package (docs/updater.md §2/§6/§8/§9/§14):
+
+- `errors.go` - sentinels (`ErrRateLimited`, `ErrRequestFailed`,
+  `ErrAssetNotFound`, `ErrAssetAmbiguous`, `ErrDigestMismatch`,
+  `ErrResponseTooLarge`), mirroring every other domain's
+  `errors.go` convention in this codebase.
+- `client.go` - `Client`, constructed via the public `NewClient`
+  (fixed to `https://api.github.com`) or the unexported `newClient`
+  (test-only, used exclusively by this package's own `_test.go` files
+  to point at a local `httptest` server - no production code path can
+  reach a non-canonical host, per docs/updater.md §1/§15).
+  `FetchLatestRelease` calls `GET /repos/Czekosabe/streaming-tree-for-obs/
+  releases/latest` with the researched `Accept`/`X-GitHub-Api-Version`/
+  `User-Agent` headers, sends `If-None-Match` when an ETag is held and
+  treats `304` as a normal success (`NotModified: true`, no error),
+  detects rate-limiting (`403` with `X-RateLimit-Remaining: 0`, or
+  `429`) as `ErrRateLimited`, and bounds the response body at 2 MiB.
+  `Release.AssetByName` matches by exact name only (never substring,
+  never case-insensitive), returning `ErrAssetNotFound`/
+  `ErrAssetAmbiguous` for zero/multiple matches. `FetchManifest`
+  downloads the fixed `streaming-tree-release.json` asset via its API
+  resource URL, bounded at 256 KiB.
+- `digest.go` - `CrossCheckDigest`, implementing docs/updater.md §14
+  exactly: a present `"sha256:<hex>"` GitHub asset digest must agree
+  with the manifest's own SHA-256 or the release is refused
+  (`ErrDigestMismatch`, never silently ignored); an absent digest, or
+  one using an unrecognized prefix, is not an error - the manifest's
+  own SHA-256 remains sufficient on its own.
+
+### Tests
+21 new test functions (49 total across `internal/updater/...` now),
+all passing, run against a real local `httptest.Server` standing in
+for `api.github.com` - real HTTP round-trips, no mocked transport.
+Covers: a successful fetch with every expected header asserted on the
+server side; draft/prerelease flags preserved through to the caller
+(so the manager can independently re-check them, per docs/updater.md
+§2's "never trusts the endpoint's filtering alone"); a real
+`If-None-Match`/`304` round trip; both documented rate-limit shapes
+(`403`+`X-RateLimit-Remaining: 0`, and plain `429`); malformed JSON;
+an unexpected 500 status; an oversized response exceeding the 2 MiB
+bound; exact-name/no-substring/case-sensitive/ambiguous asset
+matching; the manifest asset lookup; a real bounded download plus its
+own oversized/rate-limited paths; and every digest cross-check
+outcome (agreement, case-insensitive hex comparison, mismatch,
+absence, and an unrecognized-prefix digest being ignored rather than
+rejected).
+
+One real bug caught by the test suite itself during this commit: the
+first draft of `AssetByName`/`CrossCheckDigest` wrapped their sentinel
+errors with `fmt.Errorf("%w: ...")`, so the tests' initial direct `err
+!= ErrAssetAmbiguous`/`err != ErrDigestMismatch` comparisons correctly
+failed (a wrapped error is never `==` to its own sentinel) - fixed by
+switching those two assertions to `errors.Is`, matching how every
+other sentinel-error check in this codebase already works.
+
+### Validation
+`go vet ./internal/updater/...` clean. `go test ./internal/updater/...
+-v` - all 49 tests PASS. `gofmt -l internal/updater/` initially
+flagged `client.go`'s struct-tag alignment; `gofmt -w` applied and
+`go build ./...` reconfirmed clean afterward.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest schema/
+  validator and the GitHub release client are done; no update manager/
+  state machine, settings persistence, HTTP API, Windows helper, or
+  frontend yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. This entry - `feat(server): add the GitHub release client`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested
+(including fixing the one real assertion bug the suite itself caught),
+and validated synchronously in the same turn. No AskUserQuestion call
+was made.
