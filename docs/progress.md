@@ -31255,3 +31255,138 @@ existing handler test, not just the new ones) PASS. `go test ./...`
 No background command was required for this unit - written, tested,
 and validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## feat(server): add the Windows update-installer handoff
+
+### Windows API research reconfirmed
+`windows.OpenProcess(desiredAccess uint32, inheritHandle bool,
+processId uint32) (Handle, error)` and `windows.WaitForSingleObject
+(handle Handle, waitMilliseconds uint32) (event uint32, err error)`
+directly confirmed present in the already-vendored `golang.org/x/sys`
+v0.46.0 module (`zsyscall_windows.go`), alongside `windows.
+WAIT_OBJECT_0`/`WAIT_FAILED` - no new dependency added.
+
+### What was built
+The real, platform-specific half of docs/updater.md §19-§26:
+
+- `internal/updater/handoff_windows.go` - `WindowsHandoff`
+  (`NewPlatformHandoff(dataDir)`). `Available()` implements the
+  installed-context check from §19: Inno Setup automatically creates
+  `unins000.exe`/`unins000.dat` beside the installed executable for
+  every install it performs (confirmed via official Inno Setup docs in
+  the earlier contract-writing session) - no installer-script change
+  was needed. `Begin()` copies the running executable into
+  `DataDir/updates/update-helper.exe` (never the install directory -
+  the installer needs to freely replace files there a moment later)
+  and launches it with the closed, application-generated argument set
+  from §22 (`-update-helper -parent-pid -candidate -target-exe
+  -expected-version`), returning once launched, deliberately not
+  waited on.
+- `internal/updater/helper.go`/`helper_windows.go` - `HelperArgs`, the
+  closed outcome vocabulary (`ok`/`parent_did_not_exit`/
+  `reverify_failed`/`installer_failed:<code>`/`version_mismatch`/
+  `restart_failed`), and `RunHelper`'s real ten-step implementation
+  (§21): `windows.OpenProcess(SYNCHRONIZE, ...)` on the parent PID
+  called immediately at helper startup (while the parent is still
+  running, closing the PID-reuse race per §23) before
+  `WaitForSingleObject` with a bounded 3-minute wait; re-verification
+  of the staged candidate's SHA-256 prefix (re-derived from its own
+  `verified-<version>-<sha12>.exe` file name rather than a duplicated
+  argument); the real Inno Setup silent run
+  (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...`, never `/DIR=`,
+  per the earlier contract's Inno Setup research) with its official
+  exit codes mapped to `installer_failed:<code>`; post-install version
+  re-verification via `--version` (never trusting exit code 0 alone,
+  §26); a restart of the installed executable; and a small, bounded,
+  no-secret result record written beside the candidate.
+- `internal/updater/result.go` - `Manager.consumePostUpdateResult`,
+  called once from `Start`: reads and deletes the result file if
+  present (a normal, silent no-op on every ordinary startup where no
+  update was ever attempted), surfacing it once through `Status`'s new
+  `postUpdateOutcome`/`postUpdateFromVersion`/`postUpdateToVersion`
+  fields - cleared from memory the first time `Status` is read back
+  out, so it is shown exactly once (§26).
+- `internal/updater/handoff_other.go`'s `NewPlatformHandoff` signature
+  updated to match (`dataDir` parameter, unused on non-Windows) and
+  `internal/updater/helper_other.go` added - the non-Windows `runHelper`
+  stub, never actually reachable since `UnsupportedHandoff` never
+  launches a helper on any platform but Windows.
+- `cmd/server/main.go`: `handleVersionFlag` renamed/expanded to
+  `handleEarlyFlags`, now also defining and parsing the
+  `-update-helper`/`-parent-pid`/`-candidate`/`-target-exe`/
+  `-expected-version` flags in the same single `flag.Parse()` call
+  (never two separate parses). Update-helper mode is detected and
+  fully handled - via the new `runUpdateHelper` - before `run()` is
+  ever called, so it touches no SQLite, no MediaMTX, no providers, no
+  HTTP server, no single-instance mutex, and no TTS, exactly matching
+  how `--version` already worked (docs/updater.md §22). The real
+  `updater.Manager` is now constructed and started in every build (not
+  only packaged ones - a development build reports itself honestly
+  `disabled` rather than the `/api/updates/*` routes not existing at
+  all, docs/updater.md §35), wired with the real GitHub client, the
+  real persisted-preferences service, `branchManager` directly as its
+  `BranchSnapshotSource` (it already satisfies the interface), the
+  real platform `Handoff`, and `OnHandoffBegun` pointed at the exact
+  same `stop` `context.CancelFunc` `POST /api/system/shutdown` already
+  reuses - never a second shutdown implementation (§24). Registered
+  into the router as `Updater` and into `shutdownRuntime` as the first
+  subsystem stopped.
+
+### Tests
+11 new test functions on the real Windows build (this development
+machine is Windows, so these compile and run natively, not merely
+cross-compiled): `checkInstalledMarkers` (a testable split-out of
+`Available`'s own directory check) against absent/present/partial
+marker files; `parseVersionOutput` (split out of `readInstalledVersion`
+so the parsing logic is testable without spawning a process) on valid
+and empty `--version`-shaped output; `reverifyCandidate` accepting a
+correctly-named, unmodified file, detecting genuine post-naming
+tampering (the file's content is changed after being written and
+named - a real hash-mismatch condition, not a mocked one), and
+rejecting an unrecognized file-name shape; and `ValidateHelperArgs`
+rejecting missing arguments and a candidate path outside the
+`updates/` subdirectory while accepting one correctly inside it.
+
+### Manual verification against a real compiled binary
+Built a real Windows GUI-subsystem release binary directly (the same
+`-ldflags` shape `scripts/build-release.ps1` uses, `-H=windowsgui` plus
+injected version/commit/packaged flags) and ran it twice: `--version`
+printed the expected `Streaming Tree for OBS 0.1.0-test` / `commit
+abc123` / `licence GPL-3.0-or-later`, and `-update-helper` with no
+companion arguments failed cleanly with exit code 1 and a bounded
+stderr message, touching no application service - confirming the flag
+wiring works end to end against real compiled output, not only unit
+tests.
+
+### Validation
+`go build ./...` (native Windows) clean. `GOOS=linux GOARCH=amd64
+CGO_ENABLED=0 go build ./...` clean - `cmd/server` still compiles
+portably with the new import (`runtime` for `GOOS`/`GOARCH`) and the
+new Windows-only files correctly excluded. `go vet ./...` and
+`go vet -tags integration ./...` (whole repo) both clean. `go test
+./...` (every package) PASS, no failures. `gofmt -l` clean.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest, GitHub
+  client, settings, the update-manager state machine, the full HTTP
+  API, and the real Windows install-installer handoff are all done and
+  wired into `cmd/server/main.go`; no frontend yet, no release-pipeline
+  manifest generation yet, no integration test script yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. This entry - `feat(server): add the Windows update-installer
+   handoff`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested
+(including real Windows API research verification and a real compiled-
+binary manual check), and validated synchronously in the same turn.
+No AskUserQuestion call was made.

@@ -115,6 +115,10 @@ type Manager struct {
 	verifiedCandidatePath    string
 	verifiedCandidateVersion string
 
+	postUpdateOutcome     string
+	postUpdateFromVersion string
+	postUpdateToVersion   string
+
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -163,6 +167,8 @@ func NewManager(opts Options) *Manager {
 // background check loop (docs/updater.md §10). A no-op in a
 // development build regardless of the preference's value.
 func (m *Manager) Start(ctx context.Context) {
+	m.consumePostUpdateResult()
+
 	prefs, err := m.settings.Preferences(ctx)
 	if err != nil {
 		m.logger.Warn("could not load updater preferences at startup, using defaults", slog.Any("error", err))
@@ -274,7 +280,16 @@ func (m *Manager) Status(ctx context.Context) Status {
 		DownloadedBytes:       m.downloadedBytes,
 		TotalBytes:            m.totalBytes,
 		LastErrorCode:         m.lastErrorCode,
+		PostUpdateOutcome:     m.postUpdateOutcome,
+		PostUpdateFromVersion: m.postUpdateFromVersion,
+		PostUpdateToVersion:   m.postUpdateToVersion,
 	}
+	// One-shot: cleared from memory the first time it is read back out,
+	// exactly like the on-disk record was already consumed once at
+	// Start (docs/updater.md §26).
+	m.postUpdateOutcome = ""
+	m.postUpdateFromVersion = ""
+	m.postUpdateToVersion = ""
 	if !m.publishedAt.IsZero() {
 		s.PublishedAt = m.publishedAt.UTC().Format(time.RFC3339)
 	}

@@ -16,8 +16,9 @@ import (
 // unavailable.
 type UnsupportedHandoff struct{}
 
-// NewPlatformHandoff returns the non-Windows stub.
-func NewPlatformHandoff() Handoff { return UnsupportedHandoff{} }
+// NewPlatformHandoff returns the non-Windows stub. dataDir is accepted
+// only to match the real Windows constructor's signature - unused here.
+func NewPlatformHandoff(dataDir string) Handoff { return UnsupportedHandoff{} }
 
 func (UnsupportedHandoff) Available() (bool, string) {
 	return false, BlockerPlatformUnsupported

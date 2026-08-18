@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
@@ -65,11 +67,13 @@ import (
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
+	"github.com/streaming-tree/server/internal/updater"
+	"github.com/streaming-tree/server/internal/updater/manifest"
 	"github.com/streaming-tree/server/internal/webassets"
 )
 
 func main() {
-	if handled := handleVersionFlag(); handled {
+	if handled := handleEarlyFlags(); handled {
 		return
 	}
 
@@ -86,13 +90,28 @@ func main() {
 	}
 }
 
-// handleVersionFlag implements `--version`: prints product identity and
-// exits 0 without starting any application service (no database open, no
-// MediaMTX supervisor, no HTTP listener) - safe to run against an
-// installed release binary as a smoke-test check.
-func handleVersionFlag() bool {
+// handleEarlyFlags parses every command-line flag exactly once and
+// handles the two modes that must run before any normal application
+// startup: `--version` (unchanged since Stage 20A) and Stage 20B's
+// internal `-update-helper` mode (docs/updater.md §22) - detected here,
+// before SQLite/MediaMTX/providers/the HTTP server/the single-instance
+// mutex/TTS are ever touched, exactly like `--version` already is.
+// Returns true when either mode fully handled the process (main should
+// simply return), false when normal startup should proceed.
+func handleEarlyFlags() bool {
 	versionFlag := flag.Bool("version", false, "print version information and exit")
+	updateHelperFlag := flag.Bool(updater.FlagUpdateHelper, false, "internal: run in update-helper mode")
+	parentPID := flag.Int(updater.FlagParentPID, 0, "internal: update-helper only")
+	candidate := flag.String(updater.FlagCandidate, "", "internal: update-helper only")
+	targetExe := flag.String(updater.FlagTargetExe, "", "internal: update-helper only")
+	expectedVersion := flag.String(updater.FlagExpectedVersion, "", "internal: update-helper only")
 	flag.Parse()
+
+	if *updateHelperFlag {
+		runUpdateHelper(*parentPID, *candidate, *targetExe, *expectedVersion)
+		return true
+	}
+
 	if !*versionFlag {
 		return false
 	}
@@ -103,6 +122,24 @@ func handleVersionFlag() bool {
 	}
 	fmt.Printf("licence %s\n", buildinfo.ApplicationLicenseSPDX)
 	return true
+}
+
+// runUpdateHelper validates the closed argument set and runs the real
+// handoff (docs/updater.md §21/§22) - a strict, self-contained mode
+// that starts no normal application service. Failure here has no
+// operator-facing UI of its own (the original application, if it is
+// still running, already reported the error state that would have led
+// here); a bounded stderr line is the only diagnostic surface.
+func runUpdateHelper(parentPID int, candidate, targetExe, expectedVersion string) {
+	args, err := updater.ValidateHelperArgs(parentPID, candidate, targetExe, expectedVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "update-helper: %v\n", err)
+		os.Exit(1)
+	}
+	result := updater.RunHelper(args)
+	if result.Outcome != updater.OutcomeOK {
+		os.Exit(1)
+	}
 }
 
 // run holds the real main so that every exit path can return an error and still
@@ -652,6 +689,34 @@ func run() error {
 		shutdownCancel = stop
 	}
 
+	// Stage 20B: the application updater (docs/updater.md). Wired in
+	// every build, not only packaged/release ones - a development build
+	// simply reports itself honestly disabled (docs/updater.md §35)
+	// rather than the /api/updates/* routes not existing at all. The
+	// updater's own release-build/streaming/installed-context guards
+	// (not this conditional) are what actually prevent any real GitHub
+	// traffic or install action outside a packaged release build.
+	updateSettingsService := updatersettings.NewService(sqlite.NewUpdateSettingsRepository(db.DB), nil)
+	updateManager := updater.NewManager(updater.Options{
+		Client:         updater.NewClient(buildinfo.EffectiveVersion()),
+		Settings:       updateSettingsService,
+		Branches:       branchManager,
+		Handoff:        updater.NewPlatformHandoff(cfg.DataDir),
+		DataDir:        cfg.DataDir,
+		ReleaseBuild:   buildinfo.IsReleaseBuild(),
+		CurrentVersion: buildinfo.EffectiveVersion(),
+		Identity: manifest.Identity{
+			OS: manifest.OS(runtime.GOOS), Arch: manifest.Arch(runtime.GOARCH), Kind: manifest.KindInstaller,
+		},
+		// The same CancelFunc signal.NotifyContext already returned above -
+		// a successful install handoff reuses the exact existing
+		// <-ctx.Done() graceful-shutdown path rather than duplicating it
+		// (docs/updater.md §24).
+		OnHandoffBegun: stop,
+		Logger:         logger,
+	})
+	updateManager.Start(ctx)
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:          logger,
 		AllowedOrigins:  cfg.AllowedOrigins,
@@ -702,6 +767,7 @@ func run() error {
 		WebAssets:   webAssets,
 		LegalAssets: legalAssets,
 		Shutdown:    shutdownCancel,
+		Updater:     updateManager,
 	})
 
 	server := &http.Server{
@@ -718,6 +784,7 @@ func run() error {
 	// an input that is itself mid-shutdown), reaping every child process so
 	// the backend never leaves one behind.
 	shutdownRuntime := func(shutdownCtx context.Context) {
+		updateManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)

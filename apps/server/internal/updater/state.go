@@ -69,4 +69,13 @@ type Status struct {
 	BlockerCode    string `json:"blockerCode,omitempty"`
 
 	LastErrorCode string `json:"lastErrorCode,omitempty"`
+
+	// PostUpdateOutcome/FromVersion/ToVersion surface the one-shot
+	// result of the previous update attempt, if any (docs/updater.md
+	// §26) - present only once, immediately after a restart triggered
+	// by a successful or failed install; consumed and cleared by
+	// Manager.Start, never re-read from disk after that.
+	PostUpdateOutcome     string `json:"postUpdateOutcome,omitempty"`
+	PostUpdateFromVersion string `json:"postUpdateFromVersion,omitempty"`
+	PostUpdateToVersion   string `json:"postUpdateToVersion,omitempty"`
 }
