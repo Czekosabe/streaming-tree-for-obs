@@ -1,9 +1,9 @@
-//go:build !windows && !darwin
+//go:build !windows && !darwin && !linux
 
-// Fallback for platforms with no real packaged fatal-alert mechanism yet
-// (e.g. Linux, ahead of Stage 20D). Windows has a real implementation
-// (docs/windows-packaging.md §7) and so does macOS
-// (docs/macos-packaging.md §12, nativealert_darwin.go). Non-packaged
+// Fallback for platforms with no real packaged fatal-alert mechanism (e.g.
+// the BSDs). Windows, macOS (docs/macos-packaging.md §12,
+// nativealert_darwin.go), and Linux (docs/linux-desktop-packaging.md §12,
+// nativealert_linux.go) all have real implementations. Non-packaged
 // developer builds never build with the no-console release flag in the
 // first place, so stderr already reaches them - this exists only so the
 // package keeps compiling for other platforms.

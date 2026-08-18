@@ -72,9 +72,10 @@ func TestArtifactForNoMatch(t *testing.T) {
 	}
 }
 
-// multiPlatformManifest is a real Stage 20C1 shape: one release
-// describing a Windows installer and both macOS DMG architectures
-// together (docs/macos-packaging.md §22).
+// multiPlatformManifest is a real Stage 20D1 shape: one release
+// describing a Windows installer, both macOS DMG architectures, and
+// both Linux .deb architectures together (docs/macos-packaging.md §22,
+// docs/linux-desktop-packaging.md §21).
 func multiPlatformManifest() Manifest {
 	m := validManifest() // windows/amd64/installer
 	m.Artifacts = append(m.Artifacts,
@@ -90,6 +91,18 @@ func multiPlatformManifest() Manifest {
 			SizeBytes: 23456790,
 			SHA256:    strings.Repeat("c", 64),
 		},
+		Artifact{
+			OS: OSLinux, Arch: ArchAMD64, Kind: KindDeb,
+			Name:      "StreamingTreeForOBS-0.2.0-linux-amd64.deb",
+			SizeBytes: 18456789,
+			SHA256:    strings.Repeat("d", 64),
+		},
+		Artifact{
+			OS: OSLinux, Arch: ArchARM64, Kind: KindDeb,
+			Name:      "StreamingTreeForOBS-0.2.0-linux-arm64.deb",
+			SizeBytes: 18456790,
+			SHA256:    strings.Repeat("e", 64),
+		},
 	)
 	return m
 }
@@ -102,11 +115,12 @@ func TestMultiPlatformManifestIsValid(t *testing.T) {
 
 // TestMultiPlatformManifestSelectsExactIdentityOnly proves the real
 // selection property the updater's own security model depends on
-// (docs/updater.md §7, docs/macos-packaging.md §22): a Windows build's
-// identity only ever resolves the Windows artifact, each macOS
-// architecture only resolves its own artifact, and no identity ever
-// fuzzy-matches a different OS or a different architecture on the same
-// OS, even though all three coexist in one manifest for one release.
+// (docs/updater.md §7, docs/macos-packaging.md §22,
+// docs/linux-desktop-packaging.md §21): a Windows build's identity only
+// ever resolves the Windows artifact, each macOS and Linux architecture
+// only resolves its own artifact, and no identity ever fuzzy-matches a
+// different OS or a different architecture/kind, even though all five
+// coexist in one manifest for one release.
 func TestMultiPlatformManifestSelectsExactIdentityOnly(t *testing.T) {
 	m := multiPlatformManifest()
 
@@ -125,12 +139,24 @@ func TestMultiPlatformManifestSelectsExactIdentityOnly(t *testing.T) {
 		t.Fatalf("darwin/amd64/dmg = %+v, ok=%v, want the Mac Intel artifact", macIntel, ok)
 	}
 
+	linuxAMD64, ok := m.ArtifactFor(Identity{OS: OSLinux, Arch: ArchAMD64, Kind: KindDeb})
+	if !ok || linuxAMD64.Name != "StreamingTreeForOBS-0.2.0-linux-amd64.deb" {
+		t.Fatalf("linux/amd64/deb = %+v, ok=%v, want the Linux amd64 artifact", linuxAMD64, ok)
+	}
+
+	linuxARM64, ok := m.ArtifactFor(Identity{OS: OSLinux, Arch: ArchARM64, Kind: KindDeb})
+	if !ok || linuxARM64.Name != "StreamingTreeForOBS-0.2.0-linux-arm64.deb" {
+		t.Fatalf("linux/arm64/deb = %+v, ok=%v, want the Linux arm64 artifact", linuxARM64, ok)
+	}
+
 	// No cross-platform/cross-architecture fuzzy match of any kind.
 	noMatchIdentities := []Identity{
 		{OS: OSDarwin, Arch: ArchAMD64, Kind: KindInstaller},  // right OS/arch, wrong kind
 		{OS: OSDarwin, Arch: ArchARM64, Kind: KindInstaller},  // right OS/arch, wrong kind
 		{OS: OSWindows, Arch: ArchARM64, Kind: KindInstaller}, // right OS, wrong arch
-		{OS: OSLinux, Arch: ArchAMD64, Kind: KindInstaller},   // wrong OS entirely
+		{OS: OSLinux, Arch: ArchAMD64, Kind: KindInstaller},   // right OS/arch, wrong kind
+		{OS: OSLinux, Arch: ArchARM64, Kind: KindAppImage},    // right OS/arch, wrong kind
+		{OS: OSLinux, Arch: ArchAMD64, Kind: KindDMG},         // wrong OS entirely, matching Mac's kind
 	}
 	for _, id := range noMatchIdentities {
 		if _, ok := m.ArtifactFor(id); ok {

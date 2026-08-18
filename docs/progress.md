@@ -33208,3 +33208,72 @@ Stage 20A/20B/20C1: Completed. Stage 20C2: Planned, externally gated.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this contract. No AskUserQuestion
 call was made while writing it.
+
+## feat(server): add Linux packaged lifecycle adapters
+
+### What changed
+Implements docs/linux-desktop-packaging.md §11/§12/§21, replacing the
+previously-insufficient generic stubs, plus real Linux coverage of the
+multi-platform release-manifest selection tests.
+
+1. **Real Linux single instance** (§11): new
+   `singleinstance_linux.go` replaces the "always succeeds" stub with a
+   real exclusive, non-blocking `flock(2)` on a fixed lock file -
+   preferring `$XDG_RUNTIME_DIR/StreamingTree/.instance.lock` when
+   `XDG_RUNTIME_DIR` is set (session-scoped, self-cleaning per the XDG
+   Base Directory Specification), falling back to the same per-user
+   data directory `internal/config.resolveDataDir` already resolves
+   otherwise (honoring the same `STREAMING_TREE_DATA_DIR` override used
+   for hermetic test isolation on every other platform). The kernel
+   releases the lock automatically on process exit for any reason, so
+   there is no stale-lock recovery problem; no PID file is used as sole
+   proof of another instance.
+2. **Real Linux fatal-startup UX** (§12): new `nativealert_linux.go`,
+   an honestly best-effort `zenity`/`kdialog` chain (checked via
+   `exec.LookPath`, invoked with fixed argv, title/message passed as
+   literal argv elements, never interpolated into any command),
+   falling back to the existing stderr behavior when neither tool is
+   present - documented as best-effort, never claimed as a guaranteed
+   cross-desktop mechanism the way Windows/macOS are.
+3. `singleinstance_other.go`/`nativealert_other.go` are narrowed from
+   `!windows && !darwin` to `!windows && !darwin && !linux` - they now
+   only cover genuinely unpackaged Unix targets (e.g. the BSDs).
+   `browserlaunch_linux.go` (already real since Stage 20C1's own darwin/
+   linux split) needed no change - it already correctly uses
+   `xdg-open` with a fixed argv, matching this milestone's own primary-
+   source xdg-open research.
+4. **Multi-platform manifest selection now covers Linux for real**
+   (`internal/updater/manifest/parse_test.go`): `multiPlatformManifest()`
+   is extended from three artifacts (windows/amd64/installer +
+   darwin/arm64/dmg + darwin/amd64/dmg) to five, adding
+   linux/amd64/deb and linux/arm64/deb (`manifest.KindDeb` already
+   existed since Stage 20B, unused until now).
+   `TestMultiPlatformManifestSelectsExactIdentityOnly` now also proves
+   `ArtifactFor` resolves both real Linux identities to the correct,
+   distinct artifact, and that Linux-shaped mismatches (right OS/arch
+   wrong kind, and Darwin's own DMG kind under a Linux OS/arch) never
+   fuzzy-match anything.
+
+No Go code change was needed for the updater's platform-capability gate
+itself: `internal/updater/handoff_other.go` is gated `//go:build
+!windows` (confirmed by direct source read, not assumed), so the
+`StatePlatformUnsupported` state Stage 20C1 already built applies to a
+Linux release build automatically - proven natively in this milestone's
+own package-verification CI, not re-implemented.
+
+### Validation
+`gofmt -l .` clean; `go vet ./...` and `go vet -tags integration ./...`
+clean; `go build ./...` and `go build -tags integration ./...` clean;
+`go test ./... -count=1` - all packages pass, including the extended
+five-artifact manifest tests. Cross-compiled (no CGO, matching this
+milestone's own `CGO_ENABLED=0` policy) `singleinstance`/`nativealert`
+for `linux/amd64` and `linux/arm64`; also confirmed the narrowed
+`!windows && !darwin && !linux` fallback still compiles for
+`freebsd/amd64`, and that the darwin build is unaffected.
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): add Linux packaged lifecycle adapters`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
