@@ -29514,3 +29514,73 @@ None new - see the contract's own §24.
 ### Next step
 Add the Windows release build script and the Inno Setup installer
 script.
+
+## 2026-08-18 — build: add Windows release packaging and installer
+
+### Status
+Completed. Verified with a real, successful end-to-end local build, not
+just written and assumed to work.
+
+### Scope
+`scripts/build-release.ps1` and `scripts/installer/streaming-tree.iss` -
+the one Windows release-build entry point and the Inno Setup installer
+it drives, per `docs/windows-packaging.md`.
+
+### Changes
+- `scripts/build-release.ps1` (new) - fails fast (`$ErrorActionPreference
+  = 'Stop'`); validates the requested version (rejects unsafe characters
+  and explicitly refuses `1.0.0`, since this is packaging infrastructure
+  and never the real public release); validates required tools (`go`,
+  `npm`, `ISCC.exe`, the last only unless `-SkipInstaller`); `npm ci`
+  (lockfile-exact) then `npm run build`; stages the real frontend
+  `dist/` output and the four legal documents into
+  `internal/webassets/{embedded,legal}` (bounded cleanup - only ever
+  inside these two fixed subdirectories, never a caller-supplied path);
+  builds the Windows release executable with `-ldflags "-H=windowsgui
+  -X .../buildinfo.releaseVersion=... -X .../buildinfo.releaseCommit=...
+  -X .../buildinfo.packagedFlag=true"`; stages loose copies of the four
+  legal documents beside the executable (redundant with the embedded
+  copies, satisfying the requirement even independent of the HTTP
+  routes); invokes `ISCC.exe`; generates a SHA-256 digest. Produces only
+  local artifacts under `build/release/` (gitignored) - no GitHub
+  publish, no Git tag, no GitHub Release.
+- `scripts/installer/streaming-tree.iss` (new) - selected after the
+  documented WiX/NSIS/Inno Setup comparison in
+  `docs/windows-packaging.md` §12. Fixed `AppId` GUID for stable
+  upgrade identity; `DefaultDirName={localappdata}\Programs\...`
+  (per-user, `PrivilegesRequired=lowest`, no elevation); Start Menu
+  entries only (no desktop icon, no auto-startup registration, no
+  service installation); `[Files]` stages the executable plus
+  `LICENSE`/`THIRD_PARTY_NOTICES.md`/`LEGAL.md`/`PRIVACY.md`; no
+  `[Registry]` section at all, so neither install nor uninstall can
+  ever touch `%AppData%\StreamingTree` or the OS credential store - a
+  structural guarantee, not a runtime check. A commented, inert
+  `SignTool=` line documents the future signing hook
+  (docs/windows-packaging.md §20 - no certificate exists).
+
+### Real end-to-end verification
+Ran `powershell -File scripts/build-release.ps1 -Version
+"0.1.0-dev+test1"` for real: `npm ci`/`npm run build` succeeded, the
+release executable was produced, Inno Setup compiled successfully on
+the first attempt, and a real installer + `.sha256` digest were
+produced. `streaming-tree-server.exe --version` against the real
+output printed the injected version, the real commit hash (matching
+`git rev-parse HEAD` at build time), and the licence identifier -
+confirming the `-ldflags` injection pipeline genuinely works, not just
+compiles.
+
+### Automated validation
+The build itself *is* the validation for this commit - a script that
+only compiles but was never actually run would not prove anything.
+Focused backend/frontend checks from the prior two commits remain
+unaffected (no application source changed here).
+
+### Known limitations
+Installer output is unsigned (no production certificate exists yet -
+`docs/windows-packaging.md` §20), stated plainly in the script's own
+output. `build/release/` artifacts are local only and gitignored.
+
+### Next step
+Add `scripts/verify-packaged-app.mjs` (integration script #23) and the
+separate installer smoke-test helper, and run each enough times to
+prove deterministic, clean process teardown.
