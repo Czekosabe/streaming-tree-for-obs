@@ -1,0 +1,65 @@
+{
+  "panel": {
+    "heading": "Aktualizacje",
+    "currentVersionLabel": "Bieżąca wersja",
+    "channelLabel": "Kanał",
+    "channelStable": "Stabilny",
+    "autoCheckLabel": "Automatycznie sprawdzaj aktualizacje",
+    "autoCheckDescription": "Sprawdza na GitHubie nowsze stabilne wydanie krótko po uruchomieniu, a potem mniej więcej co godzinę. Nigdy samodzielnie niczego nie pobiera ani nie instaluje.",
+    "lastCheckedLabel": "Ostatnie udane sprawdzenie",
+    "neverChecked": "Nigdy",
+    "checkButton": "Sprawdź aktualizacje",
+    "checking": "Sprawdzanie…",
+    "developmentBuildNotice": "Aktualizacje są dostępne w spakowanych wersjach wydania."
+  },
+  "state": {
+    "upToDate": "Masz najnowszą wersję.",
+    "available": "Dostępna jest nowa wersja.",
+    "checkFailed": "Ostatnie sprawdzenie się nie powiodło. Zostanie powtórzone automatycznie."
+  },
+  "available": {
+    "versionLabel": "Wersja {{version}}",
+    "releaseNotesLabel": "Co nowego",
+    "releaseNotesTruncated": "(informacje o wydaniu skrócone)",
+    "updateNow": "Aktualizuj teraz",
+    "later": "Później"
+  },
+  "downloading": {
+    "label": "Pobieranie aktualizacji…"
+  },
+  "readyToInstall": {
+    "label": "Aktualizacja pobrana i zweryfikowana.",
+    "installButton": "Zainstaluj i uruchom ponownie"
+  },
+  "install": {
+    "confirmTitle": "Instalacja aktualizacji i ponowne uruchomienie",
+    "confirmMessage": "Streaming Tree zamknie się, zainstaluje aktualizację i uruchomi się ponownie. To potrwa tylko chwilę.",
+    "confirmButton": "Zainstaluj i uruchom ponownie"
+  },
+  "blocked": {
+    "install_blocked_streaming_active": "Zatrzymaj aktywny stream przed instalacją aktualizacji.",
+    "not_installed_context": "Ta kopia Streaming Tree nie może automatycznie instalować aktualizacji.",
+    "no_verified_candidate": "Aktualizacja jeszcze się nie pobrała.",
+    "platform_unsupported": "Automatyczna instalacja nie jest jeszcze dostępna na tej platformie.",
+    "generic": "Nie można teraz zainstalować aktualizacji."
+  },
+  "error": {
+    "check_failed": "Nie udało się sprawdzić aktualizacji. Zostanie to powtórzone automatycznie.",
+    "rate_limited": "Zbyt wiele ostatnich sprawdzeń aktualizacji. Zostanie to powtórzone automatycznie.",
+    "invalid_manifest": "Nie udało się zweryfikować informacji o wydaniu z GitHuba.",
+    "download_failed": "Nie udało się pobrać aktualizacji.",
+    "hash_mismatch": "Pobrana aktualizacja nie przeszła weryfikacji i została odrzucona.",
+    "size_exceeded": "Pobierana aktualizacja była większa niż oczekiwano i została anulowana.",
+    "install_failed": "Nie udało się zainstalować aktualizacji. Twoja obecna instalacja nadal działa.",
+    "generic": "Coś poszło nie tak z aktualizatorem."
+  },
+  "postUpdate": {
+    "success": "Streaming Tree zostało zaktualizowane do wersji {{version}}.",
+    "failure": "Nie udało się zainstalować aktualizacji. Twoja obecna instalacja nadal działa."
+  },
+  "banner": {
+    "message": "Dostępna jest wersja Streaming Tree {{version}}.",
+    "updateNow": "Aktualizuj teraz",
+    "later": "Później"
+  }
+}

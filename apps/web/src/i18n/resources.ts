@@ -17,6 +17,7 @@ import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
+import enUpdates from './resources/en/updates.json';
 import enVisualTemplates from './resources/en/visualTemplates.json';
 import plAbout from './resources/pl/about.json';
 import plAccounts from './resources/pl/accounts.json';
@@ -37,6 +38,7 @@ import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
 import plRuntime from './resources/pl/runtime.json';
+import plUpdates from './resources/pl/updates.json';
 import plVisualTemplates from './resources/pl/visualTemplates.json';
 
 /**
@@ -70,6 +72,7 @@ export const enResources = {
   audio: enAudio,
   goals: enGoals,
   about: enAbout,
+  updates: enUpdates,
 } as const;
 
 const plResources = {
@@ -93,6 +96,7 @@ const plResources = {
   audio: plAudio,
   goals: plGoals,
   about: plAbout,
+  updates: plUpdates,
 } as const;
 
 export const resources = {

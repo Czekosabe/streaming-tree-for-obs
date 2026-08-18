@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as aboutApi from '@/api/about';
 import * as accountsApi from '@/api/accounts';
+import * as updatesApi from '@/api/updates';
 import { renderWithProviders } from '@/test/render';
 
 import { AboutLegalPage } from './AboutLegalPage';
@@ -12,6 +13,7 @@ import { SettingsPage } from './SettingsPage';
 
 vi.mock('@/api/accounts');
 vi.mock('@/api/about');
+vi.mock('@/api/updates');
 
 const ABOUT_RESPONSE = {
   productName: 'Streaming Tree for OBS',
@@ -23,6 +25,16 @@ const ABOUT_RESPONSE = {
   supportUrl: 'https://streamelements.com/czekosabe/tip',
   applicationLicenseSpdx: 'GPL-3.0-or-later',
   applicationLicenseName: 'GNU General Public License v3 or later',
+};
+
+const UPDATE_STATUS_DISABLED = {
+  enabled: false,
+  releaseBuild: false,
+  currentVersion: '0.1.0',
+  autoCheck: true,
+  state: 'disabled' as const,
+  updateAvailable: false,
+  installBlocked: false,
 };
 
 function renderApp(initialPath: string) {
@@ -48,6 +60,7 @@ beforeEach(() => {
     source: 'missing',
   });
   vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
+  vi.mocked(updatesApi).fetchUpdateStatus.mockResolvedValue(UPDATE_STATUS_DISABLED);
 });
 
 describe('SettingsPage', () => {

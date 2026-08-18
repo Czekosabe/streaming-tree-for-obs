@@ -1,0 +1,65 @@
+{
+  "panel": {
+    "heading": "Updates",
+    "currentVersionLabel": "Current version",
+    "channelLabel": "Channel",
+    "channelStable": "Stable",
+    "autoCheckLabel": "Automatically check for updates",
+    "autoCheckDescription": "Checks GitHub for a newer Stable release shortly after startup, then about once an hour. Never downloads or installs anything on its own.",
+    "lastCheckedLabel": "Last successful check",
+    "neverChecked": "Never",
+    "checkButton": "Check for updates",
+    "checking": "Checking…",
+    "developmentBuildNotice": "Updates are available in packaged release builds."
+  },
+  "state": {
+    "upToDate": "You're up to date.",
+    "available": "A new version is available.",
+    "checkFailed": "The last check could not complete. It will be retried automatically."
+  },
+  "available": {
+    "versionLabel": "Version {{version}}",
+    "releaseNotesLabel": "What's new",
+    "releaseNotesTruncated": "(release notes truncated)",
+    "updateNow": "Update now",
+    "later": "Later"
+  },
+  "downloading": {
+    "label": "Downloading update…"
+  },
+  "readyToInstall": {
+    "label": "Update downloaded and verified.",
+    "installButton": "Install and restart"
+  },
+  "install": {
+    "confirmTitle": "Install update and restart",
+    "confirmMessage": "Streaming Tree will close, install the update, and restart. This only takes a moment.",
+    "confirmButton": "Install and restart"
+  },
+  "blocked": {
+    "install_blocked_streaming_active": "Stop the active stream before installing the update.",
+    "not_installed_context": "This copy of Streaming Tree cannot install updates automatically.",
+    "no_verified_candidate": "The update has not finished downloading yet.",
+    "platform_unsupported": "Automatic installation is not available on this platform yet.",
+    "generic": "The update cannot be installed right now."
+  },
+  "error": {
+    "check_failed": "Could not check for updates. This will be retried automatically.",
+    "rate_limited": "Too many update checks recently. This will be retried automatically.",
+    "invalid_manifest": "The release information from GitHub could not be verified.",
+    "download_failed": "The update could not be downloaded.",
+    "hash_mismatch": "The downloaded update failed verification and was discarded.",
+    "size_exceeded": "The update download was larger than expected and was cancelled.",
+    "install_failed": "The update could not be installed. Your existing installation is still available.",
+    "generic": "Something went wrong with the updater."
+  },
+  "postUpdate": {
+    "success": "Streaming Tree was updated to {{version}}.",
+    "failure": "Update could not be installed. Your existing installation is still available."
+  },
+  "banner": {
+    "message": "Streaming Tree {{version}} is available.",
+    "updateNow": "Update now",
+    "later": "Later"
+  }
+}

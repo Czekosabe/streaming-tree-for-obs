@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { UpdateBanner } from '@/components/system/UpdateBanner';
+
 import { DesktopSidebar, MobileSidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 
@@ -38,6 +40,7 @@ export function AppShell({ title, description, actions, children }: AppShellProp
           actions={actions}
           onOpenMenu={() => setMenuOpen(true)}
         />
+        <UpdateBanner />
         <main id="main-content" tabIndex={-1} className="flex-1 px-4 py-5 sm:px-6 sm:py-6">
           {children}
         </main>

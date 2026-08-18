@@ -31390,3 +31390,126 @@ No background command was required for this unit - written, tested
 (including real Windows API research verification and a real compiled-
 binary manual check), and validated synchronously in the same turn.
 No AskUserQuestion call was made.
+
+## feat(web): add the Updates settings panel and global banner
+
+### What was built
+The full frontend half of docs/updater.md §31-§34, following this
+codebase's existing conventions exactly rather than inventing new
+ones:
+
+- `models/updates.ts` - `updateStatusSchema` (Zod), mirroring the
+  backend's own safe-field exclusion list field-for-field.
+- `models/updates-presentation.ts` - `updateBlockerKey`/
+  `updateErrorKey`, mirroring `branch-presentation.ts`'s
+  `blockerKey` convention: a closed lookup table typed via
+  `ParseKeys<'updates'>` (not a bare `string`), falling back to a
+  generic key for any code this build does not recognise.
+- `api/updates.ts` - `fetchUpdateStatus`/`setAutoCheckPreference`/
+  `checkForUpdate`/`downloadUpdate`/`installUpdate`, using the
+  existing `apiGet`/`apiPut`/`apiPostNoContent` helpers unchanged.
+- `hooks/use-updates.ts` - `useUpdateStatusQuery` with
+  `updatePollIntervalFor` (a state-dependent polling interval - 1s
+  while checking/downloading/installing, 30s otherwise - the same
+  idiom `use-runtime.ts`'s own `pollIntervalFor` already established)
+  and the four command mutations, each invalidating the status query
+  on settle.
+- `components/about/UpdatesPanel.tsx` - added to `AboutLegalPage.tsx`
+  next to the existing `QuitApplicationCard` (both are process-
+  lifecycle concerns). Shows current version, Stable channel, the
+  auto-check `ToggleSwitch`, last-check time, a manual check button,
+  and - once an update exists - its version, bounded plain-text
+  release notes (rendered via `whitespace-pre-wrap` inside a bounded
+  scroll container, never `dangerouslySetInnerHTML`, never a Markdown
+  renderer), `Update now`/download progress/`Install and restart`
+  depending on state, the real blocker reason when installation is
+  blocked, and the one-shot post-update result message. A development
+  build shows only the honest "Updates are available in packaged
+  release builds" notice and no controls at all.
+- `components/system/UpdateBanner.tsx` - mounted once in `AppShell`
+  (so it appears on every page, alongside `TopBar`), shown only once
+  an update reaches `available`/`downloading`/`ready_to_install`.
+  "Later" dismissal is deliberately module-level in-memory state, not
+  `localStorage`/`sessionStorage` - this application persists exactly
+  one thing client-side (the language preference, per `i18n/config.ts`'s
+  own doc comment), and a "Later" dismissal is a transient UI
+  preference that resets on an ordinary page reload, matching "the
+  current application process" in docs/updater.md §32.
+- `i18n/resources/{en,pl}/updates.json` - the new `updates` namespace,
+  registered in `i18n/config.ts`'s `NAMESPACES` array and
+  `i18n/resources.ts`'s import/barrel, both languages complete before
+  this commit (verified via `npm run i18n:check`).
+
+### A real regression found and fixed during this commit
+`AppShell` now mounts `UpdateBanner` on every page, which calls
+`useUpdateStatusQuery` - `pages/SettingsPage.test.tsx` (which renders
+`AboutLegalPage`, and therefore both the new `UpdatesPanel` and, via
+`AppShell`, `UpdateBanner`) was not mocking `@/api/updates`, so it
+would have made a real, doomed `fetch` call in every test run. Fixed
+by adding `vi.mock('@/api/updates')` and a `UPDATE_STATUS_DISABLED`
+fixture to that file's existing `beforeEach`, exactly matching how it
+already mocks `@/api/about` and `@/api/accounts` - the test's own
+assertions are unchanged, it was already passing before this fix (the
+component degrades to rendering nothing on a fetch failure), but the
+fix removes a real source of test-run network noise rather than
+leaving it as a latent hazard.
+
+A second, real test-isolation bug was caught and fixed while writing
+`UpdateBanner.test.tsx` itself: the "Later" dismissal's module-level
+`Set` persists across every test in the same file (an intentional
+production property, not a bug), so three tests originally sharing
+the same version string would have let one test's dismissal silently
+suppress the banner in a later, unrelated test depending on execution
+order - fixed by giving each test its own distinct version string,
+with a comment explaining why.
+
+### Tests
+12 new test functions, all passing: `UpdatesPanel` covers the honest
+development-build notice with no controls rendered, the current-
+version/up-to-date state, an available update showing its version and
+release notes, `Install and restart` disabled with the real
+`install_blocked_streaming_active` reason shown while a fake stream is
+active (the exact scenario docs/updater.md §38 names explicitly),
+the same button enabled and requiring the `ConfirmDialog` before
+`installUpdate` is actually called, the auto-check toggle persisting
+through `setAutoCheckPreference`, and the one-shot post-update success
+message. `UpdateBanner` covers rendering nothing while up to date,
+rendering nothing in a development build, showing the available
+version, both `Update now`/`Later` always being reachable (never
+blocking), and hiding for that specific version once dismissed.
+
+### Validation
+`npm run i18n:check` - 2 languages, 22 namespaces (21 → 22, the new
+`updates` namespace), no differences against `en`. `npm run typecheck`
+clean. `npm run lint` clean. `npm run test -- --run` - full suite,
+101 test files (99 → 101), 1391 tests (1379 → 1391), all PASS - no
+regression in any existing test, including every other page that now
+also mounts `UpdateBanner` via `AppShell`. `npm run build` - production
+build succeeds.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest, GitHub
+  client, settings, the update-manager state machine, the full HTTP
+  API, the real Windows handoff, and the full frontend are all done;
+  no release-pipeline manifest generation yet, no integration test
+  script yet, no documentation pass yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. `7a4fac2` - `feat(server): add the Windows update-installer handoff`
+8. This entry - `feat(web): add the Updates settings panel and global
+   banner`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested
+(including finding and fixing one real test-hygiene regression and
+one real test-isolation bug the suite itself would have hit), and
+validated synchronously in the same turn. No AskUserQuestion call
+was made.

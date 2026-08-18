@@ -2,6 +2,7 @@ import { ExternalLink, Heart, Power, Scale, ScrollText } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { UpdatesPanel } from '@/components/about/UpdatesPanel';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -242,6 +243,8 @@ export function AboutLegalPage() {
                 />
               </PanelBody>
             </Panel>
+
+            <UpdatesPanel />
 
             <QuitApplicationCard />
           </>
