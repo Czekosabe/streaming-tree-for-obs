@@ -29584,3 +29584,89 @@ output. `build/release/` artifacts are local only and gitignored.
 Add `scripts/verify-packaged-app.mjs` (integration script #23) and the
 separate installer smoke-test helper, and run each enough times to
 prove deterministic, clean process teardown.
+
+## 2026-08-18 — test: verify the packaged application
+
+### Status
+Completed. Integration-script count is now 23.
+
+### Scope
+`scripts/verify-packaged-app.mjs` (integration script #23) and
+`scripts/verify-installer.mjs` (a separate helper, not part of the
+canonical numbered suite - docs/windows-packaging.md §23) - the
+automated proof that the real, release-built packaged application and
+the real Inno Setup installer actually work, end to end.
+
+### scripts/verify-packaged-app.mjs (18 steps)
+Requires a release build to already exist (`build-release.ps1
+-SkipInstaller`) - it does not rebuild the frontend/executable itself,
+which would duplicate the release script's own job. Spawns the real
+staged `streaming-tree-server.exe` (never `go run`, never Vite)
+against a hermetic temporary `STREAMING_TREE_DATA_DIR` and a dedicated
+test port, with `STREAMING_TREE_TEST_NO_UI=1` suppressing the real
+browser-launch/native-dialog side effects. Covers: `--version` exits
+without starting any service; the app becomes healthy; `/api/about`
+identity (creator, support URL, GPL-3.0-or-later); `/` serves the real
+production HTML; a hashed JS asset and a CSS asset are served with the
+correct content types (not HTML); all six React Router
+management/public-overlay routes resolve to the SPA entry; an unknown
+`/api/` path is a JSON 404; `/api/engagement/stream` reports
+`text/event-stream`; a missing static asset is a real 404, never
+`index.html`; a path-traversal attempt is rejected; all four
+`/legal/*` routes serve real content, with `/legal/license`
+byte-cross-checked against the actual repository `LICENSE` file; a
+second launch detects the running instance via the real
+`CreateMutexW`-backed mechanism, exits cleanly, and does not disturb
+the first instance; graceful shutdown through the real `POST
+/api/system/shutdown` endpoint actually exits the process.
+
+### scripts/verify-installer.mjs (10 steps)
+Requires a full release build (installer included) to already exist.
+Drives the real Inno Setup output through its own documented silent-
+install flags (`/VERYSILENT /SUPPRESSMSGBOXES /DIR=<hermetic path>`)
+into a throwaway location, never the operator's real per-user install
+path. Verifies the SHA-256 digest matches a fresh recomputation; the
+installed `LICENSE`/`THIRD_PARTY_NOTICES.md`/`LEGAL.md`/`PRIVACY.md`
+and executable exist; `--version` works from the installed copy;
+starts the installed executable against a second hermetic data
+directory, confirms it answers `/api/health`/`/api/about`, and stops
+it through the real shutdown endpoint; creates a marker file in that
+hermetic data directory before running the real silent uninstaller
+(`/VERYSILENT /SUPPRESSMSGBOXES`); confirms the installed executable
+is removed and the marker file survives untouched.
+
+### Real bug found and fixed during development
+The first run's `finally` cleanup called a shared `forceStop` helper
+on a value from the second-launch scenario that was never a process
+handle in the first place (`{code, out}`, not `{child, hasExited}}`) -
+a genuine script bug (`TypeError: handle.hasExited is not a function`)
+that only surfaced because every functional scenario had already
+passed and reached teardown. Fixed by recognizing the second launch
+process already exits on its own (that is exactly what the scenario
+proves) and has nothing left to force-stop. The one temporary
+directory this bug orphaned before the fix (its own `rmSync` call
+never ran, since the exception unwound past it) was identified by
+timestamp and removed by hand; a separate, unrelated three-day-old
+temp directory from earlier work was left untouched.
+
+### Real end-to-end verification
+`node scripts/verify-packaged-app.mjs` run twice consecutively after
+the fix: 18/18 steps passed both times, and a process check
+(`tasklist`) after each run found no lingering
+`streaming-tree-server.exe`/`node.exe`. `node scripts/verify-
+installer.mjs` run once (a full real silent install + live health/API
+check + graceful shutdown + silent uninstall cycle): 10/10 steps
+passed, no lingering process, temp directories cleaned.
+
+### Known limitations
+`verify-installer.mjs` is a separate helper the closing regression
+does not run as one of the canonical numbered integration scripts -
+consistent with the governing task's own framing of installer smoke
+verification as validation work distinct from the 22 (now 23)
+integration-script suite.
+
+### Next step
+Documentation pass (README, project-overview, product-identity-legal,
+config/README, THIRD_PARTY_NOTICES re-audit against what the installer
+actually contains, progress.md), then a stale-claim audit, then the
+complete final regression with all 23 integration scripts.
