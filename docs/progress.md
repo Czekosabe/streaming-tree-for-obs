@@ -32761,3 +32761,21 @@ exercises the same unchanged Go test suite on `windows-amd64` again.
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## docs: split the 20C roadmap row in project-overview.md
+
+### What changed
+`docs/project-overview.md` §13's roadmap table still listed a single
+undifferentiated "20C | macOS desktop portability, packaging, signing,
+notarization..." row, missed by the previous commit's README/platform-
+support.md roadmap-table updates. Split into 20C1 (In progress) / 20C2
+(Planned - externally gated), matching README.md and
+docs/platform-support.md exactly, both pointing at
+[macos-packaging.md](macos-packaging.md).
+
+### Commits (chronological, this entry)
+1. This entry - `docs: split the 20C roadmap row in project-overview.md`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.
