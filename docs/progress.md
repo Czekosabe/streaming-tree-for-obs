@@ -28776,3 +28776,115 @@ immediately followed by the next actionable step. No turn ended on
 passive-waiting language, and no operator message was needed at any
 point to make this task inspect a completed background command and
 resume.
+
+## 2026-08-18 — docs: license Streaming Tree under GPLv3 or later
+
+### Status
+Completed.
+
+### Scope
+The operator has now made the application-licence decision that
+`docs/product-identity-legal.md` §5 previously recorded as
+deliberately unresolved. Selected: GNU General Public License version
+3, or (at the recipient's option) any later version. SPDX:
+`GPL-3.0-or-later`. Copyright identity: Czekosabe (the same public
+creator identity established in the prior product-identity milestone -
+never a real/legal personal name).
+
+### Research (2026-08-18, primary sources only)
+- `https://www.gnu.org/licenses/gpl-3.0.txt` fetched directly and
+  diffed byte-for-byte against the new `LICENSE` file (674 lines,
+  identical) - the canonical text was copied verbatim, never
+  paraphrased, never edited, never translated.
+- `https://spdx.org/licenses/GPL-3.0-or-later.html` confirmed
+  `GPL-3.0-or-later` as the correct, current, non-deprecated
+  identifier, distinct from `GPL-3.0-only`.
+- `https://www.gnu.org/licenses/license-list.html#apache2` confirmed
+  Apache License 2.0 is "compatible with version 3 of the GNU GPL"
+  (explicitly not GPLv2 - irrelevant here since this project is
+  GPLv3-or-later).
+- `https://www.gnu.org/licenses/why-affero-gpl.html` confirmed the
+  GPL/AGPL distinction: ordinary GPL carries no network-use/SaaS
+  source-disclosure obligation, unlike AGPL - this project uses GPL,
+  not AGPL, and nothing in this milestone describes AGPL obligations.
+
+### Ownership audit (before applying the licence)
+`git shortlog -sne --all` and `git log --format='%an <%ae>' | sort |
+uniq` show exactly one real contributor identity across the entire
+repository history - the same email (`kacper2280@tlen.pl`) under two
+local Git author-name spellings ("Czekosabe" and "kacper2280"), never
+a distinct third-party human contributor. No relicensing-consent
+blocker exists; this milestone proceeded without needing to stop.
+
+### Third-party compatibility audit
+Every third-party component actually linked/bundled into a distributed
+build (per `THIRD_PARTY_NOTICES.md`, `apps/server/go.mod`,
+`apps/web/package.json`) is MIT, BSD-2/3-Clause, ISC, or Apache-2.0 -
+all confirmed GPLv3-compatible. The vendored/generated YouTube
+`streamlistpb` material (Apache-2.0, carrying its own pre-existing
+Google attribution header) was left completely untouched - no GPL
+header was added to it, and it is not claimed as authored or
+relicensed by Czekosabe. MediaMTX and FFmpeg remain separately
+licensed and are explicitly not claimed as GPL - both are separate
+child processes, never linked into the Streaming Tree binary, never
+redistributed by this repository (ordinary "mere aggregation," not a
+combined work). No incompatibility was found; nothing was papered
+over.
+
+### Changes
+- `LICENSE` (new, repository root) - the complete, verbatim official
+  GNU GPLv3 text, byte-identical to the FSF's own
+  `gpl-3.0.txt`. No clause edited, no project-specific restriction
+  inserted, no translation. GitHub's own licence detection should
+  recognize this file by its standard name and content.
+- `LEGAL.md` - "Application licence" section replaced: names the
+  selected licence, SPDX expression, and copyright line; states
+  plainly that commercial use/distribution is permitted (GPL is not a
+  "non-commercial" licence, and this project adds no extra
+  restriction), that copyleft obligations attach to conveying
+  (distributing) the program rather than to private unshared
+  modification, and that this is the GPL, not the AGPL. "No warranty"
+  section updated to point at the GPL's own §15-16 rather than describe
+  a hypothetical future licence's terms.
+- `docs/product-identity-legal.md` §5 - restructured into §5.1 (the
+  original 2026-08-17 unresolved audit, preserved as historical
+  record, not rewritten) and §5.2 (the 2026-08-18 operator decision:
+  selected licence, SPDX, copyright, reason, the ownership/
+  compatibility audits above, and explicit "what this does NOT mean"
+  clarifications matching this milestone's own required boundaries).
+  New §5.3 lists the primary sources consulted. New §8 documents the
+  Stage 20A distribution boundary (every future packaged release must
+  include `LICENSE` and `THIRD_PARTY_NOTICES.md`) without implementing
+  any packaging. New §9 records the contribution-policy audit (no
+  `CONTRIBUTING.md`/CLA/DCO exists; not a blocker; a future, minimal
+  rule is sketched but not created now, since no external contributor
+  exists yet per the ownership audit).
+- `README.md` - "About, privacy and legal" section gained a `LICENSE`
+  document link and a new concise "Licence" subsection naming
+  `GPL-3.0-or-later`/Copyright (C) 2026 Czekosabe, pointing at `LICENSE`
+  and `LEGAL.md`, and stating third-party components keep their own
+  licences. No licence tutorial; creator-support content unchanged.
+- `THIRD_PARTY_NOTICES.md` - gained one clarifying introductory
+  paragraph pointing at `LICENSE`/`LEGAL.md` for Streaming Tree's own
+  licence, stating this file covers third-party material only; no
+  dependency entry's own licence fact was changed.
+- `apps/web/package.json` - `"license": "GPL-3.0-or-later"` added (the
+  first-party frontend package). `apps/server/go.mod` intentionally
+  left alone - Go modules have no equivalent licence-field convention.
+
+### Automated validation
+Documentation/text-only commit for the `LICENSE`/`LEGAL.md`/
+`product-identity-legal.md`/`README.md`/`THIRD_PARTY_NOTICES.md`
+changes; `apps/web/package.json`'s new field validated by re-running
+`npm run i18n:check`, `tsc -b`, and `eslint .` (all clean - a `license`
+field cannot affect any of these, confirmed rather than assumed). Full
+frontend/backend validation runs after the remaining commits below, as
+part of this milestone's closing regression.
+
+### Known limitations
+None.
+
+### Next step
+Update `internal/buildinfo`/`GET /api/about` to report the selected
+licence (replacing the now-resolved "unselected" status field), then
+the frontend About & Legal UI to display it.

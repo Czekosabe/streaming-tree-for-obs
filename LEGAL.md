@@ -13,15 +13,42 @@ Repository: <https://github.com/Czekosabe/streaming-tree-for-obs>
 
 ## Application licence
 
-**No application-wide licence has been selected yet for the first public
-packaged release.** This is a deliberate, unresolved decision the project
-will make before public distribution - see
-`docs/product-identity-legal.md` §5 for the audit behind this statement.
-Nothing in this repository should be read as an implicit licence grant
-until that decision is made and this section is updated to name it.
+Streaming Tree for OBS's own first-party source code is licensed under
+the:
+
+**GNU General Public License version 3, or (at your option) any later
+version.**
+
+SPDX expression: `GPL-3.0-or-later`
+
+Copyright (C) 2026 Czekosabe
+
+The complete, authoritative licence text is in
+[`LICENSE`](LICENSE) at the repository root - that file, not this
+summary, is what governs. In brief, and without attempting to restate
+the licence's own clauses:
+
+- you may use, study, modify, and redistribute this program under the
+  GPL's terms;
+- **commercial use and commercial distribution are permitted** - the GPL
+  is not a "non-commercial" licence, and this project adds no extra
+  restriction on top of it (no "personal use only," no "no resale," no
+  "permission required for companies");
+- if you **distribute** (convey) the program or a modified version of
+  it, the GPL's copyleft terms apply to that conveyed copy - recipients
+  must receive the rights and source availability the GPL requires;
+  private, un-distributed modification carries no publication
+  obligation on its own;
+- this is the ordinary GNU GPL, not the GNU Affero GPL - it carries no
+  separate network-use/SaaS source-disclosure requirement.
+
+This licence decision was recorded on 2026-08-18; see
+`docs/product-identity-legal.md` §5 for the full audit (contributor-
+history ownership check, third-party compatibility review) behind it.
 
 This is separate from third-party licence compliance, which is already
-tracked below.
+tracked below - third-party material keeps its own licence regardless of
+Streaming Tree's own licence.
 
 ## Third-party software
 
@@ -76,6 +103,7 @@ what that means for your data.
 ## No warranty
 
 Streaming Tree for OBS is provided as-is, without warranty of any kind,
-express or implied. This statement does not depend on which application
-licence is eventually selected (§ above); the licence, once chosen, will
-state its own warranty terms formally.
+express or implied. The GPL itself states this formally in its own
+Disclaimer of Warranty and Limitation of Liability sections (§15-16 of
+[`LICENSE`](LICENSE)); this sentence is a plain-language pointer to those
+clauses, not a substitute for them.

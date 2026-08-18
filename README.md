@@ -3894,21 +3894,31 @@ and the implementation notes in
 Streaming Tree for OBS is an independent project created by **Czekosabe**
 (<https://github.com/Czekosabe>). The application's own in-app **About &
 Legal** page (`Settings → About & Legal`) shows product identity, the
-current build/version state, and a voluntary creator-support link, and
-links out to the canonical documents:
+current build/version state, the application licence, and a voluntary
+creator-support link, and links out to the canonical documents:
 
+- [`LICENSE`](LICENSE) - the complete, authoritative licence text.
 - [`PRIVACY.md`](PRIVACY.md) - what is local application state versus
   network activity the user explicitly enables.
-- [`LEGAL.md`](LEGAL.md) - a concise disclaimer, the current (unresolved)
-  application-licence status, and third-party service terms.
+- [`LEGAL.md`](LEGAL.md) - a concise disclaimer, the application-licence
+  section below, and third-party service terms.
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) - bundled/dependency
   third-party software notices.
 - [`docs/product-identity-legal.md`](docs/product-identity-legal.md) - the
   canonical contract these surfaces were built from.
 
-No application-wide licence has been selected yet for the first public
-packaged release; this is a deliberate, unresolved decision, not an
-oversight - see `LEGAL.md`.
+### Licence
+
+Streaming Tree for OBS's own first-party application code is licensed
+under the **GNU General Public License version 3 or any later version**
+(`GPL-3.0-or-later`), Copyright (C) 2026 Czekosabe. The complete licence
+text is [`LICENSE`](LICENSE) at the repository root; see
+[`LEGAL.md`](LEGAL.md) for a plain-language summary (commercial use is
+permitted; distributed modified versions remain subject to the same
+licence terms). Third-party components this project bundles or depends on
+keep their own licences, documented separately in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) - they are not
+relicensed by Streaming Tree for OBS's own choice of licence.
 
 ---
 

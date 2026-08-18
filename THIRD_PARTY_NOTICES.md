@@ -1,5 +1,10 @@
 # Third-party notices
 
+The licence of Streaming Tree for OBS itself is documented in
+[`LICENSE`](LICENSE) (GNU General Public License version 3 or any later
+version, `GPL-3.0-or-later`; see [`LEGAL.md`](LEGAL.md)) - this file
+covers third-party material only.
+
 Streaming Tree for OBS uses third-party software. This file records what is
 used, under which licence, and where the full licence text can be found on a
 machine that has the software installed.

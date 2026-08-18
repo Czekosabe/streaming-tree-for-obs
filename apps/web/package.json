@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Streaming Tree for OBS - operator dashboard frontend",
+  "license": "GPL-3.0-or-later",
   "engines": {
     "node": ">=20.19"
   },
