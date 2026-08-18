@@ -267,21 +267,33 @@ prepares/reuses the `buildinfo` abstraction and does not begin packaging.
   `apps/web/src/pages/AboutLegalPage.tsx`), which summarizes both of the
   above and links to them rather than duplicating their full text.
 
-## 8. Stage 20A distribution boundary (documented now, not implemented)
+## 8. Stage 20A distribution boundary - implemented (2026-08-18)
 
-Every future public packaged distribution of Streaming Tree for OBS must
-include, at minimum:
+At the time this section was first written, it recorded a future
+requirement ahead of implementation: "every future public packaged
+distribution must include, at minimum, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+and any additional required notice." **Stage 20A has since implemented
+this for real** - see [windows-packaging.md](windows-packaging.md) §16 for
+the complete architecture. In summary: `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+`LEGAL.md`, and `PRIVACY.md` are all embedded into the single release
+executable (`internal/webassets`) and served through a fixed, closed
+route allowlist (`/legal/license`, `/legal/privacy`, `/legal/legal`,
+`/legal/third-party-notices`), plus staged as loose files beside the
+executable by the installer - so the installed application can show its
+own licence fully offline, satisfying this requirement independent of
+GitHub/internet access.
 
-- `LICENSE` (the GPLv3 text);
-- `THIRD_PARTY_NOTICES.md`;
-- any additional licence/notice file a specific redistributed third-party
-  component requires beyond what `THIRD_PARTY_NOTICES.md` already covers.
+The Windows installer's own `AppPublisher`/`AppPublisherURL` metadata
+(Inno Setup `[Setup]` section) reuses exactly the same `Czekosabe`/
+`https://github.com/Czekosabe` identity established in §1 above - never a
+second, independently-maintained copy.
 
-Stage 20A must not produce an installer or release artifact that omits
-the application's own GPL text, and release/source-availability practice
-must satisfy the chosen licence's obligations for whatever is actually
-conveyed to recipients. This milestone documents that requirement only -
-it does not implement installer logic and creates no release artifact.
+Stage 20A does not publish a public GitHub Release; the corresponding-
+source obligation for any binary actually distributed by a future public
+release remains the later release pipeline's own responsibility (already
+noted in §5.2 above) - already satisfied today for any locally-built
+binary, since this project's complete source is already public at the
+canonical repository.
 
 ## 9. Contribution policy - audit result, not a blocker
 

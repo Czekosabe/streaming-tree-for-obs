@@ -461,3 +461,25 @@ with no transcoding, is this stage's deliberate scope.
     and is gone the moment the backend restarts. No new filesystem blob
     directory, no new environment variable. See
     [supporter-widgets.md](../docs/supporter-widgets.md).
+23. Stage 20A (production runtime and Windows packaging foundation)
+    adds **no new file to this directory and no new persisted table**.
+    `STREAMING_TREE_TEST_NO_UI` follows the exact same rule as every
+    other `_TEST_*` variable in this list: read once at process
+    startup like every other setting, has no effect at all unless the
+    binary was also built packaged (`buildinfo.Packaged()`), and can
+    never be influenced by an incoming HTTP request - it exists purely
+    so `scripts/verify-packaged-app.mjs`/`scripts/verify-installer.mjs`
+    can suppress the real browser-launch/native-dialog side effects.
+    The application's version/commit/packaged-mode identity is instead
+    set at *build* time, not via an environment variable at all: three
+    unexported `internal/buildinfo` package variables
+    (`releaseVersion`, `releaseCommit`, `packagedFlag`) are populated
+    only by `scripts/build-release.ps1`'s own `-ldflags "-X ..."`
+    flags, empty/false in every ordinary `go build`/`go run`/`go test`.
+    The production frontend build and the four legal documents are
+    staged into `apps/server/internal/webassets/{embedded,legal}` by
+    that same release script immediately before building - both
+    directories are git-ignored except for a tracked `.gitkeep`
+    placeholder each, so a clean checkout's `go build`/`go test` never
+    require Node and the generated content is never committed. See
+    [windows-packaging.md](../docs/windows-packaging.md).

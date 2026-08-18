@@ -180,6 +180,30 @@ Full licence texts are installed in `apps/web/node_modules/<package>/` after
 
 ---
 
+## Inno Setup (Windows installer build tool)
+
+| | |
+| --- | --- |
+| **Project** | Inno Setup |
+| **Upstream** | <https://jrsoftware.org/isinfo.php> |
+| **Licence** | Inno Setup License (custom, free for any use including commercial) - <https://jrsoftware.org/files/is/license.txt> |
+| **Role** | Build-only tool (`scripts/build-release.ps1`, `scripts/installer/streaming-tree.iss`, Stage 20A). Not a Go or npm dependency, not imported by any source file, and not fetched by any package manager - installed separately on the build machine (`winget install --id JRSoftware.InnoSetup`). |
+
+This is a genuinely different question from every dependency above:
+Inno Setup's *build-tool* licence (free to use to compile an installer)
+is separate from what its *output* actually contains. The installer
+`.exe` that `ISCC.exe` produces embeds Inno Setup's own compiled
+bootstrap/uninstaller stub code - licensed for exactly this by its own
+terms ("compiled installers produced by Inno Setup can be distributed
+commercially without restriction"), so redistributing a Streaming Tree
+for OBS installer built with it is permitted. That installer otherwise
+contains only Streaming Tree for OBS's own release executable (which
+itself embeds the production frontend and the four legal documents -
+see `docs/windows-packaging.md` §2/§16) - no other third-party binary
+is added by packaging.
+
+---
+
 ## Trademarks
 
 Twitch, YouTube, Kick and TikTok are trademarks of their respective owners.

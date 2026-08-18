@@ -291,7 +291,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 18A | Persistent goals/counters foundation: a provider-independent accumulation engine, four core goal families (followers, subscriptions, donations, Bits), operator baseline/current management, and real public OBS goal widgets, see [goals-widgets.md](docs/goals-widgets.md) | **Completed** — see [progress.md](docs/progress.md) |
 | 18B | Latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](docs/supporter-widgets.md) | **Completed** — see [progress.md](docs/progress.md); Stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential client secret with no public-client alternative found, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md); Stage 19 is **not** implemented |
-| 20 | Logs, diagnostics, packaging, remote-server hardening | Planned |
+| 20A | Production runtime and Windows packaging foundation: embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown), release-injectable version metadata, and a per-user Inno Setup installer including the four legal documents, see [windows-packaging.md](docs/windows-packaging.md) | **Completed** |
+| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff) | Planned |
+| 20 (remaining) | Logs, diagnostics, and remote-server hardening not covered by 20A/20B | Planned |
 
 The full table with dependencies is in
 [`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The
@@ -303,14 +305,19 @@ that document's opening notice before treating any part of it as implemented.
 
 ## Requirements
 
+There are two different audiences here, and they need different tools.
+
+### Developer/build requirements
+
+Building Streaming Tree for OBS from source, or running the two-process
+development workflow below, needs:
+
 | Tool | Version | Purpose | Needed now? |
 | ---- | ------- | ------- | ----------- |
-| **Node.js** | 20.19+ or 22.12+ (22 LTS or newer recommended) | running the React panel | yes |
+| **Node.js** | 20.19+ or 22.12+ (22 LTS or newer recommended) | running/building the React panel | yes |
 | **npm** | 10+ | installing frontend dependencies | yes |
 | **Go** | 1.25 or newer | building and running the backend (`go.mod` pins the floor) | yes |
-| OBS Studio | 30+ | the source of the stream | yes, to actually publish something — the backend runs without it |
-| MediaMTX | — | receiving the RTMP stream | yes — installed and supervised automatically, see [Local ingest with MediaMTX](#local-ingest-with-mediamtx) |
-| FFmpeg | a recent build (4.4+ floor; actual compatibility is capability-probed, not version-matched) | sending each destination branch | yes, to actually start a destination — see [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg). The backend runs and the rest of the interface works without it. |
+| Inno Setup 6 | — | building the Windows installer (`scripts/build-release.ps1`) | only for producing a release build, see [windows-packaging.md](docs/windows-packaging.md) |
 
 Checking the installed versions:
 
@@ -330,9 +337,28 @@ If you do not have Go yet, download it from <https://go.dev/dl/> and run the
 installer for your system. It adds `go` to `PATH`; open a **new** terminal
 window afterwards.
 
+### Packaged Windows user requirements
+
+Running the **packaged Windows release** (built via
+[windows-packaging.md](docs/windows-packaging.md)) needs **none of the
+above** - no Node.js, no npm, and no Go installation. Install it, launch it,
+and it opens your default browser to the local management UI on its own.
+
+Both audiences still need the following, regardless of how the application
+itself was obtained - these are not build tools, they are what the
+application actually does its work with:
+
+| Tool | Version | Purpose | Needed now? |
+| ---- | ------- | ------- | ----------- |
+| OBS Studio | 30+ | the source of the stream | yes, to actually publish something — the backend runs without it |
+| MediaMTX | — | receiving the RTMP stream | yes — installed and supervised automatically, see [Local ingest with MediaMTX](#local-ingest-with-mediamtx) |
+| FFmpeg | a recent build (4.4+ floor; actual compatibility is capability-probed, not version-matched) | sending each destination branch | yes, to actually start a destination — see [Outgoing streaming with FFmpeg](#outgoing-streaming-with-ffmpeg). The application starts and the rest of the interface works without it, packaged or not. |
+
 ---
 
 ## Quick start
+
+### Development workflow (from source)
 
 The application consists of two processes, started in **two separate
 terminals**.
@@ -358,14 +384,29 @@ The panel also works **without the backend running** — the system status secti
 then shows a clear "Backend unavailable" message and the rest of the interface
 keeps working.
 
-**This two-process workflow is today's only supported way to run the
-project**, and stays that way for the foreseeable future. A single-launch
-Windows packaging is the intended **Stage 20** target (one application,
-one click, no Node/npm/Go install required, no separate frontend process) —
-documented ahead of implementation in
-[`docs/project-overview.md` §12.1](docs/project-overview.md#121-windows-packaging-target-stage-20-documentation-only)
-so later decisions do not accidentally fight it, but **nothing about it is
-implemented yet**.
+This two-process workflow remains fully supported for development and stays
+that way for the foreseeable future - Stage 20A's packaged build is
+additive, not a replacement for it.
+
+### Packaged Windows release
+
+Stage 20A implements a real single-launch Windows packaging: one Go process
+serving the production frontend, no separate frontend process, no Node/npm/Go
+installation required for the end user. See
+[`docs/windows-packaging.md`](docs/windows-packaging.md) for the full
+architecture (production routing, packaged-mode lifecycle, the Inno Setup
+installer). Building a local release from source:
+
+```powershell
+powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+local"
+```
+
+produces an unsigned installer under `build/release/output/` (local build
+artifacts only - nothing is published, tagged, or released by this script).
+Installing and running it opens your default browser to the local management
+UI once the application is ready; "Quit Streaming Tree" in **Settings →
+About & Legal** stops it cleanly. Stage 20B's own automatic update system is
+not implemented yet.
 
 ---
 
@@ -3214,7 +3255,14 @@ node scripts/verify-tts-audio.mjs                 # Stage 17A shared audio runti
 node scripts/verify-alert-audio.mjs               # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
 node scripts/verify-goals-widgets.mjs             # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
 node scripts/verify-supporter-widgets.mjs         # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
+node scripts/verify-packaged-app.mjs              # Stage 20A packaged production runtime: routing, legal routes, single-instance, graceful shutdown - real release build, no fake servers
 ```
+
+A separate helper, `scripts/verify-installer.mjs`, smoke-tests the real
+Inno Setup installer's silent install/uninstall cycle - see
+[windows-packaging.md](docs/windows-packaging.md) §23. It requires a full
+release build (`scripts/build-release.ps1`, installer included) and is not
+part of the numbered integration-script sequence above.
 
 The persistence script starts the backend against a temporary database,
 exercises the whole platform API, restarts the process against the same file and
@@ -3895,7 +3943,11 @@ Streaming Tree for OBS is an independent project created by **Czekosabe**
 (<https://github.com/Czekosabe>). The application's own in-app **About &
 Legal** page (`Settings → About & Legal`) shows product identity, the
 current build/version state, the application licence, and a voluntary
-creator-support link, and links out to the canonical documents:
+creator-support link, and links to the canonical documents - served from a
+packaged installation's own embedded copies (`/legal/license`,
+`/legal/privacy`, `/legal/legal`, `/legal/third-party-notices`, see
+[windows-packaging.md](docs/windows-packaging.md) §16), so this works fully
+offline, not only from source:
 
 - [`LICENSE`](LICENSE) - the complete, authoritative licence text.
 - [`PRIVACY.md`](PRIVACY.md) - what is local application state versus

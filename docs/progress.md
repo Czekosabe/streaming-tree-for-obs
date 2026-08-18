@@ -29670,3 +29670,96 @@ Documentation pass (README, project-overview, product-identity-legal,
 config/README, THIRD_PARTY_NOTICES re-audit against what the installer
 actually contains, progress.md), then a stale-claim audit, then the
 complete final regression with all 23 integration scripts.
+
+## 2026-08-18 — docs: reflect Stage 20A Windows packaging
+
+### Status
+Completed.
+
+### Scope
+Documentation pass after the Stage 20A implementation, plus a stale-
+claim audit across every living doc.
+
+### Changes
+- `README.md` - "Requirements" split into developer/build requirements
+  (Node/npm/Go/Inno Setup) versus packaged Windows user requirements
+  (none of those - OBS/MediaMTX/FFmpeg remain needed regardless of how
+  the application was obtained, since those are what it actually does
+  its work with, not build tools). "Quick start" gained a "Packaged
+  Windows release" subsection alongside the unchanged two-process
+  development workflow, with the real `build-release.ps1` invocation.
+  The stale "this two-process workflow is today's only supported way
+  to run the project... nothing about [Stage 20] is implemented yet"
+  claim (accurate when Stage 18B closed, false now) was replaced with
+  the real current state. Roadmap table's Stage 20 row split into 20A
+  (**Completed**) / 20B (Planned) / "20 (remaining)" (Planned),
+  mirroring the existing 7A/7B/7C and 17A/17B pattern. Integration-
+  scripts list gained `verify-packaged-app.mjs` (23rd) and a note
+  about the separate `verify-installer.mjs` helper. "About, privacy
+  and legal" section noted the local `/legal/*` routes work fully
+  offline in a packaged installation.
+- `docs/project-overview.md` §12.1 - rewritten from "documentation
+  only, nothing implemented" (the honest pre-Stage-20A state) to
+  record what Stage 20A actually shipped, pointing to
+  `windows-packaging.md` as authoritative; §12.1.1 (the updater)
+  retargeted from generic "Stage 20" to "Stage 20B" throughout, since
+  Stage 20A explicitly does not implement it; the Authenticode
+  paragraph updated to state Stage 20A already researched signing and
+  found no certificate, rather than telling a future stage to
+  "additionally investigate" from scratch. Roadmap table split into
+  20A/20B/20-remaining, matching README's.
+- `docs/engagement-architecture.md` §18 - the same 20A/20B/20-remaining
+  roadmap-table split.
+- `docs/product-identity-legal.md` §8 - rewritten from "documented now,
+  not implemented" to record the real implementation (legal documents
+  embedded and served via the fixed `/legal/*` allowlist, the
+  installer's `AppPublisher` metadata reusing the exact same identity
+  constants, the corresponding-source position restated).
+- `config/README.md` - new item 23 in the standing numbered list: no
+  new file/table added by Stage 20A; `STREAMING_TREE_TEST_NO_UI`
+  follows the same rule as every other `_TEST_*` variable; version/
+  commit/packaged-mode identity is set at *build* time via
+  `-ldflags`, not an environment variable; the embedded-asset
+  placeholder-directory mechanism.
+- `THIRD_PARTY_NOTICES.md` - new "Inno Setup (Windows installer build
+  tool)" section, distinguishing its build-tool licence (free to use)
+  from what its *output* actually contains (its own compiled
+  bootstrap/uninstaller stub code, permitted for redistribution by its
+  own licence terms) - per the governing task's own explicit
+  "build-tool licensing and runtime distribution are different
+  questions" instruction. No existing dependency entry's own licence
+  fact was changed; "no third-party binary is committed to this
+  repository" remains true of the repository itself (the installer is
+  a gitignored build *output*, never committed).
+
+### Stale-claim audit
+Searched every living doc for: "two-process workflow is today's only
+supported way" (found and fixed, above); "Stage 20 not started"/
+"packaging not implemented"/"no installer exists" (none found);
+"application licence unselected"/"GPL licence unresolved" (none found
+outside `docs/progress.md`'s own historical entries and
+`product-identity-legal.md`'s explicitly-labeled §5.1 historical
+record); "Node/npm/Go/Vite required" outside a development/build
+context (none found); "updater implemented"/"update checks exist"
+(none found - correctly still absent, Stage 20B is not implemented);
+"FFmpeg bundled"/"MediaMTX bundled" (none found - both correctly
+remain not bundled). The one historical "the 22nd integration script"
+reference (describing `verify-supporter-widgets.mjs`'s own ordinal
+position when it was added in Stage 18B) was left untouched - it
+remains accurate; the 23rd script added by this milestone does not
+change which script was 22nd.
+
+### Automated validation
+Documentation-only commit; verified via direct re-read and the
+stale-claim searches above rather than a test suite. Full final
+regression (frontend, backend, all 23 integration scripts) runs next,
+after this commit, on the now-complete and clean tree.
+
+### Known limitations
+None new.
+
+### Next step
+Run the complete final regression: frontend checks, backend checks,
+and all 23 integration scripts (the existing 22 plus
+`verify-packaged-app.mjs`) in canonical order, as one unbroken
+sequence, then append the final closing journal entry.

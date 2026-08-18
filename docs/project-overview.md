@@ -933,79 +933,91 @@ The server version will additionally require panel authentication, TLS
 transport and a considered model for storing secrets server-side. None of these
 is implemented yet.
 
-## 12.1 Windows packaging target (Stage 20, documentation only)
+## 12.1 Windows packaging (Stage 20A - Completed)
 
-This subsection states the intended **end-user** distribution target now,
-deliberately ahead of implementation, so architecture decisions made in the
-meantime (Stage 14A onward) never accidentally fight it. **Nothing described
-here is implemented.** Today's only supported way to run this project is the
-two-process development workflow described in the README's own Quick Start
-(a Go backend process and a separate Vite dev-server process) - that remains
-true and unchanged until Stage 20 actually lands.
+This subsection originally stated the intended end-user distribution target
+ahead of implementation, so architecture decisions made in the meantime
+(Stage 14A onward) would never accidentally fight it. **Stage 20A has since
+implemented it for real** - see
+[windows-packaging.md](windows-packaging.md) for the complete, current
+contract (production routing, packaged-mode lifecycle, the Inno Setup
+installer comparison and choice, GPL packaging obligations, and known
+limitations). This section now records what actually shipped, at the level
+of a project-overview summary; `windows-packaging.md` is authoritative for
+detail.
 
-**Intended normal end-user workflow**, once Stage 20 ships:
+**The two-process development workflow (Go backend + separate Vite dev
+server) remains fully supported and unchanged** - Stage 20A is additive, not
+a replacement. It is simply no longer the *only* way to run the project: a
+Windows release build now also exists.
 
-1. install or run Streaming Tree,
-2. launch **one** normal Windows application,
+**Normal packaged end-user workflow, as implemented:**
+
+1. install via the Inno Setup-produced installer (per-user, no elevation),
+2. launch **one** normal Windows application (no console window),
 3. that application starts its own local Go backend,
-4. the production React frontend is served by that same application - no
-   separate frontend process,
-5. the system browser opens the local operator UI automatically,
+4. the production React frontend is served by that same application, embedded
+   into the single executable - no separate frontend process,
+5. the system browser opens the local management UI automatically, once the
+   server is actually ready to accept connections,
 6. every managed child process (MediaMTX, per-destination FFmpeg) is
-   supervised by that same application, exactly as today,
-7. closing the application cleanly stops every process it owns.
+   supervised by that same application, exactly as in the development
+   workflow,
+7. the in-app "Quit Streaming Tree" action (About & Legal) stops every
+   process it owns; a second launch while one is already running detects it
+   and focuses its management URL instead of starting a second backend.
 
-**Target distribution:**
+**Distribution, as implemented:**
 
-- Windows-first; a normal installer is preferred, a portable executable may
-  additionally be offered,
+- Windows-first, per-user install, Inno Setup (chosen over WiX/NSIS - see
+  `windows-packaging.md` §12 for the comparison),
 - no Node.js, no npm, and no Go installation required for an end user,
-- no Vite development server involved in the shipped product.
+- no Vite development server involved in the packaged product,
+- unsigned (no production Authenticode certificate exists yet -
+  `windows-packaging.md` §20).
 
-**Preferred production architecture** (not yet built): build the React
-frontend once at release time, embed or package that static production
-bundle alongside the Go application, and have the Go process serve both the
-frontend and the API from one loopback origin, opening the system browser
-automatically on launch. Electron (or any other bundled-browser-engine
-approach) is deliberately **not** planned merely to obtain a native `.exe`
-window - it would only be reconsidered if a genuinely new, documented
-requirement needed a bundled browser engine for its own sake.
+**Production architecture, as implemented:** the React frontend is built
+once at release time and embedded (`//go:embed`) directly into the Go
+executable alongside the four canonical legal documents, so the packaged
+application is a single file; the Go process serves both the frontend and
+the API from one loopback origin. Electron (or any other bundled-browser-
+engine approach) was **not** used, as originally intended - the packaged
+application is still fundamentally the same Go process plus the user's own
+default browser.
 
-**Application data across an upgrade:** the existing per-user application
-data location (see "Data storage" in the README) continues to be used
-unchanged; an upgrade must preserve the SQLite database/configuration and the
-managed MediaMTX installation where the new version remains compatible with
-it, and must never delete an OS credential-store entry a prior version wrote.
-Exact uninstall/data-removal behavior (what a Windows uninstaller does or does
-not remove) is Stage 20's own decision, not made here.
+**Application data across an upgrade, as implemented:** the existing
+per-user application data location (see "Data storage" in the README) is
+used unchanged; the installer never installs anything there, so an ordinary
+upgrade (install a newer version over an older one, via the installer's
+fixed `AppId`) preserves the SQLite database/configuration and the managed
+MediaMTX installation automatically - there was nothing installer-specific
+to build for this. Uninstall removes only installed program files; it never
+deletes application data or an OS credential-store entry.
 
-**MediaMTX** keeps its existing managed-installation model (downloaded on
-explicit user request, checksum-verified, supervised as a child process) -
-Stage 20 changes nothing about it.
+**MediaMTX** keeps its existing managed-installation model unchanged
+(downloaded on explicit user request, checksum-verified, supervised as a
+child process) - not bundled into the installer.
 
-**FFmpeg is explicitly not planned to be bundled** by this note - it remains
-operator-provided/resolved/probed exactly as today. Whether Stage 20
-ultimately bundles, downloads, or continues to require an operator-provided
-FFmpeg is its own future decision, and redistributing FFmpeg at all would
-first need its own separate licensing/distribution audit (mirroring the one
-already done for MediaMTX, §7.4) - nothing here should be read as that
-decision having already been made.
+**FFmpeg remains operator-provided, unchanged** - not bundled, not
+downloaded by the installer or the application. The packaged application
+starts and is fully usable without it; only outgoing streaming to
+destination platforms needs a compatible FFmpeg the operator supplies.
 
-### 12.1.1 Application update system (Stage 20, documentation only)
+### 12.1.1 Application update system (Stage 20B, not yet implemented)
 
 This subsection states the intended **end-user application update system**
-now, deliberately ahead of implementation, for the same reason as §12.1
-itself: so no interim stage (Stage 14B onward) accidentally builds something
-that would conflict with it. **Nothing described here is implemented. Stage
-14B explicitly does not implement update checking, GitHub networking,
-release downloads, installer launching, or restart logic** - this is an
-architecture target for Stage 20 only.
+now, deliberately ahead of implementation, so Stage 20A's own packaging
+work (which this subsection long predates) never had to accidentally build
+something that would conflict with it. **Nothing described here is
+implemented. Stage 20A explicitly does not implement update checking,
+GitHub networking, release downloads, installer launching, or restart
+logic** - this remains an architecture target for a future Stage 20B only.
 
 **Release source.** Normal production releases are expected to be published
 through the canonical GitHub repository's GitHub Releases. The application
 must **never** update from: branch `main`, arbitrary commit artifacts,
 arbitrary user-supplied URLs, release-note links, or an untrusted mirror.
-Stage 20 must research the then-current official GitHub Releases API before
+Stage 20B must research the then-current official GitHub Releases API before
 implementation rather than hard-coding today's remembered API behavior.
 
 **Versioning.** Releases use a SemVer-like `major.minor.patch`. A dev/
@@ -1035,10 +1047,10 @@ actions.
 **Active-stream guard.** Checking for updates is allowed while streaming;
 **installing is not**. If ingest is receiving, or any destination is
 desired-running/live/restarting/starting (or an equivalent real runtime
-state Stage 20 discovers at implementation time), "Update now" must not
+state Stage 20B discovers at implementation time), "Update now" must not
 silently terminate the stream - the UI must explain that streaming is
 active, keep the update available, and require the operator to stop
-streaming first. Stage 20 must not invent an automatic forced stop/update/
+streaming first. Stage 20B must not invent an automatic forced stop/update/
 restart path.
 
 **Download and verification.** A canonical GitHub Release identity and the
@@ -1047,14 +1059,17 @@ verified by cryptographic SHA-256 against release metadata from the
 project's own release pipeline - never an arbitrary download URL supplied
 by the frontend. Downloads land in a safe temporary location; failed
 verification deletes or quarantines the candidate and leaves the current
-installation untouched. Stage 20 should additionally investigate Windows
-Authenticode code signing before public production distribution - this
-document does not claim code signing exists until it actually does.
+installation untouched. Stage 20A already researched Windows Authenticode
+code signing (`windows-packaging.md` §20) and confirmed no production
+certificate exists yet; Stage 20B inherits that unsigned status and must not
+claim signing exists before it actually does, and before public production
+distribution a real certificate remains a prerequisite regardless of which
+stage ultimately acquires one.
 
 **Installation.** A running Windows executable cannot safely overwrite
 itself, so this requires a deliberate installer/updater handoff: verified
 package, graceful shutdown, an external installer/updater process, install/
-replace, restart. The exact implementation strategy is Stage 20's own
+replace, restart. The exact implementation strategy is Stage 20B's own
 decision. Requirements on the handoff: shut down the HTTP server cleanly,
 stop every owned FFmpeg child process, stop the owned MediaMTX process,
 close the database cleanly, and preserve application data, managed visual
@@ -1120,7 +1135,9 @@ it is architected; this table only tracks status and dependencies.
 | 18A | Persistent goals/counters foundation and core public OBS goal widgets (followers, subscriptions, donations, Bits), see [goals-widgets.md](goals-widgets.md) | **Completed** |
 | 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](supporter-widgets.md) | **Completed** — stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative found (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is **not** implemented until this is resolved or a future official integration is confirmed |
-| 20 | Logs, diagnostics, packaging and remote-server hardening | Planned |
+| 20A | Production runtime and Windows packaging foundation: the embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown, native fatal-startup-error dialog), release-injectable version metadata, and a per-user Inno Setup installer with the four legal documents included (see [windows-packaging.md](windows-packaging.md)) | **Completed** |
+| 20B | Application update system: GitHub Releases check, update UI, download/verification, installer/updater handoff (§12.1.1) | Planned |
+| 20 (remaining) | Logs, diagnostics, and remote-server hardening not covered by 20A/20B | Planned |
 
 Key dependencies:
 
