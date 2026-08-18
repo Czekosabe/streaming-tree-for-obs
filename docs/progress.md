@@ -29465,3 +29465,52 @@ None new - see the contract's own §24.
 ### Next step
 Add the frontend "Quit Streaming Tree" action and local/offline legal-
 document links to the About & Legal page.
+
+## 2026-08-18 — feat(web): add Quit action and offline legal links
+
+### Status
+Completed.
+
+### Scope
+Frontend half of the Stage 20A application-lifecycle work: a real
+"Quit Streaming Tree" action for the packaged application (which has no
+console window to close from), and switching the About & Legal page's
+legal-document links from GitHub blob URLs to the new local `/legal/*`
+routes so the installed application works fully offline.
+
+### Changes
+- `src/api/system.ts` (new) - `shutdownApplication()`, `POST
+  /api/system/shutdown` with the one required body shape.
+- `src/hooks/use-shutdown.ts` (new) - `useShutdownMutation`.
+- `src/pages/AboutLegalPage.tsx` - the four `LegalEntry` "view full"
+  links now point at `/legal/license`, `/legal/privacy`, `/legal/legal`,
+  `/legal/third-party-notices` instead of GitHub blob URLs (the source-
+  code repository link itself remains external, unchanged). New
+  `QuitApplicationCard`: always rendered (the frontend cannot honestly
+  know whether it is running packaged without inventing a fake
+  packaging setting the governing task explicitly forbids), behind the
+  existing `ConfirmDialog` component; on success shows "Streaming Tree
+  has stopped - you may close this browser tab" in place of the quit
+  button; on failure (development mode, where the endpoint does not
+  exist at all) shows an honest error rather than pretending to have
+  quit.
+- `src/i18n/resources/{en,pl}/about.json` - new `quit.*` keys (heading,
+  body, button, confirm title/message, stopped state, error state).
+- `src/pages/AboutLegalPage.test.tsx` - 4 new tests: legal links point
+  at the local routes; confirming quits and shows the stopped state;
+  cancelling never calls the API; a rejected call shows the honest
+  error state. Added a `beforeEach(vi.clearAllMocks())` this file
+  previously did not need (no test had asserted a mock was *not*
+  called before).
+
+### Automated validation
+`npm run i18n:check` (20 namespaces, en/pl parity), `tsc -b`,
+`eslint .` all clean. Full suite: **99 test files, 1379 tests, all
+passing** (4 new). `npm run build` clean.
+
+### Known limitations
+None new - see the contract's own §24.
+
+### Next step
+Add the Windows release build script and the Inno Setup installer
+script.

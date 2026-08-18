@@ -1,14 +1,17 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as aboutApi from '@/api/about';
+import * as systemApi from '@/api/system';
 import { i18n } from '@/i18n';
 import { renderWithProviders } from '@/test/render';
 
 import { AboutLegalPage } from './AboutLegalPage';
 
 vi.mock('@/api/about');
+vi.mock('@/api/system');
 
 const ABOUT_RESPONSE = {
   productName: 'Streaming Tree for OBS',
@@ -31,6 +34,10 @@ function renderPage() {
 }
 
 describe('AboutLegalPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     void i18n.changeLanguage('en');
   });
@@ -103,6 +110,20 @@ describe('AboutLegalPage', () => {
     expect(screen.getByText(/independent project/i)).toBeInTheDocument();
   });
 
+  it('links every legal document to the local, offline route rather than GitHub', async () => {
+    vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
+    renderPage();
+
+    await screen.findByText('Application licence');
+    expect(screen.getByRole('link', { name: /view license/i })).toHaveAttribute('href', '/legal/license');
+    expect(screen.getByRole('link', { name: /view privacy\.md/i })).toHaveAttribute('href', '/legal/privacy');
+    expect(screen.getByRole('link', { name: /view third_party_notices\.md/i })).toHaveAttribute(
+      'href',
+      '/legal/third-party-notices',
+    );
+    expect(screen.getByRole('link', { name: /view legal\.md/i })).toHaveAttribute('href', '/legal/legal');
+  });
+
   it('renders no donation/payment form, embedded checkout, or amount field', async () => {
     vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
     const { container } = renderPage();
@@ -121,5 +142,55 @@ describe('AboutLegalPage', () => {
     expect(await screen.findByRole('link', { name: 'Wesprzyj twórcę' })).toBeInTheDocument();
     expect(screen.getByText(/otwiera streamelements w przeglądarce/i)).toBeInTheDocument();
     expect(screen.getByText(/dobrowolne/i)).toBeInTheDocument();
+  });
+
+  it('quits the application after explicit confirmation, and shows a stopped state on success', async () => {
+    vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
+    vi.mocked(systemApi).shutdownApplication.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    const quitButton = await screen.findByRole('button', { name: /quit streaming tree/i });
+    await user.click(quitButton);
+
+    const dialog = await screen.findByRole('dialog', { name: /quit streaming tree\?/i });
+    expect(systemApi.shutdownApplication).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: /quit streaming tree/i }));
+
+    await waitFor(() => expect(systemApi.shutdownApplication).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/streaming tree has stopped/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /quit streaming tree/i })).not.toBeInTheDocument();
+  });
+
+  it('cancelling the confirmation dialog never calls shutdown', async () => {
+    vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
+    vi.mocked(systemApi).shutdownApplication.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    const quitButton = await screen.findByRole('button', { name: /quit streaming tree/i });
+    await user.click(quitButton);
+
+    const dialog = await screen.findByRole('dialog', { name: /quit streaming tree\?/i });
+    await user.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+    expect(systemApi.shutdownApplication).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows an honest error state when shutdown is unavailable (development mode)', async () => {
+    vi.mocked(aboutApi).fetchAbout.mockResolvedValue(ABOUT_RESPONSE);
+    vi.mocked(systemApi).shutdownApplication.mockRejectedValue(new Error('not found'));
+    const user = userEvent.setup();
+    renderPage();
+
+    const quitButton = await screen.findByRole('button', { name: /quit streaming tree/i });
+    await user.click(quitButton);
+    const dialog = await screen.findByRole('dialog', { name: /quit streaming tree\?/i });
+    await user.click(within(dialog).getByRole('button', { name: /quit streaming tree/i }));
+
+    expect(await screen.findByText(/could not stop the application/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /quit streaming tree/i })).toBeInTheDocument();
   });
 });

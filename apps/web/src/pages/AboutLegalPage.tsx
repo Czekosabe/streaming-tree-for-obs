@@ -1,11 +1,24 @@
-import { ExternalLink, Heart, Scale, ScrollText } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ExternalLink, Heart, Power, Scale, ScrollText } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { useAboutQuery } from '@/hooks/use-about-query';
+import { useShutdownMutation } from '@/hooks/use-shutdown';
 import type { AboutResponse } from '@/models/about';
+
+/** Fixed, closed local routes - see internal/httpapi/legal.go's own
+ * allowlist. The installed application must be able to show these fully
+ * offline, so these are never GitHub links. */
+const LEGAL_ROUTES = {
+  license: '/legal/license',
+  privacy: '/legal/privacy',
+  legal: '/legal/legal',
+  thirdPartyNotices: '/legal/third-party-notices',
+} as const;
 
 const EXTERNAL_LINK_CLASSES =
   'inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-hover';
@@ -54,6 +67,59 @@ function LegalEntry({
         </a>
       )}
     </div>
+  );
+}
+
+/**
+ * "Quit Streaming Tree" - the packaged application's only normal way to
+ * stop the backend, since a release build has no console window
+ * (docs/windows-packaging.md §8/§12). Always rendered (not conditioned on
+ * anything the frontend cannot honestly know); in development mode the
+ * endpoint simply does not exist, and the error state below explains that
+ * plainly rather than pretending to have quit.
+ */
+function QuitApplicationCard() {
+  const { t } = useTranslation('about');
+  const [confirming, setConfirming] = useState(false);
+  const mutation = useShutdownMutation();
+
+  if (mutation.isSuccess) {
+    return (
+      <Panel>
+        <PanelBody>
+          <p className="text-sm text-ink">{t('quit.stopped')}</p>
+        </PanelBody>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel>
+      <PanelHeader title={t('quit.heading')} icon={<Power className="size-4" />} />
+      <PanelBody className="space-y-2.5">
+        <p className="text-sm leading-relaxed text-ink-muted">{t('quit.body')}</p>
+        <Button type="button" variant="danger" onClick={() => setConfirming(true)}>
+          <Power aria-hidden="true" className="size-3.5" />
+          {t('quit.button')}
+        </Button>
+        {mutation.isError && (
+          <p className="text-xs text-status-error">{t('quit.error')}</p>
+        )}
+      </PanelBody>
+      <ConfirmDialog
+        open={confirming}
+        title={t('quit.confirmTitle')}
+        message={t('quit.confirmMessage')}
+        confirmLabel={t('quit.button')}
+        destructive
+        busy={mutation.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          mutation.mutate();
+          setConfirming(false);
+        }}
+      />
+    </Panel>
   );
 }
 
@@ -153,29 +219,31 @@ export function AboutLegalPage() {
                   heading={t('about:legal.licence.heading')}
                   body={t('about:legal.licence.summary', { name: data.applicationLicenseName })}
                   detail={`SPDX: ${data.applicationLicenseSpdx}`}
-                  href={`${data.repositoryUrl}/blob/main/LICENSE`}
+                  href={LEGAL_ROUTES.license}
                   linkLabel={t('about:legal.licence.viewFull')}
                 />
                 <LegalEntry
                   heading={t('about:legal.privacy.heading')}
                   body={t('about:legal.privacy.summary')}
-                  href={`${data.repositoryUrl}/blob/main/PRIVACY.md`}
+                  href={LEGAL_ROUTES.privacy}
                   linkLabel={t('about:legal.privacy.viewFull')}
                 />
                 <LegalEntry
                   heading={t('about:legal.thirdPartyNotices.heading')}
                   body={t('about:legal.thirdPartyNotices.summary')}
-                  href={`${data.repositoryUrl}/blob/main/THIRD_PARTY_NOTICES.md`}
+                  href={LEGAL_ROUTES.thirdPartyNotices}
                   linkLabel={t('about:legal.thirdPartyNotices.viewFull')}
                 />
                 <LegalEntry
                   heading={t('about:legal.disclaimer.heading')}
                   body={t('about:legal.disclaimer.summary')}
-                  href={`${data.repositoryUrl}/blob/main/LEGAL.md`}
+                  href={LEGAL_ROUTES.legal}
                   linkLabel={t('about:legal.disclaimer.viewFull')}
                 />
               </PanelBody>
             </Panel>
+
+            <QuitApplicationCard />
           </>
         )}
       </div>

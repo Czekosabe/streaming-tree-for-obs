@@ -52,5 +52,14 @@
       "summary": "Streaming Tree for OBS jest niezależnym projektem. Nie jest prowadzony przez, powiązany z ani przedstawiany jako oficjalna aplikacja OBS Studio, Twitcha, YouTube'a, Kicka, TikToka ani StreamElements - te nazwy należą do ich właścicieli.",
       "viewFull": "Zobacz LEGAL.md"
     }
+  },
+  "quit": {
+    "heading": "Aplikacja",
+    "body": "Streaming Tree for OBS działa jako aplikacja w tle bez osobnego okna do zamknięcia. Użyj tego, aby zatrzymać ją całkowicie, wraz z lokalnym odbiorem, MediaMTX i każdym połączonym dostawcą.",
+    "button": "Zamknij Streaming Tree",
+    "confirmTitle": "Zamknąć Streaming Tree?",
+    "confirmMessage": "To całkowicie zatrzymuje aplikację, w tym aktywny lokalny odbiór i połączonych dostawców. Możesz uruchomić ją ponownie w normalny sposób.",
+    "stopped": "Streaming Tree został zatrzymany. Możesz zamknąć tę kartę przeglądarki.",
+    "error": "Nie udało się zatrzymać aplikacji. Ta akcja jest dostępna tylko wtedy, gdy Streaming Tree działa jako spakowana aplikacja."
   }
 }
