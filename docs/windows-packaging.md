@@ -502,10 +502,12 @@ installer during implementation.
 - No updater (§21) - Stage 20B.
 - No remote-server/non-loopback hardening - unchanged scope boundary from
   every prior stage.
-- No full diagnostics/log viewer - later Stage 20 work.
+- No full diagnostics/log viewer - Stage 20E.
 - No real end-user/OBS manual verification - only automated
   fake/hermetic verification, matching every prior stage's own testing
   discipline.
 - macOS/Linux packaging is not attempted - Stage 20A is explicitly
   Windows-first; non-Windows builds are kept compiling but are not
-  packaged.
+  packaged. See [`platform-support.md`](platform-support.md) for the full
+  cross-platform contract, current CI-verification status, and the
+  Stage 20B-20E roadmap this leads into.

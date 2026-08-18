@@ -1136,8 +1136,11 @@ it is architected; this table only tracks status and dependencies.
 | 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](supporter-widgets.md) | **Completed** — stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative found (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is **not** implemented until this is resolved or a future official integration is confirmed |
 | 20A | Production runtime and Windows packaging foundation: the embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown, native fatal-startup-error dialog), release-injectable version metadata, and a per-user Inno Setup installer with the four legal documents included (see [windows-packaging.md](windows-packaging.md)) | **Completed** |
-| 20B | Application update system: GitHub Releases check, update UI, download/verification, installer/updater handoff (§12.1.1) | Planned |
-| 20 (remaining) | Logs, diagnostics, and remote-server hardening not covered by 20A/20B | Planned |
+| 20B | Application update system: GitHub Releases check, update UI, download/verification, installer/updater handoff (§12.1.1); must use the cross-platform artifact-identity concept defined in [platform-support.md](platform-support.md) §15 even though Windows x64 is the first platform it serves | Planned |
+| 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification (see [platform-support.md](platform-support.md) §5) | Planned |
+| 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) | Planned |
+| 20D2 | Linux headless/self-hosted server mode and remote security (see [platform-support.md](platform-support.md) §9-§11) | Planned |
+| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 
 Key dependencies:
 

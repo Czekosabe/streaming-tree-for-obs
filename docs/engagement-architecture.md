@@ -1552,8 +1552,11 @@ that table.
 | 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer counters, multi-widget composition (§14, see [supporter-widgets.md](supporter-widgets.md)) — **Completed**, stage 18 as a whole now complete |
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) — **Deferred**, feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is not implemented |
 | 20A | Production runtime and Windows packaging foundation (embedded frontend, packaged-mode lifecycle, Inno Setup installer) — **Completed**, see [windows-packaging.md](windows-packaging.md) |
-| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff) — Planned |
-| 20 (remaining) | Logs, diagnostics, and remote-server hardening not covered by 20A/20B — Planned |
+| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff); must use the cross-platform artifact-identity concept in [platform-support.md](platform-support.md) §15 — Planned |
+| 20C | macOS desktop portability, packaging, signing, notarization, automated macOS verification (see [platform-support.md](platform-support.md) §5) — Planned |
+| 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) — Planned |
+| 20D2 | Linux headless/self-hosted server mode and remote security (see [platform-support.md](platform-support.md) §9-§11) — Planned |
+| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D — Planned |
 
 > **Roadmap decision (recorded when stage 8A began):** stage 8A starts
 > before stage 7C is implemented. 7C (Kick/TikTok accounts) is not a

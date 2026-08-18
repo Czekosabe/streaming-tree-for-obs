@@ -297,14 +297,51 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 18B | Latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](docs/supporter-widgets.md) | **Completed** — see [progress.md](docs/progress.md); Stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential client secret with no public-client alternative found, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md); Stage 19 is **not** implemented |
 | 20A | Production runtime and Windows packaging foundation: embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown), release-injectable version metadata, and a per-user Inno Setup installer including the four legal documents, see [windows-packaging.md](docs/windows-packaging.md) | **Completed** |
-| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff) | Planned |
-| 20 (remaining) | Logs, diagnostics, and remote-server hardening not covered by 20A/20B | Planned |
+| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff), see [platform-support.md](docs/platform-support.md) §15 for its required cross-platform artifact-identity constraint | Planned |
+| 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification, see [platform-support.md](docs/platform-support.md) | Planned |
+| 20D1 | Linux local/desktop runtime and packaging, see [platform-support.md](docs/platform-support.md) | Planned |
+| 20D2 | Linux headless/self-hosted server mode and remote security, see [platform-support.md](docs/platform-support.md) | Planned |
+| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 
 The full table with dependencies is in
 [`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The
 engagement era (stages 8–19) is architected in detail in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md) — read
 that document's opening notice before treating any part of it as implemented.
+
+---
+
+## Platform support
+
+Full detail, including exactly what is and isn't automated-CI-verified
+today, is in [`docs/platform-support.md`](docs/platform-support.md). Short
+version:
+
+- **Windows (x64)** — the packaged desktop app is implemented and this is
+  the primary, actively-used target: one Go process, a production React
+  build, and your own default browser (see
+  [`docs/windows-packaging.md`](docs/windows-packaging.md)). The
+  application updater is not implemented yet (Stage 20B, Planned), and
+  release artifacts are honestly unsigned (no Authenticode certificate
+  yet).
+- **macOS** — planned, not shipped. Native GitHub-hosted CI (both Apple
+  Silicon and Intel) compiles and tests the shared application core,
+  including a real, CGO-enabled build against the macOS Keychain backend —
+  but there is no `.app`/`.dmg`/`.pkg`, no code signing, no notarization,
+  and no real-hardware verification yet (the maintainer does not own a
+  Mac). System text-to-speech is unavailable today on macOS; the
+  application reports this honestly rather than faking it.
+- **Linux (desktop/local)** — planned, not packaged. Native GitHub-hosted
+  CI compiles and tests the shared core on Linux x64 and Linux ARM64. No
+  `.deb`/`.rpm`/AppImage/Flatpak/Snap exists yet. System text-to-speech is
+  unavailable today on Linux, same honest limitation as macOS.
+- **Linux (headless/self-hosted server)** — a planned *future* architecture
+  target, not a currently-supported deployment mode. The current
+  management API and local MediaMTX RTMP listener are deliberately
+  loopback-only with no authentication; **do not expose port 8080 (or
+  MediaMTX's RTMP/API ports) to a LAN or the public internet** — remote
+  access requires a dedicated future security/hardening stage (Stage 20D2)
+  that does not exist yet.
 
 ---
 

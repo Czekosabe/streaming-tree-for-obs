@@ -62,7 +62,7 @@ deliberate, separately documented product decision, not a silent addition.
 
 ## Updater
 
-Stage 20's automatic-update/version-check mechanism is **not implemented
+Stage 20B's automatic-update/version-check mechanism is **not implemented
 yet**. The application currently performs no update check and contacts no
 update server.
 

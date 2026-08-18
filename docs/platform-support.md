@@ -1,0 +1,565 @@
+# Platform support and Stage 20 portability contract
+
+This document is the canonical record of what "Streaming Tree for OBS"
+supports on which operating system, what is merely *technically possible*
+versus actually verified, and the roadmap that will close the gap. It exists
+because Stage 20A (see [`windows-packaging.md`](windows-packaging.md))
+implemented a real Windows production runtime and installer, and before any
+further packaging work begins for another platform this project needs one
+place that states, precisely, what is true today.
+
+Research for this document was performed 2026-08-18 against GitHub's own
+Actions documentation, Apple's own Developer documentation, the
+freedesktop.org XDG Base Directory and Secret Service specifications, and
+MediaMTX's own upstream configuration reference. Sources are cited inline
+where a specific claim depends on them.
+
+## 1. Vocabulary
+
+These words are used precisely and are not interchangeable:
+
+- **Supported** — a real user can install and run this today, with the
+  platform's native packaging, and the experience has had at least some
+  real-device/human validation beyond automated CI.
+- **Automated-build verified** — an official CI runner for that exact OS/
+  architecture compiles and/or tests the shared application core. This is
+  evidence the *code* is portable; it is not evidence of a packaged,
+  installable, or human-validated experience.
+- **Native CI verified** — automated-build verification that ran on the
+  real target OS/architecture via a GitHub-hosted runner (as opposed to
+  cross-compilation from a different host OS).
+- **Cross-compilation verified** — the Go toolchain produced a binary for
+  that OS/architecture from a *different* host OS, without ever running or
+  testing it there. This is the weakest verification tier and must never be
+  described as build-verified for a platform whose production build has
+  native, OS-specific dependencies (see §4 on macOS Keychain).
+- **Planned** — a real target for future work; nothing platform-specific
+  has shipped yet.
+- **Experimental** — exists and runs, but with known, undocumented-elsewhere
+  rough edges the project is not yet ready to call Planned-complete or
+  Supported.
+- **Deferred** — investigated and explicitly not pursued now, for a
+  documented reason (mirrors the vocabulary already used for Stage 15B/16B/
+  19's feasibility gates).
+- **Unsupported** — will not run, or runs with a feature honestly reported
+  as unavailable rather than faked.
+- **Not verified** — no automated or manual check of any kind has been
+  performed for this claim.
+
+A component is never called Supported merely because Go *can* compile it.
+
+## 2. The one-core architecture rule
+
+There is one application: a shared Go core (`apps/server`) plus a shared
+React frontend (`apps/web`), with a small number of narrow OS/runtime
+adapters (`internal/runtime/browserlaunch`, `internal/runtime/
+singleinstance`, `internal/runtime/nativealert`, `internal/provider/tts`,
+`internal/runtime/branch` process control, `internal/runtime/mediamtx`
+process control) selected at compile time via Go build tags, plus
+platform-specific *packaging* on top (installer scripts, CI jobs). This
+project does not fork into "Streaming Tree Windows" / "Streaming Tree
+macOS" / "Streaming Tree Server" - provider/event/chat/alert/widget/storage
+domains, the HTTP API, and the frontend are shared and platform-independent
+by construction. Every platform-facing package audited in §3 already
+follows this pattern from earlier stages; no refactor was required to
+establish it.
+
+## 3. Stage 20A Windows-coupling audit result
+
+Before writing this contract, the actual Stage 20A source was inspected
+end-to-end: `apps/server/cmd/server/main.go`, `internal/buildinfo`,
+`internal/webassets`, the three runtime adapter packages, the HTTP
+production/legal/shutdown routes (`internal/httpapi/production.go`,
+`legal.go`, `system.go`), `internal/secrets/keyring_store.go`, `internal/
+provider/tts`, `internal/runtime/mediamtx/platform.go`, `internal/runtime/
+ffmpeg/resolver.go`, `internal/runtime/branch/process_{windows,unix}.go`,
+`go.mod`/`go.sum`, `scripts/build-release.ps1`, and `scripts/installer/
+streaming-tree.iss`.
+
+Result: **no unnecessary Windows coupling was found**, so no refactor was
+performed. Specifically:
+
+- `main.go` only ever calls the three runtime adapters through their
+  package-level functions (`browserlaunch.Open`, `singleinstance.Acquire`,
+  `nativealert.ShowFatalError`); it never branches on `runtime.GOOS` itself
+  and never imports a Windows-only package directly. Its one `syscall.
+  SIGTERM` reference is portable (defined on every Go-supported OS).
+- `internal/buildinfo` and `internal/webassets` are pure Go with no OS-
+  conditional code at all - `internal/webassets` is a plain `embed.FS`
+  wrapper, and `go.mod`'s only direct dependencies with any OS-specific
+  code (`github.com/99designs/keyring`, `github.com/go-ole/go-ole`,
+  `golang.org/x/sys`) are all already scoped behind build tags or, in
+  go-ole's case, only imported from `internal/provider/tts/windows.go`.
+- Every Windows-only package already has a real `!windows` counterpart
+  written in an earlier stage, not added by this milestone:
+  `browserlaunch_other.go` (shells to `open`/`xdg-open`), `singleinstance_
+  other.go` (always succeeds - a real cross-platform single-instance
+  mechanism is deferred to a future packaged non-Windows target),
+  `nativealert_other.go` (writes to stderr, since non-Windows builds never
+  use the console-free release mode), `tts/stub.go` (honestly reports
+  `Capabilities.Available == false`, never fakes a `say`/shell-command
+  provider), and `runtime/branch/process_unix.go` (SIGTERM instead of an
+  immediate kill, since non-Windows FFmpeg can shut down gracefully).
+- `internal/httpapi/production.go`, `legal.go`, and `system.go` (the
+  production static/SPA host, the `/legal/*` allowlist, and the protected
+  shutdown endpoint) contain no platform branching at all; their only
+  "windows" references are doc comments pointing at `windows-packaging.md`.
+  The one backslash-rejection check in `production.go` is a security
+  hardening measure (rejecting a Windows-style path separator in a request
+  path regardless of which OS is actually serving it), not platform
+  coupling.
+- `internal/secrets/keyring_store.go` is fully portable: it lists all three
+  allowed backends (`WinCredBackend`, `KeychainBackend`,
+  `SecretServiceBackend`) unconditionally, relying on `keyring.Open` to
+  silently skip whichever is unavailable on the current OS, and it already
+  defers opening the real backend to first use rather than at construction
+  - see §5 for why that matters for a future headless Linux target.
+- `internal/runtime/mediamtx/platform.go` already carries a release-asset
+  matrix for `windows/amd64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`,
+  and `darwin/arm64` - this predates this milestone and already anticipates
+  the roadmap below.
+- `internal/runtime/ffmpeg/resolver.go` uses `runtime.GOOS` only for two
+  narrow, correct reasons: choosing the `.exe` suffix for a hypothetical
+  future bundled copy, and skipping the Unix executable-bit check on
+  Windows (which has none).
+- `scripts/build-release.ps1` and `scripts/installer/streaming-tree.iss`
+  are Windows-only tooling by design (PowerShell + Inno Setup) and are
+  left exactly as they are - per this milestone's own scope, a non-Windows
+  package is 20C/20D's decision, not this one's.
+
+`cmd/server` was confirmed to actually cross-compile for `linux/amd64` and
+`linux/arm64` (`CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build ./cmd/
+server`, both exit 0, verified locally on 2026-08-18) - see §7 for why the
+equivalent `darwin` check is deliberately *not* treated as verification.
+
+## 4. Windows (x64) — primary target
+
+**Status: Supported.**
+
+Windows x64 is where Stage 20A actually shipped: one Go process serving a
+production React build, launching the user's own default browser via
+`ShellExecuteW`, a `CreateMutexW`-based single-instance guard, a
+`MessageBoxW` fatal-startup dialog on the console-free release binary, a
+protected `POST /api/system/shutdown` endpoint, release-injected version/
+commit metadata, and a per-user Inno Setup installer bundling the four
+legal documents. Full detail is in
+[`windows-packaging.md`](windows-packaging.md); this section only restates
+current status, it does not change it.
+
+| Component | Status |
+| --- | --- |
+| Go build/test | Supported |
+| Frontend production build/serving | Supported |
+| SQLite persistence | Supported |
+| Provider connectors (Twitch/YouTube/StreamElements) | Supported |
+| MediaMTX managed install | Supported |
+| FFmpeg (operator-provided, never bundled) | Supported |
+| OS credential store (Windows Credential Manager) | Supported |
+| Packaged browser launch | Supported |
+| Single-instance detection | Supported |
+| Fatal-startup-error UX | Supported |
+| Quit (protected shutdown) | Supported |
+| System TTS (SAPI) | Supported |
+| Package format (Inno Setup, per-user) | Supported |
+| Code signing (Authenticode) | Not implemented - honestly unsigned, `SignTool=` hook prepared inert |
+| Automated CI (native Windows runner) | Automated-build verified - see §6 |
+| Application updater | Not implemented - Stage 20B, Planned |
+| Real OBS/provider manual verification | Not verified by this project beyond developer use - out of scope for automated CI |
+
+## 5. macOS — planned desktop target
+
+**Status: Planned.** No macOS package, signing, or notarization exists.
+The operator does not own a Mac; nothing here claims manual verification,
+and nothing here is implemented.
+
+### 5.1 Architecture preference
+
+Apple Silicon (`darwin/arm64`) is the preferred modern target. Intel
+(`darwin/amd64`) is not casually dropped: GitHub's currently-documented
+hosted runners still offer an Intel macOS label (`macos-15-intel` /
+`macos-26-intel` as of this research date, alongside Apple-Silicon `macos-
+latest`/`macos-15`/`macos-14`), so Intel remains at least Automated-build
+verifiable at no extra tooling cost today. A future decision to drop Intel
+belongs to Stage 20C, informed by real maintenance cost once packaging
+actually exists, not to this baseline.
+
+### 5.2 Per-architecture component status
+
+| Component | `darwin/arm64` | `darwin/amd64` |
+| --- | --- | --- |
+| Go build | Native CI verified (see §6) | Native CI verified (see §6) |
+| Frontend build | Automated-build verified (platform-independent Node build, not architecture-specific) | same |
+| SQLite (CGO-free `modernc.org/sqlite`) | Native CI verified | Native CI verified |
+| Provider connectors | Automated-build verified (platform-independent HTTP/gRPC code) | same |
+| MediaMTX managed install | Planned - asset matrix already has `darwin-arm64`/`darwin-amd64` entries (§3), installer flow itself unexercised on macOS | Planned |
+| FFmpeg (operator-provided) | Planned - resolver logic is portable, no macOS install flow written | Planned |
+| OS credential store (Keychain, requires CGO) | Native CI verified — see §5.3, this requires the *real* runner, cross-compilation cannot verify it | Native CI verified |
+| Packaged browser launch | Compiles (uses `open`) - not packaged, not human-tested | Compiles |
+| Single-instance | Compiles (always-succeeds stub) - no real mechanism yet | Compiles |
+| Fatal-startup UX | Compiles (stderr fallback) - no native alert yet | Compiles |
+| Quit | Compiles (same shared HTTP endpoint) - no packaged lifecycle yet | Compiles |
+| System TTS | **Unavailable today** - `tts/stub.go` honestly reports `Capabilities.Available == false`; no macOS `AVSpeechSynthesizer`/`say` provider exists. This is an honest limitation, not a bug. | same |
+| Package format | Planned - `.app` bundle + DMG/ZIP/PKG researched at a high level (§5.4), not chosen | Planned |
+| Signing / notarization | Not implemented - no Apple Developer account exists for this project yet | Not implemented |
+| Automated CI | Native CI verified (build + `go vet` + `go test`, this milestone) | Native CI verified |
+| Manual hardware/UX/OBS verification | Not verified - operator owns no Mac | Not verified |
+
+### 5.3 Why the macOS Keychain build gate matters
+
+`github.com/99designs/keyring`'s Keychain backend
+(`keychain.go` inside that module) carries the build constraint `//go:build
+darwin && cgo`, and the underlying `github.com/99designs/go-keychain`
+binding literally does `import "C"` against `CoreFoundation`/`Security`
+frameworks. This was confirmed by direct inspection of both modules' source
+during this milestone's audit (§3).
+
+A concrete, reproduced finding from this audit: cross-compiling with
+`GOOS=darwin GOARCH=arm64 CGO_ENABLED=0` from this Windows development
+machine **succeeds with exit code 0** - but silently produces a binary
+missing the real Keychain backend entirely, because Go excludes any file
+containing `import "C"` when CGO is disabled, and the `darwin && cgo`
+constraint on `keychain.go` means nothing else in the package even
+references the missing symbols. A binary built this way would look
+correct and would still run, but `keyring.Open` would simply never offer
+`KeychainBackend` as an available option, and no static analysis or
+successful-exit-code check would reveal that.
+
+This is exactly why this document does not accept a CGO-disabled Windows-
+host cross-compile as evidence of macOS credential-store portability, and
+why the macOS CI job (§6) is required to build with CGO enabled on a real
+macOS runner - proving the production binary compiles against the real
+platform backend, not a substitute.
+
+### 5.4 macOS packaging research (planning only, nothing implemented)
+
+Per Apple's own current developer documentation: distribution outside the
+Mac App Store requires signing with a Developer ID Application certificate
+with the hardened runtime enabled, followed by submission to Apple's
+notarization service via `notarytool` (the modern replacement for the
+retired `altool`); Gatekeeper checks the notarization ticket (typically
+"stapled" to the artifact) at first launch and otherwise blocks or warns.
+Distribution formats in common use are a signed `.app` bundle inside a
+`.dmg` disk image, a `.pkg` installer, or a plain `.zip` of the `.app`.
+None of this requires Xcode itself for a Go binary, but it does require an
+Apple Developer Program membership, a real Apple ID with 2FA, and access to
+`codesign`/`notarytool` (available via Xcode Command Line Tools). Universal
+(arm64+amd64 combined) binaries are recorded here only as a future
+possibility once both architectures are individually working - not a
+decision made now. Default-browser launching on macOS uses the `open`
+command (already what `browserlaunch_other.go` does); Keychain is the
+native credential store (already what `internal/secrets` targets); macOS
+system TTS exists via `AVSpeechSynthesizer`/the `say` command, but building
+a real provider for it is separate future feature work, not part of this
+baseline.
+
+### 5.5 macOS support-claim progression
+
+This project will not describe macOS as "supported" merely because CI goes
+green. The intended progression is: **Planned** (today) → **Automated-
+build/test verified** (this milestone, native CI compiles and tests the
+shared core and proves the Keychain build gate) → **Beta / automated-test
+supported** (once Stage 20C produces a real signed, notarized, installable
+package) → **Fully supported** after real-device/human validation of
+launch, browser-open, TTS-absence messaging, OBS Browser Source rendering,
+and Gatekeeper behavior. GitHub-hosted macOS runners execute on real Apple
+hardware/OS, which is meaningfully stronger than cross-compilation, but
+they still do not replace a human clicking through the installed app.
+
+## 6. GitHub Actions cross-platform CI baseline
+
+A new workflow, `.github/workflows/cross-platform.yml`, was added by this
+milestone as a **portability gate**, not a release workflow: it verifies
+the shared application core compiles and its platform-neutral tests pass
+on each officially available target OS/architecture. It does not build an
+installer, does not run the 23 integration scripts, does not publish
+anything, and uses no secrets.
+
+### 6.1 Runner labels used (current, 2026-08-18, per GitHub's own runner
+reference documentation)
+
+| Target | Runner label | Notes |
+| --- | --- | --- |
+| Windows x64 | `windows-latest` | Currently maps to Windows Server 2025-based image; free for this public repository |
+| Linux x64 | `ubuntu-latest` | Currently maps to Ubuntu 24.04-based image; free for this public repository |
+| Linux ARM64 | `ubuntu-24.04-arm` | Native ARM64 hosted runner, free for public repositories; included because MediaMTX itself ships ARM64 releases (§3) |
+| macOS Apple Silicon | `macos-latest` (currently `macos-15`, M-series) | Free for this public repository |
+| macOS Intel | `macos-15-intel` | Free for this public repository; explicit Intel label rather than a "latest" alias since GitHub does not offer an Intel "latest" alias |
+
+This repository (`Czekosabe/streaming-tree-for-obs`) is public
+(`"private": false`, confirmed via the unauthenticated GitHub REST API
+during this milestone), so every one of these hosted runner types,
+including macOS, runs at no cost under GitHub's public-repository Actions
+policy.
+
+### 6.2 Job content
+
+Per platform: `gofmt -l .` (fails the job on any diff), `go vet ./...`,
+`go test -count=1 ./...`, `go build ./...`. On macOS specifically, `CGO_
+ENABLED` is left at its default (enabled) rather than forced to `0`, so the
+real Keychain backend in `internal/secrets` actually compiles - see §5.3.
+On Windows and Linux, `CGO_ENABLED=0` is used for `go build`/`go test`,
+matching this project's existing CGO-free posture (SQLite is `modernc.org/
+sqlite`, a pure-Go driver) - the real Windows Credential Manager and Linux
+Secret Service backends in `github.com/99designs/keyring` do not require
+CGO. A single Linux x64 job additionally runs the frontend checks
+(`npm ci`, `i18n:check`, `typecheck`, `lint`, `test -- --run`, `build`) -
+not duplicated across every OS, since the frontend build itself is
+platform-independent Node tooling and there is no platform-specific reason
+to repeat it four times. No job runs the opt-in real-credential-store
+smoke test (`keyring_store_smoketest_test.go` is guarded behind its own
+opt-in build tag/env var and is not exercised in CI); ordinary tests
+continue to use the existing fake secret store.
+
+### 6.3 Permissions and triggers
+
+The workflow declares `permissions: contents: read` only - no `write`,
+`packages`, or `id-token` scope, since it never publishes anything.
+Triggers are `pull_request`, `push` to `main`, and `workflow_dispatch`.
+No schedule trigger was added: this is a portability gate meant to run
+when code changes, not a recurring job burning macOS/ARM64 runner minutes
+on a timer with no corresponding change to review.
+
+### 6.4 Actual run result
+
+Recorded in the closing journal entry (`docs/progress.md`) with the real
+workflow run ID(s), per-job pass/fail outcome, and any fix made in
+response to a genuine failure - this document states the intended design;
+the journal entry states what the real first run actually did.
+
+## 7. Local cross-compilation checks performed
+
+From this Windows development machine, `GOOS=linux GOARCH=amd64
+CGO_ENABLED=0 go build ./cmd/server` and `GOOS=linux GOARCH=arm64 CGO_
+ENABLED=0 go build ./cmd/server` were both run and both exited 0 (2026-08-
+18). This is recorded as **Cross-compilation verified** for Linux x64/
+ARM64 build-time portability only - it is not runtime verification, and it
+predates and is superseded by the Native CI verification in §6 for the
+same targets.
+
+A `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/server` was also
+attempted and also exited 0 - but per §5.3, this result is **deliberately
+not recorded as any form of macOS verification**, because it silently
+excludes the real Keychain backend. The only meaningful macOS compile gate
+this project uses is the native, CGO-enabled macOS CI job in §6.
+
+## 8. Linux desktop / local mode
+
+**Status: Planned.** Concept: OBS/encoder, Streaming Tree, MediaMTX, and
+FFmpeg all run on the same Linux machine, preserving today's loopback-only
+model exactly as it is on Windows - this is not the remote server mode in
+§9.
+
+| Component | Status |
+| --- | --- |
+| Go build (`linux/amd64`, `linux/arm64`) | Native CI verified (§6); also independently cross-compilation verified from this machine (§7) |
+| Frontend build | Automated-build verified (platform-independent) |
+| SQLite | Native CI verified |
+| Browser UI | Planned - relies on a real default-browser launch, currently only `xdg-open` via the portable fallback (§3), unpackaged and untested on a real Linux desktop |
+| MediaMTX managed install | Planned - asset matrix already covers `linux-amd64`/`linux-arm64` (§3), install flow unexercised |
+| FFmpeg (operator-provided) | Planned - resolver logic already portable (§3), no install guidance written |
+| Secret Service credential store | Native CI verified for the *build* gate (§6/§10); a real D-Bus Secret Service daemon is not exercised in CI, see §10 for why that is deliberate, not a gap |
+| System TTS | **Unavailable today** - same honest `stub.go` behavior as macOS, no Linux provider exists |
+| Packaged browser launch / single-instance / fatal-alert UX | Compile-only fallbacks (§3), no native Linux desktop shell integration yet |
+| Package format (`.deb`/`.rpm`/AppImage/Flatpak/Snap) | Not chosen - Stage 20D1's own decision, out of scope here |
+
+The current absence of Linux TTS is stated plainly rather than hidden: the
+feature gap is real, and the application already reports it honestly at
+runtime via `Capabilities.Available == false` rather than silently
+degrading or pretending a provider exists.
+
+## 9. Linux headless / self-hosted server mode
+
+**Status: Planned, architecturally distinct from §8.** This is a
+different future product mode, not a configuration flag: OBS/encoder on
+one machine, the Streaming Tree server on a separate headless Linux
+machine, and a management browser possibly on a third machine, with
+destination platforms reached over the network from the server machine.
+
+This **cannot** be obtained today by simply setting a bind address like
+`STREAMING_TREE_HOST=0.0.0.0`, and this milestone deliberately does not do
+that. The reasons, each requiring dedicated future design work this
+document does not perform:
+
+- **Management authentication, sessions, CSRF, trusted origins.** The
+  current management API has no authentication at all - it relies entirely
+  on being reachable only from the same machine (loopback). A remote
+  server needs real login, session handling, CSRF protection, and an
+  explicit trusted-origin policy before it can safely accept a request
+  from anywhere but `localhost`.
+- **TLS / reverse-proxy contract and trusted proxy headers.** A remote
+  deployment needs an explicit decision about who terminates TLS and how
+  `X-Forwarded-*`-style headers are trusted, or Origin/CSRF checks become
+  meaningless behind a proxy.
+- **Rate limiting and secure remote shutdown.** The existing `POST /api/
+  system/shutdown` endpoint is protected only by requiring an exact JSON
+  body (defeating simple CSRF from an HTML form) plus loopback-only
+  reachability; loopback-only is the actual security boundary today, not
+  the JSON-body check alone, and that boundary disappears the moment the
+  port is remotely reachable.
+- **Public overlay exposure.** OBS Browser Source overlay/alert/widget
+  routes are currently reachable by anyone who can reach the loopback
+  port - fine today, not fine once that port is the public internet.
+- **Remote OBS ingest and ingest authentication/transport security.** See
+  §10 - this is large enough to warrant its own subsection.
+- **Headless secret storage.** See §11 - also large enough for its own
+  subsection.
+- **Service-user permissions, systemd lifecycle, logs, backup/restore,
+  firewall documentation.** None of this exists yet; a real headless
+  deployment needs a defined service user, a systemd unit with a real
+  lifecycle (start/stop/restart/logs via journald or a file), a backup/
+  restore story for the SQLite database, and operator-facing firewall
+  guidance - none of which is invented by this milestone.
+
+None of the above is implemented here. This section exists so that a
+future Stage 20D2 has a written starting point instead of rediscovering
+these requirements from scratch.
+
+## 10. Remote OBS ingest is a separate security boundary
+
+MediaMTX's RTMP listener and Control API are deliberately loopback-only
+today, and this milestone does not weaken that. Per MediaMTX's own
+upstream configuration reference (`mediamtx.yml`, checked during this
+milestone's research), the project already ships optional building blocks
+for a future authenticated/encrypted ingest path - `rtmpEncryption`
+(`no`/`strict`/`optional`) with `rtmpServerKey`/`rtmpServerCert` for RTMPS,
+an internal user database, external HTTP auth, or JWT/JWKS auth for the
+Control API, `rtmpTrustedProxies` and `apiTrustedProxies` for IP-based
+trust, and per-user IP allowlisting - but selecting and wiring any of this
+is explicitly deferred to a dedicated future server-security stage, not
+decided here. Binding an unauthenticated RTMP listener to `0.0.0.0` is
+explicitly rejected as a way to "fix" remote ingest; a safe model
+(authenticated RTMP/RTMPS, SRT if justified, a VPN/private-network
+deployment expectation, or an explicit MediaMTX auth mechanism) needs its
+own threat-model milestone. The MediaMTX Control API must remain private
+and must never become remotely exposed as a side effect of any future
+change.
+
+## 11. Headless secret storage is a hard design question
+
+`internal/secrets` currently only supports the three real OS-native
+keyring backends (§3): Windows Credential Manager, macOS Keychain, and
+Linux Secret Service. Per the freedesktop.org Secret Service specification
+(checked during this milestone's research), Secret Service is a D-Bus
+API backed by desktop-session daemons (GNOME Keyring, KWallet) that
+depends on an active D-Bus session bus - something a headless systemd
+service with no graphical login session typically does not have. This is
+a real, currently-unsolved gap for a future Linux headless server target,
+and this milestone does **not** solve it by introducing a plaintext
+`secrets.json`, an unencrypted config file, a plaintext env-file fallback,
+or a hardcoded master password. A future server-security stage must
+deliberately research and select a secure headless-appropriate mechanism
+(candidates worth that future research include a system-level secret
+manager, an operator-supplied encryption key combined with an encrypted
+on-disk store, or a dedicated secrets service) - none of that research or
+selection is performed here.
+
+`internal/secrets/keyring_store.go` already defers opening the real
+backend until first use rather than at construction (confirmed by direct
+reading during this milestone's audit, §3) - this was already true before
+this milestone and is a genuinely useful property for a future headless
+target (it means the binary does not hard-fail at startup just because no
+graphical session is present), but it does not by itself solve the
+headless secret-storage problem; it only avoids making it worse.
+
+## 12. MediaMTX platform matrix
+
+| Platform | Managed install status |
+| --- | --- |
+| `windows/amd64` | Supported (Stage 20A) |
+| `linux/amd64` | Asset resolvable (`internal/runtime/mediamtx/platform.go`), install flow Planned |
+| `linux/arm64` | Asset resolvable, install flow Planned |
+| `darwin/amd64` | Asset resolvable, install flow Planned |
+| `darwin/arm64` | Asset resolvable, install flow Planned |
+
+## 13. FFmpeg platform policy
+
+Unchanged everywhere: FFmpeg is always operator-provided and never
+bundled, on every platform, now and in the future - this project does not
+control FFmpeg's build provenance or licensing and does not take on that
+responsibility by shipping a copy. `internal/runtime/ffmpeg/resolver.go`
+is already fully portable (§3); only the operator-facing install guidance
+for non-Windows platforms remains to be written, as part of a future
+20C/20D milestone.
+
+## 14. TTS platform matrix
+
+| Platform | Status |
+| --- | --- |
+| Windows | Supported - real SAPI provider (`tts/windows.go`) |
+| macOS | Unavailable today - honestly reported via `Capabilities.Available == false`, no provider exists |
+| Linux | Unavailable today - same honest stub, no provider exists |
+
+No CI job or test on any platform is permitted to fake
+`Capabilities.Available = true` to claim parity; native macOS/Linux TTS is
+separate future feature work, not part of this baseline.
+
+## 15. Stage 20B updater: cross-platform artifact-identity constraint
+
+Stage 20B (the application updater) is **not implemented by this
+milestone**. This section only records a forward-looking architectural
+constraint so that when 20B is eventually built, it does not hard-code
+"there will always be exactly one Windows installer asset."
+
+The future update-check contract must identify a downloadable artifact by
+at least: **OS** (`windows`/`darwin`/`linux`), **architecture**
+(`amd64`/`arm64`), **package/artifact kind** (e.g. `installer`, `dmg`,
+`pkg`, `appimage`, `deb`, `rpm` - none chosen yet), **version**, a
+**SHA-256** digest, and a **download URL derived only from trusted release
+metadata** (never an arbitrary URL supplied to or accepted from the
+frontend). Concretely, a future Windows x64 release might select `windows/
+amd64/installer`, a future Apple Silicon Mac release `darwin/arm64/<signed
+package kind>`, and a future Linux release `linux/amd64` or `linux/arm64`
+with whatever package kind 20D eventually chooses. None of these package
+kinds are chosen by this milestone; only the shape of the identity concept
+is recorded here so 20B's design does not need to be reworked later to add
+multi-platform support after the fact.
+
+## 16. Current Windows artifact naming
+
+`scripts/installer/streaming-tree.iss` currently produces
+`StreamingTreeForOBS-Setup-<version>.exe` (e.g.
+`StreamingTreeForOBS-Setup-0.1.0.exe`), with no explicit OS/architecture
+token in the filename - acceptable today because Windows is the only
+platform that produces a release artifact at all, so there is nothing to
+disambiguate from. Renaming it now, before Stage 20B's updater or any
+multi-platform GitHub Release exists, would only churn the already-
+verified installer (`scripts/verify-installer.mjs`) for no present benefit
+and is deliberately not done by this milestone. The future naming contract
+for when a single GitHub Release carries multiple platforms' artifacts is
+recorded here instead: a name that encodes product, version, OS, and
+architecture together, for example (illustrative only, not a byte-exact
+final spelling) `StreamingTreeForOBS-<version>-windows-amd64-setup.exe`
+alongside a future `StreamingTreeForOBS-<version>-darwin-arm64.dmg` and
+`StreamingTreeForOBS-<version>-linux-amd64.<package-kind>`. Whichever
+milestone actually introduces the second platform's artifact should revisit
+the Windows name at that point, not before.
+
+## 17. Roadmap (Stage 20, expanded)
+
+| Stage | Scope | Status |
+| --- | --- | --- |
+| 20A | Windows production runtime and installer (see [`windows-packaging.md`](windows-packaging.md)) | **Completed** |
+| 20B | Application updater (GitHub Releases check, update UI, download/verification, installer/updater handoff) - must use the cross-platform artifact-identity concept in §15 even though Windows x64 is the first and only platform it will actually serve at launch | Planned |
+| 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification | Planned |
+| 20D | Linux platform support, split into: | Planned |
+| 20D1 | Linux local/desktop runtime and packaging (§8) | Planned |
+| 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |
+| 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
+
+Stage 20 as a whole remains **Incomplete**. This cross-platform
+portability baseline milestone does not complete any of 20B-20E; it only
+establishes the gates and roadmap that will let them proceed without
+re-litigating platform scope each time.
+
+## 18. What this milestone explicitly did not do
+
+No macOS package (`.app`/`.dmg`/`.pkg`), no Linux package (`.deb`/`.rpm`/
+AppImage/Flatpak/Snap/systemd service), no code signing, no notarization
+submission, no Apple Developer account or certificate request, no Stage
+20B updater code, no GitHub Release, no Git tag, no binding of the
+management API to a non-loopback address, no weakening of MediaMTX's
+loopback-only RTMP/Control-API policy, no remote authentication system, no
+TLS termination, no headless secret-storage fallback of any kind, and no
+macOS/Linux TTS implementation. Every one of these remains exactly as
+future-scoped as it was before this milestone, with this document as the
+place their eventual design work should start from.

@@ -30019,7 +30019,7 @@ instructions.
   logical commit.
 
 ### Commits this milestone (chronological)
-1. This entry - `fix(docs): reconcile Stage 20A living state`
+1. `2b72fcb` - `fix(docs): reconcile Stage 20A living state`
 
 ### Continuous-execution rule compliance
 No background command was required for this documentation-only
@@ -30027,3 +30027,158 @@ change, so nothing was polled. This entry is written, verified via
 direct file read, and will be followed immediately by staging,
 committing, pushing, and push-verification in the same turn, with no
 pause for operator confirmation.
+
+## docs: define cross-platform support roadmap
+
+### Governing task
+Continuing the CROSS-PLATFORM PORTABILITY BASELINE + STAGE 20 RELEASE
+ROADMAP milestone: §4 (audit Stage 20A for Windows coupling), §5
+(current official-source research), §6-§18 (create the canonical
+`docs/platform-support.md` contract and expand the living roadmap),
+performed and committed together since the roadmap-table edits are a
+direct, inseparable consequence of the contract document itself.
+
+### §4 - Stage 20A Windows-coupling audit
+Inspected the real Stage 20A source: `cmd/server/main.go`,
+`internal/buildinfo`, `internal/webassets`, the three runtime adapter
+packages (`browserlaunch`, `singleinstance`, `nativealert`), the HTTP
+production/legal/shutdown routes, `internal/secrets/keyring_store.go`,
+`internal/provider/tts`, `internal/runtime/mediamtx/platform.go`,
+`internal/runtime/ffmpeg/resolver.go`, `internal/runtime/branch/
+process_{windows,unix}.go`, `go.mod`/`go.sum`, and the Windows-only
+build/installer scripts. Result: no unnecessary Windows coupling was
+found anywhere, so no refactor was performed. `main.go` only calls the
+three runtime adapters through their portable function signatures and
+never branches on `runtime.GOOS` itself; every Windows-only package
+already has a real, previously-written `!windows` counterpart;
+`buildinfo` and `webassets` are pure Go with no platform code at all;
+`internal/secrets/keyring_store.go` already defers opening the real
+OS backend to first use (relevant later for headless-server design);
+the MediaMTX asset resolver already carries entries for
+windows/amd64, linux/amd64, linux/arm64, darwin/amd64, and
+darwin/arm64; the FFmpeg resolver's only `runtime.GOOS` use is a
+`.exe` suffix choice and skipping the (nonexistent on Windows)
+executable-bit check. `cmd/server` was confirmed to actually
+cross-compile cleanly for `linux/amd64` and `linux/arm64`
+(`CGO_ENABLED=0`, both exit 0, verified locally). A `darwin/arm64`
+`CGO_ENABLED=0` cross-compile from this Windows machine was also
+attempted and also exited 0 - but is deliberately **not** recorded as
+any form of macOS verification: direct inspection of
+`github.com/99designs/go-keychain`'s `keychain.go` (`+build darwin`,
+`import "C"` against CoreFoundation/Security) and
+`github.com/99designs/keyring`'s own `keychain.go`
+(`//go:build darwin && cgo`) proved that a CGO-disabled cross-compile
+silently excludes the real Keychain backend from the binary while
+still exiting 0 - exactly the trap the governing task warned about.
+This finding, and the reasoning for why only a native, CGO-enabled
+macOS CI job can serve as a meaningful compile gate, is recorded in
+`docs/platform-support.md` §5.3/§7.
+
+### §5 - Primary-source research (2026-08-18)
+- GitHub Actions runner labels: GitHub's own runner-reference
+  documentation confirms current hosted labels `windows-latest`
+  (Windows Server 2025-based), `ubuntu-latest` (Ubuntu 24.04-based),
+  `ubuntu-24.04-arm` (native Linux ARM64), `macos-latest`/`macos-15`
+  (Apple Silicon), and `macos-15-intel` (Intel) - all free for this
+  repository, confirmed public (`"private": false`) via the
+  unauthenticated GitHub REST API.
+- macOS build/distribution: Apple's own developer documentation on
+  notarizing macOS software confirms Developer ID signing with the
+  hardened runtime enabled, submission via `notarytool`, Gatekeeper's
+  first-launch check of the notarization ticket, and `.app`/`.dmg`/
+  `.pkg`/`.zip` as the relevant distribution shapes - none of this
+  requires Xcode itself for a Go binary, but does require a real
+  Apple Developer Program membership neither this project nor its
+  operator currently has.
+- Linux desktop/XDG conventions and Secret Service: the
+  freedesktop.org Secret Service specification confirms it is a
+  D-Bus API backed by desktop-session daemons (GNOME Keyring,
+  KWallet) that depends on an active D-Bus session bus - the concrete
+  reason a headless systemd service (no graphical login session)
+  cannot rely on it, informing the future Stage 20D2 headless-secret-
+  storage gate.
+- MediaMTX: its own upstream `mediamtx.yml` configuration reference
+  documents `rtmpEncryption`/`rtmpServerKey`/`rtmpServerCert` for
+  RTMPS, internal/external-HTTP/JWT auth options for the Control API,
+  and `rtmpTrustedProxies`/`apiTrustedProxies` IP-allowlisting - noted
+  as future building blocks only; the current loopback-only policy is
+  unchanged and not weakened by this research.
+
+### §6-§18 - `docs/platform-support.md` created
+New canonical cross-platform contract, covering: the precise Supported/
+Automated-build verified/Native CI verified/Cross-compilation verified/
+Planned/Experimental/Deferred/Unsupported/Not verified vocabulary; the
+one-application-core architecture rule; the §4 Windows-coupling audit
+result; Windows x64 status (Supported, primary target, unchanged from
+20A); macOS per-architecture status tables for arm64/amd64 with the
+Keychain CGO build-gate explanation and the Planned→Automated-build/
+test verified→Beta→Fully-supported progression; the new
+`.github/workflows/cross-platform.yml` design (runner labels, job
+content, permissions, triggers - see below); the local cross-
+compilation results; Linux desktop/local mode status; Linux headless/
+server mode as an explicitly distinct future product mode with its
+required-but-undesigned pieces listed (management auth/CSRF/sessions,
+TLS/reverse-proxy trust, remote shutdown, public overlay exposure,
+remote OBS ingest, headless secret storage, systemd lifecycle);
+the remote-OBS-ingest security boundary (loopback-only MediaMTX
+unchanged, future auth options recorded for later research only);
+the headless-secret-storage hard design question (explicitly rejecting
+a plaintext-secrets shortcut); the MediaMTX and FFmpeg platform
+matrices; the TTS platform matrix (Windows real, macOS/Linux honestly
+unavailable); the Stage 20B cross-platform artifact-identity
+constraint (OS/architecture/package-kind/version/SHA-256/trusted-
+metadata-only download URL); the current Windows installer artifact-
+naming audit (kept as-is, future multi-platform naming contract
+documented instead of renaming now); and the expanded Stage
+20A/20B/20C/20D1/20D2/20E roadmap table.
+
+### Roadmap expansion applied consistently
+The same 20A/20B/20C/20D1/20D2/20E split was applied to the roadmap
+tables in `README.md`, `docs/project-overview.md`, and
+`docs/engagement-architecture.md`, each cross-referencing
+`docs/platform-support.md` for the 20B artifact-identity constraint
+and the 20C/20D/20E scope. `docs/windows-packaging.md` §24's "later
+Stage 20 work" line was tightened to "Stage 20E" and now points at
+`platform-support.md` for the full contract. A new "Platform support"
+section was added to `README.md` (between Roadmap and Requirements)
+giving a concise, honest, user-facing summary per platform, including
+an explicit instruction not to expose port 8080 or MediaMTX's ports to
+a LAN or the public internet. `PRIVACY.md`'s updater section was
+corrected from "Stage 20's...mechanism" to "Stage 20B's...mechanism"
+for precision - the underlying claim (not implemented, no update
+traffic) was already true and remains true.
+
+### Validation
+Reviewed the full diff of every touched file before staging. No
+product code was changed, so no build/test regression was required for
+this documentation commit. The new `docs/platform-support.md` and the
+new `.github/workflows/cross-platform.yml` (added in the next, separate
+commit per the governing task's own instruction to commit the contract
+document before any CI/code change) were both reviewed by direct
+re-reading rather than only trusting the write operation.
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20A: Completed (unchanged).
+- Stage 20 (whole): Incomplete (unchanged) - now expressed as
+  20A Completed / 20B Planned / 20C Planned / 20D1 Planned / 20D2
+  Planned / 20E Planned across every living roadmap document.
+- Cross-platform portability baseline milestone: in progress, second
+  logical commit.
+
+### Commits this milestone (chronological)
+1. `2b72fcb` - `fix(docs): reconcile Stage 20A living state`
+2. This entry - `docs: define cross-platform support roadmap`
+
+### Continuous-execution rule compliance
+The only "background" work this entry depended on was primary-source
+web research (GitHub Actions docs, Apple Developer docs, freedesktop.org
+specifications, MediaMTX's own config reference) and two local
+cross-compilation builds, both run synchronously to completion and
+inspected directly rather than assumed - no turn ended on passive-
+waiting language, and no operator message was needed to proceed from
+research into the contract document, the roadmap edits, staging,
+committing, pushing, and push-verification, all performed in the same
+continuous turn.
