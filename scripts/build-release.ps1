@@ -44,7 +44,16 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+
+    # Builds with `-tags integration`, so the resulting binary is
+    # otherwise-identical to a real production release EXCEPT that the
+    # updater's GitHub API base URL can be redirected via the
+    # STREAMING_TREE_TEST_UPDATE_API_BASE_URL environment variable (see
+    # cmd/server/updater_testhook_integration.go). Used only by
+    # scripts/verify-updater.mjs (docs/updater.md §41) - never set for a
+    # real release build, and never the default.
+    [switch]$IntegrationTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -185,7 +194,12 @@ Push-Location $ServerDir
 try {
     $env:GOOS = 'windows'
     $env:GOARCH = 'amd64'
-    go build -ldflags $Ldflags -o $ExePath ./cmd/server
+    if ($IntegrationTest) {
+        go build -tags integration -ldflags $Ldflags -o $ExePath ./cmd/server
+    }
+    else {
+        go build -ldflags $Ldflags -o $ExePath ./cmd/server
+    }
     if ($LASTEXITCODE -ne 0) { Fail 'go build of the release executable failed.' }
 }
 finally {

@@ -142,6 +142,19 @@ func runUpdateHelper(parentPID int, candidate, targetExe, expectedVersion string
 	}
 }
 
+// newUpdaterClient builds the updater's GitHub API client. The default
+// here - the only one a normal `go build ./cmd/server` (no tags) can
+// ever produce - always talks to the real, canonical GitHub host
+// (docs/updater.md §1/§15). A companion file gated behind the
+// `integration` build tag (updater_testhook_integration.go) may
+// override this variable at init time; that file, and the
+// updater.NewTestClient symbol it depends on, do not exist at all
+// unless the whole binary was built with `-tags integration` - see
+// that file's own doc comment for the full reasoning.
+var newUpdaterClient = func(installedVersion string) *updater.Client {
+	return updater.NewClient(installedVersion)
+}
+
 // run holds the real main so that every exit path can return an error and still
 // let deferred cleanup happen (os.Exit in main would skip it).
 func run() error {
@@ -698,7 +711,7 @@ func run() error {
 	// traffic or install action outside a packaged release build.
 	updateSettingsService := updatersettings.NewService(sqlite.NewUpdateSettingsRepository(db.DB), nil)
 	updateManager := updater.NewManager(updater.Options{
-		Client:         updater.NewClient(buildinfo.EffectiveVersion()),
+		Client:         newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:       updateSettingsService,
 		Branches:       branchManager,
 		Handoff:        updater.NewPlatformHandoff(cfg.DataDir),

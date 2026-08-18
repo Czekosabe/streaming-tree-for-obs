@@ -31677,3 +31677,145 @@ No background command was required for this unit - written, tested
 (including diagnosing and fixing the test's own first-draft bug),
 and validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## test: verify the application updater end to end
+
+### The core architectural problem this commit solves
+docs/updater.md §1/§15 fixes the production updater's GitHub API host
+as a Go constant with no override mechanism of any kind - a deliberate
+security boundary. That same boundary makes a real, hermetic,
+no-real-GitHub-account integration test of the actual installed
+production binary structurally impossible by design: there is no way
+to point a real `go build ./cmd/server` binary at anything but the
+real `api.github.com`. Solved the way docs/updater.md §1 itself
+already committed to: "an integration build tag... unavailable in
+ordinary production builds."
+
+### What was built
+- `internal/updater/testclient_integration.go` (`//go:build
+  integration`) - exports `NewTestClient(baseURL, installedVersion)`,
+  a thin wrapper around the package's own already-existing unexported
+  `newClient` test seam. This symbol does not exist at all unless the
+  whole binary is built with `-tags integration` - verified
+  structurally, not just asserted: a throwaway probe test confirmed
+  `go vet ./internal/updater/...` (no tags) fails with `undefined:
+  NewTestClient`, while `go vet -tags integration ./internal/updater/...`
+  compiles it cleanly.
+- `cmd/server/main.go` - the inline `updater.NewClient(...)` call
+  extracted into an overridable `newUpdaterClient` variable, defaulting
+  to the real production client - the only behavior a normal `go build
+  ./cmd/server` (no tags) can ever produce.
+- `cmd/server/updater_testhook_integration.go` (`//go:build
+  integration`) - an `init()` that, only when both the `integration`
+  tag was used to build the WHOLE binary AND the env var
+  `STREAMING_TREE_TEST_UPDATE_API_BASE_URL` is actually set at
+  runtime, reassigns `newUpdaterClient` to `updater.NewTestClient`.
+  Two independent gates (compile-time tag, runtime env var), neither
+  of which a production build or a production environment can trigger
+  by accident.
+- `scripts/build-release.ps1` extended with an additive `-IntegrationTest`
+  switch (mirroring the existing `-SkipInstaller` switch) that passes
+  `-tags integration` to the one `go build` invocation - the real,
+  already-verified release pipeline (frontend build, embedding, Inno
+  Setup compilation, manifest generation) is reused unchanged; nothing
+  about it was forked or duplicated. Omitting the switch (every real
+  release build) is byte-for-byte the existing behavior.
+- `scripts/verify-updater.mjs` - the new canonical integration script
+  **24** (docs/updater.md §41; the 23 existing scripts are unchanged
+  and stay in their existing order - this is a genuinely new
+  capability, the same justification Stage 20A used when it added
+  script 23).
+
+### What the new script actually proves (all real, nothing mocked at
+the OS/process level)
+Builds a real OLD (0.9.0) and a real NEW (0.9.1) release, both with
+`-IntegrationTest`, via the real `build-release.ps1` pipeline
+(including the real manifest generator from the previous commit).
+Really, silently installs the OLD version via the real Inno Setup
+installer into a hermetic `/DIR=` location (never the operator's real
+install path), confirming Inno Setup really created the
+`unins000.exe`/`unins000.dat` installed-context markers
+`WindowsHandoff.Available()` depends on. Launches the real installed
+OLD executable with the integration-only env var pointing it at a
+local fake GitHub API server this script itself implements (serving
+only the two endpoints the real client actually calls - never
+anything resembling the real GitHub host). Proves, all against the
+real running application over its real HTTP API: a version-mismatched
+manifest is rejected (`invalid_manifest`); a tampered installer with a
+manifest-agreeing declared size but wrong content is rejected
+(`hash_mismatch`) - deliberately the exact same "same length,
+different content" shape the previous commit's own Go unit test
+isolated, now proven through the real network/download path instead
+of only in-process; the real successful cycle - check, download,
+verify - reaches `ready_to_install` with `installBlocked: false`;
+`POST /api/updates/install` triggers the real external-helper handoff
+- a real `OpenProcess`/`WaitForSingleObject` wait for the real old
+process to actually exit, a real silent Inno Setup upgrade in place
+(never `/DIR=` again - the same AppId-based upgrade detection
+researched for docs/updater.md §20), and a real restart; the
+restarted process reports the real new version both over its HTTP API
+and via `--version` against the real file now on disk; the one-shot
+post-update result (`ok`, `0.9.0` → `0.9.1`) is surfaced exactly once
+and then cleared on the next read; and a final real silent uninstall
+succeeds. 14 steps, all passing, exercising exactly one long-running
+fake-GitHub server across all three scenarios (mode-switched, not
+three separate servers) so the version-mismatch and hash-mismatch
+rejections and the real successful cycle all run in one continuous,
+realistic session against the same running application instance.
+
+### Real run result
+Ran the complete script for real (several minutes: two full release
+builds, two Inno Setup compilations, a real install, a real upgrade, a
+real uninstall) - **all 14 steps passed on the first attempt**, exit
+code 0. Verified afterward via `tasklist` that no
+`streaming-tree-server.exe`/`update-helper.exe` process was left
+running, and the hermetic staging directory was fully removed - the
+script's own retrying cleanup (file handles can briefly linger right
+after an uninstaller exits, exactly the same reasoning
+`verify-installer.mjs` already documents) was not even needed this
+run.
+
+### Validation
+`go build ./...` and `go build -tags integration ./...` both clean.
+`go vet ./...` and `go vet -tags integration ./...` both clean.
+`go test ./...` (whole repo, after restoring the two tracked
+`webassets` placeholder `.gitkeep` files the real release builds
+predictably overwrote again - the same established, expected pattern
+from every prior release-build-touching milestone) - all PASS.
+`gofmt -l` clean.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation essentially complete (manifest,
+  GitHub client, settings, the update-manager state machine, the full
+  HTTP API, the real Windows handoff, the full frontend, the release-
+  pipeline manifest generator, and the new canonical integration
+  script 24 are all done and verified for real end to end); only the
+  documentation pass and the final full local regression remain before
+  this milestone can close.
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. `7a4fac2` - `feat(server): add the Windows update-installer handoff`
+8. `4bbf685` - `feat(web): add the Updates settings panel and global
+   banner`
+9. `be6115f` - `build: generate the release manifest in the release
+   pipeline`
+10. `df4efef` - `test: verify Download detects a real hash mismatch`
+11. This entry - `test: verify the application updater end to end`
+
+### Continuous-execution rule compliance
+A structural probe (confirming `NewTestClient` is genuinely absent
+without the integration tag), a real runtime smoke test of the
+GitHub-API-redirect hook against a throwaway build, and the full
+several-minute `verify-updater.mjs` run itself were all executed
+synchronously and their real output inspected directly - the full run
+was backgrounded only because of its multi-minute duration, and was
+actively watched via a Monitor task to its real completion rather than
+assumed. No AskUserQuestion call was made.
