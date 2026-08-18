@@ -33398,3 +33398,89 @@ response. Windows CI stability is re-confirmed by this commit's own
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: reflect Stage 20D1 Linux desktop packaging status
+
+### What changed
+Implements docs/linux-desktop-packaging.md §38-41 (PRIVACY/README/
+platform-support living-doc updates), following the same first native-
+CI-evidence-in-hand discipline as the Stage 20C1 milestone.
+
+1. **`PRIVACY.md`**: extended the existing macOS updater-network-
+   activity note to also cover Linux - a packaged Linux build performs
+   no automatic or manual update-check network activity either, for
+   the same platform-capability reason as macOS (no install path
+   exists for the updater to hand off to yet).
+2. **`docs/platform-support.md`** §8: rewritten from "Planned" to
+   reflect the real, now-implemented and natively-verified Stage 20D1
+   state - the component table now shows real browser-launch/single-
+   instance/fatal-startup-UX/package-format rows instead of "compile-
+   only fallback"/"not chosen", and records the real ephemeral D-Bus/
+   Secret Service smoke test. §17's roadmap table splits 20D into
+   20D1 (In progress) / 20D2 (Planned), matching docs/linux-desktop-
+   packaging.md.
+3. **`README.md`**: both narrative summaries of Stage 20's remaining
+   work now say "20D1 in progress, 20D2 planned" instead of an
+   undifferentiated "20D's Linux portability"; the roadmap table splits
+   the single 20D1 row's status to "In progress"; the Linux (desktop/
+   local) bullet in the platform-support summary is rewritten to
+   describe the real `.deb` native-CI verification instead of
+   "planned, not packaged", while explicitly narrowing the claim to
+   the Debian/Ubuntu family only, never generic "Linux supported", and
+   stating no operator-owned physical Linux desktop test occurred.
+4. **`docs/project-overview.md`** §13: the 20D1 roadmap row updated to
+   match, pointing at the new contract document.
+
+### Native Linux CI evidence (this milestone, recorded here since it
+motivates the wording above)
+`.github/workflows/linux-package.yml`'s first-ever run (commit
+`d910bfc`, run id `32175806115`) succeeded on both `package
+(linux-amd64)` and `package (linux-arm64)` on the first attempt, each
+completing two independent build-then-verify passes - real `.deb`
+assembly via `dpkg-deb`, real `DEBIAN/control` metadata, a real
+`dpkg -i` install as root followed by the packaged executable running
+as a normal unprivileged user, the real `.desktop` entry (validated
+with `desktop-file-validate`), the full `verify-linux-package.mjs`
+scenario list (control metadata, legal documents, `--version`, health/
+About/frontend/SPA/legal routes, honest TTS/updater unavailability, the
+real `flock`-based second-launch detection, real graceful shutdown, and
+a real `dpkg -r` removal proving application data survives it) - twice
+per architecture, zero leftover processes after either pass. The same
+run's dedicated Secret Service smoke test step (an ephemeral
+`dbus-run-session` plus `gnome-keyring-daemon --unlock`, running the
+existing opt-in `TestKeyringStoreAgainstTheRealOSCredentialStore`) also
+completed.
+
+### A fourth windows-amd64 CI flake, now the clearest evidence yet
+The same commit's `cross-platform.yml` run (id `32175806079`) produced
+a **fourth** occurrence of the exact same signature already documented
+three times before in this project's history (Stage 20B's
+`58464ee`/run `32118459362`; Stage 20C1's `56dc658`/run
+`32159238543`; this milestone's own `ab09cba`/run `32173547180`, which
+had itself immediately recovered on the very next commit, `a80fa18`):
+`backend (windows-amd64)`'s `go test` step failed (verified precisely
+with a real JSON parse of the Actions API response, not the fragile
+grep-based parsing used earlier in this session - step 7 `go test`
+`completed failure`, step 8 `go build` `completed skipped`), while
+every other job (frontend, linux-amd64, linux-arm64, macos-arm64,
+macos-amd64) passed, and the same commit's `linux-package.yml` run
+(`32175806115`) passed in full on both architectures.
+
+This occurrence is the strongest evidence yet that the cause is purely
+environmental: commit `d910bfc` changed **zero Go source files** at
+all - only `scripts/build-release-linux.sh` (bash), `.github/workflows/
+linux-package.yml` (YAML), `scripts/verify-linux-package.mjs`
+(JavaScript), and `docs/progress.md`. The Go test suite `go test`
+executed against was therefore byte-identical to the one that had just
+passed cleanly on the immediately preceding commit (`ab09cba`) minutes
+earlier, with no code difference of any kind, anywhere, between the two
+runs. No code change was made in response; no CI leg was weakened. This
+will be re-confirmed, as in every prior occurrence, by the next
+commit's `cross-platform.yml` run.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: reflect Stage 20D1 Linux desktop packaging status`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

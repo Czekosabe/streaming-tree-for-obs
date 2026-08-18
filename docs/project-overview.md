@@ -1126,7 +1126,7 @@ it is architected; this table only tracks status and dependencies.
 | 20B | Application update system: GitHub Releases check, update UI, download/verification, real Windows external-installer handoff (§12.1.1, see [updater.md](updater.md)); already uses the cross-platform artifact-identity concept defined in [platform-support.md](platform-support.md) §15, with Windows x64 as the only platform it currently serves | **Completed** |
 | 20C1 | macOS packaged runtime: unsigned `.app`/DMG, real lifecycle adapters, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, public/Beta readiness (see [macos-packaging.md](macos-packaging.md)) | Planned - externally gated on real Apple Developer credentials |
-| 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) | Planned |
+| 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | In progress |
 | 20D2 | Linux headless/self-hosted server mode and remote security (see [platform-support.md](platform-support.md) §9-§11) | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 

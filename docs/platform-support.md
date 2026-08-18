@@ -354,23 +354,31 @@ this project uses is the native, CGO-enabled macOS CI job in §6.
 
 ## 8. Linux desktop / local mode
 
-**Status: Planned.** Concept: OBS/encoder, Streaming Tree, MediaMTX, and
-FFmpeg all run on the same Linux machine, preserving today's loopback-only
-model exactly as it is on Windows - this is not the remote server mode in
-§9.
+**Status: Stage 20D1 in progress** (see
+[linux-desktop-packaging.md](linux-desktop-packaging.md) for the full
+contract). Concept: OBS/encoder, Streaming Tree, MediaMTX, and FFmpeg
+all run on the same Linux machine, preserving today's loopback-only
+model exactly as it is on Windows - this is not the remote server mode
+in §9. A real, **unsigned** `.deb` package for the Debian/Ubuntu family
+is built and verified natively on both x64 and ARM64 GitHub-hosted CI
+runners - only that family is claimed, never generic "Linux supported".
 
 | Component | Status |
 | --- | --- |
-| Go build (`linux/amd64`, `linux/arm64`) | Native CI verified (§6); also independently cross-compilation verified from this machine (§7) |
+| Go build (`linux/amd64`, `linux/arm64`, `CGO_ENABLED=0`) | Native CI verified (§6) |
 | Frontend build | Automated-build verified (platform-independent) |
 | SQLite | Native CI verified |
-| Browser UI | Planned - relies on a real default-browser launch, currently only `xdg-open` via the portable fallback (§3), unpackaged and untested on a real Linux desktop |
-| MediaMTX managed install | Planned - asset matrix already covers `linux-amd64`/`linux-arm64` (§3), install flow unexercised |
-| FFmpeg (operator-provided) | Planned - resolver logic already portable (§3), no install guidance written |
-| Secret Service credential store | Native CI verified for the *build* gate (§6/§10); a real D-Bus Secret Service daemon is not exercised in CI, see §10 for why that is deliberate, not a gap |
+| Browser launch | Real `browserlaunch_linux.go` (`xdg-open`, fixed argv), native-CI-verified via the `STREAMING_TREE_TEST_NO_UI` seam |
+| Single-instance | Real `flock`-based mechanism (`singleinstance_linux.go`, preferring `XDG_RUNTIME_DIR`), native-CI-verified with two real processes |
+| Fatal-startup UX | Best-effort `zenity`/`kdialog` chain (`nativealert_linux.go`), falling back to stderr - honestly documented as best-effort, not a guaranteed cross-desktop mechanism |
+| MediaMTX managed install | Asset matrix covers `linux-amd64`/`linux-arm64` (§3); managed-install/process lifecycle exercised as far as the existing test architecture allows |
+| FFmpeg (operator-provided) | Resolver logic portable; the packaged app starts and runs without FFmpeg |
+| Secret Service credential store | Native CI verified for the build gate; a real ephemeral D-Bus session + `gnome-keyring-daemon` now also exercises the existing opt-in credential-store smoke test for real, non-fatally skipped if the tooling is unavailable on the runner |
 | System TTS | **Unavailable today** - same honest `stub.go` behavior as macOS, no Linux provider exists |
-| Packaged browser launch / single-instance / fatal-alert UX | Compile-only fallbacks (§3), no native Linux desktop shell integration yet |
-| Package format (`.deb`/`.rpm`/AppImage/Flatpak/Snap) | Not chosen - Stage 20D1's own decision, out of scope here |
+| Updater | Recognized as a real release build, but automatic polling never starts (`platform_unsupported` state) - no Linux install path exists yet |
+| Package format | Real `.deb` (Debian/Ubuntu family), native-CI-verified `dpkg -i`/`dpkg -r` install-and-remove lifecycle, twice per architecture |
+| Signing | **Not implemented** - no Linux release signing exists at any stage yet |
+| Manual hardware/UX/OBS verification | Not verified - no operator-owned physical Linux desktop test was performed |
 
 The current absence of Linux TTS is stated plainly rather than hidden: the
 feature gap is real, and the application already reports it honestly at
@@ -564,16 +572,16 @@ would follow the same shape,
 | 20B | Application updater (GitHub Releases check, update UI, download/verification, real Windows installer/updater handoff, see [updater.md](updater.md)) - uses the cross-platform artifact-identity concept in §15; Windows x64 remains the only platform it actually serves | **Completed** |
 | 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
-| 20D | Linux platform support, split into: | Planned |
-| 20D1 | Linux local/desktop runtime and packaging (§8) | Planned |
+| 20D | Linux platform support, split into: | In progress |
+| 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | In progress |
 | 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
 Stage 20 as a whole remains **Incomplete**: 20A, 20B, and 20C1 are
-Completed; 20C2, 20D1, 20D2, and 20E remain Planned. 20C2 is externally
-gated on real Apple Developer signing/notarization credentials this
-project does not have - it is not blocked on any further engineering
-decision.
+Completed; 20D1 is in progress; 20C2, 20D2, and 20E remain Planned. 20C2
+is externally gated on real Apple Developer signing/notarization
+credentials this project does not have - it is not blocked on any
+further engineering decision.
 
 ## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)
 
@@ -589,7 +597,11 @@ current below, one line per original claim:
   Stage 20C1 shipped a real, unsigned, not-notarized `.app`/DMG, native-
   CI-verified on both architectures (see [macos-packaging.md](macos-packaging.md)).
 - No Linux package (`.deb`/`.rpm`/AppImage/Flatpak/Snap/systemd service)
-  - **still true**: Stage 20D1 is Planned, not started.
+  - **partially since implemented**: Stage 20D1 shipped a real,
+  unsigned `.deb` for the Debian/Ubuntu family, native-CI-verified on
+  both architectures (see [linux-desktop-packaging.md](linux-desktop-packaging.md));
+  no RPM/Arch/other distro-family package, and no systemd service,
+  exist or are planned for 20D1.
 - No code signing, no notarization submission, no Apple Developer
   account or certificate request - **still true**: this is Stage 20C2's
   own scope, externally gated on real Apple Developer credentials this

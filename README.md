@@ -84,13 +84,15 @@ TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
-work (20C2's macOS signing/notarization/updater handoff, 20D's Linux
-portability, and 20E's final hardening — Stage 20A's own Windows
-production runtime/installer, 20B's application updater, and 20C1's
-unsigned macOS packaged runtime are already complete, see
+work (20C2's macOS signing/notarization/updater handoff, 20D1's Linux
+desktop packaging in progress, 20D2's Linux headless/remote mode, and
+20E's final hardening — Stage 20A's own Windows production runtime/
+installer, 20B's application updater, and 20C1's unsigned macOS
+packaged runtime are already complete, see
 [`docs/windows-packaging.md`](docs/windows-packaging.md),
-[`docs/updater.md`](docs/updater.md), and
-[`docs/macos-packaging.md`](docs/macos-packaging.md)) — detailed in
+[`docs/updater.md`](docs/updater.md),
+[`docs/macos-packaging.md`](docs/macos-packaging.md), and
+[`docs/linux-desktop-packaging.md`](docs/linux-desktop-packaging.md)) — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
@@ -223,10 +225,11 @@ engagement piece above in order (stages 8A through 18B).
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
 > goals/supporter-widgets foundation — Stage 20's remaining work
-> (20C2's macOS signing/notarization/updater handoff, 20D's Linux
-> portability, and 20E's final hardening; Stage 20A's own Windows
-> production runtime/installer, 20B's application updater, and 20C1's
-> unsigned macOS packaged runtime are already complete) — is still
+> (20C2's macOS signing/notarization/updater handoff, 20D1's Linux
+> desktop packaging in progress, 20D2's Linux headless/remote mode, and
+> 20E's final hardening; Stage 20A's own Windows production
+> runtime/installer, 20B's application updater, and 20C1's unsigned
+> macOS packaged runtime are already complete) — is still
 > **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -304,7 +307,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 20B | Application update system (GitHub Releases check, update UI, real Windows installer/updater handoff), see [updater.md](docs/updater.md) | **Completed** |
 | 20C1 | macOS packaged runtime: unsigned `.app`/DMG, real macOS lifecycle adapters (browser launch, single-instance via `flock`, native NSAlert fatal-startup UX), and native macOS CI package verification, see [macos-packaging.md](docs/macos-packaging.md) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, and public/Beta readiness, see [macos-packaging.md](docs/macos-packaging.md) | Planned — externally gated on real Apple Developer credentials |
-| 20D1 | Linux local/desktop runtime and packaging, see [platform-support.md](docs/platform-support.md) | Planned |
+| 20D1 | Linux local/desktop runtime and packaging: a real `.deb` package for the Debian/Ubuntu family, native x64/ARM64 CI package verification, see [linux-desktop-packaging.md](docs/linux-desktop-packaging.md) | In progress |
 | 20D2 | Linux headless/self-hosted server mode and remote security, see [platform-support.md](docs/platform-support.md) | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 
@@ -349,10 +352,20 @@ version:
   rather than faking it. Stage 20C2 (signing, notarization, updater
   install handoff, public readiness) is planned, externally gated on
   real Apple Developer credentials.
-- **Linux (desktop/local)** — planned, not packaged. Native GitHub-hosted
-  CI compiles and tests the shared core on Linux x64 and Linux ARM64. No
-  `.deb`/`.rpm`/AppImage/Flatpak/Snap exists yet. System text-to-speech is
-  unavailable today on Linux, same honest limitation as macOS.
+- **Linux (desktop/local)** — Stage 20D1 (in progress, see
+  [`docs/linux-desktop-packaging.md`](docs/linux-desktop-packaging.md)):
+  a real `.deb` package for the Debian/Ubuntu family, built and verified
+  natively on both x64 and ARM64 GitHub-hosted CI runners (a real
+  `CGO_ENABLED=0` statically-linked build, a real `flock`-based single-
+  instance mechanism, a real `.desktop` entry, a real Secret Service
+  credential-store smoke test against an ephemeral D-Bus session, and a
+  real `dpkg -i`/`dpkg -r` install-and-remove lifecycle) - **only the
+  Debian/Ubuntu family is claimed**, never generic "Linux supported";
+  no RPM/Arch/other distro-family package exists. The updater honestly
+  reports automatic updates as unavailable on Linux rather than a false
+  "up to date". System text-to-speech is unavailable today on Linux,
+  same honest limitation as macOS. No operator-owned physical Linux
+  desktop manual test was performed.
 - **Linux (headless/self-hosted server)** — a planned *future* architecture
   target, not a currently-supported deployment mode. The current
   management API and local MediaMTX RTMP listener are deliberately

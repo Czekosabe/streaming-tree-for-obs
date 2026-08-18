@@ -64,14 +64,15 @@ deliberate, separately documented product decision, not a silent addition.
 
 Streaming Tree includes an application updater (Stage 20B), active only in
 a packaged Windows release build - a development build never checks for
-updates, regardless of settings. A packaged macOS build (Stage 20C1) does
-**not** perform automatic or manual update checks either: macOS has no
-install path for the updater to hand off to yet, so it never contacts
-GitHub for this purpose at all and honestly reports updates as
-unavailable rather than silently polling for something it could not
-install. This is an intentional platform-capability limitation, not a
-privacy carve-out - see [docs/macos-packaging.md](docs/macos-packaging.md)
-§20.
+updates, regardless of settings. Packaged macOS (Stage 20C1) and Linux
+(Stage 20D1) builds do **not** perform automatic or manual update checks
+either: neither platform has an install path for the updater to hand off
+to yet, so neither ever contacts GitHub for this purpose at all - both
+honestly report updates as unavailable rather than silently polling for
+something they could not install. This is an intentional platform-
+capability limitation, not a privacy carve-out - see
+[docs/macos-packaging.md](docs/macos-packaging.md) §20 and
+[docs/linux-desktop-packaging.md](docs/linux-desktop-packaging.md) §20.
 
 **What it contacts.** `api.github.com` for release metadata, and GitHub's
 own release-asset storage when a download begins - always the canonical
