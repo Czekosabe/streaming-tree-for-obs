@@ -21,7 +21,8 @@ const ABOUT_RESPONSE = {
   repositoryUrl: 'https://github.com/Czekosabe/streaming-tree-for-obs',
   creatorUrl: 'https://github.com/Czekosabe',
   supportUrl: 'https://streamelements.com/czekosabe/tip',
-  applicationLicenceStatus: 'unselected' as const,
+  applicationLicenseSpdx: 'GPL-3.0-or-later',
+  applicationLicenseName: 'GNU General Public License v3 or later',
 };
 
 function renderApp(initialPath: string) {

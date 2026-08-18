@@ -24,11 +24,14 @@ function ExternalAction({ href, children }: { href: string; children: ReactNode 
 function LegalEntry({
   heading,
   body,
+  detail,
   href,
   linkLabel,
 }: {
   heading: string;
   body: string;
+  /** Optional short technical line, e.g. an SPDX identifier - shown in monospace. */
+  detail?: string;
   href?: string;
   linkLabel?: string;
 }) {
@@ -36,6 +39,9 @@ function LegalEntry({
     <div className="space-y-1.5 border-t border-line pt-3 first:border-t-0 first:pt-0">
       <h3 className="text-sm font-semibold text-ink">{heading}</h3>
       <p className="text-xs leading-relaxed text-ink-muted">{body}</p>
+      {detail !== undefined && (
+        <p className="font-mono text-[11px] text-ink-faint">{detail}</p>
+      )}
       {href !== undefined && linkLabel !== undefined && (
         <a
           href={href}
@@ -145,11 +151,10 @@ export function AboutLegalPage() {
               <PanelBody className="space-y-3">
                 <LegalEntry
                   heading={t('about:legal.licence.heading')}
-                  body={
-                    data.applicationLicenceStatus === 'unselected'
-                      ? t('about:legal.licence.unselected')
-                      : data.applicationLicenceStatus
-                  }
+                  body={t('about:legal.licence.summary', { name: data.applicationLicenseName })}
+                  detail={`SPDX: ${data.applicationLicenseSpdx}`}
+                  href={`${data.repositoryUrl}/blob/main/LICENSE`}
+                  linkLabel={t('about:legal.licence.viewFull')}
                 />
                 <LegalEntry
                   heading={t('about:legal.privacy.heading')}

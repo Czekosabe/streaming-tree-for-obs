@@ -18,7 +18,8 @@ const ABOUT_RESPONSE = {
   repositoryUrl: 'https://github.com/Czekosabe/streaming-tree-for-obs',
   creatorUrl: 'https://github.com/Czekosabe',
   supportUrl: 'https://streamelements.com/czekosabe/tip',
-  applicationLicenceStatus: 'unselected' as const,
+  applicationLicenseSpdx: 'GPL-3.0-or-later',
+  applicationLicenseName: 'GNU General Public License v3 or later',
 };
 
 function renderPage() {
@@ -92,9 +93,10 @@ describe('AboutLegalPage', () => {
     renderPage();
 
     expect(await screen.findByText('Application licence')).toBeInTheDocument();
-    expect(
-      screen.getByText(/application licence for the first public release has not been selected yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/GNU General Public License v3 or later/)).toBeInTheDocument();
+    expect(screen.getByText('SPDX: GPL-3.0-or-later')).toBeInTheDocument();
+    expect(screen.queryByText(/has not been selected/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unselected/i)).not.toBeInTheDocument();
     expect(screen.getByText('Privacy')).toBeInTheDocument();
     expect(screen.getByText('Third-party notices')).toBeInTheDocument();
     expect(screen.getByText('Disclaimer')).toBeInTheDocument();

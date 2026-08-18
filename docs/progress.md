@@ -28929,3 +28929,63 @@ None.
 Update the frontend About & Legal UI to render the resolved licence
 (name, SPDX identifier, and a link to the new `LICENSE` file) in place
 of the old unresolved-state copy, in English and Polish.
+
+## 2026-08-18 — feat(web): show the GPL licence in About
+
+### Status
+Completed.
+
+### Scope
+Frontend half of the GPL licence-establishment milestone. Reuses the
+existing About & Legal architecture from the prior product-identity
+milestone unchanged - no new navigation item, no Markdown-rendering
+dependency, no duplication of the full licence text into i18n JSON.
+
+### Changes
+- `src/models/about.ts` - schema updated:
+  `applicationLicenceStatus: z.enum(['unselected'])` replaced with
+  `applicationLicenseSpdx`/`applicationLicenseName` string fields,
+  matching the backend contract exactly.
+- `src/pages/AboutLegalPage.tsx` - the "Application licence" entry in
+  the Legal & Privacy panel now shows the resolved licence name (via a
+  new interpolated `about:legal.licence.summary` string), a monospace
+  `SPDX: GPL-3.0-or-later` detail line (via `LegalEntry`'s new optional
+  `detail` prop), and a link to view the real `LICENSE` file on GitHub
+  (`${repositoryUrl}/blob/main/LICENSE`) - the same "short summary plus
+  a link to the canonical file" pattern already used for Privacy/
+  Third-party notices/Disclaimer, not a new UI pattern.
+- `src/i18n/resources/{en,pl}/about.json` - `legal.licence.unselected`
+  replaced with `legal.licence.summary` ("Streaming Tree for OBS is
+  licensed under the {{name}}. Commercial use is permitted; distributed
+  modified versions remain subject to the same licence." / Polish
+  equivalent) and `legal.licence.viewFull` ("View LICENSE" / "Zobacz
+  LICENSE").
+- `src/pages/AboutLegalPage.test.tsx`, `src/pages/SettingsPage.test.tsx`
+  - fixtures updated to the new response shape. The licence assertion
+  in `AboutLegalPage.test.tsx` now checks for "GNU General Public
+  License v3 or later" and "SPDX: GPL-3.0-or-later", and explicitly
+  asserts neither "has not been selected" nor "unselected" appears
+  anywhere on the page.
+
+### Automated validation
+`npm run i18n:check` (20 namespaces, en/pl parity unchanged), `tsc -b`,
+`eslint .` all clean. `AboutLegalPage.test.tsx` and
+`SettingsPage.test.tsx` run standalone: 8/8 passing. Full suite,
+backend suite, and build run next as this milestone's closing
+regression.
+
+### Known limitations
+None. Displaying the local `LICENSE` file's own text inside the running
+development app was deliberately not attempted (would need either a
+new build-time raw-text import path reaching outside `apps/web` or a
+Markdown-rendering dependency, neither justified for this milestone
+per its own governing instructions) - the UI shows the accurate licence
+name/SPDX identifier now and links to the canonical file on GitHub;
+Stage 20A packaging must include a local copy of `LICENSE` with the
+installed application (already recorded in
+`docs/product-identity-legal.md` §8).
+
+### Next step
+Run the complete closing regression (frontend checks, backend checks,
+all 22 integration scripts - no 23rd script) as one unbroken sequence,
+then append the final closing journal entry.

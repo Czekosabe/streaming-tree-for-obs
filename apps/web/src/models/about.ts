@@ -9,9 +9,11 @@ import { z } from 'zod';
  * `internal/buildinfo` on the backend and `docs/product-identity-legal.md`.
  *
  * Display prose is intentionally NOT part of this contract - `versionLabel`-
- * style wording ("Development build", licence status text) is derived from
- * `isReleaseBuild`/`applicationLicenceStatus` in the UI layer via i18n, never
- * sent as English text from the backend.
+ * style wording ("Development build") is derived from `isReleaseBuild` in
+ * the UI layer via i18n, never sent as English text from the backend. The
+ * licence fields are the one exception: a licence's own name/SPDX
+ * identifier is not the kind of string that varies by UI language, so the
+ * UI uses them directly rather than localizing them.
  */
 export const aboutResponseSchema = z.object({
   productName: z.string().min(1),
@@ -24,7 +26,8 @@ export const aboutResponseSchema = z.object({
   repositoryUrl: z.string().url(),
   creatorUrl: z.string().url(),
   supportUrl: z.string().url(),
-  applicationLicenceStatus: z.enum(['unselected']),
+  applicationLicenseSpdx: z.string().min(1),
+  applicationLicenseName: z.string().min(1),
 });
 
 export type AboutResponse = z.infer<typeof aboutResponseSchema>;

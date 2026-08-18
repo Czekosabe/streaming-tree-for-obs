@@ -34,7 +34,8 @@
     "heading": "Legal & Privacy",
     "licence": {
       "heading": "Application licence",
-      "unselected": "Application licence for the first public release has not been selected yet."
+      "summary": "Streaming Tree for OBS is licensed under the {{name}}. Commercial use is permitted; distributed modified versions remain subject to the same licence.",
+      "viewFull": "View LICENSE"
     },
     "privacy": {
       "heading": "Privacy",
