@@ -28888,3 +28888,44 @@ None.
 Update `internal/buildinfo`/`GET /api/about` to report the selected
 licence (replacing the now-resolved "unselected" status field), then
 the frontend About & Legal UI to display it.
+
+## 2026-08-18 — feat(server): expose the selected application licence
+
+### Status
+Completed.
+
+### Scope
+Backend half of the GPL licence-establishment milestone.
+
+### Changes
+- `internal/buildinfo/buildinfo.go` - `ApplicationLicenceStatus`
+  ("unselected") replaced with `ApplicationLicenseSPDX`
+  ("GPL-3.0-or-later") and `ApplicationLicenseName` ("GNU General
+  Public License v3 or later"). Unlike the other display-prose fields
+  this package keeps out of the API in English, a licence's own name
+  is not the kind of string that varies by UI language, so it is
+  exposed directly rather than as a status code the frontend maps to
+  localized copy.
+- `internal/httpapi/about.go` - `AboutResponse.ApplicationLicenceStatus`
+  replaced with `applicationLicenseSpdx`/`applicationLicenseName` JSON
+  fields, sourced from the new `buildinfo` constants.
+- `internal/httpapi/about_test.go` -
+  `TestAboutReturnsFixedProductIdentity` now asserts the exact selected
+  SPDX expression and licence name instead of the old "unselected"
+  status; the field no longer existing at all is itself the strongest
+  proof the unresolved state is gone (a removed field can never
+  accidentally still report it), stronger than a string-absence check.
+
+### Automated validation
+`gofmt -l .`, `go build ./...` clean. `go test ./internal/httpapi/...
+-run TestAbout -v`: 3/3 passing. Full `go test -count=1 ./...` runs
+after the frontend commit below, as part of this milestone's closing
+regression.
+
+### Known limitations
+None.
+
+### Next step
+Update the frontend About & Legal UI to render the resolved licence
+(name, SPDX identifier, and a link to the new `LICENSE` file) in place
+of the old unresolved-state copy, in English and Polish.

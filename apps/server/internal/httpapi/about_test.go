@@ -50,8 +50,11 @@ func TestAboutReturnsFixedProductIdentity(t *testing.T) {
 	if resp.SupportURL != "https://streamelements.com/czekosabe/tip" {
 		t.Errorf("supportUrl = %q, want the canonical support URL", resp.SupportURL)
 	}
-	if resp.ApplicationLicenceStatus != "unselected" {
-		t.Errorf("applicationLicenceStatus = %q, want %q (no licence has been invented)", resp.ApplicationLicenceStatus, "unselected")
+	if resp.ApplicationLicenseSpdx != "GPL-3.0-or-later" {
+		t.Errorf("applicationLicenseSpdx = %q, want %q", resp.ApplicationLicenseSpdx, "GPL-3.0-or-later")
+	}
+	if resp.ApplicationLicenseName != "GNU General Public License v3 or later" {
+		t.Errorf("applicationLicenseName = %q, want %q", resp.ApplicationLicenseName, "GNU General Public License v3 or later")
 	}
 	if resp.IsReleaseBuild {
 		t.Error("isReleaseBuild = true, want false: no release-version injection exists yet (stage 20A)")

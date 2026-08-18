@@ -40,13 +40,19 @@ const CreatorURL = "https://github.com/Czekosabe"
 // component or test should hold a second copy of this literal.
 const SupportURL = "https://streamelements.com/czekosabe/tip"
 
-// ApplicationLicenceStatus is a stable status code, not display prose - the
-// frontend maps it to localized copy. "unselected" means no application-wide
-// licence has been chosen yet for the first public packaged release; this is
-// an explicit, deliberately unresolved operator decision (see
-// docs/product-identity-legal.md), not an oversight, and nothing in this
-// codebase should ever fill in a guessed licence identifier.
-const ApplicationLicenceStatus = "unselected"
+// ApplicationLicenseSPDX is the canonical SPDX expression for Streaming
+// Tree for OBS's own first-party application licence, selected by the
+// project operator (see docs/product-identity-legal.md). This governs
+// first-party source only - third-party dependencies keep their own
+// licences, documented in THIRD_PARTY_NOTICES.md.
+const ApplicationLicenseSPDX = "GPL-3.0-or-later"
+
+// ApplicationLicenseName is a short, stable display name for
+// ApplicationLicenseSPDX. It is not display prose to be translated line by
+// line - the frontend uses it directly, since a licence name is not the
+// kind of string that varies by UI language. The authoritative full licence
+// text is the repository-root LICENSE file.
+const ApplicationLicenseName = "GNU General Public License v3 or later"
 
 // IsReleaseBuild reports whether Version above should be presented as a real
 // release. It is always false until Stage 20A establishes real

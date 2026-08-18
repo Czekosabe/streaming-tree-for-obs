@@ -11,10 +11,12 @@ import (
 //
 // Every field here is either a fixed product-identity constant
 // (internal/buildinfo) or build metadata Go can determine reliably on its
-// own. Display prose ("Development build", licence status wording) is
-// deliberately NOT sent as English text here - that is UI copy and belongs
-// in the frontend's own localized strings, keyed off the status
-// fields below.
+// own. Display prose ("Development build" wording) is deliberately NOT sent
+// as English text here - that is UI copy and belongs in the frontend's own
+// localized strings, keyed off the status fields below. The licence fields
+// are the one exception: a licence's own name/SPDX identifier is not the
+// kind of string that varies by UI language, so the frontend uses them
+// directly rather than localizing them.
 //
 // This response must never contain a Git author email, OS username,
 // hostname, filesystem path, credential, token, or database path.
@@ -25,13 +27,14 @@ type AboutResponse struct {
 	// Commit and CommitDirty are omitted entirely when no VCS revision is
 	// available, rather than sent as empty/false placeholders that could be
 	// mistaken for a real (empty) commit.
-	Commit                   string `json:"commit,omitempty"`
-	CommitDirty              bool   `json:"commitDirty,omitempty"`
-	CreatorName              string `json:"creatorName"`
-	RepositoryURL            string `json:"repositoryUrl"`
-	CreatorURL               string `json:"creatorUrl"`
-	SupportURL               string `json:"supportUrl"`
-	ApplicationLicenceStatus string `json:"applicationLicenceStatus"`
+	Commit                 string `json:"commit,omitempty"`
+	CommitDirty            bool   `json:"commitDirty,omitempty"`
+	CreatorName            string `json:"creatorName"`
+	RepositoryURL          string `json:"repositoryUrl"`
+	CreatorURL             string `json:"creatorUrl"`
+	SupportURL             string `json:"supportUrl"`
+	ApplicationLicenseSpdx string `json:"applicationLicenseSpdx"`
+	ApplicationLicenseName string `json:"applicationLicenseName"`
 }
 
 // aboutHandler reports fixed product-identity and build metadata for the
@@ -44,14 +47,15 @@ func aboutHandler(logger *slog.Logger) http.HandlerFunc {
 		commit, dirty, ok := buildinfo.CommitInfo()
 
 		resp := AboutResponse{
-			ProductName:              buildinfo.ProductName,
-			Version:                  buildinfo.Version,
-			IsReleaseBuild:           buildinfo.IsReleaseBuild,
-			CreatorName:              buildinfo.CreatorName,
-			RepositoryURL:            buildinfo.RepositoryURL,
-			CreatorURL:               buildinfo.CreatorURL,
-			SupportURL:               buildinfo.SupportURL,
-			ApplicationLicenceStatus: buildinfo.ApplicationLicenceStatus,
+			ProductName:            buildinfo.ProductName,
+			Version:                buildinfo.Version,
+			IsReleaseBuild:         buildinfo.IsReleaseBuild,
+			CreatorName:            buildinfo.CreatorName,
+			RepositoryURL:          buildinfo.RepositoryURL,
+			CreatorURL:             buildinfo.CreatorURL,
+			SupportURL:             buildinfo.SupportURL,
+			ApplicationLicenseSpdx: buildinfo.ApplicationLicenseSPDX,
+			ApplicationLicenseName: buildinfo.ApplicationLicenseName,
 		}
 		if ok {
 			resp.Commit = commit
