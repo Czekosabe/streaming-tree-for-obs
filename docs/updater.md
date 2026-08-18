@@ -330,6 +330,17 @@ a release build — see §24) → `idle` → `checking` → `up_to_date` /
 `error` (a recoverable failure state that returns to `idle` on the next
 successful check, not a terminal dead end).
 
+A release build on a platform with no usable install path at all (macOS
+in Stage 20C1, see [macos-packaging.md](macos-packaging.md) §20) starts,
+and stays, in a separate `platform_unsupported` state instead - decided
+once at startup from the platform `Handoff`'s own static answer, never
+from whether the release manifest happens to list an artifact for that
+platform. This is distinct from `disabled`: the build genuinely is a
+release build, but automatic polling never begins and every manual
+action (`CheckNow`/`Download`/`Install`) refuses immediately with
+`ErrPlatformUnsupported`, so the frontend never sees a misleading
+`available` state it could never actually act on.
+
 A check already in progress is tracked with an internal mutex/flag so
 repeated manual "Check for updates" clicks never spawn concurrent
 requests — a click while `checking` is already true is a no-op against

@@ -32779,3 +32779,22 @@ docs/platform-support.md exactly, both pointing at
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## docs: document the platform_unsupported updater state in updater.md
+
+### What changed
+`docs/updater.md` §11 (the canonical update-manager state-machine
+contract) is extended to document the new `platform_unsupported` state
+introduced by this milestone's `internal/updater` changes - previously
+only recorded in `docs/macos-packaging.md` §20 and the corresponding
+journal entry, not in the updater's own primary contract document.
+Explains the distinction from `disabled` (not a release build) and
+that it is decided once at startup from the platform `Handoff`'s static
+answer, independent of manifest artifact contents.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: document the platform_unsupported updater state in updater.md`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.
