@@ -33094,3 +33094,117 @@ GitHub Actions history was audited via the read-only REST API
 synchronously in this turn; no run needed to be triggered since the
 cited runs already existed with the conclusions recorded above. No
 AskUserQuestion call was made during this corrective pass.
+
+## docs: define Stage 20D1 Linux desktop packaging contract
+
+### Governing task
+Stage 20D1 - Linux local/desktop packaged runtime + native package
+verification. Local desktop model only (OBS/encoder + Streaming Tree +
+MediaMTX + operator-provided FFmpeg, same machine, loopback-only) -
+explicitly not remote/server/headless mode, which is Stage 20D2's own,
+separately-threat-modeled scope.
+
+### Audit performed before writing the contract
+Directly re-read: `browserlaunch_linux.go` (already real, xdg-open,
+fixed argv, no shell - no change needed), `singleinstance_other.go`
+(still the always-succeeds stub, scoped `!windows && !darwin` so Linux
+still falls through to it - needs a real implementation),
+`nativealert_other.go` (still stderr-only, same scoping - needs a real
+implementation), `internal/runtime/branch/process_unix.go` and
+`internal/runtime/mediamtx/process_unix.go` (both `!windows`, already
+fully portable to Linux, no change needed),
+`internal/runtime/ffmpeg/resolver.go` (already fully portable, no
+change needed), `internal/runtime/mediamtx/platform.go` (linux/amd64
+and linux/arm64 assets already present), `internal/secrets/keyring_store.go`
+plus a direct read of `github.com/99designs/keyring@v1.2.2/secretservice.go`
+(confirmed `//go:build linux` only, no cgo requirement - pure Go via
+godbus/dbus and go-libsecret, unlike the macOS Keychain backend),
+`internal/updater/handoff_other.go` (confirmed `//go:build !windows`,
+not `!windows && !darwin` - the Stage 20C1 platform_unsupported gate
+already applies to Linux release builds with zero further Go changes),
+`cmd/server/main.go` (lifecycle-adapter call sites unchanged since
+Stage 20A/20C1), `internal/config.resolveDataDir` (already correct,
+XDG_CONFIG_HOME-based), and `cmd/releasemanifest` (the Stage 20C1 `-in`
+mechanism reused verbatim, no extension needed). Also confirmed
+`manifest.Kind` already defines `KindDeb` (anticipated since Stage
+20B) - no schema change needed, only real usage for the first time.
+
+### Primary-source research (2026-08-18)
+freedesktop.org's XDG Base Directory Specification (XDG_CONFIG_HOME/
+XDG_DATA_HOME/XDG_CACHE_HOME defaults, and XDG_RUNTIME_DIR's mode-0700/
+session-lifetime/no-default-value requirements); the Desktop Entry
+Specification v1.5 (the Exec key's fixed-program-plus-arguments-only
+rule, explicitly no shell constructs, field-code rules - none of which
+Streaming Tree needs since it takes no file/URL argument); xdg-open's
+documented exit codes (0/1/2/3/4); the Secret Service D-Bus
+specification (session-bus + agent assumption, a legitimate desktop-
+session expectation, explicitly distinct from Stage 20D2's headless
+secret-storage problem); Debian Policy, AppImage, Flatpak, and Snap
+official documentation for the package-format decision; GitHub's
+current hosted-runner labels for Linux (ubuntu-latest, ubuntu-24.04-arm
+- already the exact labels this repository's own cross-platform.yml
+uses, re-verified rather than assumed); this repository's own go.mod
+(go 1.25.0) and the CGO_ENABLED=0 static-binary policy this contract
+selects, which sidesteps any distro-glibc-version question entirely.
+
+### Package format decision
+Selected: a `.deb` package (Debian/Ubuntu family) built with
+`dpkg-deb`, evaluated in the contract against AppImage (real FUSE/
+appimagetool CI friction, no first-class desktop-menu integration
+without an extra integration daemon this project cannot assume is
+present), and Flatpak/Snap (sandboxing/store-oriented models with real
+operational surface this single self-contained binary does not need).
+`.deb`'s advantages: this repository's native Linux CI is already
+Ubuntu-based (dpkg-deb/dpkg/apt already present, zero added tooling),
+first-class desktop-menu integration, a real auditable install/remove
+lifecycle directly testable in ephemeral CI, and - since the binary is
+CGO_ENABLED=0 and therefore fully static - no `Depends` field needed at
+all. Because this is a Debian/Ubuntu-family format, the support claim
+is explicitly narrowed to "Debian/Ubuntu package CI-verified on x64 and
+ARM64," never generic "Linux supported."
+
+### Contract written
+`docs/linux-desktop-packaging.md` - the full Stage 20D1 contract,
+covering: the 20D1/20D2 boundary; primary-source research; the real
+current-Linux-state audit; the package-format decision and its
+reasoning; package identity (Debian package name
+`streaming-tree-for-obs`, Maintainer field using GitHub's own noreply-
+email convention for the real public `Czekosabe` identity - never the
+personal Git commit email); the CGO_ENABLED=0 static-binary build
+policy; the package filesystem layout
+(`/usr/bin`, `/usr/share/applications`, `/usr/share/doc/...`, no
+maintainer scripts); application data (unchanged, already correct);
+packaged-mode identification (build-time, not `runtime.GOOS`-inferred);
+Linux browser launch (already correct, no change); the new real
+`flock`-based Linux single-instance mechanism (preferring
+`XDG_RUNTIME_DIR` when set, falling back to the existing per-user data
+directory otherwise); the new best-effort `zenity`/`kdialog` fatal-
+startup-UX chain (honestly documented as best-effort, never claimed
+universal); the real `.desktop` entry; Quit/graceful shutdown (reused
+unchanged); Secret Service (kept as the real backend, no plaintext
+fallback, a hermetic ephemeral D-Bus/Secret-Service CI proof planned
+only if it can be made genuinely hermetic); no-runtime-root and no-
+systemd-service boundaries; MediaMTX/FFmpeg/TTS status; Linux updater
+behavior (already `platform_unsupported` via existing code, no new
+Go changes, no privileged install path implemented); artifact naming
+and the reused release-manifest `-in` mechanism; the new
+`scripts/build-release-linux.sh`; the new
+`.github/workflows/linux-package.yml` native CI workflow (two build-
+and-verify passes per architecture, matching the macOS workflow's own
+shape); the new `scripts/verify-linux-package.mjs` platform-specific CI
+helper (explicitly not canonical script #25 - the canonical count
+remains 24); package security; the manual-verification limitation (no
+operator-owned Linux desktop test); and known limitations remaining
+after Stage 20D1.
+
+### Stage status after this entry
+Stage 20A/20B/20C1: Completed. Stage 20C2: Planned, externally gated.
+**Stage 20D1: contract written, implementation not yet started.** Stage
+20D2/20E: Planned. Stage 20 as a whole: Incomplete.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: define Stage 20D1 Linux desktop packaging contract`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this contract. No AskUserQuestion
+call was made while writing it.
