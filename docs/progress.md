@@ -32451,3 +32451,67 @@ CGO requirement.
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## feat(server): extend release manifest for multiple platform artifacts
+
+### What changed
+Implements docs/macos-packaging.md §22: `cmd/releasemanifest` previously
+accepted exactly one `-artifact` per invocation and always wrote a fresh
+single-artifact manifest. Windows and macOS release builds never run on
+the same machine, so a real multi-platform release cannot be assembled
+in one process invocation - `cmd/releasemanifest/main.go` gains a new
+optional `-in` flag: when given an existing manifest file, that
+manifest's own artifacts are carried over and the newly-hashed artifact
+is appended to them (re-validated as a whole with the existing
+`manifest.Validate`) before being written to `-out`; omitting `-in`
+behaves exactly as before (a fresh single-artifact manifest), so
+`scripts/build-release.ps1`'s existing invocation is unaffected without
+any changes to it in this commit. `-version` must match the existing
+manifest's own version, so a manifest can never be silently grown to
+describe two different releases. No second manifest format was
+invented - `-in`/`-out` both speak the exact same schema `Validate`/
+`Parse` already understand. A real pipeline now assembles one canonical
+manifest across three separate invocations, e.g.:
+
+```
+releasemanifest -version 0.2.0 -artifact win.exe  -os windows -arch amd64 -kind installer -out release.json
+releasemanifest -version 0.2.0 -artifact mac1.dmg -os darwin  -arch arm64 -kind dmg -in release.json -out release.json
+releasemanifest -version 0.2.0 -artifact mac2.dmg -os darwin  -arch amd64 -kind dmg -in release.json -out release.json
+```
+
+Manually smoke-tested this exact three-invocation chain end-to-end (a
+real built binary, three real fake-artifact files, no test doubles) and
+confirmed the final `release.json` correctly accumulates all three
+artifacts with independently correct names/sizes/hashes.
+
+### Tests
+`internal/updater/manifest/parse_test.go`: added
+`multiPlatformManifest()` (windows/amd64/installer +
+darwin/arm64/dmg + darwin/amd64/dmg, the real Stage 20C1 shape),
+`TestMultiPlatformManifestIsValid`,
+`TestMultiPlatformManifestSelectsExactIdentityOnly` (proves
+`ArtifactFor` resolves each of the three real identities to the
+correct, distinct artifact, and that four deliberately-mismatched
+identities - right OS/arch wrong kind, right OS wrong arch, wrong OS
+entirely - never fuzzy-match anything, satisfying docs/updater.md §7's
+own security property now that more than one platform coexists in one
+manifest), and
+`TestMultiPlatformManifestStillRejectsDuplicateIdentity` (the existing
+duplicate-identity guard still holds with three platforms present).
+`cmd/releasemanifest/main_test.go`: added `TestBaseManifestFreshWhenNoInPath`,
+`TestBaseManifestExtendsExistingFile` (the real cross-invocation
+assembly path), and `TestBaseManifestRejectsVersionMismatch`.
+
+### Validation
+`gofmt -l .` clean; `go vet ./...` and `go vet -tags integration ./...`
+clean; `go build ./...` and `go build -tags integration ./...` clean;
+`go test ./... -count=1` - all 48 packages with tests pass, no
+failures. Manual CLI smoke test described above, separate from the
+automated suite.
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): extend release manifest for multiple platform artifacts`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.
