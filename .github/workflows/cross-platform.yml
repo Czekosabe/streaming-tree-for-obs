@@ -46,6 +46,17 @@ jobs:
     env:
       CGO_ENABLED: ${{ matrix.cgo }}
     steps:
+      # The repository's Go source is committed with LF line endings.
+      # actions/checkout on the Windows runner defaults to core.autocrlf=true
+      # and would otherwise rewrite every file to CRLF on checkout, which
+      # gofmt always reports as needing reformatting regardless of actual
+      # formatting - this is a checkout-configuration issue, not a real
+      # source-formatting difference, so it is fixed here rather than by
+      # relaxing the gofmt check itself.
+      - name: Disable line-ending conversion on checkout
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5

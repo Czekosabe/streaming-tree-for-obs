@@ -30258,3 +30258,74 @@ was a synchronous local Node script). The very next action after this
 commit is pushed is to actively poll the GitHub REST API for the
 triggered workflow run until it reaches a terminal state - this is
 explicitly not deferred or left for the operator to report back.
+
+## fix(ci): check out Go source with LF endings on Windows runner
+
+### What happened
+The push of `00130e5` triggered the first real run of `cross-platform.
+yml` (run id 32113002854). It was actively watched (a background
+Monitor polling the GitHub REST API every 30s, `gh` CLI confirmed not
+installed via both Bash and PowerShell before falling back to the API).
+`backend (linux-arm64)` and `frontend (linux-amd64)` completed
+successfully first; `backend (windows-amd64)` completed with failure
+at its `gofmt` step (`go vet`/`go test`/`go build` all skipped as a
+consequence). The job-logs API endpoint
+(`/actions/jobs/{id}/logs`) returned 403 "Must have admin rights to
+Repository" for this unauthenticated read, so the per-step console
+output itself could not be fetched directly - diagnosis instead used
+the job's step-by-step conclusions (only `gofmt` failed) plus a real
+local reproduction.
+
+### Root cause
+This repository's committed Go source blobs use LF line endings (no
+`.gitattributes` exists, and the working tree on this development
+machine already has LF despite a local `core.autocrlf=true` setting -
+consistent with the blobs themselves being LF). `actions/checkout@v4`
+on GitHub's `windows-latest` runner defaults to Git's own
+`core.autocrlf=true`, which rewrites LF blobs to CRLF on checkout.
+Reproduced locally: copying a real source file
+(`internal/buildinfo/buildinfo.go`) and converting its line endings to
+CRLF, then running `gofmt -l` against the copy, reports the file as
+needing reformatting - confirming CRLF alone (with no actual
+formatting difference) is sufficient to fail this check. This is a
+real, narrow CI-environment portability bug, not a false positive in
+the check itself and not an actual source-formatting problem, so the
+fix corrects the checkout configuration rather than relaxing or
+removing the `gofmt` gate.
+
+### Fix
+Added a `Disable line-ending conversion on checkout` step
+(`git config --global core.autocrlf false`) before `actions/checkout@
+v4` in the `backend` job, applying to every matrix leg. Harmless on
+Linux/macOS runners, where `core.autocrlf` is already unset/false by
+default; on the Windows runner it now makes checkout preserve the
+repository's real LF blob content, matching every other platform and
+matching this development machine's own working tree.
+
+### Validation
+The updated workflow was re-validated as structurally correct YAML via
+the same local `js-yaml` parse used for the original file, and the
+step order was re-read directly (line-ending fix step, then checkout,
+then setup-go, then gofmt) to confirm the fix actually runs before the
+checkout it needs to affect.
+
+### Stage status after this entry
+- Stage 20 (whole): Incomplete (unchanged).
+- Cross-platform portability baseline milestone: in progress, fourth
+  logical commit; still watching the same GitHub Actions run family
+  for a clean result following this fix.
+
+### Commits this milestone (chronological)
+1. `2b72fcb` - `fix(docs): reconcile Stage 20A living state`
+2. `0a1f627` - `docs: define cross-platform support roadmap`
+3. `00130e5` - `ci: add cross-platform portability workflow`
+4. This entry - `fix(ci): check out Go source with LF endings on Windows runner`
+
+### Continuous-execution rule compliance
+The failing job was diagnosed and fixed within the same continuous
+turn the failure notification arrived in, with no operator message
+requested or required - matching the governing task's explicit
+instruction that a genuine CI failure must be inspected and fixed,
+never worked around by weakening the check, and never left for the
+operator to report back. The next action after this commit is pushed
+is to resume active polling for the new run this push triggers.
