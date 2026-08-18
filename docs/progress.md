@@ -30832,3 +30832,71 @@ question was used to pass time while they ran. All research (GitHub
 API, Inno Setup, Windows process-wait) was performed synchronously via
 WebFetch/WebSearch/live `curl` calls in the same turn. No AskUserQuestion
 call was made this commit.
+
+## feat(server): add the release manifest schema and validator
+
+### What was built
+New pure-Go package `internal/updater/manifest` (docs/updater.md §5),
+with no I/O and no dependency beyond the standard library, so the
+exact same logic will run both in the release-build pipeline and in
+the runtime updater:
+
+- `manifest.go` - the `Manifest`/`Artifact`/`Identity` types, the
+  `OS`/`Arch`/`Kind` closed enums (already naming every future
+  platform/package-kind docs/platform-support.md records, even though
+  only `windows`/`amd64`/`installer` is ever installable today), and
+  `ArtifactFor` for exact-identity lookup.
+- `version.go` - `Version` (major/minor/patch), `ParseVersion`/
+  `ParseTag` (strict: exactly three numeric dot-separated components,
+  no leading zeros beyond a bare "0", no pre-release/build suffix, an
+  optional single leading "v" stripped only by `ParseTag`), and
+  `Compare` (always exact integer comparison of the three components,
+  never lexicographic - verified by a dedicated test asserting
+  `0.9.0 < 0.10.0`, the case a string comparison would get wrong).
+- `validate.go` - `Validate(m, tag)` implementing every rule from
+  docs/updater.md §5: fixed `format`/`schemaVersion`, manifest version
+  must exactly equal the release tag's own parsed version, channel
+  must be exactly `"stable"`, artifacts must be non-empty, no duplicate
+  identity, no duplicate name, closed `os`/`arch`/`kind` enums, an
+  artifact name that can never contain a path separator/relative
+  segment/drive letter (it becomes part of a filesystem path later),
+  a positive size bounded by the new `MaxArtifactSizeBytes` (300 MiB,
+  documented inline per docs/updater.md §13), and an exactly-64-
+  lowercase-hex-character SHA-256.
+- `parse.go` - `Parse` (strict JSON decode, `DisallowUnknownFields`,
+  exactly one JSON value - the same convention `internal/httpapi/
+  decode.go` already established, reused here rather than reinvented)
+  and `MustMarshal` (release-pipeline/test use only).
+
+### Tests
+28 test functions, all passing: full acceptance/rejection coverage for
+every validation rule above (including the two "manifest looks welcome
+but should mismatch" cases - wrong tag/version pairing and a duplicate
+name across two otherwise-distinct identities), version parsing's
+explicit rejection list from docs/updater.md §4 verified case-by-case,
+the max-size boundary accepted at exactly the limit and rejected one
+byte over, and a parse round-trip proving `MustMarshal`'s own output
+never contains a `url`-like field (the manifest's own no-download-URL
+design principle, checked mechanically rather than only by code
+review).
+
+### Validation
+`go vet ./internal/updater/...` clean. `go test ./internal/updater/...
+-v` - all 28 tests PASS. `gofmt -l internal/updater/` - no output
+(already formatted).
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation started (manifest schema/
+  validator only so far; no runtime updater, no HTTP API, no frontend,
+  no Windows helper yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. This entry - `feat(server): add the release manifest schema and
+   validator`
+
+### Continuous-execution rule compliance
+No background command was required for this unit (pure Go, no
+external I/O) - written, tested, and validated synchronously in the
+same turn. No AskUserQuestion call was made.
