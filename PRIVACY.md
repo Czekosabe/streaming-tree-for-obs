@@ -62,9 +62,40 @@ deliberate, separately documented product decision, not a silent addition.
 
 ## Updater
 
-Stage 20B's automatic-update/version-check mechanism is **not implemented
-yet**. The application currently performs no update check and contacts no
-update server.
+Streaming Tree includes an application updater (Stage 20B), active only in
+a packaged Windows release build - a development build never checks for
+updates, regardless of settings.
+
+**What it contacts.** `api.github.com` for release metadata, and GitHub's
+own release-asset storage when a download begins - always the canonical
+`Czekosabe/streaming-tree-for-obs` repository, never configurable and never
+redirectable by any setting, environment variable, or web page.
+
+**What leaves this machine.** An HTTPS request carrying only a descriptive
+User-Agent identifying the application and its own version (e.g.
+`StreamingTreeForOBS/0.1.0 (+https://github.com/Czekosabe/
+streaming-tree-for-obs)`). Nothing else - no stream key, no OAuth token, no
+chat content, no destination configuration, no Windows username, no machine
+name, and no installation or analytics identifier of any kind.
+
+**When it runs.** By default, a packaged release build checks for updates
+shortly after startup and roughly once an hour thereafter - metadata only,
+never a download or install on its own. This can be turned off in Settings
+→ About & Legal → Updates at any time; a manual "Check for updates" button
+remains available either way.
+
+**What is stored locally.** The automatic-check on/off preference, and,
+only while an update is actively downloading or has just been installed, a
+small temporary file recording the download's own verification state and,
+after a real install attempt, a one-shot local result (success or failure)
+shown once and then deleted. None of this is shared with any third party
+beyond GitHub itself as the download source, and none of it is telemetry -
+see the section above.
+
+**Installing an update is always an explicit action** - the operator must
+click "Update now" and then confirm "Install and restart"; nothing
+downloads or installs automatically. Installing is blocked while a stream
+is active.
 
 ## Creator support
 

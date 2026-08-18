@@ -1003,96 +1003,83 @@ downloaded by the installer or the application. The packaged application
 starts and is fully usable without it; only outgoing streaming to
 destination platforms needs a compatible FFmpeg the operator supplies.
 
-### 12.1.1 Application update system (Stage 20B, not yet implemented)
+### 12.1.1 Application update system (Stage 20B - implemented)
 
-This subsection states the intended **end-user application update system**
-now, deliberately ahead of implementation, so Stage 20A's own packaging
-work (which this subsection long predates) never had to accidentally build
-something that would conflict with it. **Nothing described here is
-implemented. Stage 20A explicitly does not implement update checking,
-GitHub networking, release downloads, installer launching, or restart
-logic** - this remains an architecture target for a future Stage 20B only.
+This subsection originally stated the intended end-user application update
+system ahead of implementation, so Stage 20A's own packaging work (which
+this subsection long predates) never had to accidentally build something
+that would conflict with it. **Stage 20B has since implemented it for
+real** - see [updater.md](updater.md) for the complete, current contract
+(the fixed release source, the current GitHub Releases API research, the
+release manifest schema, the streaming-active guard, the real Windows
+external-installer handoff, and known limitations). This section now
+records what actually shipped, at the level of a project-overview summary;
+`updater.md` is authoritative for detail.
 
-**Release source.** Normal production releases are expected to be published
-through the canonical GitHub repository's GitHub Releases. The application
-must **never** update from: branch `main`, arbitrary commit artifacts,
-arbitrary user-supplied URLs, release-note links, or an untrusted mirror.
-Stage 20B must research the then-current official GitHub Releases API before
-implementation rather than hard-coding today's remembered API behavior.
+**Release source, as implemented:** fixed as a Go constant to the
+canonical `Czekosabe/streaming-tree-for-obs` repository's GitHub Releases -
+never configurable by any setting, environment variable, or web page.
+Branch `main`, arbitrary commit artifacts, and user-supplied URLs were
+never candidates and remain structurally unreachable.
 
-**Versioning.** Releases use a SemVer-like `major.minor.patch`. A dev/
-non-release build must not accidentally behave as an updateable production
-release. The installed version is read from the application's own build
-metadata, never from the frontend. The initial release channel is **Stable
-only** - beta/nightly channels are not planned into the first
-implementation unless a later requirement adds them.
+**Versioning and channel, as implemented:** strict `major.minor.patch`,
+compared as exact integers, never a downgrade. Stable is the only channel.
+A development build never checks for updates regardless of settings,
+reported honestly in Settings rather than pretending the feature does not
+exist.
 
-**Manual check.** Settings must eventually provide a "Check for updates"
-action showing: current version, latest stable version, last successful
-check time, whether an update is available, and a useful nonfatal offline/
-check-failed state.
+**Automatic and manual checks, as implemented:** a packaged release build
+checks shortly after startup and roughly hourly thereafter, gated by a
+persisted "Automatically check for updates" preference (default on);
+"Check for updates" remains available manually either way. Checking is
+metadata-only and never affects streaming.
 
-**Automatic update checks.** Default behavior: check shortly after startup,
-then periodically (roughly every 60 minutes) while running, gated by a
-persisted Settings toggle ("Automatically check for updates"). Automatic
-checking means **metadata checking only** - never automatic installation,
-restart, stream-stopping, or auto-download-and-launch. A failed check must
-never affect streaming or normal use.
+**Update-available UI, as implemented:** a non-blocking global banner plus
+a dedicated Settings → About & Legal → Updates panel, showing bounded
+plain-text release notes (never HTML), with "Later" and "Update now".
 
-**Update-available UI.** A non-blocking banner shows the current version,
-the new version, and release notes/changelog in a safe, text-oriented
-presentation (never arbitrary HTML/JS), with "Later" and "Update now"
-actions.
+**Active-stream guard, as implemented:** checking and downloading are
+allowed while streaming; installing is not, re-checked again immediately
+before the final shutdown/handoff commitment to close the gap between
+enabling the button and clicking it.
 
-**Active-stream guard.** Checking for updates is allowed while streaming;
-**installing is not**. If ingest is receiving, or any destination is
-desired-running/live/restarting/starting (or an equivalent real runtime
-state Stage 20B discovers at implementation time), "Update now" must not
-silently terminate the stream - the UI must explain that streaming is
-active, keep the update available, and require the operator to stop
-streaming first. Stage 20B must not invent an automatic forced stop/update/
-restart path.
+**Download and verification, as implemented:** a project-controlled
+release manifest (no download URL of its own - the actual asset is always
+resolved from the same GitHub Release's own assets array by exact name),
+mandatory SHA-256 verification, and an additional cross-check against
+GitHub's own documented per-asset digest field where present. Windows
+release artifacts remain unsigned (`windows-packaging.md` §20, unchanged
+by Stage 20B) - the updater's integrity boundary is the manifest plus
+SHA-256, not code-signing, and this is stated honestly rather than implied
+otherwise.
 
-**Download and verification.** A canonical GitHub Release identity and the
-exact expected app version, over HTTPS, with a bounded download size,
-verified by cryptographic SHA-256 against release metadata from the
-project's own release pipeline - never an arbitrary download URL supplied
-by the frontend. Downloads land in a safe temporary location; failed
-verification deletes or quarantines the candidate and leaves the current
-installation untouched. Stage 20A already researched Windows Authenticode
-code signing (`windows-packaging.md` §20) and confirmed no production
-certificate exists yet; Stage 20B inherits that unsigned status and must not
-claim signing exists before it actually does, and before public production
-distribution a real certificate remains a prerequisite regardless of which
-stage ultimately acquires one.
+**Installation, as implemented:** a small first-party helper process (never
+a generated shell/PowerShell script), copied into the update-staging
+subtree and launched by the running application, which waits for the
+original process to actually exit (a real Windows `OpenProcess`/
+`WaitForSingleObject` wait, race-free against PID reuse), re-verifies the
+staged installer, runs the real Inno Setup installer silently
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, never `/DIR=` - the same
+fixed `AppId` from Stage 20A gives it real in-place upgrade identity),
+verifies the resulting installed version via `--version` rather than
+trusting the installer's exit code alone, and restarts the application.
 
-**Installation.** A running Windows executable cannot safely overwrite
-itself, so this requires a deliberate installer/updater handoff: verified
-package, graceful shutdown, an external installer/updater process, install/
-replace, restart. The exact implementation strategy is Stage 20B's own
-decision. Requirements on the handoff: shut down the HTTP server cleanly,
-stop every owned FFmpeg child process, stop the owned MediaMTX process,
-close the database cleanly, and preserve application data, managed visual
-assets, templates, the managed MediaMTX installation where compatible, and
-OS credential-store entries - an update must never erase data because it
-failed.
+**Failure model, as implemented:** a failure before shutdown leaves the
+current app running untouched; a failure after the handoff has begun makes
+a best effort to restart the existing installation, and a small one-shot
+result (no secrets) is shown once after restart, then cleared.
 
-**Failure model.** A download failure leaves the current app running; a
-verification failure leaves the current app running; an installer-launch
-failure leaves the old installed app usable; an interrupted installation
-must not leave a half-written executable as the only runnable copy. Stage
-20 must select an installer/updater strategy with atomic/recoverable
-replacement semantics.
+**Privacy, as implemented:** documented in [PRIVACY.md](../PRIVACY.md)'s
+own "Updater" section - only a descriptive User-Agent leaves the machine,
+never a stream key, OAuth token, chat content, or machine identity.
 
-**Privacy and network behavior.** The update checker is an explicit
-application network feature, to be documented clearly in Settings and the
-README once implemented, with no implied telemetry. It must never transmit
-stream keys, OAuth tokens, template contents, visual assets, chat, or
-destination metadata to the release service.
-
-**Scope statement.** The update system described in this subsection is
-**required** for the final packaged application, but it is **not**
-implemented in Stage 14B.
+**Verified for real:** integration script 24
+(`scripts/verify-updater.mjs`) drives the complete real cycle - a real
+Inno Setup silent install, a real fake-GitHub-redirected check/download/
+verify, manifest-mismatch and tampered-installer rejection, the real
+helper handoff, a real silent in-place Inno Setup upgrade, a real restart,
+and the real post-update result - against real locally-built artifacts,
+never mocked at the OS/process level.
 
 ---
 
@@ -1136,7 +1123,7 @@ it is architected; this table only tracks status and dependencies.
 | 18B | Latest follower/subscriber/donation, largest donation, recent supporters, event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](supporter-widgets.md) | **Completed** — stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative found (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is **not** implemented until this is resolved or a future official integration is confirmed |
 | 20A | Production runtime and Windows packaging foundation: the embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown, native fatal-startup-error dialog), release-injectable version metadata, and a per-user Inno Setup installer with the four legal documents included (see [windows-packaging.md](windows-packaging.md)) | **Completed** |
-| 20B | Application update system: GitHub Releases check, update UI, download/verification, installer/updater handoff (§12.1.1); must use the cross-platform artifact-identity concept defined in [platform-support.md](platform-support.md) §15 even though Windows x64 is the first platform it serves | Planned |
+| 20B | Application update system: GitHub Releases check, update UI, download/verification, real Windows external-installer handoff (§12.1.1, see [updater.md](updater.md)); already uses the cross-platform artifact-identity concept defined in [platform-support.md](platform-support.md) §15, with Windows x64 as the only platform it currently serves | **Completed** |
 | 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification (see [platform-support.md](platform-support.md) §5) | Planned |
 | 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) | Planned |
 | 20D2 | Linux headless/self-hosted server mode and remote security (see [platform-support.md](platform-support.md) §9-§11) | Planned |

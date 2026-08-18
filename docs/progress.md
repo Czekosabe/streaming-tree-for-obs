@@ -31819,3 +31819,107 @@ synchronously and their real output inspected directly - the full run
 was backgrounded only because of its multi-minute duration, and was
 actively watched via a Monitor task to its real completion rather than
 assumed. No AskUserQuestion call was made.
+
+## docs: reflect Stage 20B application updater
+
+### What was updated
+Every living document Stage 20B's own implementation touched, all
+cross-referencing [`updater.md`](updater.md) as the authoritative
+contract rather than duplicating its content:
+
+- `PRIVACY.md` - the "Updater" section rewritten from "not implemented
+  yet" to a full, honest description of what the real system contacts
+  (`api.github.com` and GitHub's own release-asset storage, always the
+  canonical repository, never configurable), what leaves the machine
+  (only a descriptive User-Agent - no stream key, token, chat content,
+  or machine identity), when it runs (packaged release builds only,
+  startup + hourly, metadata-only, togglable), what is stored locally
+  (the auto-check preference, a transient download-verification file,
+  a one-shot post-update result), and that installing is always an
+  explicit, confirmed action, blocked while streaming.
+- `docs/project-overview.md` §12.1.1 - retitled "Stage 20B -
+  implemented" (was "not yet implemented") and rewritten in the same
+  "as-built, cross-reference the detail" style §12.1 already
+  established for Stage 20A after it shipped - release source,
+  versioning/channel, automatic/manual checks, the update-available
+  UI, the active-stream guard, download/verification, the real Windows
+  helper handoff, the failure model, privacy, and the real
+  `verify-updater.mjs` end-to-end verification, each in a few sentences
+  with `updater.md` as the detailed source of truth.
+- `docs/project-overview.md`, `docs/engagement-architecture.md`,
+  `README.md`, `docs/platform-support.md` roadmap tables - the 20B row
+  changed from Planned to **Completed** in all four places, each now
+  linking `updater.md`.
+- `README.md` - the two "Stage 20's remaining work" passages (the
+  "Still planned" list and the "Project state" blockquote) updated to
+  name 20B's updater as already complete alongside 20A, leaving only
+  20C/20D/20E as still planned; the "Platform support" Windows bullet
+  updated from "updater is not implemented yet" to a real description;
+  the packaged-release Quick Start section's closing sentence updated
+  from "Stage 20B's own automatic update system is not implemented
+  yet" to describing the real Updates panel; the integration-scripts
+  list extended with the new script 24
+  (`node scripts/verify-updater.mjs`).
+- `docs/platform-support.md` §4 (Windows component table) - "Application
+  updater" changed from "Not implemented - Stage 20B, Planned" to
+  "Supported"; §15 (the cross-platform artifact-identity constraint,
+  originally written as a forward-looking requirement before Stage 20B
+  existed) rewritten to confirm the shipped `manifest.Identity{OS, Arch,
+  Kind}` model actually honored that constraint from the start, needing
+  no rework to add Windows.
+- `docs/windows-packaging.md` §21 ("Updater boundary", previously "Not
+  implemented, not started... Stage 20B (or later) work") rewritten to
+  point at `updater.md` as the real implementation's own contract;
+  §24's "No updater (§21) - Stage 20B" known-limitation line removed,
+  since it is no longer a limitation.
+- `config/README.md` - new entry 24, documenting the one new persisted
+  table (`update_preferences`, migration `0027`) and the one new
+  integration-build-only test hook
+  (`STREAMING_TREE_TEST_UPDATE_API_BASE_URL`), explaining precisely why
+  a normal `go build ./cmd/server` (the exact command that produces
+  every real release) can never be redirected by it under any
+  circumstances.
+
+A repository-wide search for "Stage 20B" confirmed every remaining
+occurrence outside `docs/progress.md`'s own historical entries is
+either an already-correct "implemented"/"Completed" statement, or is
+inside `docs/updater.md`'s own body text - the contract document
+itself, deliberately left in its original design-document phrasing,
+exactly matching how `docs/windows-packaging.md`'s own body was never
+rewritten with "now completed" annotations after Stage 20A shipped;
+its implementation status is instead correctly recorded in the
+documents that reference it, which is what this commit did.
+
+### Validation
+This is a documentation-only commit; no product code changed. The
+full closing regression (frontend, backend, release build, all 24
+integration scripts, `verify-installer.mjs`) was run as a single
+combined step immediately after this documentation pass and is
+recorded in the next, final entry.
+
+### Stage status after this entry
+- Stage 20B: **Completed.**
+- Stage 20 (whole): Incomplete - 20C (macOS), 20D1/20D2 (Linux), and
+  20E (final hardening) remain Planned.
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. `9bdec03` - `feat(server): add the update HTTP API`
+7. `7a4fac2` - `feat(server): add the Windows update-installer handoff`
+8. `4bbf685` - `feat(web): add the Updates settings panel and global
+   banner`
+9. `be6115f` - `build: generate the release manifest in the release
+   pipeline`
+10. `df4efef` - `test: verify Download detects a real hash mismatch`
+11. `64b546a` - `test: verify the application updater end to end`
+12. This entry - `docs: reflect Stage 20B application updater`
+
+### Continuous-execution rule compliance
+No background command was required for this documentation-only unit -
+written and cross-checked synchronously in the same turn. No
+AskUserQuestion call was made.

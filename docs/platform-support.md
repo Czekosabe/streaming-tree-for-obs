@@ -163,7 +163,7 @@ current status, it does not change it.
 | Package format (Inno Setup, per-user) | Supported |
 | Code signing (Authenticode) | Not implemented - honestly unsigned, `SignTool=` hook prepared inert |
 | Automated CI (native Windows runner) | Automated-build verified - see §6 |
-| Application updater | Not implemented - Stage 20B, Planned |
+| Application updater | Supported - Stage 20B, see [updater.md](updater.md) |
 | Real OBS/provider manual verification | Not verified by this project beyond developer use - out of scope for automated CI |
 
 ## 5. macOS — planned desktop target
@@ -495,24 +495,30 @@ separate future feature work, not part of this baseline.
 
 ## 15. Stage 20B updater: cross-platform artifact-identity constraint
 
-Stage 20B (the application updater) is **not implemented by this
-milestone**. This section only records a forward-looking architectural
-constraint so that when 20B is eventually built, it does not hard-code
-"there will always be exactly one Windows installer asset."
+Stage 20B (the application updater) is now **implemented** - see
+[updater.md](updater.md) for the full contract. This section, originally
+written as a forward-looking constraint before implementation, now
+records that the constraint was actually honored: the shipped
+`internal/updater/manifest.Identity{OS, Arch, Kind}` model was built
+exactly this way from the start, so Windows x64 (`windows/amd64/
+installer`, the only platform the updater actually installs anything on
+today) required no special-casing that a future platform would need to be
+carved back out of.
 
-The future update-check contract must identify a downloadable artifact by
-at least: **OS** (`windows`/`darwin`/`linux`), **architecture**
-(`amd64`/`arm64`), **package/artifact kind** (e.g. `installer`, `dmg`,
-`pkg`, `appimage`, `deb`, `rpm` - none chosen yet), **version**, a
-**SHA-256** digest, and a **download URL derived only from trusted release
-metadata** (never an arbitrary URL supplied to or accepted from the
-frontend). Concretely, a future Windows x64 release might select `windows/
-amd64/installer`, a future Apple Silicon Mac release `darwin/arm64/<signed
-package kind>`, and a future Linux release `linux/amd64` or `linux/arm64`
-with whatever package kind 20D eventually chooses. None of these package
-kinds are chosen by this milestone; only the shape of the identity concept
-is recorded here so 20B's design does not need to be reworked later to add
-multi-platform support after the fact.
+The update-check contract identifies a downloadable artifact by at least:
+**OS** (`windows`/`darwin`/`linux`), **architecture** (`amd64`/`arm64`),
+**package/artifact kind** (the shipped enum already lists `installer`,
+`dmg`, `pkg`, `appimage`, `deb`, `rpm` - only `installer` is installable
+today), **version**, a **SHA-256** digest, and a download resolved only
+from the same trusted GitHub Release's own assets array (never an
+arbitrary URL accepted from the frontend - the release manifest itself
+carries no download-URL field at all, by design). A future Windows x64
+release continues to select `windows/amd64/installer`; a future Apple
+Silicon Mac release would select `darwin/arm64/<signed package kind>`; a
+future Linux release would select `linux/amd64` or `linux/arm64` with
+whatever package kind 20D eventually chooses. No non-Windows package kind
+is chosen or installable yet - only the shape of the identity concept was
+required to be, and is, already multi-platform-ready.
 
 ## 16. Current Windows artifact naming
 
@@ -539,7 +545,7 @@ the Windows name at that point, not before.
 | Stage | Scope | Status |
 | --- | --- | --- |
 | 20A | Windows production runtime and installer (see [`windows-packaging.md`](windows-packaging.md)) | **Completed** |
-| 20B | Application updater (GitHub Releases check, update UI, download/verification, installer/updater handoff) - must use the cross-platform artifact-identity concept in §15 even though Windows x64 is the first and only platform it will actually serve at launch | Planned |
+| 20B | Application updater (GitHub Releases check, update UI, download/verification, real Windows installer/updater handoff, see [updater.md](updater.md)) - uses the cross-platform artifact-identity concept in §15; Windows x64 remains the only platform it actually serves | **Completed** |
 | 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification | Planned |
 | 20D | Linux platform support, split into: | Planned |
 | 20D1 | Linux local/desktop runtime and packaging (§8) | Planned |

@@ -483,3 +483,21 @@ with no transcoding, is this stage's deliberate scope.
     placeholder each, so a clean checkout's `go build`/`go test` never
     require Node and the generated content is never committed. See
     [windows-packaging.md](../docs/windows-packaging.md).
+24. Stage 20B (application updater) adds exactly one new persisted
+    table, `update_preferences` (migration `0027_update_preferences.sql`)
+    - a singleton row holding only the `Automatically check for
+    updates` boolean, following the same pattern as every other small
+    settings table in this list. It also adds one **integration-build-
+    only, environment-variable-driven** test hook,
+    `STREAMING_TREE_TEST_UPDATE_API_BASE_URL`, read exclusively by
+    `apps/server/cmd/server/updater_testhook_integration.go` - a file
+    gated `//go:build integration` that does not exist at all, and
+    whose own `updater.NewTestClient` dependency does not exist as a
+    compiled symbol either, unless the whole binary was built with
+    `-tags integration` (`scripts/build-release.ps1 -IntegrationTest`,
+    used only by `scripts/verify-updater.mjs`). A normal `go build
+    ./cmd/server` - the exact command that produces every real release
+    - never sees this variable and cannot be redirected by it under any
+    circumstances; there is no production environment variable that
+    changes the updater's GitHub API host. See
+    [updater.md](../docs/updater.md) §1/§15.

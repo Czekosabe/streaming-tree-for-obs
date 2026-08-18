@@ -461,9 +461,11 @@ integration is prepared for, not implemented.
 
 ## 21. Updater boundary
 
-Not implemented, not started. No GitHub Releases check, no update banner,
-no download, no install, no restart-after-update, no telemetry. This is
-Stage 20B (or later) work.
+Implemented in Stage 20B - see [`updater.md`](updater.md) for the full
+contract (release source, manifest schema, streaming-active guard, the
+real Windows external-helper handoff, and privacy). This document's own
+scope remains Stage 20A's packaging/runtime foundation; the updater's own
+research, design, and closing state live in `updater.md`, not here.
 
 ## 22. Automated packaged-runtime test strategy
 
@@ -499,7 +501,6 @@ installer during implementation.
   packaging default - a canonical brand mark was not found in the
   repository during this audit and inventing one is explicitly out of
   scope; recorded as pre-public-release polish.
-- No updater (§21) - Stage 20B.
 - No remote-server/non-loopback hardening - unchanged scope boundary from
   every prior stage.
 - No full diagnostics/log viewer - Stage 20E.

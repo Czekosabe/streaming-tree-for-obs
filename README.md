@@ -84,10 +84,11 @@ TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
-work (20B's updater, 20C/20D's macOS/Linux portability, and 20E's
-final hardening — Stage 20A's own Windows production runtime and
-installer are already complete, see
-[`docs/windows-packaging.md`](docs/windows-packaging.md)) — detailed in
+work (20C/20D's macOS/Linux portability and 20E's final hardening —
+Stage 20A's own Windows production runtime/installer and 20B's
+application updater are already complete, see
+[`docs/windows-packaging.md`](docs/windows-packaging.md) and
+[`docs/updater.md`](docs/updater.md)) — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
@@ -219,10 +220,10 @@ engagement piece above in order (stages 8A through 18B).
 > feasibility-gated), and everything else still built **on top of** the
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
-> goals/supporter-widgets foundation — Stage 20's remaining work (20B's
-> updater, 20C/20D's macOS/Linux portability, and 20E's final
-> hardening; Stage 20A's own Windows production runtime and installer
-> are already complete) — is
+> goals/supporter-widgets foundation — Stage 20's remaining work
+> (20C/20D's macOS/Linux portability and 20E's final hardening;
+> Stage 20A's own Windows production runtime/installer and 20B's
+> application updater are already complete) — is
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -297,7 +298,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 18B | Latest follower/subscriber/donation, largest donation, a recent-supporters list, an event ticker, richer session counters, and bounded multi-widget dashboards, see [supporter-widgets.md](docs/supporter-widgets.md) | **Completed** — see [progress.md](docs/progress.md); Stage 18 as a whole is now complete |
 | 19 | TikTok LIVE connector, **only if** an official, permitted, sufficiently stable integration exists | **Deferred** — feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential client secret with no public-client alternative found, see [tiktok-live.md](docs/provider-integrations/tiktok-live.md); Stage 19 is **not** implemented |
 | 20A | Production runtime and Windows packaging foundation: embedded production frontend, packaged-mode lifecycle (browser launch, single-instance detection, protected graceful shutdown), release-injectable version metadata, and a per-user Inno Setup installer including the four legal documents, see [windows-packaging.md](docs/windows-packaging.md) | **Completed** |
-| 20B | Application update system (GitHub Releases check, update UI, installer/updater handoff), see [platform-support.md](docs/platform-support.md) §15 for its required cross-platform artifact-identity constraint | Planned |
+| 20B | Application update system (GitHub Releases check, update UI, real Windows installer/updater handoff), see [updater.md](docs/updater.md) | **Completed** |
 | 20C | macOS desktop portability, packaging, signing, notarization, and automated macOS verification, see [platform-support.md](docs/platform-support.md) | Planned |
 | 20D1 | Linux local/desktop runtime and packaging, see [platform-support.md](docs/platform-support.md) | Planned |
 | 20D2 | Linux headless/self-hosted server mode and remote security, see [platform-support.md](docs/platform-support.md) | Planned |
@@ -321,8 +322,11 @@ version:
   the primary, actively-used target: one Go process, a production React
   build, and your own default browser (see
   [`docs/windows-packaging.md`](docs/windows-packaging.md)). The
-  application updater is not implemented yet (Stage 20B, Planned), and
-  release artifacts are honestly unsigned (no Authenticode certificate
+  application updater is implemented (Stage 20B, see
+  [`docs/updater.md`](docs/updater.md)) - a Stable-only, explicit-action
+  update flow against the canonical GitHub repository, with mandatory
+  SHA-256 verification and a real Windows installer/restart handoff.
+  Release artifacts remain honestly unsigned (no Authenticode certificate
   yet).
 - **macOS** — planned, not shipped. Native GitHub-hosted CI (both Apple
   Silicon and Intel) compiles and tests the shared application core,
@@ -447,8 +451,9 @@ produces an unsigned installer under `build/release/output/` (local build
 artifacts only - nothing is published, tagged, or released by this script).
 Installing and running it opens your default browser to the local management
 UI once the application is ready; "Quit Streaming Tree" in **Settings →
-About & Legal** stops it cleanly. Stage 20B's own automatic update system is
-not implemented yet.
+About & Legal** stops it cleanly. The same page's **Updates** panel checks
+GitHub for a newer Stable release and, with explicit confirmation, installs
+it and restarts - see [`docs/updater.md`](docs/updater.md).
 
 ---
 
@@ -3298,6 +3303,7 @@ node scripts/verify-alert-audio.mjs               # Stage 17B persistent alert s
 node scripts/verify-goals-widgets.mjs             # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
 node scripts/verify-supporter-widgets.mjs         # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
 node scripts/verify-packaged-app.mjs              # Stage 20A packaged production runtime: routing, legal routes, single-instance, graceful shutdown - real release build, no fake servers
+node scripts/verify-updater.mjs                   # Stage 20B application updater: real Inno Setup install/upgrade/restart cycle, manifest and hash-mismatch rejection - fake GitHub API only, real installers
 ```
 
 A separate helper, `scripts/verify-installer.mjs`, smoke-tests the real
