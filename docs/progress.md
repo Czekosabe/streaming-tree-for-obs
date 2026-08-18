@@ -29935,3 +29935,95 @@ this entry). No turn ended on passive-waiting language, and no
 operator message was needed at any point to make this task inspect a
 completed background command and resume - autonomous execution is
 claimed on that basis.
+
+## fix(docs): reconcile Stage 20A living state
+
+### Governing task
+Begin a new pre-20B milestone: CROSS-PLATFORM PORTABILITY BASELINE +
+STAGE 20 RELEASE ROADMAP. Explicitly does NOT implement the Stage 20B
+updater, does NOT create GitHub Releases or tags, does NOT implement
+macOS/Linux packaging, and does NOT expose the backend remotely. This
+first commit addresses the milestone's own first required step: known
+post-20A README drift where living prose still described "Stage 20's
+own packaging/updater/hardening work" as a single undifferentiated
+future bucket, which became inaccurate the moment Stage 20A (Windows
+production runtime + installer) was marked Completed in the prior
+milestone.
+
+### Preflight
+Confirmed starting state matched exactly: branch `main`, HEAD
+`d8a2d8f` = `origin/main`, working tree clean, `git rev-list
+--left-right --count origin/main...HEAD` = `0 0`, effective committer
+identity `Czekosabe <kacper2280@tlen.pl>` (both local and global
+config), Stage 17/18 Completed, Stage 19 Deferred, Stage 20A
+Completed, Stage 20 (whole) Incomplete, 23 integration scripts, no
+updater/macOS package/Linux package/remote-server mode implemented.
+`git pull --ff-only origin main` reported already up to date - no
+history rewritten, no merge/rebase/amend/reset performed.
+
+### Change made
+Corrected two living-state passages in `README.md` that both said, in
+effect, "Stage 20's own packaging/updater/hardening work" remains
+future work as one bucket:
+
+1. Near the "Still planned" list (previously around line 86-88): now
+   reads "Stage 20's remaining work (20B's updater, 20C/20D's
+   macOS/Linux portability, and 20E's final hardening - Stage 20A's
+   own Windows production runtime and installer are already complete,
+   see `docs/windows-packaging.md`)".
+2. Inside the "Project state" blockquote (previously around line
+   219-223): parallel correction, same split, same explicit note that
+   Stage 20A's Windows production runtime and installer are already
+   complete.
+
+Both edits are minimal - they do not restructure surrounding prose,
+do not touch any other claim, and do not rename or renumber any
+completed historical stage.
+
+### Stale-variant search
+Searched living docs (`README.md`, `docs/project-overview.md`,
+`docs/engagement-architecture.md`, `docs/product-identity-legal.md`,
+`docs/windows-packaging.md`) for the close variants named by the
+governing task: "Stage 20 packaging is planned", "packaging/updater/
+hardening is still planned", "all Stage 20 work is planned", "Stage
+20 has not started". None of these variants were found anywhere in
+the tree. All remaining "Stage 20" mentions in `README.md` and
+`docs/project-overview.md` were reviewed individually and found to
+already be accurate: they either correctly state Stage 20A is
+Completed, correctly state Stage 20B (the updater) is not yet
+implemented/Planned, or are historical progress-journal-style prose
+that was already correctly scoped to Stage 20A/20B at the time it was
+written. No further edits were required. `docs/progress.md` itself
+was not touched by this search (append-only, historical entries never
+rewritten).
+
+### Validation
+`git diff README.md` reviewed in full - confirmed only the two
+intended hunks changed, no unrelated whitespace/line-ending damage
+beyond the pre-existing LF/CRLF normalization warning Git already
+emits for this file. No product code changed, so no build/test/
+integration-script regression was required for this documentation-
+only commit; the full local regression is deferred to this
+milestone's own closing entry per the governing task's own
+instructions.
+
+### Stage status after this entry
+- Stage 17 (whole): Completed (unchanged).
+- Stage 18 (whole): Completed (unchanged).
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20A: Completed (unchanged).
+- Stage 20 (whole): Incomplete (unchanged) - this entry only corrects
+  stale prose describing that incompleteness, it does not change any
+  stage's actual status.
+- Cross-platform portability baseline milestone: in progress, first
+  logical commit.
+
+### Commits this milestone (chronological)
+1. This entry - `fix(docs): reconcile Stage 20A living state`
+
+### Continuous-execution rule compliance
+No background command was required for this documentation-only
+change, so nothing was polled. This entry is written, verified via
+direct file read, and will be followed immediately by staging,
+committing, pushing, and push-verification in the same turn, with no
+pause for operator confirmation.

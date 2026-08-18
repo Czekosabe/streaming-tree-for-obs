@@ -83,8 +83,11 @@ engagement connector (feasibility-gated — see
 TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
-Ko-fi — both feasibility-gated, stage 16B), and Stage 20's own
-packaging/updater/hardening work — detailed in
+Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
+work (20B's updater, 20C/20D's macOS/Linux portability, and 20E's
+final hardening — Stage 20A's own Windows production runtime and
+installer are already complete, see
+[`docs/windows-packaging.md`](docs/windows-packaging.md)) — detailed in
 [`docs/engagement-architecture.md`](docs/engagement-architecture.md), which
 also shapes decisions made today about what is built first. The foundation
 was built incrementally: the credential-store foundation (stage 5), the
@@ -216,8 +219,10 @@ engagement piece above in order (stages 8A through 18B).
 > feasibility-gated), and everything else still built **on top of** the
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
-> goals/supporter-widgets foundation — Stage 20's own
-> packaging/updater/hardening work — is
+> goals/supporter-widgets foundation — Stage 20's remaining work (20B's
+> updater, 20C/20D's macOS/Linux portability, and 20E's final
+> hardening; Stage 20A's own Windows production runtime and installer
+> are already complete) — is
 > still **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
