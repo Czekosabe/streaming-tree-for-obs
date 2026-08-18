@@ -78,6 +78,54 @@ func TestCheckNowDisabledInDevelopmentBuild(t *testing.T) {
 	}
 }
 
+func TestPlatformUnsupportedNeverStartsOrActs(t *testing.T) {
+	// docs/macos-packaging.md §20: a release build whose Handoff reports
+	// itself statically unsupported (the non-Windows UnsupportedHandoff's
+	// permanent answer) must never begin automatic polling and must
+	// refuse every manual action outright - regardless of whether a
+	// manifest happens to list an artifact for this platform's identity.
+	// The client here points at an unused URL: if CheckNow ever actually
+	// contacted it, the test would hang/fail rather than returning
+	// ErrPlatformUnsupported immediately.
+	m := NewManager(Options{
+		Client:         newClient("http://unused.invalid", "0.1.0"),
+		Settings:       newTestSettings(),
+		Branches:       &fakeBranches{},
+		Handoff:        &fakeHandoff{available: false, blockerCode: BlockerPlatformUnsupported},
+		ReleaseBuild:   true,
+		CurrentVersion: "0.1.0",
+		Identity:       manifest.Identity{OS: manifest.OSDarwin, Arch: manifest.ArchARM64, Kind: manifest.KindDMG},
+	})
+
+	if got := m.Status(context.Background()).State; got != StatePlatformUnsupported {
+		t.Fatalf("initial State = %q, want %q", got, StatePlatformUnsupported)
+	}
+
+	if err := m.CheckNow(context.Background()); err != ErrPlatformUnsupported {
+		t.Fatalf("CheckNow() error = %v, want ErrPlatformUnsupported", err)
+	}
+	if err := m.Download(context.Background()); err != ErrPlatformUnsupported {
+		t.Fatalf("Download() error = %v, want ErrPlatformUnsupported", err)
+	}
+	if err := m.Install(context.Background()); err != ErrPlatformUnsupported {
+		t.Fatalf("Install() error = %v, want ErrPlatformUnsupported", err)
+	}
+
+	// Enabling AutoCheck must not start the background loop on this
+	// platform - if it did, m.stopCh would become non-nil.
+	if err := m.SetAutoCheck(context.Background(), true); err != nil {
+		t.Fatalf("SetAutoCheck() error = %v", err)
+	}
+	m.Start(context.Background())
+	if m.stopCh != nil {
+		t.Fatal("Start() began the automatic check loop on a platform-unsupported build")
+	}
+
+	if got := m.Status(context.Background()).State; got != StatePlatformUnsupported {
+		t.Fatalf("State after actions = %q, want %q", got, StatePlatformUnsupported)
+	}
+}
+
 func TestCheckNowUpToDate(t *testing.T) {
 	server := simpleReleaseServer(t, "0.1.0")
 	m := newTestManager(t, server, "0.1.0")

@@ -17,6 +17,13 @@ import (
 // refuses outright rather than silently no-op-ing.
 var ErrDisabled = errors.New("updater is disabled in a development build")
 
+// ErrPlatformUnsupported means the manager was asked to act on a
+// release build whose platform has no usable update-install path at all
+// (docs/macos-packaging.md §20, StatePlatformUnsupported) - every
+// check/download/install operation refuses outright, the same way
+// ErrDisabled does for a development build.
+var ErrPlatformUnsupported = errors.New("updater is not available on this platform")
+
 const (
 	// startupCheckDelayBase/Jitter is the short, randomized delay before
 	// the very first automatic check after a successful startup
@@ -79,6 +86,13 @@ type Manager struct {
 	identity       manifest.Identity
 	onHandoffBegun func()
 
+	// platformUnsupported is decided once at construction from the
+	// Handoff's own static answer and never changes afterward (see
+	// StatePlatformUnsupported) - read without m.mu, exactly like
+	// releaseBuild/currentVersion/identity above, since it too is
+	// immutable after NewManager returns.
+	platformUnsupported bool
+
 	clock func() time.Time
 	rand  *rand.Rand
 
@@ -139,26 +153,40 @@ func NewManager(opts Options) *Manager {
 		logger = slog.Default()
 	}
 
+	// A release build whose Handoff statically reports install as
+	// platform-unsupported (never dependent on installed-context state,
+	// unlike BlockerNotInstalledCtx) starts, and stays, in
+	// StatePlatformUnsupported - never StateIdle, so a fresh manifest
+	// listing an artifact for this platform's own identity can never by
+	// itself make CheckNow/Start believe an install is actually possible
+	// here (docs/macos-packaging.md §20).
+	platformUnsupported := false
 	state := StateIdle
 	if !opts.ReleaseBuild {
 		state = StateDisabled
+	} else if opts.Handoff != nil {
+		if ok, code := opts.Handoff.Available(); !ok && code == BlockerPlatformUnsupported {
+			platformUnsupported = true
+			state = StatePlatformUnsupported
+		}
 	}
 
 	return &Manager{
-		client:         opts.Client,
-		settings:       opts.Settings,
-		branches:       opts.Branches,
-		handoff:        opts.Handoff,
-		dataDir:        opts.DataDir,
-		releaseBuild:   opts.ReleaseBuild,
-		currentVersion: opts.CurrentVersion,
-		identity:       opts.Identity,
-		onHandoffBegun: opts.OnHandoffBegun,
-		clock:          clock,
-		rand:           rng,
-		logger:         logger,
-		state:          state,
-		autoCheck:      true,
+		client:              opts.Client,
+		settings:            opts.Settings,
+		branches:            opts.Branches,
+		handoff:             opts.Handoff,
+		dataDir:             opts.DataDir,
+		releaseBuild:        opts.ReleaseBuild,
+		currentVersion:      opts.CurrentVersion,
+		identity:            opts.Identity,
+		onHandoffBegun:      opts.OnHandoffBegun,
+		platformUnsupported: platformUnsupported,
+		clock:               clock,
+		rand:                rng,
+		logger:              logger,
+		state:               state,
+		autoCheck:           true,
 	}
 }
 
@@ -179,7 +207,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.autoCheck = prefs.AutoCheck
 	m.mu.Unlock()
 
-	if !m.releaseBuild || !prefs.AutoCheck {
+	if !m.releaseBuild || !prefs.AutoCheck || m.platformUnsupported {
 		return
 	}
 
@@ -245,7 +273,7 @@ func (m *Manager) SetAutoCheck(ctx context.Context, enabled bool) error {
 	m.autoCheck = enabled
 	m.mu.Unlock()
 
-	if !m.releaseBuild {
+	if !m.releaseBuild || m.platformUnsupported {
 		return nil
 	}
 

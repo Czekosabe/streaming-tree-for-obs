@@ -28,6 +28,9 @@ func (m *Manager) Download(ctx context.Context) error {
 	if !m.releaseBuild {
 		return ErrDisabled
 	}
+	if m.platformUnsupported {
+		return ErrPlatformUnsupported
+	}
 
 	m.mu.Lock()
 	switch m.state {

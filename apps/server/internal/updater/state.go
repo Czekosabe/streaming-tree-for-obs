@@ -20,6 +20,16 @@ const (
 	// StateError is recoverable - the next successful check returns to
 	// StateIdle/StateUpToDate/StateAvailable, never a terminal dead end.
 	StateError State = "error"
+	// StatePlatformUnsupported means this is a release build, but the
+	// platform Handoff reports install as structurally impossible here
+	// (docs/macos-packaging.md §20) - distinct from StateDisabled, which
+	// specifically means "not a release build". Set once at
+	// construction and permanent for the life of the process: automatic
+	// polling never begins in this state, and CheckNow/Download both
+	// refuse immediately, regardless of the persisted AutoCheck
+	// preference or of whether the release manifest happens to list an
+	// artifact for this platform's identity.
+	StatePlatformUnsupported State = "platform_unsupported"
 )
 
 // Blocker codes - stable, machine-readable, surfaced to the frontend

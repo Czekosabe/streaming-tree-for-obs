@@ -32370,3 +32370,84 @@ the governing task's own explicit instruction, this is expected and is
 not a blocker for Stage 20C1 - it is recorded here as the Stage 20C2
 boundary rather than raised as a question. No AskUserQuestion call was
 made while writing this contract.
+
+## feat(server): add macOS lifecycle adapters and updater platform gate
+
+### What changed
+Implements the real macOS packaged-lifecycle adapters
+`docs/macos-packaging.md` §10-§12/§20 committed to, replacing the
+previously-insufficient generic stubs, plus the new updater
+platform-capability gate.
+
+1. **Browser launch split** (§10): `browserlaunch_other.go`'s mixed
+   darwin/linux `runtime.GOOS` switch is replaced with
+   `browserlaunch_darwin.go` (`//go:build darwin`, unchanged `open`
+   mechanism) and `browserlaunch_linux.go` (`//go:build linux`,
+   unchanged `xdg-open` mechanism); `browserlaunch_other.go` now only
+   covers other/unusual Unix targets. Behavior is unchanged for both
+   platforms - this is a clarity split, not a mechanism change.
+2. **Real macOS single instance** (§11): new
+   `singleinstance_darwin.go` replaces the "always succeeds" stub with
+   a real exclusive, non-blocking `flock(2)` on a fixed lock file inside
+   the same per-user data directory `internal/config.resolveDataDir`
+   already resolves (honoring the same `STREAMING_TREE_DATA_DIR`
+   override, for hermetic test isolation). The kernel releases the lock
+   automatically on process exit for any reason, so there is no
+   stale-lock recovery problem; no PID file is used as sole proof of
+   another instance. `singleinstance_other.go` is narrowed to
+   `!windows && !darwin`.
+3. **Real macOS fatal-startup UX** (§12): new
+   `nativealert_darwin.go` + `nativealert_darwin.m`, a narrow Cgo bridge
+   to AppKit's `NSAlert` - title/message are passed as plain string data
+   only, never interpolated into any command, AppleScript, or shell
+   string. Requires `CGO_ENABLED=1`, the same requirement the real
+   Keychain backend already has. `nativealert_other.go` is narrowed to
+   `!windows && !darwin`. This package cannot be locally verified from
+   Windows (no darwin C toolchain here); real verification is native
+   macOS CI (§34/§38 of the contract).
+4. **Updater platform-capability gate** (§20): a real gap was found and
+   closed, not merely documented - `internal/updater.Manager` is
+   release-build/artifact-driven, and once a manifest lists a darwin
+   artifact (§22 of the contract, not yet implemented at this commit but
+   coming), `CheckNow` would have reported `StateAvailable` on macOS
+   purely because `hasArtifact` became true, even though `Handoff` can
+   never actually install it there - this would have misled the
+   frontend. Fixed with a new `StatePlatformUnsupported` state and
+   `ErrPlatformUnsupported` sentinel, decided once at `NewManager`
+   construction from the `Handoff`'s own static
+   `BlockerPlatformUnsupported` answer (never from installed-context
+   state) and stored in a dedicated immutable `platformUnsupported`
+   field - distinct from the mutable `state` field `CheckNow` itself
+   overwrites. `Start`/`SetAutoCheck` never begin the automatic polling
+   loop in this state; `CheckNow`/`Download`/`Install` all refuse
+   immediately with `ErrPlatformUnsupported`, before touching the
+   network. Windows is unaffected: `WindowsHandoff.Available()` never
+   returns `BlockerPlatformUnsupported`, only the non-Windows
+   `UnsupportedHandoff` does.
+
+### Tests
+Added `TestPlatformUnsupportedNeverStartsOrActs` in
+`internal/updater/manager_test.go`, proving: initial state is
+`StatePlatformUnsupported`; `CheckNow`/`Download`/`Install` all return
+`ErrPlatformUnsupported` (the client points at an unused URL, so a
+network call would hang/fail the test rather than silently pass);
+enabling `AutoCheck` and calling `Start` does not begin the background
+loop (`m.stopCh` stays nil); state remains `StatePlatformUnsupported`
+throughout.
+
+### Validation
+`gofmt -l .` clean; `go vet ./...` and `go vet -tags integration ./...`
+clean; `go build ./...` and `go build -tags integration ./...` clean;
+`go test ./... -count=1` - all packages pass. Cross-compiled (no CGO)
+`browserlaunch` and `singleinstance` for `darwin/arm64` and
+`linux/amd64` to confirm they compile outside native CI; `nativealert`'s
+darwin file requires a real darwin CGO toolchain and is left to native
+macOS CI, consistent with docs/macos-packaging.md §16's own Keychain
+CGO requirement.
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): add macOS lifecycle adapters and updater platform gate`
+
+### Continuous-execution rule compliance
+No Apple credentials were needed for this work. No AskUserQuestion call
+was made.
