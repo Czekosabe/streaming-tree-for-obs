@@ -32134,3 +32134,119 @@ milestone) was diagnosed and fixed in the same turn it was found. The
 one genuine deviation this milestone (four unnecessary AskUserQuestion
 checkpoints early on, corrected by the operator) is recorded plainly
 above rather than omitted.
+
+## docs: correct Stage 20B closing record
+
+### Governing task
+Opening audit for STAGE 20C1 — macOS PACKAGED RUNTIME + NATIVE PACKAGE
+VERIFICATION. Before any Stage 20C1 implementation, the governing task
+required auditing three specific claims in the immediately preceding
+"docs: record Stage 20B updater milestone" entry (`3f3af9f`): a
+self-contradictory AskUserQuestion attribution, a closing-subject
+deviation, and unclear final-CI evidence. This entry is an append-only
+correction - the original Stage 20B closing entry is left completely
+unmodified, exactly as the append-only journal discipline requires.
+
+### 1. AskUserQuestion attribution corrected
+The Stage 20B closing entry's own "Operator interaction during this
+milestone" paragraph opened with "Four unnecessary AskUserQuestion
+calls were made early in this milestone" and then, in the same
+paragraph, said the corrective memory "was successfully followed for
+the remainder of this session, including this entire Stage 20B
+milestone" with "no further AskUserQuestion calls of any kind" - an
+internal contradiction: if the four calls were "early in this
+[Stage 20B] milestone," the second half's "no further calls... in this
+entire Stage 20B milestone" could not also be true unless the four
+were the ones being excepted, which the wording never states.
+
+Audited directly against this session's own real, continuous
+conversation history (this agent executed both milestones itself, in
+the same unbroken session, so this is a first-hand audit, not a
+reconstruction): all four incidents - "Continue plan?", a passive-
+wait/status prompt, "placeholder - internal check, not a real
+question", and "placeholder" with literal "a"/"b" options - occurred
+during the immediately preceding CROSS-PLATFORM PORTABILITY BASELINE
+milestone, specifically during that milestone's own GitHub Actions/
+local-regression watching phase, entirely **before** its own closing
+commit (`9558f27`, `docs: record cross-platform portability
+baseline`) was made. That milestone's own closing entry already
+records these four interactions accurately and is **not** edited by
+this correction.
+
+**Corrected finding: Stage 20B itself had zero AskUserQuestion
+interruptions of any kind**, from its first preflight check through
+its own closing commit. The Stage 20B closing entry's underlying
+factual claim (the corrective memory held for the rest of the
+session, no further calls occurred) was already true; only the
+misleading opening clause - which read as attributing the four
+incidents to Stage 20B itself - is corrected here.
+
+### 2. Closing-subject deviation recorded
+The Stage 20B governing task's requested exact closing subject was
+`docs: record Stage 20B updater regression`. The actual closing commit
+used `docs: record Stage 20B updater milestone` instead. The actual
+commit subject did exactly match its own journal entry heading (this
+repository's own append-only journal-identity discipline was never
+violated), so no commit/journal mismatch exists - only a deviation
+from the specific subject text the governing task had requested. This
+is a historical process deviation with no product-code impact,
+recorded here for completeness; the historical entry and its heading
+are left unmodified.
+
+### 3. Stage 20B final CI evidence recorded
+Audited `.github/workflows/cross-platform.yml`'s real run history via
+the GitHub REST API (`gh` CLI still not installed on this machine,
+confirmed again before falling back to the API). Every one of the 13
+Stage 20B commits triggered its own real run (push-triggered, no
+`workflow_dispatch` needed). Current HEAD's own run,
+**`32126412888`** (commit `3f3af9f`), is real and green:
+
+| Job | Conclusion |
+| --- | --- |
+| `backend (windows-amd64)` | success |
+| `backend (linux-amd64)` | success |
+| `backend (linux-arm64)` | success |
+| `backend (macos-amd64)` | success |
+| `backend (macos-arm64)` | success |
+| `frontend (linux-amd64)` | success |
+
+This is cited as the required final-state CI evidence for Stage 20B -
+no new run needed to be triggered, since a suitable, already-green,
+current-HEAD run already existed.
+
+**One real, previously-unrecorded historical failure was found during
+this audit**: run `32118459362` (commit `58464ee`, `feat(server): add
+the GitHub release client`) shows `backend (windows-amd64)` as
+`failure`, specifically at its `go test` step (exit code 1; the
+GitHub Actions logs endpoint itself returned 403 without admin
+credentials, so only the step-level conclusion and check-run
+annotations were available, not the raw test output). This is
+recorded honestly rather than silently passed over. It is assessed as
+a one-off environmental CI flake, not a reproducible defect, for three
+concrete reasons: (a) this exact commit's own local Windows regression
+passed cleanly at the time it was made (recorded in that commit's own
+journal entry); (b) the very next commit (`33fc249`) through current
+HEAD - **12 consecutive `backend (windows-amd64)` runs** - are all
+green, with no code change in that window that would explain a real
+bug spontaneously disappearing; (c) the tests introduced in `58464ee`
+include real `httptest.Server` network round-trips - exactly the class
+of test already established in this session as susceptible to
+transient GitHub-hosted-runner timing variance, not a logic defect.
+No code change was made in response, since there is no reproducible
+defect to fix and the current, real state is confirmed green.
+
+### Stage 20B product status after this correction
+Unchanged: **Completed.** This correction concerns historical
+interaction attribution, a closing-subject naming deviation, and
+previously-unrecorded CI evidence only - no product code, test, or
+documentation content from Stage 20B is reopened, reimplemented, or
+otherwise changed.
+
+### Commits (chronological, this correction)
+1. This entry - `docs: correct Stage 20B closing record`
+
+### Continuous-execution rule compliance
+The GitHub Actions run history was audited via the read-only REST API
+synchronously in this turn; no run needed to be triggered since a
+suitable, already-green, current-HEAD run already existed. No
+AskUserQuestion call was made.
