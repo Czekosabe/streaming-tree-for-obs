@@ -85,7 +85,7 @@ and StreamElements.
 
 ## Questions
 
-This is a source-available, community project, not a company with a
+This is a GPL-licensed open-source community project, not a company with a
 dedicated privacy contact. The most reliable way to ask a question or
 report a concern is to open an issue on the canonical repository:
 <https://github.com/Czekosabe/streaming-tree-for-obs>.

@@ -29189,3 +29189,53 @@ regression rather than asking whether to proceed). No turn ended on
 passive-waiting language, and no operator message was needed at any
 point to make this task inspect a completed background command and
 resume.
+
+## 2026-08-18 — fix(docs): reconcile post-GPL project wording
+
+### Status
+Completed.
+
+### Scope
+Beginning of Stage 20A. Audited `PRIVACY.md` for the one known post-GPL
+wording drift: its "Questions" section still called the project "a
+source-available, community project," accurate before the licence
+decision but ambiguous now that GPL-3.0-or-later is the project's
+actual selected licence.
+
+### Search and classification
+Searched all current living docs for "source-available":
+`PRIVACY.md:88` (stale present-tense product-licensing description -
+fixed below); `docs/engagement-architecture.md`,
+`docs/provider-integrations/{external-donations,kick-engagement,
+tiktok-live}.md` (all use "source-available" descriptively as part of
+deployment-architecture security reasoning about why a confidential
+OAuth `client_secret` cannot safely be embedded in this application's
+distributed binary - an accurate technical property regardless of
+licence, not a present-tense licensing classification - left
+unchanged, consistent with the governing task's own "historical
+research text discussing the deployment architecture... does not
+automatically need rewriting" guidance); `docs/progress.md` occurrences
+(historical journal entries, untouched per the append-only rule).
+
+### Changes
+- `PRIVACY.md` - "This is a source-available, community project..."
+  changed to "This is a GPL-licensed open-source community project..."
+  - a minimal, accurate wording fix, not a rewrite of the surrounding
+  paragraph or document.
+
+### Automated validation
+Documentation-only change; focused validation only, per this task's
+own instruction not to run the full Stage 20A regression for this
+correction. Confirmed no other stale licensing-status phrase remains
+in `PRIVACY.md` by direct re-read.
+
+### Known limitations
+None.
+
+### Next step
+Audit the real current runtime (backend lifecycle, routing, frontend
+build) before designing Stage 20A's production-serving/packaging
+architecture, then conduct primary-source research (Go embedding,
+Windows browser launch, single-instance, installer comparison,
+Authenticode, GPL/FFmpeg distribution) and write
+`docs/windows-packaging.md` before any product code.
