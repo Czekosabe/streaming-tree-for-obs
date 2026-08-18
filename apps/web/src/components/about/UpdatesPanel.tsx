@@ -47,8 +47,9 @@ export function UpdatesPanel() {
     );
   }
 
-  // docs/macos-packaging.md §20: a release build whose platform has no
-  // usable update-install path at all (macOS in Stage 20C1) reports this
+  // docs/macos-packaging.md §20, docs/linux-desktop-packaging.md §20: a
+  // release build whose platform has no usable update-install path at
+  // all (macOS since Stage 20C1, Linux since Stage 20D1) reports this
   // state permanently - shown honestly instead of a check button that
   // would only ever come back refused, and never as a false "up to date".
   if (status.state === 'platform_unsupported') {

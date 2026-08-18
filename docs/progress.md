@@ -33484,3 +33484,24 @@ commit's `cross-platform.yml` run.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: mention Linux in the platform-unsupported updater code comment
+
+### What changed
+`apps/web/src/components/about/UpdatesPanel.tsx`'s internal code
+comment above the `platform_unsupported` branch (added in Stage 20C1)
+referenced only macOS, since Linux did not yet exist as a
+platform-unsupported case at the time it was written. Updated to also
+cite Linux/Stage 20D1 and docs/linux-desktop-packaging.md, now that a
+Linux release build reaches the same state. The user-facing string
+itself (panel.platformUnsupportedNotice, "not yet available on this
+platform") was already fully platform-neutral and needed no change -
+only the internal comment was macOS-specific. Comment-only change, no
+behavior/test impact.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: mention Linux in the platform-unsupported updater code comment`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
