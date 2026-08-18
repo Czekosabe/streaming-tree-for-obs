@@ -32798,3 +32798,182 @@ answer, independent of manifest artifact contents.
 ### Continuous-execution rule compliance
 No Apple credentials were needed for this work. No AskUserQuestion call
 was made.
+
+## docs: record Stage 20C1 macOS packaging milestone
+
+### Governing task
+Stage 20C1 - macOS packaged runtime + application bundle + DMG
+packaging + native CI package verification + macOS lifecycle adapters.
+This closes the milestone opened by `docs: correct Stage 20B closing
+record` and contracted by `docs: define Stage 20C1 macOS packaging
+contract`.
+
+### Starting / final state
+Starting HEAD: `3f3af9f` (Stage 20B's own closing commit). Final HEAD
+before this entry: `ff0807a`. Branch `main`, origin `main`, clean
+working tree, `0`/`0` ahead/behind at every commit boundary throughout.
+
+### Commits (chronological, this milestone)
+1. `30e0721` - `docs: correct Stage 20B closing record` (opening audit:
+   corrected an AskUserQuestion-attribution self-contradiction in Stage
+   20B's own closing entry; recorded a closing-subject naming
+   deviation; recorded Stage 20B's final CI evidence, including a
+   previously-unrecorded historical flake)
+2. `6734d56` - `docs: define Stage 20C1 macOS packaging contract`
+   (the full contract, `docs/macos-packaging.md`, written and pushed
+   before any product code, per this project's own established
+   discipline)
+3. `f71eafa` - `feat(server): add macOS lifecycle adapters and updater
+   platform gate` (real `browserlaunch_darwin.go`/`browserlaunch_linux.go`
+   split; real `flock`-based `singleinstance_darwin.go`; real
+   NSAlert/Cgo `nativealert_darwin.go`/`.m`; the new
+   `StatePlatformUnsupported` updater state and `ErrPlatformUnsupported`
+   sentinel, gating automatic polling and every manual action on a
+   platform with no install path)
+4. `acd0544` - `feat(server): extend release manifest for multiple
+   platform artifacts` (`cmd/releasemanifest`'s new `-in` flag, letting
+   separate per-platform build invocations assemble one canonical
+   manifest; real multi-platform `ArtifactFor` exact-identity-selection
+   tests)
+5. `d51e51b` - `feat: rename the Windows installer to the
+   cross-platform artifact convention` (`StreamingTreeForOBS-Setup-
+   VERSION.exe` renamed to `StreamingTreeForOBS-VERSION-windows-amd64-
+   setup.exe`; real Windows release-build/installer/updater regression
+   re-run and passed against the renamed artifact)
+6. `56dc658` - `feat: add macOS release build script, package CI, and
+   verification helper` (`scripts/build-release-macos.sh`,
+   `.github/workflows/macos-package.yml`,
+   `scripts/verify-macos-package.mjs`)
+7. `2ed17b4` - `feat: honest macOS updater wording and living-doc
+   status updates` (frontend `platform_unsupported` panel state, EN+PL;
+   PRIVACY.md/platform-support.md/README.md updates; first native
+   macOS CI evidence recorded; the `windows-amd64` `go test` flake
+   discovered and documented)
+8. `342fa9a` - `docs: split the 20C roadmap row in project-overview.md`
+9. `ff0807a` - `docs: document the platform_unsupported updater state
+   in updater.md`
+10. This entry - `docs: record Stage 20C1 macOS packaging milestone`
+    (also carries the final status-marker flip from "In progress" to
+    "Completed" in README.md, docs/platform-support.md, and
+    docs/project-overview.md, held back until the evidence below was
+    in hand)
+
+### Primary-source research (recorded in full in commit 2's contract;
+summarized here)
+Research date 2026-08-18, performed live against: Apple's own bundle-
+structure documentation (Contents/MacOS, Contents/Resources,
+Info.plist and its key fields); GitHub's own current hosted-runner
+reference (re-verified rather than trusted from the prior milestone -
+macos-latest/macos-14/macos-15/macos-26 for Apple Silicon,
+macos-15-intel/macos-26-intel for Intel, the Intel label cross-checked
+against this repository's own real CI history); this repository's own
+go.mod (go 1.25.0) and Go 1.25's own release notes, establishing macOS
+12 Monterey as the non-guessed minimum deployment target; Apple's
+Developer ID/hardened-runtime/Gatekeeper/notarytool documentation
+(research-only, informing the Stage 20C2 boundary, never acted on);
+hdiutil as Apple's own standard DMG tool.
+
+### Native macOS CI evidence
+`.github/workflows/macos-package.yml` ran twice for real product
+changes during this milestone and succeeded both times, on both
+architectures, each run performing two independent build-then-verify
+passes (docs/macos-packaging.md section 56 requires at least two; four
+total passes per architecture were actually observed):
+
+| Run (commit) | package (macos-arm64) | package (macos-amd64) | Run conclusion |
+| --- | --- | --- | --- |
+| 32159238567 (56dc658) | success (2/2 passes) | success (2/2 passes) | success |
+| 32160291342 (2ed17b4) | success (2/2 passes) | success (2/2 passes) | success |
+
+Both runs proved, for real, on native Apple hardware: `.app` assembly;
+Info.plist generation and `plutil -lint`; the stable bundle identifier
+`io.github.czekosabe.streaming-tree-for-obs`; CGO-enabled Go build
+against the real Keychain backend; the real flock-based single-instance
+mechanism with two real processes; the real browser-launch code path
+(safely suppressed by the existing test seam); health/About/production-
+frontend/SPA/legal-route serving; honest TTS/updater unavailability;
+real graceful shutdown; real DMG creation, mount, `.app` copy to a
+hermetic "Applications-like" directory, a second real launch from
+there, and clean unmount - with zero leftover processes or mounted
+images after either pass, both times.
+
+`.github/workflows/cross-platform.yml` (the separate, lighter-weight
+portability gate) was kept green throughout, with one investigated
+exception:
+
+| Run (commit) | Result |
+| --- | --- |
+| 32135505526 (30e0721) | success, all 6 jobs |
+| 32156398661 (d51e51b) | success, all 6 jobs |
+| 32159238543 (56dc658) | backend (windows-amd64) failed at go test; the other 5 jobs passed |
+| 32160291284 (2ed17b4) | success, all 6 jobs, including backend (windows-amd64) |
+| 32160477505 (ff0807a, current HEAD) | success |
+
+The 56dc658 failure was investigated, not silently retried or ignored:
+no Go source file changed in that commit (only build-release-macos.sh,
+verify-macos-package.mjs, macos-package.yml, and a journal entry), so
+the exact same Go test suite ran on windows-amd64 in the immediately
+preceding green run (d51e51b) minutes earlier, in the very next run
+(2ed17b4), and locally on this Windows development machine during the
+closing regression below - three independent passes bracketing one
+anomalous failure, with zero code difference. Assessed as a non-
+reproducible environmental CI flake, the same pattern already
+documented once before in this project's own history (58464ee/run
+32118459362, Stage 20B's own corrective entry). No code change was
+made in response; no CI leg was weakened or removed to manufacture a
+green result.
+
+### Local Windows closing regression
+Ran in full against current HEAD: frontend (npm run i18n:check,
+typecheck, lint, test -- --run, build) and backend (gofmt -l .,
+go vet ./..., go vet -tags integration ./..., go test -count=1 ./...,
+go build ./..., go build -tags integration ./...) all passed; a real
+Windows release build (build-release.ps1 -Version
+"0.1.0-dev+regression20c1") succeeded, producing the renamed installer;
+all 24 canonical integration scripts passed in canonical order,
+including verify-updater.mjs's full real two-version end-to-end update
+cycle against the renamed artifact; verify-installer.mjs passed against
+the renamed installer. Zero failures. The tracked .gitkeep placeholders
+overwritten by the real release build were restored via
+`git checkout --` before this entry's own commit, per this project's
+established mechanical convention.
+
+### Stage status after this milestone
+
+| Stage | Scope | Status |
+| --- | --- | --- |
+| 20A | Windows production runtime and installer | Completed |
+| 20B | Application updater | Completed |
+| 20C1 | macOS packaged runtime, unsigned .app/DMG, native macOS CI package verification | Completed |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials, not on any further engineering decision |
+| 20D1 | Linux local/desktop runtime and packaging | Planned |
+| 20D2 | Linux headless/self-hosted server mode and remote security | Planned |
+| 20E | Logs/diagnostics, final release hardening, final manual/platform verification | Planned |
+
+Stage 20 as a whole remains Incomplete.
+
+### Explicit truth statements
+No operator-owned physical Mac manual test was performed, and none is
+claimed - GitHub-hosted native macOS CI is real native execution on
+real Apple hardware/OS, meaningfully stronger evidence than cross-
+compilation, but it is not equivalent to a human's real Finder UX, Dock
+UX, Gatekeeper first-launch experience, OBS Browser Source rendering on
+a real Mac, or real audio-device behavior. Stage 20C1's macOS packages
+are unsigned and not notarized - no self-signed certificate was
+created, no fake Developer ID was fabricated, no certificate or private
+key was committed, and the operator was never asked for Apple
+credentials at any point in this milestone. No macOS updater install
+path exists; the updater honestly reports platform_unsupported instead
+of a false "up to date" or a silently-attempted unsupported install.
+The canonical local integration-script count remains 24;
+scripts/verify-macos-package.mjs is documented separately as a
+platform-specific CI verification helper, never counted as script #25.
+
+### Continuous-execution rule compliance
+Every GitHub Actions run cited above was observed to terminal state via
+the read-only REST API (no gh CLI available in this environment); the
+one real failure found was investigated to a documented conclusion
+rather than ignored or blindly retried. No Apple signing/notarization
+credentials were requested from, or needed from, the operator at any
+point - their absence is Stage 20C2's own external gate, not a blocker
+for this milestone. No AskUserQuestion call was made during Stage 20C1.

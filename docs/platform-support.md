@@ -166,9 +166,9 @@ current status, it does not change it.
 | Application updater | Supported - Stage 20B, see [updater.md](updater.md) |
 | Real OBS/provider manual verification | Not verified by this project beyond developer use - out of scope for automated CI |
 
-## 5. macOS — Stage 20C1 in progress
+## 5. macOS — Stage 20C1 Completed
 
-**Status: Stage 20C1 in progress** (see
+**Status: Stage 20C1 Completed** (see
 [macos-packaging.md](macos-packaging.md) for the full contract). A real,
 **unsigned and not notarized** `.app` bundle inside a DMG is built and
 verified natively on both Apple Silicon and Intel GitHub-hosted CI
@@ -562,17 +562,18 @@ would follow the same shape,
 | --- | --- | --- |
 | 20A | Windows production runtime and installer (see [`windows-packaging.md`](windows-packaging.md)) | **Completed** |
 | 20B | Application updater (GitHub Releases check, update UI, download/verification, real Windows installer/updater handoff, see [updater.md](updater.md)) - uses the cross-platform artifact-identity concept in §15; Windows x64 remains the only platform it actually serves | **Completed** |
-| 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | In progress |
+| 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
 | 20D | Linux platform support, split into: | Planned |
 | 20D1 | Linux local/desktop runtime and packaging (§8) | Planned |
 | 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
-Stage 20 as a whole remains **Incomplete**. This cross-platform
-portability baseline milestone does not complete any of 20B-20E; it only
-establishes the gates and roadmap that will let them proceed without
-re-litigating platform scope each time.
+Stage 20 as a whole remains **Incomplete**: 20A, 20B, and 20C1 are
+Completed; 20C2, 20D1, 20D2, and 20E remain Planned. 20C2 is externally
+gated on real Apple Developer signing/notarization credentials this
+project does not have - it is not blocked on any further engineering
+decision.
 
 ## 18. What this milestone explicitly did not do
 
