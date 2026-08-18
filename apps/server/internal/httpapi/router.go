@@ -188,6 +188,11 @@ type Options struct {
 	// already-correct shutdown path rather than duplicating it. When nil
 	// (every development/test build today), the route is not registered.
 	Shutdown context.CancelFunc
+	// Updater serves the Stage 20B application-updater API
+	// (/api/updates/*, docs/updater.md §28). When nil (every
+	// development/test build unless explicitly wired), those routes are
+	// not registered.
+	Updater UpdateService
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -294,6 +299,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Shutdown != nil {
 		registerShutdownRoute(mux, logger, opts.Shutdown, opts.AllowedOrigins)
+	}
+
+	if opts.Updater != nil {
+		registerUpdaterRoutes(mux, logger, opts.Updater, opts.AllowedOrigins)
 	}
 
 	if opts.LegalAssets != nil {

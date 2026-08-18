@@ -31172,3 +31172,86 @@ then `manager_test.go`).
 No background command was required for this unit - written, tested,
 and validated synchronously in the same turn. No AskUserQuestion call
 was made.
+
+## feat(server): add the update HTTP API
+
+### What was built
+The `/api/updates/*` API (docs/updater.md §28-§30):
+
+- `internal/httpapi/local_action.go` - a genuine, warranted refactor
+  (docs/updater.md §29): `handleShutdown`'s inline Origin-allowlist
+  check was factored into `buildOriginAllowlist`/
+  `checkLocalActionOrigin`, so there is exactly one implementation of
+  the "same-origin, non-form-submittable local action" protection
+  instead of two that could subtly diverge. `internal/httpapi/
+  system.go` was updated to call the shared helper - its own behavior
+  is byte-for-byte unchanged, confirmed by its full existing 8-test
+  suite passing unmodified.
+- `internal/httpapi/updater.go` - `UpdateService` (the interface
+  `*updater.Manager` satisfies: `Status`/`SetAutoCheck`/`CheckNow`/
+  `Download`/`Install`) and five handlers: `GET /api/updates/status`
+  (serializes `updater.Status` directly - already safe by
+  construction, no separate DTO needed), `PUT /api/updates/
+  preferences` (strict `{"autoCheck": bool}`, unknown fields
+  rejected), `POST /api/updates/check` and `POST /api/updates/
+  download` (both `requireEmptyBody`, the same "commands are not
+  resources" convention `handleInstallMediaMTX`/`handleStartBranch`
+  already use), and `POST /api/updates/install` (reuses the shared
+  Origin check plus the exact `{"confirm":true}` strict-JSON-body
+  shape `system.go`'s own shutdown endpoint uses, for the same
+  form-cannot-submit-`application/json` reasoning).
+  `writeUpdateError` maps `updater.ErrDisabled` to 409
+  `updater_disabled` and `updater.ErrInstallBlocked` to 409 with the
+  real blocker code re-read from a fresh `Status` call (never a raw
+  error string, docs/updater.md §30). Wired into `router.go`'s
+  existing nil-gated `Options`/registration convention unchanged.
+
+### Tests
+21 new test functions, all passing, using the same `httptest`-based
+router-level convention `system_test.go` already established (a fake
+`UpdateService` rather than a real `*updater.Manager`, since the
+manager itself is already covered by its own 65 tests): status
+returns the real snapshot; a dedicated regression guard scans the
+serialized status JSON for `path`/`url`/`sha256`-shaped substrings and
+fails if any appear (mechanically enforcing docs/updater.md §30's
+exclusion list, not just relying on code review); the route is
+unregistered when `Updater` is nil; preferences PUT round-trips and
+rejects an unknown field; check/download both work with no body and
+reject one; install succeeds same-origin, is rejected for a foreign
+Origin, cannot be submitted by an HTML form
+(`application/x-www-form-urlencoded` rejected outright, mirroring
+`TestShutdownCannotBeSubmittedByAnHTMLForm` exactly), rejects a
+missing `confirm:true`, and correctly surfaces a real blocker code
+(`install_blocked_streaming_active`) rather than a generic message
+when the manager refuses. One final test re-runs the shutdown
+same-origin success path through the real router after the refactor,
+as a light cross-check alongside `system_test.go`'s own full,
+unmodified suite.
+
+### Validation
+`go vet ./...` and `go vet -tags integration ./...` (whole repo) both
+clean. `go build ./...` and `go build -tags integration ./...` both
+clean. `go test ./internal/httpapi/...` - full package suite (every
+existing handler test, not just the new ones) PASS. `go test ./...`
+(every package in the module) PASS. `gofmt -l` clean after one
+`gofmt -w` pass.
+
+### Stage status after this entry
+- Stage 20B: Planned - implementation in progress (manifest, GitHub
+  client, settings, the update-manager state machine, and the full
+  HTTP API are done; no Windows helper/real handoff, no frontend yet).
+- Stage 20 (whole): Incomplete (unchanged).
+
+### Commits this milestone (chronological)
+1. `cb7796e` - `docs: define Stage 20B updater contract`
+2. `1cf494a` - `feat(server): add the release manifest schema and
+   validator`
+3. `58464ee` - `feat(server): add the GitHub release client`
+4. `33fc249` - `feat(server): add persisted update preferences`
+5. `d126434` - `feat(server): add the update-manager state machine`
+6. This entry - `feat(server): add the update HTTP API`
+
+### Continuous-execution rule compliance
+No background command was required for this unit - written, tested,
+and validated synchronously in the same turn. No AskUserQuestion call
+was made.

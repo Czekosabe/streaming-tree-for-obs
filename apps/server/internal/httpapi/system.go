@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync/atomic"
 )
 
@@ -32,10 +31,7 @@ func registerShutdownRoute(mux *http.ServeMux, logger *slog.Logger, cancel conte
 }
 
 func handleShutdown(logger *slog.Logger, cancel context.CancelFunc, allowedOrigins []string) http.HandlerFunc {
-	allowed := make(map[string]struct{}, len(allowedOrigins))
-	for _, origin := range allowedOrigins {
-		allowed[strings.TrimRight(origin, "/")] = struct{}{}
-	}
+	allowed := buildOriginAllowlist(allowedOrigins)
 
 	// Shutdown must happen exactly once: cancel() itself is safe to call
 	// repeatedly, but this flag also makes a repeat request return
@@ -44,12 +40,8 @@ func handleShutdown(logger *slog.Logger, cancel context.CancelFunc, allowedOrigi
 	var triggered atomic.Bool
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" {
-			if _, ok := allowed[origin]; !ok {
-				writeError(w, logger, http.StatusForbidden,
-					"origin_not_allowed", "This origin is not permitted to shut down the application.")
-				return
-			}
+		if !checkLocalActionOrigin(w, logger, r, allowed) {
+			return
 		}
 
 		var body shutdownRequest
