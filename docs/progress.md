@@ -28989,3 +28989,203 @@ installed application (already recorded in
 Run the complete closing regression (frontend checks, backend checks,
 all 22 integration scripts - no 23rd script) as one unbroken sequence,
 then append the final closing journal entry.
+
+## 2026-08-18 — docs: record GPL licence regression
+
+### Status
+Completed. Streaming Tree for OBS now has a real, explicit application
+licence.
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `c8cd8e1` ("docs: record product identity and legal regression"),
+clean tree, ahead/behind `0 0`.
+
+### Operator licence decision
+Selected licence: **GNU General Public License version 3, or (at the
+recipient's option) any later version.** SPDX: `GPL-3.0-or-later`.
+Copyright identity: **Copyright (C) 2026 Czekosabe** - the same public
+creator identity already established (never a real/legal personal
+name, never invented or substituted). Apache/MIT/BSD/proprietary
+licensing was not reconsidered; the licence was not silently changed
+to `GPL-3.0-only`, `AGPL-3.0-or-later`, LGPL, or anything else. GPL
+permits commercial use and sale - no "non-commercial," "personal use
+only," "no resale," or "permission required for companies" restriction
+was added on top of the standard GPL terms.
+
+### Ownership/contributor-history audit
+`git shortlog -sne --all` and `git log --format='%an <%ae>' | sort |
+uniq` show exactly one real contributor identity across the entire
+history - the same email (`kacper2280@tlen.pl`) under two local Git
+author-name spellings ("Czekosabe" and "kacper2280"). No distinct
+third-party human contributor exists, so no relicensing-consent
+blocker existed and this task proceeded without stopping.
+
+### Third-party compatibility audit
+Every third-party component actually linked/bundled into a distributed
+build is MIT, BSD-2/3-Clause, ISC, or Apache-2.0 - all confirmed
+GPLv3-compatible directly against the FSF's own license-list page. The
+vendored/generated Apache-2.0 YouTube `streamlistpb` material kept its
+own pre-existing attribution header untouched; no GPL header was added
+to it and it is not claimed as authored/relicensed by Czekosabe.
+MediaMTX and FFmpeg remain separately licensed (never linked, never
+redistributed, "mere aggregation") and are not claimed as GPL. No
+incompatibility was found.
+
+### Root LICENSE
+`LICENSE` (new, repository root) is the complete, verbatim official
+GNU GPLv3 text, fetched directly from
+`https://www.gnu.org/licenses/gpl-3.0.txt` and diffed byte-for-byte
+identical against the committed file (674 lines) - confirmed again
+directly against the committed Git blob, not just the working-tree
+file. No clause was edited, no project-specific restriction was
+inserted, and the text was not translated. The "or any later version"
+choice is established through the project's own licensing notice
+(`LEGAL.md`, `docs/product-identity-legal.md`, `README.md`, `GET
+/api/about`) rather than by modifying GNU's licence text itself.
+
+### Package metadata
+`apps/web/package.json` gained `"license": "GPL-3.0-or-later"` (the
+standardized SPDX expression, not deprecated shorthand). `apps/server/
+go.mod` was intentionally left alone - Go modules have no equivalent
+licence-field convention to invent one for.
+
+### LEGAL.md / product-identity-legal.md / README updates
+`LEGAL.md`'s "Application licence" section now states the selected
+licence, SPDX, and copyright line, plus plain-language notes:
+commercial use/distribution is permitted, copyleft obligations attach
+to conveying (distributing) the program rather than to private
+unshared modification, and this is the GPL, not the AGPL (no
+network-use source-disclosure obligation). `docs/product-identity-
+legal.md` §5 was restructured into §5.1 (the original 2026-08-17
+unresolved audit, preserved as historical record, not rewritten) and
+§5.2 (this decision, with the ownership/compatibility audits above and
+explicit "what this does NOT mean" clarifications); new §5.3 lists
+primary sources; new §8 documents the Stage 20A distribution boundary
+(every future packaged release must include `LICENSE` and
+`THIRD_PARTY_NOTICES.md`) without implementing packaging; new §9
+records the contribution-policy audit (no `CONTRIBUTING.md`/CLA/DCO
+exists, not a blocker, not created now). `README.md` gained a `LICENSE`
+link and a concise "Licence" subsection; creator-support content
+unchanged.
+
+### About API / About UI
+`GET /api/about`'s `applicationLicenceStatus` ("unselected") was
+replaced with `applicationLicenseSpdx`/`applicationLicenseName`,
+sourced from two new `internal/buildinfo` constants
+(`ApplicationLicenseSPDX`, `ApplicationLicenseName`). The frontend's
+About & Legal "Application licence" entry now shows the resolved
+licence name, a monospace `SPDX: GPL-3.0-or-later` line, and a link to
+view the real `LICENSE` file on GitHub - the same summary-plus-link
+pattern already used for Privacy/Third-party notices/Disclaimer, no
+new UI pattern, no Markdown-rendering dependency added. English and
+Polish both updated (`legal.licence.summary`/`legal.licence.viewFull`
+replacing the old `legal.licence.unselected` key); `npm run i18n:check`
+passes with 20 namespaces and no differences against English.
+
+### Third-party notices
+`THIRD_PARTY_NOTICES.md` gained one clarifying introductory paragraph
+pointing at `LICENSE`/`LEGAL.md` for Streaming Tree's own licence,
+stating this file covers third-party material only - no dependency
+entry's own licence fact was changed. Vendored third-party source
+(the YouTube `streamlistpb` material) confirmed to have retained its
+own original Apache-2.0 attribution header, untouched.
+
+### Distribution/source-availability boundary
+Documented in `docs/product-identity-legal.md` §8: every future public
+packaged distribution must include `LICENSE` and
+`THIRD_PARTY_NOTICES.md` at minimum, and release/source-availability
+practice must satisfy the chosen licence's obligations for whatever is
+actually conveyed. Not implemented by this milestone - no installer
+logic, no release artifact.
+
+### Stale licence-state audit
+Searched all current living files (README.md, LEGAL.md, PRIVACY.md,
+docs/product-identity-legal.md, source, package metadata) for "licence
+has not been selected," "unselected," "application licence decision
+required," and equivalents - the only remaining occurrence is inside
+`docs/product-identity-legal.md` §5.1, explicitly labeled as preserved
+2026-08-17 historical context, not a live claim. Historical
+`docs/progress.md` entries that correctly recorded the licence as
+unresolved at the time they were written were left untouched, per the
+append-only journal rule. Searched for accidental contradictory
+first-party licence claims (MIT/Apache-2.0/GPL-3.0-only/AGPL/
+proprietary/non-commercial) naming Streaming Tree's own licence - none
+found; every match was either a correct third-party reference
+(MediaMTX's MIT licence) or a deliberate disambiguating negation
+("is NOT non-commercial," "the GPL, NOT the AGPL," "distinct from
+GPL-3.0-only").
+
+### Frontend tests
+99 test files, 1375 tests, all passing at closing (existing
+`AboutLegalPage.test.tsx`/`SettingsPage.test.tsx` fixtures and
+assertions updated for the new licence fields; no new test file was
+needed for this small milestone).
+
+### Backend validation
+`gofmt -l .`, `go vet ./...`, `go vet -tags integration ./...` all
+clean. `go build ./...` and `go build -tags integration ./...` both
+clean. `go test -count=1 ./...`: 43 packages, 0 failures (existing
+`about_test.go` assertions updated for the new licence fields).
+
+### Integration regression
+All 22 existing integration scripts run once, in canonical order, in a
+single accepted sequence with no failures: verify-persistence.mjs,
+verify-mediamtx-runtime.mjs, verify-ffmpeg-branches.mjs,
+verify-twitch-account-integration.mjs,
+verify-youtube-account-integration.mjs, verify-twitch-engagement.mjs,
+verify-operator-chat.mjs, verify-chat-overlay.mjs,
+verify-twitch-outbound-chat.mjs, verify-chat-automation.mjs,
+verify-alerts.mjs, verify-alert-advanced-queue.mjs,
+verify-alert-designer.mjs, verify-chat-overlay-designer.mjs,
+verify-visual-templates.mjs, verify-visual-template-packages.mjs,
+verify-youtube-engagement.mjs, verify-streamelements-donations.mjs,
+verify-tts-audio.mjs, verify-alert-audio.mjs,
+verify-goals-widgets.mjs, verify-supporter-widgets.mjs. Final log:
+`=== ALL CHECKS AND ALL 22 SCRIPTS PASSED ===`. **No 23rd script was
+created** - this milestone added licence metadata and documentation,
+not a provider integration.
+
+### Regression attempts
+Two attempts were required. Attempt 1's `web-test` step crashed with
+an unhandled `Error: kill EPERM` inside Vitest's own Windows worker-
+pool teardown, before any test-file summary line was produced (43 log
+lines total, 25 seconds elapsed - far too fast and too early to be a
+real test failure). Diagnosed as a genuine, non-deterministic
+environment-level flake, not a product or test regression: an
+immediate standalone re-run of the exact same frontend test suite,
+with zero source changes in between, passed cleanly (99/99 files,
+1375/1375 tests). No source, script, or documentation fix was made or
+needed; the complete regression was restarted from a clean tree per
+the no-selective-retry rule and passed cleanly end to end on attempt
+2. All test-owned processes exited on their own; a post-run process
+check found no lingering `node.exe`/`testserver.exe`/`go.exe`
+processes at all.
+
+### Stage status after this entry
+- Stage 19: Deferred / feasibility-gated (unchanged).
+- Stage 20: Planned / not started (unchanged). **Packaging did not
+  begin, no installer was created, and the updater remains
+  unimplemented** - this milestone was explicitly scoped to establish
+  the application licence only, immediately before Stage 20A.
+
+### Commits this milestone (chronological)
+1. `bf6b137` - `docs: license Streaming Tree under GPLv3 or later`
+2. `6227ad4` - `feat(server): expose the selected application licence`
+3. `9c4d49e` - `feat(web): show the GPL licence in About`
+4. This entry - `docs: record GPL licence regression`
+
+Every commit subject above exactly matches its own journal entry
+heading.
+
+### Continuous-execution rule compliance
+Both background regression attempts were actively polled to completion
+via bounded-timeout blocking polls, their real results verified against
+`SUMMARY.txt`/log content rather than the wrapper's own trailing echo
+alone, and each immediately followed by the next actionable step
+(diagnosing attempt 1's failure, then restarting the complete
+regression rather than asking whether to proceed). No turn ended on
+passive-waiting language, and no operator message was needed at any
+point to make this task inspect a completed background command and
+resume.
