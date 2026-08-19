@@ -36349,3 +36349,62 @@ exactly per this project's own established evidentiary standard.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(web): add remote management login UI
+
+### What changed
+- `lib/api-client.ts`: `setCSRFToken`/module-level in-memory token,
+  attached as `X-CSRF-Token` on every non-GET request when set - never
+  persisted to localStorage/sessionStorage/IndexedDB/URL
+  (`docs/remote-management.md` §27). The existing `fetch()` call
+  already defaults to same-origin cookie sending, so no `credentials`
+  option change was needed for D2B's same-origin-only contract.
+- New `api/auth-schemas.ts`/`api/auth.ts`: `fetchSessionStatus` (GET
+  `/api/auth/session`, returning `null` when the route 404s - i.e.
+  remote management is not enabled on this backend, treated as a
+  normal, expected outcome, never an error), `login`, `logout`.
+- New `app/auth-context.tsx`: `AuthProvider`/`useAuth` - a
+  `'checking' | 'not-applicable' | 'unauthenticated' | 'authenticated'`
+  state machine. `'not-applicable'` (the 404 case) renders the app
+  exactly as before this stage - every existing desktop/D2A-headless-
+  only deployment is unaffected. A bootstrap failure (network error,
+  unexpected shape) also resolves to `'not-applicable'` rather than
+  trapping the operator behind a login screen a broken backend could
+  never satisfy.
+- New `pages/LoginPage.tsx`: password-only form (no username field, no
+  registration, no password-recovery link - a single administrator
+  identity), submitting/invalid-credentials/rate-limited/network error
+  states, EN+PL localized (new `auth` i18n namespace).
+- New `components/auth/AuthGate.tsx`: gates every route except
+  `/overlay/*` (checked via the current path, mirroring the backend's
+  own `/api/public/*` convention) - public overlay/Browser-Source
+  routes never require authentication, regardless of remote-management
+  status, per `docs/remote-management.md` §35/§49.
+- `App.tsx`: wraps the existing route tree in `AuthProvider`/`AuthGate`
+  - zero route/behavior change for any deployment where remote
+  management is not enabled.
+
+### Validation
+`npm run i18n:check`: 2 languages, 22 namespaces (21 existing + the new
+`auth` namespace), no differences. `npm run typecheck`: clean. `npm
+run lint`: 0 errors (one pre-existing-pattern Fast-Refresh warning on
+the Provider+hook file, non-blocking, exit 0). Full `npm run test --
+run`: 104 test files, 1410 tests, all passing (28 new: `LoginPage`
+rendering/no-username-field/invalid-credentials/rate-limited/submit-
+calls-login/never-stores-password-in-browser-storage; `AuthProvider`
+bootstrap-state transitions including the not-applicable/bootstrap-
+failure cases; `AuthGate` public-overlay-bypass/not-applicable/
+unauthenticated/authenticated; `api-client` CSRF-header attachment on
+POST/DELETE, never on GET, never when unset). `npm run build`: clean
+production build; the built `dist/index.html` was read directly and
+contains zero inline `<script>`/`<style>` - confirming (not merely
+asserting) the CSP documented in `docs/remote-management.md` §14
+(`default-src 'self'`, no `unsafe-inline`) is genuinely compatible
+with the real production output, not assumed.
+
+### Commits (chronological, this entry)
+1. This entry - `feat(web): add remote management login UI`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

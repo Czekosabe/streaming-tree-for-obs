@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { ApiError, apiDelete, apiGet, apiPost } from './api-client';
+import { ApiError, apiDelete, apiGet, apiPost, setCSRFToken } from './api-client';
 
 /** Builds a fetch stub returning one response. */
 function mockFetch(status: number, body: unknown, ok = status < 400) {
@@ -19,6 +19,54 @@ const schema = z.object({ value: z.string() });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setCSRFToken(null);
+});
+
+describe('Stage 20D2B CSRF header attachment', () => {
+  it('attaches X-CSRF-Token on POST when a token is set', async () => {
+    const fetchMock = mockFetch(200, { value: 'ok' });
+    vi.stubGlobal('fetch', fetchMock);
+    setCSRFToken('a-csrf-token');
+
+    await apiPost('/api/test', {}, schema);
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(init?.headers).toMatchObject({ 'X-CSRF-Token': 'a-csrf-token' });
+  });
+
+  it('attaches X-CSRF-Token on DELETE when a token is set', async () => {
+    const fetchMock = mockFetch(204, '');
+    vi.stubGlobal('fetch', fetchMock);
+    setCSRFToken('a-csrf-token');
+
+    await apiDelete('/api/test');
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(init?.headers).toMatchObject({ 'X-CSRF-Token': 'a-csrf-token' });
+  });
+
+  it('does not attach X-CSRF-Token on GET even when a token is set', async () => {
+    const fetchMock = mockFetch(200, { value: 'ok' });
+    vi.stubGlobal('fetch', fetchMock);
+    setCSRFToken('a-csrf-token');
+
+    await apiGet('/api/test', schema);
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers['X-CSRF-Token']).toBeUndefined();
+  });
+
+  it('does not attach X-CSRF-Token when no token has been set', async () => {
+    const fetchMock = mockFetch(201, { value: 'created' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiPost('/api/test', {}, schema);
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers['X-CSRF-Token']).toBeUndefined();
+  });
 });
 
 describe('successful requests', () => {

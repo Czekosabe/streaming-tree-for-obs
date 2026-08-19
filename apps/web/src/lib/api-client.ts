@@ -159,6 +159,21 @@ export function resolveUrl(path: string): string {
   return `${base.replace(/\/$/, '')}${path}`;
 }
 
+/**
+ * The current Stage 20D2B CSRF token, held in memory only - never
+ * localStorage/sessionStorage/IndexedDB/URL (docs/remote-management.md
+ * §27). `null` on a backend that does not have remote management
+ * enabled, or before the frontend's own auth bootstrap has completed;
+ * `send` below simply omits the header in that case; every read route
+ * (GET/HEAD) never needs it regardless.
+ */
+let currentCSRFToken: string | null = null;
+
+/** Set once, right after a successful login or session bootstrap - see app/auth-context.tsx. */
+export function setCSRFToken(token: string | null): void {
+  currentCSRFToken = token;
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
@@ -186,6 +201,12 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
   if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(options.body);
+  }
+  // docs/remote-management.md §22: CSRF is required on unsafe methods
+  // only - GET/HEAD requests never carry it, matching the backend's
+  // own withRemoteManagementSecurity middleware exactly.
+  if (currentCSRFToken !== null && method !== 'GET') {
+    headers['X-CSRF-Token'] = currentCSRFToken;
   }
 
   let response: Response;
