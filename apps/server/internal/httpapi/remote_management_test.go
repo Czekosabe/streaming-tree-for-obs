@@ -110,11 +110,36 @@ func testLogger() *slog.Logger {
 
 func testRouterWithRemoteManagement(t *testing.T, rm RemoteManagementOptions) http.Handler {
 	t.Helper()
-	return NewRouter(Options{
+	router, _ := testRouterWithRemoteManagementAndShutdown(t, rm)
+	return router
+}
+
+// testRouterWithRemoteManagementAndShutdown additionally wires a real
+// Shutdown handler (a context.CancelFunc backed by a channel this test
+// can observe) - a real Shutdown/Updater wiring is required to
+// exercise their own pre-existing checkLocalActionOrigin path
+// end-to-end; a nil Shutdown (as the plain testRouterWithRemoteManagement
+// helper effectively used before this fix) leaves POST
+// /api/system/shutdown unregistered entirely (a 404), which cannot
+// prove the real, layered Origin-check interaction actually succeeds -
+// exactly the coverage gap that let the bug fixed alongside this
+// helper change reach real CI undetected.
+func testRouterWithRemoteManagementAndShutdown(t *testing.T, rm RemoteManagementOptions) (http.Handler, <-chan struct{}) {
+	t.Helper()
+	shutdownCalled := make(chan struct{}, 1)
+	cancel := context.CancelFunc(func() {
+		select {
+		case shutdownCalled <- struct{}{}:
+		default:
+		}
+	})
+	router := NewRouter(Options{
 		Logger:           testLogger(),
 		StartedAt:        time.Now(),
 		RemoteManagement: rm,
+		Shutdown:         cancel,
 	})
+	return router, shutdownCalled
 }
 
 // --- login/logout/session-bootstrap behavior ----------------------------
@@ -360,25 +385,42 @@ func TestProtectedUnsafeMethodSameSiteDifferentOriginRejected(t *testing.T) {
 	}
 }
 
+// TestProtectedUnsafeMethodValidRequestSucceeds exercises the real
+// POST /api/system/shutdown handler end-to-end - not merely the
+// withRemoteManagementSecurity middleware in isolation. A prior version
+// of this test used a router with no Shutdown func wired (the route
+// was simply unregistered, a 404), which meant it could never catch a
+// real bug: /api/system/shutdown carries its own separate, pre-
+// existing checkLocalActionOrigin check (docs/windows-packaging.md
+// §8), validated against opts.AllowedOrigins, entirely independent of
+// withRemoteManagementSecurity's own Origin check - a request with the
+// exact right session/CSRF/Origin still failed there, since the
+// remote-management external origin was never added to that older
+// allowlist. Found via real native CI (linux-headless.yml run
+// 32291463443, docs/progress.md's own entry for the fix), fixed in
+// router.go's localActionOrigins computation, and only actually
+// provable by a test that wires the real handler, as this one now
+// does.
 func TestProtectedUnsafeMethodValidRequestSucceeds(t *testing.T) {
 	rm, _ := testRemoteManagementOptions(t, "correct-password")
-	router := testRouterWithRemoteManagement(t, rm)
+	router, shutdownCalled := testRouterWithRemoteManagementAndShutdown(t, rm)
 	cookie, csrfToken := loginAndGetSessionAndCSRF(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/system/shutdown", strings.NewReader(`{"confirm":true}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://stream.example.com")
+	req.Header.Set("Origin", rm.ExternalOrigin)
 	req.Header.Set("X-CSRF-Token", csrfToken)
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	// No Shutdown func wired in this test router, so the route itself
-	// is not even registered - the point of this test is that it does
-	// NOT fail with 401/403 for auth reasons; a 404 here means the
-	// auth/CSRF/Origin gate was passed successfully and the request
-	// reached (or would have reached) the real handler.
-	if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
-		t.Fatalf("status = %d, want neither 401 nor 403 (valid session+CSRF+Origin)", rec.Code)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s, want 200 (valid session+CSRF+Origin against the real handler)", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-shutdownCalled:
+	default:
+		t.Error("the real Shutdown func was never invoked")
 	}
 }
 

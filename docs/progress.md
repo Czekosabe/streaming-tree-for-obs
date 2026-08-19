@@ -36710,3 +36710,87 @@ recorded as its own distinct finding, not conflated with it.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix(server): recognize the remote-management origin in the pre-existing local-action check
+
+### The failure
+Commit `178614a`'s `linux-headless.yml` run (`32291463443`, both
+architectures) failed at "Verify the remote-management contract",
+step 24: "Authenticated remote shutdown with valid session+CSRF+Origin
+succeeds" - a real, `200`-expecting assertion, not a status-code-
+tolerant one. `cross-platform.yml`/`linux-package.yml`/
+`macos-package.yml` were all green on this same commit, confirming the
+earlier flaky-test fix and ruling out the recurring Windows/TTS
+characteristic entirely - this was a new, genuine bug.
+
+### Diagnosis, made possible by the diagnostic capture added the
+previous commit
+The `::error::` annotation (built specifically because this
+environment has no authenticated access to raw step logs) captured
+the script's own step-by-step output for the first time: every check
+through step 23 passed, including "shutdown without CSRF token is
+rejected", "shutdown with wrong CSRF token is rejected", and "shutdown
+with wrong Origin is rejected" (all correctly `403`) - but step 24, the
+first assertion in the sequence expecting `200` rather than "any
+`403`", failed with `403 origin_not_allowed`. This exposed a masking
+effect in the earlier steps: they all also received `origin_not_
+allowed` internally (not the specific CSRF-related rejection their own
+names implied), but the test only asserted `status === 403` generically
+for those, never distinguishing the error code - so the same bug was
+silently present three requests earlier and only became visible on the
+first request expecting success.
+
+Root cause: `POST /api/system/shutdown` and `POST /api/updates/install`
+each carry a second, older, independent Origin check
+(`checkLocalActionOrigin`, `internal/httpapi/local_action.go`,
+predating Stage 20D2B - originally built for the loopback-only local
+dev-server case) validated against `cfg.AllowedOrigins` (the CORS-style
+local dev-server allowlist, defaulting to `http://localhost:5173`/
+`http://127.0.0.1:5173`). This is entirely independent of the new
+`withRemoteManagementSecurity` middleware's own Origin check (which
+correctly passed, using `RemoteManagementOptions.ExternalOrigin`) - a
+request with the exact correct session, CSRF token, and Origin still
+failed at this second, older check, since the configured remote-
+management external origin was never added to the allowlist it
+validates against.
+
+### The fix
+`internal/httpapi/router.go`: `NewRouter` now computes
+`localActionOrigins` - `opts.AllowedOrigins` plus
+`opts.RemoteManagement.ExternalOrigin` when remote management is
+enabled - and passes this extended list to both
+`registerShutdownRoute` and `registerUpdaterRoutes` (both share the
+exact same `checkLocalActionOrigin` pattern, confirmed by direct
+source read). No change to `checkLocalActionOrigin` itself, no second
+implementation - the existing, already-correct local/loopback
+behavior (an absent Origin allowed through, for a non-browser local
+client) is preserved unchanged for every deployment where remote
+management is disabled.
+
+### A real gap in this milestone's own test coverage, also fixed
+`TestProtectedUnsafeMethodValidRequestSucceeds` (`internal/httpapi/
+remote_management_test.go`) previously used a router with no
+`Shutdown` func wired at all - the route was simply unregistered
+(`404`), so the test could never have caught this exact bug regardless
+of what it asserted. A new `testRouterWithRemoteManagementAndShutdown`
+helper wires a real, observable `context.CancelFunc`; the test now
+asserts a genuine `200` and confirms the real handler was actually
+invoked (a channel signal), closing the coverage gap that let this bug
+reach real CI undetected by the Go test suite in the first place.
+
+### Validation
+`gofmt -l`/`go vet`/`go build ./...`: clean. The fixed test and its
+four sibling CSRF/Origin tests (missing CSRF, wrong CSRF, wrong Origin,
+same-site-different-origin) all pass. Full `go test -count=1 ./...`:
+clean across the whole module, zero regressions. The real native-CI
+proof is the next `linux-headless.yml` run for this commit, observed
+to terminal state next - not claimed fixed merely because the
+unit-test reproduction now passes.
+
+### Commits (chronological, this entry)
+1. This entry - `fix(server): recognize the remote-management origin
+   in the pre-existing local-action check`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

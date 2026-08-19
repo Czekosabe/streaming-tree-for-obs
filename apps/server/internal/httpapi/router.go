@@ -306,12 +306,29 @@ func NewRouter(opts Options) http.Handler {
 		registerPublicWidgetRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
 	}
 
+	// localActionOrigins is opts.AllowedOrigins (the local dev-server
+	// allowlist) plus the configured remote-management external origin
+	// when enabled - a real gap found and fixed during this milestone's
+	// own native CI verification: POST /api/system/shutdown and POST
+	// /api/updates/install each carry their own pre-existing
+	// checkLocalActionOrigin check (docs/windows-packaging.md §8,
+	// predating Stage 20D2B), entirely independent of
+	// withRemoteManagementSecurity's own (correctly passing) Origin
+	// check - without this, a legitimate remote-management request
+	// with the exact right session/CSRF/Origin still failed at this
+	// second, older check, since the remote external origin was never
+	// added to the allowlist it validates against.
+	localActionOrigins := opts.AllowedOrigins
+	if opts.RemoteManagement.Enabled && opts.RemoteManagement.ExternalOrigin != "" {
+		localActionOrigins = append(append([]string{}, opts.AllowedOrigins...), opts.RemoteManagement.ExternalOrigin)
+	}
+
 	if opts.Shutdown != nil {
-		registerShutdownRoute(mux, logger, opts.Shutdown, opts.AllowedOrigins)
+		registerShutdownRoute(mux, logger, opts.Shutdown, localActionOrigins)
 	}
 
 	if opts.Updater != nil {
-		registerUpdaterRoutes(mux, logger, opts.Updater, opts.AllowedOrigins)
+		registerUpdaterRoutes(mux, logger, opts.Updater, localActionOrigins)
 	}
 
 	if opts.LegalAssets != nil {
