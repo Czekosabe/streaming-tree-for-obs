@@ -33998,3 +33998,103 @@ Every GitHub Actions run cited above was audited via the read-only
 REST API synchronously in this turn; no run needed to be triggered
 since the cited runs already existed with the conclusions recorded
 above. No AskUserQuestion call was made during this corrective pass.
+
+## docs: define Stage 20D2A Linux headless foundation contract
+
+### Governing task
+Stage 20D2A - Linux headless service foundation + secure headless
+secret storage, loopback-only. Deliberately does not expose the
+application remotely. Establishes the unattended-service foundation
+Stage 20D2B (remote management/control plane) and 20D2C (remote OBS
+ingest) will build on later - neither is touched by this milestone.
+
+### Audit performed before writing the contract
+Directly re-read: `cmd/server/main.go` (CLI parsing via a single
+`flag.Parse()` in `handleEarlyFlags`; `buildinfo.Packaged()` gating for
+browser-launch/nativealert/single-instance/embedded-assets; the
+existing `SIGTERM`-via-`signal.NotifyContext` shutdown path, already
+correct and needing no change), `internal/config` (`resolveDataDir`'s
+`STREAMING_TREE_DATA_DIR` override; confirmed `loadMediaMTX` already
+unconditionally validates both MediaMTX addresses as loopback,
+regardless of platform/mode - no new MediaMTX validation needed;
+confirmed the management HTTP listener has no such validation today -
+the one real gap this milestone closes), `internal/secrets/store.go`
+(the clean `SecretStore` port every consumer already depends on
+through the interface alone, confirmed zero callers assume a specific
+backend), `internal/runtime/singleinstance/singleinstance_linux.go`
+(confirmed its existing `STREAMING_TREE_DATA_DIR`-first lock-path
+resolution, shipped in Stage 20D1, already satisfies "a lock tied to
+the service runtime/state identity" with zero further change),
+`internal/runtime/ffmpeg/resolver.go` and the updater's
+`//go:build !windows` handoff gate (both already correct and
+unchanged), and `scripts/build-release-linux.sh`'s current package
+layout (no systemd unit or maintainer scripts yet).
+
+### Primary-source research (2026-08-19)
+Current freedesktop.org systemd.service/systemd.exec/systemd.unit
+documentation; `systemd.io/CREDENTIALS` and `systemd-creds(1)` for
+`LoadCredential=`/`LoadCredentialEncrypted=` (confirmed
+`LoadCredentialEncrypted=` does NOT require a TPM2 chip - a pure-
+software host key at `/var/lib/systemd/credential.secret` is
+sufficient); a real, verified systemd-version gap between Ubuntu 22.04
+LTS (systemd 249, plain `LoadCredential=` only) and Ubuntu 24.04
+LTS/Debian 12 (systemd 255/252, both mechanisms) - not assumed, this
+directly shaped the decision to require only the broadly-compatible
+plain `LoadCredential=` as the D2A baseline; current systemd.exec
+hardening directive semantics (`NoNewPrivileges=`, `ProtectSystem=strict`,
+`ProtectHome=`, `PrivateTmp=`, `RestrictAddressFamilies=`,
+`RestrictSUIDSGID=`, `CapabilityBoundingSet=`); `StateDirectory=`
+persistence semantics under `DynamicUser=` (confirmed systemd itself
+transparently remaps recycled dynamic UIDs back onto the same
+directory's ownership on every start, per current documentation - not
+something this project has to solve itself); Go's standard-library
+`crypto/aes`+`crypto/cipher` AES-256-GCM (NIST SP 800-38D) as the
+selected AEAD primitive, chosen over inventing a passphrase KDF because
+the systemd-credential-provisioned master key is already raw 256-bit
+material.
+
+### Package-format / service-identity decisions
+`DynamicUser=yes` + `StateDirectory=streaming-tree` selected over a
+fixed system user, avoiding any maintainer-script user creation/
+removal entirely - a materially simpler, more auditable package.
+Master-key provisioning uses plain `LoadCredential=` (systemd 247+) as
+the required baseline, with `LoadCredentialEncrypted=` documented as an
+optional, non-required enhancement for systemd 250+/Ubuntu 24.04-class
+hosts. AES-256-GCM (Go standard library, no new dependency) as the
+secret-storage AEAD primitive, with per-entry random nonces and the
+entry's own key string bound in as AEAD associated data.
+
+### Contract written
+`docs/linux-headless-server.md` - the full Stage 20D2A contract,
+covering: the 20D2A/20D2B/20D2C split and the unconditional loopback-
+only network boundary; the real-implementation audit above; primary-
+source research; explicit `--headless` mode semantics (never inferred
+from GOOS/DISPLAY/systemd); headless loopback bind validation (the one
+real closed gap); the `DynamicUser`+`StateDirectory` service-identity
+decision; the full secure headless secret-storage design (format,
+AEAD, nonce/AAD handling, corruption/tamper handling, plaintext
+handling); master-key provisioning flow (first provisioning, backup,
+recovery, deliberate reset, explicit "losing the master key makes
+existing secrets unrecoverable" statement); mode-driven (not GOOS-
+driven) backend selection; the explicit no-migration boundary between
+desktop Secret Service and headless storage; the headless data/runtime
+layout; the fail-closed headless startup contract; Debian package/
+systemd integration (no maintainer scripts, unit shipped inert, never
+auto-enabled/started); the documented service-enablement operator
+sequence; the native-CI systemd reality check (PID 1 genuinely
+inspected, not assumed); the new `linux-headless.yml` workflow and
+`verify-linux-headless.mjs` helper (explicitly not canonical script
+#25); and explicit 20D2B/20D2C exclusions.
+
+### Stage status after this entry
+Stage 20A/20B/20C1/20D1: Completed. Stage 20C2: Planned, externally
+gated. **Stage 20D2A: contract written, implementation not yet
+started.** Stage 20D2B/20D2C/20E: Planned. Stage 20 as a whole:
+Incomplete.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: define Stage 20D2A Linux headless foundation contract`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this contract. No AskUserQuestion
+call was made while writing it.
