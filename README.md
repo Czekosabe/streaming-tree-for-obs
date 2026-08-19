@@ -311,7 +311,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, and public/Beta readiness, see [macos-packaging.md](docs/macos-packaging.md) | Planned — externally gated on real Apple Developer credentials |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` package for the Debian/Ubuntu family, native x64/ARM64 CI package verification, see [linux-desktop-packaging.md](docs/linux-desktop-packaging.md) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage, see [linux-headless-server.md](docs/linux-headless-server.md) | **Completed** |
-| 20D2B | Secure remote management/control plane: authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, public-overlay exposure policy | Planned |
+| 20D2B | Secure remote management/control plane: single-administrator authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, no remote overlay/ingest exposure yet, see [remote-management.md](docs/remote-management.md) | **In progress** |
 | 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 

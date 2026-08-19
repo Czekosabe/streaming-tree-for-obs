@@ -387,14 +387,18 @@ degrading or pretending a provider exists.
 
 ## 9. Linux headless / self-hosted server mode
 
-**Status: Stage 20D2A Completed** (see [linux-headless-server.md](linux-headless-server.md)
-for the full contract) **- still loopback-only, still not remote.**
-Stage 20D2 as a whole is split into three parts, each with its own
-threat model: 20D2A (this section - a real unattended-service
-foundation, loopback-only), 20D2B (the future secure remote management/
-control plane), and 20D2C (the future remote OBS ingest/data plane).
-Only 20D2A is implemented; 20D2B/20D2C remain exactly as unimplemented
-as this section originally described the whole of 20D2.
+**Status: Stage 20D2A Completed, Stage 20D2B In progress** (see
+[linux-headless-server.md](linux-headless-server.md) for the 20D2A
+contract and [remote-management.md](remote-management.md) for the
+20D2B contract) **- the backend HTTP listener remains loopback-only in
+every mode; remote reachability is provided only by an operator-
+supplied same-host HTTPS reverse proxy, and only when explicitly
+opted into.** Stage 20D2 as a whole is split into three parts, each
+with its own threat model: 20D2A (a real unattended-service
+foundation, loopback-only), 20D2B (the secure remote management/
+control plane - authentication, sessions, CSRF, the reverse-proxy
+contract), and 20D2C (the future remote OBS ingest/data plane, still
+untouched).
 
 **What 20D2A actually implements**, real and native-CI-verified: an
 explicit `--headless` CLI flag (never inferred from `runtime.GOOS`/
@@ -411,23 +415,43 @@ desktop package; and headless-mode-only startup validation that
 (`0.0.0.0`/`::`/a LAN address) rather than merely documenting the
 restriction as a future requirement.
 
-**What remains exactly as unimplemented as before** - all Stage
-20D2B/20D2C scope, untouched by 20D2A:
+**What Stage 20D2B adds**, real and native-CI-verified through a real
+ephemeral-CA TLS reverse-proxy boundary (see
+[remote-management.md](remote-management.md) for the full contract):
+an explicit `--remote-management` opt-in (refused without
+`--headless`); a single-administrator Argon2id (RFC 9106) password
+model with local-only `systemd-run`-based provisioning, never a
+default/hard-coded/environment-variable/HTTP-exposed credential;
+opaque in-memory server-side sessions (never a JWT) with a `__Host-`
+`Secure`/`HttpOnly`/`SameSite=Strict` cookie; a session-bound CSRF
+token required on every unsafe management request; strict canonical-
+Origin enforcement (no absent-Origin exception, unlike the existing
+loopback-oriented local-action check) plus `Sec-Fetch-Site` as defense
+in depth; a forwarding-header contract trusted only from a loopback
+proxy peer, with exactly one value per header and an exact `https`/
+host match required; login rate limiting (per-IP and global); a single
+deny-by-default middleware gating every `/api/` route except the
+existing `/api/public/*` overlay prefix and the new `/api/auth/*`/
+`/api/health` routes - covering every current and future management
+route automatically; management-route security headers (CSP audited
+against the real production build's own lack of inline scripts/
+styles); and remote-safe shutdown (session + CSRF + Origin, on top of
+the existing local Origin check, reusing the exact same graceful-
+shutdown path).
 
-- **Management authentication, sessions, CSRF, trusted origins.** The
-  management API still has no authentication at all - it still relies
-  entirely on being reachable only from the same machine (loopback),
-  now actively enforced rather than merely conventional.
-- **TLS / reverse-proxy contract and trusted proxy headers.** Still
-  undesigned.
-- **Rate limiting and secure remote shutdown.** `POST /api/system/
-  shutdown` is still protected only by an exact-JSON-body check plus
-  loopback-only reachability - still not a remote-safe design.
-- **Public overlay exposure.** Overlay/alert/widget routes are still
-  reachable by anyone who can reach the loopback port - still not
-  remote-safe.
+**What remains exactly as unimplemented as before** - Stage 20D2C's
+own scope, untouched:
+
 - **Remote OBS ingest and ingest authentication/transport security.**
   See §10 - Stage 20D2C's own scope, untouched.
+- **Remote overlay exposure.** Overlay/alert/widget routes remain
+  loopback-only in every mode - Stage 20D2B's reference reverse-proxy
+  configuration deliberately does not forward `/overlay/*`/
+  `/api/public/*`; a future D2C-scoped review is required before any
+  such exposure, including a dedicated `publicSlug` entropy/rotation/
+  revocation audit and an origin-separation decision (a distinct
+  overlay capability origin, never sharing the management session
+  cookie).
 
 This **still cannot** be obtained by simply setting a bind address like
 `STREAMING_TREE_HOST=0.0.0.0` - in headless mode, doing so is now an
@@ -597,14 +621,14 @@ desktop-packaging.md §22) produces
 | 20D | Linux platform support, split into: | Incomplete |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (§9, §11, see [linux-headless-server.md](linux-headless-server.md)) | **Completed** |
-| 20D2B | Secure remote management/control plane: authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, public-overlay exposure policy (§9) | Planned |
+| 20D2B | Secure remote management/control plane: single-administrator authentication, opaque sessions, CSRF, strict Origin/forwarded-header contract, login rate limiting, remote-safe shutdown - no remote overlay/ingest exposure yet (§9, see [remote-management.md](remote-management.md)) | **In progress** |
 | 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation (§10) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
 Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, 20D1, and
-20D2A are Completed; 20C2, 20D2B, 20D2C, and 20E remain Planned. 20C2
-is externally gated on real Apple Developer signing/notarization
-credentials this project does not have - it is not
+20D2A are Completed; 20D2B is In progress; 20C2, 20D2C, and 20E remain
+Planned. 20C2 is externally gated on real Apple Developer signing/
+notarization credentials this project does not have - it is not
 blocked on any further engineering decision.
 
 ## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)

@@ -36512,3 +36512,41 @@ found.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: reflect Stage 20D2B remote management status
+
+### What changed
+`docs/platform-support.md` §9: status line updated to "Stage 20D2A
+Completed, Stage 20D2B In progress"; the "what remains exactly as
+unimplemented" list rewritten into "what Stage 20D2B adds" (the real,
+native-CI-verified feature list: opt-in gating, Argon2id password
+model + local provisioning, opaque sessions + `__Host-` cookie, CSRF,
+strict Origin + `Sec-Fetch-Site`, the forwarding-header contract, login
+rate limiting, the deny-by-default middleware, security headers,
+remote-safe shutdown) plus what still genuinely remains Stage 20D2C
+scope (remote ingest, remote overlay exposure - both explicitly
+untouched); the roadmap table's 20D2B row and the closing summary line
+updated to **In progress**.
+`docs/project-overview.md`: the 20D2B roadmap-table row updated
+similarly, linking to the new `remote-management.md` contract instead
+of the old `platform-support.md` §9 placeholder reference.
+`README.md`: the 20D2B roadmap-table row updated similarly. The two
+narrative "Stage 20's remaining work" mentions and the headless-mode
+"remote access requires Stage 20D2B... neither of which exists yet"
+line were deliberately left unchanged in this commit - Stage 20D2B is
+"In progress", not yet "Completed", so those statements remain
+accurate as written; they will be updated in the dedicated status-flip
+commit once the remote-management native CI evidence is in hand,
+matching this project's own established two-phase status-update
+discipline (a mid-milestone "reflect status" commit, then a separate
+"flip to Completed" commit later).
+
+### Validation
+Prose-only change; no code touched.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: reflect Stage 20D2B remote management status`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
