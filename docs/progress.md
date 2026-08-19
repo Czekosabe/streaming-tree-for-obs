@@ -34203,3 +34203,99 @@ covers every platform this codebase ships).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## build: add Linux headless systemd unit, provisioning helper, and CI
+
+### What changed
+Implements docs/linux-headless-server.md §7/§9/§14-§18.
+
+1. **`scripts/systemd/streaming-tree.service`** (§7/§14/§15): a real
+   systemd unit for optional headless operation - `DynamicUser=yes` +
+   `StateDirectory=streaming-tree` + `RuntimeDirectory=streaming-tree`
+   (no fixed system user, no maintainer-script user management),
+   `LoadCredential=streaming-tree-master-key:/etc/streaming-tree/
+   master.key` (the required systemd-247+ plain-credential baseline,
+   never `Environment=`), a fixed `ExecStart=/usr/bin/streaming-tree-
+   server --headless` with no shell string, `Restart=on-failure`, and
+   the hardening directives researched in the contract
+   (`NoNewPrivileges=`, `ProtectSystem=strict`, `ProtectHome=`,
+   `PrivateTmp=`, `UMask=0077`, `RestrictSUIDSGID=`, an empty
+   `CapabilityBoundingSet=`/`AmbientCapabilities=`,
+   `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` - deliberately
+   keeping `AF_INET`/`AF_INET6` for the application's real loopback/
+   outbound-HTTPS needs, plus several further read-only/no-real-time/
+   no-new-IPC directives with no functional cost to this application).
+   Not enabled or started by anything in this commit or the package
+   itself (§32/§14).
+2. **`scripts/provision-headless-master-key.sh`** (§9): a small,
+   fixed-argv provisioning helper - `head -c 32 /dev/urandom`, write to
+   a temp file in the target directory, verify the exact byte count,
+   `chmod 0600`, atomic rename - refuses to overwrite an existing key
+   without `--force` (stating plainly that doing so invalidates every
+   secret already encrypted under the old key). Never prints key
+   material. Manually smoke-tested: produces a real 32-byte file and
+   correctly refuses to silently overwrite an existing one.
+3. **`scripts/build-release-linux.sh` extended** (not duplicated): now
+   stages the unit at `lib/systemd/system/streaming-tree.service` and
+   the provisioning helper at `usr/share/streaming-tree/provision-
+   headless-master-key.sh` inside the same `streaming-tree-for-obs`
+   `.deb`, running `systemd-analyze verify` against the staged unit
+   when available (non-fatal skip otherwise, matching the existing
+   `desktop-file-validate` convention).
+4. **`.github/workflows/linux-headless.yml`** (§16/§17): a dedicated
+   package-verification workflow, not a release workflow -
+   `contents: read` only, no secrets, no artifact upload. Its first
+   real step is the runner systemd reality check the contract itself
+   requires (`ps -p 1`, `systemctl is-system-running`, `systemd-analyze
+   --version`) rather than assuming PID 1 is systemd merely because
+   `systemctl` exists on `PATH`. Matrix: `ubuntu-latest` (x64),
+   `ubuntu-24.04-arm` (ARM64) - the same current labels already used
+   elsewhere. Runs the real build-and-verify cycle twice per
+   architecture, matching the macOS/Linux-desktop workflows' own shape.
+5. **`scripts/verify-linux-headless.mjs`** (§18): a platform-specific
+   CI verification helper, explicitly NOT canonical script #25 - the
+   canonical count remains 24. Verifies: `.deb` install with the unit
+   present but inert (not enabled); `systemd-analyze verify` against
+   the shipped unit; the unit's `ExecStart=`/`DynamicUser=`/
+   `LoadCredential=` directives directly, including a check for no
+   shell metacharacters and no literal secret-shaped value in the unit
+   file itself; real systemd lifecycle (`daemon-reload`/`enable --now`/
+   `status`/`disable --now`) **only** when the runner's own PID 1 is
+   genuinely `systemd` (checked via `ps -p 1 -o comm=`, not assumed) -
+   otherwise explicitly logs that native PID-1 lifecycle was not
+   available on this run rather than claiming it; real process-level
+   headless-mode behavior via direct invocation (no browser-launch/
+   zenity/kdialog code path, no `DISPLAY`/`WAYLAND_DISPLAY` dependency,
+   health/About/frontend/legal routes, honest TTS/updater
+   unavailability); real `SIGTERM` graceful shutdown and a real restart
+   against the same data/credentials directory; real rejection of
+   `0.0.0.0`/`::`/a LAN address for the management listener in headless
+   mode, each proven by actually attempting to start the process with
+   that host and confirming it exits nonzero before ever accepting a
+   connection; a real fail-closed startup failure when no master
+   credential is present; a real socket-level check (`ss -Hltn`)
+   proving no non-loopback listener exists on the application's port
+   while it runs; and a clean `dpkg -r` removal. The headless secret
+   store's own read/write/persistence/tamper/wrong-key behavior is
+   deliberately not re-tested at the HTTP level here - it is already
+   proven directly and thoroughly by `internal/secrets/
+   headlessstore_test.go`'s 23 focused Go tests; this script instead
+   proves the real binary is wired up to use it correctly end-to-end
+   via the real-restart scenario.
+
+### Validation performed so far
+`bash -n` on both new shell scripts; the provisioning helper was
+manually run for real (produced a genuine 32-byte key file, correctly
+refused to overwrite it without `--force`); `node --check` on the new
+verification script; both new/changed YAML workflow files parsed
+successfully with `js-yaml`. None of the systemd-specific behavior can
+be meaningfully exercised on this Windows development machine - real
+verification is the native Linux CI this commit triggers, observed to
+terminal state next.
+
+### Commits (chronological, this entry)
+1. This entry - `build: add Linux headless systemd unit, provisioning helper, and CI`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

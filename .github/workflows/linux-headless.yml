@@ -1,0 +1,92 @@
+name: Linux headless service verification
+
+# Stage 20D2A native Linux headless-service verification gate, NOT a
+# release workflow: no publication, no secrets, no artifact upload
+# (docs/linux-headless-server.md §17). Builds the same .deb
+# scripts/build-release-linux.sh already produces (now including the
+# systemd unit + provisioning helper) and proves the headless-mode
+# process-level contract natively - loopback-only bind enforcement, no
+# browser/desktop-UI code path, the encrypted headless secret store,
+# graceful SIGTERM shutdown - plus static systemd unit correctness via
+# systemd-analyze verify. Real systemd PID-1 service lifecycle is only
+# claimed if this workflow's own runner reality-check (the first step
+# below) confirms it is genuinely available - never assumed from
+# `systemctl` merely being present on PATH (docs/linux-headless-
+# server.md §16).
+#
+# scripts/verify-linux-headless.mjs is a platform-specific CI
+# verification helper, explicitly not canonical integration script #25
+# - the canonical local integration-script count remains 24.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "scripts/build-release-linux.sh"
+      - "scripts/provision-headless-master-key.sh"
+      - "scripts/systemd/streaming-tree.service"
+      - "scripts/verify-linux-headless.mjs"
+      - ".github/workflows/linux-headless.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  headless:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-latest
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+    name: headless (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # docs/linux-headless-server.md §16: inspect the real runner
+      # before deciding what can honestly be claimed - never assumed.
+      - name: Runner systemd reality check
+        run: |
+          echo "PID 1:"; ps -p 1 -o pid,comm= || true
+          echo "systemctl --version:"; systemctl --version || true
+          echo "systemctl is-system-running:"; systemctl is-system-running || true
+          echo "systemd-analyze --version:"; systemd-analyze --version || true
+
+      - name: Install systemd-analyze / desktop-file-validate (best-effort)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends systemd desktop-file-utils || true
+
+      - name: Build the Linux release package (includes the systemd unit + provisioning helper)
+        run: bash scripts/build-release-linux.sh --version "0.1.0-dev+headless-ci1"
+
+      - name: Verify the headless service contract (pass 1)
+        run: node scripts/verify-linux-headless.mjs
+
+      - name: Build the Linux release package (pass 2)
+        run: bash scripts/build-release-linux.sh --version "0.1.0-dev+headless-ci2"
+
+      - name: Verify the headless service contract (pass 2)
+        run: node scripts/verify-linux-headless.mjs
+
+      - name: Clean up any leftover process, service, or installed package
+        if: always()
+        run: |
+          sudo systemctl disable --now streaming-tree.service || true
+          pkill -f streaming-tree-server || true
+          sudo dpkg -r streaming-tree-for-obs || true
+          sudo rm -rf /etc/streaming-tree /var/lib/private/streaming-tree /run/streaming-tree
+          rm -rf build/release-linux

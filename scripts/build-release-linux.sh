@@ -159,7 +159,9 @@ DEB_ROOT="$OUTPUT_DIR/deb-root"
 mkdir -p "$DEB_ROOT/DEBIAN" \
          "$DEB_ROOT/usr/bin" \
          "$DEB_ROOT/usr/share/applications" \
-         "$DEB_ROOT/usr/share/doc/$PACKAGE_NAME"
+         "$DEB_ROOT/usr/share/doc/$PACKAGE_NAME" \
+         "$DEB_ROOT/lib/systemd/system" \
+         "$DEB_ROOT/usr/share/streaming-tree"
 
 cp "$EXE_PATH" "$DEB_ROOT/usr/bin/$EXE_NAME"
 chmod 0755 "$DEB_ROOT/usr/bin/$EXE_NAME"
@@ -186,6 +188,29 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
 else
   log "desktop-file-validate not found on PATH - skipping (not installed on every host, non-fatal)"
 fi
+
+# --- 10b. Stage the Stage 20D2A headless systemd unit + provisioning helper --
+# docs/linux-headless-server.md §14: shipped inert - not enabled, not
+# started, by this script or by dpkg. No maintainer script installs,
+# enables, or starts this unit; the operator does both explicitly
+# (docs/linux-headless-server.md §15).
+log "Staging the headless systemd unit and provisioning helper"
+SYSTEMD_UNIT="$REPO_ROOT/scripts/systemd/streaming-tree.service"
+[ -f "$SYSTEMD_UNIT" ] || fail "expected systemd unit file at $SYSTEMD_UNIT"
+cp "$SYSTEMD_UNIT" "$DEB_ROOT/lib/systemd/system/streaming-tree.service"
+chmod 0644 "$DEB_ROOT/lib/systemd/system/streaming-tree.service"
+
+if command -v systemd-analyze >/dev/null 2>&1; then
+  systemd-analyze verify "$DEB_ROOT/lib/systemd/system/streaming-tree.service" \
+    || fail "systemd-analyze verify rejected streaming-tree.service"
+else
+  log "systemd-analyze not found on PATH - skipping static unit verification (non-fatal)"
+fi
+
+PROVISION_SCRIPT="$REPO_ROOT/scripts/provision-headless-master-key.sh"
+[ -f "$PROVISION_SCRIPT" ] || fail "expected provisioning helper at $PROVISION_SCRIPT"
+cp "$PROVISION_SCRIPT" "$DEB_ROOT/usr/share/streaming-tree/provision-headless-master-key.sh"
+chmod 0755 "$DEB_ROOT/usr/share/streaming-tree/provision-headless-master-key.sh"
 
 # Debian package versions must not contain characters outside the accepted
 # set (roughly alphanumerics, '.', '+', '-', '~', ':') - the same character

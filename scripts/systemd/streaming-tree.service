@@ -1,0 +1,64 @@
+[Unit]
+Description=Streaming Tree for OBS (headless)
+Documentation=https://github.com/Czekosabe/streaming-tree-for-obs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/streaming-tree-server --headless
+
+# docs/linux-headless-server.md §7: DynamicUser + StateDirectory - no
+# fixed system user is created/removed by the package, and systemd
+# itself remaps the recycled dynamic UID back onto StateDirectory's
+# existing ownership on every start.
+DynamicUser=yes
+StateDirectory=streaming-tree
+RuntimeDirectory=streaming-tree
+
+# docs/linux-headless-server.md §16: the required baseline provisioning
+# mechanism (systemd 247+, covers Ubuntu 22.04 LTS onward and Debian 12
+# onward). The path below is this unit's own default - an operator
+# provisioning a key at a different path overrides this one line via a
+# systemd drop-in (systemctl edit streaming-tree.service), never by
+# editing the package-owned unit file directly.
+LoadCredential=streaming-tree-master-key:/etc/streaming-tree/master.key
+
+Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree
+
+# docs/linux-headless-server.md §2/§6: the application's own headless
+# bind validation already refuses a non-loopback listener at startup;
+# these defaults simply keep the common case explicit rather than
+# relying on the application's own compiled-in default.
+Environment=STREAMING_TREE_HOST=127.0.0.1
+Environment=STREAMING_TREE_PORT=8080
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# docs/linux-headless-server.md §4: hardening evaluated against this
+# application's real needs (real outbound HTTPS to providers, real
+# loopback TCP listeners, MediaMTX/FFmpeg child-process execution, real
+# file I/O under StateDirectory/RuntimeDirectory) - not a blindly
+# copied checklist.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+UMask=0077
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+RestrictRealtime=yes
+RemoveIPC=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+
+[Install]
+WantedBy=multi-user.target
