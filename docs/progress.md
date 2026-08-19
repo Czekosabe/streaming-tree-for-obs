@@ -35814,3 +35814,207 @@ run-ID evidence table.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+
+## docs: record Windows SAPI CI stabilization regression
+
+### Governing task
+PRE-20D2B.1 - determine the actual cause of the recurring `backend
+(windows-amd64)` `go test` failure in `internal/provider/tts`'s
+`TestSystemProviderListVoicesSmoke` (first precisely identified by the
+PRE-20D2B milestone's diagnostic instrumentation) and establish a
+deterministic Windows CI gate before any Stage 20D2B backend work
+begins. Explicitly not Stage 20D2B: no authentication, session, CSRF,
+TLS, reverse-proxy, remote-shutdown, remote-overlay, remote-RTMP, or
+MediaMTX public-binding code was added or touched.
+
+### Starting / final state
+Starting HEAD: `512e22e` (PRE-20D2B's own closing commit). Final HEAD
+before this entry: `656ceae`. Branch `main`, origin `main`, clean
+working tree, `0`/`0` ahead/behind at every commit boundary, confirmed
+via `git pull --ff-only origin main` at milestone start (already up to
+date) and `git rev-list --left-right --count origin/main...HEAD` after
+every push.
+
+### Commits (chronological, this milestone)
+1. `3740c8d` - `fix(server): correct Windows SAPI voice enumeration
+   lifecycle`
+2. `656ceae` - `docs: record Windows SAPI CI stabilization`
+3. This entry - `docs: record Windows SAPI CI stabilization
+   regression`
+
+### Source audit and classification
+Read completely before any edit: `internal/provider/tts/windows.go`,
+`windows_test.go`, `provider.go`, `stub.go`, `go.mod`/`go.sum`
+(`go-ole v1.3.0`), `docs/audio-tts.md`, `docs/ci-reliability.md`.
+`TestSystemProviderListVoicesSmoke` and its three siblings are best
+classified as host-capability integration smoke tests (governing
+task's own class B) - they already skip, never fail, when
+`Capabilities().Available` is false; they prove "this host currently
+has a usable SAPI voice engine," not something this package's code
+alone can guarantee about every machine/CI runner it executes on. This
+package's genuinely deterministic contract (SAPI numeric-range
+conversion, string sanitization, and, new this milestone, the
+zero-voice-availability decision) needs no real SAPI/COM and always
+runs as part of the hard gate.
+
+### Local reproduction
+150+ combined local runs (80 isolated processes, 50 same-process
+repeats, 20 full-package repeats, 3 full-backend repeats) against the
+**original**, unmodified code: zero failures, `available=true`
+throughout, on a machine with genuinely, consistently installed SAPI
+voices. Local non-reproduction was recorded as exactly that - not
+proof CI's failure was wrong.
+
+### Diagnostic-evidence recovery
+The exact CI assertion text was never recovered: the diagnostic
+artifact's download endpoint returned `401` (unauthenticated
+environment, established in the preceding PRE-20D2B milestone); a
+fresh attempt at the raw job-logs endpoint this milestone hit a live
+`403` rate-limit response before an authentication answer could be
+determined, and was not retried in a loop, per this project's own
+low-request monitoring discipline. The exact failing package/test name
+already recovered by PRE-20D2B
+(`internal/provider/tts`::`TestSystemProviderListVoicesSmoke`) was
+sufficient to drive the source-level investigation, exactly as this
+milestone's own governing task anticipated it might need to be.
+
+### Primary-source research (2026-08-19)
+`github.com/actions/runner-images`'s `Windows2025-Readme.md` (fetched
+directly): zero mentions of speech synthesis, SAPI, TTS, or voice
+packages in the documented software inventory - no default voice is a
+documented guarantee on the hosted image. Microsoft Learn's SAPI 5.4
+API overview (archived but authoritative): voice tokens resolve
+through `ISpObjectTokenCategory`/`IEnumSpObjectTokens`, a
+registry-backed enumeration, not an in-memory cache. go-ole `v1.3.0`
+source, read directly: `coInitialize()` treats any nonzero HRESULT as
+an error, including the documented-benign `S_FALSE` (already-
+initialized) success code.
+
+### Empirical COM-threading test (throwaway, not committed)
+A standalone diagnostic program reproducing `runOnLockedThread`'s
+exact goroutine/lock/CoInitialize pattern: 11,000 total `CoInitialize`
+calls (3,000 sequential at each of `GOMAXPROCS` 1/2/4, plus 2,000 at
+8-way concurrency) - zero `S_FALSE` occurrences. This empirically
+disproves ordinary Go thread-pool reuse alone as the practical trigger
+on this Go version/runtime, recorded honestly as a negative result
+rather than suppressed.
+
+### Root cause: two real, source-confirmed defects fixed; exact
+historical mechanism not provable with certainty
+1. `ListVoices()`'s `ctx.Done()` branch returned immediately without
+   waiting for its locked-OS-thread goroutine, unlike `Synthesize()`'s
+   own already-correct cancellation path - orphaning a locked OS
+   thread holding a live COM apartment for however long the in-flight
+   COM call actually took, on every cancellation/timeout.
+2. `runOnLockedThread` misread the documented-benign `S_FALSE` HRESULT
+   as a hard failure and skipped `CoUninitialize` on that path, leaving
+   the OS thread's COM reference count unbalanced for whatever
+   goroutine Go's runtime handed that thread to next.
+
+Both are genuine defects in the exact code this investigation audited,
+fixed on their own merits. Whether either, both, or neither fully
+explains all seven historical occurrences cannot be proven without the
+unrecoverable exact CI assertion text - stated honestly rather than
+claimed as certain, per the governing task's own explicit prohibition
+on inventing a cause.
+
+### What changed (product/test code)
+`internal/provider/tts/windows.go`: `ListVoices()`'s cancellation path
+now waits for `<-done`; `runOnLockedThread` now recognizes `S_FALSE`
+via `errors.As`/`ole.OleError.Code()` and falls through to normal use
+(still calling `CoUninitialize` to keep the thread balanced);
+`checkAvailable()`'s zero-voice decision factored into a new pure
+function `voiceCountAvailable(count int) error`.
+`internal/provider/tts/windows_test.go`: three new deterministic tests
+for `voiceCountAvailable` (zero/negative/positive, no SAPI required);
+`TestSystemProviderListVoicesSmoke`'s context timeout raised 5s to
+20s, justified by the audited COM-call-volume asymmetry against
+`Capabilities()` (not a blind increase); new
+`TestSystemProviderListVoicesCancellation` exercising the fixed
+`ctx.Done()` path directly; strengthened section comment explicitly
+classifying the four SAPI-dependent tests as host-capability smoke
+tests.
+
+No unrelated TTS product change was made. macOS/Linux system TTS
+remain unavailable (`stub.go` untouched). No new voice/provider was
+implemented. No test was skipped, weakened, retried, or removed to
+force a green result. `.github/workflows/cross-platform.yml`'s own
+routing/concurrency, established by the preceding PRE-20D2B milestone,
+was not altered.
+
+### Local validation after the fix
+`gofmt -l .`: clean. `go vet ./internal/provider/tts/...`: clean.
+`go test -count=1 ./internal/provider/tts/... -v`: all 11 tests pass.
+`-race` was attempted but unavailable (no C compiler on this machine
+to enable cgo) - a stated environment limitation; the governing task
+itself notes the race detector is not proof of COM correctness anyway,
+since go-ole uses raw `syscall`, not cgo. Repeated validation of the
+specific formerly-failing test: 100 same-process repeats + 100
+additional isolated process runs = 200/200 passed, zero unexplained
+failures. Full backend `go test -count=2 ./...`: one transient,
+unrelated failure in `internal/runtime/mediamtx` (`TestPing*`, a local
+loopback-connection timeout under whole-suite resource pressure),
+confirmed non-reproducible in isolation and confirmed unrelated to
+`internal/provider/tts` (which passed cleanly both times); a further
+`go test -count=1 ./...` passed with zero failures anywhere.
+Cross-platform impact: `GOOS=linux`/`GOOS=darwin` (`CGO_ENABLED=0`)
+builds and vets of the affected package both clean; `GOOS=windows`
+(`CGO_ENABLED=0`, matching the real CI matrix) full-module build
+clean.
+
+### Final CI evidence (all four workflows, first attempt, no retry)
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| `cross-platform.yml` | `32284351369` | **success - all 6 jobs, including `backend (windows-amd64)`, explicitly confirmed `success`** |
+| `linux-headless.yml` | `32284351410` | success, both architectures |
+| `linux-package.yml` | `32284351399` | success, both architectures |
+| `macos-package.yml` | `32284351366` | success, both architectures |
+
+This is the first fully green `cross-platform.yml` run in this
+project's history to include a Windows job that had previously shown
+this specific recurring failure. No 5/6 result was accepted; the fix
+produced a genuine 6/6 result on the first real CI attempt.
+
+### Package-workflow boundary
+All four workflows triggered automatically because the fix legitimately
+touched `apps/server/**` - none was manually dispatched, and no
+unnecessary expensive run was generated beyond what the real code
+change warranted.
+
+### API request budget and quota
+The evidence-gathering this milestone (one `head_sha` locate call
+covering all four workflows, run-level-only polling until terminal,
+one jobs-listing call per completed run, one bounded and non-retried
+job-logs attempt that hit a live rate limit) stayed well within
+`docs/ci-reliability.md` §11's ~15-20/hour budget. Quota was not
+exhausted by this milestone's own activity at any point.
+
+### Stage status after this milestone
+
+| Stage | Status |
+| --- | --- |
+| 20A, 20B, 20C1, 20D1, 20D2A | Completed |
+| 20C2 | Planned - externally gated |
+| 20D2B, 20D2C, 20E | Planned |
+
+Stage 20 as a whole remains **Incomplete**. This milestone changed no
+product stage status - it is a CI-reliability/root-cause micro-
+milestone sitting between PRE-20D2B and Stage 20D2B.
+
+### Operator-resume/follow-up count, this milestone
+Zero. Launched with one comprehensive governing-task message and
+completed without any "so?"/"continue"/"and?"-style follow-up.
+
+### AskUserQuestion count
+Zero calls this milestone.
+
+### Continuous-execution rule compliance
+No turn ended in passive waiting - the one real CI wait was filled with
+a full source audit, primary-source research, and an empirical 11,000-
+call diagnostic stress test performed while the fix was being
+developed, and monitored afterward via a single low-request background
+watcher rather than manual polling. No AskUserQuestion call was made.
+No retry, skip, weakening, or removal of the Windows SAPI test was used
+to reach the green result recorded above.
