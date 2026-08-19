@@ -225,6 +225,14 @@ PROVISION_SCRIPT="$REPO_ROOT/scripts/provision-headless-master-key.sh"
 cp "$PROVISION_SCRIPT" "$DEB_ROOT/usr/share/streaming-tree/provision-headless-master-key.sh"
 chmod 0755 "$DEB_ROOT/usr/share/streaming-tree/provision-headless-master-key.sh"
 
+# docs/remote-management.md §9.2: the Stage 20D2B administrator-
+# password provisioning helper - staged alongside the Stage 20D2A
+# master-key helper, same ownership/permission convention.
+ADMIN_PASSWORD_SCRIPT="$REPO_ROOT/scripts/provision-admin-password.sh"
+[ -f "$ADMIN_PASSWORD_SCRIPT" ] || fail "expected provisioning helper at $ADMIN_PASSWORD_SCRIPT"
+cp "$ADMIN_PASSWORD_SCRIPT" "$DEB_ROOT/usr/share/streaming-tree/provision-admin-password.sh"
+chmod 0755 "$DEB_ROOT/usr/share/streaming-tree/provision-admin-password.sh"
+
 # Debian package versions must not contain characters outside the accepted
 # set (roughly alphanumerics, '.', '+', '-', '~', ':') - the same character
 # class this script's own --version validation above already enforces is a

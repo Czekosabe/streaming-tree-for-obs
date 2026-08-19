@@ -36284,3 +36284,68 @@ evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## build: wire remote management into the server and add admin password provisioning
+
+### What changed
+- `internal/auth/adminauth.go` (+ tests): `AdminAuthenticator` - the
+  concrete `httpapi.AdminAuthService` implementation, verifying the
+  administrator password against the verifier stored via the existing
+  `SecretStore`; `SetAdminPassword`/`AdminPasswordProvisioned` for the
+  local-only provisioning path.
+- `cmd/server/main.go`: new `--remote-management` flag (refused unless
+  `--headless` is also set - `docs/remote-management.md` §3); new
+  `--provision-admin-password [--force]` mode, handled in
+  `handleEarlyFlags` exactly like the existing `-update-helper`
+  pattern; `run()` now fails closed (§5) before creating any listener
+  when remote management is enabled but the external origin is
+  malformed or no administrator credential is provisioned; constructs
+  `httpapi.RemoteManagementOptions` (a real `auth.SessionStore`/
+  `auth.LoginLimiter` using `auth.RealClock`) and passes it to
+  `httpapi.NewRouter`.
+- New `cmd/server/provision.go`: `readProvisioningPassword` - hidden,
+  confirmed input via `golang.org/x/term` when stdin is a real
+  terminal; a single non-interactive line otherwise (so a script/CI
+  driver can provide one without a pty) - never a command-line
+  argument, never an environment variable, per `docs/remote-management.md`
+  §9.2/§14.
+- New `scripts/provision-admin-password.sh`: wraps
+  `--provision-admin-password` in a `systemd-run` invocation carrying
+  the shipped unit's own exact `LoadCredential=`/`DynamicUser=yes`/
+  `StateDirectory=`/`Environment=STREAMING_TREE_DATA_DIR` properties -
+  the provisioned verifier lands in the same encrypted `secrets.json`
+  the real service reads, under the same identity, never a second
+  parallel state path.
+- `scripts/systemd/streaming-tree.service`: documented, commented-out
+  (disabled-by-default) `STREAMING_TREE_REMOTE_MANAGEMENT`/
+  `STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN` drop-in example - an
+  install never silently enables remote management.
+- `scripts/build-release-linux.sh`: stages the new provisioning script
+  into the `.deb` alongside the existing master-key helper.
+- `.github/workflows/linux-headless.yml` +
+  `scripts/verify-ci-routing.mjs`: the new script added to the
+  workflow's own path filter and the routing-verification model kept
+  in sync (`node scripts/verify-ci-routing.mjs` passes again).
+
+### Validation
+`go build ./...`, `gofmt -l`, `go vet ./...`: all clean across the
+whole module. `go test -count=1 ./...`: zero failures anywhere.
+`bash -n` on both shell scripts: clean. `node scripts/verify-ci-
+routing.mjs`: all checks pass, including the newly-synced
+`linux-headless.yml` model.
+
+### CI note
+Commit `a899413`'s `cross-platform.yml` run succeeded fully (6/6,
+including `backend (windows-amd64)`) - consistent with the recurring
+TTS characteristic being genuinely probabilistic rather than
+deterministic on every `apps/server`-touching commit, as already
+documented. Not treated as proof the characteristic is resolved,
+exactly per this project's own established evidentiary standard.
+
+### Commits (chronological, this entry)
+1. This entry - `build: wire remote management into the server and
+   add admin password provisioning`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -48,6 +48,7 @@ const WORKFLOWS = {
     "apps/web/**",
     "scripts/build-release-linux.sh",
     "scripts/provision-headless-master-key.sh",
+    "scripts/provision-admin-password.sh",
     "scripts/systemd/streaming-tree.service",
     "scripts/verify-linux-headless.mjs",
     "LICENSE",

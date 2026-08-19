@@ -23,6 +23,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/alerts"
 	audiort "github.com/streaming-tree/server/internal/audio"
+	"github.com/streaming-tree/server/internal/auth"
 	"github.com/streaming-tree/server/internal/buildinfo"
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
@@ -78,6 +79,12 @@ import (
 // §5). Read only after handleEarlyFlags has run.
 var headlessMode bool
 
+// remoteManagementFlag is set once, from the real command-line flag,
+// inside handleEarlyFlags - never inferred from --headless alone
+// (docs/remote-management.md §3). Read only after handleEarlyFlags has
+// run.
+var remoteManagementFlag bool
+
 func main() {
 	if handled := handleEarlyFlags(); handled {
 		return
@@ -115,13 +122,23 @@ func main() {
 func handleEarlyFlags() bool {
 	versionFlag := flag.Bool("version", false, "print version information and exit")
 	headlessFlag := flag.Bool("headless", false, "run without a browser/desktop UI, as an unattended Linux service (docs/linux-headless-server.md)")
+	remoteManagementCLIFlag := flag.Bool("remote-management", false, "enable the Stage 20D2B remote management/control plane - requires --headless (docs/remote-management.md)")
 	updateHelperFlag := flag.Bool(updater.FlagUpdateHelper, false, "internal: run in update-helper mode")
 	parentPID := flag.Int(updater.FlagParentPID, 0, "internal: update-helper only")
 	candidate := flag.String(updater.FlagCandidate, "", "internal: update-helper only")
 	targetExe := flag.String(updater.FlagTargetExe, "", "internal: update-helper only")
 	expectedVersion := flag.String(updater.FlagExpectedVersion, "", "internal: update-helper only")
+	provisionAdminPasswordFlag := flag.Bool("provision-admin-password", false,
+		"local-only: read a new administrator password from stdin and store its verifier, then exit (docs/remote-management.md §9.2)")
+	forceProvision := flag.Bool("force", false, "with -provision-admin-password: overwrite an existing verifier")
 	flag.Parse()
 	headlessMode = *headlessFlag
+	remoteManagementFlag = *remoteManagementCLIFlag
+
+	if *provisionAdminPasswordFlag {
+		runProvisionAdminPassword(*forceProvision)
+		return true
+	}
 
 	if *updateHelperFlag {
 		runUpdateHelper(*parentPID, *candidate, *targetExe, *expectedVersion)
@@ -156,6 +173,65 @@ func runUpdateHelper(parentPID int, candidate, targetExe, expectedVersion string
 	if result.Outcome != updater.OutcomeOK {
 		os.Exit(1)
 	}
+}
+
+// runProvisionAdminPassword implements `--provision-admin-password`
+// (docs/remote-management.md §9.2) - a local-only mode, never reachable
+// through any HTTP route. It reuses the exact same
+// secrets.LoadHeadlessMasterKey/secrets.NewHeadlessStore construction
+// run() itself uses, so it requires the same $CREDENTIALS_DIRECTORY
+// input a real systemd unit invocation provides - operators run this
+// via scripts/provision-admin-password.sh, which wraps it in a
+// `systemd-run` invocation carrying the shipped unit's own
+// LoadCredential=/DynamicUser=/StateDirectory=/Environment= properties,
+// rather than inventing a second, parallel identity/state path. The
+// password is read from stdin only - never a command-line argument,
+// never an environment variable - and is hashed immediately; nothing
+// derived from it is ever written to a temporary file.
+func runProvisionAdminPassword(force bool) {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+		os.Exit(1)
+	}
+
+	masterKey, err := secrets.LoadHeadlessMasterKey()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+		os.Exit(1)
+	}
+	store, err := secrets.NewHeadlessStore(filepath.Join(cfg.DataDir, "secrets.json"), masterKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+	if !force {
+		provisioned, err := auth.AdminPasswordProvisioned(ctx, store)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+			os.Exit(1)
+		}
+		if provisioned {
+			fmt.Fprintln(os.Stderr,
+				"provision-admin-password: an administrator password is already provisioned - pass -force to deliberately overwrite it (this invalidates every active remote-management session)")
+			os.Exit(1)
+		}
+	}
+
+	password, err := readProvisioningPassword()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := auth.SetAdminPassword(ctx, store, password); err != nil {
+		fmt.Fprintf(os.Stderr, "provision-admin-password: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintln(os.Stderr, "Administrator password provisioned.")
 }
 
 // newUpdaterClient builds the updater's GitHub API client. The default
@@ -195,6 +271,27 @@ func run() error {
 		if err := config.ValidateHeadlessListenAddress(cfg); err != nil {
 			return err
 		}
+	}
+
+	// docs/remote-management.md §3/§5: remote management is Linux
+	// headless deployment functionality only - never inferred from
+	// --headless alone, and refused outright if requested without it.
+	// Every other precondition (a valid HTTPS origin, a provisioned
+	// administrator credential) is checked further below, once the
+	// secret store this depends on has been constructed - a headless
+	// service whose remote-management preconditions are not all met
+	// must fail before serving any traffic, not silently fall back to
+	// an unauthenticated or desktop-only mode.
+	remoteManagementEnabled := cfg.RemoteManagement.Enabled
+	if remoteManagementEnabled && !headlessMode {
+		return fmt.Errorf("--remote-management requires --headless (docs/remote-management.md §3)")
+	}
+	var remoteManagementOrigin string
+	if remoteManagementEnabled {
+		if err := config.ValidateRemoteManagementOrigin(cfg.RemoteManagement.ExternalOrigin); err != nil {
+			return err
+		}
+		remoteManagementOrigin = config.CanonicalRemoteManagementOrigin(cfg.RemoteManagement.ExternalOrigin)
 	}
 
 	// Packaged mode only (docs/windows-packaging.md §9): a second launch
@@ -303,6 +400,30 @@ func run() error {
 		secretStore = secrets.NewKeyringStore()
 	}
 	credentialService := credential.NewService(secretStore)
+
+	// docs/remote-management.md §5: fail closed before any listener is
+	// created if remote management is enabled but no administrator
+	// credential has been provisioned - a service must never appear
+	// healthy while remote authentication is impossible.
+	var remoteManagementOptions httpapi.RemoteManagementOptions
+	if remoteManagementEnabled {
+		provisioned, provisionErr := auth.AdminPasswordProvisioned(ctx, secretStore)
+		if provisionErr != nil {
+			return provisionErr
+		}
+		if !provisioned {
+			return fmt.Errorf(
+				"remote management is enabled but no administrator password is provisioned - run --provision-admin-password first (docs/remote-management.md §9.2)")
+		}
+		remoteManagementOptions = httpapi.RemoteManagementOptions{
+			Enabled:        true,
+			ExternalOrigin: remoteManagementOrigin,
+			Auth:           auth.AdminAuthenticator{Store: secretStore},
+			Sessions:       auth.NewSessionStore(auth.RealClock),
+			LoginLimiter:   auth.NewLoginLimiter(auth.RealClock),
+		}
+		logger.Info("remote management enabled", slog.String("external_origin", remoteManagementOrigin))
+	}
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
 
@@ -845,6 +966,8 @@ func run() error {
 		LegalAssets: legalAssets,
 		Shutdown:    shutdownCancel,
 		Updater:     updateManager,
+
+		RemoteManagement: remoteManagementOptions,
 	})
 
 	server := &http.Server{

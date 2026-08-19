@@ -33,6 +33,19 @@ Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree
 Environment=STREAMING_TREE_HOST=127.0.0.1
 Environment=STREAMING_TREE_PORT=8080
 
+# docs/remote-management.md §3/§4: Stage 20D2B remote management is
+# disabled by default and must never be silently enabled by a package
+# install. An operator who has completed the full provisioning
+# sequence (docs/remote-management.md's own operator sequence -
+# administrator password provisioned, a real HTTPS reverse proxy
+# configured on this same host) enables it via a systemd drop-in
+# (systemctl edit streaming-tree.service), never by editing this
+# package-owned unit file directly:
+#
+#   [Service]
+#   Environment=STREAMING_TREE_REMOTE_MANAGEMENT=true
+#   Environment=STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN=https://your-domain.example.com
+
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
