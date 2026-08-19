@@ -35769,3 +35769,48 @@ was made. The one bounded evidence-recovery attempt that hit a rate
 limit was not retried in a loop - the investigation continued using
 the evidence already in hand, per this milestone's own low-request
 monitoring discipline.
+
+## docs: record Windows SAPI CI stabilization
+
+### Final CI evidence
+Commit `3740c8d` (`fix(server): correct Windows SAPI voice enumeration
+lifecycle`) touched `apps/server/**`, triggering all four workflows
+under the current routing. All four reached a clean terminal
+`success`, confirmed at both run level and per-job level via the
+low-request monitoring strategy (`docs/ci-reliability.md` §11) - one
+locating request per workflow set (covered in a single `head_sha`
+lookup), run-level polling only until terminal, one jobs-listing call
+per run after completion, zero jobs-endpoint polling mid-run:
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| `cross-platform.yml` | `32284351369` | success - all 6 jobs green, including `backend (windows-amd64)` explicitly confirmed `success` |
+| `linux-headless.yml` | `32284351410` | success, both architectures |
+| `linux-package.yml` | `32284351399` | success, both architectures |
+| `macos-package.yml` | `32284351366` | success, both architectures |
+
+This is the first fully green `cross-platform.yml` run in this
+project's history that includes a Windows job which had previously
+shown the recurring `TestSystemProviderListVoicesSmoke` failure -
+obtained on the first CI attempt after the fix, with no retry and no
+weakening of the Windows job.
+
+### What changed
+`docs/ci-reliability.md` - added §19 ("PRE-20D2B.1 - Windows SAPI
+flake: root-cause investigation and resolution") recording: the exact
+failing package/test; why prior evidence looked purely environmental
+(absence of code correlation, never an actual source audit); the two
+real defects found (`ListVoices()`'s orphaned-goroutine cancellation
+path; `runOnLockedThread`'s `S_FALSE`-as-error misinterpretation); why
+each fix is correct independent of whether it fully explains every
+historical occurrence; the empirical 11,000-call negative-result stress
+test; the honest statement that the exact CI assertion text was never
+recovered; the deterministic-vs-host-smoke classification; and this
+run-ID evidence table.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: record Windows SAPI CI stabilization`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

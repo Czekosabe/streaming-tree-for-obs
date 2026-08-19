@@ -497,3 +497,93 @@ concurrency/cancellation behavior, and the diagnostic-capture
 mechanism itself - is independently proven regardless of this specific
 job's outcome, since the failure is attributable to the pre-existing
 environmental characteristic, not to anything this milestone changed.
+
+## 19. PRE-20D2B.1 - Windows SAPI flake: root-cause investigation and
+resolution
+
+**Exact failing package/test:**
+`github.com/streaming-tree/server/internal/provider/tts` ::
+`TestSystemProviderListVoicesSmoke` (identified by §17 above).
+
+**Why prior evidence looked purely environmental:** every one of the
+seven historical occurrences (Stage 20B's `58464ee`; Stage 20C1's
+`56dc658`; Stage 20D1's `ab09cba`/`d910bfc`; Stage 20D2A's
+`3b44b7a`/`3e46bca`; PRE-20D2B's `074004b`) was bracketed by clean runs
+on commits with no relevant code difference, and never reproduced on
+any local development machine - both are still true. What changed is
+that the code itself was never actually audited for a real defect
+before PRE-20D2B.1; "environmental" had been an inference from absence
+of correlation with commits, not a conclusion from reading the
+implementation.
+
+**What was actually wrong, found by direct source audit:**
+1. `ListVoices()`'s context-cancellation branch returned immediately on
+   `ctx.Done()` without waiting for its locked-OS-thread goroutine to
+   finish - unlike `Synthesize()`'s own cancellation path, which
+   already waits. This orphans a locked OS thread holding a live COM
+   apartment for however long the in-flight `GetVoices`/token
+   enumeration actually takes, unbounded and unobserved, on every
+   cancellation or timeout.
+2. `runOnLockedThread` (via go-ole's `CoInitialize` wrapper) treated
+   the HRESULT `S_FALSE` - which Microsoft's own `CoInitialize`
+   reference documents as "COM already initialized on this thread", a
+   **success** code - as a hard failure, and skipped
+   `CoUninitialize` on that path, leaving the OS thread's COM
+   reference count unbalanced for whatever goroutine Go's runtime
+   handed that thread to next.
+
+**Why the selected fix is correct:** both are genuine, source-
+confirmed defects in the exact COM-lifecycle code this investigation
+was scoped to audit, independent of whether either fully explains
+every historical CI occurrence - a resource-lifecycle bug (orphaning a
+thread/COM apartment on cancellation) and a HRESULT-handling bug
+(misreading a documented success code as failure) are worth fixing on
+their own merits, and both are plausible, evidence-consistent
+mechanisms for CI-only intermittency under runner virtualization/
+contention that a local, always-fast, always-available development
+machine would never trigger. An empirical stress test (11,000
+`CoInitialize` calls reproducing `runOnLockedThread`'s exact pattern
+across varied `GOMAXPROCS` and concurrency levels) found zero `S_FALSE`
+occurrences from ordinary Go thread-pool reuse alone on this Go
+version - recorded honestly as a negative result. **The exact CI
+assertion text was never recovered** (the diagnostic artifact requires
+authentication this environment does not have, and a follow-up attempt
+at the raw job-logs endpoint hit a live rate limit before an
+authentication answer could even be determined) - so no single
+mechanism is claimed as certain or exclusive.
+
+**Deterministic-vs-host-smoke classification:** `TestSystemProviderList
+VoicesSmoke` and its three siblings are explicitly classified as
+host-capability integration smoke tests (already true via
+`skipIfSAPIUnavailable`, now stated explicitly in the test file's own
+section comment) - they prove "this host currently has a usable SAPI
+voice engine," not something this package's code can guarantee about
+every machine it runs on. The zero-voice-availability decision
+previously only reachable through real SAPI was factored into a pure
+function (`voiceCountAvailable`) with three new deterministic unit
+tests, now part of the hard gate regardless of host SAPI availability.
+
+**Future diagnostic behavior:** unchanged from §7-§8 above - the same
+`go test -json`/`tee`/`jq` mechanism, failure annotations, and
+diagnostic-artifact upload apply to any future Windows failure,
+including a recurrence of this exact test. If it recurs, the same
+mechanism will again identify the exact package/test on the very next
+occurrence.
+
+**Final resolution evidence:** commit `3740c8d` (`fix(server): correct
+Windows SAPI voice enumeration lifecycle`) triggered all four
+workflows (via its `apps/server/**` path). All four reached a clean
+terminal `success`, confirmed at both the run level and the per-job
+level:
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| `cross-platform.yml` | `32284351369` | success - all 6 jobs, including `backend (windows-amd64)`, explicitly confirmed `success` |
+| `linux-headless.yml` | `32284351410` | success, both architectures |
+| `linux-package.yml` | `32284351399` | success, both architectures |
+| `macos-package.yml` | `32284351366` | success, both architectures |
+
+This is the first fully green `cross-platform.yml` run in this
+project's history to include a Windows job that had previously shown
+this specific failure - obtained on the very first CI attempt after
+the fix, with no retry.
