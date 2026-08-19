@@ -36624,3 +36624,29 @@ tests pass, full existing suite unaffected. `go build ./...`/`go vet
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: disclose remote management in PRIVACY.md
+
+### What changed
+`PRIVACY.md`: added an honest disclosure of Stage 20D2B's real
+privacy-relevant facts - the administrator password is never stored in
+plain text (only an Argon2id verifier, in the same encrypted headless
+store Stage 20D2A already established); remote management is opt-in
+and requires `--headless`; once enabled, and once the operator
+separately configures their own reverse proxy, the instance becomes
+reachable wherever that proxy is exposed - the application itself
+never binds beyond loopback and never opens a port on its own. The
+existing `localStorage` disclosure was extended to explicitly name
+session identifiers/CSRF tokens/administrator passwords as things that
+are never written to browser storage, alongside the existing stream-
+key/token guarantee.
+
+### Validation
+Prose-only change; no code touched.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: disclose remote management in PRIVACY.md`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

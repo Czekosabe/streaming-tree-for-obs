@@ -34,9 +34,23 @@ link**. It describes the application as it exists today; see
   local-machine-only; nothing about it exposes the application to a
   network beyond the same loopback-only boundary every other mode
   already has.
+- A Linux instance additionally started with `--remote-management`
+  (Stage 20D2B, see
+  [docs/remote-management.md](docs/remote-management.md)) is opt-in and
+  requires `--headless`. Your single administrator password is never
+  stored in plain text: only an Argon2id-hashed verifier is stored, in
+  the same encrypted headless secret store described above. Once
+  enabled, and once you separately configure your own HTTPS reverse
+  proxy in front of it, this instance becomes reachable from wherever
+  you choose to expose that proxy - the application itself never binds
+  to a network interface beyond loopback, and never opens a port for
+  you; remote reachability is entirely a consequence of infrastructure
+  you set up yourself outside this application.
 - The only thing this application stores in your browser (`localStorage`)
-  is your interface language preference. No stream key, token, or other
-  secret is ever written to browser storage.
+  is your interface language preference. No stream key, token, session
+  identifier, CSRF token, administrator password, or other secret is
+  ever written to browser storage - a remote-management session is
+  held only in a browser cookie your browser itself manages.
 - Public OBS overlay routes (chat overlay, alert overlay, audio overlay,
   goal/supporter widgets) are **local application routes**, served by your
   own backend for you to add as an OBS Browser Source. They are not hosted
