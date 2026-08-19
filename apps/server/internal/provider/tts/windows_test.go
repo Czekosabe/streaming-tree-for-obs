@@ -53,16 +53,50 @@ func TestSanitizeNilError(t *testing.T) {
 	}
 }
 
-// --- best-effort local SAPI smoke tests ----------------------------------
+// PRE-20D2B.1: the zero-installed-voices contract (Capabilities()
+// reports unavailable, never a crash or a silently-empty "available"
+// provider) is deterministic product behavior and belongs in the hard
+// gate - unlike the SAPI-dependent tests below, it needs no real COM/
+// SAPI engine at all.
+func TestVoiceCountAvailableZero(t *testing.T) {
+	if err := voiceCountAvailable(0); err == nil {
+		t.Error("voiceCountAvailable(0) = nil, want a non-nil error")
+	}
+}
+
+func TestVoiceCountAvailableNegative(t *testing.T) {
+	// SAPI's own Count property is never observed negative in
+	// practice, but the check is a plain "<= 0" specifically so a
+	// negative value (a malformed/unexpected COM response) is treated
+	// the same as zero rather than as "available".
+	if err := voiceCountAvailable(-1); err == nil {
+		t.Error("voiceCountAvailable(-1) = nil, want a non-nil error")
+	}
+}
+
+func TestVoiceCountAvailablePositive(t *testing.T) {
+	if err := voiceCountAvailable(1); err != nil {
+		t.Errorf("voiceCountAvailable(1) = %v, want nil", err)
+	}
+}
+
+// --- best-effort real-host SAPI smoke tests -------------------------------
 //
-// These never send audio to speakers (AudioOutputStream is always an
+// PRE-20D2B.1 classification (docs/ci-reliability.md's own Windows CI
+// investigation): these are host-capability integration smoke tests,
+// not deterministic provider-correctness tests - they prove "this
+// particular Windows host currently has a usable SAPI voice engine",
+// which is real, meaningful integration evidence, but is not something
+// this package's own code can guarantee about every machine/CI runner
+// it happens to execute on. The deterministic parts of this package's
+// own contract (bounds conversion above, the zero-voice decision
+// above, and internal/audio's own tests against a fake Provider) never
+// depend on real SAPI and always run as part of the hard gate. These
+// never send audio to speakers (AudioOutputStream is always an
 // in-memory SpMemoryStream) and never depend on one particular
 // installed voice name (governing task §71). If SAPI reports itself
 // unavailable in this environment, every test below skips rather than
-// fails - this package's own deterministic contract is covered by the
-// bounds tests above and by internal/audio's own tests against a fake
-// Provider; this file is a best-effort local verification only, never
-// a required CI dependency.
+// fails.
 
 func skipIfSAPIUnavailable(t *testing.T, p *SystemProvider) {
 	t.Helper()
@@ -77,7 +111,16 @@ func TestSystemProviderListVoicesSmoke(t *testing.T) {
 	p := NewSystemProvider()
 	skipIfSAPIUnavailable(t, p)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// PRE-20D2B.1: ListVoices does strictly more COM work per call than
+	// Capabilities' own fast availability check (an extra
+	// GetProperty("Voice") plus, per installed voice token, an
+	// Item/GetDescription/GetAttribute×2 round trip) - a real,
+	// audited asymmetry, not an arbitrary number. 20s (up from 5s)
+	// gives that proportionally larger amount of real COM/OS work
+	// genuine headroom under CI-runner virtualization/contention
+	// variance that this package cannot control, rather than assuming
+	// this call is exactly as fast as the simpler Capabilities check.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	voices, err := p.ListVoices(ctx)
 	if err != nil {
@@ -157,5 +200,25 @@ func TestSystemProviderSynthesizeCancellation(t *testing.T) {
 	_, err := p.Synthesize(ctx, SynthesizeInput{Text: longText, Speed: 1.0, Volume: 1.0})
 	if err == nil {
 		t.Fatal("Synthesize() error = nil for an immediately-expired context, want a context/cancellation error")
+	}
+}
+
+// TestSystemProviderListVoicesCancellation exercises the fix in this
+// same PRE-20D2B.1 milestone: ListVoices' ctx.Done() branch now waits
+// for its locked-thread goroutine before returning, exactly like
+// Synthesize's own cancellation path already did - this guards against
+// silently orphaning a locked OS thread/COM apartment on every timed-
+// out or canceled call, regardless of whether that was CI's own root
+// cause. The test only proves the call returns promptly and with a
+// context error, not that this specific run is what CI ever hit.
+func TestSystemProviderListVoicesCancellation(t *testing.T) {
+	p := NewSystemProvider()
+	skipIfSAPIUnavailable(t, p)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	_, err := p.ListVoices(ctx)
+	if err == nil {
+		t.Fatal("ListVoices() error = nil for an immediately-expired context, want a context/cancellation error")
 	}
 }

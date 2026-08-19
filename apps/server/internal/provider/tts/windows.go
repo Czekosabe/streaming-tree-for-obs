@@ -100,6 +100,19 @@ func (p *SystemProvider) ListVoices(ctx context.Context) ([]Voice, error) {
 		}
 		return o.voices, nil
 	case <-ctx.Done():
+		// Unlike Synthesize's own cancellation path (which has SAPI's
+		// own Skip method to promptly interrupt in-flight work), there
+		// is no way to interrupt an in-flight GetVoices/token
+		// enumeration - but this goroutine still owns a locked OS
+		// thread and a live COM apartment until runOnLockedThread
+		// returns. Returning here without waiting would orphan that
+		// thread/apartment for however long the COM call actually
+		// takes, silently accumulating under repeated
+		// cancellation/timeout - waiting for <-done (discarding the
+		// now-unwanted result) guarantees the thread/apartment is
+		// always released before this method returns, exactly like
+		// Synthesize already does.
+		<-done
 		return nil, ctx.Err()
 	}
 }
@@ -141,6 +154,14 @@ func (p *SystemProvider) Synthesize(ctx context.Context, in SynthesizeInput) (Sy
 	}
 }
 
+// comSFalse is COM's own S_FALSE HRESULT (winerror.h): for
+// CoInitialize specifically, it means "COM was already initialized on
+// this thread with a compatible concurrency model" - a documented
+// SUCCESS outcome (Microsoft's own CoInitialize reference), not a
+// failure. go-ole's CoInitialize wrapper treats any nonzero HRESULT as
+// an error, which would misreport this benign case as a hard failure.
+const comSFalse = 1
+
 // runOnLockedThread runs fn on a freshly locked OS thread with its own
 // CoInitialize/CoUninitialize pair - SAPI Automation objects are
 // apartment-threaded, so every call must happen on the same thread that
@@ -151,8 +172,19 @@ func runOnLockedThread(fn func() error) error {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		if err := ole.CoInitialize(0); err != nil {
-			done <- fmt.Errorf("CoInitialize: %w", err)
-			return
+			var oleErr *ole.OleError
+			if !errors.As(err, &oleErr) || oleErr.Code() != comSFalse {
+				done <- fmt.Errorf("CoInitialize: %w", err)
+				return
+			}
+			// S_FALSE: COM is genuinely initialized on this thread
+			// (most plausibly a thread Go's runtime reused from an
+			// earlier, already-cleanly-uninitialized
+			// LockOSThread/CoInitialize/CoUninitialize/
+			// UnlockOSThread cycle elsewhere in this process) - fall
+			// through to use it normally. CoUninitialize is still
+			// called below to keep this thread's COM reference count
+			// balanced for whichever goroutine acquires it next.
 		}
 		defer ole.CoUninitialize()
 		done <- fn()
@@ -172,6 +204,15 @@ func checkAvailable() error {
 		return err
 	}
 	defer tokens.Release()
+	return voiceCountAvailable(count)
+}
+
+// voiceCountAvailable is checkAvailable's own decision logic, factored
+// out as a pure function so the "zero installed voices" contract is
+// deterministically unit-testable without any real SAPI/COM
+// dependency (docs/ci-reliability.md's own Windows-diagnostic
+// investigation found no seam for this before).
+func voiceCountAvailable(count int) error {
 	if count <= 0 {
 		return errors.New("no installed voices reported")
 	}

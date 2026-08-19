@@ -35546,3 +35546,226 @@ scope, and no historical Stage 20D2A journal entry was edited.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+
+## fix(server): correct Windows SAPI voice enumeration lifecycle
+
+### Governing task
+PRE-20D2B.1 - a dedicated micro-milestone to determine the actual
+cause of the recurring `backend (windows-amd64)` `go test` failure in
+`internal/provider/tts`'s `TestSystemProviderListVoicesSmoke` (first
+precisely identified by the preceding PRE-20D2B milestone's new
+diagnostic instrumentation) and establish a deterministic Windows CI
+gate, before any Stage 20D2B backend work begins.
+
+### Source audit (before any edit)
+Read completely: `internal/provider/tts/windows.go`, `windows_test.go`,
+`provider.go`, `stub.go`, `go.mod`/`go.sum` (`go-ole v1.3.0`),
+`docs/audio-tts.md`, `docs/ci-reliability.md`. Confirmed: no
+`t.Parallel()` anywhere in this package (tests run strictly
+sequentially within one process); every `Capabilities()`/`ListVoices()`
+/`Synthesize()` call spins up its own goroutine, locks its own fresh
+OS thread, and does its own independent `CoInitialize`/`CoUninitialize`
+pair - no COM state is ever shared across calls by design.
+`checkAvailable()` (backing `Capabilities()`) and `listVoices()`
+(backing `ListVoices()`) each independently create a fresh
+`SAPI.SpVoice` and call `GetVoices()` - `ListVoices()` additionally
+reads the `Voice` (default) property and iterates every token calling
+`Item`/`GetDescription`/`GetAttribute`×2, a real, audited asymmetry in
+COM-call volume between the two methods.
+
+### Local reproduction (this Windows machine)
+- Single run: pass, `available=true`, 0.22s.
+- 80 isolated `go test` process invocations: 80/80 passed.
+- `-count=50` within one process: 50/50 passed.
+- Full `tts` package, `-count=20`: all passed.
+- Full backend, `-count=3`: all passed (`internal/provider/tts` clean
+  every time).
+Zero failures across 150+ local runs on a machine with genuine,
+consistently-available installed SAPI voices - local non-reproduction
+is recorded as exactly that, not as proof CI is wrong.
+
+### Diagnostic-evidence recovery attempt (bounded, per this milestone's
+own low-request rule)
+The exact CI assertion text remained unrecoverable: the
+`go-test-failure-windows-amd64-32252440982-1` artifact download
+(`GET .../actions/artifacts/{id}/zip`) returned `401` (unauthenticated
+environment, confirmed in the prior milestone); a fresh attempt at the
+raw job-logs endpoint (`GET .../actions/jobs/{id}/logs`) hit `403 API
+rate limit exceeded` before a real auth-vs-quota answer could be
+determined. No further attempts were made past this bounded check, per
+`docs/ci-reliability.md` §11's own request-budget discipline. The
+exact failing package/test name recovered by the prior milestone
+(`internal/provider/tts` :: `TestSystemProviderListVoicesSmoke`)
+remained sufficient to drive source-level and local investigation, as
+this milestone's own governing task anticipated.
+
+### Primary-source research (2026-08-19)
+- `github.com/actions/runner-images`'s `Windows2025-Readme.md`,
+  fetched directly: **zero** mentions of speech synthesis, SAPI, TTS,
+  or voice packages anywhere in the documented software inventory - no
+  default voice is a documented guarantee on this hosted image.
+- Microsoft Learn's SAPI 5.4 API overview (`ee125077`, archived but
+  authoritative): confirms voice tokens are resolved through
+  `ISpObjectTokenCategory`/`IEnumSpObjectTokens` - a registry-backed
+  enumeration mechanism, not an in-memory cache, consistent with
+  `GetVoices()`'s count being a real reflection of installed-voice
+  registry state at call time.
+- go-ole `v1.3.0` source (`com.go`), read directly: `coInitialize()`
+  calls the raw `ole32.dll!CoInitialize` and treats **any** nonzero
+  HRESULT as an error (`if hr != 0 { err = NewError(hr) }`) - including
+  `S_FALSE` (HRESULT `1`), which Microsoft's own `CoInitialize`
+  reference documents as "COM library is already initialized on this
+  thread" - a **success** code, not a failure.
+
+### Empirical COM-threading test (this Windows machine, throwaway
+diagnostic, not committed to the repository)
+Built a standalone program reproducing `runOnLockedThread`'s exact
+pattern (fresh goroutine, `LockOSThread`, raw `CoInitialize`, skip
+`CoUninitialize` on any nonzero `hr` exactly like the real bug) to
+determine whether Go's OS-thread-pool reuse alone ever produces
+`S_FALSE` under this pattern: 3,000 sequential calls each at
+`GOMAXPROCS` 1/2/4, plus 2,000 calls at 8-way concurrency - **11,000
+total `CoInitialize` calls, zero `S_FALSE` observed** (all 11,000
+returned `S_OK`). This empirically disproves thread-pool reuse alone
+as the practical trigger on this Go version/runtime; recorded honestly
+as a negative result, not suppressed because it didn't confirm the
+hypothesis.
+
+### Root cause: best-supported conclusion, stated with its actual
+confidence level
+No single mechanism was proven with certainty (the exact CI assertion
+text was never recovered - see above). Two real, source-confirmed
+defects were found and are fixed regardless of which one (or neither,
+in isolation) explains every historical occurrence:
+
+1. **A genuine resource-lifecycle bug**: `ListVoices()`'s `ctx.Done()`
+   branch returned immediately without waiting for its locked-thread
+   goroutine to finish - unlike `Synthesize()`'s own cancellation path,
+   which already waits (`<-done // wait for the locked goroutine to
+   release its COM state`). On any cancellation or timeout, this
+   orphaned a locked OS thread holding a live COM apartment for
+   however long the in-flight `GetVoices`/token enumeration actually
+   took to complete - unbounded, unobserved, and capable of
+   accumulating under repeated timeouts. Given `ListVoices()` does
+   proportionally more COM work than `Capabilities()` (the asymmetry
+   confirmed by the audit above) and CI runners are virtualized/
+   potentially contended in ways this repository cannot control, an
+   occasional slow `ListVoices()` call hitting its 5-second budget,
+   orphaning a thread, and that orphaned thread's own resource
+   footprint compounding subsequent contention is a coherent,
+   evidence-consistent explanation for CI-only (never locally
+   reproduced) intermittency.
+2. **A real HRESULT-handling defect**: `runOnLockedThread` (via
+   go-ole's `CoInitialize` wrapper) would treat the documented-benign
+   `S_FALSE` success code as a hard failure, and - because the early
+   return happens before `defer ole.CoUninitialize()` is ever
+   registered - would additionally skip cleanup, leaving that OS
+   thread's COM apartment reference count unbalanced for whichever
+   goroutine Go's runtime hands that thread to next. The empirical test
+   above shows this is not triggered by ordinary thread-pool reuse on
+   this Go version, but it remains a real, documented-incorrect
+   interpretation of a valid COM return code, found in the exact
+   function under root-cause audit - left latent, it could interact
+   unpredictably with genuinely different CI-runner scheduling
+   behavior this repository has no way to test cross-platform ahead of
+   time.
+
+Both are fixed. Whether either, both, or neither turns out to fully
+account for every one of the seven historical occurrences cannot be
+proven without the unrecoverable exact CI assertion text - stated
+honestly rather than claimed as certain.
+
+### Classification (governing task §7)
+`TestSystemProviderListVoicesSmoke` and its three siblings are
+classified explicitly as **host-capability integration smoke tests**
+(class B), not deterministic provider-correctness tests - they already
+skip (never fail) when `Capabilities().Available` is false, proving
+"this host currently has a usable SAPI voice engine", not something
+this package's own code can guarantee about every machine it executes
+on. The genuinely deterministic parts of this package's contract (SAPI
+numeric-range conversion, string sanitization, and - new in this
+commit - the zero-voice-availability decision) are unit-tested without
+any real COM dependency and always run as part of the hard gate,
+regardless of host SAPI availability.
+
+### What changed
+- `internal/provider/tts/windows.go`:
+  - `ListVoices()`'s `ctx.Done()` branch now waits for `<-done` before
+    returning, matching `Synthesize()`'s established pattern - no
+    orphaned locked thread/COM apartment on cancellation or timeout.
+  - `runOnLockedThread` now recognizes `S_FALSE` (HRESULT `1`) via
+    `errors.As`/`ole.OleError.Code()` as the documented success case
+    it is, falling through to normal use (and still calling
+    `CoUninitialize` to keep the thread's COM reference count
+    balanced) instead of treating it as a fatal error.
+  - `checkAvailable()`'s zero-voice decision is factored out into a
+    new pure function, `voiceCountAvailable(count int) error`,
+    deterministically unit-testable without any real SAPI/COM
+    dependency.
+- `internal/provider/tts/windows_test.go`:
+  - Three new deterministic tests (`TestVoiceCountAvailableZero`/
+    `Negative`/`Positive`) - hard-gate, no SAPI required.
+  - `TestSystemProviderListVoicesSmoke`'s context timeout raised from
+    5s to 20s, justified by the audited COM-call-volume asymmetry
+    versus `Capabilities()`, not an unjustified blind increase.
+  - New `TestSystemProviderListVoicesCancellation`, mirroring the
+    existing `Synthesize` cancellation test, exercising the fixed
+    `ctx.Done()` path directly.
+  - Strengthened the section comment explicitly classifying these four
+    tests as host-capability smoke tests, not deterministic
+    correctness tests.
+
+No unrelated TTS product change was made. macOS/Linux system TTS
+remain unavailable (`stub.go` untouched). No new voice/provider was
+implemented. No test was skipped, weakened, retried, or removed to
+force a green result.
+
+### Local validation
+`gofmt -l .`: clean. `go vet ./internal/provider/tts/...`: clean.
+`go test -count=1 ./internal/provider/tts/... -v`: all 11 tests pass
+(4 pre-existing deterministic + 3 new deterministic + 4 SAPI smoke,
+including the 2 new/changed ones). `-race` was attempted but this
+machine has no C compiler (`gcc`/`clang` not on `PATH`) to enable cgo -
+a real, stated environment limitation; per this milestone's own
+governing task, the race detector is explicitly not treated as proof
+of COM correctness regardless (go-ole uses raw `syscall`, not cgo, so
+it would not meaningfully instrument the COM calls under audit here).
+
+Repeated validation of the specific formerly-failing test: `-count=100`
+within one process (100/100 passed) plus 100 additional isolated
+`go test` process invocations (100/100 passed) - 200/200, zero
+unexplained failures.
+
+Full backend, `go test -count=2 ./...`: one transient, unrelated
+failure surfaced in `internal/runtime/mediamtx` (`TestPing*` - a local
+loopback-connection timeout under the resource pressure of running the
+entire suite twice back-to-back), confirmed non-reproducible by
+rerunning that specific test in isolation (passed immediately) -
+recorded honestly as a separate, out-of-scope local environment
+artifact, not chased, since it is unrelated to `internal/provider/tts`
+and this package passed cleanly in both `-count=2` passes. A further
+full `go test -count=1 ./...` afterward passed with zero failures
+anywhere.
+
+Cross-platform impact: `GOOS=linux CGO_ENABLED=0 go build ./...` and
+`go vet ./...` both clean (the `!windows` stub, untouched, compiles
+correctly); `GOOS=darwin CGO_ENABLED=0` build/vet of
+`internal/provider/tts` specifically both clean (a full-module darwin
+build requires cgo/clang for an unrelated macOS-specific package on
+this Windows machine, an existing, unrelated environment limitation,
+not attempted further); `GOOS=windows CGO_ENABLED=0 go build ./...`
+(matching the real CI matrix's own Windows CGO setting) clean.
+`.github/workflows/cross-platform.yml` was not touched - confirmed via
+`git status` before staging.
+
+### Commits (chronological, this entry)
+1. This entry - `fix(server): correct Windows SAPI voice enumeration
+   lifecycle`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. The one bounded evidence-recovery attempt that hit a rate
+limit was not retried in a loop - the investigation continued using
+the evidence already in hand, per this milestone's own low-request
+monitoring discipline.
