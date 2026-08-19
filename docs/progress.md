@@ -36475,3 +36475,40 @@ and validated in Stage 20D2A.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: add the Caddy reverse-proxy example file and operator provisioning sequence
+
+### What changed
+New `docs/examples/Caddyfile.remote-management` - a real, standalone,
+copyable reverse-proxy configuration file (not merely a doc-comment
+snippet), matching `docs/remote-management.md` §20's own documented
+example exactly: terminates HTTPS for one operator-chosen domain,
+proxies only to the loopback backend, explicitly documents (in its own
+comments) that a second site block proxying to the MediaMTX Control
+API/RTMP listener/`/overlay/*`/`/api/public/*` must never be added.
+
+`docs/remote-management.md`: new §21 "Operator provisioning sequence" -
+the full, real, tested command sequence (install → provision the
+Stage 20D2A master key → provision the administrator password →
+configure the reverse proxy → enable remote management via a systemd
+drop-in → daemon-reload/enable → inspect status/logs → sign in → stop/
+disable → backup → remove-without-destroying-state), every command
+reflecting the actual design already implemented and CI-verified in
+this milestone's preceding commits, none aspirational. §20 now
+references the real example file. Non-scope renumbered §21→§22
+(this document is a living contract, not append-only - unlike
+docs/progress.md - matching the precedent already set when
+docs/linux-headless-server.md §16 was amended in Stage 20D2A).
+
+### Validation
+Prose-only/config-file-only change; no code touched. Cross-checked for
+stale internal section-number references after the renumbering - none
+found.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: add the Caddy reverse-proxy example file and
+   operator provisioning sequence`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

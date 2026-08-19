@@ -468,6 +468,10 @@ stream.example.com {
 }
 ```
 
+A real, standalone copy of this exact configuration lives at
+`docs/examples/Caddyfile.remote-management` - not merely a doc-comment
+snippet, so an operator can copy the actual file.
+
 Caddy terminates HTTPS (automatic certificate management is Caddy's
 own concern, external to this application), overwrites `X-Forwarded-
 For`/`X-Forwarded-Proto`/`X-Forwarded-Host` with real values per §2's
@@ -478,7 +482,47 @@ not installed, configured, or started by this repository's own
 tooling; this block is operator-applied guidance, documented in
 `docs/linux-headless-server.md`'s own provisioning-sequence style.
 
-## 21. Non-scope (restated)
+## 21. Operator provisioning sequence
+
+Every command below reflects the actual, tested design in this
+document - none is aspirational or untested:
+
+1. Install the package (`sudo dpkg -i streaming-tree-for-obs_*.deb`) -
+   the unit is installed disabled, remote management is not enabled.
+2. Provision the headless secret-store master key (Stage 20D2A,
+   unchanged): `sudo scripts/provision-headless-master-key.sh
+   /etc/streaming-tree/master.key`.
+3. Provision the administrator password:
+   `sudo scripts/provision-admin-password.sh`.
+4. Configure the reverse proxy on this same host (§20 /
+   `docs/examples/Caddyfile.remote-management`), pointing at
+   `127.0.0.1:8080` (or the configured port) and terminating HTTPS for
+   the chosen domain.
+5. Enable remote management via a systemd drop-in (never editing the
+   package-owned unit file directly): `sudo systemctl edit
+   streaming-tree.service`, adding
+   `STREAMING_TREE_REMOTE_MANAGEMENT=true` and
+   `STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN=https://<your-domain>`.
+6. `sudo systemctl daemon-reload && sudo systemctl enable --now
+   streaming-tree.service`.
+7. Inspect status/logs: `systemctl status streaming-tree.service`,
+   `journalctl -u streaming-tree.service`.
+8. Sign in at `https://<your-domain>` with the provisioned
+   administrator password.
+9. To stop/disable: `sudo systemctl disable --now
+   streaming-tree.service`.
+10. To back up: stop the service cleanly, back up the state directory
+    together with the master-key file (Stage 20D2A's own backup
+    contract, unchanged - losing either one alone makes encrypted
+    secrets, including the administrator password verifier,
+    unrecoverable).
+11. To remove the package without destroying persistent state:
+    ordinary `sudo dpkg -r streaming-tree-for-obs` (not `--purge`)
+    preserves the state directory and the master-key/administrator-
+    password material, exactly like Stage 20D2A's own existing
+    removal contract.
+
+## 22. Non-scope (restated)
 
 No remote overlay exposure, no remote RTMP/RTMPS/SRT, no MediaMTX
 external auth, no multi-hop/CDN proxy chain, no application-managed

@@ -1,0 +1,34 @@
+# Stage 20D2B reverse-proxy reference configuration (docs/remote-management.md
+# §20). This is operator-applied guidance, not something this repository's
+# own tooling installs, configures, or starts. Replace stream.example.com
+# with your own domain, and set STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN to
+# exactly "https://stream.example.com" (or with an explicit port if you use
+# one) to match.
+#
+# This is the ONLY supported D2B proxy topology: exactly one reverse-proxy
+# hop, on the same host as the Streaming Tree backend, proxying only to its
+# loopback listener. Do not chain this behind a second proxy/CDN, and do not
+# run it on a different host - docs/remote-management.md §6/§7 explain why.
+#
+# Caddy automatically obtains and renews a certificate for the domain named
+# in the site block (ACME/Let's Encrypt) - no certificate paths need to be
+# configured here.
+
+stream.example.com {
+	# Terminates HTTPS here; proxies to the loopback Streaming Tree
+	# backend over plain HTTP. Caddy overwrites (never trusts/passes
+	# through) client-supplied X-Forwarded-For/X-Forwarded-Proto/
+	# X-Forwarded-Host headers by default - confirmed directly against
+	# Caddy's own reverse_proxy documentation
+	# (docs/remote-management.md §2) - so no additional header
+	# configuration is required for the application's own forwarding-
+	# header contract (docs/remote-management.md §8) to hold.
+	reverse_proxy 127.0.0.1:8080
+}
+
+# Do NOT add a second site block or handle_path directive proxying to:
+#   - the MediaMTX Control API (loopback-only, never proxied - Stage 20D2C
+#     remote ingest does not exist yet);
+#   - the MediaMTX RTMP listener (loopback-only, never proxied);
+#   - /overlay/* or /api/public/* (remote overlay exposure is explicitly
+#     out of scope for Stage 20D2B - docs/remote-management.md §17/§21).
