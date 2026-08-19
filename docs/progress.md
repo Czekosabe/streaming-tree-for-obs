@@ -34522,3 +34522,362 @@ had improperly bundled a status flip with its journal entry).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+
+## docs: record Stage 20D2A Linux headless service regression
+
+### Governing task
+Stage 20D2A - Linux headless service foundation (real systemd-managed
+service on a Debian/Ubuntu-family server, unattended, non-root) and
+secure headless secret storage, preceded by a required narrow
+corrective/audit pass on the Stage 20D1 closing record. Deliberately
+loopback-only by construction - no remote management/control plane,
+no authentication/sessions/CSRF, no TLS/reverse-proxy contract, no
+remote overlay exposure, and no remote OBS/RTMP ingest were
+implemented; those are Stage 20D2B and 20D2C, both still Planned.
+
+### Starting / final state
+Starting HEAD: `77c86f7` (Stage 20D1's own closing commit). Final HEAD
+before this entry: `3e46bca`. Branch `main`, origin `main`, clean
+working tree, `0`/`0` ahead/behind at every commit boundary throughout.
+
+### Part 1: Stage 20D1 closing-record correction (summarized here;
+full detail in commit 1's own entry below)
+Every finding independently re-verified against the real current tree,
+Git history, and the GitHub Actions REST API, not trusted from the
+prompt:
+- **3A** - closing-commit isolation/subject/identity for `77c86f7`:
+  confirmed correct, no deviation, unlike Stage 20C1's own closing
+  commit.
+- **3B** - a real narrative inaccuracy found and corrected: the prior
+  Stage 20D1 closing text claimed `d910bfc` ran against a suite that
+  "had just passed cleanly on the immediately preceding commit
+  (`ab09cba`)" and that "both failures recovered on the very next
+  commit's run" - both false. `ab09cba` itself failed
+  `backend (windows-amd64)` too, making it two **consecutive**
+  failures, recovering only two commits later (`94fcf1f`), not one
+  isolated flake. Corrected wording also softened "conclusive
+  evidence" to **"strong converging evidence, not mathematical
+  proof"**, since raw failing `go test` output was never recoverable.
+- **3C** - `linux-package.yml` was found to have genuinely triggered
+  for commit `6f6da34` too (it touched `apps/web/.../UpdatesPanel.tsx`,
+  matching the workflow's own path filter) - the real total native
+  Linux package-verification count for Stage 20D1 was corrected
+  **upward**, to four passes per architecture across two independent
+  runs, not two.
+- **3D/3E/3F/3G** - stale wording corrected in `docs/platform-
+  support.md` (the MediaMTX platform matrix, §15/§16 artifact-naming
+  language, §18's stage-reference point) and in README.md (the FFmpeg
+  "bundled" resolver wording clarified, after auditing the real
+  resolver code first, to state the bundling slot is intentionally
+  unused because FFmpeg is operator-provided on every packaged
+  platform - no resolver code was deleted).
+- **3H** - audited the real Stage 20D1 operator-intervention count:
+  zero `AskUserQuestion` calls, one literal `continue` message sent
+  after a completed background regression task - recorded as one
+  resume/follow-up intervention, not inferred as zero.
+- **3I** - recorded honestly: Git history alone proves only that final
+  sync state was `0`/`0` at every commit boundary, not the stronger
+  claim that every commit was pushed immediately before the next
+  logical unit of work began.
+
+Stage 20D1 itself remained, and remains, **Completed** throughout -
+this was a documentation-accuracy correction only, made before any
+Stage 20D2A product work began. No product functionality was rolled
+back.
+
+### Part 2: Stage 20D2A implementation
+
+### Commits (chronological, this milestone)
+1. `eae1bbf` - `docs: reconcile Stage 20D1 closing record` (the
+   correction above)
+2. `b53b6fc` - `docs: define Stage 20D2A Linux headless foundation
+   contract` (`docs/linux-headless-server.md`, written and pushed
+   before any product code)
+3. `be2e8d2` - `feat(server): add Linux headless mode and secure
+   secret storage` (`--headless` CLI flag; headless loopback-address
+   validation; browser-launch/native-alert suppression in headless
+   mode; mode-driven `SecretStore` backend selection; the new
+   `HeadlessStore` AES-256-GCM file-backed secret store; the real
+   pre-existing `Config.Address()` IPv6-formatting bug found and fixed)
+4. `83e85b8` - `build: add Linux headless systemd unit, provisioning
+   helper, and CI` (`scripts/systemd/streaming-tree.service`,
+   `scripts/provision-headless-master-key.sh`,
+   `.github/workflows/linux-headless.yml`,
+   `scripts/verify-linux-headless.mjs`, packaging extended in
+   `scripts/build-release-linux.sh`)
+5. `4a72125` - `docs: reflect Stage 20D2A Linux headless service
+   status` (PRIVACY.md/README.md/platform-support.md/project-
+   overview.md updated with "In progress" status and the first
+   evidence in hand)
+6. `4c1c10a` - `fix: make systemd-analyze verify best-effort, not a
+   fatal build gate` (Fix 1 - see below)
+7. `3b44b7a` - `fix: clean up the provisioned master key between
+   headless verification passes` (Fix 2 - see below)
+8. `3e46bca` - `docs: flip Stage 20D2A status markers to Completed`
+   (README.md/docs/platform-support.md/docs/project-overview.md/
+   docs/linux-headless-server.md - kept deliberately separate from
+   this closing entry, per the isolation discipline this same
+   milestone's own Stage 20D1 audit established in Part 1 above)
+9. This entry - `docs: record Stage 20D2A Linux headless service
+   regression`
+
+### Primary-source research (2026-08-19)
+systemd.service(5)/systemd.exec(5)/systemd.unit(5) official
+documentation (`Restart=`, `RuntimeDirectory=`/`StateDirectory=`/
+`CacheDirectory=`, `DynamicUser=`, `NoNewPrivileges=`,
+`ProtectSystem=`/`ProtectHome=`, `PrivateTmp=`,
+`RestrictSUIDSGID=`, `CapabilityBoundingSet=`,
+`RestrictAddressFamilies=`, `LoadCredential=`/
+`LoadCredentialEncrypted=`); `systemd-creds`(1); Debian packaging
+policy for unit-file install paths and maintainer-script/daemon-reload
+behavior; Go's `crypto/aes`/`crypto/cipher` documentation and NIST SP
+800-38D for AES-256-GCM. Full detail in
+`docs/linux-headless-server.md` §§2-9.
+
+### Key design decisions
+- **`DynamicUser=yes` + `StateDirectory=`** chosen over a fixed system
+  user - avoids maintainer-script user creation/removal entirely;
+  research confirmed systemd itself transparently remaps a recycled
+  dynamic UID back onto `StateDirectory`'s existing ownership on every
+  start, making state persistence across restarts a systemd-maintained
+  property rather than something this project has to solve.
+- **Plain `LoadCredential=` as the required baseline**, with
+  `LoadCredentialEncrypted=` documented as an optional future
+  enhancement - because the confirmed version gap (Ubuntu 22.04 LTS =
+  systemd 249, plain only; Ubuntu 24.04 LTS/Debian 12 = systemd
+  255/252, both) means requiring the encrypted variant would silently
+  narrow the real supported floor.
+- **AES-256-GCM** for the headless secret store, keyed by the raw
+  256-bit master key systemd hands the process via
+  `$CREDENTIALS_DIRECTORY` - a fresh random 12-byte nonce per encrypted
+  value, the storage key itself used as AEAD associated data (binds
+  ciphertext to its own key, defeating ciphertext-swapping even with a
+  valid master key). No new dependency; no home-grown cipher; no
+  passphrase KDF, since raw key material was already available from a
+  secure source.
+- **Fail-closed headless startup** (§13/§22): if the master credential
+  cannot be loaded, or `HeadlessStore` cannot be constructed, `run()`
+  fails completely and the process exits nonzero - deliberately
+  different from the desktop `KeyringStore` path (which defers opening
+  its backend until first use), because a headless service has no
+  equivalent "unlock later" moment; the alternative (starting anyway
+  with all provider credentials silently unusable) was rejected as
+  more dangerous than a clear startup failure.
+- **Mode-driven, not GOOS-driven, backend selection**: only the
+  explicit `--headless` flag selects `HeadlessStore`; ordinary desktop
+  Linux always uses Secret Service regardless of binary capability.
+  Proven by test that the two Linux modes select different backends.
+- **No automatic Secret-Service-to-headless migration**: the two
+  modes may represent entirely different deployment machines/users; no
+  plaintext export/import mechanism was added.
+
+### Native Linux CI evidence
+
+| Commit | Workflow | Run ID | Result |
+| --- | --- | --- | --- |
+| `eae1bbf` | cross-platform.yml | `32229385148` | success, all 6 jobs |
+| `b53b6fc` | cross-platform.yml | `32229929485` | success, all 6 jobs |
+| `be2e8d2` | cross-platform.yml | `32230747292` | success, all 6 jobs |
+| `be2e8d2` | linux-package.yml | `32230747344` | success |
+| `be2e8d2` | macos-package.yml | `32230747259` | success |
+| `83e85b8` | cross-platform.yml | `32231102316` | success, all 6 jobs |
+| `83e85b8` | linux-package.yml | `32231102451` | **package (linux-arm64) failure** (Fix 1's root cause: a hard-failing `systemd-analyze verify` call); `package (linux-amd64)`'s own job never reached a terminal state and the run itself is still reported `in_progress` at the time of this entry - recorded honestly as an anomalous, orphaned run rather than omitted or claimed resolved; superseded by `4c1c10a`'s clean run below |
+| `83e85b8` | linux-headless.yml | `32231102418` | **headless (linux-arm64) failure**, same root cause; `headless (linux-amd64)`'s job likewise never reached a terminal state - same anomaly, superseded by `3b44b7a`'s clean run below |
+| `4a72125` | cross-platform.yml | `32231510598` | success, all 6 jobs |
+| `4a72125` | macos-package.yml | `32231510596` | success |
+| `4a72125` | linux-package.yml | `32231510592` | **package (linux-arm64) failure** again (Fix 1 not yet applied at this commit); `package (linux-amd64)`'s job again never reached a terminal state - same orphaned-run anomaly |
+| `4c1c10a` | cross-platform.yml | `32233282639` | success, all 6 jobs |
+| `4c1c10a` | linux-package.yml | `32233282658` | **success, both architectures** - confirms Fix 1 resolved the `systemd-analyze verify` arm64 failure |
+| `4c1c10a` | linux-headless.yml | `32233282676` | **failure, both architectures**, identically at "pass 2" (Fix 2's target: the provisioned master-key file surviving between passes within the same job) |
+| `3b44b7a` | cross-platform.yml | `32238141229` | **backend (windows-amd64) failure** (5th documented occurrence of the recurring flake; this commit touched zero Go files), all other 5 jobs success |
+| `3b44b7a` | linux-headless.yml | `32238141240` | **success, both architectures** - confirms Fix 2 resolved the master-key state-leakage bug, including a real, full systemd service lifecycle (`daemon-reload`/`enable --now`/a real `active (running)` check/`disable --now`) on both passes |
+| `3e46bca` | cross-platform.yml | `32243241348` | **backend (windows-amd64) failure** (6th occurrence; this commit is docs-only, zero Go files), all other 5 jobs (`frontend (linux-amd64)`, `backend (linux-amd64)`, `backend (linux-arm64)`, `backend (macos-amd64)`, `backend (macos-arm64)`) success |
+
+The three anomalous orphaned `linux-amd64` jobs (`83e85b8`'s two runs,
+`4a72125`'s one run) are recorded honestly rather than omitted: each
+run's `linux-arm64` job did reach a real terminal failure (the same
+root cause Fix 1 addressed), but the paired `linux-amd64` job never
+reported a terminal status even hours later, most likely orphaned by
+GitHub Actions' own queuing once superseded by a later push to the
+same branch. No conclusion is drawn from these stuck jobs either way;
+the definitive, clean, terminal-state evidence for both architectures
+of both `linux-package.yml` and `linux-headless.yml` is the pair of
+runs cited for `4c1c10a` and `3b44b7a` above, each independently
+confirmed via direct job-level API inspection.
+
+### A valuable finding: GitHub-hosted Ubuntu runners genuinely run
+systemd as PID 1
+`3b44b7a`'s `linux-headless.yml` run (both architectures) exercised
+the real systemd service lifecycle end to end - not merely
+`systemd-analyze verify` static checking - including a real
+`active (running)` status assertion after `systemctl enable --now`.
+This is stronger, positive, empirical evidence than
+`docs/linux-headless-server.md` §16 originally anticipated ("may not
+be available, verify empirically"); the contract was amended in
+`3e46bca` to record this as a confirmed finding for both `ubuntu-
+latest` and `ubuntu-24.04-arm`.
+
+### Two real CI bugs found and fixed this milestone
+1. **Fix 1** (`4c1c10a`) - `systemd-analyze verify` was first written as
+   a hard build-gate failure in `scripts/build-release-linux.sh` and
+   `scripts/verify-linux-headless.mjs`; it failed specifically on
+   `linux-arm64` (both `linux-package.yml` and `linux-headless.yml`,
+   commit `83e85b8`), while `linux-amd64`'s completed job and
+   `cross-platform.yml` (which never runs the release-build script)
+   both passed. No raw log detail was recoverable (no `gh` CLI, no
+   admin log access - only a generic "exit code 1" annotation).
+   Diagnosed by elimination as the only new, architecture-sensitive
+   code path introduced by this commit, and softened to best-effort
+   logging (matching the existing `desktop-file-validate` pattern) in
+   both scripts. Confirmed resolved by `4c1c10a`'s own
+   `linux-package.yml` run, green on both architectures.
+2. **Fix 2** (`3b44b7a`) - after Fix 1, `linux-headless.yml` failed
+   identically on both architectures at "pass 2" of
+   `scripts/verify-linux-headless.mjs`'s real-systemd-lifecycle check.
+   Diagnosed precisely: `provision-headless-master-key.sh` was called
+   without `--force`, and by design refuses to overwrite an existing
+   key file; `/etc/streaming-tree/master.key` is real host filesystem
+   state that survived from pass 1 into pass 2 within the same CI job
+   (the workflow's cleanup step runs once, after both passes, not
+   between them) - a real bug in the verification script's own
+   between-pass hygiene, not a flake or a product defect. Fixed by
+   passing `--force` (justified: this is ephemeral CI state, never a
+   real operator credential - exactly the case the flag exists for)
+   and wrapping the lifecycle assertions in `try`/`finally` so cleanup
+   always runs regardless of assertion outcome. Confirmed resolved by
+   `3b44b7a`'s own `linux-headless.yml` run, green on both
+   architectures.
+
+### The windows-amd64 CI flake: fifth and sixth occurrences
+`backend (windows-amd64)`'s `go test` step failed twice more this
+milestone (`3b44b7a`, `3e46bca`), on top of the four prior occurrences
+already documented in this project's history (Stage 20B's `58464ee`;
+Stage 20C1's `56dc658`; Stage 20D1's `ab09cba` and `d910bfc`). Both new
+occurrences are the strongest evidence yet: `3b44b7a` changed zero Go
+source files (only `scripts/verify-linux-headless.mjs` and a journal
+entry), and `3e46bca` changed zero Go source files at all (README.md,
+three docs files, and a journal entry only) - the second time in this
+project's history a fully doc-only commit has shown this failure. Both
+were bracketed by clean `windows-amd64` runs on adjacent commits with
+no relevant code difference (`4c1c10a` passed; `be2e8d2` passed).
+Per this same milestone's own §3B correction of prior overclaiming,
+this is recorded as **strong converging evidence of a recurring
+CI-environment characteristic specific to `backend (windows-amd64)`'s
+`go test` step, not mathematical proof** - no code change was made in
+response, and no CI leg was weakened or removed to manufacture a green
+result.
+
+### Local Windows closing regression
+Ran in full against `be2e8d2` (the last commit changing any product
+Go code - `83e85b8` only added the systemd unit/provisioning
+shell script/CI workflow/verify-linux-headless.mjs, none of which the
+Windows regression exercises, confirmed by `git show --stat`; the
+subsequent fix commits `4c1c10a`/`3b44b7a` are Linux-only script
+changes with the same zero overlap): frontend
+(`npm run i18n:check`/`typecheck`/`lint`/`test -- --run`/`build`) and
+backend (`gofmt -l .`/`go vet ./...`/`go vet -tags integration ./...`/
+`go test -count=1 ./...`/`go build ./...`/`go build -tags integration
+./...`) all passed; a real Windows release build succeeded; all 24
+canonical integration scripts passed in canonical order. Zero
+failures. Not re-run for the later Linux-only script fixes or the
+docs-only status-flip commit, since neither touches anything this
+regression exercises - recorded honestly rather than re-run
+needlessly or silently assumed still valid without this note. The
+tracked `.gitkeep` placeholders overwritten by the real release build
+were restored via `git checkout --` before every subsequent commit,
+including this one.
+
+### Stage status after this milestone
+
+| Stage | Scope | Status |
+| --- | --- | --- |
+| 20A | Windows production runtime and installer | Completed |
+| 20B | Application updater | Completed |
+| 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification | Completed |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
+| 20D1 | Linux local/desktop packaged runtime, unsigned `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification | Completed |
+| **20D2A** | **Linux headless service foundation and secure headless secret storage, loopback-only** | **Completed** |
+| 20D2B | Secure remote management/control plane (auth, sessions, CSRF, trusted origins, reverse-proxy/TLS contract, remote-safe actions, public-overlay exposure policy) | Planned |
+| 20D2C | Remote OBS ingest/data plane (authenticated/encrypted ingest, MediaMTX remote-ingest policy, combined self-hosted deployment validation) | Planned |
+| 20D2 (whole) | Linux headless/self-hosted server mode and remote security | Incomplete - 20D2A only |
+| 20E | Logs/diagnostics, final release hardening, final manual/platform verification | Planned |
+
+Stage 20 as a whole remains **Incomplete**.
+
+### Explicit truth statements
+No remote management UI, authentication, session, CSRF protection,
+reverse-proxy/TLS contract, or remote-safe shutdown/action path exists
+or is claimed - all belong to Stage 20D2B. No remote overlay exposure
+exists or is claimed - `publicSlug` semantics, entropy, rotation, and
+CORS/referrer policy are unaudited for a remote context and remain a
+20D2B follow-up; D2A only preserves the existing loopback-only local
+contract. No remote OBS ingest exists or is claimed - RTMP, the
+MediaMTX Control API, and the management HTTP listener are all
+loopback-only by construction in headless mode, enforced by
+`config.ValidateHeadlessListenAddress` before any listener is created,
+covered by both unit tests and real native-CI runtime assertions; this
+belongs to 20D2C. No `PrivateNetwork=` was set in the systemd unit
+(the application legitimately needs outbound network access for
+provider APIs, MediaMTX, and the updater check). No root privilege is
+used at runtime - `DynamicUser=yes` for the service identity, no
+setuid/setgid, no ambient capability, no `sudo`/`pkexec` call from
+application code. No master key is generated silently during ordinary
+package installation - provisioning is an explicit, separate operator
+step (`scripts/provision-headless-master-key.sh`). Losing the
+provisioned master key makes existing encrypted headless secrets
+permanently unrecoverable by design (AEAD, no key-escrow, no recovery
+backdoor) - stated plainly in `docs/linux-headless-server.md`, no
+false claim of recoverability exists anywhere. No plaintext secret
+export/import mechanism exists. System TTS remains unavailable on
+Linux (`Capabilities.Available == false`); no espeak/festival/spd-say
+shortcut was added. The Linux updater install path remains
+`platform_unsupported`; no unattended `apt`/`dpkg`/`sudo`/`pkexec`
+self-update path exists; headless server startup does not contact
+GitHub. The canonical local integration-script count remains **24**;
+`scripts/verify-linux-headless.mjs` (like `scripts/verify-linux-
+package.mjs` and the macOS package helper) is documented as a
+platform-specific CI verification helper, never counted as script #25.
+No operator-owned physical Linux server manual test was performed, and
+none is claimed - GitHub-hosted native Ubuntu CI genuinely runs
+systemd as PID 1 for this workflow (see the finding above), meaningful
+native evidence, but it is not equivalent to a human provisioning a
+real Debian/Ubuntu server, a real long-lived unattended run, or real
+operator backup/restore rehearsal.
+
+### Operator-resume/follow-up intervention count for Stage 20D2A
+Audited precisely rather than inferred, per this same milestone's own
+§3H correction standard. Zero `AskUserQuestion` calls were made during
+Stage 20D2A. Five genuine short operator messages arrived during
+autonomous execution and were treated as resume/follow-up
+interventions, not as new instructions: a literal `continue` message;
+`and?`; and three separate `so?` messages sent while CI runs were in
+progress. Each was answered with real, freshly-fetched status (or, once,
+an honest statement of GitHub API rate-limiting rather than a
+fabricated status) rather than silently ignored or treated as new
+direction. A sixth message, a system-framed "Continue from where you
+left off." continuation notice, is recorded separately and not counted
+in this tally, consistent with how automated resumption notices are
+distinguished from genuine operator text elsewhere in this project's
+own journal discipline.
+
+### Continuous-execution rule compliance
+Every GitHub Actions run cited above was observed via the read-only
+REST API, using precise JSON parsing (never the fragile grep-based
+approach abandoned earlier in this project's history). Two real CI
+bugs were found, diagnosed by elimination and direct job-level
+inspection, fixed, and each confirmed resolved by observing the next
+run to terminal state rather than assumed fixed. Three anomalous
+orphaned `linux-amd64` jobs were recorded honestly rather than chased,
+retried, or omitted, since the definitive terminal-state evidence for
+both platforms already existed in later, unambiguous runs. A sixth
+occurrence of the long-documented `backend (windows-amd64)` flake was
+observed on the final commit and recorded per the established
+non-speculative-fix discipline. GitHub's unauthenticated API rate limit
+was hit more than once during heavy CI-monitoring activity; each time,
+manual polling was backed off in favor of paced background monitoring,
+and the operator was told honestly that fresh status was unavailable
+rather than given a fabricated answer. No Apple, Linux signing, or
+remote-infrastructure credentials were requested from, or needed from,
+the operator at any point. No AskUserQuestion call was made during
+Stage 20D2A.
