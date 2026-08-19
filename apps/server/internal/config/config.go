@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"net"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,6 +82,29 @@ type Config struct {
 	// set by an incoming HTTP request, only by the process's own
 	// environment at startup.
 	TestNoUI bool
+
+	// RemoteManagement groups the Stage 20D2B remote-management
+	// deployment-security settings (docs/remote-management.md §4) -
+	// read once, here, from the process environment at startup, and
+	// never mutable through any HTTP route: no handler in this codebase
+	// ever re-invokes config.Load() or writes to process environment.
+	RemoteManagement RemoteManagementConfig
+}
+
+// RemoteManagementConfig groups Stage 20D2B's security-critical
+// deployment configuration (docs/remote-management.md §4) - never
+// persisted as an ordinary, remotely-editable application setting.
+type RemoteManagementConfig struct {
+	// Enabled is the explicit --remote-management opt-in
+	// (docs/remote-management.md §3). Never inferred from --headless
+	// alone; checked against it explicitly at startup (only valid when
+	// Headless is also true).
+	Enabled bool
+
+	// ExternalOrigin is the one canonical external HTTPS origin
+	// browser clients use (docs/remote-management.md §6), e.g.
+	// "https://stream.example.com". Empty unless Enabled.
+	ExternalOrigin string
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -270,6 +294,35 @@ func Load() (Config, error) {
 	}
 	cfg.TestNoUI = testNoUI
 
+	remoteManagement, err := loadRemoteManagement()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.RemoteManagement = remoteManagement
+
+	return cfg, nil
+}
+
+// loadRemoteManagement reads the Stage 20D2B remote-management
+// deployment settings. The external origin is read but not validated
+// here - net/url parsing/validation happens in
+// ValidateRemoteManagementOrigin, called explicitly by run() only
+// when Enabled, so a desktop/D2A-only build that never sets these
+// variables pays no validation cost and cannot be affected by a
+// malformed value it does not use.
+func loadRemoteManagement() (RemoteManagementConfig, error) {
+	var cfg RemoteManagementConfig
+
+	enabled, err := lookupBool("STREAMING_TREE_REMOTE_MANAGEMENT", false)
+	if err != nil {
+		return RemoteManagementConfig{}, err
+	}
+	cfg.Enabled = enabled
+
+	if raw, ok := lookup("STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN"); ok {
+		cfg.ExternalOrigin = raw
+	}
+
 	return cfg, nil
 }
 
@@ -438,6 +491,65 @@ func lookupBool(key string, fallback bool) (bool, error) {
 // build.
 func ValidateHeadlessListenAddress(cfg Config) error {
 	return validateLoopbackAddress("STREAMING_TREE_HOST/STREAMING_TREE_PORT (headless mode)", cfg.Address())
+}
+
+// ValidateRemoteManagementOrigin strictly validates the configured
+// canonical external management origin (docs/remote-management.md
+// §6): scheme must be exactly "https" (no production insecure
+// fallback), a host is required, an explicit port is allowed, and no
+// userinfo/path/query/fragment is permitted - this is an origin
+// identity, never a URL with a meaningful path. Call only when
+// RemoteManagement.Enabled is true.
+func ValidateRemoteManagementOrigin(origin string) error {
+	const key = "STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN"
+
+	if origin == "" {
+		return fmt.Errorf("%s: must be set when remote management is enabled", key)
+	}
+
+	parsed, err := neturl.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("%s: %q is not a valid URL: %w", key, origin, err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("%s: %q must use the https scheme (no insecure remote management)", key, origin)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s: %q must not contain a username or password", key, origin)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("%s: %q must include a host", key, origin)
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("%s: %q must not contain a path", key, origin)
+	}
+	if parsed.RawQuery != "" {
+		return fmt.Errorf("%s: %q must not contain a query string", key, origin)
+	}
+	if parsed.Fragment != "" {
+		return fmt.Errorf("%s: %q must not contain a fragment", key, origin)
+	}
+	if strings.Contains(origin, ",") {
+		return fmt.Errorf("%s: %q must be exactly one origin, not a list", key, origin)
+	}
+	if strings.TrimSpace(origin) == "*" {
+		return fmt.Errorf("%s: a wildcard origin is not permitted", key)
+	}
+
+	return nil
+}
+
+// CanonicalRemoteManagementOrigin returns origin normalized to
+// scheme://host[:port] with no trailing slash - the exact form every
+// Origin/forwarded-header comparison in internal/httpapi compares
+// against. Call only after ValidateRemoteManagementOrigin has already
+// accepted origin.
+func CanonicalRemoteManagementOrigin(origin string) string {
+	parsed, err := neturl.Parse(origin)
+	if err != nil {
+		return origin
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // validateLoopbackAddress rejects anything that is not a loopback host:port.

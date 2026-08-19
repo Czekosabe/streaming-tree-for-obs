@@ -36190,3 +36190,97 @@ itself uses).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add remote management config, auth API, and security middleware
+
+### What changed
+- `internal/config/config.go`: new `RemoteManagementConfig`
+  (`Enabled`, `ExternalOrigin`), read from
+  `STREAMING_TREE_REMOTE_MANAGEMENT`/
+  `STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN` - never mutable through any
+  HTTP route, by construction (no handler re-invokes `config.Load()`).
+  New `ValidateRemoteManagementOrigin` (strict `https`-only, no
+  userinfo/path/query/fragment/wildcard/list) and
+  `CanonicalRemoteManagementOrigin` (normalizes to
+  `scheme://host[:port]`), per `docs/remote-management.md` §6.
+- `internal/secrets/store.go`: new `SecretTypeAdminPassword` +
+  `AdminPasswordSubjectID` - the single administrator's Argon2id
+  verifier is stored through the **existing** `SecretStore`
+  abstraction, no new persistence mechanism (`docs/remote-management.md`
+  §9.1/§16).
+- New `internal/httpapi/remote_management.go`: `AdminAuthService`
+  interface (narrow, mirrors `CredentialService`'s own pattern - no
+  method can expose the verifier); `RemoteManagementOptions`;
+  `requiresAuthentication`/`isPublicManagementAPIPath` - the
+  deny-by-default classifier built on the **existing**
+  `/api/public/*` prefix convention (`/api/health` and `/api/auth/*`
+  are the only other public exceptions); `withRemoteManagementSecurity`
+  - one middleware gating every non-public `/api/` route with
+  session + (unsafe-method-only) CSRF + Origin, plus `Sec-Fetch-Site:
+  cross-site` rejection as defense in depth; `withManagementSecurityHeaders`
+  (CSP/`X-Content-Type-Options`/`Referrer-Policy`, `Cache-Control:
+  no-store` on `/api/auth/*`) applied outside the auth check so even a
+  401/403 response carries them; the forwarded-header contract
+  (`validateForwardedRequest`/`singleForwardedValue`/
+  `clientIPForRateLimit`) - trusted only from a loopback direct peer,
+  exactly one value per header, `X-Forwarded-Proto` must be `https`,
+  `X-Forwarded-Host` must exactly match the configured origin; the
+  `__Host-streaming-tree-session` cookie (`Secure`, `HttpOnly`,
+  `SameSite=Strict`, `Path=/`, no `Domain`, `Max-Age` = the absolute
+  session lifetime).
+- New `internal/httpapi/auth_routes.go`: `GET /api/auth/session`
+  (bootstrap, always 200, `authenticated` in the body), `POST
+  /api/auth/login` (strict JSON, Origin+`Sec-Fetch-Site` checked before
+  authentication exists, rate-limited, constant-time verification, a
+  fresh session+CSRF token on success, a generic 401 on failure - no
+  username to enumerate), `POST /api/auth/logout` (session+CSRF
+  required, deletes the server-side session, clears the cookie).
+- `internal/httpapi/router.go`: new `Options.RemoteManagement` field;
+  `registerAuthRoutes` called only when `Enabled`; the two new
+  middlewares added to the chain.
+
+### Validation
+`gofmt -l`/`go vet`: clean. New `remote_management_test.go`, 33 tests:
+the route-auth matrix (governing task §57 - asserts the classification
+rule itself, including an explicitly-unregistered future route, so a
+route added later without a deliberate decision is automatically
+protected rather than relying on human memory); login success/wrong-
+password/wrong-Origin/missing-Origin/cross-site-Fetch-Metadata;
+session bootstrap; logout auth/CSRF requirements; the full CSRF/Origin
+matrix against a real protected route (unauthenticated, GET without
+CSRF, missing CSRF, wrong CSRF, wrong Origin, same-site-different-
+origin, valid request); public overlay routes never gated; **the
+disabled-by-default no-op guarantee** (a plain `Options{}` router
+behaves identically to before this stage, and `/api/auth/*` is not
+even registered); the forwarded-header contract (valid loopback proxy
+metadata, wrong host, `http` proto, repeated header, comma-separated
+list, non-loopback peer with forwarded headers present, direct
+loopback with no headers, explicit port matching, IPv6 loopback peer);
+client-IP derivation (trusted only from loopback); session cookie
+attribute assertions (`__Host-` prefix, `Secure`, `HttpOnly`,
+`SameSite=Strict`, `Path=/`, no `Domain`, positive `Max-Age`); logout
+cookie deletion (`Max-Age` negative). The full pre-existing
+`internal/httpapi` suite (all routes, all prior stages) was re-run
+twice - unchanged, zero regressions, confirming the new middleware is
+a true no-op when `RemoteManagement.Enabled` is false.
+
+### CI note (unrelated to this commit's own changes)
+The immediately preceding commit's (`4768f34`) `cross-platform.yml` run
+failed again on `backend (windows-amd64)` -
+`internal/provider/tts::TestSystemProviderListVoicesSmoke`, confirmed
+via the diagnostic annotations built in the PRE-20D2B milestone. This
+is the same pre-existing characteristic PRE-20D2B.1 investigated and
+partially addressed - not a regression from this commit's own
+`internal/auth`/`internal/httpapi` changes (the annotation names the
+unrelated TTS package specifically), and not chased further here since
+it is out of this milestone's scope; recorded honestly rather than
+silently ignored, to be revisited in this milestone's own closing
+evidence.
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): add remote management config, auth API,
+   and security middleware`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

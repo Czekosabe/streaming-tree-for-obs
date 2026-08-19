@@ -193,6 +193,15 @@ type Options struct {
 	// development/test build unless explicitly wired), those routes are
 	// not registered.
 	Updater UpdateService
+
+	// RemoteManagement carries the Stage 20D2B remote-management
+	// security surface (docs/remote-management.md). When
+	// RemoteManagement.Enabled is false (every build unless explicitly
+	// opted into --remote-management), no auth route is registered, no
+	// security middleware runs, and every existing route behaves
+	// exactly as it did before this stage - see
+	// withRemoteManagementSecurity's own doc comment.
+	RemoteManagement RemoteManagementOptions
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -309,6 +318,10 @@ func NewRouter(opts Options) http.Handler {
 		registerLegalRoutes(mux, logger, opts.LegalAssets)
 	}
 
+	if opts.RemoteManagement.Enabled {
+		registerAuthRoutes(mux, logger, opts.RemoteManagement)
+	}
+
 	// Anything else under /api is an explicit, JSON-shaped 404 rather than the
 	// default plain-text response, so the frontend can parse every failure.
 	// Registered before the production/liveness routes below so a real /api/
@@ -340,6 +353,8 @@ func NewRouter(opts Options) http.Handler {
 		withRecovery(logger),
 		withLogging(logger),
 		withCORS(opts.AllowedOrigins),
+		withManagementSecurityHeaders(opts.RemoteManagement),
+		withRemoteManagementSecurity(logger, opts.RemoteManagement),
 	)
 }
 

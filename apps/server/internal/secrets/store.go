@@ -41,7 +41,20 @@ const (
 	// expiry this application manages; see
 	// internal/domain/donationsource.
 	SecretTypeDonationSourceToken SecretType = "donation-source-token"
+
+	// SecretTypeAdminPassword is the Stage 20D2B single-administrator
+	// password verifier (docs/remote-management.md §9.1) - an
+	// Argon2id-hashed string, never the plaintext password. There is
+	// exactly one administrator identity, so this type has exactly one
+	// stored key (see AdminPasswordSubjectID) rather than a
+	// per-instance subject ID.
+	SecretTypeAdminPassword SecretType = "admin-password"
 )
+
+// AdminPasswordSubjectID is the fixed BuildKey subject for
+// SecretTypeAdminPassword - a single-administrator product has no
+// per-instance identity to key by.
+const AdminPasswordSubjectID = "default"
 
 // BuildKey returns the namespaced key for one secret.
 //

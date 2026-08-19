@@ -27,6 +27,8 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_YOUTUBE_CLIENT_ID",
 		"STREAMING_TREE_ENGAGEMENT_BUFFER_SIZE",
 		"STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE",
+		"STREAMING_TREE_REMOTE_MANAGEMENT",
+		"STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN",
 	} {
 		t.Setenv(key, "")
 	}
@@ -561,5 +563,88 @@ func TestOperatorChatBufferSizeConstantsMatchProjectionPackage(t *testing.T) {
 	}
 	if maxOperatorChatBufferSize != 5000 {
 		t.Errorf("maxOperatorChatBufferSize = %d, want 5000 (must match internal/operatorchat.MaxCapacity)", maxOperatorChatBufferSize)
+	}
+}
+
+func TestRemoteManagementDefaultsDisabled(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.RemoteManagement.Enabled {
+		t.Error("RemoteManagement.Enabled = true by default, want false")
+	}
+	if cfg.RemoteManagement.ExternalOrigin != "" {
+		t.Errorf("RemoteManagement.ExternalOrigin = %q by default, want empty", cfg.RemoteManagement.ExternalOrigin)
+	}
+}
+
+func TestRemoteManagementEnabledFromEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_REMOTE_MANAGEMENT", "true")
+	t.Setenv("STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN", "https://stream.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if !cfg.RemoteManagement.Enabled {
+		t.Error("RemoteManagement.Enabled = false, want true")
+	}
+	if cfg.RemoteManagement.ExternalOrigin != "https://stream.example.com" {
+		t.Errorf("RemoteManagement.ExternalOrigin = %q, want %q",
+			cfg.RemoteManagement.ExternalOrigin, "https://stream.example.com")
+	}
+}
+
+func TestRemoteManagementRejectsNonBooleanFlag(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_REMOTE_MANAGEMENT", "yes-please")
+
+	if _, err := Load(); err == nil {
+		t.Error("Load() with a non-boolean STREAMING_TREE_REMOTE_MANAGEMENT succeeded, want an error")
+	}
+}
+
+func TestValidateRemoteManagementOriginAcceptsValidHTTPS(t *testing.T) {
+	cases := []string{
+		"https://stream.example.com",
+		"https://stream.example.com:8443",
+		"https://sub.stream.example.com",
+	}
+	for _, origin := range cases {
+		if err := ValidateRemoteManagementOrigin(origin); err != nil {
+			t.Errorf("ValidateRemoteManagementOrigin(%q) = %v, want nil", origin, err)
+		}
+	}
+}
+
+func TestValidateRemoteManagementOriginRejectsInvalid(t *testing.T) {
+	cases := []string{
+		"",
+		"http://stream.example.com",            // insecure scheme
+		"stream.example.com",                   // no scheme
+		"https://user:pass@stream.example.com", // userinfo
+		"https://",                             // no host
+		"https://stream.example.com/admin",     // path
+		"https://stream.example.com?x=1",       // query
+		"https://stream.example.com#frag",      // fragment
+		"*",                                    // wildcard
+		"https://a.example.com,https://b.example.com", // list
+	}
+	for _, origin := range cases {
+		if err := ValidateRemoteManagementOrigin(origin); err == nil {
+			t.Errorf("ValidateRemoteManagementOrigin(%q) = nil, want an error", origin)
+		}
+	}
+}
+
+func TestCanonicalRemoteManagementOriginNormalizesForm(t *testing.T) {
+	got := CanonicalRemoteManagementOrigin("https://stream.example.com:8443")
+	want := "https://stream.example.com:8443"
+	if got != want {
+		t.Errorf("CanonicalRemoteManagementOrigin() = %q, want %q", got, want)
 	}
 }
