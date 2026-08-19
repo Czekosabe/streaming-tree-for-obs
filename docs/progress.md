@@ -34299,3 +34299,50 @@ terminal state next.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: reflect Stage 20D2A Linux headless service status
+
+### What changed
+Implements docs/linux-headless-server.md's own living-doc update
+expectations, following the same pattern established for Stage 20C1/
+20D1: update PRIVACY.md/README.md/docs/platform-support.md/docs/
+project-overview.md with the real, now-implemented Stage 20D2A state,
+while holding the final "In progress" to "Completed" flip until native
+CI evidence is actually in hand.
+
+1. **PRIVACY.md**: added a bullet describing the new headless secret-
+   storage path - AES-256-GCM-encrypted at rest under an operator-
+   provisioned master key, never a desktop Secret Service session,
+   opt-in and local-machine-only, no change to the existing loopback-
+   only boundary.
+2. **docs/platform-support.md** §9: rewritten from "Planned,
+   architecturally distinct from §8" to reflect the real Stage 20D2A/
+   20D2B/20D2C split - what 20D2A actually implements (explicit
+   `--headless` flag, the real systemd unit, the provisioning helper,
+   the encrypted headless secret store, active loopback-bind rejection)
+   versus what remains exactly as unimplemented as before (auth/
+   sessions/CSRF/TLS/remote shutdown/public overlay exposure/remote
+   ingest - all 20D2B/20D2C scope). §11 ("Headless secret storage is a
+   hard design question") retitled "solved by Stage 20D2A" and
+   rewritten to describe the real, tested `HeadlessStore` design instead
+   of the prior "candidates worth future research" framing. §17's
+   roadmap table splits the single 20D2 row into 20D2A (In progress) /
+   20D2B / 20D2C (Planned).
+3. **README.md**: both narrative "Stage 20's remaining work" summaries
+   now separate "20D2A's Linux headless service foundation in progress"
+   from "20D2B/20D2C's remote management and OBS ingest" instead of a
+   single undifferentiated "20D2's Linux headless/remote mode"; the
+   roadmap table splits the single 20D2 row to match; the "Linux
+   (headless/self-hosted server)" bullet is rewritten to describe the
+   real systemd unit and encrypted secret store while explicitly
+   restating "still not remote" and that 20D2B/20D2C remain
+   unimplemented.
+4. **docs/project-overview.md** §13: the 20D2 roadmap row split to
+   match, pointing at the new contract document.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: reflect Stage 20D2A Linux headless service status`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

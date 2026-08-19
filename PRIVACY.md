@@ -24,6 +24,16 @@ link**. It describes the application as it exists today; see
   store** - Windows Credential Manager, macOS Keychain, or the Linux
   Secret Service, depending on platform - never in a plain application
   file, and never in the SQLite database.
+- A Linux instance started explicitly with `--headless` (Stage 20D2A,
+  see [docs/linux-headless-server.md](docs/linux-headless-server.md))
+  never opens a desktop Secret Service session - it uses a separate,
+  file-based secret store instead, still never plaintext:
+  AES-256-GCM-encrypted at rest under a master key you provision
+  yourself outside the application, decrypted only in memory for as
+  long as a value is actually in use. This mode is entirely opt-in and
+  local-machine-only; nothing about it exposes the application to a
+  network beyond the same loopback-only boundary every other mode
+  already has.
 - The only thing this application stores in your browser (`localStorage`)
   is your interface language preference. No stream key, token, or other
   secret is ever written to browser storage.

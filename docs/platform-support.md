@@ -387,50 +387,52 @@ degrading or pretending a provider exists.
 
 ## 9. Linux headless / self-hosted server mode
 
-**Status: Planned, architecturally distinct from §8.** This is a
-different future product mode, not a configuration flag: OBS/encoder on
-one machine, the Streaming Tree server on a separate headless Linux
-machine, and a management browser possibly on a third machine, with
-destination platforms reached over the network from the server machine.
+**Status: Stage 20D2A in progress** (see [linux-headless-server.md](linux-headless-server.md)
+for the full contract) **- still loopback-only, still not remote.**
+Stage 20D2 as a whole is split into three parts, each with its own
+threat model: 20D2A (this section - a real unattended-service
+foundation, loopback-only), 20D2B (the future secure remote management/
+control plane), and 20D2C (the future remote OBS ingest/data plane).
+Only 20D2A is implemented; 20D2B/20D2C remain exactly as unimplemented
+as this section originally described the whole of 20D2.
 
-This **cannot** be obtained today by simply setting a bind address like
-`STREAMING_TREE_HOST=0.0.0.0`, and this milestone deliberately does not do
-that. The reasons, each requiring dedicated future design work this
-document does not perform:
+**What 20D2A actually implements**, real and native-CI-verified: an
+explicit `--headless` CLI flag (never inferred from `runtime.GOOS`/
+`DISPLAY`); a real systemd unit (`DynamicUser=yes` +
+`StateDirectory=`/`RuntimeDirectory=`, hardened per current
+`systemd.exec` documentation, `Restart=on-failure`, a fixed
+`ExecStart=` with no shell string); a small provisioning helper for a
+real 32-byte master key delivered to the service exclusively via
+systemd's own `LoadCredential=` mechanism (never `Environment=`, never
+a command-line argument); a real AES-256-GCM encrypted headless secret
+store (§11) selected only in headless mode, never on a normal Linux
+desktop package; and headless-mode-only startup validation that
+**actively rejects** a non-loopback management bind
+(`0.0.0.0`/`::`/a LAN address) rather than merely documenting the
+restriction as a future requirement.
+
+**What remains exactly as unimplemented as before** - all Stage
+20D2B/20D2C scope, untouched by 20D2A:
 
 - **Management authentication, sessions, CSRF, trusted origins.** The
-  current management API has no authentication at all - it relies entirely
-  on being reachable only from the same machine (loopback). A remote
-  server needs real login, session handling, CSRF protection, and an
-  explicit trusted-origin policy before it can safely accept a request
-  from anywhere but `localhost`.
-- **TLS / reverse-proxy contract and trusted proxy headers.** A remote
-  deployment needs an explicit decision about who terminates TLS and how
-  `X-Forwarded-*`-style headers are trusted, or Origin/CSRF checks become
-  meaningless behind a proxy.
-- **Rate limiting and secure remote shutdown.** The existing `POST /api/
-  system/shutdown` endpoint is protected only by requiring an exact JSON
-  body (defeating simple CSRF from an HTML form) plus loopback-only
-  reachability; loopback-only is the actual security boundary today, not
-  the JSON-body check alone, and that boundary disappears the moment the
-  port is remotely reachable.
-- **Public overlay exposure.** OBS Browser Source overlay/alert/widget
-  routes are currently reachable by anyone who can reach the loopback
-  port - fine today, not fine once that port is the public internet.
-- **Remote OBS ingest and ingest authentication/transport security.** See
-  §10 - this is large enough to warrant its own subsection.
-- **Headless secret storage.** See §11 - also large enough for its own
-  subsection.
-- **Service-user permissions, systemd lifecycle, logs, backup/restore,
-  firewall documentation.** None of this exists yet; a real headless
-  deployment needs a defined service user, a systemd unit with a real
-  lifecycle (start/stop/restart/logs via journald or a file), a backup/
-  restore story for the SQLite database, and operator-facing firewall
-  guidance - none of which is invented by this milestone.
+  management API still has no authentication at all - it still relies
+  entirely on being reachable only from the same machine (loopback),
+  now actively enforced rather than merely conventional.
+- **TLS / reverse-proxy contract and trusted proxy headers.** Still
+  undesigned.
+- **Rate limiting and secure remote shutdown.** `POST /api/system/
+  shutdown` is still protected only by an exact-JSON-body check plus
+  loopback-only reachability - still not a remote-safe design.
+- **Public overlay exposure.** Overlay/alert/widget routes are still
+  reachable by anyone who can reach the loopback port - still not
+  remote-safe.
+- **Remote OBS ingest and ingest authentication/transport security.**
+  See §10 - Stage 20D2C's own scope, untouched.
 
-None of the above is implemented here. This section exists so that a
-future Stage 20D2 has a written starting point instead of rediscovering
-these requirements from scratch.
+This **still cannot** be obtained by simply setting a bind address like
+`STREAMING_TREE_HOST=0.0.0.0` - in headless mode, doing so is now an
+explicit, actively-rejected startup error rather than merely an
+unsupported configuration.
 
 ## 10. Remote OBS ingest is a separate security boundary
 
@@ -452,32 +454,42 @@ own threat-model milestone. The MediaMTX Control API must remain private
 and must never become remotely exposed as a side effect of any future
 change.
 
-## 11. Headless secret storage is a hard design question
+## 11. Headless secret storage - solved by Stage 20D2A
 
-`internal/secrets` currently only supports the three real OS-native
-keyring backends (§3): Windows Credential Manager, macOS Keychain, and
-Linux Secret Service. Per the freedesktop.org Secret Service specification
-(checked during this milestone's research), Secret Service is a D-Bus
-API backed by desktop-session daemons (GNOME Keyring, KWallet) that
-depends on an active D-Bus session bus - something a headless systemd
-service with no graphical login session typically does not have. This is
-a real, currently-unsolved gap for a future Linux headless server target,
-and this milestone does **not** solve it by introducing a plaintext
-`secrets.json`, an unencrypted config file, a plaintext env-file fallback,
-or a hardcoded master password. A future server-security stage must
-deliberately research and select a secure headless-appropriate mechanism
-(candidates worth that future research include a system-level secret
-manager, an operator-supplied encryption key combined with an encrypted
-on-disk store, or a dedicated secrets service) - none of that research or
-selection is performed here.
+`internal/secrets` supports four backends now: the three real OS-native
+keyrings (§3 - Windows Credential Manager, macOS Keychain, Linux Secret
+Service, selected on every platform exactly as before) plus a new
+`HeadlessStore` (`internal/secrets/headlessstore.go`), selected only
+when `--headless` is explicitly given. Per the freedesktop.org Secret
+Service specification, Secret Service is a D-Bus API backed by desktop-
+session daemons (GNOME Keyring, KWallet) that depends on an active
+D-Bus session bus - something a headless systemd service with no
+graphical login session typically does not have, confirmed during
+Stage 20D2A's own research. `HeadlessStore` never attempts to open one:
+it is a single AES-256-GCM-encrypted JSON file, keyed by a 32-byte
+master key delivered exclusively via systemd's `LoadCredential=`
+mechanism (never a plaintext `secrets.json`, never an unencrypted
+config file, never an env-file fallback, never a hardcoded password -
+see [linux-headless-server.md](linux-headless-server.md) §8/§9 for the
+full envelope/nonce/AAD/corruption-handling design and §17-§21 of the
+Stage 20D2A governing task for the security requirements it was built
+against). Every entry gets a fresh random nonce and is bound to its own
+key via AEAD associated data; tampering, truncation, an unknown
+envelope version, or a wrong master key are all detected and rejected,
+proven by 23 focused Go tests. Losing the master key makes existing
+encrypted secrets permanently unrecoverable - stated plainly, not
+hidden, since that is the correct, expected behavior of real
+authenticated encryption with no back door.
 
-`internal/secrets/keyring_store.go` already defers opening the real
-backend until first use rather than at construction (confirmed by direct
-reading during this milestone's audit, §3) - this was already true before
-this milestone and is a genuinely useful property for a future headless
-target (it means the binary does not hard-fail at startup just because no
-graphical session is present), but it does not by itself solve the
-headless secret-storage problem; it only avoids making it worse.
+`internal/secrets/keyring_store.go` still defers opening the real
+desktop backend until first use rather than at construction - unchanged
+and still exactly correct for the desktop path; `HeadlessStore`, by
+contrast, deliberately fails closed at construction (Stage 20D2A's own
+explicit decision, [linux-headless-server.md](linux-headless-server.md)
+§13): a headless service whose mandatory secret backend cannot
+initialize must not report itself healthy while every configured
+provider credential is silently unusable, unlike an interactive desktop
+user who can reasonably unlock a keychain after launch.
 
 ## 12. MediaMTX platform matrix
 
@@ -584,14 +596,16 @@ desktop-packaging.md §22) produces
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
 | 20D | Linux platform support, split into: | Incomplete |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
-| 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |
+| 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (§9, §11, see [linux-headless-server.md](linux-headless-server.md)) | In progress |
+| 20D2B | Secure remote management/control plane: authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, public-overlay exposure policy (§9) | Planned |
+| 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation (§10) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
 Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, and 20D1
-are Completed; 20C2, 20D2, and 20E remain Planned. 20C2
-is externally gated on real Apple Developer signing/notarization
-credentials this project does not have - it is not blocked on any
-further engineering decision.
+are Completed; 20D2A is in progress; 20C2, 20D2B, 20D2C, and 20E remain
+Planned. 20C2 is externally gated on real Apple Developer signing/
+notarization credentials this project does not have - it is not
+blocked on any further engineering decision.
 
 ## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)
 
