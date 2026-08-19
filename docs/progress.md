@@ -36597,3 +36597,30 @@ PRE-20D2B.1), now applied to this milestone's own new CI mechanism.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## test: verify remote management security headers
+
+### What changed
+`internal/httpapi/remote_management_test.go`: five new tests per the
+governing task's own §59 - a management API response carries
+`Content-Security-Policy`/`X-Content-Type-Options: nosniff`/
+`Referrer-Policy`; `/api/auth/*` specifically carries
+`Cache-Control: no-store`; a 401/403 rejection still carries the
+security headers (confirms `withManagementSecurityHeaders` is applied
+outside/before the auth check in the middleware chain, exactly as
+designed); a public overlay route (`/api/public/*`) does **not**
+inherit the management CSP (must not break OBS Browser Source
+embedding); and the disabled-by-default no-op guarantee extends to
+these headers too (absent entirely when remote management is off).
+
+### Validation
+`gofmt -l`: clean. `go test -count=1 ./internal/httpapi/...`: all 5 new
+tests pass, full existing suite unaffected. `go build ./...`/`go vet
+./...`/`go test -count=1 ./...`: clean across the whole module.
+
+### Commits (chronological, this entry)
+1. This entry - `test: verify remote management security headers`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

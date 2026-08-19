@@ -621,3 +621,84 @@ func TestLogoutClearsCookie(t *testing.T) {
 		t.Errorf("logout cookie MaxAge = %d, want negative (delete)", cleared.MaxAge)
 	}
 }
+
+// --- security headers (governing task §59) --------------------------------
+
+func TestManagementRouteCarriesSecurityHeaders(t *testing.T) {
+	rm, _ := testRemoteManagementOptions(t, "correct-password")
+	router := testRouterWithRemoteManagement(t, rm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Error("no Content-Security-Policy header on a management API response")
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got == "" {
+		t.Error("no Referrer-Policy header on a management API response")
+	}
+}
+
+func TestAuthRouteHasCacheControlNoStore(t *testing.T) {
+	rm, _ := testRemoteManagementOptions(t, "correct-password")
+	router := testRouterWithRemoteManagement(t, rm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store on /api/auth/*", got)
+	}
+}
+
+func TestUnauthenticatedRejectionStillCarriesSecurityHeaders(t *testing.T) {
+	// A 401/403 response is exactly where a header like
+	// frame-ancestors matters most - confirms withManagementSecurityHeaders
+	// is applied outside (before) the auth check in the chain.
+	rm, _ := testRemoteManagementOptions(t, "correct-password")
+	router := testRouterWithRemoteManagement(t, rm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/about", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Error("a 401 response has no Content-Security-Policy header")
+	}
+}
+
+func TestPublicOverlayRouteDoesNotInheritManagementCSP(t *testing.T) {
+	// docs/remote-management.md §14/§35: overlay/Browser-Source pages
+	// must not inherit a management frame-ancestors policy that would
+	// break OBS Browser Source embedding.
+	rm, _ := testRemoteManagementOptions(t, "correct-password")
+	router := testRouterWithRemoteManagement(t, rm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/chat-overlays/some-slug", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Content-Security-Policy"); got != "" {
+		t.Errorf("Content-Security-Policy = %q on a public overlay route, want empty (must not inherit the management CSP)", got)
+	}
+}
+
+func TestSecurityHeadersAbsentWhenRemoteManagementDisabled(t *testing.T) {
+	router := NewRouter(Options{Logger: testLogger(), StartedAt: time.Now()})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/about", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Content-Security-Policy"); got != "" {
+		t.Errorf("Content-Security-Policy = %q with remote management disabled, want empty (true no-op)", got)
+	}
+}
