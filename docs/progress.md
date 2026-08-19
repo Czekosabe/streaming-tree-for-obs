@@ -33801,3 +33801,200 @@ before restarting the regression cleanly, rather than assumed lost or
 re-litigated. No Apple or Linux signing credentials were requested
 from, or needed from, the operator at any point. No AskUserQuestion
 call was made during Stage 20D1.
+
+## docs: reconcile Stage 20D1 closing record
+
+### Governing task
+Stage 20D2A's own governing task required a narrow corrective/audit
+pass on Stage 20D1's closing record before any Stage 20D2A product
+work began. Every finding below was independently re-verified against
+the real current tree, Git history, and the GitHub Actions REST API,
+not trusted from the prior chat report or this prompt.
+
+### 3A. Closing-commit isolation and identity - confirmed correct
+`git show --stat 77c86f7` / `--name-status` / `--format=fuller` confirm:
+exact requested subject `docs: record Stage 20D1 Linux desktop
+packaging regression`; author and committer both exactly
+`Czekosabe <kacper2280@tlen.pl>`; the diff touches only
+`docs/progress.md`. Unlike the Stage 20C1 closing commit, no deviation
+occurred here - explicitly recorded as correct, not silently assumed.
+
+### 3B. CI-flake wording corrected (a real inaccuracy found)
+Precisely re-checked `backend (windows-amd64)`'s conclusion for every
+run in the flake window via the GitHub REST API:
+
+| Commit | Run | windows-amd64 |
+| --- | --- | --- |
+| `a80fa18` | `32173129680` | success |
+| `ab09cba` | `32173547180` | **failure** |
+| `d910bfc` | `32175806079` | **failure** |
+| `94fcf1f` | `32181079425` | success |
+
+The existing closing entry (in the `docs: reflect Stage 20D1 Linux
+desktop packaging status` and `docs: record Stage 20D1 Linux desktop
+packaging regression` entries) states that `d910bfc`'s `go test` ran
+against a suite "byte-identical to the one that had just passed
+cleanly on the immediately preceding commit (`ab09cba`)" and that
+"both failures recovered on the very next commit's `cross-platform.yml`
+run". Both claims are **inaccurate**, confirmed against the table
+above: `ab09cba` did not pass cleanly - its own `windows-amd64` job
+failed too, making `ab09cba` and `d910bfc` two **consecutive**
+failures, not one isolated flake that recovered before a second,
+unrelated one occurred. The actual sequence recovered only on the
+commit after that (`94fcf1f`), two commits after `ab09cba`, not "the
+very next commit" in either case.
+
+This does not weaken the underlying finding - it strengthens it: since
+`d910bfc` changed zero Go source files relative to `ab09cba` (confirmed
+again by `git show --stat` in this audit: only
+`scripts/build-release-linux.sh`, `.github/workflows/linux-package.yml`,
+`scripts/verify-linux-package.mjs`, and a journal entry), and
+`ab09cba`'s own diff touched no Go file Windows compiles except five
+lines of new, pure, deterministic test data in `internal/updater/
+manifest/parse_test.go`, both consecutive failures ran against
+materially identical Go source to each other, yet still disagreed with
+the runs immediately bracketing them on both sides. Corrected
+description: **two consecutive `backend (windows-amd64)` `go test`
+failures occurred back-to-back (`ab09cba`, `d910bfc`), both against
+Go source with no meaningful Windows-relevant difference between them,
+bracketed by clean runs on both the preceding (`a80fa18`) and following
+(`94fcf1f`) commits.**
+
+Also, per the governing task's own instruction: the prior wording
+called this "conclusive evidence" and "now conclusive evidence of a
+recurring environmental characteristic". Because the raw failing
+`go test` output itself was never available (no `gh` CLI, no admin log
+access in this environment - only the Checks API's own generic "exit
+code 1" annotation, confirmed unchanged across every occurrence),
+"conclusive" overstates what was actually established. Corrected
+characterization: **strong converging evidence, not mathematical
+proof** - four occurrences across this project's history (Stage 20B's
+`58464ee`, Stage 20C1's `56dc658`, and this milestone's `ab09cba`/
+`d910bfc`), every one on `backend (windows-amd64)`'s `go test` step
+specifically, every one bracketed by clean runs on immediately
+adjacent commits with no relevant Windows-compiled code difference,
+and zero reproduction on this same Windows development machine across
+many local `go test` runs this session. Assessed as a recurring CI-
+environment failure characteristic of that specific job - not proven
+by direct evidence of its root cause. No code change was made in
+response, and none is warranted without that direct evidence; the CI
+leg itself was never weakened or removed.
+
+### 3C. linux-package.yml ran for 6f6da34 - a real missed run (Case 1)
+`.github/workflows/linux-package.yml`'s actual `paths` filter (audited
+directly from the file) includes `apps/web/**`. Commit `6f6da34`
+changed `apps/web/src/components/about/UpdatesPanel.tsx`, which matches
+that filter - confirmed via the GitHub REST API that the workflow
+**did** run for `6f6da34` (run `32182105657`), completing successfully
+on both `package (linux-amd64)` and `package (linux-arm64)`, each with
+its own two independent build-then-verify passes and its own real
+Secret Service smoke test - never observed or recorded during Stage
+20D1's own closing work.
+
+**Corrected total native Linux package-verification count**: two
+independent successful `linux-package.yml` runs during Stage 20D1
+(`d910bfc`'s run `32175806115` and `6f6da34`'s run `32182105657`), each
+performing two passes per architecture, for **four real native
+build-and-verify passes per architecture in total** - not the two
+passes per architecture the closing entry recorded. This exceeds the
+contract's own "at least twice" requirement with an additional
+independent workflow run's worth of margin, and required no workflow
+filter change: `linux-package.yml`'s filter already worked exactly as
+its own contract states.
+
+### 3D. Stale MediaMTX platform matrix (`docs/platform-support.md` §12,
+corrected in this commit)
+The matrix still read "install flow Planned" for `linux/amd64`,
+`linux/arm64`, `darwin/amd64`, and `darwin/arm64`, despite Stage 20C1's
+and Stage 20D1's own native package-verification helpers
+(`verify-macos-package.mjs`, `verify-linux-package.mjs`) already
+exercising the real managed-install/start/stop/cleanup lifecycle for
+MediaMTX on all four. Corrected to "Native-CI-verified managed-install/
+process lifecycle" for each, with an explicit note that this still
+does not mean operator-hardware verification.
+
+### 3E. Stale artifact-identity/naming wording (`docs/platform-support.md`
+§15/§16, corrected in this commit)
+§15 said "No non-Windows package kind is chosen or installable yet" -
+false since Stage 20C1 (`dmg`) and Stage 20D1 (`deb`) both chose and
+actually produce real artifact kinds; corrected to distinguish "chosen
+and produced" (true for Windows/macOS/Linux) from "auto-installable
+through the updater" (still Windows-only). §16 said a future Linux
+artifact "would follow the same shape... when Stage 20D introduces it"
+- corrected to state the real, already-produced
+`StreamingTreeForOBS-<version>-linux-amd64.deb`/`-arm64.deb` names
+Stage 20D1 actually ships.
+
+### 3F. §18 current-annotation update (corrected in this commit)
+"No GitHub Release, no Git tag - still true: no stage through 20C1..."
+updated to "no stage through 20D1..." - remains true, Stage 20D1 has
+not published a release or tag either, but the reference point needed
+to move forward with the new completed stage.
+
+### 3G. README FFmpeg "bundled" wording (corrected in this commit)
+Audited `internal/runtime/ffmpeg/resolver.go` directly: the "bundled
+location beside the backend executable" resolver step is real,
+functional code (`os.Stat` against a real computed path, second in
+resolution order after the explicit override) - not a stub, not
+deleted. Only the prose was stale, describing it as "a future...
+convention for a later packaged build" despite three packaged builds
+(Windows/macOS/Linux) now existing. Corrected to state plainly that
+this step is intentionally unused on every current packaged platform
+because FFmpeg remains operator-provided everywhere, not because the
+feature is unbuilt. No resolver code was touched.
+
+### 3H. Stage 20D1 operator-resume accounting
+Audited this session's own available conversation history directly
+(the same first-hand-position method used for the Stage 20C1 audit).
+One background regression task was interrupted when this session's own
+process boundary stopped several background tasks without a completion
+record; the operator's next message was a genuine, minimal resume
+instruction ("continue"), required to make work resume after that
+interruption - not a background-completion notification, which would
+not need operator action. This is recorded honestly as:
+
+Operator resume/follow-up interventions during Stage 20D1: 1 (a single
+"continue"-shaped message sent after an unrelated session-boundary
+interruption stopped background tasks without a completion record).
+
+No turn is identified in the available history where work ended in
+passive waiting while actionable milestone work remained and no
+background task was genuinely in flight.
+
+### 3I. Per-commit push evidence - honest evidence-level statement
+The claim that working tree/ahead-behind was `0`/`0` at every commit
+boundary is independently verifiable right now via `git log` (linear
+history, no merge commits, `origin/main` equals local `HEAD`) and was
+also directly observed in-session after every commit via
+`git rev-list --left-right --count origin/main...HEAD`. However, the
+stronger claim that *each* logical commit was specifically pushed
+*immediately*, before the next logical unit began (rather than, say,
+several commits created locally and pushed together at the end) cannot
+be established from the final Git history alone - both patterns
+produce an identical final linear history with `0`/`0` sync. The
+actual evidence for immediate per-commit pushing is this session's own
+tool-call sequence (a `git push` and a `0 0` verification recorded
+immediately after each commit throughout Stage 20D1), which is real
+but is in-session process evidence, not something a future auditor of
+the Git repository alone could re-derive. Stated honestly at this
+evidence level rather than overclaimed as something Git history itself
+proves.
+
+### Product status after this correction
+Stage 20D1 remains **Completed**. This correction concerns only
+historical CI-narrative precision, missed-but-real CI evidence
+(strengthening, not weakening, the record), four living-doc wording
+corrections (MediaMTX matrix, artifact-identity/naming, a historical
+section's current-annotation reference point, and README's FFmpeg
+resolver prose), and precise operator-resume/push-evidence accounting.
+No product functionality is being rolled back, and no code was changed
+by this commit beyond the documentation corrections listed above.
+
+### Commits (chronological, this correction)
+1. This entry - `docs: reconcile Stage 20D1 closing record`
+
+### Continuous-execution rule compliance
+Every GitHub Actions run cited above was audited via the read-only
+REST API synchronously in this turn; no run needed to be triggered
+since the cited runs already existed with the conclusions recorded
+above. No AskUserQuestion call was made during this corrective pass.

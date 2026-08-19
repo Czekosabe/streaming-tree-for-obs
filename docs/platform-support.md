@@ -484,10 +484,15 @@ headless secret-storage problem; it only avoids making it worse.
 | Platform | Managed install status |
 | --- | --- |
 | `windows/amd64` | Supported (Stage 20A) |
-| `linux/amd64` | Asset resolvable (`internal/runtime/mediamtx/platform.go`), install flow Planned |
-| `linux/arm64` | Asset resolvable, install flow Planned |
-| `darwin/amd64` | Asset resolvable, install flow Planned |
-| `darwin/arm64` | Asset resolvable, install flow Planned |
+| `linux/amd64` | Native-CI-verified managed-install/process lifecycle (Stage 20D1, `scripts/verify-linux-package.mjs`) |
+| `linux/arm64` | Native-CI-verified managed-install/process lifecycle (Stage 20D1) |
+| `darwin/amd64` | Native-CI-verified managed-install/process lifecycle (Stage 20C1, `scripts/verify-macos-package.mjs`) |
+| `darwin/arm64` | Native-CI-verified managed-install/process lifecycle (Stage 20C1) |
+
+"Native-CI-verified" means the real managed download/install/start/stop
+lifecycle was exercised on real native CI runners for that platform -
+not merely that the asset matrix resolves an entry for it. No platform
+here has had this verified by an operator's own physical hardware.
 
 ## 13. FFmpeg platform policy
 
@@ -526,17 +531,21 @@ carved back out of.
 The update-check contract identifies a downloadable artifact by at least:
 **OS** (`windows`/`darwin`/`linux`), **architecture** (`amd64`/`arm64`),
 **package/artifact kind** (the shipped enum already lists `installer`,
-`dmg`, `pkg`, `appimage`, `deb`, `rpm` - only `installer` is installable
-today), **version**, a **SHA-256** digest, and a download resolved only
-from the same trusted GitHub Release's own assets array (never an
-arbitrary URL accepted from the frontend - the release manifest itself
-carries no download-URL field at all, by design). A future Windows x64
-release continues to select `windows/amd64/installer`; a future Apple
-Silicon Mac release would select `darwin/arm64/<signed package kind>`; a
-future Linux release would select `linux/amd64` or `linux/arm64` with
-whatever package kind 20D eventually chooses. No non-Windows package kind
-is chosen or installable yet - only the shape of the identity concept was
-required to be, and is, already multi-platform-ready.
+`dmg`, `pkg`, `appimage`, `deb`, `rpm`), **version**, a **SHA-256**
+digest, and a download resolved only from the same trusted GitHub
+Release's own assets array (never an arbitrary URL accepted from the
+frontend - the release manifest itself carries no download-URL field at
+all, by design). `windows/amd64/installer`, `darwin/arm64/dmg`,
+`darwin/amd64/dmg`, `linux/amd64/deb`, and `linux/arm64/deb` are all now
+real, chosen, and actually produced identities (Stages 20A/20C1/20D1).
+**Only `windows/amd64/installer` is auto-installable through the
+updater's own handoff today** - macOS and Linux release builds report
+`platform_unsupported` and never attempt an install, even though their
+artifacts exist and are named (see [macos-packaging.md](macos-packaging.md)
+§20, [linux-desktop-packaging.md](linux-desktop-packaging.md) §20). A
+future Linux RPM/Arch-family package, if ever added, would reuse this
+same already-multi-platform-ready identity shape without any manifest
+schema change.
 
 ## 16. Current cross-platform artifact naming
 
@@ -559,10 +568,11 @@ discovers the installer's real filename dynamically
 (`Get-ChildItem -Filter '*.exe'`) rather than hard-coding it, so nothing
 there needed to change. `scripts/verify-installer.mjs` and
 `scripts/verify-updater.mjs` were re-run against the renamed artifact as
-part of Stage 20C1's own closing regression. A future Linux artifact
-would follow the same shape,
-`StreamingTreeForOBS-<version>-linux-amd64.<package-kind>`, when Stage
-20D introduces it.
+part of Stage 20C1's own closing regression. Stage 20D1 followed the
+same shape for real: `scripts/build-release-linux.sh` (docs/linux-
+desktop-packaging.md §22) produces
+`StreamingTreeForOBS-<version>-linux-amd64.deb` and
+`StreamingTreeForOBS-<version>-linux-arm64.deb`.
 
 ## 17. Roadmap (Stage 20, expanded)
 
@@ -609,7 +619,7 @@ current below, one line per original claim:
 - No Stage 20B updater code - **since implemented**: Stage 20B shipped
   the real GitHub Releases update system (see [updater.md](updater.md)).
 - No GitHub Release, no Git tag - **still true**: no stage through
-  20C1 has published a public release.
+  20D1 has published a public release.
 - No binding of the management API to a non-loopback address, no
   weakening of MediaMTX's loopback-only RTMP/Control-API policy - **still
   true and unconditional**: every stage through 20C1 preserved this,

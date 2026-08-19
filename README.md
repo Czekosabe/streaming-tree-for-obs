@@ -954,9 +954,13 @@ application only ever *locates and probes* it.
 1. **`STREAMING_TREE_FFMPEG_PATH`** — an explicit path you set. Relative
    paths are made absolute; the file must exist, be a regular file, and be
    executable. Reported as source `override`.
-2. **A future bundled location** beside the backend executable — documented
-   as a convention for a later packaged build; **no binary is bundled or
-   committed today**, so this step currently finds nothing.
+2. **A bundled location** beside the backend executable — a real,
+   checked resolver step (`internal/runtime/ffmpeg/resolver.go`), kept
+   intentionally unused: Windows, macOS, and Linux packaged builds
+   (Stages 20A/20C1/20D1) all deliberately never place an FFmpeg binary
+   there, since FFmpeg remains operator-provided on every packaged
+   platform — so this step currently finds nothing on any of them, by
+   design, not because the feature is unbuilt.
 3. **The system `PATH`.** Unlike MediaMTX, FFmpeg has no single
    application-managed installation to prefer over it — searching `PATH` is
    the correct fallback here, precisely because there is no approved managed
