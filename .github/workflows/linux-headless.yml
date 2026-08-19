@@ -24,11 +24,29 @@ on:
     branches: [main]
     paths:
       - "apps/server/**"
+      # docs/ci-reliability.md §4: scripts/build-release-linux.sh (the
+      # build script this workflow also runs) stages apps/web's build
+      # output and the four legal documents into both the embedded
+      # binary and the .deb - the same real inputs linux-package.yml
+      # already tracks. Previously omitted here; a real gap found by
+      # direct source inspection, not by assumption.
+      - "apps/web/**"
+      - "LICENSE"
+      - "PRIVACY.md"
+      - "LEGAL.md"
+      - "THIRD_PARTY_NOTICES.md"
       - "scripts/build-release-linux.sh"
       - "scripts/provision-headless-master-key.sh"
       - "scripts/systemd/streaming-tree.service"
       - "scripts/verify-linux-headless.mjs"
       - ".github/workflows/linux-headless.yml"
+
+# docs/ci-reliability.md §5: scoped to this workflow's own identity
+# plus the ref, so a superseded run on the same branch is cancelled
+# without ever touching a different workflow's concurrency group.
+concurrency:
+  group: linux-headless-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -30,6 +30,13 @@ on:
       - "THIRD_PARTY_NOTICES.md"
       - ".github/workflows/linux-package.yml"
 
+# docs/ci-reliability.md §5: scoped to this workflow's own identity
+# plus the ref, so a superseded run on the same branch is cancelled
+# without ever touching a different workflow's concurrency group.
+concurrency:
+  group: linux-package-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

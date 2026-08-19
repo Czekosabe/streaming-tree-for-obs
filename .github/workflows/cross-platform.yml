@@ -10,9 +10,24 @@ name: Cross-platform portability gate
 
 on:
   pull_request:
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - ".github/workflows/cross-platform.yml"
   push:
     branches: [main]
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - ".github/workflows/cross-platform.yml"
   workflow_dispatch:
+
+# docs/ci-reliability.md §5: scoped to this workflow's own identity
+# plus the ref, so a superseded run on the same branch/PR is cancelled
+# without ever touching a different workflow's concurrency group.
+concurrency:
+  group: cross-platform-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

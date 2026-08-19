@@ -34995,3 +34995,73 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. While the inherited rate-limit window had not yet reset,
 local actionable work (research, auditing, contract writing) was done
 instead of idling, per this milestone's own new §11/§12 discipline.
+
+## ci: route and cancel superseded workflow runs
+
+### What changed
+Implements `docs/ci-reliability.md` §5/§7's routing and concurrency
+design against the real workflow files, following the contract
+committed in the previous entry:
+
+- `cross-platform.yml`: added a `paths` filter to both `pull_request`
+  and `push` (`apps/server/**`, `apps/web/**`, its own workflow file) -
+  previously unfiltered on both triggers, meaning it ran for every
+  push including pure `docs/progress.md` commits. Added
+  `concurrency: { group: cross-platform-${{ github.ref }},
+  cancel-in-progress: true }`.
+- `macos-package.yml` / `linux-package.yml`: path filters were already
+  correct (audited against the real `scripts/build-release-*.sh`
+  content in the contract commit); added the same per-workflow
+  concurrency pattern, group names `macos-package-${{ github.ref }}`
+  / `linux-package-${{ github.ref }}`.
+- `linux-headless.yml`: fixed the real gap found during the contract
+  audit - added `apps/web/**`, `LICENSE`, `PRIVACY.md`, `LEGAL.md`,
+  `THIRD_PARTY_NOTICES.md` to its path filter, since
+  `scripts/build-release-linux.sh` (which this workflow also runs)
+  stages all of these into the same `.deb` `linux-package.yml` already
+  tracks. Added `concurrency: { group:
+  linux-headless-${{ github.ref }}, cancel-in-progress: true }`.
+
+Every concurrency group name is a hard-coded per-workflow literal
+prefix plus `github.ref`, satisfying `docs.github.com`'s own
+requirement (confirmed in the contract's §2 research) that group names
+must be unique across workflows - no workflow's concurrency group can
+cancel a different workflow's run. `cancel-in-progress: true` is
+enabled on all four; no evidence in this repository's history argues
+against it.
+
+Also added `scripts/verify-ci-routing.mjs` (`docs/ci-reliability.md`
+§22-equivalent local check, not a large meta-CI framework): re-
+implements the small, negation-free glob subset this repository's own
+`paths` filters actually use, extracts the real committed `paths:`
+lists directly from the four workflow YAML files via regex (so it
+fails if the real YAML and its own expectations ever drift apart), and
+asserts eight representative changed-path cases route to the expected
+workflow set.
+
+### Validation
+All four workflow files parsed successfully with `js-yaml` (from
+`apps/web/node_modules`, no new dependency added) after the edit,
+confirming `concurrency` and the corrected `paths` lists are present
+and structurally valid YAML. `node --check scripts/verify-ci-
+routing.mjs` passes. `node scripts/verify-ci-routing.mjs` passes all
+four "committed paths match modeled paths" checks and all eight
+representative routing cases (A: docs/progress.md-only -> no
+workflows; B: README-only -> no workflows; C: apps/server Go source ->
+all four; D: apps/web source -> all four; E: the systemd unit ->
+linux-headless.yml only; F: the macOS build script -> macos-
+package.yml only; G: LEGAL.md -> the three package workflows, not
+cross-platform.yml; H: cross-platform.yml's own file -> itself only).
+
+No shared Go/TypeScript product source was touched by this commit -
+only workflow YAML and one new local Node.js script - so the 24-
+canonical-integration-script product regression was not run, per
+`docs/ci-reliability.md` §30's own "does not require re-execution"
+guidance for CI-tooling-only changes.
+
+### Commits (chronological, this entry)
+1. This entry - `ci: route and cancel superseded workflow runs`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
