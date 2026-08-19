@@ -17,6 +17,12 @@ name: Linux headless service verification
 # scripts/verify-linux-headless.mjs is a platform-specific CI
 # verification helper, explicitly not canonical integration script #25
 # - the canonical local integration-script count remains 24.
+#
+# Stage 20D2B: also verifies the remote-management/control-plane
+# contract (docs/remote-management.md) through a real, ephemeral-CA
+# TLS reverse-proxy boundary via scripts/verify-linux-remote-
+# management.mjs - itself another platform-specific helper, not
+# canonical script #25 either.
 
 on:
   workflow_dispatch:
@@ -40,6 +46,7 @@ on:
       - "scripts/provision-admin-password.sh"
       - "scripts/systemd/streaming-tree.service"
       - "scripts/verify-linux-headless.mjs"
+      - "scripts/verify-linux-remote-management.mjs"
       - ".github/workflows/linux-headless.yml"
 
 # docs/ci-reliability.md §5: scoped to this workflow's own identity
@@ -100,6 +107,15 @@ jobs:
 
       - name: Verify the headless service contract (pass 2)
         run: node scripts/verify-linux-headless.mjs
+
+      # docs/remote-management.md: Stage 20D2B - the remote management/
+      # control plane. Reuses the same package already built above
+      # (no third build pass) since --remote-management is layered on
+      # top of the identical headless binary/package. Traverses a real
+      # ephemeral-CA TLS reverse-proxy boundary - never a fake
+      # X-Forwarded-Proto header sent directly to the loopback backend.
+      - name: Verify the remote-management contract
+        run: node scripts/verify-linux-remote-management.mjs
 
       - name: Clean up any leftover process, service, or installed package
         if: always()

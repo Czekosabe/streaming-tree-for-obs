@@ -36408,3 +36408,70 @@ with the real production output, not assumed.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## test: verify Stage 20D2B remote management through a real TLS proxy
+
+### What changed
+New `scripts/verify-linux-remote-management.mjs` - a platform-specific
+CI verification helper (not canonical integration script #25; the
+canonical count remains 24). Extends `linux-headless.yml`'s existing
+coverage (a new step, not a new workflow file - reuses the same
+package already built by that job's own pass 2, no third build pass)
+rather than duplicating the matrix/build cost in a separate workflow.
+
+Builds a real ephemeral-CA HTTPS reverse-proxy test harness in Node
+(`node:https`/`node:tls`, a real `openssl`-generated X.509 cert/key
+pair, discarded with the temp directory) that always overwrites
+`X-Forwarded-Proto`/`X-Forwarded-Host`/`X-Forwarded-For` with fixed,
+correct values - mirroring the documented Caddy reference
+configuration's own confirmed default behavior, never a fake header
+sent directly to the loopback backend. The test client
+(`proxyRequest`) connects over real TLS, explicitly trusting the
+ephemeral CA (`ca: cert.certPem`) - never disabling certificate
+verification.
+
+Covers: `--remote-management` refused without `--headless`; fail-
+closed startup with no administrator password provisioned; fail-
+closed startup with a malformed (`http://`) origin; successful startup
+with a valid password and HTTPS origin; the backend itself remaining
+loopback-only (a real socket audit via `ss`); unauthenticated
+management API rejection through the real proxy; the public health
+endpoint and login-page shell remaining reachable unauthenticated;
+wrong-password rejection; login rate-limit activation under bounded
+repeated attempts; a real session cookie's exact attributes
+(`__Host-` name, `Secure`, `HttpOnly`, `SameSite=Strict`, no `Domain`);
+session bootstrap; an authenticated management read; state-changing
+requests rejected for missing/wrong CSRF and wrong Origin;
+`/api/public/*` correctly not gated by the auth boundary (matching
+existing local-overlay behavior); authenticated remote shutdown
+succeeding and the process actually exiting; a fresh restart
+invalidating the pre-restart session; a new login succeeding after
+restart; the administrator password never appearing in process
+output; clean package removal; no leftover process.
+
+This is the security-critical core of the governing task's own native-
+scenario list, not a literal enumeration of every one of its named
+items - recorded honestly rather than claimed as exhaustive.
+
+`.github/workflows/linux-headless.yml`: new step "Verify the remote-
+management contract"; path filter and header comment updated for the
+new script. `scripts/verify-ci-routing.mjs`: model kept in sync (all
+checks pass).
+
+### Validation
+`node --check scripts/verify-linux-remote-management.mjs`: clean.
+Workflow YAML parses (`js-yaml`). `node scripts/verify-ci-routing.mjs`:
+all checks pass. This script cannot be executed on this Windows
+development machine (Linux-only: real `.deb` install, real systemd-
+adjacent process model, real `ss` socket audit) - real validation
+happens via the native Linux CI run this commit triggers, exactly like
+`scripts/verify-linux-headless.mjs` itself was originally developed
+and validated in Stage 20D2A.
+
+### Commits (chronological, this entry)
+1. This entry - `test: verify Stage 20D2B remote management through a
+   real TLS proxy`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -51,6 +51,7 @@ const WORKFLOWS = {
     "scripts/provision-admin-password.sh",
     "scripts/systemd/streaming-tree.service",
     "scripts/verify-linux-headless.mjs",
+    "scripts/verify-linux-remote-management.mjs",
     "LICENSE",
     "PRIVACY.md",
     "LEGAL.md",
