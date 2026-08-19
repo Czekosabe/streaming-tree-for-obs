@@ -35485,3 +35485,64 @@ jobs-endpoint polling every cycle. The one operator-only gap identified
 in this entry and in `docs/ci-reliability.md` §18 rather than worked
 around with an artificial commit or a fabricated claim of success. No
 AskUserQuestion call was made at any point in this milestone.
+
+## docs: reconcile Stage 20D2A CI evidence gap against the PRE-20D2B baseline
+
+### Explicit §27-equivalent reconciliation (append-only, Stage 20D2A's
+own closing entry is not rewritten)
+Stage 20D2A's closing entry (`f7127fa`) recorded two open CI-evidence
+items honestly rather than glossing over them: `3e46bca` (the final
+product/status commit) showed `backend (windows-amd64)` failing at
+`go test` while all other five `cross-platform.yml` jobs passed; and
+`f7127fa` itself (the journal-only closing commit) never had its own
+`cross-platform.yml` run observed, because the monitoring approach in
+use at the time exhausted GitHub's unauthenticated API quota before a
+result could be retrieved.
+
+This PRE-20D2B milestone directly addresses both, without reopening or
+modifying Stage 20D2A's own product implementation or its historical
+journal entries:
+
+- The monitoring-exhaustion problem that made `f7127fa`'s own result
+  unobservable is fixed at the system level by `docs/ci-reliability.md`
+  §11's budgeted, header-aware, no-simultaneous-monitors strategy - the
+  same strategy used successfully throughout this entire milestone
+  without a single operator follow-up message.
+- `backend (windows-amd64)`'s recurring `go test` failure is not
+  "fixed" (no code change was made, and none was warranted by the
+  evidence obtained), but it is, for the first time in this project's
+  history, precisely diagnosed down to one exact test
+  (`TestSystemProviderListVoicesSmoke` in `internal/provider/tts`) via
+  the new diagnostic-capture mechanism, replacing six prior
+  occurrences' worth of generic "exit code 1" annotations with real,
+  specific evidence.
+- A fully green `cross-platform.yml` terminal run was **not** obtained
+  on this milestone's own final workflow-file commit (`074004b`) either
+  - it failed on that same, better-diagnosed characteristic (5 of 6
+    jobs passed). This milestone does not claim otherwise. Per its own
+  contract, a clean dispatch-triggered run remains a stated,
+  operator-actionable follow-up (`docs/ci-reliability.md` §18), not
+  something worked around with an artificial commit.
+
+**Accepted baseline going forward:** the routing, concurrency, and
+diagnostic-capture behavior introduced by this milestone (commits
+`ad621c3`/`c74368e`/`074004b`/`b438462`) is the accepted replacement CI
+operating model for this repository from this point forward, verified
+by real (not synthetic) evidence - the natural cancellation of
+`c74368e`'s superseded `cross-platform.yml` run, the three package
+workflows' clean terminal runs on `c74368e`, and the diagnostic
+mechanism's own correct behavior on `074004b`'s real failure. The
+specific `backend (windows-amd64)` characteristic remains open and
+unresolved, now with substantially better diagnostic tooling in place
+for whenever it next recurs.
+
+Stage 20D2A remains **Completed** - nothing here reopens its product
+scope, and no historical Stage 20D2A journal entry was edited.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: reconcile Stage 20D2A CI evidence gap against
+   the PRE-20D2B baseline`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
