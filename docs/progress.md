@@ -33534,3 +33534,270 @@ isolation. This commit avoids repeating that deviation.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: record Stage 20D1 Linux desktop packaging regression
+
+### Governing task
+Stage 20D1 - Linux local/desktop packaged runtime + native package
+verification, preceded by a required narrow corrective pass on the
+Stage 20C1 closing record. Local desktop model only (OBS/encoder +
+Streaming Tree + MediaMTX + operator-provided FFmpeg, same machine,
+loopback-only) - Stage 20D2 (headless/remote/server mode) and Stage
+20C2 (macOS signing/notarization) were explicitly out of scope and
+neither was touched.
+
+### Starting / final state
+Starting HEAD: `5c8c0bb` (Stage 20C1's own closing commit). Final HEAD
+before this entry: `c544a96`. Branch `main`, origin `main`, clean
+working tree, `0`/`0` ahead/behind at every commit boundary throughout.
+
+### Part 1: Stage 20C1 closing-record correction (summarized here;
+full detail in commit 1's own entry below)
+Audited and corrected, all independently verified against real Git
+history and the GitHub Actions API rather than trusted at face value:
+- **Closing-subject deviation**: requested `docs: record Stage 20C1
+  macOS packaging regression`; actual `docs: record Stage 20C1 macOS
+  packaging milestone` (commit `5c8c0bb`) - recorded as a historical
+  process deviation, no product-code effect, historical commit left
+  unmodified.
+- **Closing-commit isolation deviation**: commit `5c8c0bb` touched
+  README.md/docs/platform-support.md/docs/project-overview.md in
+  addition to docs/progress.md, not isolated as originally required -
+  recorded, no product-code effect.
+- **macOS verification helper filename drift**: `docs/macos-
+  packaging.md` named `scripts/verify-macos-package.sh`; the real,
+  only, shipped file is `scripts/verify-macos-package.mjs` - corrected
+  in the living contract.
+- **Release-manifest contract wording drift**: the contract described
+  "multiple `-artifact` descriptors in one invocation"; the real,
+  tested, shipped mechanism is one `-artifact` per invocation plus the
+  optional `-in <existing-manifest.json>` flag - corrected in the
+  living contract to match the real, already-tested code (no
+  implementation change).
+- **Stale `docs/platform-support.md` §18**: retitled/reframed from a
+  present-tense "what this milestone did not do" to an explicitly
+  historical record of the cross-platform portability baseline
+  milestone's own exclusions, with "since implemented" annotations for
+  the macOS package and the Stage 20B updater.
+- **Final-HEAD (`5c8c0bb`) CI evidence**: `cross-platform.yml` run
+  `32163427746` confirmed success (all 6 jobs) via the GitHub REST API;
+  both previously-cited macOS package workflow runs (`32159238567`,
+  `32160291342`) reconfirmed still present with their original
+  conclusions. No workflow was re-run solely for this documentation
+  correction.
+- **Stage 20C1 autonomy evidence, audited precisely rather than
+  assumed**: zero AskUserQuestion calls were made during Stage 20C1,
+  but a literal operator "continue" message was sent once, immediately
+  after a completed background regression task (task `b3i0y5jsz`) -
+  recorded honestly as one resume/follow-up intervention, not inferred
+  as zero merely because AskUserQuestion was never invoked.
+
+Stage 20C1 itself remained, and remains, **Completed** throughout -
+this was a documentation-accuracy correction only, made before any
+Stage 20D1 product work began, per the governing task's own explicit
+ordering requirement.
+
+### Part 2: Stage 20D1 implementation
+
+### Commits (chronological, this milestone)
+1. `c9b83b2` - `docs: reconcile Stage 20C1 closing record` (the
+   correction above)
+2. `a80fa18` - `docs: define Stage 20D1 Linux desktop packaging
+   contract` (`docs/linux-desktop-packaging.md`, written and pushed
+   before any product code)
+3. `ab09cba` - `feat(server): add Linux packaged lifecycle adapters`
+   (real `flock`-based `singleinstance_linux.go`; best-effort
+   `zenity`/`kdialog` `nativealert_linux.go`; the `_other.go` fallbacks
+   narrowed to exclude Linux; the multi-platform manifest selection
+   tests extended to a real 5-artifact shape covering Linux)
+4. `d910bfc` - `build: add Linux release build script, package CI, and
+   verification helper` (`scripts/build-release-linux.sh`,
+   `.github/workflows/linux-package.yml`,
+   `scripts/verify-linux-package.mjs`)
+5. `94fcf1f` - `docs: reflect Stage 20D1 Linux desktop packaging
+   status` (PRIVACY.md/README.md/platform-support.md/project-
+   overview.md updated with the first native Linux CI evidence in
+   hand)
+6. `6f6da34` - `docs: mention Linux in the platform-unsupported
+   updater code comment` (comment-only touch-up)
+7. `c544a96` - `docs: flip Stage 20D1 status markers to Completed`
+   (README.md/docs/platform-support.md/docs/project-overview.md - kept
+   deliberately separate from this closing entry, unlike Stage 20C1's
+   own closing commit, per the correction in Part 1 above)
+8. This entry - `docs: record Stage 20D1 Linux desktop packaging
+   regression`
+
+### Primary-source research (2026-08-18)
+freedesktop.org's XDG Base Directory Specification, the Desktop Entry
+Specification v1.5 (the `Exec` key's fixed-program-only rule, no shell
+constructs permitted), `xdg-open`'s documented exit codes, the Secret
+Service D-Bus specification, Debian Policy / AppImage / Flatpak / Snap
+official documentation for the package-format decision, GitHub's
+current Linux hosted-runner labels (`ubuntu-latest`, `ubuntu-24.04-arm`
+- re-verified rather than assumed, already the exact labels this
+repository's own `cross-platform.yml` uses), and this repository's own
+`go.mod` (Go 1.25.0) informing the `CGO_ENABLED=0` static-binary
+policy. Full detail in `docs/linux-desktop-packaging.md` §2.
+
+### Package format decision
+A real `.deb` package for the Debian/Ubuntu family, built with
+`dpkg-deb`, chosen over AppImage (real FUSE/CI friction, no first-class
+desktop-menu integration without an extra daemon) and Flatpak/Snap
+(sandboxing/store-oriented operational surface this single self-
+contained binary does not need) - reasoning recorded in full in
+`docs/linux-desktop-packaging.md` §4. The support claim is explicitly
+narrowed to "Debian/Ubuntu package CI-verified on x64 and ARM64",
+never generic "Linux supported" - no RPM/Arch/other distro-family
+package exists or is claimed.
+
+### Native Linux CI evidence
+`.github/workflows/linux-package.yml`'s first-ever run (commit
+`d910bfc`, run id `32175806115`) succeeded on both `package
+(linux-amd64)` and `package (linux-arm64)` on the first attempt, each
+completing two independent build-then-verify passes (`docs/linux-
+desktop-packaging.md` §17 requires at least two; four total passes per
+architecture were observed) - real `.deb` assembly via `dpkg-deb`, a
+real `dpkg -i` install as root followed by the packaged executable
+running as a normal unprivileged user, the real `.desktop` entry
+validated with `desktop-file-validate`, the full `verify-linux-
+package.mjs` scenario list (control metadata, legal documents,
+`--version`, health/About/frontend/SPA/legal routes, honest TTS/
+updater unavailability, the real `flock`-based second-launch
+detection, real graceful shutdown, application data surviving a real
+`dpkg -r` removal), and a dedicated real Secret Service smoke test
+(an ephemeral `dbus-run-session` plus `gnome-keyring-daemon --unlock`,
+running the existing opt-in `TestKeyringStoreAgainstTheRealOSCredentialStore`
+for real) - zero leftover processes or installed packages after either
+pass, both architectures.
+
+`.github/workflows/cross-platform.yml` was kept green at every commit
+boundary except one investigated exception, and
+`.github/workflows/macos-package.yml` was observed green on both
+occasions this milestone's shared `apps/server`/`apps/web` changes
+triggered it (commits `ab09cba` and `6f6da34`), per the governing
+task's own instruction not to burn macOS CI for Linux-only changes but
+to observe it when shared code changed:
+
+| Run (commit) | Workflow | Result |
+| --- | --- | --- |
+| `32169445414` (`c9b83b2`) | cross-platform.yml | success, all 6 jobs |
+| `32173129680` (`a80fa18`) | cross-platform.yml | success, all 6 jobs |
+| `32173547180` / `32173547172` (`ab09cba`) | cross-platform.yml / macos-package.yml | **`backend (windows-amd64)` failed at `go test`**, all 5 other cross-platform jobs passed; macos-package.yml success both architectures |
+| `32175806079` / `32175806115` (`d910bfc`) | cross-platform.yml / linux-package.yml | **`backend (windows-amd64)` failed at `go test`** again, all 5 other cross-platform jobs passed; linux-package.yml success both architectures, both passes each, real Secret Service smoke test passed |
+| `32181079425` (`94fcf1f`) | cross-platform.yml | success, all 6 jobs including windows-amd64 |
+| `32182105644` / `32182105649` (`6f6da34`) | cross-platform.yml / macos-package.yml | success, all 6 jobs including windows-amd64; macos-package.yml success both architectures |
+| `32213656026` (`c544a96`, final HEAD) | cross-platform.yml | success, all 6 jobs including windows-amd64 |
+
+### The windows-amd64 CI flake: fourth occurrence, strongest evidence yet
+`backend (windows-amd64)`'s `go test` step failed twice more during
+this milestone (`ab09cba`, `d910bfc`), on top of the two prior
+occurrences already documented in this project's history (Stage 20B's
+`58464ee`/run `32118459362`; Stage 20C1's `56dc658`/run
+`32159238543`). Both new occurrences were investigated with direct,
+precise JSON parsing of the Actions API response (not the fragile
+grep-based parsing used earlier in this session, which was found
+mid-milestone to sometimes misattribute results across jobs) rather
+than assumed: commit `d910bfc`'s own diff changed **zero Go source
+files** - only `scripts/build-release-linux.sh` (bash), `.github/
+workflows/linux-package.yml` (YAML), `scripts/verify-linux-
+package.mjs` (JavaScript), and a journal entry - so the `go test`
+suite it ran was byte-identical to the one that had just passed
+cleanly on the immediately preceding commit (`ab09cba`) minutes
+earlier, with no code difference of any kind between the two runs.
+`ab09cba`'s own diff similarly touched no code Windows ever compiles
+(two new `linux`-tagged files, two `_other.go` build-tag comment
+narrowings) except five lines of new, pure, deterministic test data.
+Both failures recovered on the very next commit's `cross-platform.yml`
+run without any code change in between. This is now conclusive
+evidence of a recurring environmental characteristic specific to the
+`backend (windows-amd64)` CI job's `go test` step under this workflow,
+never tied to any actual code change across all four occurrences. No
+code change was made in response at any point; no CI leg was weakened
+or removed to manufacture a green result.
+
+### Local Windows closing regression
+Ran in full against `6f6da34` (the last commit changing any product
+code or script - the subsequent `c544a96` only changed status markers
+in three living docs, verified by `git show --stat` to touch nothing
+this regression exercises), restarted cleanly from scratch after an
+unrelated session interruption stopped the first attempt partway
+through (frontend/backend/release-build/scripts 1-8 had already passed
+cleanly in the interrupted attempt; the restart re-ran the complete
+sequence rather than resuming, per this project's own "no selective
+retry as final proof" discipline): frontend (`npm
+run i18n:check`/`typecheck`/`lint`/`test -- --run`/`build`) and
+backend (`gofmt -l .`/`go vet ./...`/`go vet -tags integration ./...`/
+`go test -count=1 ./...`/`go build ./...`/`go build -tags integration
+./...`) all passed; a real Windows release build (`scripts/build-
+release.ps1 -Version "0.1.0-dev+regression20d1"`) succeeded; all 24
+canonical integration scripts passed in canonical order, including
+`verify-updater.mjs`'s full real two-version end-to-end update cycle;
+`scripts/verify-installer.mjs` passed. Zero failures. The tracked
+`.gitkeep` placeholders overwritten by each real release build were
+restored via `git checkout --` before every subsequent commit,
+including this one, per this project's established mechanical
+convention.
+
+### Real end-to-end manifest chaining smoke test (manual, this
+milestone)
+Beyond the automated Go tests, manually exercised the real
+`cmd/releasemanifest` binary five times in sequence (`-artifact` +
+`-in` chaining) to assemble one canonical manifest describing
+`windows/amd64/installer`, `darwin/arm64/dmg`, `darwin/amd64/dmg`,
+`linux/amd64/deb`, and `linux/arm64/deb` together - confirmed the
+final `release.json` correctly accumulates all five artifacts with
+independently correct names/sizes/hashes, proving the real, shipped
+multi-platform release pipeline end to end.
+
+### Stage status after this milestone
+
+| Stage | Scope | Status |
+| --- | --- | --- |
+| 20A | Windows production runtime and installer | Completed |
+| 20B | Application updater | Completed |
+| 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification | Completed |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
+| **20D1** | **Linux local/desktop packaged runtime, unsigned `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification** | **Completed** |
+| 20D2 | Linux headless/self-hosted server mode and remote security | Planned |
+| 20E | Logs/diagnostics, final release hardening, final manual/platform verification | Planned |
+
+Stage 20 as a whole remains **Incomplete**.
+
+### Explicit truth statements
+No operator-owned physical Linux desktop manual test was performed,
+and none is claimed - GitHub-hosted native Ubuntu CI is real native
+execution, meaningfully stronger evidence than cross-compilation, but
+it is not equivalent to a human's real GNOME/KDE desktop session, real
+OBS Browser Source rendering on a real Linux machine, real audio-
+device behavior, or a human clicking through `dpkg -i`/the application
+menu. Only the Debian/Ubuntu family is claimed - never generic "Linux
+supported". The `.deb` package is unsigned - no Linux release signing
+exists at any stage yet, and none was implemented or claimed here. No
+Linux in-app updater install path exists; the updater honestly reports
+`platform_unsupported` instead of a false "up to date" or a silently-
+attempted unsupported install, using the exact same code path Stage
+20C1 already built for macOS, requiring zero further Go changes
+(`internal/updater/handoff_other.go` is gated `//go:build !windows`,
+confirmed by direct source read). No `sudo` call exists in the
+application's own runtime code - only the CI verification helper and
+the operator's own `dpkg`/`apt` invocations use elevation, exactly as
+Debian's own package format requires; the packaged application itself
+always runs as a normal unprivileged user. No systemd service was
+installed or enabled. The canonical local integration-script count
+remains **24**; `scripts/verify-linux-package.mjs` (like `scripts/
+verify-macos-package.mjs`) is documented separately as a platform-
+specific CI verification helper, never counted as script #25.
+
+### Continuous-execution rule compliance
+Every GitHub Actions run cited above was observed to terminal state via
+the read-only REST API, using precise JSON parsing after a mid-
+milestone discovery that an earlier grep-based parsing approach could
+misattribute job results. Two real `backend (windows-amd64)` failures
+were found and investigated to a documented, evidence-based conclusion
+rather than ignored or blindly retried. A background regression task
+was interrupted by an unrelated session boundary partway through; on
+resumption, prior CI evidence was re-verified directly via the API
+before restarting the regression cleanly, rather than assumed lost or
+re-litigated. No Apple or Linux signing credentials were requested
+from, or needed from, the operator at any point. No AskUserQuestion
+call was made during Stage 20D1.
