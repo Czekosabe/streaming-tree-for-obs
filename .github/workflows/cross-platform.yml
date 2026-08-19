@@ -92,8 +92,63 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # docs/ci-reliability.md §7: runs the suite exactly once (no
+      # blind retry). `tee` saves the raw `go test -json` stream to a
+      # file for later machine parsing while `jq` reconstructs the
+      # same human-readable console output a plain `go test` would
+      # have produced; `pipefail` preserves go test's own real exit
+      # code through the pipe.
       - name: go test
-        run: go test -count=1 ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/test-results"
+          go test -count=1 -json ./... \
+            | tee "$RUNNER_TEMP/test-results/go-test.jsonl" \
+            | jq -j -r 'select(.Action=="output") | .Output // empty'
+
+      # Adds zero output to a normal successful run - only runs when
+      # the step above failed. Answers this milestone's own root
+      # complaint: prior sessions had only a generic "exit code 1"
+      # Checks-API annotation and no way to identify which package or
+      # test actually failed.
+      - name: Extract go test failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/test-results/go-test.jsonl"
+          if [ ! -f "$LOG" ]; then
+            echo "No go-test.jsonl found (the suite may have failed before producing output)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### go test failure diagnostics (${{ matrix.name }})"
+            echo
+            echo "- Go version: $(go version)"
+            echo "- GOOS/GOARCH: $(go env GOOS)/$(go env GOARCH)"
+            echo "- Runner OS: ${RUNNER_OS:-unknown}"
+            echo
+            echo "**Failing package(s)/test(s):**"
+            echo '```'
+            jq -r 'select(.Action=="fail") | (.Package // "?") + " :: " + (.Test // "(package-level)")' "$LOG" | sort -u
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "panic:" "$LOG"; then
+            echo "- A panic was detected in the raw test output." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if grep -qi "test timed out" "$LOG"; then
+            echo "- A test timeout was detected in the raw test output." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          jq -r 'select(.Action=="fail") | "::error title=go test failure (${{ matrix.name }})::" + (.Package // "?") + " :: " + (.Test // "(package-level)")' "$LOG"
+
+      - name: Upload go test failure log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-test-failure-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-results/go-test.jsonl
+          retention-days: 5
+          if-no-files-found: ignore
 
       - name: go build
         run: go build ./...

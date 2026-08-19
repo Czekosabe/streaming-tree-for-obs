@@ -35065,3 +35065,74 @@ guidance for CI-tooling-only changes.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## ci: capture Windows backend test failure diagnostics
+
+### The problem this fixes
+`backend (windows-amd64)`'s `go test` step has now failed
+intermittently six times across this project's history (Stage 20B's
+`58464ee`; Stage 20C1's `56dc658`; Stage 20D1's `ab09cba`/`d910bfc`;
+Stage 20D2A's `3b44b7a`/`3e46bca`), including on commits that changed
+zero Go files. Every prior occurrence was investigated using only the
+Checks API's own generic "exit code 1" annotation - no session in this
+project's history has ever been able to identify which package or
+test actually failed. This commit fixes that observability gap without
+touching test semantics, retrying, or weakening the job in any way.
+
+### What changed
+`cross-platform.yml`'s `backend` job's `go test` step (all five
+matrix legs, not special-cased to `windows-amd64`, so the mechanism is
+uniform): changed from `go test -count=1 ./...` to `go test -count=1
+-json ./... | tee "$RUNNER_TEMP/test-results/go-test.jsonl" | jq -j -r
+'select(.Action=="output") | .Output // empty'`, run under `set -o
+pipefail` with `shell: bash` (already used elsewhere in this same job
+on every matrix OS including `windows-latest`, confirmed working there
+in this project's own CI history). This runs the suite exactly once:
+`tee` saves the complete raw JSON-Lines stream to a file while `jq`
+simultaneously reconstructs the same human-readable console text a
+plain `go test` would have produced, and `pipefail` preserves `go
+test`'s own real exit code through the pipeline, so the step still
+fails exactly when the suite genuinely fails.
+
+Two new steps, both gated `if: failure()` so a normal successful run
+produces zero additional output:
+- "Extract go test failure diagnostics" parses the saved JSON-Lines
+  file with `jq` to list every failing package/test pair (`(package-
+  level)` when Go reported no individual test name), detects `panic:`
+  and `test timed out` substrings in the raw output, and writes a
+  concise Markdown summary (failing package(s)/test(s), Go version,
+  `GOOS`/`GOARCH`, runner OS, matrix leg name) to `$GITHUB_STEP_SUMMARY`
+  plus one `::error::` annotation per distinct failure. No secret,
+  credential, stream key, OAuth token, or unrelated environment
+  variable is read or emitted - only `go test -json`'s own structured
+  fields.
+- "Upload go test failure log" uploads the raw JSON-Lines file via
+  `actions/upload-artifact@v7` (current latest major, confirmed in the
+  contract commit's research), named
+  `go-test-failure-<matrix-name>-<run id>-<run attempt>`,
+  `retention-days: 5`, `if-no-files-found: ignore`.
+
+`jq`'s availability on all three hosted runner families (including
+`windows-latest`, specifically confirmed via the `runner-images`
+`Windows2025-Readme.md` primary source in the contract commit) is what
+makes this design possible without adding any new tool-install step.
+
+No retry was added. No `continue-on-error` was added. No timeout was
+changed. No package was skipped. A real failure still fails the job
+exactly as before - this commit only makes a future failure
+diagnosable after the fact, per `docs/ci-reliability.md` §7/§15-20's
+explicit prohibition on blind retries or weakening the job to chase a
+green result.
+
+### Validation
+`cross-platform.yml` parses successfully with `js-yaml` after the
+edit (`jobs: backend, frontend` confirmed present). No shared Go/
+TypeScript product source was touched - only workflow YAML - so the
+24-canonical-integration-script product regression was not run.
+
+### Commits (chronological, this entry)
+1. This entry - `ci: capture Windows backend test failure diagnostics`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
