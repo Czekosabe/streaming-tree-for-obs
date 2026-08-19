@@ -36018,3 +36018,108 @@ developed, and monitored afterward via a single low-request background
 watcher rather than manual polling. No AskUserQuestion call was made.
 No retry, skip, weakening, or removal of the Windows SAPI test was used
 to reach the green result recorded above.
+
+## docs: define Stage 20D2B remote management security contract
+
+### Governing task
+Stage 20D2B - the secure remote management/control plane for the Linux
+headless deployment established in Stage 20D2A. Explicitly does not
+implement remote OBS ingest (Stage 20D2C), does not expose MediaMTX
+RTMP remotely, and does not expose remote overlays.
+
+### PRE-20D2B.1 closure audit (§3, lightweight, git-local only)
+Verified directly rather than trusted: `1ad465a`'s exact subject
+matches (`docs: record Windows SAPI CI stabilization regression`);
+`git show --name-only` confirms it touches only `docs/progress.md`;
+`cross-platform.yml` contains no `continue-on-error`/retry mechanism
+(the one grep hit is a comment explicitly documenting the *absence* of
+blind retry); `TestSystemProviderListVoicesSmoke` is still present in
+`internal/provider/tts/windows_test.go`. No repository inconsistency
+found - no corrective commit made, per the governing task's own
+instruction not to manufacture documentation work.
+
+### Architecture audit (before design)
+Read completely: `cmd/server/main.go`, `internal/config/config.go`,
+`internal/httpapi/router.go`/`middleware.go`/`local_action.go`/
+`system.go`/`health.go`/`production.go`/`decode.go`,
+`internal/secrets/store.go`/`headlessstore.go`,
+`scripts/systemd/streaming-tree.service`,
+`scripts/provision-headless-master-key.sh`, the frontend's
+`api/api-client.ts`/`api/system.ts`/`App.tsx`. Key findings that shaped
+the design:
+- The router already establishes an `/api/public/*` prefix convention
+  for every existing public overlay/widget route - a ready-made,
+  centralized deny-by-default boundary for the new remote-management
+  auth middleware, avoiding the need to touch ~50 individual route
+  registrations.
+- `checkLocalActionOrigin`/`buildOriginAllowlist`
+  (`local_action.go`) already implement the loopback-appropriate
+  "allow an absent Origin through" policy for the shutdown/updater
+  routes - D2B needs a deliberately *stricter*, separate check (no
+  absent-Origin exception) rather than modifying this existing,
+  correct-for-its-context helper.
+- `secrets.LoadHeadlessMasterKey()` strictly requires
+  `$CREDENTIALS_DIRECTORY`, only ever populated by systemd's own
+  `LoadCredential=` for a real unit invocation - a manually-run
+  provisioning CLI has no such env var by default. The shipped unit's
+  `Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree` line is how
+  the real service resolves its state path; a provisioning tool must
+  reproduce the exact same identity (`systemd-run` with matching
+  `LoadCredential=`/`DynamicUser=yes`/`StateDirectory=`/`Environment=`
+  properties) rather than inventing a parallel path.
+- The frontend's shared `fetch()` wrapper already sends cookies by
+  default for same-origin requests (no `credentials: 'include'` needed
+  or added) - consistent with D2B's same-origin-only contract (no
+  CORS-based remote model).
+
+### Primary-source research (2026-08-19)
+- RFC 9106 §4: Argon2id's second recommended parameter set (t=3, p=4,
+  m=2^16 KiB/64 MiB, 128-bit salt, 256-bit tag) - selected over the
+  first (2 GiB) option because this application shares a general-
+  purpose host with MediaMTX/FFmpeg, not dedicated authentication
+  hardware.
+- `pkg.go.dev/golang.org/x/crypto/argon2`: confirmed `IDKey(...)` is
+  the Argon2id-specific function (not `Key`, which is Argon2i).
+- MDN Cookies guide: confirmed the exact `__Host-` prefix requirements
+  (`Secure`, `Path=/`, no `Domain`) and that `Max-Age` is the current-
+  recommended lifetime mechanism over `Expires` (avoids client/server
+  clock-skew error class).
+- MDN `Sec-Fetch-Site` reference: confirmed Baseline-available since
+  March 2023, browser-generated/unspoofable, but absent from older
+  browsers and non-browser clients - used as defense-in-depth only,
+  never sole CSRF defense.
+- Caddy's `reverse_proxy` documentation: confirmed directly - Caddy
+  "ignore[s] their values from incoming requests, to prevent spoofing"
+  for `X-Forwarded-*` and sets fresh values itself. This is the load-
+  bearing fact behind the forwarding-header contract: the documented
+  reference proxy cannot pass through an attacker-supplied header.
+
+### What changed
+New `docs/remote-management.md` (Stage 20D2B contract), written and
+pushed before any product code, per this project's own established
+ordering. Defines: the loopback-only scope boundary; the explicit
+`--remote-management` opt-in gated on `--headless`; the local-only,
+environment-variable-sourced deployment-security config (never API-
+mutable, by construction - no HTTP handler ever re-invokes
+`config.Load()`); fail-closed startup preconditions; the canonical
+external-origin validation rules; the Origin/CSRF/Sec-Fetch-Site
+enforcement middleware design; the loopback-peer-gated forwarding-
+header contract; the single-administrator Argon2id password model and
+its local-only `systemd-run`-based provisioning path; the in-memory
+opaque-session design (30-minute idle / 12-hour absolute lifetime,
+explicitly chosen and recorded, not left implicit); the `__Host-`
+session cookie attributes; login rate limiting; logging boundaries;
+management-route security headers; the `/api/public/*`-based deny-by-
+default route boundary; the health-endpoint audit (already minimal, no
+change needed); the public-overlay/`publicSlug` D2B policy (audited,
+not exposed, future D2C origin-separation rule recorded); the new
+authentication API surface; remote-safe shutdown; and a Caddy reverse-
+proxy reference configuration.
+
+### Commits (chronological, this milestone)
+1. This entry - `docs: define Stage 20D2B remote management security
+   contract`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
