@@ -34881,3 +34881,117 @@ rather than given a fabricated answer. No Apple, Linux signing, or
 remote-infrastructure credentials were requested from, or needed from,
 the operator at any point. No AskUserQuestion call was made during
 Stage 20D2A.
+
+## docs: define CI reliability and monitoring contract
+
+### Governing task
+PRE-20D2B - a dedicated CI reliability, workflow routing, monitoring,
+and notification-hygiene milestone, explicitly not Stage 20D2B product
+work. Real project history (Stage 20D1/20D2A) demonstrated five
+concrete problems with the repository's prior CI operating model:
+`cross-platform.yml` ran unfiltered on every push including pure
+`docs/progress.md` commits; no workflow had a `concurrency` block, so
+a superseded run could keep consuming runner capacity after a newer
+commit replaced it as the accepted source state; `backend
+(windows-amd64)`'s `go test` step had failed intermittently six times
+across this project's history with no machine-readable evidence of
+which package/test actually failed; prior CI monitoring used
+aggressive unauthenticated REST polling that exhausted GitHub's
+60/hour anonymous quota more than once; and that exhaustion produced
+operator-visible idle waiting requiring follow-up "so?"/"continue"
+messages to resume.
+
+### Starting state
+Starting HEAD: `f7127fa` (Stage 20D2A's own closing commit). Branch
+`main`, origin `main`, clean working tree, `0`/`0` ahead/behind,
+confirmed via `git pull --ff-only origin main` (already up to date).
+
+### `gh` CLI availability audit
+`which gh` and `gh --version`/`gh auth status` all confirm `gh` is
+**not installed** in this environment (`command not found`),
+determined directly this milestone rather than assumed from a prior
+session's own note. All CI monitoring for this milestone therefore
+uses the unauthenticated REST fallback described in the new contract's
+§11, never `gh`.
+
+### Rate-limit state at milestone start
+`GET /rate_limit` at milestone start showed `0`/`60` remaining
+(inherited from the immediately preceding session's exhaustion),
+reset `2026-08-19T12:30:30Z`. Per the new contract's own §11/§12, no
+further unauthenticated requests were made until genuinely needed;
+local, actionable work (primary-source research, workflow auditing,
+contract writing, workflow-file edits, the routing-verification
+script) was done instead of idling for the ~15-minute remainder of the
+window.
+
+### Primary-source research (2026-08-19)
+Fetched directly (not relied on from memory), full citation list and
+findings in `docs/ci-reliability.md` §2:
+- `docs.github.com`'s "Triggering a workflow" page - `paths`/
+  `paths-ignore` semantics, and the important finding that a workflow
+  skipped by path filtering leaves any required status check for it in
+  a `Pending` state, which can block a pull request.
+- `docs.github.com`'s "Using concurrency" page - `concurrency.group`/
+  `cancel-in-progress` semantics, and that concurrency group names
+  must be unique **across workflows** (repository-wide by default).
+- `docs.github.com`'s REST API rate-limits page - confirmed
+  unauthenticated 60/hour, PAT-authenticated 5,000/hour, in-Actions
+  `GITHUB_TOKEN` 1,000/hour/repository; the four relevant response
+  headers.
+- `cli.github.com`'s `gh run watch` manual page.
+- `github.com/actions/upload-artifact`'s own README and Releases page,
+  fetched directly - confirmed the current latest release is
+  **v7.0.1** (major tag `v7`), immutable artifacts, 90-day default
+  retention.
+- `github.com/actions/runner-images`'s `Windows2025-Readme.md`,
+  fetched directly - confirmed `jq 1.8.1` and Node.js are both
+  preinstalled on the `windows-latest` hosted image, which the new
+  Windows diagnostic-extraction step (§7 of the contract) depends on.
+
+### Branch-protection / required-check audit
+Deferred to the next entry in this milestone, once the unauthenticated
+API quota reset - see that entry for the finding and its evidence
+limitation, if any.
+
+### Real gap found by direct source inspection
+`linux-headless.yml` shares the exact same `scripts/build-release-
+linux.sh` build script as `linux-package.yml` (confirmed by `grep`
+against the real script: it runs `npm run build` in `apps/web` and
+copies `LICENSE`/`THIRD_PARTY_NOTICES.md`/`LEGAL.md`/`PRIVACY.md` into
+both the embedded-legal directory and the `.deb`), yet its path filter
+omitted `apps/web/**` and all four legal documents - a real
+verification-coverage gap, not a hypothetical one. Recorded in the new
+contract and fixed in the next commit.
+
+### What changed
+New `docs/ci-reliability.md` (PRE-20D2B CI reliability and monitoring
+contract), written and pushed before any workflow-file implementation
+change, per this milestone's own required ordering. Defines: the five
+problems this milestone fixes; primary-source citations; a branch-
+protection audit placeholder (filled in the next entry); the before/
+after workflow trigger-matrix tables; docs-only non-impacting
+behavior; the Windows `go test` diagnostic model (single test
+invocation, `tee`+`jq` producing both a readable console stream and a
+machine-parseable JSON-Lines file, `pipefail` preserving the real exit
+code, a `if: failure()`-gated summary/annotation step, a
+`if: failure()`-gated `actions/upload-artifact@v7` diagnostic upload);
+the superseded-run policy (`cancelled` is not `failure`); the final-
+evidence model (evidence belongs to the final commit that actually
+changed relevant inputs, never to a later docs-only commit); the
+unauthenticated monitoring budget (~15-20 requests/hour, no jobs-
+endpoint polling every cycle, a single computed rate-limit-reset wait
+rather than a retry loop); when a manual `workflow_dispatch` is
+appropriate; and the explicit non-scope statement (no Stage 20D2B
+capability of any kind).
+
+### Validation
+The document is prose-only; no code changed in this commit.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: define CI reliability and monitoring contract`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. While the inherited rate-limit window had not yet reset,
+local actionable work (research, auditing, contract writing) was done
+instead of idling, per this milestone's own new §11/§12 discipline.
