@@ -193,6 +193,35 @@ func TestLoopbackAddressesAreAccepted(t *testing.T) {
 	}
 }
 
+func TestValidateHeadlessListenAddressRejectsNonLoopback(t *testing.T) {
+	cases := map[string]string{
+		"all interfaces":   "0.0.0.0",
+		"routable IPv4":    "192.168.1.10",
+		"public IPv4":      "8.8.8.8",
+		"IPv6 unspecified": "::",
+	}
+
+	for name, host := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{Host: host, Port: defaultPort}
+			if err := ValidateHeadlessListenAddress(cfg); err == nil {
+				t.Fatalf("ValidateHeadlessListenAddress() accepted the non-loopback host %q", host)
+			}
+		})
+	}
+}
+
+func TestValidateHeadlessListenAddressAcceptsLoopback(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "localhost", "::1", "127.0.0.5"} {
+		t.Run(host, func(t *testing.T) {
+			cfg := Config{Host: host, Port: defaultPort}
+			if err := ValidateHeadlessListenAddress(cfg); err != nil {
+				t.Fatalf("ValidateHeadlessListenAddress() rejected the loopback host %q: %v", host, err)
+			}
+		})
+	}
+}
+
 func TestInvalidMediaMTXPortsAreRejected(t *testing.T) {
 	for _, address := range []string{"127.0.0.1:0", "127.0.0.1:70000", "127.0.0.1:abc", "127.0.0.1"} {
 		t.Run(address, func(t *testing.T) {

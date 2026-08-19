@@ -72,6 +72,12 @@ import (
 	"github.com/streaming-tree/server/internal/webassets"
 )
 
+// headlessMode is set once, from the real command-line flag, inside
+// handleEarlyFlags - never inferred from runtime.GOOS, a missing
+// DISPLAY, or being launched by systemd (docs/linux-headless-server.md
+// §5). Read only after handleEarlyFlags has run.
+var headlessMode bool
+
 func main() {
 	if handled := handleEarlyFlags(); handled {
 		return
@@ -79,7 +85,13 @@ func main() {
 
 	if err := run(); err != nil {
 		slog.Error("server terminated with an error", slog.Any("error", err))
-		if buildinfo.Packaged() {
+		if headlessMode {
+			// docs/linux-headless-server.md §5/§23: a headless fatal
+			// startup error is a structured log line (already written
+			// above, captured by journald under the real systemd unit)
+			// plus this nonzero exit - never zenity/kdialog/a desktop
+			// alert of any kind, and no dependency on DISPLAY.
+		} else if buildinfo.Packaged() {
 			// The release binary has no console window (docs/windows-
 			// packaging.md §7/§13) - a fatal startup error must not simply
 			// disappear. err's own text follows this codebase's existing
@@ -95,17 +107,21 @@ func main() {
 // startup: `--version` (unchanged since Stage 20A) and Stage 20B's
 // internal `-update-helper` mode (docs/updater.md §22) - detected here,
 // before SQLite/MediaMTX/providers/the HTTP server/the single-instance
-// mutex/TTS are ever touched, exactly like `--version` already is.
+// mutex/TTS are ever touched, exactly like `--version` already is. Also
+// captures `--headless` (docs/linux-headless-server.md §5) into the
+// package-level headlessMode for run() to read afterward.
 // Returns true when either mode fully handled the process (main should
 // simply return), false when normal startup should proceed.
 func handleEarlyFlags() bool {
 	versionFlag := flag.Bool("version", false, "print version information and exit")
+	headlessFlag := flag.Bool("headless", false, "run without a browser/desktop UI, as an unattended Linux service (docs/linux-headless-server.md)")
 	updateHelperFlag := flag.Bool(updater.FlagUpdateHelper, false, "internal: run in update-helper mode")
 	parentPID := flag.Int(updater.FlagParentPID, 0, "internal: update-helper only")
 	candidate := flag.String(updater.FlagCandidate, "", "internal: update-helper only")
 	targetExe := flag.String(updater.FlagTargetExe, "", "internal: update-helper only")
 	expectedVersion := flag.String(updater.FlagExpectedVersion, "", "internal: update-helper only")
 	flag.Parse()
+	headlessMode = *headlessFlag
 
 	if *updateHelperFlag {
 		runUpdateHelper(*parentPID, *candidate, *targetExe, *expectedVersion)
@@ -168,6 +184,19 @@ func run() error {
 		return err
 	}
 
+	// docs/linux-headless-server.md §6: the one real gap in the
+	// existing address validation - MediaMTX's own two addresses are
+	// already unconditionally loopback-validated by config.Load()
+	// regardless of mode, but the management HTTP listener has no such
+	// restriction by default. Headless mode fails closed here, before
+	// any listener of any kind is created, rather than silently
+	// reinterpreting a requested non-loopback bind as loopback.
+	if headlessMode {
+		if err := config.ValidateHeadlessListenAddress(cfg); err != nil {
+			return err
+		}
+	}
+
 	// Packaged mode only (docs/windows-packaging.md §9): a second launch
 	// while an instance is already running must not open a second backend,
 	// bind the port again, or touch the database - it focuses the existing
@@ -179,7 +208,15 @@ func run() error {
 		}
 		if !acquired {
 			managementURL := "http://" + cfg.Address() + "/"
-			if cfg.TestNoUI {
+			if headlessMode {
+				// docs/linux-headless-server.md §5/§24: never a browser
+				// launch in headless mode, and no zenity/kdialog/native
+				// UI either - a second headless instance detecting the
+				// first is simply a structured log line, exactly what a
+				// service operator inspects via journald.
+				logger.Info("another instance is already running (headless mode, no browser to open)",
+					slog.String("url", managementURL))
+			} else if cfg.TestNoUI {
 				logger.Info("another instance is already running (test mode, browser launch suppressed)",
 					slog.String("url", managementURL))
 			} else if openErr := browserlaunch.Open(managementURL); openErr != nil {
@@ -231,13 +268,40 @@ func run() error {
 
 	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
 
-	// Opening the OS credential store is deferred to first use (see
-	// secrets.NewKeyringStore), so constructing it here never blocks startup
-	// or prompts, even on a system where no credential store is available.
-	// One shared store instance backs both destination stream keys and
-	// connected-account OAuth token bundles - different SecretType
-	// namespaces, same underlying OS credential store.
-	secretStore := secrets.NewKeyringStore()
+	// Secret-store backend selection is mode-driven, never GOOS-driven
+	// (docs/linux-headless-server.md §10): a normal Linux desktop
+	// package still uses Secret Service unconditionally; only an
+	// explicit --headless run ever selects the encrypted headless
+	// store, and it never falls through to KeyringStore (which would
+	// try to open a desktop D-Bus session that does not exist for a
+	// service account). One shared store instance backs both
+	// destination stream keys and connected-account OAuth token
+	// bundles either way - different SecretType namespaces, same
+	// underlying backend.
+	var secretStore secrets.SecretStore
+	if headlessMode {
+		// docs/linux-headless-server.md §13: fail closed. A headless
+		// service whose mandatory secret backend cannot be
+		// initialized must not report itself healthy while every
+		// configured provider credential is silently unusable - so
+		// this is a startup error, not a deferred-to-first-use
+		// condition the way KeyringStore's desktop path is.
+		masterKey, keyErr := secrets.LoadHeadlessMasterKey()
+		if keyErr != nil {
+			return keyErr
+		}
+		headlessStore, storeErr := secrets.NewHeadlessStore(filepath.Join(cfg.DataDir, "secrets.json"), masterKey)
+		if storeErr != nil {
+			return storeErr
+		}
+		secretStore = headlessStore
+	} else {
+		// Opening the OS credential store is deferred to first use (see
+		// secrets.NewKeyringStore), so constructing it here never blocks
+		// startup or prompts, even on a system where no credential store
+		// is available.
+		secretStore = secrets.NewKeyringStore()
+	}
 	credentialService := credential.NewService(secretStore)
 
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
@@ -834,7 +898,12 @@ func run() error {
 
 	if buildinfo.Packaged() {
 		managementURL := "http://" + listener.Addr().String() + "/"
-		if cfg.TestNoUI {
+		if headlessMode {
+			// docs/linux-headless-server.md §5/§23: no browser launch,
+			// no xdg-open, ever, in headless mode - just a log line an
+			// operator can read via journald.
+			logger.Info("headless mode: no browser will be opened", slog.String("url", managementURL))
+		} else if cfg.TestNoUI {
 			logger.Info("browser launch suppressed (test mode)", slog.String("url", managementURL))
 		} else if openErr := browserlaunch.Open(managementURL); openErr != nil {
 			logger.Warn("failed to open the default browser",

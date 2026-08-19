@@ -34098,3 +34098,108 @@ Incomplete.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this contract. No AskUserQuestion
 call was made while writing it.
+
+## feat(server): add Linux headless mode and secure secret storage
+
+### What changed
+Implements the core Go-side of docs/linux-headless-server.md
+§5/§6/§8-§13.
+
+1. **Explicit `--headless` flag** (§5): parsed once in the existing
+   `handleEarlyFlags`/`flag.Parse()` call alongside `--version` and the
+   updater-helper flags, captured into a package-level `headlessMode`
+   `main()`/`run()` read afterward - never inferred from `runtime.GOOS`,
+   a missing `DISPLAY`, or being launched by systemd.
+2. **Headless loopback bind validation** (§6): a new exported
+   `config.ValidateHeadlessListenAddress(cfg Config) error`, reusing
+   the existing, already-tested `validateLoopbackAddress` logic against
+   `cfg.Address()` - called only when `--headless` is given, immediately
+   after `config.Load()` succeeds, before any listener is created.
+   MediaMTX's own two addresses needed no change: `loadMediaMTX`
+   already validates both unconditionally on every platform/mode,
+   confirmed by the contract's own audit.
+3. **A real pre-existing bug fixed as part of this same change**:
+   `Config.Address()` concatenated `Host + ":" + Port` directly instead
+   of using `net.JoinHostPort`, so a literal IPv6 host such as `::1`
+   produced `"::1:8080"` - a string `net.SplitHostPort`/`net.Listen`
+   both reject as ambiguous ("too many colons in address"). This
+   affected every platform/mode already, not just headless mode, and
+   was only surfaced now because this milestone is the first to add a
+   test asserting IPv6 loopback (`::1`) is accepted as a valid listen
+   address. Fixed with `net.JoinHostPort`, which brackets IPv6
+   addresses correctly.
+4. **No browser launch / no nativealert in headless mode** (§5/§23):
+   both `browserlaunch.Open` call sites (the second-instance fallback
+   and the post-listener call) and the `nativealert.ShowFatalError`
+   call in `main()` are now gated on `headlessMode` first - a headless
+   fatal error is the structured `slog.Error` line already written,
+   plus the existing nonzero exit, nothing more.
+5. **Secure headless secret storage** (§8): a new
+   `internal/secrets/headlessstore.go` implements a second
+   `SecretStore` - `HeadlessStore` - backed by a single AES-256-GCM
+   encrypted JSON file (Go standard library `crypto/aes`+
+   `crypto/cipher`, no new dependency). Each entry gets a fresh random
+   12-byte nonce and is sealed with its own key string as AEAD
+   associated data, binding ciphertext to the exact key it is stored
+   under. Every `Set`/`Delete` does an atomic write-temp-then-rename
+   under both an in-process mutex and a real cross-process `flock(2)`
+   on a dedicated `<path>.lock` file (never the data file itself, since
+   `os.Rename` would otherwise detach an already-held lock from the
+   old inode) - platform-specific via new `filelock_unix.go`/
+   `filelock_windows.go` (Windows is a no-op stub; headless mode is
+   Linux-only in practice, but the cross-platform `secrets` package
+   must still compile everywhere). Corruption (malformed JSON, wrong
+   format/version, truncated/malformed ciphertext, GCM authentication
+   failure from a wrong key or tampering) all map to the existing
+   `ErrFailure` sentinel; a missing/wrong-length master key maps to the
+   existing `ErrUnavailable` sentinel - both already understood by
+   every existing `SecretStore` consumer, so **zero changes** were
+   needed to `credential.Service` or the HTTP-layer error mapping.
+6. **Master-key loading** (§9): `secrets.LoadHeadlessMasterKey()` reads
+   exactly 32 bytes from `$CREDENTIALS_DIRECTORY/streaming-tree-master-
+   key` (the systemd `LoadCredential=` mechanism, wired up in the unit
+   file in the next commit) - never an environment variable *value*, a
+   flag, or an application-parsed config file. Missing
+   `CREDENTIALS_DIRECTORY`, a missing file, or a wrong-length key all
+   fail with `ErrUnavailable`.
+7. **Mode-driven backend selection, fail-closed** (§10/§13): `main.go`'s
+   single `secrets.NewKeyringStore()` construction site is now a small
+   conditional - `--headless` loads the master key and constructs
+   `HeadlessStore`, returning the error immediately (failing service
+   startup completely) if either step fails; its absence keeps
+   `secrets.NewKeyringStore()` exactly as before, on every platform. A
+   normal Linux desktop package still uses Secret Service
+   unconditionally; headless mode never falls through to it.
+
+### Tests
+`internal/config/config_test.go`: `TestValidateHeadlessListenAddressRejectsNonLoopback`/
+`...AcceptsLoopback` (0.0.0.0/routable-IPv4/public-IPv4/::/localhost/
+127.0.0.1/127.0.0.5/::1 - the last of these only passable after the
+`Address()` fix above). `internal/secrets/headlessstore_test.go`: 23
+focused tests covering write/read/overwrite/delete/exists, restart
+persistence, independent keys producing different ciphertext, random-
+nonce non-determinism for identical plaintext, wrong-master-key
+rejection, tampered/truncated/malformed-encoding ciphertext rejection,
+unknown format/version rejection, a large (64KiB) value round-tripping
+correctly, plaintext absence from the backing file (asserted via a
+literal marker string search), wrong-key-length construction
+rejection, all four `LoadHeadlessMasterKey` paths (missing directory,
+missing file, wrong length, valid), and a 20-goroutine concurrent-
+Set/Get consistency check.
+
+### Validation
+`gofmt -l .` clean; `go vet ./...` and `go vet -tags integration ./...`
+clean; `go build ./...` and `go build -tags integration ./...` clean;
+`go test ./... -count=1` - all packages pass, including all new tests.
+Cross-compiled (`CGO_ENABLED=0`, matching this project's own Linux
+build policy) `cmd/server` and `internal/secrets` for `linux/amd64` and
+`linux/arm64`; also confirmed `internal/secrets` still compiles for
+`darwin/arm64` (the `filelock_unix.go`/`filelock_windows.go` split
+covers every platform this codebase ships).
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): add Linux headless mode and secure secret storage`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

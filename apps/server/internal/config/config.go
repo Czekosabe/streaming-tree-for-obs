@@ -425,6 +425,21 @@ func lookupBool(key string, fallback bool) (bool, error) {
 	return parsed, nil
 }
 
+// ValidateHeadlessListenAddress rejects a management HTTP listener
+// address that is not loopback-only (docs/linux-headless-server.md
+// §6). Unlike the MediaMTX addresses (already unconditionally
+// loopback-validated by loadMediaMTX on every platform/mode), the
+// management listener has no such restriction by default - a desktop
+// deployment may legitimately want a different local address in the
+// future, but a headless service (no interactive user to notice a
+// misconfiguration) must fail closed rather than silently bind
+// somewhere reachable off the local machine. Call only when headless
+// mode is explicitly requested; never call this for a desktop/dev
+// build.
+func ValidateHeadlessListenAddress(cfg Config) error {
+	return validateLoopbackAddress("STREAMING_TREE_HOST/STREAMING_TREE_PORT (headless mode)", cfg.Address())
+}
+
 // validateLoopbackAddress rejects anything that is not a loopback host:port.
 //
 // MediaMTX is configured to accept an unauthenticated publisher and to expose a
@@ -497,8 +512,17 @@ func ValidateIngestPath(path string) error {
 var ingestPathPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Address returns the host:port string accepted by net.Listen.
+//
+// net.JoinHostPort (not a bare "+") is required here: a literal IPv6
+// host such as "::1" must be bracketed ("[::1]:8080") or
+// net.SplitHostPort/net.Listen reject the whole string as ambiguous
+// ("too many colons in address") - a real, pre-existing gap this
+// package's own Stage 20D2A headless-mode listener validation surfaced
+// (docs/linux-headless-server.md §6), since STREAMING_TREE_HOST=::1 is
+// a legitimate loopback value MediaMTX's own address fields already
+// accept when given as one whole string.
 func (c Config) Address() string {
-	return c.Host + ":" + strconv.Itoa(c.Port)
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 // lookup returns the trimmed value of an environment variable, treating an
