@@ -97,7 +97,19 @@ it owns in `Pending` (§2), path-filter changes must not be made
 blindly against a repository that requires one of these checks to
 merge a pull request.
 
-<!-- BRANCH_PROTECTION_FINDING -->
+Checked directly via `GET /repos/Czekosabe/streaming-tree-for-obs/
+branches/main` (the lightweight, publicly-readable branch endpoint -
+the stricter `.../branches/main/protection` endpoint returned `401
+Requires authentication`, consistent with GitHub's own documented
+behavior that endpoint always requires an authenticated admin-level
+token regardless of repository visibility, so it was not usable in
+this unauthenticated environment). The response's own `protected`
+field is `false`: **`main` has no branch protection and no required
+status checks configured at all.** This is a definitive finding, not
+an evidence limitation - path-filter changes in this milestone carry
+zero required-check/merge-gate risk for the current repository
+configuration. If branch protection is added in the future, this
+finding should be re-checked before any further path-filter change.
 
 ## 4. Workflow purpose matrix (before this milestone)
 
@@ -378,3 +390,110 @@ kind. It does not reopen or modify any Stage 20D2A product code
 handling, the systemd unit, or the provisioning helper) - only the CI
 workflow files, this contract, and (if genuinely needed) a small local
 routing-verification script are in scope.
+
+## 17. Real evidence obtained this milestone
+
+Both new mechanisms were proven against real CI, not merely reasoned
+about:
+
+**Concurrency/cancellation, proven naturally (no synthetic run
+manufactured to test it):** commit `c74368e` (the routing/concurrency
+implementation, which changed all four workflow files) queued a
+`cross-platform.yml` run (id `32252366278`). Before it finished,
+commit `074004b` (the Windows-diagnostics implementation, which
+changed only `cross-platform.yml`) pushed moments later and queued its
+own `cross-platform.yml` run. Per the new `cancel-in-progress: true`
+concurrency block, `32252366278` was correctly cancelled and GitHub
+reported it as **`cancelled`**, not `failure` - exactly the §8/§11
+behavior this milestone set out to build, observed for real on its
+first opportunity. `c74368e`'s other three workflow runs (`linux-
+headless.yml` id `32252366222`, `linux-package.yml` id `32252366306`,
+`macos-package.yml` id `32252366243`) all reached terminal `success`
+- each one implies both matrix architectures passed, since GitHub only
+reports a matrix-job workflow run as `success` when every job in the
+matrix succeeded.
+
+**Windows diagnostic capture, proven on a real, unplanned recurrence:**
+commit `074004b`'s own `cross-platform.yml` run (id `32252440982`)
+failed - `backend (windows-amd64)` again, all other five jobs
+(`frontend (linux-amd64)`, `backend (linux-amd64)`, `backend
+(linux-arm64)`, `backend (macos-amd64)`, `backend (macos-arm64)`)
+succeeded. Step-level inspection of the `windows-amd64` job confirms
+the new mechanism worked exactly as designed: step 7 ("go test")
+failed with the real `go test` exit code; step 8 ("Extract go test
+failure diagnostics") completed successfully and produced annotations;
+step 9 ("Upload go test failure log") completed successfully; step 10
+("go build") was correctly `skipped`, preserving the job's overall
+`failure` conclusion exactly as before this milestone. This is real
+proof the new steps do not accidentally suppress a genuine failure
+(§18's own requirement).
+
+For the **first time in this project's history**, the exact failing
+test is now known: the check run's annotations (`GET /repos/.../
+check-runs/{id}/annotations`, publicly readable without
+authentication) show two `failure`-level annotations naming
+`github.com/streaming-tree/server/internal/provider/tts` ::
+`TestSystemProviderListVoicesSmoke` (one package-level, one test-
+level). Direct source reading confirms
+`TestSystemProviderListVoicesSmoke` (`apps/server/internal/provider/
+tts/windows_test.go`) skips via `skipIfSAPIUnavailable` when
+`Capabilities().Available` is false, so this run's `Capabilities()`
+call (which itself already checks `GetVoices().Count > 0`, per
+`checkAvailable()` in `apps/server/internal/provider/tts/windows.go`)
+reported SAPI as available with at least one voice, yet the test's own
+separate `ListVoices()` call then failed or returned an unexpected
+result moments later. This is genuinely new, actionable evidence - six
+prior occurrences across this project's history had only a generic
+"exit code 1" Checks-API annotation and no way to know even which
+package was involved.
+
+**The evidence gap that remains, stated honestly:** the exact
+assertion message (which of `ListVoices() error = ...`, `ListVoices()
+returned no voices`, or `a voice has an empty ID` actually fired) is
+only present in the uploaded diagnostic artifact's raw JSON-Lines
+content, and the artifact-download endpoint (`GET .../actions/
+artifacts/{id}/zip`) returned `401 Requires authentication` in this
+unauthenticated environment - confirmed by direct attempt, not
+assumed. No `gh` CLI and no token are available here to retrieve it.
+**No product or test fix was made to `internal/provider/tts` in this
+milestone** - the evidence available narrows the failure to one
+specific test and describes its plausible mechanism (a race or
+transient inconsistency between two independent COM
+`CoInitialize`/`SpVoice.GetVoices` sequences run moments apart on the
+hosted Windows runner), but does not yet prove the exact assertion
+that fired, and per this contract's own §15/§20 a fix is only made
+when the evidence actually supports one. This is recorded as
+diagnostic progress, not root-cause closure: a future session with
+authenticated `gh`/API access, or the operator downloading the
+`go-test-failure-windows-amd64-32252440982-1` artifact from the
+Actions UI directly, can close this gap without further speculation.
+
+## 18. Final workflow-file CI evidence and one remaining operator-
+only gap
+
+Per this contract's own §24-equivalent closing requirement, terminal
+evidence was obtained for every workflow file this milestone changed:
+
+| Workflow | Evidence commit | Run | Result |
+| --- | --- | --- | --- |
+| `linux-headless.yml` | `c74368e` (last commit changing this file) | `32252366222` | success, both architectures |
+| `linux-package.yml` | `c74368e` (last commit changing this file) | `32252366306` | success, both architectures |
+| `macos-package.yml` | `c74368e` (last commit changing this file) | `32252366243` | success, both architectures |
+| `cross-platform.yml` | `074004b` (last commit changing this file) | `32252440982` | 5/6 jobs success; `backend (windows-amd64)` failed on the pre-existing, now better-diagnosed §17 flake |
+
+`cross-platform.yml` does not have a clean, fully-green terminal run
+on its own final commit (`074004b`). Obtaining one requires either an
+authenticated `workflow_dispatch` call (this environment has no `gh`
+and no token, confirmed earlier this milestone) or a genuinely new
+`apps/server`/`apps/web` source commit through ordinary routing - and
+manufacturing an artificial source change solely to trigger CI is
+explicitly forbidden by this same contract's §9/§13. This is recorded
+here as a real, honest, operator-actionable gap, not glossed over: an
+operator with either repository-admin `gh` access or the Actions web
+UI can manually run "Run workflow" for `cross-platform.yml` against
+`074004b` (or any later commit) to obtain a clean dispatch-triggered
+result. Every other piece of §17/§18's evidence - the routing fix, the
+concurrency/cancellation behavior, and the diagnostic-capture
+mechanism itself - is independently proven regardless of this specific
+job's outcome, since the failure is attributable to the pre-existing
+environmental characteristic, not to anything this milestone changed.

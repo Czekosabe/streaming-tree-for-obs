@@ -35136,3 +35136,100 @@ TypeScript product source was touched - only workflow YAML - so the
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: record CI reliability evidence and Windows diagnostic finding
+
+### Branch-protection audit result
+Checked directly via `GET /repos/Czekosabe/streaming-tree-for-obs/
+branches/main` (the `.../branches/main/protection` endpoint returned
+`401 Requires authentication`, consistent with its documented
+always-authenticated behavior, so it was not usable here). The
+response's own `protected` field is `false`: `main` has **no branch
+protection and no required status checks configured at all** -
+definitive, not an evidence limitation. The path-filter changes in the
+previous two commits carry zero required-check/merge-gate risk.
+
+### Concurrency/cancellation proof (real, not synthetic)
+Commit `c74368e` (routing/concurrency, changed all four workflow
+files) queued a `cross-platform.yml` run (`32252366278`). Commit
+`074004b` (Windows diagnostics, changed only `cross-platform.yml`)
+pushed moments later and queued its own run on the same ref. Per the
+new `cancel-in-progress: true` block, `32252366278` was correctly
+cancelled - GitHub reports it as `cancelled`, distinct from `failure`,
+exactly the intended behavior, observed naturally on the first real
+opportunity rather than manufactured. `c74368e`'s other three runs all
+reached `success`: `linux-headless.yml` (`32252366222`), `linux-
+package.yml` (`32252366306`), `macos-package.yml` (`32252366243`) -
+each implies both matrix architectures passed, since a matrix-job
+workflow only reports `success` when every job in the matrix
+succeeded.
+
+### Windows diagnostic capture proof (real, on an unplanned recurrence)
+Commit `074004b`'s own `cross-platform.yml` run (`32252440982`)
+failed: `backend (windows-amd64)` again (the 7th occurrence of this
+project's long-documented recurring characteristic), all other five
+jobs succeeded. Step-level inspection confirms the new mechanism works
+exactly as designed and does not suppress the real failure: step 7
+("go test") failed with the real exit code; step 8 ("Extract go test
+failure diagnostics") completed successfully; step 9 ("Upload go test
+failure log") completed successfully; step 10 ("go build") was
+correctly `skipped`, preserving the job's overall `failure`
+conclusion.
+
+For the first time in this project's history, the exact failing test
+is now known - the check run's own annotations (publicly readable via
+`GET .../check-runs/{id}/annotations`, no authentication required)
+name `github.com/streaming-tree/server/internal/provider/tts` ::
+`TestSystemProviderListVoicesSmoke`. Direct source reading
+(`apps/server/internal/provider/tts/windows.go`/`windows_test.go`)
+shows this test only runs past `skipIfSAPIUnavailable` when
+`Capabilities().Available` is true, and `Capabilities()` itself
+already checks `GetVoices().Count > 0` via `checkAvailable()` - so the
+runner's SAPI reported at least one voice moments before the test's
+own separate `ListVoices()` call then failed or returned an unexpected
+result. A plausible mechanism (a race or transient inconsistency
+between two independent COM `CoInitialize`/`SpVoice.GetVoices`
+sequences run moments apart) is recorded, but **no product or test fix
+was made** - the exact assertion that fired is only present in the
+uploaded diagnostic artifact's raw content, and downloading it
+(`GET .../actions/artifacts/{id}/zip`) returned `401 Requires
+authentication` in this unauthenticated environment, confirmed by
+direct attempt. Per this milestone's own explicit rule, a fix is only
+made when the evidence actually supports one - this is recorded as
+real diagnostic progress (six prior occurrences had only a generic
+"exit code 1" annotation and no known package/test at all), not as
+root-cause closure.
+
+### One remaining, honestly-stated operator-only gap
+`cross-platform.yml` does not have a clean, fully-green terminal run
+on its own final commit (`074004b`) - the only failure is the
+pre-existing, better-diagnosed §17 flake above. A clean run requires
+either an authenticated `workflow_dispatch` (no `gh`, no token
+available in this environment, confirmed) or a genuine new
+`apps/server`/`apps/web` commit through ordinary routing - and
+manufacturing an artificial source change solely to trigger CI is
+explicitly forbidden by this milestone's own contract. This is left as
+an explicit, operator-actionable item (manually run "Run workflow" for
+`cross-platform.yml` via the Actions UI) rather than worked around.
+Every other piece of evidence in this entry - the routing fix, the
+concurrency/cancellation behavior, and the diagnostic-capture
+mechanism itself - is independently proven regardless of this specific
+job's outcome.
+
+### What changed
+`docs/ci-reliability.md` - filled in the branch-protection audit
+placeholder (§3) and added two new sections (§17 "Real evidence
+obtained this milestone", §18 "Final workflow-file CI evidence and one
+remaining operator-only gap") recording all of the above with full
+run-ID citations.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: record CI reliability evidence and Windows
+   diagnostic finding`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for recording this evidence. The one
+genuine operator-only gap identified above (a clean dispatch-triggered
+`cross-platform.yml` run) is stated plainly rather than worked around
+with an artificial commit or a fabricated claim of success. No
+AskUserQuestion call was made for this entry itself.
