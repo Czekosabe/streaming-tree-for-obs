@@ -257,26 +257,43 @@ async function main() {
     if (runningNativeSystemd) {
       step('Real systemd lifecycle: daemon-reload, enable --now, status, disable --now (native PID 1 confirmed)');
       execFileSync('sudo', ['mkdir', '-p', '/etc/streaming-tree'], { stdio: 'ignore' });
-      execFileSync('sudo', ['bash', PROVISION_HELPER_PATH, '/etc/streaming-tree/master.key'], { stdio: 'pipe' });
+      // --force: this script may run this same lifecycle test more than
+      // once against the same host within one CI job (two build-and-
+      // verify passes in one linux-headless.yml job) - a leftover key
+      // from an earlier pass in the same job is expected here, not a
+      // real operator's key the provisioning helper's own default
+      // refusal is meant to protect.
+      execFileSync('sudo', ['bash', PROVISION_HELPER_PATH, '--force', '/etc/streaming-tree/master.key'], { stdio: 'pipe' });
       execFileSync('sudo', ['systemctl', 'daemon-reload'], { stdio: 'ignore' });
       execFileSync('sudo', ['systemctl', 'enable', '--now', 'streaming-tree.service'], { stdio: 'pipe' });
 
-      const deadline = Date.now() + READINESS_TIMEOUT_MS;
-      let active = false;
-      while (Date.now() < deadline && !active) {
-        try {
-          execFileSync('systemctl', ['is-active', '--quiet', 'streaming-tree.service']);
-          active = true;
-        } catch {
-          await new Promise((r) => setTimeout(r, 500));
+      try {
+        const deadline = Date.now() + READINESS_TIMEOUT_MS;
+        let active = false;
+        while (Date.now() < deadline && !active) {
+          try {
+            execFileSync('systemctl', ['is-active', '--quiet', 'streaming-tree.service']);
+            active = true;
+          } catch {
+            await new Promise((r) => setTimeout(r, 500));
+          }
         }
+        expect(active, 'the real service became active under systemd', '');
+
+        const status = execFileSync('systemctl', ['status', 'streaming-tree.service', '--no-pager'], { encoding: 'utf8' });
+        expect(status.includes('active (running)'), 'systemctl status reports active (running)', status);
+      } finally {
+        // Always torn down, even on failure above, and always removing
+        // the provisioned key - so a second pass within the same CI job
+        // (or a genuinely repeated local run) starts from the same
+        // clean state every time, not just on the happy path.
+        try {
+          execFileSync('sudo', ['systemctl', 'disable', '--now', 'streaming-tree.service'], { stdio: 'ignore' });
+        } catch {
+          // Already stopped/disabled - fine.
+        }
+        execFileSync('sudo', ['rm', '-rf', '/etc/streaming-tree'], { stdio: 'ignore' });
       }
-      expect(active, 'the real service became active under systemd', '');
-
-      const status = execFileSync('systemctl', ['status', 'streaming-tree.service', '--no-pager'], { encoding: 'utf8' });
-      expect(status.includes('active (running)'), 'systemctl status reports active (running)', status);
-
-      execFileSync('sudo', ['systemctl', 'disable', '--now', 'streaming-tree.service'], { stdio: 'ignore' });
     } else {
       step('Real systemd PID-1 lifecycle is NOT available on this runner - not claimed as native-CI-verified (docs/linux-headless-server.md §16)');
       pass('honestly skipped: PID 1 is not systemd here; static systemd-analyze verify above and the direct process-level tests below are the real evidence this run provides');

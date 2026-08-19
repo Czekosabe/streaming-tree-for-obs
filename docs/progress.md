@@ -34418,3 +34418,72 @@ observed to terminal state next.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix: clean up the provisioned master key between headless verification passes
+
+### The failure
+Commit `4c1c10a`'s `linux-headless.yml` run confirmed the systemd-
+analyze fix (`linux-package.yml` now green on both architectures, and
+`cross-platform.yml` fully green), but revealed a second, distinct,
+fully deterministic failure: `headless (linux-arm64)` and `headless
+(linux-amd64)` **both** failed identically, at "Verify the headless
+service contract (**pass 2**)" specifically - pass 1 succeeded in
+full, including the real systemd lifecycle test
+(`daemon-reload`/`enable --now`/a real `active (running)` status
+check/`disable --now`), on both architectures. This precise, identical,
+cross-architecture pass-2-only signature is not consistent with an
+environmental flake - it is a deterministic bug.
+
+### Diagnosis
+`scripts/verify-linux-headless.mjs`'s real-systemd-lifecycle block
+(only reached when `pid1IsSystemd()` is true - genuinely confirmed
+true on these runners by pass 1's own success, valuable evidence in
+its own right, see below) calls
+`scripts/provision-headless-master-key.sh /etc/streaming-tree/
+master.key` with no `--force`. The helper deliberately refuses to
+overwrite an existing key file without `--force` (by design,
+`docs/linux-headless-server.md` §9 - protecting a real operator's key
+from accidental destruction). `/etc/streaming-tree/master.key` is real
+host filesystem state, outside every per-pass temp directory the
+script otherwise creates and cleans up - it survived from pass 1 into
+pass 2 within the same CI job (the workflow's own final cleanup step
+only runs once, after both passes, not between them). Pass 2's
+provisioning attempt therefore failed with a real, expected "already
+exists" error, which the script correctly propagated as a hard
+failure - a real bug in this verification script's own between-pass
+hygiene, not a flake, not an environmental limitation, and not a
+product-code defect.
+
+### What changed
+`scripts/verify-linux-headless.mjs`: the real-systemd-lifecycle
+provisioning call now passes `--force` (justified here specifically -
+this is ephemeral CI verification state, never a real operator
+credential, exactly the case the helper's own `--force` escape hatch
+exists for); the whole `enable`/`status` sequence is now wrapped in a
+`try`/`finally` that always disables the service and removes
+`/etc/streaming-tree` afterward, regardless of whether the assertions
+inside passed or failed - so a second pass within the same job (or a
+genuinely repeated local run) always starts from the same clean state.
+
+### A valuable finding surfaced by this investigation
+Pass 1's own full success through the real systemd lifecycle
+assertions (`active (running)` explicitly checked and confirmed)
+is direct, positive evidence that GitHub-hosted `ubuntu-latest`/
+`ubuntu-24.04-arm` runners **do** genuinely run systemd as PID 1 for
+this workflow - stronger than `docs/linux-headless-server.md` §16's
+own more cautious "may not be available, verify empirically" framing
+anticipated. This will be recorded precisely, with real run/job
+evidence, in the closing entry once the fix itself is confirmed clean
+on both architectures by the next CI run.
+
+### Validation
+`node --check scripts/verify-linux-headless.mjs` passes. The real
+proof is the next CI run for this commit, observed to terminal state
+next.
+
+### Commits (chronological, this entry)
+1. This entry - `fix: clean up the provisioned master key between headless verification passes`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
