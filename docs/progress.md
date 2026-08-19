@@ -36123,3 +36123,70 @@ proxy reference configuration.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add Argon2id password hashing, sessions, and login rate limiting
+
+### What changed
+New `internal/auth` package (`docs/remote-management.md` §9-§12),
+compiled on every platform but wired into the HTTP surface only when
+`--remote-management` is enabled (not yet done - this commit is the
+package's own foundation, framework-independent):
+
+- `password.go`: `HashPassword`/`VerifyPassword` using
+  `golang.org/x/crypto/argon2.IDKey` with RFC 9106's second
+  recommended parameter set (t=3, m=65536 KiB, p=4, 16-byte
+  `crypto/rand` salt, 32-byte key). Verifier format
+  `argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>`, self-describing so a
+  future parameter upgrade never breaks an existing stored value.
+  Parsing bounds every field (algorithm, version, m/t/p, salt/hash
+  length) before any value reaches `argon2.IDKey`, so a corrupted or
+  malicious verifier can never itself trigger a resource-exhausting
+  derivation. Comparison via `crypto/subtle.ConstantTimeCompare`.
+- `session.go`: `SessionStore` - opaque, in-memory, server-side
+  sessions (never a JWT). Session ID and CSRF token are two
+  independent 256-bit `crypto/rand` values, never derived from each
+  other. A `Clock` interface (real `time.Now()` in production, a
+  manually-advanced fake in tests) drives idle-timeout (30 min) and
+  absolute-lifetime (12 hour) expiry - both values chosen and recorded
+  in the contract, not left implicit. Expiry is checked lazily on
+  every `Touch`, evicting the entry immediately rather than running a
+  background sweep goroutine. `DeleteAll` backs a local password-reset
+  invalidating every active session.
+- `ratelimit.go`: `LoginLimiter` - per-IP (5/5min) and global secondary
+  (30/5min) failed-login bounds, same lazy-eviction/injected-clock
+  pattern as sessions. A blocked `Allow()` call does not itself record
+  a new failure, so hammering a blocked endpoint cannot extend its own
+  block. Never accepts or stores a password - `RecordFailure` and
+  `Allow` take only a client-IP string, a structural guarantee, not
+  merely a documented one.
+
+`go.mod`/`go.sum`: added `golang.org/x/crypto` as a direct dependency
+(was already present transitively; `go mod tidy` promoted it).
+`golang.org/x/term` (already present, used later for hidden password-
+prompt input in the provisioning CLI) was left as-is.
+
+### Validation
+`gofmt -l internal/auth/`: clean (after one `gofmt -w` pass corrected
+struct-field alignment). `go vet ./internal/auth/...`: clean.
+`go test -count=1 ./internal/auth/... -v`: 32 tests pass, covering
+(per `docs/remote-management.md` §9.1/§10/§12's own requirements):
+valid/wrong-password verification, random-salt non-determinism,
+malformed-verifier rejection (14 distinct malformed-format cases,
+including unsupported algorithm/version, absurd bounds, invalid
+base64, truncated/mutated hash), empty-password policy, max-length
+bound, Unicode support, constant-time comparison paths; session
+creation/touch/idle-expiry/absolute-expiry/logout/reset-invalidation/
+unknown-session/malformed-ID/concurrent-operation/bounded-memory-
+cleanup; rate-limiter per-IP bound, global bound, per-IP separation,
+window decay, Retry-After semantics, and the "never stores a password"
+structural guarantee. No 2 GiB Argon2 configuration is exercised in
+any test (RFC 9106's memory-constrained option is what production
+itself uses).
+
+### Commits (chronological, this entry)
+1. This entry - `feat(server): add Argon2id password hashing,
+   sessions, and login rate limiting`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
