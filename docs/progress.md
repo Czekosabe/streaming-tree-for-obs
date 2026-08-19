@@ -33505,3 +33505,32 @@ behavior/test impact.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: flip Stage 20D1 status markers to Completed
+
+### What changed
+With the full native Linux package-verification CI evidence in hand
+(`.github/workflows/linux-package.yml` green on both architectures,
+two build-and-verify passes each, real Secret Service smoke test
+passed - see the next entry for full detail) and the full local
+Windows closing regression passed clean, the "In progress" status
+markers for Stage 20D1 in README.md, docs/platform-support.md, and
+docs/project-overview.md are flipped to "Completed", and the two
+narrative "Stage 20's remaining work" summaries in README.md move
+20D1 out of the remaining-work list into the already-complete list,
+alongside 20A/20B/20C1.
+
+This status-marker flip is deliberately its own commit, isolated from
+the final closing journal entry that follows - the immediately
+preceding Stage 20C1 milestone's own closing commit bundled this kind
+of status flip together with its journal entry, which the corrective
+audit earlier in this milestone (`docs: reconcile Stage 20C1 closing
+record`) flagged as a deviation from the required closing-commit
+isolation. This commit avoids repeating that deviation.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: flip Stage 20D1 status markers to Completed`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

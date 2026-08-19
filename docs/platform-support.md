@@ -354,7 +354,7 @@ this project uses is the native, CGO-enabled macOS CI job in §6.
 
 ## 8. Linux desktop / local mode
 
-**Status: Stage 20D1 in progress** (see
+**Status: Stage 20D1 Completed** (see
 [linux-desktop-packaging.md](linux-desktop-packaging.md) for the full
 contract). Concept: OBS/encoder, Streaming Tree, MediaMTX, and FFmpeg
 all run on the same Linux machine, preserving today's loopback-only
@@ -572,13 +572,13 @@ would follow the same shape,
 | 20B | Application updater (GitHub Releases check, update UI, download/verification, real Windows installer/updater handoff, see [updater.md](updater.md)) - uses the cross-platform artifact-identity concept in §15; Windows x64 remains the only platform it actually serves | **Completed** |
 | 20C1 | macOS packaged runtime, unsigned `.app`/DMG, native macOS CI package verification (see [macos-packaging.md](macos-packaging.md)) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff, public/Beta readiness | Planned - externally gated on real Apple Developer credentials |
-| 20D | Linux platform support, split into: | In progress |
-| 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | In progress |
+| 20D | Linux platform support, split into: | Incomplete |
+| 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
 | 20D2 | Linux headless/self-hosted server mode and remote security (§9, §10, §11) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
-Stage 20 as a whole remains **Incomplete**: 20A, 20B, and 20C1 are
-Completed; 20D1 is in progress; 20C2, 20D2, and 20E remain Planned. 20C2
+Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, and 20D1
+are Completed; 20C2, 20D2, and 20E remain Planned. 20C2
 is externally gated on real Apple Developer signing/notarization
 credentials this project does not have - it is not blocked on any
 further engineering decision.
