@@ -84,12 +84,12 @@ TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
-work (20D2A's Linux headless service foundation in progress, 20C2's
-macOS signing/notarization/updater handoff, 20D2B/20D2C's remote
-management and OBS ingest, and 20E's final hardening — Stage 20A's own
-Windows production runtime/installer, 20B's application updater,
-20C1's unsigned macOS packaged runtime, and 20D1's unsigned Linux
-`.deb` package are already complete, see
+work (20C2's macOS signing/notarization/updater handoff, 20D2B/20D2C's
+remote management and OBS ingest, and 20E's final hardening — Stage
+20A's own Windows production runtime/installer, 20B's application
+updater, 20C1's unsigned macOS packaged runtime, 20D1's unsigned Linux
+`.deb` package, and 20D2A's Linux headless service foundation are
+already complete, see
 [`docs/windows-packaging.md`](docs/windows-packaging.md),
 [`docs/updater.md`](docs/updater.md),
 [`docs/macos-packaging.md`](docs/macos-packaging.md), and
@@ -226,12 +226,12 @@ engagement piece above in order (stages 8A through 18B).
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
 > goals/supporter-widgets foundation — Stage 20's remaining work
-> (20D2A's Linux headless service foundation in progress, 20C2's macOS
-> signing/notarization/updater handoff, 20D2B/20D2C's remote
-> management and OBS ingest, and 20E's final hardening; Stage 20A's own
-> Windows production runtime/installer, 20B's application updater,
-> 20C1's unsigned macOS packaged runtime, and 20D1's unsigned Linux
-> `.deb` package are already complete) — is still
+> (20C2's macOS signing/notarization/updater handoff, 20D2B/20D2C's
+> remote management and OBS ingest, and 20E's final hardening; Stage
+> 20A's own Windows production runtime/installer, 20B's application
+> updater, 20C1's unsigned macOS packaged runtime, 20D1's unsigned
+> Linux `.deb` package, and 20D2A's Linux headless service foundation
+> are already complete) — is still
 > **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -310,7 +310,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 20C1 | macOS packaged runtime: unsigned `.app`/DMG, real macOS lifecycle adapters (browser launch, single-instance via `flock`, native NSAlert fatal-startup UX), and native macOS CI package verification, see [macos-packaging.md](docs/macos-packaging.md) | **Completed** |
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, and public/Beta readiness, see [macos-packaging.md](docs/macos-packaging.md) | Planned — externally gated on real Apple Developer credentials |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` package for the Debian/Ubuntu family, native x64/ARM64 CI package verification, see [linux-desktop-packaging.md](docs/linux-desktop-packaging.md) | **Completed** |
-| 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage, see [linux-headless-server.md](docs/linux-headless-server.md) | In progress |
+| 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage, see [linux-headless-server.md](docs/linux-headless-server.md) | **Completed** |
 | 20D2B | Secure remote management/control plane: authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, public-overlay exposure policy | Planned |
 | 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
@@ -370,7 +370,7 @@ version:
   "up to date". System text-to-speech is unavailable today on Linux,
   same honest limitation as macOS. No operator-owned physical Linux
   desktop manual test was performed.
-- **Linux (headless/self-hosted server)** — Stage 20D2A (in progress,
+- **Linux (headless/self-hosted server)** — Stage 20D2A (**Completed**,
   see [`docs/linux-headless-server.md`](docs/linux-headless-server.md)):
   a real, explicit `--headless` mode with a real systemd unit
   (`DynamicUser`, hardened, unattended `SIGTERM`-graceful restart) and

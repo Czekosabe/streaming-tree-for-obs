@@ -522,6 +522,18 @@ this happens, that full systemd service-lifecycle management was not
 exercised natively, rather than presenting `systemd-analyze verify`
 output as if it were live lifecycle proof.
 
+**Confirmed finding (2026-08-19, both architectures):** on the current
+`ubuntu-latest` and `ubuntu-24.04-arm` GitHub-hosted runners, PID 1
+genuinely is `systemd`, and the real service lifecycle path above
+(`daemon-reload`/`enable --now`/a real `systemctl status ... active
+(running)` assertion/`disable --now`) executed and passed for real -
+not merely `systemd-analyze verify`. This is stronger evidence than
+this section originally expected to be able to claim; it was
+discovered empirically (a real CI failure investigation surfaced it,
+not a deliberate test of the fallback path) rather than assumed at
+contract-writing time - see the closing entry in `docs/progress.md`
+for the exact run/commit evidence.
+
 ## 17. Native headless CI workflow
 
 `.github/workflows/linux-headless.yml` - `contents: read` only, no

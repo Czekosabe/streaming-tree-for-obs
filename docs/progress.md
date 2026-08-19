@@ -34487,3 +34487,38 @@ next.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: flip Stage 20D2A status markers to Completed
+
+### What changed
+With the full native Linux headless-service CI evidence in hand -
+`.github/workflows/linux-headless.yml` green on both `linux-amd64` and
+`linux-arm64`, `linux-package.yml` green on both architectures,
+`macos-package.yml` green on both architectures, and
+`cross-platform.yml` green (except the separately-documented,
+unrelated `windows-amd64` `go test` CI-environment characteristic) -
+the "In progress" status markers for Stage 20D2A in README.md,
+docs/platform-support.md, and docs/project-overview.md are flipped to
+"Completed", and the two narrative "Stage 20's remaining work"
+summaries in README.md move 20D2A out of the remaining-work list into
+the already-complete list, alongside 20A/20B/20C1/20D1.
+
+Also updated `docs/linux-headless-server.md` §16 with the confirmed
+finding (see the next entry for full evidence) that GitHub-hosted
+Ubuntu runners genuinely run systemd as PID 1 for this workflow - real
+service lifecycle, not merely `systemd-analyze verify`, was exercised
+natively - stronger than that section's own original, more cautious
+expectation.
+
+This status-marker flip is deliberately its own commit, isolated from
+the final closing journal entry that follows, per the discipline
+established during this same milestone's own Stage 20D1 corrective
+audit (which found the immediately preceding Stage 20C1 closing commit
+had improperly bundled a status flip with its journal entry).
+
+### Commits (chronological, this entry)
+1. This entry - `docs: flip Stage 20D2A status markers to Completed`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
