@@ -114,8 +114,24 @@ jobs:
       # top of the identical headless binary/package. Traverses a real
       # ephemeral-CA TLS reverse-proxy boundary - never a fake
       # X-Forwarded-Proto header sent directly to the loopback backend.
+      #
+      # Output is teed to a file so a failure can be surfaced as a
+      # readable ::error:: annotation below - this environment's own
+      # monitoring has no authenticated access to raw step logs
+      # (docs/ci-reliability.md), so a bare `run:` alone would leave a
+      # failure here undiagnosable from outside GitHub's own UI.
       - name: Verify the remote-management contract
-        run: node scripts/verify-linux-remote-management.mjs
+        run: |
+          set -o pipefail
+          node scripts/verify-linux-remote-management.mjs 2>&1 | tee /tmp/rm-verify.log
+
+      - name: Show remote-management verification diagnostics on failure
+        if: failure()
+        run: |
+          TAIL="$(tail -c 3000 /tmp/rm-verify.log 2>/dev/null || echo 'no output captured')"
+          ENCODED="${TAIL//$'\n'/%0A}"
+          ENCODED="${ENCODED//$'\r'/}"
+          echo "::error title=verify-linux-remote-management.mjs failure (${{ matrix.name }})::${ENCODED}"
 
       - name: Clean up any leftover process, service, or installed package
         if: always()

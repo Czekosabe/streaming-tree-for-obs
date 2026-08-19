@@ -36550,3 +36550,50 @@ Prose-only change; no code touched.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## ci: capture remote-management verification failure diagnostics
+
+### The failure
+Commit `083f24c`'s `linux-headless.yml` run failed on both
+architectures at the new "Verify the remote-management contract" step
+(`headless (linux-amd64)` run `32289549204`, and the matching
+`linux-arm64` job) - the first real execution of
+`scripts/verify-linux-remote-management.mjs` against a genuine native
+Linux CI runner. Unlike the Go `cross-platform.yml` diagnostic
+mechanism built in the PRE-20D2B milestone, this new Node script had
+no equivalent failure-diagnostic capture: the only evidence recoverable
+via the unauthenticated Checks API was a generic "Process completed
+with exit code 1" annotation and a `line: 94` anchor pointing at an
+unrelated earlier step (`Runner systemd reality check`, which cannot
+itself fail - it uses `|| true` throughout) - not diagnostic of which
+of the script's ~25 steps actually failed or why. Careful re-reading of
+both the new Node script and the Go middleware/route code did not
+surface a certain root cause - recorded honestly rather than guessed
+at and "fixed" speculatively.
+
+### What changed
+`.github/workflows/linux-headless.yml`: the "Verify the remote-
+management contract" step now tees its output to a file
+(`set -o pipefail` preserves the real exit code through the pipe,
+exactly like the existing Go test diagnostic mechanism's own pattern);
+a new `if: failure()` step encodes the tail of that captured output
+into a `::error::` annotation - readable via the unauthenticated
+Checks-API annotations endpoint, which this project's own monitoring
+has confirmed working access to throughout this session, unlike raw
+step logs or artifact downloads (both require authentication this
+environment does not have).
+
+### Validation
+Workflow YAML parses (`js-yaml`). No product/test code was changed -
+this commit only adds observability for the next real run, per this
+project's own explicit "improve diagnostics before guessing" discipline
+(first established for the recurring Windows SAPI flake in PRE-20D2B/
+PRE-20D2B.1), now applied to this milestone's own new CI mechanism.
+
+### Commits (chronological, this entry)
+1. This entry - `ci: capture remote-management verification failure
+   diagnostics`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
