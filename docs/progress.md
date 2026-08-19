@@ -36650,3 +36650,63 @@ Prose-only change; no code touched.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix(test): stabilize the tampered-verifier password test
+
+### The failure
+Commit `57cb35f`'s `cross-platform.yml` run (`32290408786`) failed at
+`backend (macos-amd64)`'s `go test` step - a genuinely new signature,
+distinct from the long-documented recurring Windows SAPI flake.
+Diagnostic annotations (built in the PRE-20D2B milestone, covering all
+five matrix legs, not only Windows) identified the exact test:
+`internal/auth::TestVerifyPasswordModifiedHashRejected`.
+
+### Root cause, found and understood (not merely "it happened once")
+The test mutated the verifier's literal last character, toggling it
+between `'A'` and `'B'`, to prove a tampered hash fails verification.
+`base64.RawStdEncoding`'s final character for a 32-byte payload (not a
+multiple of 3) carries only 4 real data bits, with the remaining 2 bits
+zero-padded filler that carries no information - a real, documented
+property of base64's own tail-handling, not an environment quirk.
+Since the last character's real 4 bits are `0000` in roughly 1-in-16
+cases (any hash whose original last-character value already fell in
+`{A,B,C,D}`), a same-position toggle restricted to `A`/`B` had
+approximately a 1-in-16 chance of only touching the two filler bits -
+producing a *byte-identical* decoded hash despite a different base64
+string, so `VerifyPassword` correctly (and, for this test, misleadingly)
+returned `true`. This is a genuine bug in the test's own mutation
+strategy, not in `VerifyPassword` itself, and not a CI-environment
+characteristic - it could recur locally too, just with low enough
+probability (~6%) that it had not yet been observed in this
+project's own prior local runs.
+
+### The fix
+`internal/auth/password_test.go`: the test now mutates a character 4
+positions before the end of the verifier (a position where all 6 bits
+of the base64 character are real hash data, never padding filler), and
+increments through the full `base64.RawStdEncoding` alphabet (`A`→`B`→
+...→`Z`→`a`→...→`9`→`+`→`/`→`A`) via a new `nextBase64Char` helper,
+rather than a two-way toggle limited to two fixed characters -
+guaranteeing a real, deterministic byte change on every run, for any
+verifier this package produces.
+
+### Validation
+`gofmt -l`/`go vet`: clean. The specific test repeated 300 times
+(`go test -count=300 -run TestVerifyPasswordModifiedHashRejected`):
+300/300 passed - given the old bug's own ~6% per-run failure
+probability, 300 consecutive passes make a reversion to the old
+behavior astronomically unlikely to have gone undetected here
+(`(15/16)^300` is vanishingly small). Full `go build ./...`/`go test
+-count=1 ./...`: clean across the whole module, zero regressions.
+
+This is unrelated to, and does not resolve, the separate, long-
+documented `backend (windows-amd64)`/`internal/provider/tts` flake -
+recorded as its own distinct finding, not conflated with it.
+
+### Commits (chronological, this entry)
+1. This entry - `fix(test): stabilize the tampered-verifier password
+   test`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

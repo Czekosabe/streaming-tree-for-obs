@@ -183,17 +183,27 @@ func TestVerifyPasswordModifiedHashRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashPassword() error = %v", err)
 	}
-	// Flip the verifier's last character - still valid base64 shape
-	// (same length), but a different byte value, so this exercises the
-	// constant-time comparison's mismatch path specifically rather than
-	// a parse failure.
+	// Mutates one character a fixed distance before the end of the
+	// base64-encoded hash, not the final character itself. A found,
+	// understood bug in an earlier version of this test flipped only
+	// the verifier's literal last character: RawStdEncoding's final
+	// base64 character for a 32-byte (non-multiple-of-3) payload
+	// carries 2 real data bits and 2 zero-padded filler bits, so a
+	// same-position value swap has roughly a 1-in-16 chance of only
+	// touching the filler bits, decoding to byte-identical output and
+	// making the test flaky (reproduced for real on macOS CI: run
+	// 32290408786, `internal/auth::TestVerifyPasswordModifiedHashRejected`).
+	// A character several positions before the end is always a "full"
+	// 6-real-bits position, and incrementing through the base64
+	// alphabet (rather than a two-way A/B toggle) guarantees a real,
+	// deterministic byte change every time this test runs.
+	const mutateOffsetFromEnd = 4
 	mutated := []rune(verifier)
-	last := len(mutated) - 1
-	if mutated[last] == 'A' {
-		mutated[last] = 'B'
-	} else {
-		mutated[last] = 'A'
+	pos := len(mutated) - 1 - mutateOffsetFromEnd
+	if pos < 0 {
+		t.Fatalf("verifier too short to mutate at offset %d: %q", mutateOffsetFromEnd, verifier)
 	}
+	mutated[pos] = nextBase64Char(mutated[pos])
 	ok, err := VerifyPassword("password", string(mutated))
 	if err != nil {
 		// A mutated final character may occasionally still fail base64
@@ -207,6 +217,18 @@ func TestVerifyPasswordModifiedHashRejected(t *testing.T) {
 	if ok {
 		t.Error("VerifyPassword(mutated hash) = true, want false")
 	}
+}
+
+// nextBase64Char returns a different character from
+// base64.RawStdEncoding's own alphabet - used only to guarantee a
+// real, deterministic mutation in TestVerifyPasswordModifiedHashRejected.
+func nextBase64Char(c rune) rune {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	idx := strings.IndexRune(alphabet, c)
+	if idx < 0 {
+		return 'A'
+	}
+	return rune(alphabet[(idx+1)%len(alphabet)])
 }
 
 func TestFormatVerifierMatchesDocumentedShape(t *testing.T) {
