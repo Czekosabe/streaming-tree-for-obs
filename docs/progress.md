@@ -36899,3 +36899,268 @@ milestone boundary since).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+
+## docs: record Stage 20D2B remote management regression
+
+### Governing task
+Stage 20D2B - the secure remote management/control plane for the
+Linux headless deployment established in Stage 20D2A. Explicitly does
+not implement remote OBS ingest (Stage 20D2C), does not expose
+MediaMTX RTMP remotely, and does not expose remote overlays. The
+backend HTTP listener remains loopback-only in every mode; remote
+reachability is provided only by an operator-supplied same-host HTTPS
+reverse proxy, never by the application itself binding beyond
+loopback.
+
+### Starting / final state
+Starting HEAD: `1ad465a` (PRE-20D2B.1's own closing commit). Final HEAD
+before this entry: `d7bf962`. Branch `main`, origin `main`, clean
+working tree, `0`/`0` ahead/behind at every commit boundary, confirmed
+via `git pull --ff-only origin main` at milestone start and
+`git rev-list --left-right --count origin/main...HEAD` after every
+push - including a full re-verification via `git status`/`git fetch`
+after a session interruption partway through, rather than trusting the
+pre-interruption summary.
+
+### Commits (chronological, this milestone, 15 total)
+1. `dd2b399` - `docs: define Stage 20D2B remote management security
+   contract` (`docs/remote-management.md`, written and pushed before
+   any product code)
+2. `4768f34` - `feat(server): add Argon2id password hashing, sessions,
+   and login rate limiting` (`internal/auth`: `password.go`,
+   `session.go`, `ratelimit.go`)
+3. `a899413` - `feat(server): add remote management config, auth API,
+   and security middleware` (`internal/config`, `internal/secrets`,
+   `internal/httpapi/remote_management.go`/`auth_routes.go`/
+   `router.go`)
+4. `861e43a` - `build: wire remote management into the server and add
+   admin password provisioning` (`internal/auth/adminauth.go`,
+   `cmd/server/main.go`/`provision.go`,
+   `scripts/provision-admin-password.sh`, systemd unit documentation)
+5. `bdf35d5` - `feat(web): add remote management login UI`
+6. `083f24c` - `test: verify Stage 20D2B remote management through a
+   real TLS proxy` (`scripts/verify-linux-remote-management.mjs`,
+   extending `linux-headless.yml`)
+7. `84fa9f5` - `docs: add the Caddy reverse-proxy example file and
+   operator provisioning sequence`
+8. `1359084` - `docs: reflect Stage 20D2B remote management status`
+9. `b311762` - `ci: capture remote-management verification failure
+   diagnostics` (real bug-fix cycle, see below)
+10. `57cb35f` - `test: verify remote management security headers`
+11. `8e1cfca` - `docs: disclose remote management in PRIVACY.md`
+12. `178614a` - `fix(test): stabilize the tampered-verifier password
+    test` (a real, understood flaky-test bug, unrelated to the
+    recurring Windows/TTS characteristic)
+13. `d478c11` - `fix(server): recognize the remote-management origin
+    in the pre-existing local-action check` (the real bug-fix cycle's
+    resolution)
+14. `0fade9e` - `docs: record Stage 20D2B final CI evidence`
+15. `d7bf962` - `docs: flip Stage 20D2B status markers to Completed`
+16. This entry - `docs: record Stage 20D2B remote management
+    regression`
+
+### Architecture audit (before design)
+Read completely before any code: `cmd/server/main.go`,
+`internal/config/config.go`, `internal/httpapi/router.go`/
+`middleware.go`/`local_action.go`/`system.go`/`health.go`/
+`production.go`/`decode.go`, `internal/secrets/store.go`/
+`headlessstore.go`, `scripts/systemd/streaming-tree.service`,
+`scripts/provision-headless-master-key.sh`, the frontend's
+`api/api-client.ts`/`api/system.ts`/`App.tsx`. Key findings that
+shaped the design, recorded in `dd2b399`'s own entry: the existing
+`/api/public/*` prefix convention became the deny-by-default
+middleware's own boundary (no per-route audit of ~50 registrations
+needed); `checkLocalActionOrigin`'s existing loopback-appropriate
+"allow an absent Origin through" policy was deliberately not modified,
+in favor of a separate, stricter check for D2B; `secrets.
+LoadHeadlessMasterKey()`'s strict `$CREDENTIALS_DIRECTORY` requirement
+shaped the `systemd-run`-based admin-password provisioning design.
+
+### Primary-source research (2026-08-19)
+RFC 9106 §4 (Argon2id's second recommended parameter set, selected for
+a general-purpose host, not dedicated authentication hardware);
+`pkg.go.dev/golang.org/x/crypto/argon2` (`IDKey`, Argon2id-specific);
+MDN's Cookies guide (`__Host-` prefix requirements, `Max-Age` over
+`Expires`); MDN's `Sec-Fetch-Site` reference (Baseline since March
+2023, browser-generated/unspoofable, but absent from older/non-browser
+clients - defense in depth only); Caddy's `reverse_proxy` documentation
+(confirmed directly: overwrites, never trusts, client-supplied
+`X-Forwarded-*` headers by default - the load-bearing fact behind the
+forwarding-header contract). Full citations in `dd2b399`'s own entry
+and `docs/remote-management.md` §2.
+
+### Key security-architecture decisions
+- Argon2id, RFC 9106's memory-constrained parameter set (t=3, m=64
+  MiB, p=4), stored via the existing `SecretStore` abstraction under a
+  new `SecretTypeAdminPassword` - no new persistence mechanism.
+- Opaque, in-memory, server-side sessions (never a JWT) - a restart
+  empties the session set by construction; a local password reset
+  invalidates every session by the same construction (a fresh
+  `SessionStore` only exists from process start).
+- `__Host-` session cookie (`Secure`/`HttpOnly`/`SameSite=Strict`/
+  `Path=/`/no `Domain`) - verified with real attribute assertions
+  against the actual `Set-Cookie` header, both in Go unit tests and
+  through the real TLS proxy in native CI.
+- One centralized `withRemoteManagementSecurity` middleware, built on
+  the existing `/api/public/*` prefix, rather than per-route
+  protection - a future route added anywhere under `/api/` is
+  automatically protected without anyone needing to remember to wrap
+  it (proven by the route-auth matrix test's own explicitly-
+  unregistered "future route" case).
+- The forwarding-header contract trusts `X-Forwarded-*` only from a
+  loopback direct peer, requires exactly one value per header, and an
+  exact `https`/host match - defense in depth on top of the documented
+  Caddy reference configuration's own confirmed default overwrite
+  behavior.
+- Fail-closed startup: `--remote-management` without `--headless`,  a
+  malformed/non-HTTPS external origin, or no provisioned administrator
+  password all refuse to start before any listener opens - proven by
+  dedicated native-CI scenarios, not just unit tests.
+
+### Real bugs found and fixed by this milestone's own testing (not
+merely passed trivially)
+1. **A genuine, understood, non-environmental flaky test**
+   (`178614a`): `TestVerifyPasswordModifiedHashRejected` mutated only
+   the verifier's literal last base64 character, which - for a
+   32-byte payload - has a documented ~1-in-16 chance of only touching
+   `base64.RawStdEncoding`'s own zero-padded filler bits, producing a
+   byte-identical decoded hash despite a different string. Reproduced
+   for real on macOS CI (`cross-platform.yml` run `32290408786`,
+   `backend (macos-amd64)`), diagnosed precisely via this project's
+   own PRE-20D2B diagnostic-annotation mechanism, and fixed by
+   mutating a guaranteed-real-data position and cycling the full
+   base64 alphabet instead of a two-way toggle. Verified with 300
+   repeated runs, zero failures - a reversion would have been
+   astronomically unlikely to go undetected.
+2. **A real cross-check gap between two independent Origin checks**
+   (`b311762`→`d478c11`): `POST /api/system/shutdown` (and `POST
+   /api/updates/install`) carry a pre-existing, Stage-20A-era
+   `checkLocalActionOrigin` check, entirely independent of the new
+   `withRemoteManagementSecurity` middleware - a legitimate remote-
+   management request with the exact correct session/CSRF/Origin still
+   failed at this older check, since the remote external origin was
+   never added to the allowlist it validates against. Found via the
+   new native-CI script's own real ephemeral-TLS-proxy test (first
+   surfaced opaquely in `083f24c`, made diagnosable by the `::error::`
+   annotation mechanism added in `b311762` - this environment has no
+   authenticated access to raw step logs, so that mechanism was the
+   only way this bug was ever recoverable), fixed in `router.go` by
+   extending the allowlist passed to both routes with the configured
+   remote-management origin when enabled. A genuine gap in this
+   milestone's own Go test coverage was found and closed alongside it:
+   the relevant unit test previously used a router with no real
+   `Shutdown` handler wired (a 404, masking the bug entirely) - it now
+   wires a real, observable handler.
+
+### Final CI evidence
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| `cross-platform.yml` | `32293899491` (`d478c11`) | success, all 6 jobs |
+| `macos-package.yml` | `32293899518` (`d478c11`) | success, both architectures |
+| `linux-headless.yml` | `32293899461` (`d478c11`) | **success, both architectures** - the dedicated remote-management verification (real ephemeral-CA TLS proxy, real `.deb` install, real `--provision-admin-password` CLI, real login/session/CSRF/Origin/rate-limit/shutdown/restart-invalidation cycle) passed end-to-end |
+| `linux-package.yml` | `32293899561` (`d478c11`) | `cancelled` - queued for ~6 hours across this session's own interruption/resumption gap, then cancelled by GitHub without starting; not caused by a superseding commit (confirmed: `d478c11` remains `HEAD`); the immediately preceding commit's own equivalent run (`32291463378`, `178614a`) is clean and covers the same package-build/install surface this workflow actually exercises (unrelated to the httpapi code `d478c11` changed) |
+
+Recorded honestly per `docs/ci-reliability.md`'s own established
+distinction: `cancelled` is not a code defect, and this gap is stated
+plainly rather than worked around with an artificial commit or a
+fabricated `workflow_dispatch` (unavailable - no `gh`/token in this
+environment, confirmed).
+
+### Native CI scenario coverage (honest scope statement)
+`scripts/verify-linux-remote-management.mjs` covers the security-
+critical core of the governing task's own extensive native-scenario
+list - not a literal enumeration of every one of its ~45 named items.
+Covered: package install; `--remote-management` refused without
+`--headless`; fail-closed startup (no admin password, malformed
+origin); successful startup; backend loopback-only (real `ss` socket
+audit); a real ephemeral-CA TLS proxy boundary; unauthenticated
+rejection; public health/login-shell reachability; wrong-password
+rejection; rate-limit activation; real session-cookie attribute
+assertions; session bootstrap; an authenticated management read;
+CSRF/Origin rejection in all three combinations; `/api/public/*`
+correctly ungated; authenticated remote shutdown actually stopping the
+process; a fresh restart invalidating the pre-restart session; a new
+post-restart login succeeding; the administrator password never
+appearing in process output; clean package removal; no leftover
+process. Not separately covered by a dedicated native-CI scenario:
+branch-control-with-a-fake-process-harness tested remotely, and an
+authenticated password-change UI (explicitly optional per the
+governing task itself - not implemented, since a secure local reset
+path already exists and covers the same real need).
+
+### Explicit truth statements
+No remote overlay exposure exists or is claimed - `/api/public/*` is
+not gated by the new authentication boundary (matching the existing
+local-overlay contract unchanged), but the reference reverse-proxy
+configuration deliberately does not forward `/overlay/*`/
+`/api/public/*` at all; a dedicated `publicSlug` entropy/rotation/
+revocation review and an origin-separation decision remain explicit
+Stage 20D2C prerequisites, not assumed satisfied here. No remote OBS
+ingest exists or is claimed - MediaMTX's RTMP listener and Control API
+remain loopback-only, untouched. No password-reset email, no OAuth/
+TOTP/WebAuthn, no multi-account/RBAC, no JWT, no persistent bearer-
+token database, no embedded TLS/ACME, no application-managed firewall,
+and no multi-hop/CDN proxy topology exist or are claimed - all
+explicitly out of scope per `docs/remote-management.md` §22. The
+backend's own HTTP listener never binds beyond loopback in any mode;
+remote reachability is entirely a consequence of infrastructure the
+operator configures themselves outside this application, disclosed
+plainly in `PRIVACY.md`. Windows/macOS/Linux-desktop packaged builds
+and plain `--headless` (without `--remote-management`) are unaffected
+- proven by a dedicated Go test (`TestRemoteManagementDisabledIsANoOp`)
+and by the full pre-existing `internal/httpapi` test suite passing
+unchanged throughout every commit in this milestone.
+
+### Local validation (final)
+Backend: `gofmt -l .` clean; `go vet ./...`/`go vet -tags integration
+./...` clean; `go build ./...`/`go build -tags integration ./...`
+clean; `go test -count=1 ./...` clean across the whole module,
+including 300 repeated runs of the fixed flaky test. Frontend: `npm
+run i18n:check` (2 languages, 22 namespaces, no differences); `npm run
+typecheck` clean; `npm run lint` 0 errors; `npm run test -- --run`
+(104 test files, 1410 tests, all passing); `npm run build` clean, and
+the real built `dist/index.html` was read directly to confirm zero
+inline `<script>`/`<style>` - the documented CSP genuinely matches the
+real production output, not merely asserted.
+
+### Stage status after this milestone
+
+| Stage | Status |
+| --- | --- |
+| 20A, 20B, 20C1, 20D1, 20D2A, **20D2B** | **Completed** |
+| 20C2 | Planned - externally gated |
+| 20D2C, 20E | Planned |
+
+Stage 20D2 as a whole remains **Incomplete** until 20D2C is also done.
+Stage 20 as a whole remains **Incomplete**.
+
+### Operator-resume/follow-up count, this milestone
+Two genuine resume messages: a system-framed "Continue from where you
+left off." and a literal "continue", both arriving after a session
+interruption partway through the milestone (background CI-monitoring
+tasks were still in flight when the hosting process exited, confirmed
+via the harness's own orphaned-task notification on resumption). Both
+were answered by first re-verifying real repository/CI state directly
+rather than trusting the pre-interruption summary, per this project's
+own established discipline. No other "so?"/"and?"/"check again"-style
+follow-up occurred.
+
+### AskUserQuestion count
+Zero calls this milestone.
+
+### Continuous-execution rule compliance
+Every GitHub Actions run cited above was observed via the read-only
+REST API, using the low-request budgeted strategy established in
+`docs/ci-reliability.md` - background monitors for every apps/server-
+touching commit, a single computed rate-limit-reset wait when the
+anonymous quota was exhausted (filled with real local validation work,
+never idle), and honest reporting (including the one `cancelled`-run
+gap) rather than a fabricated green result. Two real product/test bugs
+were found through this milestone's own real native-CI and cross-
+platform testing, diagnosed precisely (using and, in one case,
+building the diagnostic tooling needed to do so), and fixed with
+verified evidence - never guessed at or worked around. No retry, skip,
+or weakening was used to reach any green result recorded above. No
+AskUserQuestion call was made at any point in this milestone.
