@@ -23,6 +23,15 @@ name: Linux headless service verification
 # TLS reverse-proxy boundary via scripts/verify-linux-remote-
 # management.mjs - itself another platform-specific helper, not
 # canonical script #25 either.
+#
+# Stage 20D2C: also verifies the remote-ingest/remote-overlay contract
+# (docs/remote-ingest.md) through a genuinely isolated network
+# namespace + veth boundary (not localhost relabeled as remote) via
+# scripts/verify-linux-remote-server.mjs - another platform-specific
+# helper, not canonical script #25 either. Requires real network-
+# namespace/CAP_NET_ADMIN capability and ffmpeg; the script itself
+# verifies both are genuinely available before attempting anything,
+# and fails loudly rather than silently downgrading if not.
 
 on:
   workflow_dispatch:
@@ -47,6 +56,7 @@ on:
       - "scripts/systemd/streaming-tree.service"
       - "scripts/verify-linux-headless.mjs"
       - "scripts/verify-linux-remote-management.mjs"
+      - "scripts/verify-linux-remote-server.mjs"
       - ".github/workflows/linux-headless.yml"
 
 # docs/ci-reliability.md §5: scoped to this workflow's own identity
@@ -133,11 +143,36 @@ jobs:
           ENCODED="${ENCODED//$'\r'/}"
           echo "::error title=verify-linux-remote-management.mjs failure (${{ matrix.name }})::${ENCODED}"
 
-      - name: Clean up any leftover process, service, or installed package
+      # docs/remote-ingest.md §15: real network-namespace/veth
+      # isolation and a real synthetic FFmpeg publisher - neither is
+      # present on the base runner image, installed explicitly here
+      # (iproute2 is normally already present; ffmpeg is not).
+      - name: Install iproute2/ffmpeg for the Stage 20D2C remote-server verification
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 ffmpeg
+
+      - name: Verify the remote-server (remote ingest + remote overlay) contract
+        run: |
+          set -o pipefail
+          node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify.log
+
+      - name: Show remote-server verification diagnostics on failure
+        if: failure()
+        run: |
+          TAIL="$(tail -c 4000 /tmp/rs-verify.log 2>/dev/null || echo 'no output captured')"
+          ENCODED="${TAIL//$'\n'/%0A}"
+          ENCODED="${ENCODED//$'\r'/}"
+          echo "::error title=verify-linux-remote-server.mjs failure (${{ matrix.name }})::${ENCODED}"
+
+      - name: Clean up any leftover process, service, package, or network namespace
         if: always()
         run: |
           sudo systemctl disable --now streaming-tree.service || true
           pkill -f streaming-tree-server || true
+          sudo pkill -f mediamtx || true
           sudo dpkg -r streaming-tree-for-obs || true
           sudo rm -rf /etc/streaming-tree /var/lib/private/streaming-tree /run/streaming-tree
+          sudo ip netns del streamtree-d2c-client || true
+          sudo ip link del veth-d2c-host || true
+          sudo rm -f /usr/local/share/ca-certificates/streamtree-d2c-test-ca.crt
+          sudo update-ca-certificates || true
           rm -rf build/release-linux

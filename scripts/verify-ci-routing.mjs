@@ -52,6 +52,7 @@ const WORKFLOWS = {
     "scripts/systemd/streaming-tree.service",
     "scripts/verify-linux-headless.mjs",
     "scripts/verify-linux-remote-management.mjs",
+    "scripts/verify-linux-remote-server.mjs",
     "LICENSE",
     "PRIVACY.md",
     "LEGAL.md",

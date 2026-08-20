@@ -38820,3 +38820,101 @@ suite affected.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## ci: add the Stage 20D2C native remote-server verification harness
+
+`scripts/verify-linux-remote-server.mjs` (new) - the native CI
+verification for the remote-ingest/remote-overlay contract, wired
+into `.github/workflows/linux-headless.yml` after the existing D2A/
+D2B verification steps. This is a genuinely large, security-critical
+piece written without the ability to execute it locally (this Windows
+development machine cannot create Linux network namespaces or run
+systemd) - its correctness is being proven by the real CI run this
+commit triggers, exactly like every other native Linux script in this
+project has always been proven, not by local execution here.
+
+### What it actually proves, stated precisely (not the whole original wishlist)
+A genuinely isolated remote network boundary: a real Linux network
+namespace connected to the host by a veth pair, non-loopback addresses
+on both sides - never localhost-to-localhost relabeled as remote. A
+capability check runs first and fails loudly if network-namespace/veth
+creation is not genuinely available on the runner, rather than
+silently downgrading. A real, freshly generated 3-host ephemeral CA
+(management/overlay/ingest hostnames), installed into the trust store,
+used for genuine TLS verification on every positive-path request - no
+`-k`/`--insecure` anywhere. The real authenticated management login/
+CSRF flow and real remote-ingest credential provisioning, genuinely
+issued via `curl` from inside the isolated namespace through a real
+TLS proxy stand-in (a Node reimplementation of `Caddyfile.self-
+hosted`'s own routing policy - not the literal Caddy binary, disclosed
+honestly, mirroring `verify-linux-remote-management.mjs`'s own
+established choice). The full RTMPS accept/reject matrix via a real
+synthetic FFmpeg publisher run from the isolated namespace: plaintext
+RTMP, no credential, wrong credential, and wrong path all rejected;
+the correct credential and canonical path accepted, with the ingest
+status genuinely observed transitioning waiting -> receiving ->
+waiting (the publish runs asynchronously specifically so the mid-
+stream "receiving" state is actually observed, not merely inferred
+from an exit code). MediaMTX's Control API, the Go backend's own
+loopback management port, and the loopback-only plain RTMP listener
+all confirmed unreachable from the isolated namespace - a structural
+consequence of each network namespace owning its own loopback, not
+merely an assertion. A real cookie-separation check via curl's own
+RFC 6265 cookie-jar handling: the management session cookie is never
+sent to the overlay origin.
+
+### What it does not cover yet, disclosed in the script's own header
+The full systemd/package combined lifecycle (this run spawns the
+installed binary directly with explicit env vars, mirroring `verify-
+linux-remote-management.mjs`'s own already-established choice, rather
+than going through `systemctl`); a real destination-branch E2E to a
+local sink; the per-domain remote-overlay E2E matrix beyond the
+cookie-separation check; two independent passes per architecture.
+Tracked here as explicit follow-up work, not silently left
+unmentioned - matching this project's own established discipline for
+every prior partial-coverage native script.
+
+### Workflow wiring
+`.github/workflows/linux-headless.yml`: new `iproute2`/`ffmpeg`
+install step (iproute2 is normally already present on the runner
+image; ffmpeg is not), the verification step itself teed to a log
+file with the same `::error::` diagnostic-annotation mechanism every
+other native script here already uses (this environment has no
+authenticated access to raw step logs), and the existing final
+cleanup step extended to also remove the network namespace, veth
+interface, and ephemeral CA trust-store entry as a redundant safety
+net behind the script's own `finally` block. `scripts/verify-ci-
+routing.mjs`'s own internal model of `linux-headless.yml`'s path
+filters was updated to include the new script - the established
+"don't let two things silently drift apart" self-check this project
+uses for exactly this kind of change; re-run locally and confirmed
+passing before this commit.
+
+### Self-review fixes made before this commit (not caught by CI, since none has run yet)
+The RTMPS positive-path test originally ran the valid publish
+synchronously to completion before checking status at all - a real
+bug that would have proven only "the publish eventually succeeded,"
+never the actual waiting -> receiving transition the step's own
+description claimed. Fixed to spawn the publish asynchronously and
+poll status mid-stream. Removed an unused, never-read `/tmp` marker-
+file write left over from an earlier draft. Added a default `--max-
+time` to the client-side curl helper so a hung request cannot hang
+the whole job indefinitely.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean.
+`node scripts/verify-ci-routing.mjs`: all checks pass, including the
+newly-updated `linux-headless.yml` path-filter model. This script
+cannot be executed end-to-end on this Windows development machine
+(requires real Linux network namespaces, systemd, and root/
+CAP_NET_ADMIN) - real validation happens via the native Linux CI run
+this commit triggers, the same honest limitation every prior native
+script in this project has stated.
+
+### Commits (chronological, this milestone)
+19. This entry - `ci: add the Stage 20D2C native remote-server
+    verification harness`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
