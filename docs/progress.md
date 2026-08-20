@@ -39865,8 +39865,53 @@ matrix should finally pass in full, including the positive path
 (already Control-API-based, unaffected by this bug) right after it.
 
 ### Commits (chronological, this milestone)
-38. This entry - `fix(ci): stop trusting ffmpeg's exit code for the
-    RTMPS auth-reject matrix`
+38. `fix(ci): stop trusting ffmpeg's exit code for the RTMPS
+    auth-reject matrix`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 18:05 — ci: check MediaMTX's own path-ready state during the positive-path publish too
+
+### Real CI result: the previous fix worked, the whole reject matrix now passes
+Commit `a4bd991` was checked. All four RTMPS accept/reject-matrix
+assertions now pass on linux-amd64 - plaintext RTMP rejected, no
+credential rejected, wrong credential rejected, wrong path rejected -
+confirming both the exit-code-based diagnosis and the Control-API-
+based redesign were correct. The run progressed into the RTMPS
+positive path (valid credential, canonical path) and failed there
+instead: `before` (waiting, pre-publish) passed, but `during` (polled
+`PUBLISH_SETTLE_MS` = 4s into a 10-second real publish) showed
+`receiving: false` when it should be `true`.
+
+This is a genuinely new question, not a repeat of the reject-matrix
+bug: the positive-path test already uses the backend's own polled
+`/api/remote-ingest/status` (`receiving`, sourced from
+`Supervisor.Snapshot().Ingest.State`, itself updated every
+`ingestPollInterval` = 1s from a real `/v3/paths/list` read - not
+ffmpeg's exit code at all), so the class of bug fixed three entries
+ago structurally cannot be the cause here. What's not yet known is
+whether MediaMTX itself never marks the path ready for this valid
+credential (a real, still-undiscovered config/credential problem
+specific to the positive path) or whether MediaMTX does mark it ready
+and the *backend's own* status-reporting has a separate bug.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added a direct `GET /v3/paths/list` check right alongside the
+`during` assertion, logging MediaMTX's own raw ground truth at the
+exact same moment the backend's status endpoint is checked - the same
+signal the reject-matrix fix already trusts, now used to distinguish
+"MediaMTX truly never accepted this" from "the backend isn't
+reporting what MediaMTX itself already knows."
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+39. This entry - `ci: check MediaMTX's own path-ready state during
+    the positive-path publish too`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

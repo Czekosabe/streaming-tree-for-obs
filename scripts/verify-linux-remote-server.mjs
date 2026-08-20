@@ -840,6 +840,15 @@ async function main() {
     });
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+    // MediaMTX's own /v3/paths/list is the same ground truth the
+    // reject-matrix above now trusts instead of ffmpeg's exit code -
+    // check it directly here too, so a failure below shows whether
+    // MediaMTX itself considers this connection accepted (a backend
+    // status-reporting bug) or not (a real credential/config problem
+    // for the positive path specifically, distinct from the
+    // already-verified reject cases).
+    const positivePathState = await hostFetchJson('/v3/paths/list');
+    console.log(`     diag paths/list during the valid publish: ${JSON.stringify(positivePathState.body).slice(0, 700)}`);
     const during = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(during.body && during.body.receiving === true, 'ingest status becomes receiving while the publish is active', during.status === 200 ? during.text : withServerDiag(during.text));
 
