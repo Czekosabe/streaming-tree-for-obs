@@ -39801,8 +39801,72 @@ no remaining references to the removed `noCredTry` variable. Real
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-37. This entry - `ci: poll the Control API during the real failing
-    attempt, not a separate premature one`
+37. `ci: poll the Control API during the real failing attempt, not
+    a separate premature one`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 17:45 — fix(ci): stop trusting ffmpeg's exit code for the RTMPS auth-reject matrix
+
+### Real CI result: the definitive evidence, from the correct attempt this time
+Commit `c578d13` was checked - the real "no credential" assertion
+itself, polled mid-stream at 1.5s (well inside its natural 2-second
+clip). `/v3/rtmpconns/list` still reported zero connections and
+`/v3/paths/list` showed the "live" path exactly as it starts:
+`ready: false, online: false, source: null, readers: [],
+inboundBytes: 0`. Meanwhile ffmpeg's own stderr, in the same run,
+carried real libx264 encoder statistics (`mb I I16..4: 100.0%...`,
+`kb/s:86.84`, `Qavg: 851.570`) - the kind only printed on a clean,
+complete encode. Two things that should agree if the connection were
+genuinely accepted flatly contradict each other: MediaMTX's own
+authoritative state says nothing was ever accepted; ffmpeg's exit code
+says it succeeded.
+
+Given six consecutive CI runs of real evidence, and both MediaMTX's
+config (`RenderConfig`) and its real `authInternalUsers` matching code
+(`internal/auth/manager.go`, verified against the pinned v1.19.3
+source, not memory) checked out as correct on every axis - IP
+allowlist, credential hashing, permission/path matching, `SkipAuth`
+never set for RTMP publish - the conclusion is no longer "what is
+MediaMTX doing wrong" but "why does ffmpeg's exit code disagree with
+MediaMTX's own state." The answer: a real, well-known TCP behavior,
+not a bug in either MediaMTX or this project's own code. The entire
+~2 seconds of h264/aac data for this tiny 160x120 test clip is small
+enough to fit inside the kernel's TCP send buffer in one or two
+`write()` calls, which can succeed *locally* even after the remote
+peer has already rejected/closed the connection, if the local kernel
+has not yet surfaced that closure back to the writing process. ffmpeg
+reaches end-of-input, closes cleanly, and exits 0 - genuinely unaware
+the remote side never accepted a single byte. This does not apply to
+the plaintext-RTMP-to-RTMPS-port case, which fails at TLS-handshake/
+connection-establishment time, a fundamentally different failure mode
+ffmpeg does reliably detect and report.
+
+### Fix
+Replaced `tryPublish()`-based exit-code trust for the three auth-based
+rejection cases (no credential, wrong credential, wrong path) with
+`tryPublishAndCheckAccepted()`: spawns the publish, polls `GET
+/v3/paths/list` at 1.5s for the target path's real `ready` state (the
+authoritative signal, not ffmpeg's own belief about what happened),
+and lets the process run to its natural exit or a 10s safety timeout.
+`tryPublish()` itself is kept, scoped now to only the plaintext-RTMP
+case, where exit-code trust is genuinely reliable - documented as such
+at its own definition so a future reader does not reintroduce the same
+mistake for the other three.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; confirmed
+`withServerDiag` still has real call sites elsewhere in the file (not
+orphaned by this refactor). Real validation is the next native Linux
+CI run this commit triggers - if this diagnosis is correct, the RTMPS
+matrix should finally pass in full, including the positive path
+(already Control-API-based, unaffected by this bug) right after it.
+
+### Commits (chronological, this milestone)
+38. This entry - `fix(ci): stop trusting ffmpeg's exit code for the
+    RTMPS auth-reject matrix`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

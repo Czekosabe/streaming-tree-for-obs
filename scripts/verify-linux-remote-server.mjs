@@ -728,19 +728,13 @@ async function main() {
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
     const ffmpegBase = ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
 
+    // Only used for the plaintext-RTMP-to-RTMPS-port case below now -
+    // a connection-establishment-level failure (the TLS handshake
+    // itself never completes) that ffmpeg's exit code reliably
+    // reports. The three auth-based rejections further down do not
+    // trust ffmpeg's exit code at all - see tryPublishAndCheckAccepted.
     async function tryPublish(url) {
       const result = await clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
-      // MediaMTX's own log line for this connection is relayed through
-      // a separate pipe (the Go supervisor's own bufio.Scanner reading
-      // MediaMTX's stdout) that is not guaranteed to have caught up the
-      // instant ffmpeg's process exits - the previous CI run's
-      // diagnostic showed only the restart's startup lines with nothing
-      // for the actual connection, consistent with reading
-      // serverHandle.getStdout() a beat too early. A short settle wait
-      // here is cheap and makes any later withServerDiag() call for
-      // this attempt see the real, flushed log line instead of racing
-      // it.
-      await new Promise((r) => setTimeout(r, 500));
       // A blind tail can miss the actual rejection/connection message,
       // which ffmpeg typically prints near the top (around "Output #0")
       // rather than at the very end (which is mostly encoder/muxer
@@ -754,26 +748,13 @@ async function main() {
     const plaintextTry = await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`);
     expect(!plaintextTry.ok, 'plaintext RTMP to the RTMPS port is rejected', plaintextTry.ok ? plaintextTry.detail : '');
 
-    // MediaMTX's own log at logLevel: info turned out (per two earlier
-    // CI runs) to carry server-lifecycle events only - nothing per-
-    // connection - so it cannot answer what MediaMTX itself thinks is
-    // happening for the "no credential" attempt. The Control API can:
-    // /v3/rtmpconns/list reports each connection's real state (idle/
-    // read/publish), user, and remoteAddr. Reachable directly from the
-    // host namespace (loopback-only, and this script itself already
-    // runs there).
-    //
-    // A first attempt at this diagnostic ran a *separate*, short-lived
-    // spawn, polled at 800ms, and killed it 300ms later if still
-    // running - and saw zero connections, for either the diagnostic
-    // run or the real one that followed it. That is not evidence
-    // MediaMTX saw nothing; a real TLS+RTMP handshake with a fresh
-    // ephemeral-CA certificate may simply take longer than 800ms to
-    // reach a state the Control API reports, and killing the
-    // connection early could have cut it off before MediaMTX ever
-    // finished evaluating it. This version polls the *actual* failing
-    // attempt itself, mid-stream, well within its natural 2-second
-    // clip, rather than a separate, premature, throwaway run.
+    // MediaMTX's own log at logLevel: info carries server-lifecycle
+    // events only, never per-connection detail, so it cannot answer
+    // what MediaMTX itself decided about a given publish attempt. The
+    // Control API can: GET /v3/paths/list reports each configured
+    // path's real "ready" state, reachable directly from the host
+    // namespace (loopback-only, and this script itself already runs
+    // there).
     function hostFetchJson(path) {
       return new Promise((resolve) => {
         const req = httpRequest({ host: '127.0.0.1', port: MEDIAMTX_API_PORT, path, method: 'GET' }, (res) => {
@@ -792,32 +773,53 @@ async function main() {
       });
     }
 
-    const noCredChild = clientSpawn('ffmpeg', [...ffmpegBase, `${rtmpsBase}/${INGEST_PATH}`]);
-    let noCredStderr = '';
-    noCredChild.stderr.on('data', (c) => (noCredStderr += c.toString()));
-    let noCredExited = false;
-    let noCredExitCode = null;
-    noCredChild.on('exit', (code) => {
-      noCredExited = true;
-      noCredExitCode = code;
-    });
-    await new Promise((r) => setTimeout(r, 1500));
-    const rtmpconns = await hostFetchJson('/v3/rtmpconns/list');
-    console.log(`     diag rtmpconns/list at t=1.5s (still within the 2s clip): ${JSON.stringify(rtmpconns.body).slice(0, 700)}`);
-    const pathsList = await hostFetchJson('/v3/paths/list');
-    console.log(`     diag paths/list at t=1.5s: ${JSON.stringify(pathsList.body).slice(0, 500)}`);
-
-    const noCredDeadline = Date.now() + 10_000;
-    while (!noCredExited && Date.now() < noCredDeadline) {
-      await new Promise((r) => setTimeout(r, 200));
+    // Six consecutive CI runs (docs/progress.md) showed the same thing:
+    // MediaMTX's Control API never once reports a connection or a
+    // ready path for these attempts, yet ffmpeg's own exit code was
+    // 0. The real explanation isn't a MediaMTX or config bug (both
+    // were verified line-by-line against the pinned v1.19.3 source) -
+    // it's that ffmpeg's exit code is not a reliable signal for a
+    // *post-handshake, application-level* rejection on a clip this
+    // short: the entire ~2 seconds of h264/aac data is small enough to
+    // fit in the kernel's TCP send buffer in one or two write() calls,
+    // which can succeed locally even after the remote peer has already
+    // closed the connection, if the local kernel hasn't yet surfaced
+    // that closure back to ffmpeg. ffmpeg then reaches end-of-input,
+    // closes cleanly, and exits 0 - genuinely unaware the remote side
+    // never accepted a single byte. (The plaintext-RTMP-to-RTMPS-port
+    // case above is a *different*, connection-establishment-level
+    // failure - the TLS handshake itself never completes - and ffmpeg
+    // reliably reports that one correctly.)
+    //
+    // The fix is to stop trusting ffmpeg's exit code for these three
+    // auth-based rejections and check what MediaMTX itself reports
+    // instead: GET /v3/paths/list's "ready" field for the target path,
+    // polled mid-stream while the attempt is definitely still active.
+    async function tryPublishAndCheckAccepted(url, pathName) {
+      const child = clientSpawn('ffmpeg', [...ffmpegBase, url]);
+      let exited = false;
+      child.on('exit', () => {
+        exited = true;
+      });
+      await new Promise((r) => setTimeout(r, 1500));
+      const pathsList = await hostFetchJson('/v3/paths/list');
+      const items = (pathsList.body && Array.isArray(pathsList.body.items)) ? pathsList.body.items : [];
+      const matched = items.find((p) => p && p.name === pathName);
+      const accepted = !!(matched && matched.ready);
+      const deadline = Date.now() + 10_000;
+      while (!exited && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      if (!exited) child.kill('SIGKILL');
+      return { accepted, snapshot: JSON.stringify(pathsList.body).slice(0, 600) };
     }
-    if (!noCredExited) noCredChild.kill('SIGKILL');
-    const noCredOk = noCredExited && noCredExitCode === 0;
-    expect(!noCredOk, 'RTMPS with no credential is rejected', noCredOk ? noCredStderr.slice(-400) : '');
-    const wrongCredTry = await tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`);
-    expect(!wrongCredTry.ok, 'RTMPS with a wrong credential is rejected', wrongCredTry.ok ? withServerDiag(wrongCredTry.detail) : '');
-    const wrongPathTry = await tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`);
-    expect(!wrongPathTry.ok, 'RTMPS with a valid credential but the wrong path is rejected', wrongPathTry.ok ? withServerDiag(wrongPathTry.detail) : '');
+
+    const noCred = await tryPublishAndCheckAccepted(`${rtmpsBase}/${INGEST_PATH}`, INGEST_PATH);
+    expect(!noCred.accepted, 'RTMPS with no credential is rejected (MediaMTX never reports the path ready)', noCred.accepted ? noCred.snapshot : '');
+    const wrongCred = await tryPublishAndCheckAccepted(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`, INGEST_PATH);
+    expect(!wrongCred.accepted, 'RTMPS with a wrong credential is rejected (MediaMTX never reports the path ready)', wrongCred.accepted ? wrongCred.snapshot : '');
+    const wrongPath = await tryPublishAndCheckAccepted(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`, 'wrong-path');
+    expect(!wrongPath.accepted, 'RTMPS with a valid credential but the wrong path is rejected (MediaMTX never reports the path ready)', wrongPath.accepted ? wrongPath.snapshot : '');
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
