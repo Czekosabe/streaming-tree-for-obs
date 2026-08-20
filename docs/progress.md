@@ -39129,8 +39129,86 @@ actual failure line at the tail of the captured log.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-23. This entry - `ci: add ping/verbose-curl diagnostics ahead of the
-    management-proxy login step`
+23. `ci: add ping/verbose-curl diagnostics ahead of the management-
+    proxy login step`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 13:10 — fix(ci): stop the remote-server verification script deadlocking itself
+
+### Real root cause, found from the previous commit's own diagnostics
+Commit `ffe8325`'s ping/verbose-curl probes worked exactly as
+intended and immediately localized the failure precisely (one
+low-request annotations lookup, fetched in small targeted chunks after
+the WebFetch tool's own prose summary twice invented a false "125-
+character limit" and, earlier in this same investigation, an
+impossible past reset date for the rate limit - both discarded in
+favor of the raw underlying data, never trusted as fact on their own):
+
+```
+diag ping 10.201.0.1 exit 0                    (0% packet loss)
+diag * Connected to manage-d2c.test (10.201.0.1) port 8714
+diag * TLSv1.3 (OUT), TLS handshake, Client hello (1):
+diag * Connection timed out after 8002 milliseconds
+```
+
+Ping succeeds and the TCP three-way handshake genuinely completes
+(proving real bidirectional connectivity across the veth boundary,
+including the SYN-ACK direction) - so this was never a network,
+firewall, or routing problem at any layer. The client sends its TLS
+ClientHello and then simply never receives a ServerHello.
+
+The real cause, found by reading this script's own code rather than
+guessing further: the management/overlay TLS proxies
+(`startManagementProxy`/`startOverlayProxy`) are plain Node
+`https.Server`s running in-process - the *same* single-threaded event
+loop as the rest of this script. Every client-side curl call
+(`clientExecStatus`, and therefore every `remoteCurl` call) used
+`spawnSync`, which blocks that entire event loop until the child
+process exits. The moment `remoteCurl` synchronously spawned curl to
+talk to the in-process proxy, the proxy's own event loop - the thing
+that would read the ClientHello and write a response - was frozen for
+the whole duration of that same blocking call: a same-process
+deadlock (curl blocked waiting on Node; Node blocked waiting on curl),
+not a real network failure. This exactly explains why every step
+before the first `remoteCurl` call passed (nothing before it needed
+this process's event loop to be free while a client curl ran) and why
+it broke on literally the first request that did.
+
+The script's own `clientSpawn` helper (used later for the mid-stream
+RTMPS "receiving" poll) had already solved this same class of problem
+once, for a different reason (observing a running publish rather than
+just its exit code) - that precedent existed in the file already but
+had not been generalized to `clientExecStatus`/`remoteCurl`.
+
+### Fix
+Converted `clientExecStatus` from a `spawnSync` wrapper to a real
+async function built on `spawn` (mirroring `clientSpawn`'s pattern),
+resolving `{status, signal, stdout, stderr, timedOut}` on `close`
+instead of blocking - preserving the existing `timeout` option via a
+manual kill timer, since the ffmpeg reject-matrix check relies on it.
+`remoteCurl` is now `async` and awaits it; every call site (the two
+diagnostic probes, `tryPublish` and its four callers, and all six
+`remoteCurl` call sites across the login/provision/status-polling/
+cookie-separation steps) now `await`s properly. Also added
+`attachTlsDiagnostics()`, wiring `tlsClientError`/`clientError`/
+`secureConnection`/`error` listeners onto both in-process proxy
+servers - since they run in this same process, anything logged there
+lands directly in the script's own captured stdout with no extra
+plumbing, giving a second, independent signal if a future TLS-layer
+problem ever recurs for a different reason.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean.
+Re-grepped every `clientExecStatus`/`remoteCurl` call site to confirm
+none were left un-awaited. Real validation is the next native Linux
+CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+24. This entry - `fix(ci): stop the remote-server verification script
+    deadlocking itself`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

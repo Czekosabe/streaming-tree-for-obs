@@ -252,12 +252,47 @@ function clientExecOk(cmd, args, opts = {}) {
     return false;
   }
 }
+/** Async equivalent of a synchronous spawnSync-based status check -
+ * deliberately non-blocking. The management/overlay TLS proxies below
+ * run in-process (same event loop as this script), so a *synchronous*
+ * client-side curl call here would starve the event loop for its
+ * entire duration and the in-process proxy could never accept or
+ * service the very connection the blocked curl is waiting on - a
+ * same-process deadlock, not a real network problem, that a first
+ * version of this function had (docs/progress.md). */
 function clientExecStatus(cmd, args, opts = {}) {
-  const result = spawnSync('sudo', ['ip', 'netns', 'exec', NETNS_NAME, cmd, ...args], {
-    encoding: 'utf8',
-    ...opts,
+  const { timeout, ...spawnOpts } = opts;
+  return new Promise((resolve) => {
+    const child = spawn('sudo', ['ip', 'netns', 'exec', NETNS_NAME, cmd, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...spawnOpts,
+    });
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = timeout
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGKILL');
+        }, timeout)
+      : undefined;
+    child.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d;
+    });
+    child.on('close', (code, signal) => {
+      if (timer) clearTimeout(timer);
+      resolve({ status: timedOut ? null : code, signal, stdout, stderr, timedOut });
+    });
+    child.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      resolve({ status: null, stdout, stderr: stderr + String((err && err.message) || err) });
+    });
   });
-  return result;
 }
 
 /** Non-blocking equivalent of clientExec, for a long-running publish
@@ -327,6 +362,17 @@ function isOverlayAllowedPath(urlPath) {
   return overlayAllowedPrefixes.some((p) => pathname.startsWith(p));
 }
 
+// The TLS proxy stand-ins run in-process (not a spawned child), so
+// anything logged here lands directly in this script's own captured
+// stdout - no extra plumbing needed to surface a real server-side TLS
+// failure in the CI diagnostic tail.
+function attachTlsDiagnostics(server, label) {
+  server.on('tlsClientError', (err) => console.log(`     diag [${label}] tlsClientError: ${err && err.message}`));
+  server.on('clientError', (err) => console.log(`     diag [${label}] clientError: ${err && err.message}`));
+  server.on('secureConnection', () => console.log(`     diag [${label}] secureConnection established`));
+  server.on('error', (err) => console.log(`     diag [${label}] server error: ${err && err.message}`));
+}
+
 function startManagementProxy(leaf) {
   const server = createHttpsServer({ key: leaf.keyPem, cert: leaf.certPem }, (clientReq, clientRes) => {
     if (isManagementExcludedPath(clientReq.url)) {
@@ -336,6 +382,7 @@ function startManagementProxy(leaf) {
     }
     proxyToBackend(clientReq, clientRes, `${MANAGE_HOST}:${MANAGE_PROXY_PORT}`);
   });
+  attachTlsDiagnostics(server, 'management-proxy');
   return new Promise((res) => server.listen(MANAGE_PROXY_PORT, HOST_ADDR, () => res(server)));
 }
 
@@ -348,6 +395,7 @@ function startOverlayProxy(leaf) {
     }
     proxyToBackend(clientReq, clientRes, `${OVERLAY_HOST}:${OVERLAY_PROXY_PORT}`);
   });
+  attachTlsDiagnostics(server, 'overlay-proxy');
   return new Promise((res) => server.listen(OVERLAY_PROXY_PORT, HOST_ADDR, () => res(server)));
 }
 
@@ -471,7 +519,7 @@ async function forceStop(handle) {
  * file path curl reads and rewrites across calls, so a login's session
  * cookie is available to a later provision/rotate call exactly like a
  * real browser's cookie jar would carry it. */
-function remoteCurl(method, url, { body, headers = {}, cookieJar, csrfToken, expectStatusOnly = false, maxTimeSeconds = 10 } = {}) {
+async function remoteCurl(method, url, { body, headers = {}, cookieJar, csrfToken, expectStatusOnly = false, maxTimeSeconds = 10 } = {}) {
   const args = ['-sS', '-o', '-', '-w', '\n__STATUS__:%{http_code}', '--max-time', String(maxTimeSeconds), '-X', method];
   for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
   if (csrfToken) args.push('-H', `X-CSRF-Token: ${csrfToken}`);
@@ -481,7 +529,7 @@ function remoteCurl(method, url, { body, headers = {}, cookieJar, csrfToken, exp
   if (cookieJar) args.push('-c', cookieJar, '-b', cookieJar);
   args.push(url);
 
-  const result = clientExecStatus('curl', args);
+  const result = await clientExecStatus('curl', args);
   if (result.status !== 0) {
     fail(`curl ${method} ${url} failed to run`, (result.stderr || '') + (result.stdout || ''));
   }
@@ -563,17 +611,17 @@ async function main() {
     const cookieJar = join(pkiDir, 'cookies.txt');
 
     step('Diagnostic: L3 (ping) and L4/TLS (verbose curl) connectivity probes, captured regardless of outcome');
-    const pingProbe = clientExecStatus('ping', ['-c', '2', '-W', '2', HOST_ADDR]);
+    const pingProbe = await clientExecStatus('ping', ['-c', '2', '-W', '2', HOST_ADDR]);
     console.log(`     diag ping ${HOST_ADDR} exit ${pingProbe.status}`);
     console.log((pingProbe.stdout || '').trim().split('\n').map((l) => `     diag ${l}`).join('\n'));
-    const probe = clientExecStatus('curl', ['-v', '-sS', '--max-time', '8', '-o', '/dev/null', `${MANAGE_ORIGIN}/api/auth/session`]);
+    const probe = await clientExecStatus('curl', ['-v', '-sS', '--max-time', '8', '-o', '/dev/null', `${MANAGE_ORIGIN}/api/auth/session`]);
     console.log(`     diag curl exit ${probe.status}`);
     console.log((probe.stderr || '').trim().split('\n').map((l) => `     diag ${l}`).join('\n'));
 
     step('Log in as the administrator through the real management TLS proxy, from the isolated client namespace');
-    const sessionBootstrap = remoteCurl('GET', `${MANAGE_ORIGIN}/api/auth/session`, { cookieJar });
+    const sessionBootstrap = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/auth/session`, { cookieJar });
     expect(sessionBootstrap.status === 200, 'GET /api/auth/session (unauthenticated bootstrap) returns 200', sessionBootstrap.text);
-    const loginRes = remoteCurl('POST', `${MANAGE_ORIGIN}/api/auth/login`, {
+    const loginRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/auth/login`, {
       body: { password: ADMIN_PASSWORD },
       headers: { Origin: MANAGE_ORIGIN },
       cookieJar,
@@ -583,7 +631,7 @@ async function main() {
     expect(typeof csrfToken === 'string' && csrfToken.length > 0, 'login response carries a CSRF token', loginRes.text);
 
     step('Provision the remote-ingest publisher credential through the authenticated management API');
-    const provisionRes = remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/provision`, {
+    const provisionRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/provision`, {
       headers: { Origin: MANAGE_ORIGIN },
       cookieJar,
       csrfToken,
@@ -610,18 +658,18 @@ async function main() {
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
     const ffmpegBase = ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
 
-    function tryPublish(url) {
-      const result = clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
+    async function tryPublish(url) {
+      const result = await clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
       return result.status === 0;
     }
 
-    expect(!tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`), 'plaintext RTMP to the RTMPS port is rejected', '');
-    expect(!tryPublish(`${rtmpsBase}/${INGEST_PATH}`), 'RTMPS with no credential is rejected', '');
-    expect(!tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`), 'RTMPS with a wrong credential is rejected', '');
-    expect(!tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`), 'RTMPS with a valid credential but the wrong path is rejected', '');
+    expect(!(await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`)), 'plaintext RTMP to the RTMPS port is rejected', '');
+    expect(!(await tryPublish(`${rtmpsBase}/${INGEST_PATH}`)), 'RTMPS with no credential is rejected', '');
+    expect(!(await tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`)), 'RTMPS with a wrong credential is rejected', '');
+    expect(!(await tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`)), 'RTMPS with a valid credential but the wrong path is rejected', '');
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
-    const before = remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+    const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(before.body && before.body.receiving === false, 'ingest status is waiting before any publish', before.text);
 
     // Spawned (not spawnSync) specifically so this script can observe
@@ -639,7 +687,7 @@ async function main() {
     });
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
-    const during = remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+    const during = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(during.body && during.body.receiving === true, 'ingest status becomes receiving while the publish is active', during.text);
 
     const publishDeadline = Date.now() + 20_000;
@@ -650,7 +698,7 @@ async function main() {
     expect(publishExited && publishExitCode === 0, 'the valid RTMPS publish completed successfully', publishStderr.slice(-2000));
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
-    const after = remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+    const after = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(after.body && after.body.receiving === false, 'ingest status returns to waiting after the publisher disconnects', after.text);
 
     step('MediaMTX exposes the plaintext RTMP listener only on loopback - branch reads are unaffected by remote ingest');
@@ -664,7 +712,7 @@ async function main() {
     const cookieJarText = readFileSync(cookieJar, 'utf8');
     expect(cookieJarText.includes(MANAGE_HOST), 'the cookie jar recorded a cookie scoped to the management hostname', cookieJarText);
     expect(!cookieJarText.includes(OVERLAY_HOST), 'the cookie jar never recorded a cookie scoped to the overlay hostname (none was ever set for it)', cookieJarText);
-    const overlayWithManagementCookie = remoteCurl('GET', `${OVERLAY_ORIGIN}/api/public/chat-overlays/does-not-exist/config`, {
+    const overlayWithManagementCookie = await remoteCurl('GET', `${OVERLAY_ORIGIN}/api/public/chat-overlays/does-not-exist/config`, {
       cookieJar,
       expectStatusOnly: true,
     });
