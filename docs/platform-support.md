@@ -446,12 +446,18 @@ own scope, untouched:
   See §10 - Stage 20D2C's own scope, untouched.
 - **Remote overlay exposure.** Overlay/alert/widget routes remain
   loopback-only in every mode - Stage 20D2B's reference reverse-proxy
-  configuration deliberately does not forward `/overlay/*`/
-  `/api/public/*`; a future D2C-scoped review is required before any
-  such exposure, including a dedicated `publicSlug` entropy/rotation/
-  revocation audit and an origin-separation decision (a distinct
-  overlay capability origin, never sharing the management session
-  cookie).
+  configuration deliberately excludes `/overlay/*`/`/api/public/*`
+  from the proxied surface (a Caddy `handle` block responding `404`
+  for those paths before the catch-all proxy handle ever runs - a
+  PRE-20D2C correction: the reference configuration's own first
+  version was a bare, matcher-less `reverse_proxy`, which Caddy's own
+  documented semantics forward every path through, contradicting this
+  exact claim until corrected; see
+  [remote-management.md](remote-management.md) §17); a future D2C-
+  scoped review is required before any such exposure, including a
+  dedicated `publicSlug` entropy/rotation/revocation audit and an
+  origin-separation decision (a distinct overlay capability origin,
+  never sharing the management session cookie).
 
 This **still cannot** be obtained by simply setting a bind address like
 `STREAMING_TREE_HOST=0.0.0.0` - in headless mode, doing so is now an
@@ -656,18 +662,38 @@ current below, one line per original claim:
   project does not have.
 - No Stage 20B updater code - **since implemented**: Stage 20B shipped
   the real GitHub Releases update system (see [updater.md](updater.md)).
-- No GitHub Release, no Git tag - **still true**: no stage through
-  20D1 has published a public release.
+- No GitHub Release, no Git tag - **still true through the current
+  stage** (re-verified directly via `git tag -l` during the PRE-20D2C
+  correction milestone, 2026-08-19: no tags exist): no stage through
+  20D2B has published a public release.
 - No binding of the management API to a non-loopback address, no
   weakening of MediaMTX's loopback-only RTMP/Control-API policy - **still
-  true and unconditional**: every stage through 20C1 preserved this,
-  and Stage 20D1 (Linux local/desktop mode) preserves it too; only a
-  future, separately-designed Stage 20D2 remote/headless mode could
-  ever revisit it, under its own distinct threat model.
+  true and unconditional even after Stage 20D2B**: the backend's own
+  HTTP listener has never bound beyond loopback in any mode through
+  20D2B, including the new `--remote-management` mode - remote
+  reachability is provided entirely by an operator-supplied same-host
+  HTTPS reverse proxy (see [remote-management.md](remote-management.md)),
+  never by the application binding a non-loopback interface itself.
+  MediaMTX's RTMP listener and Control API remain loopback-only and
+  unexposed by any proxy configuration this project documents. Only
+  Stage 20D2C (remote OBS ingest, still Planned/not started) could ever
+  revisit MediaMTX's own loopback-only policy, under its own
+  separately-designed threat model - 20D2B did not, and does not,
+  touch it.
 - No remote authentication system, no TLS termination, no headless
-  secret-storage fallback of any kind - **still true**: these remain
-  Stage 20D2's own unsolved scope, not addressed by 20C1 or by Stage
-  20D1's local/desktop-only Linux work.
+  secret-storage fallback of any kind - **since implemented, in two
+  parts**: Stage 20D2A shipped a real, native-CI-verified AES-256-GCM
+  encrypted headless secret store (see
+  [linux-headless-server.md](linux-headless-server.md)); Stage 20D2B
+  shipped a real, native-CI-verified single-administrator Argon2id
+  authentication system, opaque server-side sessions, CSRF protection,
+  and a reverse-proxy/TLS *contract* (see
+  [remote-management.md](remote-management.md)) - the application
+  itself still performs no TLS termination of its own (that remains
+  the operator-supplied reverse proxy's job by design, not a gap); no
+  embedded ACME/certificate issuance exists or is planned for this
+  application. Remote overlay exposure and remote OBS ingest remain
+  Stage 20D2C's own unsolved scope, not addressed by 20D2A or 20D2B.
 - No macOS/Linux TTS implementation - **still true**: both remain
   honestly reported as unavailable (`Capabilities.Available == false`),
   with a real native provider left as separate future feature work on

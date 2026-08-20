@@ -37164,3 +37164,79 @@ building the diagnostic tooling needed to do so), and fixed with
 verified evidence - never guessed at or worked around. No retry, skip,
 or weakening was used to reach any green result recorded above. No
 AskUserQuestion call was made at any point in this milestone.
+
+## fix(docs): correct the Stage 20D2B remote proxy exposure boundary
+
+### Governing task
+PRE-20D2C - a pre-flight audit found one security-relevant
+contradiction in Stage 20D2B's shipped documentation that must be
+corrected before Stage 20D2C (remote OBS ingest/remote overlay
+exposure) is designed. Not a speculative redesign - a concrete,
+verifiable defect in the reference reverse-proxy configuration.
+
+### The contradiction, verified from primary sources (research date
+2026-08-19)
+`docs/remote-management.md` §17 claimed the reference Caddy
+configuration "does not expose `/overlay/*` or `/api/public/*`", while
+§20's actual configuration was a bare `reverse_proxy 127.0.0.1:8080`
+with no matcher. Confirmed directly against Caddy's own current
+documentation: *"If the matcher token is omitted, it is the same as a
+wildcard matcher (`*`)"* - a bare `reverse_proxy` forwards every path,
+including the two the document claimed it excluded. The claim was
+wrong; the backend code (an intentionally unauthenticated
+`/api/public/*` for local OBS Browser Source use) was always correct -
+this is a **backend auth classification** vs **reverse-proxy Internet
+reachability** distinction, and the two were conflated in the original
+text.
+
+Also researched and confirmed directly: the `path` matcher's multi-
+pattern OR syntax (official example: `@assets path /js/* /css/*
+/images/*`); that Caddy does **not** execute directives in textual
+file order but sorts them by a hard-coded built-in order, with
+`handle` sorted before `respond` before `reverse_proxy`; and that
+`handle` blocks are mutually exclusive, first-match-wins, with the
+official documentation's own worked example being exactly this
+milestone's shape ("Handle requests in `/foo/` with the static file
+server, and other requests with the reverse proxy").
+
+### What changed
+- `docs/examples/Caddyfile.remote-management`: replaced the bare
+  `reverse_proxy` with a `@excludedLocalOnlySurface { path /overlay/*
+  /api/public/* }` matcher plus a `handle @excludedLocalOnlySurface {
+  respond 404 }` block ahead of the catch-all `handle { reverse_proxy
+  127.0.0.1:8080 }` block - Caddy's own official, idiomatic pattern for
+  "these paths get one behavior, everything else gets another",
+  correct regardless of which `handle` block is written first (Caddy's
+  own built-in directive sorting, not textual order).
+- `docs/remote-management.md` §17: rewritten to explicitly separate
+  backend auth classification from reverse-proxy reachability, state
+  the original contradiction and its correction plainly, and confirm
+  the fix does not touch backend authentication (adding a session
+  requirement to `/api/public/*` would incorrectly conflate the two
+  security models and break every local OBS Browser Source). §20's
+  inline example updated to match the corrected standalone file. §2
+  extended with this milestone's own primary-source research.
+- `docs/platform-support.md` §9's "Remote overlay exposure" bullet and
+  §18's stale current-annotations corrected (see the next entry).
+
+No backend Go code was changed - the defect was entirely in the
+reference deployment configuration and its own documentation, never in
+`internal/httpapi`'s actual route classification, which was correct
+throughout.
+
+### Validation
+Prose/config-file changes; `docs/examples/Caddyfile.remote-management`
+has no automated Caddy-syntax check in this environment (no `caddy`
+binary installed, and one was not installed solely for this check per
+the governing task's own instruction) - its routing policy is grounded
+directly in the primary-source research above, and the very next
+commit adds a real, request-level proof of the same policy through a
+first-party TLS-proxy test harness.
+
+### Commits (chronological, this entry)
+1. This entry - `fix(docs): correct the Stage 20D2B remote proxy
+   exposure boundary`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

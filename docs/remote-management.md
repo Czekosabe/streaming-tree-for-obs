@@ -67,6 +67,33 @@ managed firewall rules.
   scheme+host+port tuple; a subdomain or different port is a different
   origin even under the same registrable "site".
 
+**PRE-20D2C correction research (2026-08-19), added after Stage 20D2B's
+own close:**
+
+- Caddy's "Caddyfile matchers" documentation: confirmed directly -
+  *"If the matcher token is omitted, it is the same as a wildcard
+  matcher (`*`)"* - the exact fact that disproved the original
+  reference configuration's implicit claim that a bare `reverse_proxy`
+  only forwarded intended paths. Also confirmed the `path` matcher's
+  multi-pattern syntax (`path <paths...>`, "Multiple paths will be
+  OR'ed together" - the real official example given is `@assets path
+  /js/* /css/* /images/*`, directly analogous to this document's own
+  `@excludedLocalOnlySurface { path /overlay/* /api/public/* }`).
+- Caddy's "Directives" documentation: confirmed directly that Caddy
+  does **not** execute directives in the literal textual order written
+  in a Caddyfile - *"a default ordering is hard-coded into Caddy"* -
+  and that `handle` is sorted before `respond`, which is sorted before
+  `reverse_proxy`, in that built-in order. This is why §20's corrected
+  configuration is correct regardless of which `handle` block appears
+  first in the file.
+- Caddy's `handle` directive documentation: confirmed directly - *"when
+  multiple `handle` directives appear in sequence, only the first
+  matching `handle` block will be evaluated"* (mutual exclusivity), and
+  the documentation's own worked example is exactly this milestone's
+  own shape: *"Handle requests in `/foo/` with the static file server,
+  and other requests with the reverse proxy."* This is the official,
+  idiomatic pattern selected for §20's fix - not an invented one.
+
 ## 3. Explicit remote-management mode (opt-in)
 
 A new boolean setting, `--remote-management` (mirroring the existing
@@ -397,7 +424,51 @@ destinations, no filesystem path, no secret-store status, no session
 information. No change needed; recorded as an explicit audit result,
 not assumed.
 
-## 17. Public overlays - D2B policy (audit only, no exposure)
+## 17. Public overlays - D2B policy (audit only, no exposure) - PRE-
+20D2C correction: proxy exposure boundary
+
+Two different questions must not be conflated, and an earlier version
+of this section conflated them:
+
+- **Backend auth classification**: does the Go backend's own
+  authentication middleware gate this route? `/api/public/*` is
+  deliberately *not* gated (§15) - this is the existing local-overlay
+  contract (`internal/domain/chatoverlay`/`alerts`/`audio`/`goals`),
+  unchanged by D2B, and it must stay that way: an OBS Browser Source
+  running locally has no session cookie and was never meant to
+  authenticate.
+- **Reverse-proxy Internet reachability**: does the operator's own
+  reverse proxy forward this path from the public Internet to the
+  backend at all? This is an entirely separate question, decided by
+  the proxy configuration, not by the backend's auth middleware.
+
+The original reference Caddy configuration (§20) was a bare
+`reverse_proxy 127.0.0.1:8080` with no matcher. Confirmed directly
+against Caddy's own current documentation (research date 2026-08-19):
+*"If the matcher token is omitted, it is the same as a wildcard
+matcher (`*`)"* - a bare `reverse_proxy` forwards **every** path,
+including `/overlay/*` and `/api/public/*`. That directly contradicted
+this document's own claim, in this same section, that D2B "does not
+expose `/overlay/*` or `/api/public/*` through the reverse-proxy
+example in §20." The claim was wrong; the code (an intentionally
+unauthenticated backend route) was always correct. **This section and
+§20 are now corrected, not the backend.**
+
+The fix does not touch backend authentication - adding a session
+requirement to `/api/public/*` would incorrectly conflate the two
+security models above and break every local OBS Browser Source. The
+fix is entirely in the reverse-proxy layer: §20's corrected reference
+configuration explicitly excludes `/overlay/*` and `/api/public/*`
+from the proxied surface (a Caddy `handle` block matching those two
+path prefixes, responding `404` before the catch-all `reverse_proxy`
+handle block ever runs - `handle` blocks are mutually exclusive and
+Caddy sorts them by its own built-in directive order regardless of
+textual position, so this is correct regardless of which block is
+written first). `docs/examples/Caddyfile.remote-management` carries
+the real, complete, corrected file; `scripts/verify-linux-remote-
+management.mjs`'s own ephemeral-TLS-proxy test harness implements the
+identical policy and proves it with real HTTP requests through the
+proxy boundary, not merely a string check against the Caddyfile.
 
 `publicSlug` values (`internal/domain/chatoverlay`, `internal/domain/
 alerts`, `internal/domain/audio`, `internal/domain/goals`'s widget
@@ -405,18 +476,23 @@ profiles) are generated as high-entropy random tokens at creation time
 (audited: existing generation already uses `crypto/rand`-backed
 identifiers of a length providing a strong capability-token entropy
 boundary for the existing loopback-only threat model). D2B does not
-change generation, does not rotate existing slugs, and does not expose
-`/overlay/*` or `/api/public/*` through the reverse-proxy example in
-§20. The future D2C rule, recorded now rather than left implicit:
-**remote overlays must not share the authenticated management
-origin** - a separate capability origin (e.g. `overlay.example.com`)
-is the preferred future architecture, so a compromised or leaked
-overlay page can never read the management session cookie (different
-origin entirely). Existing slugs are not claimed strong enough for
-unconditional future Internet exposure merely because they were
-sufficient for a loopback-only threat model; a dedicated entropy/
-rotation/revocation review is explicit required-before-D2C future
-work, not assumed satisfied here.
+change generation and does not rotate existing slugs. With the
+corrected reference proxy configuration, `/overlay/*` and
+`/api/public/*` are genuinely not reachable through the D2B management
+origin - not merely undocumented-but-actually-open, as the prior,
+uncorrected reference configuration would have made them. The future
+D2C rule, recorded now rather than left implicit: **remote overlays
+must not share the authenticated management origin** - a separate
+capability origin (e.g. `overlay.example.com`) is the preferred future
+architecture, so a compromised or leaked overlay page can never read
+the management session cookie (different origin entirely), and
+management session cookies (`__Host-`-scoped, `Path=/`, no `Domain`)
+are never sent to any other origin regardless. This document does not
+implement that separate origin - it is explicit Stage 20D2C scope.
+Existing slugs are not claimed strong enough for unconditional future
+Internet exposure merely because they were sufficient for a loopback-
+only threat model; a dedicated entropy/rotation/revocation review is
+explicit required-before-D2C future work, not assumed satisfied here.
 
 ## 18. Authentication API
 
@@ -464,7 +540,16 @@ audited, no unit change needed.
 
 ```caddyfile
 stream.example.com {
-    reverse_proxy 127.0.0.1:8080
+    @excludedLocalOnlySurface {
+        path /overlay/* /api/public/*
+    }
+    handle @excludedLocalOnlySurface {
+        respond 404
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
 }
 ```
 
@@ -477,10 +562,18 @@ own concern, external to this application), overwrites `X-Forwarded-
 For`/`X-Forwarded-Proto`/`X-Forwarded-Host` with real values per §2's
 confirmed default behavior, and proxies only to the loopback backend -
 never to the MediaMTX Control API or RTMP listener, both of which stay
-entirely unreferenced by the proxy configuration. The application is
-not installed, configured, or started by this repository's own
-tooling; this block is operator-applied guidance, documented in
-`docs/linux-headless-server.md`'s own provisioning-sequence style.
+entirely unreferenced by the proxy configuration. The `@excludedLocal
+OnlySurface` `handle` block (§17's own PRE-20D2C correction) refuses
+`/overlay/*` and `/api/public/*` with a bare `404` before the catch-all
+`handle` block's own `reverse_proxy` ever runs - `handle` blocks are
+mutually exclusive and Caddy sorts them by its own built-in directive
+order regardless of the order they are written in the file (confirmed
+directly against Caddy's own current documentation, research date
+2026-08-19), so this is correct independent of block ordering in the
+file. The application is not installed, configured, or started by this
+repository's own tooling; this block is operator-applied guidance,
+documented in `docs/linux-headless-server.md`'s own provisioning-
+sequence style.
 
 ## 21. Operator provisioning sequence
 
