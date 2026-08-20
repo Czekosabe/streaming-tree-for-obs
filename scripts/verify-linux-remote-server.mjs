@@ -641,6 +641,37 @@ async function main() {
     const csrfToken = loginRes.body && loginRes.body.csrfToken;
     expect(typeof csrfToken === 'string' && csrfToken.length > 0, 'login response carries a CSRF token', loginRes.text);
 
+    // Remote ingest is layered on the same shared MediaMTX instance
+    // local branches already use (docs/remote-ingest.md) - provisioning
+    // a credential requires it to already be installed, exactly like a
+    // real operator would need to install it first. Mirrors the same
+    // real install-then-poll sequence scripts/verify-mediamtx-runtime.mjs
+    // already proves in CI (POST install -> 202, then wait for
+    // ready-or-stopped, then wait for ready).
+    async function waitForMediaMtxState(wanted, timeoutMs) {
+      const deadline = Date.now() + timeoutMs;
+      let state = '';
+      while (Date.now() < deadline) {
+        const runtimeRes = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/runtime`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+        state = runtimeRes.body && runtimeRes.body.mediaMtx && runtimeRes.body.mediaMtx.state;
+        if (wanted.includes(state) || state === 'error') return state;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      return state;
+    }
+
+    step('Install MediaMTX through the managed installer');
+    const installRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/runtime/mediamtx/install`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+    expect(installRes.status === 202, 'POST /api/runtime/mediamtx/install returns 202', installRes.status === 202 ? installRes.text : withServerDiag(installRes.text));
+
+    step('Wait for the MediaMTX installation to finish (a real ~30 MB download, checksum-verified)');
+    const installedState = await waitForMediaMtxState(['ready', 'stopped'], 300_000);
+    expect(installedState === 'ready' || installedState === 'stopped', 'MediaMTX finishes installing (ready or stopped)', withServerDiag(`state=${installedState}`));
+
+    step('Wait for MediaMTX readiness');
+    const readyState = await waitForMediaMtxState(['ready'], 60_000);
+    expect(readyState === 'ready', 'MediaMTX reports ready', withServerDiag(`state=${readyState}`));
+
     step('Provision the remote-ingest publisher credential through the authenticated management API');
     const provisionRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/provision`, {
       headers: { Origin: MANAGE_ORIGIN },

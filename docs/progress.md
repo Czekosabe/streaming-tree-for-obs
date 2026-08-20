@@ -39368,8 +39368,57 @@ should be the run that finally shows the actual Go error behind the
 500.
 
 ### Commits (chronological, this milestone)
-28. This entry - `ci: filter the server-diagnostic dump to
-    error/warning lines, GitHub truncated the flat tail`
+28. `ci: filter the server-diagnostic dump to error/warning lines,
+    GitHub truncated the flat tail`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 14:40 — fix(ci): install MediaMTX before provisioning the remote-ingest credential
+
+### Real root cause, finally visible through the filtered diagnostic
+Commit `dd301c5`'s filtered stdout dump worked - the annotation
+carried the real Go error line intact this time:
+
+```
+level=ERROR msg="unhandled remote ingest error"
+  path=/api/remote-ingest/provision
+  error="mediamtx is not installed: MediaMTX is not installed"
+```
+
+Not a test-harness bug and not a real product defect either - a
+missing step in this script's own setup. Remote ingest is layered on
+the same shared MediaMTX instance local branches already use
+(docs/remote-ingest.md), and this project deliberately never
+auto-installs MediaMTX at server startup (confirmed by the earlier
+startup log line `"mediamtx runtime" state=missing source=missing`,
+which had already hinted at this and was noted but not yet acted on
+two entries ago) - an operator (or, here, this script) must install it
+first through the managed installer, exactly the same real sequence
+`scripts/verify-mediamtx-runtime.mjs` already proves in CI: `POST
+/api/runtime/mediamtx/install` (202), poll `GET /api/runtime` for
+`mediaMtx.state` to reach `ready` or `stopped`, then poll again
+specifically for `ready`.
+
+### Fix
+Added that same install-then-poll sequence to `verify-linux-remote-
+server.mjs`, positioned after login/CSRF (it needs the authenticated
+session) and before the remote-ingest provisioning step. Reused the
+already-proven `['ready','stopped']` then `['ready']` two-phase wait
+from `verify-mediamtx-runtime.mjs` rather than inventing a new
+polling shape, with the same generous 300s install timeout (a real
+~30 MB download, checksum-verified) and 60s readiness timeout.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+this is genuinely the last gap, the run should now reach the RTMPS
+accept/reject matrix for the first time.
+
+### Commits (chronological, this milestone)
+29. This entry - `fix(ci): install MediaMTX before provisioning the
+    remote-ingest credential`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
