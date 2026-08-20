@@ -39910,8 +39910,66 @@ reporting what MediaMTX itself already knows."
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-39. This entry - `ci: check MediaMTX's own path-ready state during
-    the positive-path publish too`
+39. `ci: check MediaMTX's own path-ready state during the
+    positive-path publish too`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 18:25 — ci: poll rtmpconns/list rapidly to test a URL-splitting hypothesis for the positive path
+
+### Real CI result: MediaMTX itself never marks the path ready for the valid credential either
+Commit `3b2831d` was checked. `/v3/paths/list`, polled at the exact
+same moment as the backend's own `during` status check (4s into a
+real 10-second publish with a genuinely valid, freshly-provisioned
+credential), showed `ready: false, source: null, inboundBytes: 0` -
+identical to every reject-matrix case. This rules out a
+backend-status-reporting bug (entry two above's open question): the
+backend is correctly reporting what MediaMTX itself believes, and
+MediaMTX itself never accepts this connection - not even with the
+right credential and the right path.
+
+`ProvisionRemoteIngestPublisherCredential` and `Manager.generateAndApply`
+were both re-read end to end and are internally consistent (a single
+`NewPublisherSecret()` call, the verifier derived directly from that
+same secret, the identical secret returned to the caller, the same
+verifier re-read by `applyStoredVerifier` before the restart) - no
+generation/storage mismatch to explain a wrong verifier being
+configured.
+
+A different, specific hypothesis: RTMP's wire protocol has no single
+"URL" the way HTTP does - a client sends a `tcUrl` plus a separate
+"playpath"/stream-key string, and different implementations disagree
+about where an app boundary ends and a stream key with a `?query`
+suffix begins. If ffmpeg's own RTMP client folds the `?user=...&pass=...`
+suffix into an opaque playpath value that MediaMTX's `gortmplib` layer
+does not split back into `Path`/`RawQuery` the way this project's own
+`c.rconn.URL.Path`/`.Query()` code (verified against the pinned source
+several entries ago) assumes, every publish attempt - valid credential
+included - would fail the exact-path-match permission check
+regardless of credential correctness, which is exactly consistent
+with what has been observed across every reject-matrix case *and* the
+positive path.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added a rapid poll of `/v3/rtmpconns/list` (every 250ms for up to 2
+seconds right after the publish starts, before the existing 4-second
+settle wait) to the positive-path test - `rtmpconns/list` reports each
+connection's real parsed `path` and `query` fields, which would
+directly confirm or rule out the URL-splitting hypothesis by showing
+exactly what MediaMTX itself parsed out of the connection, if it
+registers at all before any rejection tears it down. Only logs when a
+connection is actually present, to avoid flooding the annotation
+budget with empty polls.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+40. This entry - `ci: poll rtmpconns/list rapidly to test a
+    URL-splitting hypothesis for the positive path`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

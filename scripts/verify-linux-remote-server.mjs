@@ -839,6 +839,25 @@ async function main() {
       publishExitCode = code;
     });
 
+    // Testing a specific hypothesis before waiting the full settle
+    // time: MediaMTX's own rtmpconns/list reports each connection's
+    // parsed path/query - if the query-string credential convention
+    // (rtmps://host/live?user=X&pass=Y) is not being split the way
+    // this project's config assumes (e.g. an RTMP client's playpath
+    // handling swallowing the "?..." into the path itself rather than
+    // MediaMTX seeing path="live" and a separate query), that would
+    // explain rejection regardless of credential correctness. Poll
+    // rapidly right after connecting, since a rejected connection may
+    // not stay in this list for long.
+    for (let i = 0; i < 8 && !publishExited; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const conns = await hostFetchJson('/v3/rtmpconns/list');
+      const items = (conns.body && Array.isArray(conns.body.items)) ? conns.body.items : [];
+      if (items.length > 0) {
+        console.log(`     diag rtmpconns/list at t=${(i + 1) * 250}ms: ${JSON.stringify(items).slice(0, 700)}`);
+      }
+    }
+
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
     // MediaMTX's own /v3/paths/list is the same ground truth the
     // reject-matrix above now trusts instead of ffmpeg's exit code -
