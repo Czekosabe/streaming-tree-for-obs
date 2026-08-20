@@ -39666,8 +39666,50 @@ still worth a line if they ever fire).
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-34. This entry - `ci: reorder/shrink the diagnostic detail, GitHub's
-    size limit ate it again`
+34. `ci: reorder/shrink the diagnostic detail, GitHub's size limit
+    ate it again`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 16:40 — ci: wait for MediaMTX's own log line to flush before capturing it
+
+### Real CI result: the mediamtx section arrived, but stopped at startup
+Commit `5994704` was checked. The annotation finally carried the
+`--- server stdout` section intact, and it showed MediaMTX's real
+startup sequence for the credential-provisioning restart -
+`"[RTMPS] started with listener on 10.201.0.1:8713 (TCP/RTMPS)"` and
+similar - confirming the restart itself completed correctly and bound
+where expected. But nothing after that: no connection-opened,
+publish-accepted, or publish-rejected line for the actual "no
+credential" attempt appears anywhere in the captured tail, even though
+that connection genuinely happened (ffmpeg completed a full 2-second
+encode against it, confirmed several entries ago).
+
+MediaMTX's own log line for a connection is relayed through a
+separate pipe - the Go supervisor's own `bufio.Scanner` reading
+MediaMTX's piped stdout (`process.go`'s `drain`/`log`) - which is not
+guaranteed to have caught up the instant the *client* (ffmpeg, in a
+different process entirely) exits. The most likely explanation for a
+clean startup log with nothing after it is a timing race: this
+script's own `serverHandle.getStdout()` read happened before that
+relay had flushed the connection's own log line, not that MediaMTX
+never logged one.
+
+### Fix
+Added a 500ms settle wait inside `tryPublish()`, after ffmpeg's
+process exits and before returning - cheap, and gives the supervisor's
+own log-relay pipe time to catch up before any later `withServerDiag()`
+call reads the accumulated stdout for this specific attempt.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+35. This entry - `ci: wait for MediaMTX's own log line to flush
+    before capturing it`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

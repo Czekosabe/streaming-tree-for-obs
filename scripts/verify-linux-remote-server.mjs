@@ -730,6 +730,17 @@ async function main() {
 
     async function tryPublish(url) {
       const result = await clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
+      // MediaMTX's own log line for this connection is relayed through
+      // a separate pipe (the Go supervisor's own bufio.Scanner reading
+      // MediaMTX's stdout) that is not guaranteed to have caught up the
+      // instant ffmpeg's process exits - the previous CI run's
+      // diagnostic showed only the restart's startup lines with nothing
+      // for the actual connection, consistent with reading
+      // serverHandle.getStdout() a beat too early. A short settle wait
+      // here is cheap and makes any later withServerDiag() call for
+      // this attempt see the real, flushed log line instead of racing
+      // it.
+      await new Promise((r) => setTimeout(r, 500));
       // A blind tail can miss the actual rejection/connection message,
       // which ffmpeg typically prints near the top (around "Output #0")
       // rather than at the very end (which is mostly encoder/muxer
