@@ -39207,8 +39207,48 @@ none were left un-awaited. Real validation is the next native Linux
 CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-24. This entry - `fix(ci): stop the remote-server verification script
-    deadlocking itself`
+24. `fix(ci): stop the remote-server verification script deadlocking
+    itself`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 13:30 — ci: remove the now-obsolete verbose diagnostic probe, widen the tail further
+
+### Real CI result: the deadlock fix worked, but its own diagnostic became the new problem
+Commit `e6dc387` was checked. Steps 01-10 (through the diagnostic
+probes themselves) all now pass on linux-amd64, with no timeout - the
+event-loop deadlock fix is confirmed working, since `curl -v` in the
+probe now shows a real request/response exchange instead of hanging
+after the ClientHello. But the annotation cut off mid-probe-output
+(`"diag > Accept: */*\n dia"`), before reaching whatever happens next:
+now that the TLS handshake actually completes, `curl -v`'s own output
+is far longer (full request/response header dump, not just a stalled
+handshake trace), and it pushed the real next result - success or a
+new failure - past the workflow's 6000-character tail window.
+
+### Fix
+The diagnostic probe (ping + verbose curl) added two commits ago has
+served its purpose - it identified the deadlock precisely and that
+class of failure is now confirmed fixed - so it is actively
+counterproductive to leave in: expensive, and now crowding out
+evidence for whatever comes next. Removed it entirely rather than
+trimming its output, since the specific question it existed to answer
+has been answered. Also widened the workflow's diagnostic tail from
+6000 to 8000 characters for headroom against the real remaining steps
+(RTMPS accept/reject matrix, the positive publish path, cookie
+separation), none of which were reached yet in any prior run.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - the
+first run expected to reach past step 10 and show either a genuine
+pass or the next real failure with full evidence.
+
+### Commits (chronological, this milestone)
+25. This entry - `ci: remove the now-obsolete verbose diagnostic
+    probe, widen the tail further`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
