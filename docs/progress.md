@@ -39473,8 +39473,62 @@ that will be investigated the same way as everything before it in this
 entry sequence: from real diagnostic output, not assumption.
 
 ### Commits (chronological, this milestone)
-30. This entry - `fix(ci): wait for MediaMTX readiness after
-    provisioning, before the RTMPS matrix`
+30. `fix(ci): wait for MediaMTX readiness after provisioning, before
+    the RTMPS matrix`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 15:20 — ci: capture ffmpeg's own stderr for the RTMPS reject-matrix, verify MediaMTX auth semantics from source
+
+### Real CI result: the readiness wait did not change the outcome
+Commit `2c8ed9a` was checked. Same failure, same missing server-side
+error signal: `FAIL RTMPS with no credential is rejected`, still with
+no `level=ERR`/`level=WARN` line - meaning MediaMTX itself is not
+logging anything alarming about this specific publish attempt either
+way, and the readiness-wait fix, while a real and worthwhile
+correctness fix in its own right, was not the (sole) explanation.
+
+Before changing anything further, verified this project's own
+understanding of MediaMTX's real `authInternalUsers` matching logic
+against the pinned v1.19.3 source itself
+(`internal/auth/manager.go`), not memory or assumption: `user: any`
+skips credential verification entirely (any presented username,
+including none, is accepted by that check), but the `ips` allowlist IS
+still checked for that entry regardless of `user`, and a request whose
+`ips` doesn't include the connecting address is denied *at that
+entry* - entries are evaluated in order and the first full match (IP
++ credentials + permission for the requested action/path) wins,
+otherwise deny. Given the isolated client namespace's real address
+(10.201.0.2) is not in the read-only `any` entry's `[127.0.0.1, ::1]`
+allowlist, and the named publisher entry requires a real
+password-hash match an empty credential cannot satisfy, this
+project's rendered config *should* reject an anonymous publish by this
+logic - the real MediaMTX matching semantics do not, on their own,
+explain the observed accept.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+`tryPublish()` previously returned only a boolean, discarding
+ffmpeg's own stderr - the one piece of evidence that would show
+whether the "no credential" publish is genuinely being accepted by
+MediaMTX (and if so, in what way) or whether something else is
+producing a false-positive zero exit code. It now returns `{ok,
+detail}` with a tail of ffmpeg's real stderr, and all four
+accept/reject-matrix assertions include that detail (via the existing
+`withServerDiag` for the credential/path cases, appending MediaMTX's
+own server log too) when a rejection unexpectedly succeeds.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; all
+four `tryPublish` call sites confirmed updated to the new return
+shape. Real validation is the next native Linux CI run this commit
+triggers - the goal this time is evidence, not a fix, since the
+config-level analysis did not turn up an obvious defect to fix yet.
+
+### Commits (chronological, this milestone)
+31. This entry - `ci: capture ffmpeg's own stderr for the RTMPS
+    reject-matrix, verify MediaMTX auth semantics from source`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

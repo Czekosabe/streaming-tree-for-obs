@@ -714,13 +714,17 @@ async function main() {
 
     async function tryPublish(url) {
       const result = await clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
-      return result.status === 0;
+      return { ok: result.status === 0, detail: (result.stderr || '').trim().split('\n').slice(-15).join('\n') };
     }
 
-    expect(!(await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`)), 'plaintext RTMP to the RTMPS port is rejected', '');
-    expect(!(await tryPublish(`${rtmpsBase}/${INGEST_PATH}`)), 'RTMPS with no credential is rejected', '');
-    expect(!(await tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`)), 'RTMPS with a wrong credential is rejected', '');
-    expect(!(await tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`)), 'RTMPS with a valid credential but the wrong path is rejected', '');
+    const plaintextTry = await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`);
+    expect(!plaintextTry.ok, 'plaintext RTMP to the RTMPS port is rejected', plaintextTry.ok ? plaintextTry.detail : '');
+    const noCredTry = await tryPublish(`${rtmpsBase}/${INGEST_PATH}`);
+    expect(!noCredTry.ok, 'RTMPS with no credential is rejected', noCredTry.ok ? withServerDiag(noCredTry.detail) : '');
+    const wrongCredTry = await tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`);
+    expect(!wrongCredTry.ok, 'RTMPS with a wrong credential is rejected', wrongCredTry.ok ? withServerDiag(wrongCredTry.detail) : '');
+    const wrongPathTry = await tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`);
+    expect(!wrongPathTry.ok, 'RTMPS with a valid credential but the wrong path is rejected', wrongPathTry.ok ? withServerDiag(wrongPathTry.detail) : '');
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
