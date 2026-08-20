@@ -127,9 +127,15 @@ const remoteOverlayStatusSchemaVersion = 1
 type remoteOverlayStatusResponse struct {
 	Version   int  `json:"version"`
 	Available bool `json:"available"`
-	// Enabled reports whether a capability currently exists - never
-	// the token itself, and never any historical/revoked token value.
+	// Enabled reports whether a capability currently exists.
 	Enabled bool `json:"enabled"`
+	// URL is the current remote Browser Source URL, present only
+	// while Enabled - the operator's own equivalent of the always-
+	// visible local publicSlug URL, not a one-time secret like the
+	// remote-ingest credential. Never a historical/revoked token: a
+	// rotated-away or disabled capability's old URL is never
+	// reconstructable through this or any other route once replaced.
+	URL string `json:"url,omitempty"`
 }
 
 // remoteOverlayURLResponse carries the freshly issued/current remote
@@ -161,17 +167,25 @@ func handleRemoteOverlayStatus(logger *slog.Logger, capabilities RemoteOverlayCa
 			return
 		}
 
-		_, enabled, err := capabilities.Get(r.Context(), domain, slug)
+		cap, enabled, err := capabilities.Get(r.Context(), domain, slug)
 		if err != nil {
 			writeRemoteOverlayManagementError(w, logger, r, err)
 			return
 		}
 
-		writeJSON(w, logger, http.StatusOK, remoteOverlayStatusResponse{
+		resp := remoteOverlayStatusResponse{
 			Version:   remoteOverlayStatusSchemaVersion,
 			Available: canonicalOverlayOrigin != "",
 			Enabled:   enabled,
-		})
+		}
+		if enabled && canonicalOverlayOrigin != "" {
+			resp.URL = remoteOverlayURL(canonicalOverlayOrigin, domain, cap.Token)
+			// The response carries a live capability URL - never
+			// cached, the same discipline provision/rotate's own
+			// responses already use.
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		writeJSON(w, logger, http.StatusOK, resp)
 	}
 }
 

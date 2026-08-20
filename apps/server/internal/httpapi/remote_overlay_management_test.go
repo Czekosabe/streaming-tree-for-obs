@@ -105,6 +105,33 @@ func TestRemoteOverlayManagementStatusReflectsDisabledByDefault(t *testing.T) {
 	if !body.Available {
 		t.Error("Available = false with a configured overlay origin, want true")
 	}
+	if body.URL != "" {
+		t.Errorf("URL = %q, want empty while disabled", body.URL)
+	}
+}
+
+func TestRemoteOverlayManagementStatusReturnsTheCurrentURLOnceEnabled(t *testing.T) {
+	handler, overlay, capabilities := newRemoteOverlayManagementServer(t, "https://overlay.example.com")
+	ctx := context.Background()
+
+	cap, err := capabilities.Issue(ctx, "chat-overlay", overlay.PublicSlug)
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	recorder := do(t, handler, http.MethodGet, "/api/remote-overlay/chat-overlay/"+overlay.PublicSlug+"/status", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store when the response carries a live URL", got)
+	}
+	var body remoteOverlayStatusResponse
+	decodeBody(t, recorder, &body)
+	want := "https://overlay.example.com/overlay/chat/" + cap.Token
+	if body.URL != want {
+		t.Errorf("URL = %q, want %q", body.URL, want)
+	}
 }
 
 func TestRemoteOverlayManagementEnableReturnsAWorkingURL(t *testing.T) {

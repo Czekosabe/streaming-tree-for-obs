@@ -38667,3 +38667,42 @@ convention).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix(server): return the current remote overlay URL from status
+
+Small backend refinement found while designing the remote-overlay
+frontend panel: `GET /api/remote-overlay/{domain}/{slug}/status`
+originally reported only `enabled: bool`, with no way for an operator
+to ever see an already-enabled overlay's own URL again short of
+rotating it (which would invalidate it). That is inconsistent with
+the local `publicSlug` URL's own always-visible pattern
+(`OverlayUrlPanel` on the frontend already shows it persistently, not
+once) and would have forced an unnecessary rotation just to re-copy a
+URL into OBS a second time.
+
+`remoteOverlayStatusResponse` gained a `URL` field, populated only
+while `Enabled` is true, sourced from the same `Get`/
+`remoteOverlayURL` the enable/rotate handlers already use. This is
+the *current* capability only - never a historical or rotated-away
+token, which is what the original governing task's "status never
+returns hidden historical tokens" actually meant to prohibit, not a
+ban on showing the live one. The response header gains `Cache-
+Control: no-store` whenever it carries a URL, matching provision/
+rotate's own existing discipline.
+
+New test: `TestRemoteOverlayManagementStatusReturnsTheCurrentURLOnceEnabled`
+- also asserts the no-store header. The existing disabled-by-default
+test now additionally asserts `URL` is empty in that state.
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go test
+./internal/httpapi/...`: all pass (22.6s), including every other
+pre-existing test in the package unmodified.
+
+### Commits (chronological, this milestone)
+16. This entry - `fix(server): return the current remote overlay URL
+    from status`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
