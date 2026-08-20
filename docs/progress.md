@@ -38359,3 +38359,97 @@ pre-existing test unmodified.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add the remote-overlay capability management API
+
+Eighth product-code commit: the authenticated management surface for
+issuing/rotating/revoking a profile's remote capability
+(docs/remote-ingest.md §8/§12), the piece every prior commit in this
+stage deliberately left as "only reachable by calling the repository
+directly, as the tests do."
+
+### What changed
+- `internal/httpapi/remote_overlay_management.go` (new file): one
+  shared, domain-parameterized route set -
+  `GET /api/remote-overlay/{domain}/{slug}/status`,
+  `POST .../enable`, `POST .../rotate`, `POST .../disable` - never
+  four parallel per-domain route sets. Lives entirely under `/api/`,
+  never `/api/public/*`, so the existing `withRemoteManagementSecurity`
+  deny-by-default middleware already protects every route with
+  session/CSRF/Origin checks; nothing here adds a second, redundant
+  check.
+- `RemoteOverlayOwners`: validates that `{domain}/{slug}` names a
+  real, existing profile before `enable`/`rotate`/`status` act on it -
+  the shared capability repository itself accepts any `(domain,
+  local_slug)` tuple, so this is the check that stops it becoming an
+  orphan-capability factory for a fabricated slug. Each domain's own
+  branch mirrors the exact "any error means not found" convention its
+  corresponding public `resolvePublic*` helper already uses, so this
+  check and the public routes can never disagree about what "exists"
+  means. Audio has no per-id lookup (one global profile) - its branch
+  reuses the same `CurrentPublicSlug() == slug` comparison every
+  public audio handler already does.
+- `remoteOverlayRoutePrefix`: the real, existing frontend Browser
+  Source routes read directly from `apps/web/src/App.tsx`
+  (`/overlay/chat/:publicSlug`, `/overlay/alerts/:publicSlug`,
+  `/overlay/audio/:publicSlug`, `/overlay/widgets/:publicSlug`) -
+  never invented. The embedded SPA route passes whatever value is in
+  the URL straight through to the matching `/api/public/*` call, so a
+  capability token works at the frontend routing layer identically to
+  a local `publicSlug` - **no frontend routing change was required**
+  to make remote overlay URLs actually load.
+- `remoteOverlayURL` builds the full remote Browser Source URL only
+  from the validated configured overlay origin (never a caller-
+  supplied value, never derived from a request's `Host`/
+  `X-Forwarded-Host`), the domain's real route prefix, and the freshly
+  issued token.
+- `enable`/`rotate` responses carry `Cache-Control: no-store` (the
+  URL contains a live capability). `rotate` reuses the exact same
+  underlying `Issue` call as `enable` - `Issue` itself already
+  atomically replaces any previous token (the capability repository's
+  own documented contract), mirroring
+  `internal/remoteingest.Manager`'s own `Provision`/`Rotate` sharing
+  one `generateAndApply` for the identical reason.
+- `internal/httpapi/router.go`: new `Options.RemoteOverlayCapabilities`/
+  `RemoteOverlayOwners`/`RemoteOverlayCanonicalOrigin` fields, wired
+  into `NewRouter`'s route registration with the same nil-means-not-
+  registered convention as every other optional route group.
+- `cmd/server/main.go`: wires the already-constructed
+  `remoteOverlayCapabilities` repository and a `RemoteOverlayOwners`
+  built from the four existing domain services
+  (`chatOverlayProfileService`/`alertsManager`/`audioManager`/
+  `goalsDomainService`) into the router.
+
+### New tests (`internal/httpapi/remote_overlay_management_test.go`)
+Status reflects disabled-by-default and reports `Available` correctly;
+enable returns a URL whose own token actually resolves through the
+public routes (proving the returned URL and the issued capability are
+the same value, not independently computed); enable rejects a
+fabricated local slug (404) and an unrecognized domain (400); rotate
+returns a new URL and immediately invalidates the old token; disable
+revokes and is reflected by a subsequent status call; wrong method is
+405; the whole route group is absent when `RemoteOverlayCapabilities`
+is nil; enable fails closed with `409` when no overlay origin is
+configured (a defensive path, exercised directly since real config
+validation would never reach the router in that exact combination).
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go fmt ./...`: clean.
+`go test ./internal/httpapi/...`: all pass (21.8s), including every
+pre-existing test in the package unmodified.
+
+### What this commit does not do yet
+Only the chat-overlay domain has a dedicated management-API test
+(sufficient to prove the shared handler's own contract; the other
+three domains' owner-existence branches are simpler and already unit-
+adjacent-covered by their own public-route resolution tests). No
+frontend UI calls this API yet. No `Caddyfile.self-hosted`. No native
+CI network-namespace/RTMPS integration test.
+
+### Commits (chronological, this milestone)
+12. This entry - `feat(server): add the remote-overlay capability
+    management API`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

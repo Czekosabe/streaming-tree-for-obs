@@ -219,6 +219,23 @@ type Options struct {
 	// the token as a local slug.
 	RemoteOverlayResolver RemoteOverlayResolver
 
+	// RemoteOverlayCapabilities serves the authenticated management
+	// API for issuing/rotating/revoking a profile's remote capability
+	// (/api/remote-overlay/{domain}/{slug}/*). When nil, those routes
+	// are not registered - the same nil-means-not-registered
+	// convention as every other optional route group.
+	RemoteOverlayCapabilities RemoteOverlayCapabilities
+	// RemoteOverlayOwners validates that a {domain}/{slug} pair names
+	// a real, existing profile before the management API issues or
+	// checks a capability for it - required whenever
+	// RemoteOverlayCapabilities is non-nil.
+	RemoteOverlayOwners RemoteOverlayOwners
+	// RemoteOverlayCanonicalOrigin is the validated
+	// "scheme://host[:port]" overlay origin the management API embeds
+	// into every remote Browser Source URL it returns - never a value
+	// derived from an incoming request.
+	RemoteOverlayCanonicalOrigin string
+
 	// RemoteIngest serves the Stage 20D2C remote-ingest credential-
 	// management API (/api/remote-ingest/*, docs/remote-ingest.md §8).
 	// When nil (every build unless --remote-ingest is active), those
@@ -263,6 +280,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.RemoteIngest != nil {
 		registerRemoteIngestRoutes(mux, logger, opts.RemoteIngest, opts.RemoteIngestRTMPSAddress, opts.RemoteIngestPath)
+	}
+
+	if opts.RemoteOverlayCapabilities != nil {
+		registerRemoteOverlayManagementRoutes(mux, logger, opts.RemoteOverlayCapabilities, opts.RemoteOverlayOwners, opts.RemoteOverlayCanonicalOrigin)
 	}
 
 	if opts.FFmpegRuntime != nil {

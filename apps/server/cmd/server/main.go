@@ -1107,6 +1107,19 @@ func run() error {
 		RemoteOverlay:         remoteOverlayOptions,
 		RemoteOverlayResolver: remoteOverlayCapabilities,
 
+		// docs/remote-ingest.md §12: the management API is registered
+		// whenever a remote overlay origin is configured, independent
+		// of whether remote ingest itself is enabled - an operator may
+		// want remote overlays without remote RTMPS publishing.
+		RemoteOverlayCapabilities: remoteOverlayCapabilities,
+		RemoteOverlayOwners: httpapi.RemoteOverlayOwners{
+			ChatOverlays: chatOverlayProfileService,
+			Alerts:       alertsManager,
+			Audio:        audioManager,
+			Widgets:      goalsDomainService,
+		},
+		RemoteOverlayCanonicalOrigin: remoteOverlayOptions.CanonicalOrigin,
+
 		RemoteIngest:             remoteIngestService,
 		RemoteIngestRTMPSAddress: cfg.RemoteIngest.RTMPSAddress,
 		RemoteIngestPath:         cfg.MediaMTX.IngestPath,
