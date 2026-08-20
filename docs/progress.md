@@ -36794,3 +36794,78 @@ unit-test reproduction now passes.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: record Stage 20D2B final CI evidence
+
+### Final CI evidence for the fix commit
+Commit `d478c11` (`fix(server): recognize the remote-management origin
+in the pre-existing local-action check`) is the final commit changing
+any Stage 20D2B product/test/workflow code this milestone. Its own CI
+results, checked directly after a session interruption and resumption:
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| `cross-platform.yml` | `32293899491` | success, all 6 jobs |
+| `macos-package.yml` | `32293899518` | success, both architectures |
+| `linux-headless.yml` | `32293899461` | **success, both architectures** - the dedicated remote-management verification (`scripts/verify-linux-remote-management.mjs`) passed end-to-end through the real ephemeral-TLS proxy, including the exact shutdown scenario the immediately preceding commit's own run had failed on |
+| `linux-package.yml` | `32293899561` | **cancelled** - queued at `19:35:50Z`, still queued 6 hours later during this session's own interruption/resumption gap, then cancelled by GitHub without ever starting - not a failure, and not caused by a superseding commit (`d478c11` remains the current `HEAD`/`origin/main`, confirmed via `git fetch` and the run's own `head_sha` field) |
+
+Per `docs/ci-reliability.md`'s own established distinction, `cancelled`
+is not evidence of a code defect. This specific gap is recorded
+honestly rather than worked around: `linux-package.yml` does not
+exercise the `internal/httpapi` origin-check code this commit actually
+changed (it verifies the general Linux desktop `.deb` build/install/
+Secret-Service contract, unrelated to the remote-management HTTP
+routes); the immediately preceding commit (`178614a`, sharing the same
+`apps/server` package-relevant surface for build/install purposes) has
+its own clean, successful `linux-package.yml` run
+(`32291463378`) already on record. No artificial commit was created to
+force a fresh run, and no manual `workflow_dispatch` was possible (no
+`gh`/token in this environment, confirmed).
+
+### The real bug-fix cycle this milestone's own native CI drove
+Recorded here as the clearest evidence the new
+`scripts/verify-linux-remote-management.mjs` mechanism (and its
+accompanying diagnostic-capture step) did real, load-bearing work,
+not merely pass trivially:
+
+1. `083f24c` (script's first real run): failed on both architectures,
+   no diagnostic detail recoverable.
+2. `b311762`: added `::error::`-annotation diagnostic capture (no
+   product change).
+3. `178614a`/`d478c11` runs of the now-instrumented script: the exact
+   failing assertion (`24. Authenticated remote shutdown with valid
+   session+CSRF+Origin succeeds`, `403 origin_not_allowed`) was
+   recovered from a public annotation, without any authenticated log
+   access.
+4. Root cause found by direct source reading: `POST /api/system/
+   shutdown`'s own pre-existing `checkLocalActionOrigin` check
+   (predating Stage 20D2B) validated against the old local dev-server
+   `AllowedOrigins` list, entirely independent of the new
+   `withRemoteManagementSecurity` middleware's own (correctly passing)
+   check.
+5. Fixed in `d478c11` by extending the allowlist passed to both
+   `registerShutdownRoute` and `registerUpdaterRoutes` with the
+   configured remote-management external origin when enabled.
+6. Confirmed resolved by the very next `linux-headless.yml` run
+   (`32293899461`), green on both architectures.
+
+A genuine gap in this milestone's own Go unit-test coverage was found
+and closed alongside the fix (`TestProtectedUnsafeMethodValidRequestSucceeds`
+previously used a router with no real `Shutdown` handler wired, so it
+could never have caught this bug regardless of what it asserted) -
+recorded honestly as a real testing-discipline lesson, not glossed
+over.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: record Stage 20D2B final CI evidence`
+
+### Continuous-execution rule compliance
+This entry was written after a session interruption (the process
+hosting the prior turn exited while background CI-monitoring tasks
+were still in flight, confirmed via the harness's own orphaned-task
+notification) - on resumption, real state was re-verified directly
+(`git status`/`git fetch`/the GitHub Actions API) rather than assumed
+from the pre-interruption summary, per this project's own established
+"never trust a prior session's own account without re-verification"
+discipline. No AskUserQuestion call was made.
