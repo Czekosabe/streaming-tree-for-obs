@@ -84,12 +84,12 @@ TikTok LIVE support (feasibility-gated — see
 [`docs/provider-integrations/tiktok-live.md`](docs/provider-integrations/tiktok-live.md)),
 additional external donation-service connectors (Streamlabs,
 Ko-fi — both feasibility-gated, stage 16B), and Stage 20's remaining
-work (20C2's macOS signing/notarization/updater handoff, 20D2B/20D2C's
-remote management and OBS ingest, and 20E's final hardening — Stage
-20A's own Windows production runtime/installer, 20B's application
-updater, 20C1's unsigned macOS packaged runtime, 20D1's unsigned Linux
-`.deb` package, and 20D2A's Linux headless service foundation are
-already complete, see
+work (20C2's macOS signing/notarization/updater handoff, 20D2C's
+remote OBS ingest, and 20E's final hardening — Stage 20A's own Windows
+production runtime/installer, 20B's application updater, 20C1's
+unsigned macOS packaged runtime, 20D1's unsigned Linux `.deb` package,
+20D2A's Linux headless service foundation, and 20D2B's remote
+management/control plane are already complete, see
 [`docs/windows-packaging.md`](docs/windows-packaging.md),
 [`docs/updater.md`](docs/updater.md),
 [`docs/macos-packaging.md`](docs/macos-packaging.md), and
@@ -226,12 +226,12 @@ engagement piece above in order (stages 8A through 18B).
 > operator chat, outbound chat, alert engine, visual-design/template/
 > package engine, shared audio/TTS runtime, and persistent
 > goals/supporter-widgets foundation — Stage 20's remaining work
-> (20C2's macOS signing/notarization/updater handoff, 20D2B/20D2C's
-> remote management and OBS ingest, and 20E's final hardening; Stage
-> 20A's own Windows production runtime/installer, 20B's application
-> updater, 20C1's unsigned macOS packaged runtime, 20D1's unsigned
-> Linux `.deb` package, and 20D2A's Linux headless service foundation
-> are already complete) — is still
+> (20C2's macOS signing/notarization/updater handoff, 20D2C's remote
+> OBS ingest, and 20E's final hardening; Stage 20A's own Windows
+> production runtime/installer, 20B's application updater, 20C1's
+> unsigned macOS packaged runtime, 20D1's unsigned Linux `.deb`
+> package, 20D2A's Linux headless service foundation, and 20D2B's
+> remote management/control plane are already complete) — is still
 > **planned**. Whatever remains a placeholder is marked with a
 > **Demo** badge — the full list is in
 > [What is currently demo-only](#what-is-currently-demo-only).
@@ -311,7 +311,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 20C2 | macOS Developer ID signing, hardened runtime, notarization/stapling, updater install handoff, and public/Beta readiness, see [macos-packaging.md](docs/macos-packaging.md) | Planned — externally gated on real Apple Developer credentials |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` package for the Debian/Ubuntu family, native x64/ARM64 CI package verification, see [linux-desktop-packaging.md](docs/linux-desktop-packaging.md) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage, see [linux-headless-server.md](docs/linux-headless-server.md) | **Completed** |
-| 20D2B | Secure remote management/control plane: single-administrator authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, no remote overlay/ingest exposure yet, see [remote-management.md](docs/remote-management.md) | **In progress** |
+| 20D2B | Secure remote management/control plane: single-administrator authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, no remote overlay/ingest exposure yet, see [remote-management.md](docs/remote-management.md) | **Completed** |
 | 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation | Planned |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 
@@ -371,19 +371,26 @@ version:
   same honest limitation as macOS. No operator-owned physical Linux
   desktop manual test was performed.
 - **Linux (headless/self-hosted server)** — Stage 20D2A (**Completed**,
-  see [`docs/linux-headless-server.md`](docs/linux-headless-server.md)):
-  a real, explicit `--headless` mode with a real systemd unit
-  (`DynamicUser`, hardened, unattended `SIGTERM`-graceful restart) and
-  a real AES-256-GCM-encrypted secret store for deployments with no
-  desktop D-Bus session - but **still not remote**. The management API
-  and local MediaMTX RTMP listener remain exactly as loopback-only as
-  every other mode, and headless mode's own startup validation now
-  actively **rejects** a non-loopback management bind (`0.0.0.0`, `::`,
-  a LAN address) rather than merely documenting the restriction;
-  **do not expose port 8080 (or MediaMTX's RTMP/API ports) to a LAN or
-  the public internet** — remote access requires Stage 20D2B
-  (authentication/TLS/remote-safe control plane) and 20D2C (remote OBS
-  ingest), neither of which exists yet.
+  see [`docs/linux-headless-server.md`](docs/linux-headless-server.md))
+  and Stage 20D2B (**Completed**, see
+  [`docs/remote-management.md`](docs/remote-management.md)): a real,
+  explicit `--headless` mode with a real systemd unit (`DynamicUser`,
+  hardened, unattended `SIGTERM`-graceful restart) and a real
+  AES-256-GCM-encrypted secret store for deployments with no desktop
+  D-Bus session, plus an explicit, opt-in `--remote-management` mode -
+  single-administrator Argon2id authentication, opaque server-side
+  sessions with a `__Host-` cookie, CSRF, a strict canonical-Origin and
+  forwarded-header contract, and login rate limiting, all reachable
+  only through an operator-supplied same-host HTTPS reverse proxy. The
+  backend's own listener remains loopback-only in every mode - it never
+  binds beyond `127.0.0.1`/`::1` itself, and headless mode's own
+  startup validation actively **rejects** a non-loopback management
+  bind (`0.0.0.0`, `::`, a LAN address) rather than merely documenting
+  the restriction; **do not expose port 8080 (or MediaMTX's RTMP/API
+  ports) directly to a LAN or the public internet** — remote
+  reachability is always mediated by your own reverse proxy, terminating
+  TLS, never by this application opening a port itself. Remote overlay
+  exposure and remote OBS ingest remain out of scope until Stage 20D2C.
 
 ---
 

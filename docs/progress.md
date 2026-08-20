@@ -36869,3 +36869,33 @@ notification) - on resumption, real state was re-verified directly
 from the pre-interruption summary, per this project's own established
 "never trust a prior session's own account without re-verification"
 discipline. No AskUserQuestion call was made.
+
+## docs: flip Stage 20D2B status markers to Completed
+
+### What changed
+With the real CI evidence recorded in the previous entry in hand,
+Stage 20D2B's "In progress" status markers are flipped to "Completed"
+in `docs/platform-support.md` (§9's own status line, the roadmap
+table's 20D2B row, and the closing summary sentence),
+`docs/project-overview.md` (roadmap table), and `README.md` (roadmap
+table, both narrative "Stage 20's remaining work" mentions moved
+20D2B out of the remaining-work list into the already-complete list,
+and the headless-mode "remote access requires Stage 20D2B... neither
+of which exists yet" passage rewritten to describe the real, completed
+20D2B contract - single-administrator authentication, sessions, CSRF,
+the forwarded-header contract, rate limiting - while still stating
+plainly that remote overlay exposure and remote OBS ingest remain
+Stage 20D2C's own, still-untouched scope).
+
+This status-marker flip is deliberately its own commit, isolated from
+the CI-evidence entry before it and the final closing journal entry
+after it, per this project's own established discipline (first
+codified during the Stage 20D1 corrective audit, reapplied at every
+milestone boundary since).
+
+### Commits (chronological, this entry)
+1. This entry - `docs: flip Stage 20D2B status markers to Completed`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -387,7 +387,7 @@ degrading or pretending a provider exists.
 
 ## 9. Linux headless / self-hosted server mode
 
-**Status: Stage 20D2A Completed, Stage 20D2B In progress** (see
+**Status: Stage 20D2A Completed, Stage 20D2B Completed** (see
 [linux-headless-server.md](linux-headless-server.md) for the 20D2A
 contract and [remote-management.md](remote-management.md) for the
 20D2B contract) **- the backend HTTP listener remains loopback-only in
@@ -621,15 +621,15 @@ desktop-packaging.md §22) produces
 | 20D | Linux platform support, split into: | Incomplete |
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (§9, §11, see [linux-headless-server.md](linux-headless-server.md)) | **Completed** |
-| 20D2B | Secure remote management/control plane: single-administrator authentication, opaque sessions, CSRF, strict Origin/forwarded-header contract, login rate limiting, remote-safe shutdown - no remote overlay/ingest exposure yet (§9, see [remote-management.md](remote-management.md)) | **In progress** |
+| 20D2B | Secure remote management/control plane: single-administrator authentication, opaque sessions, CSRF, strict Origin/forwarded-header contract, login rate limiting, remote-safe shutdown - no remote overlay/ingest exposure yet (§9, see [remote-management.md](remote-management.md)) | **Completed** |
 | 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation (§10) | Planned |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
-Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, 20D1, and
-20D2A are Completed; 20D2B is In progress; 20C2, 20D2C, and 20E remain
-Planned. 20C2 is externally gated on real Apple Developer signing/
-notarization credentials this project does not have - it is not
-blocked on any further engineering decision.
+Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, 20D1,
+20D2A, and 20D2B are Completed; 20C2, 20D2C, and 20E remain Planned.
+20C2 is externally gated on real Apple Developer signing/notarization
+credentials this project does not have - it is not blocked on any
+further engineering decision.
 
 ## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)
 
