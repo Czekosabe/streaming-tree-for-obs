@@ -603,6 +603,15 @@ async function main() {
     serverHandle = await startServer(dataDir, credentialsDir);
     expect(serverHandle.ready, 'the server became healthy', serverHandle.hasExited() ? `exited with code ${serverHandle.exitCode}\n${serverHandle.getStderr()}` : 'timed out');
 
+    // An "internal_error" HTTP response body is deliberately sanitized
+    // (apps/server/internal/httpapi/remoteingest.go's writeRemoteIngestError)
+    // - the real Go error only ever reaches the server's own log, via
+    // slog. Appending a recent stderr tail here is what makes a real
+    // backend failure in one of these assertions diagnosable from the
+    // CI annotation alone, instead of just "internal_error" with no
+    // further detail.
+    const withServerDiag = (text) => `${text}\n--- recent server stderr (tail) ---\n${serverHandle.getStderr().slice(-2000)}`;
+
     step('Start the management and overlay TLS proxy stand-ins on the host-side veth address');
     manageProxy = await startManagementProxy(pki.leaves[MANAGE_HOST]);
     overlayProxy = await startOverlayProxy(pki.leaves[OVERLAY_HOST]);
@@ -618,7 +627,7 @@ async function main() {
       headers: { Origin: MANAGE_ORIGIN },
       cookieJar,
     });
-    expect(loginRes.status === 200, 'POST /api/auth/login succeeds through the real proxy from the isolated namespace', loginRes.text);
+    expect(loginRes.status === 200, 'POST /api/auth/login succeeds through the real proxy from the isolated namespace', loginRes.status === 200 ? loginRes.text : withServerDiag(loginRes.text));
     const csrfToken = loginRes.body && loginRes.body.csrfToken;
     expect(typeof csrfToken === 'string' && csrfToken.length > 0, 'login response carries a CSRF token', loginRes.text);
 
@@ -628,7 +637,7 @@ async function main() {
       cookieJar,
       csrfToken,
     });
-    expect(provisionRes.status === 200, 'POST /api/remote-ingest/provision succeeds', provisionRes.text);
+    expect(provisionRes.status === 200, 'POST /api/remote-ingest/provision succeeds', provisionRes.status === 200 ? provisionRes.text : withServerDiag(provisionRes.text));
     const publisherSecret = provisionRes.body && provisionRes.body.secret;
     expect(typeof publisherSecret === 'string' && publisherSecret.length > 0, 'a plaintext publisher secret was returned exactly once', '');
 
@@ -662,7 +671,7 @@ async function main() {
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
-    expect(before.body && before.body.receiving === false, 'ingest status is waiting before any publish', before.text);
+    expect(before.body && before.body.receiving === false, 'ingest status is waiting before any publish', before.status === 200 ? before.text : withServerDiag(before.text));
 
     // Spawned (not spawnSync) specifically so this script can observe
     // the mid-stream "receiving" state, not merely the exit code once
@@ -680,7 +689,7 @@ async function main() {
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
     const during = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
-    expect(during.body && during.body.receiving === true, 'ingest status becomes receiving while the publish is active', during.text);
+    expect(during.body && during.body.receiving === true, 'ingest status becomes receiving while the publish is active', during.status === 200 ? during.text : withServerDiag(during.text));
 
     const publishDeadline = Date.now() + 20_000;
     while (!publishExited && Date.now() < publishDeadline) {
@@ -691,7 +700,7 @@ async function main() {
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
     const after = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
-    expect(after.body && after.body.receiving === false, 'ingest status returns to waiting after the publisher disconnects', after.text);
+    expect(after.body && after.body.receiving === false, 'ingest status returns to waiting after the publisher disconnects', after.status === 200 ? after.text : withServerDiag(after.text));
 
     step('MediaMTX exposes the plaintext RTMP listener only on loopback - branch reads are unaffected by remote ingest');
     expect(
@@ -713,7 +722,7 @@ async function main() {
     // request. The request still succeeds/fails on its own merits
     // (unknown slug), proving the overlay origin never required or
     // consumed the management cookie at all.
-    expect(overlayWithManagementCookie.status === 200, 'the overlay origin answers without the management cookie (never required)', overlayWithManagementCookie.text);
+    expect(overlayWithManagementCookie.status === 200, 'the overlay origin answers without the management cookie (never required)', overlayWithManagementCookie.status === 200 ? overlayWithManagementCookie.text : withServerDiag(overlayWithManagementCookie.text));
 
     console.log(`\nAll ${stepCount} steps passed.`);
   } finally {

@@ -39247,8 +39247,57 @@ first run expected to reach past step 10 and show either a genuine
 pass or the next real failure with full evidence.
 
 ### Commits (chronological, this milestone)
-25. This entry - `ci: remove the now-obsolete verbose diagnostic
-    probe, widen the tail further`
+25. `ci: remove the now-obsolete verbose diagnostic probe, widen the
+    tail further`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 13:50 — ci: surface the real server-side error behind remote-ingest provisioning's 500
+
+### Real CI result: past the deadlock, into a genuine backend failure
+Commit `dd4208d` was checked. Steps 01-10 now pass cleanly on
+linux-amd64 - the deadlock fix holds, login and CSRF now genuinely
+work end to end through the real cross-namespace TLS proxy. A new
+failure at step 11:
+
+```
+[11] FAIL POST /api/remote-ingest/provision succeeds
+     {"error":"internal_error","message":"The server encountered an
+     unexpected error."}
+```
+
+This is the first failure in this whole investigation that is not a
+test-harness bug - it is the real backend responding with a genuine
+500 to the real provisioning request, the first time this endpoint
+has ever been exercised through a real end-to-end path (real MediaMTX
+process, real config reload, real credential store) rather than a
+unit test. The response body is deliberately sanitized by design
+(`apps/server/internal/httpapi/remoteingest.go`'s
+`writeRemoteIngestError`) - client-facing responses never carry
+`err.Error()`, only a generic envelope. The real cause only reaches
+the server's own `slog` output (`logger.Error("unhandled remote
+ingest error", ...)`), which this script was not capturing into the
+failure detail for any of its backend-facing assertions.
+
+### Fix (diagnostic instrumentation, not yet a guessed root-cause fix)
+Added `withServerDiag()`, appending a tail of the real server
+process's own captured stderr (already available via
+`serverHandle.getStderr()`, previously only used for the server's own
+startup-health assertion) to every backend-facing assertion's failure
+detail: login, provision, all three ingest-status polls, and the
+cookie-separation request. The next CI run's annotation will carry the
+real Go error/log line behind whatever this failure turns out to be,
+instead of just the sanitized client-facing envelope.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+26. This entry - `ci: surface the real server-side error behind
+    remote-ingest provisioning's 500`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
