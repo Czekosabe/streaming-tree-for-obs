@@ -203,6 +203,13 @@ type Options struct {
 	// withRemoteManagementSecurity's own doc comment.
 	RemoteManagement RemoteManagementOptions
 
+	// RemoteOverlay carries the Stage 20D2C backend defense-in-depth
+	// for the remote overlay origin (docs/remote-ingest.md §11). When
+	// RemoteOverlay.Enabled is false (every build unless an overlay
+	// origin is explicitly configured), the middleware is a no-op -
+	// see withRemoteOverlaySecurity's own doc comment.
+	RemoteOverlay RemoteOverlayOptions
+
 	// RemoteIngest serves the Stage 20D2C remote-ingest credential-
 	// management API (/api/remote-ingest/*, docs/remote-ingest.md §8).
 	// When nil (every build unless --remote-ingest is active), those
@@ -388,6 +395,7 @@ func NewRouter(opts Options) http.Handler {
 		withCORS(opts.AllowedOrigins),
 		withManagementSecurityHeaders(opts.RemoteManagement),
 		withRemoteManagementSecurity(logger, opts.RemoteManagement),
+		withRemoteOverlaySecurity(logger, opts.RemoteOverlay),
 	)
 }
 

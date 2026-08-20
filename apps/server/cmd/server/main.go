@@ -370,6 +370,7 @@ func run() error {
 	// without the other), but it still requires remote management to
 	// be enabled - it is validated against, and must differ in
 	// hostname from, the management origin.
+	var remoteOverlayOptions httpapi.RemoteOverlayOptions
 	if cfg.RemoteIngest.OverlayOrigin != "" {
 		if !remoteManagementEnabled {
 			return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN requires --remote-management (docs/remote-ingest.md §10)")
@@ -377,6 +378,16 @@ func run() error {
 		if err := config.ValidateRemoteOverlayOrigin(cfg.RemoteIngest.OverlayOrigin, remoteManagementOrigin); err != nil {
 			return err
 		}
+		remoteOverlayOptions = httpapi.RemoteOverlayOptions{
+			Enabled: true,
+			// CanonicalRemoteManagementOrigin is a generic
+			// "scheme://host[:port]" normalizer despite its name - the
+			// exact form withRemoteOverlaySecurity's own forwarded-host
+			// comparison needs, the same normalization the management
+			// origin already uses for the same purpose.
+			CanonicalOrigin: config.CanonicalRemoteManagementOrigin(cfg.RemoteIngest.OverlayOrigin),
+		}
+		logger.Info("remote overlay origin configured", slog.String("overlay_origin", remoteOverlayOptions.CanonicalOrigin))
 	}
 
 	// Packaged mode only (docs/windows-packaging.md §9): a second launch
@@ -1086,6 +1097,7 @@ func run() error {
 		Updater:     updateManager,
 
 		RemoteManagement: remoteManagementOptions,
+		RemoteOverlay:    remoteOverlayOptions,
 
 		RemoteIngest:             remoteIngestService,
 		RemoteIngestRTMPSAddress: cfg.RemoteIngest.RTMPSAddress,

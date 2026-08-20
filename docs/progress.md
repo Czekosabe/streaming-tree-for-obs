@@ -38054,3 +38054,75 @@ test.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add backend defense-in-depth for the remote overlay origin
+
+Fifth product-code commit: `docs/remote-ingest.md` §11 - the second,
+independent boundary behind the reverse-proxy's own overlay/management
+origin split, so the proxy configuration is never the only thing
+enforcing that boundary (PRE-20D2C's own core lesson, reapplied
+deliberately rather than assumed to only matter once).
+
+### What changed
+- `internal/httpapi/remote_overlay.go` (new file):
+  `RemoteOverlayOptions` (`Enabled`, `CanonicalOrigin`);
+  `isOverlaySurfacePath` mirrors the hardened Caddy exclusion matcher
+  exactly (`/overlay`, `/overlay/*`, `/api/public`, `/api/public/*` -
+  the same four patterns from the matcher-gap fix two commits ago, so
+  the backend's own idea of "the local-only public-overlay surface"
+  cannot silently drift from the reverse-proxy configuration's own
+  idea of it); `withRemoteOverlaySecurity` - a direct loopback request
+  (no forwarding headers) to one of those paths is always unaffected
+  (the existing local Browser Source contract); a *forwarded* request
+  is accepted only when the forwarded scheme is exactly `https` and
+  the forwarded host exactly equals the configured overlay origin -
+  a forwarded *management* hostname is explicitly rejected the same
+  as any other unrecognized hostname (docs/remote-ingest.md §11's own
+  named case). Reuses `singleForwardedValue` from
+  `remote_management.go` unmodified rather than duplicating its
+  single-value/no-comma-list contract.
+- `internal/httpapi/router.go`: new `Options.RemoteOverlay` field,
+  wired into the middleware chain alongside
+  `withRemoteManagementSecurity` - the two middlewares are orthogonal
+  (management security's own `requiresAuthentication` already excludes
+  both `/api/public/*` and everything outside `/api/`, including
+  `/overlay/*`, so there is no ordering conflict between them).
+- `cmd/server/main.go`: constructs `httpapi.RemoteOverlayOptions` from
+  the already-validated `cfg.RemoteIngest.OverlayOrigin` (reusing
+  `config.CanonicalRemoteManagementOrigin` - a generic origin
+  normalizer despite its name) and threads it into the router.
+
+### New tests
+`internal/httpapi/remote_overlay_test.go`:
+`TestIsOverlaySurfacePathMatchesExactRootsAndDescendants` (explicitly
+covers both the exact-root and prefix forms, plus near-miss paths like
+`/api/public-assets` that share a text prefix but not the path
+segment); disabled-is-a-no-op; non-overlay paths are ignored even with
+hostile forwarded headers present; direct loopback is unaffected; the
+correctly-forwarded overlay origin is accepted on both surface path
+families; the forwarded management hostname is explicitly rejected;
+an unrecognized hostname is rejected; HTTP scheme is rejected; a
+non-loopback peer presenting forwarded headers is rejected; a
+repeated header and a single-header-present-of-two case are both
+rejected.
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go fmt ./...`: clean.
+`go test ./internal/httpapi/...`: all pass, including every
+pre-existing test in the package unmodified.
+
+### What this commit does not do yet
+No remote capability tokens (docs/remote-ingest.md §12) - the overlay
+origin's own second boundary now exists, but every `/api/public/*`
+route still accepts only the legacy local `publicSlug`, so a remote
+overlay is not yet actually usable end-to-end. No frontend UI. No
+`Caddyfile.self-hosted`. No CI network-namespace/RTMPS integration
+test.
+
+### Commits (chronological, this milestone)
+8. This entry - `feat(server): add backend defense-in-depth for the
+   remote overlay origin`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
