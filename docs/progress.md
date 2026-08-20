@@ -38532,3 +38532,71 @@ and were not re-run for this reason.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: disclose Stage 20D2C in PRIVACY.md and audit MediaMTX credential logging
+
+The last of this stage's own tracked-but-not-yet-made documentation
+obligations (`docs/remote-ingest.md` §16), plus the explicitly
+load-bearing MediaMTX credential-logging investigation the governing
+task required before this stage can be considered complete.
+
+### The load-bearing question, answered from primary sources
+RTMP authentication carries `user`/`pass` in the publish URL's query
+string (already confirmed, §1's own research). Does anything in this
+project's actual architecture ever log or expose that plaintext value?
+Verified directly against the pinned MediaMTX v1.19.3 tag's real
+source (`internal/servers/rtmp/conn.go`, `internal/auth/{error,
+manager,log_and_delay_error}.go`), not assumed:
+
+- MediaMTX's own logs (at `logLevel: info`, this project's own
+  configured level) never include the query string - the read path's
+  one connection log line uses only the path name; the publish path
+  has no equivalent line at all; every authentication-failure error
+  message is generic ("authentication failed"), never embedding the
+  attempted credential.
+- MediaMTX genuinely does carry the raw query string internally
+  (`c.query = c.rconn.URL.RawQuery`), feeding its own
+  `/v3/rtmpconns/list` Control API endpoint specifically - so a caller
+  of *that* endpoint would see the plaintext credential. This
+  project's own `internal/runtime/mediamtx/apiclient.go` never calls
+  it: only `/v3/config/global/get` and `/v3/paths/list`, deserialized
+  into narrow structs (`pathItem`/`pathSource`) with no field for a
+  connection's query string at all - Go's JSON decoder silently drops
+  any such field even if a future MediaMTX release added one.
+- Net conclusion: no code change was required to make this safe - the
+  existing, narrower Control API surface (chosen before this stage
+  existed, for unrelated reasons) already had this property. A
+  defensive comment was added to `APIClient` itself warning against
+  ever adding an `rtmpconns` call, or any endpoint that might surface
+  a connection's query string, without redacting it first.
+
+### What changed
+- `apps/server/internal/runtime/mediamtx/apiclient.go`: the guard
+  comment above, directly on the `APIClient` type.
+- `PRIVACY.md`: two new bullets under "Local application state",
+  mirroring the existing Stage 20D2A/20D2B disclosure style exactly -
+  the ingest credential's show-once/verifier-only lifecycle and that
+  MediaMTX/this application's own Control API usage never surfaces it,
+  RTMPS publisher source-IP visibility, and remote overlay URLs as
+  viewer-grade capabilities (possession = access until rotated/
+  revoked, scoped to exactly one overlay, never any management
+  capability). Confirmed the embedded `internal/webassets/legal/
+  PRIVACY.md` copy is a release-build-time artifact
+  (`scripts/build-release*.{ps1,sh}` copy the root file in during
+  packaging) already stale for Stage 20D2B too before this commit -
+  not something this commit needs to manually sync, and not a gap
+  introduced here.
+- `docs/remote-ingest.md` §16: marked both tracked obligations done in
+  place and recorded the full MediaMTX audit findings above.
+
+### Validation
+`go build ./...`: clean (the only Go change is a comment). No test
+behavior changed.
+
+### Commits (chronological, this milestone)
+14. This entry - `docs: disclose Stage 20D2C in PRIVACY.md and audit
+    MediaMTX credential logging`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -15,6 +15,19 @@ import (
 // The wire models below are internal to this package on purpose: they mirror
 // MediaMTX's schema, which changes between releases, and must never become the
 // public Streaming Tree API contract.
+//
+// docs/remote-ingest.md §29 (Stage 20D2C): MediaMTX v1.19.3's own
+// /v3/rtmpconns/list response carries each RTMP connection's raw query
+// string verbatim (internal/servers/rtmp/conn.go's own `c.query =
+// c.rconn.URL.RawQuery`, verified directly against the pinned tag's
+// source) - for a remote-ingest publisher, that query string is
+// exactly the `?user=...&pass=...` credential this stage's own
+// PublisherPassVerifier authenticates. This client deliberately never
+// calls that endpoint (only /v3/config/global/get and
+// /v3/paths/list, neither of which carries connection-level query
+// data) - do not add an rtmpconns call, or any other endpoint that
+// might surface a connection's query string, without first redacting
+// it before it is logged, stored, or returned from this package.
 type APIClient struct {
 	baseURL string
 	client  *http.Client

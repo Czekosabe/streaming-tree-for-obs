@@ -55,6 +55,32 @@ link**. It describes the application as it exists today; see
   goal/supporter widgets) are **local application routes**, served by your
   own backend for you to add as an OBS Browser Source. They are not hosted
   by a Streaming Tree for OBS cloud service.
+- A Linux instance additionally started with `--remote-ingest` (Stage
+  20D2C, see [docs/remote-ingest.md](docs/remote-ingest.md)) is opt-in
+  and requires `--remote-management`. The generated publisher credential
+  is shown to you exactly once, at the moment you provision or rotate
+  it; only its one-way SHA-256 verifier is stored afterward (the same
+  encrypted headless secret store described above), and it can never be
+  displayed again through any route - only rotated or revoked.
+  MediaMTX's own connection logs and Control API never record this
+  credential's plaintext value (verified directly against MediaMTX's
+  own source for the version this application pins), and this
+  application's own Control API client only ever reads path/config
+  status, never a connection's own credential-bearing query string.
+  Once you configure your own TLS certificate and separately expose the
+  RTMPS port you choose, the source IP address of whatever publishes to
+  it (normally your own OBS installation) becomes visible to this
+  application and to MediaMTX, the same way any server sees the IP of
+  whatever connects to it.
+- If you separately enable a remote overlay capability for a specific
+  overlay profile (Stage 20D2C), the resulting remote Browser Source URL
+  is a **capability**: anyone who has that URL can view that specific
+  overlay until you rotate or revoke it, the same "possession is the
+  capability" model this application's local overlay URLs already use,
+  now extended to a second, explicitly opt-in, wider-audience surface.
+  It grants no access beyond that one overlay's own public rendering
+  data - never your administrator session, never any other overlay,
+  never any management capability.
 
 ## Network activity you explicitly enable
 

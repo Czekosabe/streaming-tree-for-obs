@@ -670,22 +670,62 @@ this stage rather than designed exhaustively in this contract document -
 concretely landing it depends on the exact shape of the credential-management
 and MediaMTX-config code this document specifies, which does not exist yet.
 
-## 16. PRIVACY.md and docs/remote-management.md updates required
+## 16. PRIVACY.md, docs/remote-management.md, and MediaMTX credential-logging audit
 
-Not yet made - tracked here so the contract records the obligation before the
-implementation commits that fulfill it:
+**Status (implementation commit, 2026-08-20): done, both items.**
 
 - `PRIVACY.md`: disclose remote overlay URLs as viewer-grade capabilities
   (possession = access, until rotated/revoked); disclose that RTMPS
-  publisher source IPs are visible to the server/MediaMTX; disclose
-  authentication-failure logging for both the ingest credential and remote
-  overlay tokens (logged as failures only, never with the attempted secret
-  value).
-- `docs/remote-management.md`: correct the "different port, same cookie"
-  wording this document's own §10/§1 research shows was too broad if it
-  implied full web-Origin isolation; record the correction append-only in
-  `docs/progress.md` per that file's own discipline, without rewriting its
-  historical PRE-20D2C entry.
+  publisher source IPs are visible to the server/MediaMTX; disclose that
+  the generated ingest credential is shown once and stored only as a
+  verifier afterward. Done - see the two new bullets under "Local
+  application state."
+- `docs/remote-management.md`: corrected the "different port, same cookie"
+  wording this document's own §10/§1 research showed was too broad if it
+  implied full web-Origin isolation; the correction was recorded append-only
+  in `docs/progress.md` (the `fix(docs): harden the D2B Caddy exclusion
+  matcher and correct the cookie/origin wording` entry, earlier this stage),
+  without rewriting the historical PRE-20D2C entry.
+
+**MediaMTX credential-logging audit (primary source, 2026-08-20)** - the
+load-bearing question this section's own governing task raised: because
+RTMP authentication carries `user`/`pass` in the publish URL's query string
+(§1's own confirmed finding), does anything in this project's actual
+architecture ever log or expose that plaintext value? Verified directly
+against the pinned `v1.19.3` tag's real source, not assumed:
+
+- `internal/servers/rtmp/conn.go`: the read path logs `"is reading from
+  path '%s', %s"` using only `res.Path.Name()` - never the query string. The
+  publish path has no equivalent connection-established log line at all.
+  Connection-lifecycle logs (`"opened"`, `"closed: %v"`) never reference the
+  query string either.
+- `internal/auth/error.go` / `manager.go` / `log_and_delay_error.go`: every
+  authentication-failure error message is generic ("authentication failed",
+  "failed to authenticate: <wrapped>") - none embeds the attempted
+  username, password, or query string. `LogAndDelayError` logs only that
+  generic error text.
+- **The one place MediaMTX genuinely does carry the raw query string is its
+  own Control API**: `conn.go` sets `c.query = c.rconn.URL.RawQuery` on the
+  connection object, which feeds MediaMTX's own `/v3/rtmpconns/list`
+  endpoint - so a caller of *that specific endpoint* would see the
+  plaintext credential. This project's own `internal/runtime/mediamtx/
+  apiclient.go` never calls it: the client only ever calls
+  `/v3/config/global/get` and `/v3/paths/list`, and the narrow `pathSource`/
+  `pathItem` structs it deserializes into have no field for a connection's
+  query string at all - Go's JSON decoder silently drops any such field even
+  if a future MediaMTX release added it to that response. A defensive
+  comment was added directly on `APIClient` warning against ever adding an
+  `rtmpconns` call (or any endpoint that might surface a connection's query
+  string) without redacting it first.
+- Net conclusion, stated honestly rather than merely hoped: at `logLevel:
+  info` (this project's own configured level, unconditionally), MediaMTX
+  does not log the ingest credential anywhere in normal operation, and this
+  project's own Control API usage structurally cannot see it either. No
+  code change was required to achieve this - the existing, narrower
+  `apiclient.go` API surface (chosen before this stage existed, for
+  unrelated reasons) already had this property; this audit confirms it
+  rather than introduces it, and the new guard comment keeps it that way
+  going forward.
 
 ## 17. Final combined self-hosted acceptance criteria
 
