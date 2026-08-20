@@ -8,6 +8,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { Modal } from '@/components/ui/Modal';
+import { RemoteOverlayPanel } from '@/components/overlays/RemoteOverlayPanel';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
@@ -234,6 +235,7 @@ function ProfileEditor({
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftFromProfile(profile));
 
   return (
+    <>
     <Panel>
       <PanelHeader
         title={profile.name}
@@ -378,5 +380,7 @@ function ProfileEditor({
         />
       )}
     </Panel>
+    <RemoteOverlayPanel domain="alert-profile" localSlug={profile.publicSlug} />
+    </>
   );
 }

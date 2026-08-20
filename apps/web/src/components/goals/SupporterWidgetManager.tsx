@@ -16,6 +16,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { Modal } from '@/components/ui/Modal';
+import { RemoteOverlayPanel } from '@/components/overlays/RemoteOverlayPanel';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
@@ -451,6 +452,8 @@ function SupporterWidgetEditor({
           </div>
         </div>
       </Panel>
+
+      <RemoteOverlayPanel domain="widget" localSlug={profile.publicSlug} />
 
       <ConfirmDialog
         open={rotateConfirmOpen}

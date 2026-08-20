@@ -6,6 +6,7 @@ import type { AudioSettings, AudioSettingsInput } from '@/api/audio-schemas';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
+import { RemoteOverlayPanel } from '@/components/overlays/RemoteOverlayPanel';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { TagInput } from '@/components/ui/TagInput';
@@ -484,6 +485,8 @@ export function AudioSettingsPanel() {
           </div>
         </PanelBody>
       </Panel>
+
+      <RemoteOverlayPanel domain="audio" localSlug={settings.publicSlug} />
 
       <ConfirmDialog
         open={rotateConfirmOpen}

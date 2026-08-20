@@ -36,6 +36,24 @@
     "rotateConfirmAction": "Wygeneruj nowy adres URL",
     "rotated": "Adres URL został wygenerowany na nowo. Zaktualizuj Browser Source w OBS nowym adresem."
   },
+  "remote": {
+    "title": "Dostęp zdalny",
+    "description": "Umożliw przeglądanie tej nakładki spoza własnej sieci, za pomocą osobnego, dedykowanego linku.",
+    "disabledHint": "Dostęp zdalny jest wyłączony. Działa wyłącznie lokalny adres URL Browser Source powyżej, i tylko w sieci tego komputera.",
+    "enableAction": "Włącz dostęp zdalny",
+    "enabledHint": "Każdy, kto ma ten link, może przeglądać tę nakładkę, dopóki go nie wygenerujesz na nowo lub nie wyłączysz. Traktuj go jak hasło.",
+    "copyAction": "Kopiuj adres URL",
+    "copied": "Skopiowano do schowka.",
+    "openAction": "Otwórz w nowej karcie",
+    "rotateAction": "Wygeneruj nowy adres URL",
+    "rotateConfirmTitle": "Wygenerować nowy zdalny adres URL?",
+    "rotateConfirmBody": "Bieżący zdalny adres URL natychmiast przestanie działać. Trzeba będzie go zaktualizować wszędzie tam, gdzie jest używany. Lokalny adres URL Browser Source nie zostanie zmieniony.",
+    "rotateConfirmAction": "Wygeneruj nowy adres URL",
+    "disableAction": "Wyłącz dostęp zdalny",
+    "disableConfirmTitle": "Wyłączyć dostęp zdalny?",
+    "disableConfirmBody": "Zdalny adres URL natychmiast przestanie działać. Lokalny adres URL Browser Source będzie działał jak wcześniej.",
+    "disableConfirmAction": "Wyłącz dostęp zdalny"
+  },
   "setup": {
     "title": "Konfiguracja Browser Source w OBS",
     "step1": "Uruchom backend i frontend.",

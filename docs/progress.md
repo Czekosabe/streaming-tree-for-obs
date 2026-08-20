@@ -38706,3 +38706,65 @@ pre-existing test in the package unmodified.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(web): add remote overlay controls to all five overlay management surfaces
+
+Second frontend commit: one shared, domain-parameterized
+`RemoteOverlayPanel`, wired into every existing overlay/profile
+management surface next to its own local Browser Source URL display -
+never a separate overlay-management application, per the governing
+task's own explicit instruction.
+
+### What changed
+- `api/remote-overlay-schemas.ts` / `api/remote-overlay.ts`: Zod
+  contracts (including the closed `RemoteOverlayDomain` enum matching
+  the backend's own four values) and fetch wrappers for
+  `/api/remote-overlay/{domain}/{slug}/{status,enable,rotate,disable}`.
+- `hooks/use-remote-overlay.ts`: React Query hooks, same 404-means-
+  unavailable retry policy as `use-remote-ingest.ts`.
+- `components/overlays/RemoteOverlayPanel.tsx`: one component taking
+  `domain`/`localSlug` props. Renders nothing when the feature is
+  unavailable (404) or still loading. When disabled, shows a hint and
+  an "Enable remote access" action. When enabled, shows the current
+  URL (now available thanks to the previous commit's status-endpoint
+  fix) with copy/open actions, an explicit "anyone with this link can
+  view this overlay... treat it like a password" hint, and rotate/
+  disable actions behind `ConfirmDialog`s whose body text explains the
+  old URL stops working immediately and the local Browser Source URL
+  is never affected.
+- Wired into all five existing surfaces, each with its own
+  `domain`/`localSlug` argument matching the backend's own classification:
+  `OverlayEditor.tsx` (`chat-overlay`), `alerts/ProfileManager.tsx`
+  (`alert-profile`), `audio/AudioSettingsPanel.tsx` (`audio`),
+  `goals/WidgetProfileManager.tsx` and `goals/SupporterWidgetManager.tsx`
+  (both `widget` - Stage 18A goal widgets and Stage 18B supporter/
+  activity/dashboard widgets are separate management components today
+  but share the same backend domain, so both got the same panel).
+- `i18n/resources/{en,pl}/overlays.json`: new `remote.*` keys under
+  the existing `overlays` namespace (English canonical + complete
+  Polish) - reused by all five surfaces, since every one of them
+  already imports this namespace for its own local-URL strings.
+
+### Validation
+`npm run i18n:check`: "2 languages (en, pl), 22 namespaces, no
+differences against en." `npm run typecheck`: clean. `npm run lint`:
+clean (the one pre-existing warning is in an unrelated file). `npm
+run test -- --run`: 104 test files, 1410 tests, all pass, including
+every pre-existing test for all five touched components unmodified.
+`npm run build`: succeeds (the existing single-bundle chunk-size
+warning is pre-existing and informational, consistent with what
+`docs/examples/Caddyfile.self-hosted` already documented about this
+project's build output).
+
+### What this commit does not do yet
+No native CI integration test exercises this UI. Frontend tests
+remain unit/component-level only, per the existing project
+convention.
+
+### Commits (chronological, this milestone)
+17. This entry - `feat(web): add remote overlay controls to all five
+    overlay management surfaces`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

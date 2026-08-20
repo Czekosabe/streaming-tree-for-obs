@@ -7,6 +7,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { Modal } from '@/components/ui/Modal';
+import { RemoteOverlayPanel } from '@/components/overlays/RemoteOverlayPanel';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { SelectInput } from '@/components/ui/SelectInput';
 import { TextInput } from '@/components/ui/TextInput';
@@ -189,6 +190,10 @@ function WidgetProfileRow({
         <Button size="sm" icon={<RefreshCw className="size-4" />} onClick={() => setRotateConfirmOpen(true)}>
           {t('widgets.rotateAction')}
         </Button>
+      </div>
+
+      <div className="mt-2">
+        <RemoteOverlayPanel domain="widget" localSlug={profile.publicSlug} />
       </div>
 
       {expanded && (

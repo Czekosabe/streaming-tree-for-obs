@@ -36,6 +36,24 @@
     "rotateConfirmAction": "Rotate URL",
     "rotated": "URL rotated. Update the Browser Source in OBS with the new URL."
   },
+  "remote": {
+    "title": "Remote access",
+    "description": "Let this overlay be viewed from outside your own network, using a separate, dedicated link.",
+    "disabledHint": "Remote access is off. Only the local Browser Source URL above works, and only on this machine's own network.",
+    "enableAction": "Enable remote access",
+    "enabledHint": "Anyone with this link can view this overlay until you rotate or disable it. Treat it like a password.",
+    "copyAction": "Copy URL",
+    "copied": "Copied to clipboard.",
+    "openAction": "Open in a new tab",
+    "rotateAction": "Rotate URL",
+    "rotateConfirmTitle": "Rotate the remote URL?",
+    "rotateConfirmBody": "The current remote URL stops working immediately. You'll need to update anywhere it's used. The local Browser Source URL is not affected.",
+    "rotateConfirmAction": "Rotate URL",
+    "disableAction": "Disable remote access",
+    "disableConfirmTitle": "Disable remote access?",
+    "disableConfirmBody": "The remote URL stops working immediately. The local Browser Source URL keeps working as before.",
+    "disableConfirmAction": "Disable remote access"
+  },
   "setup": {
     "title": "OBS Browser Source setup",
     "step1": "Start the backend and frontend.",

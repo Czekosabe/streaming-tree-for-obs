@@ -20,6 +20,7 @@ import { OverlayPreviewPanel } from './OverlayPreviewPanel';
 import { OverlaySettingsForm } from './OverlaySettingsForm';
 import { OverlaySetupPanel } from './OverlaySetupPanel';
 import { OverlayUrlPanel } from './OverlayUrlPanel';
+import { RemoteOverlayPanel } from './RemoteOverlayPanel';
 
 /**
  * The full editor for one overlay profile: identity (name/enabled), the
@@ -115,6 +116,7 @@ export function OverlayEditor({ overlayId }: { overlayId: string }) {
       </Panel>
 
       <OverlayUrlPanel overlayId={overlayId} publicSlug={profileQuery.data.publicSlug} />
+      <RemoteOverlayPanel domain="chat-overlay" localSlug={profileQuery.data.publicSlug} />
       <DesignerLinkBanner overlayId={overlayId} />
       <OverlayPreviewPanel draft={draft} />
 
