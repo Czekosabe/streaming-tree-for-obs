@@ -368,6 +368,40 @@ func TestRenderConfigRemoteIngestRestrictsTheLocalIdentityToLoopback(t *testing.
 	}
 }
 
+func TestRenderConfigRemoteIngestWithNoCredentialOmitsThePublisherEntry(t *testing.T) {
+	// First boot: --remote-ingest is enabled and TLS is configured, but
+	// the operator has not yet run provision. No authInternalUsers entry
+	// for the remote publisher may exist - an empty pass: on a named
+	// user is not a state this project relies on MediaMTX interpreting
+	// safely, so the entry is omitted entirely (nothing can publish)
+	// rather than emitted with an empty pass.
+	config := RenderConfig(ConfigOptions{
+		RTMPAddress: "127.0.0.1:1935",
+		APIAddress:  "127.0.0.1:9997",
+		IngestPath:  "live",
+		RemoteIngest: &RemoteIngestOptions{
+			RTMPSAddress:   "0.0.0.0:1936",
+			ServerKeyPath:  "/run/credentials/streaming-tree.service/streaming-tree-rtmps-key",
+			ServerCertPath: "/run/credentials/streaming-tree.service/streaming-tree-rtmps-cert",
+			PublisherUser:  "streaming-tree-obs",
+			// PublisherPassVerifier deliberately empty.
+		},
+	})
+
+	if strings.Contains(config, "user: streaming-tree-obs") {
+		t.Error("the remote publisher entry must not appear before a credential is provisioned")
+	}
+	if strings.Contains(config, "pass:") {
+		t.Error("no pass: line may appear before a credential is provisioned")
+	}
+	if !strings.Contains(config, "user: any") {
+		t.Error("the local internal identity must still be present with no remote credential provisioned")
+	}
+	if !strings.Contains(config, "authMethod: internal") {
+		t.Error("authMethod must still be internal - the RTMPS listener and local identity are configured independently of the remote credential")
+	}
+}
+
 func TestRenderConfigRemoteIngestNeverBindsRTMPSToLoopbackOnly(t *testing.T) {
 	// This is a sanity check on the test fixture, not a runtime
 	// enforcement: config.loadRemoteIngest (apps/server/internal/config)

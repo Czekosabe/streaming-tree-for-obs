@@ -37765,3 +37765,37 @@ config/CLI wiring that will exercise it.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix(server): omit the remote-publisher MediaMTX entry until a credential is provisioned
+
+Self-review catch on the commit immediately before this one, before
+any other code was built on top of it. `RenderConfig` unconditionally
+emitted an `authInternalUsers` entry for the remote-publisher identity
+even when `PublisherPassVerifier` was empty - the state a real
+deployment is in between "operator turns on `--remote-ingest`" and
+"operator runs provision" (credential persistence/API do not exist
+yet - next commit). An empty `pass:` on a *named* (non-`any`) MediaMTX
+user is not a documented, relied-upon state; the safe fix is to omit
+the entry entirely when no verifier exists, so MediaMTX's own
+default-deny (no `authInternalUsers` entry matches) is what actually
+prevents publishing during that window, not an assumption about how
+MediaMTX treats an empty password field. The local read/api identity
+(`user: any`) is unaffected - always present once `RemoteIngest` is
+non-nil, independent of whether a remote credential exists yet.
+
+New test: `TestRenderConfigRemoteIngestWithNoCredentialOmitsThePublisherEntry`
+- asserts no `user: streaming-tree-obs` line, no `pass:` line, `user:
+any` still present, `authMethod: internal` still present.
+
+### Validation
+`gofmt -l internal/runtime/mediamtx/`: clean. `go vet
+./internal/runtime/mediamtx/...`: clean. `go build ./...`: clean. `go
+test ./internal/runtime/mediamtx/...`: all tests pass.
+
+### Commits (chronological, this milestone)
+4. This entry - `fix(server): omit the remote-publisher MediaMTX
+   entry until a credential is provisioned`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

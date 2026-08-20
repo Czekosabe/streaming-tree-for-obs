@@ -136,12 +136,22 @@ func RenderConfig(opts ConfigOptions) string {
 		b.WriteString("# A request matching neither entry is refused by MediaMTX itself.\n")
 		b.WriteString("authMethod: internal\n")
 		b.WriteString("authInternalUsers:\n")
-		b.WriteString("  - user: " + ri.PublisherUser + "\n")
-		b.WriteString("    pass: " + ri.PublisherPassVerifier + "\n")
-		b.WriteString("    ips: []\n")
-		b.WriteString("    permissions:\n")
-		b.WriteString("      - action: publish\n")
-		b.WriteString("        path: " + opts.IngestPath + "\n")
+		if ri.PublisherPassVerifier != "" {
+			// No credential provisioned yet (first boot before the operator
+			// has run provision) omits this entry entirely rather than
+			// emitting a user with an empty pass: - MediaMTX's own
+			// semantics for an empty pass on a *named* (non-"any") user
+			// are not something this project relies on; the safe,
+			// unambiguous choice is "no entry matches, so nothing can
+			// publish" until a real verifier exists (docs/remote-
+			// ingest.md §6).
+			b.WriteString("  - user: " + ri.PublisherUser + "\n")
+			b.WriteString("    pass: " + ri.PublisherPassVerifier + "\n")
+			b.WriteString("    ips: []\n")
+			b.WriteString("    permissions:\n")
+			b.WriteString("      - action: publish\n")
+			b.WriteString("        path: " + opts.IngestPath + "\n")
+		}
 		b.WriteString("  - user: any\n")
 		b.WriteString("    ips: [127.0.0.1, ::1]\n")
 		b.WriteString("    permissions:\n")
