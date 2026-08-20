@@ -754,16 +754,26 @@ async function main() {
     const plaintextTry = await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`);
     expect(!plaintextTry.ok, 'plaintext RTMP to the RTMPS port is rejected', plaintextTry.ok ? plaintextTry.detail : '');
 
-    // MediaMTX's own log at logLevel: info turned out (per the previous
-    // two CI runs) to carry server-lifecycle events only - nothing
-    // per-connection - so it cannot answer what MediaMTX itself thinks
-    // is happening for the "no credential" attempt. The Control API
-    // can: /v3/rtmpconns/list reports each connection's real state
-    // (idle/read/publish), user, and remoteAddr. Spawn the same publish
-    // asynchronously (mirroring the existing clientSpawn pattern used
-    // for the positive path below) and inspect it mid-stream, from the
-    // host namespace directly (the Control API is loopback-only and
-    // this script itself runs in the host namespace).
+    // MediaMTX's own log at logLevel: info turned out (per two earlier
+    // CI runs) to carry server-lifecycle events only - nothing per-
+    // connection - so it cannot answer what MediaMTX itself thinks is
+    // happening for the "no credential" attempt. The Control API can:
+    // /v3/rtmpconns/list reports each connection's real state (idle/
+    // read/publish), user, and remoteAddr. Reachable directly from the
+    // host namespace (loopback-only, and this script itself already
+    // runs there).
+    //
+    // A first attempt at this diagnostic ran a *separate*, short-lived
+    // spawn, polled at 800ms, and killed it 300ms later if still
+    // running - and saw zero connections, for either the diagnostic
+    // run or the real one that followed it. That is not evidence
+    // MediaMTX saw nothing; a real TLS+RTMP handshake with a fresh
+    // ephemeral-CA certificate may simply take longer than 800ms to
+    // reach a state the Control API reports, and killing the
+    // connection early could have cut it off before MediaMTX ever
+    // finished evaluating it. This version polls the *actual* failing
+    // attempt itself, mid-stream, well within its natural 2-second
+    // clip, rather than a separate, premature, throwaway run.
     function hostFetchJson(path) {
       return new Promise((resolve) => {
         const req = httpRequest({ host: '127.0.0.1', port: MEDIAMTX_API_PORT, path, method: 'GET' }, (res) => {
@@ -781,27 +791,29 @@ async function main() {
         req.end();
       });
     }
-    step('Diagnostic: inspect the MediaMTX Control API mid-stream for the "no credential" attempt');
-    const noCredDiagChild = clientSpawn('ffmpeg', [...ffmpegBase, `${rtmpsBase}/${INGEST_PATH}`]);
-    let noCredDiagExited = false;
-    noCredDiagChild.on('exit', () => {
-      noCredDiagExited = true;
-    });
-    await new Promise((r) => setTimeout(r, 800));
-    const rtmpconns = await hostFetchJson('/v3/rtmpconns/list');
-    console.log(`     diag rtmpconns/list mid-stream: ${JSON.stringify(rtmpconns.body).slice(0, 700)}`);
-    const pathsList = await hostFetchJson('/v3/paths/list');
-    console.log(`     diag paths/list mid-stream: ${JSON.stringify(pathsList.body).slice(0, 500)}`);
-    if (!noCredDiagExited) noCredDiagChild.kill('SIGKILL');
-    await new Promise((r) => setTimeout(r, 300));
 
-    const noCredTry = await tryPublish(`${rtmpsBase}/${INGEST_PATH}`);
-    // The rtmpconns/paths diagnostic just above is the more useful
-    // evidence at this point (MediaMTX's own log has already been
-    // shown, twice, to carry nothing per-connection at logLevel: info)
-    // - keep this failure's own detail short so it does not crowd that
-    // diagnostic output out of GitHub's annotation size limit.
-    expect(!noCredTry.ok, 'RTMPS with no credential is rejected', noCredTry.ok ? noCredTry.detail : '');
+    const noCredChild = clientSpawn('ffmpeg', [...ffmpegBase, `${rtmpsBase}/${INGEST_PATH}`]);
+    let noCredStderr = '';
+    noCredChild.stderr.on('data', (c) => (noCredStderr += c.toString()));
+    let noCredExited = false;
+    let noCredExitCode = null;
+    noCredChild.on('exit', (code) => {
+      noCredExited = true;
+      noCredExitCode = code;
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+    const rtmpconns = await hostFetchJson('/v3/rtmpconns/list');
+    console.log(`     diag rtmpconns/list at t=1.5s (still within the 2s clip): ${JSON.stringify(rtmpconns.body).slice(0, 700)}`);
+    const pathsList = await hostFetchJson('/v3/paths/list');
+    console.log(`     diag paths/list at t=1.5s: ${JSON.stringify(pathsList.body).slice(0, 500)}`);
+
+    const noCredDeadline = Date.now() + 10_000;
+    while (!noCredExited && Date.now() < noCredDeadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!noCredExited) noCredChild.kill('SIGKILL');
+    const noCredOk = noCredExited && noCredExitCode === 0;
+    expect(!noCredOk, 'RTMPS with no credential is rejected', noCredOk ? noCredStderr.slice(-400) : '');
     const wrongCredTry = await tryPublish(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`);
     expect(!wrongCredTry.ok, 'RTMPS with a wrong credential is rejected', wrongCredTry.ok ? withServerDiag(wrongCredTry.detail) : '');
     const wrongPathTry = await tryPublish(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`);

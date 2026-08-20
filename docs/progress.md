@@ -39755,8 +39755,54 @@ annotation budget again.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-36. This entry - `ci: query the MediaMTX Control API mid-stream
-    instead of relying on its log`
+36. `ci: query the MediaMTX Control API mid-stream instead of
+    relying on its log`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 17:20 — ci: poll the Control API during the real failing attempt, not a separate premature one
+
+### Real CI result: the diagnostic's own design was the problem this time
+Commit `9db7a30` was checked. `/v3/rtmpconns/list` reported
+`{"itemCount":0,"items":[]}` and `/v3/paths/list` showed the "live"
+path present but `ready: false, online: false, source: null` -
+nothing connected, at all, during the diagnostic's own 800ms window.
+That is not evidence MediaMTX rejects the connection cleanly; it is
+more likely evidence the diagnostic itself was flawed: it ran a
+*separate*, throwaway `clientSpawn` publish, waited only 800ms (a real
+TLS handshake against a freshly generated ephemeral-CA certificate,
+plus the full RTMP handshake, may simply take longer than that to
+reach a state the Control API reports), and explicitly killed it
+300ms later if still running - quite possibly cutting the connection
+off before MediaMTX ever finished evaluating it, and definitely before
+observing whatever the *actual*, separately-run failing assertion
+right after it does differently (that one runs to its natural 2-second
+completion, unmodified, and is the one that has reliably shown `ok:
+true` for six consecutive CI runs now).
+
+### Fix
+Removed the separate premature diagnostic run entirely and merged the
+Control API polling directly into the real assertion: the "no
+credential" publish is now spawned once (async, via `clientSpawn`,
+matching the existing pattern), polled via `/v3/rtmpconns/list` and
+`/v3/paths/list` at 1.5s - solidly inside its natural 2-second clip,
+unlike the previous attempt's 800ms - then allowed to run to its own
+natural exit (or a 10s safety timeout) before the pass/fail decision
+is made from its real exit code. This should finally show the
+connection's real state while it is definitely still active, using
+the exact attempt whose outcome is actually in question rather than a
+throwaway stand-in.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; confirmed
+no remaining references to the removed `noCredTry` variable. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+37. This entry - `ci: poll the Control API during the real failing
+    attempt, not a separate premature one`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
