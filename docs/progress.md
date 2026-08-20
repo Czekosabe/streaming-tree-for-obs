@@ -39708,8 +39708,55 @@ call reads the accumulated stdout for this specific attempt.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-35. This entry - `ci: wait for MediaMTX's own log line to flush
-    before capturing it`
+35. `ci: wait for MediaMTX's own log line to flush before capturing
+    it`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 17:00 — ci: query the MediaMTX Control API mid-stream instead of relying on its log
+
+### Real CI result: the settle wait did not surface a connection event, because there isn't one to surface
+Commit `2a27071` was checked. The `--- server stdout` section arrived
+intact (1,047 characters, comfortably under the annotation limit - the
+previous entry's size fix worked) but still carried only the
+credential-provisioning restart's own startup sequence
+(`"[RTMP] closing"`, `"MediaMTX v1.19.3..."`, the three listener-
+started lines) and nothing about the actual publish connection, even
+500ms after ffmpeg exited. Since the total content was well under the
+size limit this time, the settle-wait fix ruled out its own hypothesis
+cleanly: this is not a flush-timing race. MediaMTX genuinely does not
+log anything per-connection at `logLevel: info` - only server-lifecycle
+events. Bumping the rendered `logLevel` to `debug` would be a real
+product config change made purely to serve a test, which is out of
+scope for this diagnostic and not something to do without a
+standalone justification.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Pivoted to the MediaMTX Control API instead of the server log: it
+already exposes `GET /v3/rtmpconns/list` (each connection's real
+`state`, `user`, `path`, `remoteAddr`) and `GET /v3/paths/list`,
+reachable directly from the host namespace (loopback-only, and this
+script itself already runs in the host namespace - no proxy needed).
+Added a diagnostic block that spawns the same "no credential" publish
+asynchronously (mirroring the existing `clientSpawn` pattern already
+used for the positive-path RTMPS test), waits 800ms, queries both
+endpoints, and logs the real JSON - this should finally show whether
+MediaMTX genuinely treats this connection as an authenticated
+publisher, and under what identity, rather than relying on log output
+proven twice now not to carry that information. Kept the assertion's
+own failure detail short (dropped the `withServerDiag()` wrapper for
+this one case) so it does not crowd the new diagnostic out of the
+annotation budget again.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+36. This entry - `ci: query the MediaMTX Control API mid-stream
+    instead of relying on its log`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
