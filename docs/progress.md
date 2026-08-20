@@ -39527,8 +39527,50 @@ triggers - the goal this time is evidence, not a fix, since the
 config-level analysis did not turn up an obvious defect to fix yet.
 
 ### Commits (chronological, this milestone)
-31. This entry - `ci: capture ffmpeg's own stderr for the RTMPS
-    reject-matrix, verify MediaMTX auth semantics from source`
+31. `ci: capture ffmpeg's own stderr for the RTMPS reject-matrix,
+    verify MediaMTX auth semantics from source`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 15:40 — ci: widen the ffmpeg diagnostic filter, the blind tail missed the actual rejection text
+
+### Real CI result: evidence arrived, but from the wrong part of the log
+Commit `e1bd295` was checked. The captured ffmpeg stderr tail showed
+only ordinary encoder/muxer housekeeping (`Stream #0:1: Audio: aac...`,
+`Failed to update header with correct duration/filesize` - both
+routine, unremarkable messages that appear on any RTMP output stream
+that ends without a seekable finalize, success or failure alike) and
+`size=0kB time=00:00:00.00`, meaning the stream ended essentially
+immediately - but the `.slice(-15)` (last 15 lines) this script used
+captured only the tail-end housekeeping noise, not whatever ffmpeg
+actually printed when the connection was established/rejected, which
+for ffmpeg normally appears earlier, around its own "Output #0"
+banner. Verified separately against the pinned v1.19.3 source
+(`internal/servers/rtmp/conn.go`) that an authentication failure in
+real MediaMTX does close the TCP connection immediately
+(`c.nconn.Close()`) rather than silently accepting - so the evidence
+so far still doesn't explain the accept, and guessing further without
+seeing ffmpeg's actual connection-phase output would not be
+productive.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+`tryPublish()`'s stderr capture no longer blindly tails the last 15
+lines. It now filters for lines matching connection/rejection/error
+keywords (`rtmp|server|reject|refus|denia|denied|error|fail|connect`,
+case-insensitive) across the *entire* captured stderr, unioned with a
+short recent tail for context, capped at 1200 characters - the same
+filtered-rather-than-blind-tail approach that already worked for the
+server's own stdout two entries ago.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+32. This entry - `ci: widen the ffmpeg diagnostic filter, the blind
+    tail missed the actual rejection text`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

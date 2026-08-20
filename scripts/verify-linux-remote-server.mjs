@@ -714,7 +714,14 @@ async function main() {
 
     async function tryPublish(url) {
       const result = await clientExecStatus('ffmpeg', [...ffmpegBase, url], { timeout: 15_000 });
-      return { ok: result.status === 0, detail: (result.stderr || '').trim().split('\n').slice(-15).join('\n') };
+      // A blind tail can miss the actual rejection/connection message,
+      // which ffmpeg typically prints near the top (around "Output #0")
+      // rather than at the very end (which is mostly encoder/muxer
+      // housekeeping noise for every run, success or failure alike).
+      const lines = (result.stderr || '').trim().split('\n');
+      const notable = lines.filter((l) => /rtmp|server|reject|refus|denia|denied|error|fail|connect/i.test(l));
+      const combined = [...new Set([...notable, ...lines.slice(-5)])].join('\n');
+      return { ok: result.status === 0, exitCode: result.status, detail: combined.slice(0, 1200) };
     }
 
     const plaintextTry = await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`);
