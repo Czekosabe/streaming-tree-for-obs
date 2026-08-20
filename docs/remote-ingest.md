@@ -266,14 +266,24 @@ guessing/dictionary attack in a way a 256-bit random value is not.
   logged) -> persist only the `sha256:` verifier -> the generated MediaMTX
   config (§4/§5) is regenerated with that verifier, never the plaintext ->
   the plaintext is never retrievable again through any API.
-- The verifier is stored in SQLite (it is one-way and, per the threat model
-  above, non-secret on its own - recovering the original 256-bit secret from
-  a SHA-256 digest is not feasible). This mirrors the existing project
-  precedent of storing one-way password verifiers in SQLite while keeping
-  genuinely-recoverable secrets (OAuth tokens, the D2A master key) out of it
-  entirely. No plaintext retention is required or added anywhere, including
-  `HeadlessStore` - the retention this document's governing task allowed only
-  "if implementation constraints genuinely require" is not needed here.
+- **Correction (implementation commit, 2026-08-20)**: this section originally
+  said the verifier would be stored in SQLite, describing that as "the
+  existing project precedent." Auditing the real code before implementing
+  (`internal/auth/adminauth.go`) showed this was wrong: the D2B administrator
+  password verifier is stored via the `secrets.SecretStore` abstraction (the
+  OS keyring on desktop, the AES-256-GCM `HeadlessStore` in headless mode),
+  not SQLite - `secrets.BuildKey(secrets.SecretTypeAdminPassword,
+  AdminPasswordSubjectID)`. The remote-ingest verifier follows that real
+  precedent instead: a new `secrets.SecretTypeRemoteIngestPublisherPassword`
+  key, stored and read through the same `SecretStore` interface
+  (`internal/auth/remoteingestcredential.go`, mirroring `adminauth.go`'s
+  shape exactly), never SQLite. It is one-way and, per the threat model
+  above, non-secret on its own even so - recovering the original 256-bit
+  secret from a SHA-256 digest is not feasible - but using the store already
+  reserved for security-sensitive verifiers is still the correct, consistent
+  choice, not merely an acceptable one. No plaintext retention is required or
+  added anywhere, including within the store itself - only the verifier is
+  ever written.
 - Rotation invalidates the previous verifier immediately (config regenerated,
   MediaMTX reloaded - see §11 for the safety gate around this).
 - Disable/revoke removes the `authInternalUsers` remote-publisher entry

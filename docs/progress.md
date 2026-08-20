@@ -37882,3 +37882,87 @@ not yet usable end-to-end without a publish credential.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): generate and store the remote-ingest publisher credential
+
+Third product-code commit: credential generation and persistence
+(`docs/remote-ingest.md` §6), the piece the two previous commits
+deliberately left as an empty verifier.
+
+### A contract-doc factual error, found and corrected before implementing
+`docs/remote-ingest.md` §6 claimed the verifier would be stored in
+SQLite, "mirroring the existing project precedent." Reading the real
+code before writing this commit
+(`apps/server/internal/auth/adminauth.go`) showed that claim was
+simply wrong: the D2B administrator password verifier is stored via
+the `secrets.SecretStore` abstraction (OS keyring on desktop, the
+AES-256-GCM `HeadlessStore` in headless mode) -
+`secrets.BuildKey(secrets.SecretTypeAdminPassword,
+AdminPasswordSubjectID)` - never SQLite. Corrected §6 in place
+(dated note, not a silent rewrite) and implemented against the real
+precedent instead of the contract's mistaken one.
+
+### What changed
+- `internal/secrets/store.go`: new
+  `SecretTypeRemoteIngestPublisherPassword` and
+  `RemoteIngestPublisherSubjectID` (the same "single global identity,
+  fixed subject" pattern as `SecretTypeAdminPassword`/
+  `AdminPasswordSubjectID`).
+- `internal/runtime/mediamtx/credential.go`: `NewPublisherSecret()`
+  (32 bytes via `crypto/rand`, base64url-no-padding - filesystem/URL-
+  safe, since it ends up in the RTMPS query string OBS's Server/Stream
+  Key fields carry) and `PublisherPassVerifierFor(secret)` (the
+  MediaMTX-native `sha256:<base64>` verifier).
+- `internal/auth/remoteingestcredential.go`:
+  `ProvisionRemoteIngestPublisherCredential` (generate, store only the
+  verifier, return the plaintext once),
+  `RemoteIngestPublisherVerifier` (read the stored verifier - what
+  main.go will embed into `RemoteIngestOptions`),
+  `RemoteIngestPublisherProvisioned`, and
+  `RevokeRemoteIngestPublisherCredential` (idempotent - revoking an
+  already-absent credential is not an error) - mirrors
+  `adminauth.go`'s exact shape and naming conventions.
+
+### Cross-verification against the real MediaMTX-documented recipe
+`PublisherPassVerifierFor` was checked against the actual `openssl`
+CLI, not just against the WebFetch summary from this stage's own §1
+research: `printf '%s' "mypass" | openssl dgst -binary -sha256 |
+openssl base64` produces
+`6nHCWnpgIka0w5gkuFVniJSpb0O7m3ExnDlwCh4EUiI=` locally, and
+`TestPublisherPassVerifierForMatchesMediaMTXsOwnDocumentedRecipe`
+asserts `PublisherPassVerifierFor("mypass") ==
+"sha256:6nHCWnpgIka0w5gkuFVniJSpb0O7m3ExnDlwCh4EUiI="` - an
+independent, real cross-check rather than trusting the paraphrase
+alone.
+
+### New tests
+`internal/runtime/mediamtx/credential_test.go`: entropy/length/
+charset of `NewPublisherSecret`, randomness across calls, the
+cross-verified recipe match, plaintext-never-embedded, determinism,
+and different-secrets-differ. `internal/auth/
+remoteingestcredential_test.go`: provisioned-state tracking,
+one-time-secret-vs-stored-verifier divergence, absent-state handling,
+rotation overwrites and produces a different verifier each time,
+revoke removes the verifier and is idempotent, and (explicitly) that
+revoking the remote-ingest credential never touches the admin
+password's own independent key.
+
+### Validation
+`gofmt -l`: clean. `go vet ./...`: clean. `go build ./...`: clean. `go
+test ./internal/runtime/mediamtx/... ./internal/auth/...
+./internal/secrets/...`: all pass.
+
+### What this commit does not do yet
+No HTTP API (`/api/remote-ingest/{status,provision,rotate,revoke}`).
+No `main.go` wiring of the stored verifier into
+`RemoteIngestOptions.PublisherPassVerifier` (still hardcoded empty).
+No streaming-safety 409 gate. No supervised MediaMTX config-reload/
+restart on rotation. No frontend UI.
+
+### Commits (chronological, this milestone)
+6. This entry - `feat(server): generate and store the remote-ingest
+   publisher credential`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -49,12 +49,27 @@ const (
 	// stored key (see AdminPasswordSubjectID) rather than a
 	// per-instance subject ID.
 	SecretTypeAdminPassword SecretType = "admin-password"
+
+	// SecretTypeRemoteIngestPublisherPassword is the Stage 20D2C remote
+	// OBS ingest publisher's MediaMTX-native verifier (docs/remote-
+	// ingest.md §6) - a "sha256:<base64>" string, never the plaintext
+	// 256-bit generated secret. There is exactly one remote publisher
+	// identity, so this type has exactly one stored key (see
+	// RemoteIngestPublisherSubjectID), the same singleton pattern as
+	// SecretTypeAdminPassword.
+	SecretTypeRemoteIngestPublisherPassword SecretType = "remote-ingest-publisher-password"
 )
 
 // AdminPasswordSubjectID is the fixed BuildKey subject for
 // SecretTypeAdminPassword - a single-administrator product has no
 // per-instance identity to key by.
 const AdminPasswordSubjectID = "default"
+
+// RemoteIngestPublisherSubjectID is the fixed BuildKey subject for
+// SecretTypeRemoteIngestPublisherPassword - a single-remote-ingest-
+// credential product has no per-instance identity to key by, the same
+// reasoning as AdminPasswordSubjectID.
+const RemoteIngestPublisherSubjectID = "default"
 
 // BuildKey returns the namespaced key for one secret.
 //
