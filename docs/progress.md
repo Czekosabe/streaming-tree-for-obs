@@ -38310,3 +38310,52 @@ No CI network-namespace/RTMPS integration test.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## test: prove Stage 18A goal widgets resolve through remote overlay capabilities
+
+Focused audit follow-up on the ten commits landed so far: re-verified
+directly against the real code (not just the prior commits' own
+summaries) that MediaMTX RTMPS/auth generation, credential
+persistence/separation, the capability repository's domain-scoping/
+atomic-rotation/idempotent-revoke behavior, and the audio presented-
+vs-resolved-slug split all match what was claimed - no code changes
+were needed for any of those, only re-reading.
+
+One real, genuine gap the audit found: `internal/httpapi/
+public_widgets.go`'s `resolvePublicWidget` fix (previous commit)
+covers every `domain.WidgetProfile`, and Stage 18A goal widgets
+(`WidgetProfileKindGoal`) are `WidgetProfile` records exactly like
+every Stage 18B kind - so the fix already covered them structurally -
+but no test had ever exercised a goal-kind widget through a remote
+capability specifically, only a Stage 18B kind
+(`TestRemoteOverlayStage18B...` did not exist either, until this
+commit). "Supporter widgets" in the previous commit's own summary
+could have been misread as excluding goal widgets even though the
+code never did.
+
+### New tests (`internal/httpapi/remote_overlay_widgets_test.go`)
+`TestRemoteOverlayStage18AGoalWidgetResolvesThroughACapabilityToken` -
+creates a real goal, a real `WidgetProfileKindGoal` widget bound to
+it, issues a capability, and proves a forwarded request with that
+token returns the goal's own real data (`kind: "goal"`, `target:
+1000`) - not the safe empty default - while the legacy local
+`publicSlug` presented the same way falls back to the default,
+proving the same local-slug-does-not-grant-remote-access property
+already proven for chat overlays now holds for goal widgets too.
+`TestRemoteOverlayStage18BSupporterWidgetResolvesThroughACapabilityToken`
+- the equivalent proof for `WidgetProfileKindLatestFollower`, so both
+widget families are now explicitly, not just structurally, covered.
+`TestRemoteOverlayWidgetRevokedTokenFallsBackToDefault`.
+
+### Validation
+`go build ./...`: clean. `go vet ./internal/httpapi/...`: clean. `go
+test ./internal/httpapi/...`: all pass (21.4s), including every
+pre-existing test unmodified.
+
+### Commits (chronological, this milestone)
+11. This entry - `test: prove Stage 18A goal widgets resolve through
+    remote overlay capabilities`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
