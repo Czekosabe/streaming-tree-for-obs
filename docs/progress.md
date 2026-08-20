@@ -39569,8 +39569,63 @@ server's own stdout two entries ago.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-32. This entry - `ci: widen the ffmpeg diagnostic filter, the blind
-    tail missed the actual rejection text`
+32. `ci: widen the ffmpeg diagnostic filter, the blind tail missed
+    the actual rejection text`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 16:00 — ci: capture MediaMTX's own log lines, filtered stdout was still missing the real decision
+
+### Real CI result: a genuine accept, not a false-positive exit code
+Commit `ae2b82d`'s widened ffmpeg filter showed the real picture: an
+"Output #0, flv, to 'rtmps://ingest-d2c.test:8713/live':" banner with
+no rejection text, followed by real libx264 macroblock statistics
+(`mb P I16..4: 0.3% ... P16..4: 26.6% ...`) that libx264 only prints on
+a clean, complete flush at normal encoder shutdown - meaning the
+2-second synthetic publish genuinely streamed to completion. This is
+not a test-harness false positive; MediaMTX really did accept an
+anonymous, non-loopback RTMPS publish it should have rejected.
+
+Before touching the config again, verified the actual MediaMTX
+v1.19.3 source end to end, quoting literal code rather than trusting
+paraphrase, given this session's own prior WebFetch hallucinations
+(a false "125-character limit", an impossible rate-limit reset date):
+`authenticateWithUser` (checks IPs, then `matchesPermission`, then
+credentials for non-"any" users), `matchesPermission` (exact
+path-string match for `publish`/`read`/`playback` actions), RTMP's own
+`runPublish` (constructs `Credentials{User: query.Get("user"), Pass:
+query.Get("pass")}` - empty strings when absent - and `IP: c.ip()`,
+the real connection address; explicitly confirmed `SkipAuth` never
+appears anywhere in that file, so it defaults to `false` and auth is
+never bypassed for RTMP publish). Every one of these matches this
+project's own rendered config and this project's own expectations -
+none of them explain the accept on their own.
+
+The piece that was missing: MediaMTX's own log output is not
+discarded - `process.go`'s `(*process).log` relays every line MediaMTX
+writes through the Go backend's own `slog` logger, but *always* at Go
+`level=INFO`, with MediaMTX's real level/message embedded as the
+`mediamtx_level`/`mediamtx_message` attributes. The `level=ERR|WARN`
+filter added two entries ago structurally can never match a
+MediaMTX-relayed line, no matter what MediaMTX itself logged
+internally - it was filtering out exactly the evidence needed to see
+MediaMTX's own stated reason for accepting this publish.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+`withServerDiag()`'s filter now also keeps every line containing
+`mediamtx_message`, not just the outer `level=ERR|WARN` lines - this
+is what should finally surface MediaMTX's own real decision for this
+specific publish attempt.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+33. This entry - `ci: capture MediaMTX's own log lines, filtered
+    stdout was still missing the real decision`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

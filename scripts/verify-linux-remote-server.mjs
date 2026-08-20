@@ -611,15 +611,19 @@ async function main() {
     // came back with an empty stderr tail). A second attempt appending
     // a flat 2000-char stdout tail came back truncated by GitHub's own
     // annotation size limit before reaching the actual error line, so
-    // this filters to just the level=ERR/WARN lines (where the real
-    // error lives) plus a short recent-lines tail for context, capped
-    // well under that limit rather than a broad, mostly-irrelevant dump.
+    // this filters instead of blindly tailing. MediaMTX's own log lines
+    // are relayed through the Go backend's logger (process.go's
+    // (*process).log) always at Go level=INFO, with MediaMTX's real
+    // level/message embedded as the mediamtx_level/mediamtx_message
+    // attributes - a plain level=ERR/WARN filter never catches these,
+    // so this also keeps every line mentioning "mediamtx_message"
+    // (where MediaMTX's own publish/auth decisions are actually logged).
     const withServerDiag = (text) => {
       const lines = serverHandle.getStdout().split('\n');
-      const notable = lines.filter((l) => /level=(ERR|WARN)/.test(l));
+      const notable = lines.filter((l) => /level=(ERR|WARN)|mediamtx_message/.test(l));
       const recent = lines.slice(-5);
       const combined = [...new Set([...notable, ...recent])].join('\n');
-      return `${text}\n--- server stdout: error/warning lines + recent tail ---\n${combined.slice(-1200)}`;
+      return `${text}\n--- server stdout: error/warning + mediamtx lines + recent tail ---\n${combined.slice(-1200)}`;
     };
 
     step('Start the management and overlay TLS proxy stand-ins on the host-side veth address');
