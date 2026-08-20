@@ -37385,3 +37385,147 @@ historical cancellation.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: record Stage 20D2B exposure-boundary correction
+
+Closing entry for the PRE-20D2C correction milestone (starting HEAD
+`70b0e28`). This milestone did not begin Stage 20D2C; it corrected a
+real security-relevant documentation/configuration defect discovered
+in what Stage 20D2B had already shipped, before any new stage began.
+
+### The finding
+Stage 20D2B's shipped `docs/remote-management.md` claimed the
+reference reverse-proxy configuration did not forward `/overlay/*` or
+`/api/public/*` to the backend. The actual reference file,
+`docs/examples/Caddyfile.remote-management`, was a bare `reverse_proxy
+127.0.0.1:8080` with no matcher. Verified directly against Caddy's own
+current official documentation (research date 2026-08-19): "If the
+matcher token is omitted, it is the same as a wildcard matcher (*)" -
+an unmatched directive applies to every request. The old configuration
+therefore forwarded everything, including `/overlay/*` and
+`/api/public/*`, directly contradicting the co-located prose. This was
+a genuine documentation/reference-configuration defect, not a
+misreading of the prompt.
+
+### The core distinction this milestone corrects
+BACKEND AUTH CLASSIFICATION is not the same question as REVERSE-PROXY
+INTERNET REACHABILITY. `/api/public/*` being intentionally
+unauthenticated at the Go backend is correct and unchanged - it exists
+so local OBS Browser Source overlays work without a session. Whether
+that same route should be reachable through the D2B external
+management reverse-proxy origin is a separate, proxy-configuration-
+level decision. The original Stage 20D2B docs and test conflated
+these two questions; this milestone separates them.
+
+### What changed
+- `docs/examples/Caddyfile.remote-management` - rewritten to use
+  Caddy's own documented `handle`-block pattern: an
+  `@excludedLocalOnlySurface` matcher for `/overlay/*` and
+  `/api/public/*` that responds `404` without proxying, and a
+  catch-all `handle` that proxies everything else to the loopback
+  backend. `handle` blocks are mutually exclusive and Caddy evaluates
+  them in a hard-coded specificity order regardless of textual
+  position in the file, per Caddy's own documentation - so the fix is
+  correct independent of which block is written first.
+- `docs/remote-management.md` §17 - rewritten to state the backend-
+  auth-classification/reverse-proxy-reachability distinction
+  explicitly, cite the Caddy documentation findings, and record that
+  the documentation (not the backend code) was wrong. §20's inline
+  Caddyfile example and §2's research log updated to match.
+- `docs/platform-support.md` §18 - stale current-state annotations
+  corrected: no GitHub Release/tag still true through this stage
+  (re-verified via `git tag -l`); the backend never binds beyond
+  loopback in `--remote-management` mode either, remote reachability
+  being entirely the reverse proxy's job; remote authentication is
+  "since implemented, in two parts" (20D2A secret storage, 20D2B
+  auth/session/CSRF/proxy contract), with no TLS termination performed
+  by the application itself by design. §9's remote-overlay-exposure
+  bullet cross-referenced to the correction.
+- `scripts/verify-linux-remote-management.mjs` - the TLS-proxy test
+  harness now implements the identical exclusion policy (404 for
+  `/overlay/*` and `/api/public/*` before any proxying), a new
+  self-check regex-verifies the real committed Caddyfile still matches
+  the harness's own hardcoded policy (preventing prose/config drift
+  from silently recurring the way it did originally), a new
+  `backendRequest` helper proves the direct-loopback backend contract
+  independently of the proxy, the previous tautological/misleading
+  overlay-exposure test scenario was replaced with eight explicit
+  request-level checks covering both halves of the distinction, and
+  the socket audit was extended to check MediaMTX's default ports
+  (1935, 9997) for non-loopback bindings.
+
+### Native verification result
+Commit `e858d93` triggered `linux-headless.yml` run `32336505516`.
+Both required architectures concluded `success`:
+- `headless (linux-amd64)` - success
+- `headless (linux-arm64)` - success
+
+No literal `caddy` binary was installed or exercised in this CI
+environment (consistent with the governing task's own instruction not
+to install arbitrary third-party tooling solely for this check); the
+native verification proves the Node.js proxy harness's routing
+semantics are equivalent to the corrected Caddyfile's own documented
+Caddy semantics, backed by the harness's own Caddyfile-sync self-check
+and by direct primary-source Caddy documentation research.
+
+### §11/§12/§13 corrections
+Recorded append-only in the preceding "docs: reconcile Stage 20D2B
+closing record" entry (commit `0cafeb3`): the Stage 20D2B milestone
+total is 16 commits including its own closing commit ("15 total" in
+that entry's header was a counting-label error, not a missing-commit
+error); Stage 20D2B's two resume messages are correctly split into 1
+operator-authored intervention and 1 system/harness continuation
+notice (0 AskUserQuestion calls); the `linux-package.yml` cancelled
+run at `d478c11` is reconfirmed as acceptable historical evidence
+(that commit touched only remote-management HTTP-origin files, not
+packaging).
+
+### §14 focused security-test coverage assessment
+No Go source changed in this milestone - the defect and its fix lived
+entirely in the reference Caddyfile, the docs, and the Node.js proxy
+test harness. The governing task's §14 checklist is satisfied by a
+combination of pre-existing Stage 20D2B Go tests (`/api/public/*`
+backend-public and auth-middleware-exclusion:
+`TestPublicOverlayRouteNeverRequiresAuth`; remote management disabled
+is a no-op: `TestRemoteManagementDisabledIsANoOp`; protected-API
+session/CSRF/Origin behavior: the existing remote-management test
+suite) and this milestone's new proxy-level checks (external exclusion
+of `/overlay/*` and `/api/public/*`; protected management API still
+reachable through the proxy with correct session/CSRF/Origin; no
+MediaMTX port proxied; management backend still loopback-only). No
+admin-session requirement was added to overlays, and no authentication
+was added to `/api/public/*` - both remain exactly as Stage 20D2B
+designed them.
+
+### What this milestone explicitly did not do
+Did not begin Stage 20D2C. Did not expose remote overlays. Did not
+expose RTMP remotely. Did not expose the MediaMTX Control API. Did not
+add remote OBS ingest. Did not create a separate overlay origin. Did
+not add authentication to `/api/public/*` to compensate for the proxy
+mistake - the backend's local-only-public contract is unchanged.
+
+### Stage status
+- Stage 20A, 20B, 20C1, 20D1, 20D2A: Completed
+- Stage 20C2: Planned, externally gated
+- Stage 20D2B: Completed, with this exposure-boundary correction
+  recorded
+- Stage 20D2C: Planned, not started
+- Stage 20E: Planned
+- Stage 20D2 (whole): Incomplete
+- Stage 20 (whole): Incomplete
+
+### Commits (chronological, this milestone)
+1. `a89d7a6` - `fix(docs): correct the Stage 20D2B remote proxy
+   exposure boundary`
+2. `e858d93` - `test: verify remote management does not expose
+   public overlays`
+3. `0cafeb3` - `docs: reconcile Stage 20D2B closing record`
+4. This entry - `docs: record Stage 20D2B exposure-boundary
+   correction`
+
+### Continuous-execution rule compliance
+No operator-only blocker existed anywhere in this milestone. No
+AskUserQuestion call was made. This entry is a pure journal commit
+(`docs/progress.md` only) and does not need, and will not receive, a
+manually dispatched CI run - accepted evidence belongs to the
+preceding commits that actually changed product/test/doc content.
