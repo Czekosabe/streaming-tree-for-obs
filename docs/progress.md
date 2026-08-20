@@ -38974,8 +38974,60 @@ recorded in the prior entry) - real validation happens via the native
 Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-20. This entry - `fix(ci): install the .deb before the Stage 20D2C
-    remote-server verification runs`
+20. `fix(ci): install the .deb before the Stage 20D2C remote-server
+    verification runs`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 12:05 — ci: capture the real veth-creation error instead of a blank annotation
+
+### Real CI result for the previous fix, and a new, different failure
+Commit `5100985` was checked (one low-request GitHub check-runs/
+annotations lookup, per the standing discipline). The `.deb`-install
+fix worked: steps 01/02 now both pass on both architectures. A
+different step then failed:
+
+```
+[03] Verify network-namespace/veth capability on this runner
+     ok  this runner can create a network namespace (ip netns add)
+     FAIL this runner can create a veth pair (ip link add ... type veth)
+
+FAILED: this runner can create a veth pair (ip link add ... type veth)
+```
+
+The annotation's own detail field was blank - not because GitHub
+dropped it, but because `verifyNetnsCapability()`'s veth probe used
+`shOk()`, which discards the real `stderr` from the failed `ip link
+add` and reports only a boolean. The netns probe next to it had the
+same problem, papered over with a hand-guessed static string
+(`'CAP_NET_ADMIN or root required'`) rather than the command's actual
+error. Neither is real evidence, and guessing the root cause of a
+runner-specific `ip link` failure without seeing its actual stderr
+would be exactly the "blind retry" this project's own CI discipline
+forbids.
+
+### Fix (diagnostic instrumentation, not yet a claimed root-cause fix)
+Added `shDetail()`, a variant of the existing `sh`/`shOk` helpers that
+keeps the real captured `stderr` (or the exception message as a
+fallback) instead of collapsing it to a boolean. Both capability
+probes in `verifyNetnsCapability()` now report their command's actual
+error text through `expect()`'s detail parameter, which the workflow's
+existing `::error::` diagnostic step already surfaces. This commit
+does not change what is probed or guess at why `ip link add ... type
+veth` might fail on a GitHub-hosted runner - it exists only to turn
+the next CI run's blank annotation into real, actionable evidence, the
+same low-risk diagnostic-first approach that found the actual root
+cause of the previous failure.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+21. This entry - `ci: capture the real veth-creation error instead of
+    a blank annotation`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

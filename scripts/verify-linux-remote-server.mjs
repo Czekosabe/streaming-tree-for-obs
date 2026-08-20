@@ -155,6 +155,19 @@ function shOk(cmd, args, opts = {}) {
   }
 }
 
+// Like shOk, but keeps the real stderr instead of discarding it - used
+// where a bare pass/fail with no detail would leave a CI failure
+// undiagnosable from the ::error:: annotation alone.
+function shDetail(cmd, args, opts = {}) {
+  try {
+    sh(cmd, args, opts);
+    return { ok: true, error: '' };
+  } catch (err) {
+    const stderr = err && err.stderr ? String(err.stderr).trim() : '';
+    return { ok: false, error: stderr || (err && err.message) || 'unknown error' };
+  }
+}
+
 // --- §10: environment capability check ----------------------------------
 // docs/remote-ingest.md §15: verify the environment first, never
 // silently fall back to localhost if network namespaces are not
@@ -162,17 +175,17 @@ function shOk(cmd, args, opts = {}) {
 // worse than an honest, diagnosable failure.
 function verifyNetnsCapability() {
   step('Verify network-namespace/veth capability on this runner (must not silently downgrade to localhost)');
-  const canCreateNetns = shOk('sudo', ['ip', 'netns', 'add', 'streamtree-capability-probe']);
-  if (canCreateNetns) {
+  const netnsResult = shDetail('sudo', ['ip', 'netns', 'add', 'streamtree-capability-probe']);
+  if (netnsResult.ok) {
     sh('sudo', ['ip', 'netns', 'del', 'streamtree-capability-probe']);
   }
-  expect(canCreateNetns, 'this runner can create a network namespace (ip netns add)', 'CAP_NET_ADMIN or root required');
+  expect(netnsResult.ok, 'this runner can create a network namespace (ip netns add)', netnsResult.error || 'CAP_NET_ADMIN or root required');
 
-  const canCreateVeth = shOk('sudo', ['ip', 'link', 'add', 'streamtree-veth-probe', 'type', 'veth', 'peer', 'name', 'streamtree-veth-probe-p']);
-  if (canCreateVeth) {
+  const vethResult = shDetail('sudo', ['ip', 'link', 'add', 'streamtree-veth-probe', 'type', 'veth', 'peer', 'name', 'streamtree-veth-probe-p']);
+  if (vethResult.ok) {
     sh('sudo', ['ip', 'link', 'del', 'streamtree-veth-probe']);
   }
-  expect(canCreateVeth, 'this runner can create a veth pair (ip link add ... type veth)', '');
+  expect(vethResult.ok, 'this runner can create a veth pair (ip link add ... type veth)', vethResult.error || 'the veth kernel module may not be available');
 }
 
 // --- network namespace + veth setup/teardown ----------------------------
