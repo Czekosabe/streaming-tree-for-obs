@@ -725,6 +725,21 @@ async function main() {
       '',
     );
 
+    // Every reject-matrix assertion so far - and the valid-credential
+    // positive path further down - has come back rejected by
+    // MediaMTX's own Control API state, even with a correct credential
+    // and path. Before assuming an RTMP-layer path/query-parsing
+    // mismatch, rule out the more basic question: does the TLS
+    // handshake against the RTMPS listener even complete at all, for
+    // any client? openssl s_client speaks nothing but TLS - no RTMP -
+    // so a successful handshake here proves the listener itself and
+    // the ephemeral CA trust chain are fine, independent of anything
+    // RTMP-specific.
+    const tlsProbe = await clientExecStatus('openssl', ['s_client', '-connect', `${INGEST_HOST}:${RTMPS_PORT}`, '-CAfile', pki.caCertPath, '-verify_return_error', '-brief'], { timeout: 8_000 });
+    console.log(`     diag openssl s_client -connect ${INGEST_HOST}:${RTMPS_PORT} exit ${tlsProbe.status}`);
+    console.log((tlsProbe.stdout || '').trim().split('\n').slice(0, 10).map((l) => `     diag out: ${l}`).join('\n'));
+    console.log((tlsProbe.stderr || '').trim().split('\n').slice(0, 10).map((l) => `     diag err: ${l}`).join('\n'));
+
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
     const ffmpegBase = ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
 

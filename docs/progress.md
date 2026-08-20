@@ -39968,8 +39968,52 @@ budget with empty polls.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-40. This entry - `ci: poll rtmpconns/list rapidly to test a
-    URL-splitting hypothesis for the positive path`
+40. `ci: poll rtmpconns/list rapidly to test a URL-splitting
+    hypothesis for the positive path`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 18:45 — ci: test raw TLS handshake against the RTMPS listener directly
+
+### Real CI result: rtmpconns/list never showed a connection, not even transiently
+Commit `5437268` was checked. Across all 8 rapid 250ms polls right
+after the valid-credential publish started, `/v3/rtmpconns/list` never
+reported a single item - not even briefly. If a real RTMP connection
+were being accepted-then-rejected at the application layer (the
+URL-splitting hypothesis from the previous entry), MediaMTX would be
+expected to register it in this list for at least a moment before
+tearing it down. Never registering at all points earlier than the RTMP
+layer entirely - the TLS handshake itself may never be completing for
+this specific listener, something never independently verified before
+(the RTMPS credential-carrying request was always tested through
+ffmpeg's own RTMP client, which - per two entries ago - does not
+reliably surface a connection-level failure either).
+
+Re-read `provisionCredentialsDir`'s wiring of the RTMPS server
+key/cert (`STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH`/`_CERT_PATH`
+pointing at `pki.leaves[INGEST_HOST]`'s own files) - structurally
+correct, no obvious mismatch there either.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added a raw `openssl s_client -connect <ingest-host>:<rtmps-port>
+-CAfile <ephemeral-ca>` probe, run from the isolated client namespace,
+right before the RTMPS matrix starts. This speaks nothing but TLS -
+no RTMP protocol at all - so a clean handshake here would prove the
+listener and the ephemeral CA trust chain are fine and definitively
+point the investigation at RTMP-layer path/query parsing instead;
+a handshake failure would point at the listener/certificate wiring
+itself, a different and more fundamental problem than anything
+investigated so far.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+41. This entry - `ci: test raw TLS handshake against the RTMPS
+    listener directly`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
