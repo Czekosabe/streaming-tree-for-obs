@@ -18,11 +18,13 @@
  * disclosed choice). The RTMPS ingest listener is MediaMTX's own real
  * TLS termination - never proxied through anything.
  *
- * Requires a Linux release build to already be installed - this script
- * assumes .github/workflows/linux-headless.yml's own earlier steps
- * (build-release-linux.sh + dpkg -i) already ran, exactly like verify-
- * linux-remote-management.mjs already assumes for the same reason (no
- * third build pass for a feature layered on the identical package).
+ * Requires a Linux release build to already exist as a built .deb (an
+ * earlier .github/workflows/linux-headless.yml step runs
+ * build-release-linux.sh) but installs and removes that package itself,
+ * self-contained, exactly like verify-linux-remote-management.mjs does -
+ * neither script assumes the other, or any workflow step, leaves the
+ * package installed, since verify-linux-remote-management.mjs's own
+ * cleanup already removes it again before this script would start.
  *
  * Scope of this first version, recorded honestly (docs/progress.md) -
  * do not read the section headings below as a claim this file proves
@@ -488,10 +490,24 @@ async function main() {
     fail('this script only runs on Linux', `process.platform = ${process.platform}`);
   }
 
-  step('Verify the real .deb package exists and is installed (built by an earlier workflow step)');
+  step('Verify the real .deb package exists');
   const debName = existsSync(OUTPUT_DIR) ? readdirSync(OUTPUT_DIR).find((n) => n.endsWith('.deb')) : undefined;
   expect(typeof debName === 'string', `a .deb file was found in ${OUTPUT_DIR}`, 'Run: scripts/build-release-linux.sh --version 0.1.0-dev+test');
-  expect(shOk('dpkg', ['-s', PACKAGE_NAME]), `${PACKAGE_NAME} is installed`, 'Expected an earlier workflow step to already have run dpkg -i');
+  const debPath = join(OUTPUT_DIR, debName);
+
+  // Self-contained install rather than assuming an earlier workflow step
+  // left the package installed - verify-linux-remote-management.mjs runs
+  // immediately before this script in linux-headless.yml and removes the
+  // package again in its own cleanup, so nothing upstream leaves it
+  // installed by the time this script starts.
+  if (shOk('dpkg', ['-s', PACKAGE_NAME])) {
+    execFileSync('sudo', ['dpkg', '-r', PACKAGE_NAME], { stdio: 'ignore' });
+  }
+
+  step('The .deb installs successfully');
+  execFileSync('sudo', ['dpkg', '-i', debPath], { stdio: 'pipe' });
+  let installed = true;
+  expect(shOk('dpkg', ['-s', PACKAGE_NAME]), `${PACKAGE_NAME} is installed`, PACKAGE_NAME);
   expect(existsSync(INSTALLED_EXE_PATH), 'the executable was installed', INSTALLED_EXE_PATH);
 
   verifyNetnsCapability();
@@ -653,7 +669,14 @@ async function main() {
     removeEphemeralCATrust();
     if (pkiDir) rmSync(pkiDir, { recursive: true, force: true });
     if (networkUp) tearDownNetwork();
-    pass('cleanup complete - no owned process, network namespace, veth interface, or trust-store change left behind');
+    if (installed) {
+      try {
+        execFileSync('sudo', ['dpkg', '-r', PACKAGE_NAME], { stdio: 'ignore' });
+      } catch (removeError) {
+        console.error('warning: cleanup dpkg -r failed', removeError);
+      }
+    }
+    pass('cleanup complete - no owned process, network namespace, veth interface, package install, or trust-store change left behind');
   }
 }
 

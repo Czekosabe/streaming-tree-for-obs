@@ -38912,8 +38912,70 @@ this commit triggers, the same honest limitation every prior native
 script in this project has stated.
 
 ### Commits (chronological, this milestone)
-19. This entry - `ci: add the Stage 20D2C native remote-server
-    verification harness`
+19. `ci: add the Stage 20D2C native remote-server verification
+    harness`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 11:50 — fix(ci): install the .deb before the Stage 20D2C remote-server verification runs
+
+### Real CI failure found and root-caused
+Commit `e59a11f`'s `linux-headless.yml` run failed on both
+`linux-amd64` and `linux-arm64` with the identical `::error::`
+annotation, fetched via the GitHub check-runs/annotations API (a
+single low-request lookup, per the established low-request CI
+discipline - no blind retry, no partial-green acceptance):
+
+```
+[01] Verify the real .deb package exists and is installed
+     ok  a .deb file was found in .../build/release-linux/output
+     FAIL streaming-tree-for-obs is installed
+          Expected an earlier workflow step to already have run dpkg -i
+```
+
+Root cause, confirmed by reading the real code rather than guessing:
+`scripts/verify-linux-remote-server.mjs`'s own step 01 asserted the
+package was already `dpkg -i`-installed by an earlier workflow step,
+copying that assumption from `verify-linux-remote-management.mjs`'s
+doc comment without checking what that sibling script actually does
+at runtime. In fact `verify-linux-remote-management.mjs` is
+self-contained: it `dpkg -i` installs the package itself near its own
+start and `dpkg -r` removes it again in its own `finally` block
+(`scripts/verify-linux-remote-management.mjs:396,404,643,655`). Since
+Stage 20D2C added the new remote-server verification step
+*immediately after* that script in `linux-headless.yml`, the package
+had already been removed by the time the new script's step 01 ran -
+nothing in the workflow ever leaves it installed at that point. The
+new script's own doc comment claim ("this script assumes
+build-release-linux.sh + dpkg -i already ran... exactly like
+verify-linux-remote-management.mjs already assumes") was itself
+factually wrong about what the sibling script does, not just an
+omission.
+
+### Fix
+`scripts/verify-linux-remote-server.mjs` step 01 is now self-contained,
+mirroring `verify-linux-remote-management.mjs`'s exact real pattern:
+`dpkg -r` first if a stale install is present, then `dpkg -i` the
+built `.deb`, then assert it reports installed. The cleanup `finally`
+block gained a symmetric `dpkg -r` (guarded by a tracked `installed`
+flag, swallowing its own error like the sibling script does) so the
+script leaves no package installed behind it - redundant with, not a
+replacement for, the workflow's own final catch-all cleanup step,
+which already had a `dpkg -r ... || true` backstop. The top-of-file
+doc comment's incorrect claim about the sibling script was corrected
+to state the true, mutually self-contained relationship.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Cannot
+be run end-to-end on this Windows machine (same standing limitation
+recorded in the prior entry) - real validation happens via the native
+Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+20. This entry - `fix(ci): install the .deb before the Stage 20D2C
+    remote-server verification runs`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
