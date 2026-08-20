@@ -7,11 +7,52 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/streaming-tree/server/internal/domain/remoteoverlay"
 )
+
+// RemoteOverlayResolver is the subset of remoteoverlay.Repository a
+// public handler needs to resolve a forwarded request's {slug} path
+// parameter into the real local slug (docs/remote-ingest.md §12).
+type RemoteOverlayResolver interface {
+	Resolve(ctx context.Context, domain remoteoverlay.Domain, token string) (localSlug string, ok bool, err error)
+}
+
+// resolvePublicSlug returns the real local publicSlug a public handler
+// should use to look up its profile, given the raw {slug} path
+// parameter pathSlug.
+//
+// For a direct loopback request (the existing, unchanged local Browser
+// Source contract), pathSlug IS the real local slug, returned as-is -
+// resolver is never consulted, so a deployment with no remote overlay
+// exposure configured at all pays no extra lookup cost and behaves
+// identically to every prior stage.
+//
+// For a request confirmed forwarded through the overlay origin
+// (isForwardedOverlayRequest, set only by withRemoteOverlaySecurity
+// after it has already validated the forwarded host), pathSlug is
+// treated as a remote capability token and resolved through resolver;
+// ok is false if it does not currently match any issued capability for
+// domain (revoked, rotated away, or never issued, or resolver itself
+// is nil because this domain's routes were never wired with one) - the
+// caller must respond exactly as it already does for "unknown local
+// slug" (its own existing 404), never a response that would let an
+// attacker distinguish "wrong token" from "right token, disabled
+// profile" from response shape alone.
+func resolvePublicSlug(ctx context.Context, resolver RemoteOverlayResolver, domain remoteoverlay.Domain, pathSlug string) (localSlug string, ok bool, err error) {
+	if !isForwardedOverlayRequest(ctx) {
+		return pathSlug, true, nil
+	}
+	if resolver == nil {
+		return "", false, nil
+	}
+	return resolver.Resolve(ctx, domain, pathSlug)
+}
 
 // RemoteOverlayOptions groups the Stage 20D2C remote-overlay
 // defense-in-depth settings. Present (Enabled true) only when an
@@ -135,7 +176,33 @@ func withRemoteOverlaySecurity(logger *slog.Logger, opts RemoteOverlayOptions) m
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			// This request is confirmed forwarded through the
+			// configured overlay origin - mark it so a public handler
+			// further down the chain knows to treat its {slug} path
+			// parameter as a remote capability token (docs/remote-
+			// ingest.md §12) rather than the legacy local publicSlug.
+			next.ServeHTTP(w, r.WithContext(withForwardedOverlayContext(r.Context())))
 		})
 	}
+}
+
+// forwardedOverlayContextKey is unexported so no other package can
+// forge this marker - it can only ever be set by
+// withRemoteOverlaySecurity itself, after it has already validated
+// the forwarded-host match.
+type forwardedOverlayContextKey struct{}
+
+func withForwardedOverlayContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, forwardedOverlayContextKey{}, true)
+}
+
+// isForwardedOverlayRequest reports whether r arrived through the
+// confirmed, validated overlay-origin reverse-proxy hop (docs/remote-
+// ingest.md §11/§12). A public handler uses this to decide whether its
+// own {slug} path parameter should be resolved as a remote capability
+// token (true) or used directly as the legacy local publicSlug
+// (false, every existing direct-loopback request, unchanged).
+func isForwardedOverlayRequest(ctx context.Context) bool {
+	marked, _ := ctx.Value(forwardedOverlayContextKey{}).(bool)
+	return marked
 }

@@ -11,6 +11,7 @@ import (
 
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
+	"github.com/streaming-tree/server/internal/domain/remoteoverlay"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 )
@@ -71,7 +72,7 @@ const (
 func registerChatOverlayRoutes(
 	mux *http.ServeMux, logger *slog.Logger,
 	accounts AccountService, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets OperatorChatAssetResolver,
-	visualAssets VisualAssetService,
+	visualAssets VisualAssetService, remoteOverlayResolver RemoteOverlayResolver,
 ) {
 	mux.HandleFunc("GET /api/chat-overlays", handleListChatOverlays(logger, profiles))
 	mux.HandleFunc("POST /api/chat-overlays", handleCreateChatOverlay(logger, profiles, runtime))
@@ -118,13 +119,13 @@ func registerChatOverlayRoutes(
 	mux.HandleFunc("/api/chat-overlays/{id}/visual-design", methodNotAllowed(logger, http.MethodGet, http.MethodPut, http.MethodDelete))
 
 	streamLimiter := newChatOverlayStreamLimiter()
-	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles, runtime, visualAssets))
+	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/config", handleGetPublicChatOverlayConfig(logger, profiles, runtime, visualAssets, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/chat-overlays/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/items", handleGetPublicChatOverlayItems(logger, profiles, runtime, assets))
+	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/items", handleGetPublicChatOverlayItems(logger, profiles, runtime, assets, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/chat-overlays/{slug}/items", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/stream", handlePublicChatOverlayStream(logger, profiles, runtime, assets, streamLimiter))
+	mux.HandleFunc("GET /api/public/chat-overlays/{slug}/stream", handlePublicChatOverlayStream(logger, profiles, runtime, assets, streamLimiter, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/chat-overlays/{slug}/stream", methodNotAllowed(logger, http.MethodGet))
 }
 
@@ -842,17 +843,35 @@ func toPublicChatOverlayConfigResponse(p chatoverlaydomain.Profile, design *visu
 // overlay (so the management preview surfaces it clearly); the stream
 // handler instead renders an empty overlay rather than a hard error (see
 // handlePublicChatOverlayStream's own doc comment).
-func resolvePublicChatOverlayProfile(ctx context.Context, profiles ChatOverlayProfileService, slug string) (chatoverlaydomain.Profile, bool, error) {
-	p, err := profiles.GetProfileByPublicSlug(ctx, slug)
+// resolvePublicChatOverlayProfile resolves the {slug} path parameter
+// to a profile. For a direct loopback request it is the profile's own
+// local publicSlug, unchanged from every prior stage. For a request
+// confirmed forwarded through the configured overlay origin
+// (docs/remote-ingest.md §11/§12), it is instead treated as a remote
+// capability token and resolved via resolver first - a token that does
+// not currently match an issued capability returns the exact same
+// ErrPublicSlugNotFound a direct request's unknown slug already does,
+// so the response gives an attacker no way to distinguish "wrong
+// token" from "right token, no longer valid" from "not a remote
+// request at all".
+func resolvePublicChatOverlayProfile(ctx context.Context, profiles ChatOverlayProfileService, resolver RemoteOverlayResolver, slug string) (chatoverlaydomain.Profile, bool, error) {
+	realSlug, ok, err := resolvePublicSlug(ctx, resolver, remoteoverlay.DomainChatOverlay, slug)
+	if err != nil {
+		return chatoverlaydomain.Profile{}, false, err
+	}
+	if !ok {
+		return chatoverlaydomain.Profile{}, false, chatoverlaydomain.ErrPublicSlugNotFound
+	}
+	p, err := profiles.GetProfileByPublicSlug(ctx, realSlug)
 	if err != nil {
 		return chatoverlaydomain.Profile{}, false, err
 	}
 	return p, p.Enabled, nil
 }
 
-func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets VisualAssetService) http.HandlerFunc {
+func handleGetPublicChatOverlayConfig(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets VisualAssetService, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, r.PathValue("slug"))
+		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, remoteOverlayResolver, r.PathValue("slug"))
 		if err != nil {
 			writeChatOverlayError(w, logger, r, err)
 			return
@@ -999,9 +1018,9 @@ func toPublicChatOverlayItemResponse(ctx context.Context, item co.Item, assets O
 	return resp
 }
 
-func handleGetPublicChatOverlayItems(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets OperatorChatAssetResolver) http.HandlerFunc {
+func handleGetPublicChatOverlayItems(logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets OperatorChatAssetResolver, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, r.PathValue("slug"))
+		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, remoteOverlayResolver, r.PathValue("slug"))
 		if err != nil {
 			writeChatOverlayError(w, logger, r, err)
 			return
@@ -1070,6 +1089,7 @@ func (l *chatOverlayStreamLimiter) release(overlayID string) {
 // empty reset, and then idles on keepalives only.
 func handlePublicChatOverlayStream(
 	logger *slog.Logger, profiles ChatOverlayProfileService, runtime ChatOverlayRuntime, assets OperatorChatAssetResolver, limiter *chatOverlayStreamLimiter,
+	remoteOverlayResolver RemoteOverlayResolver,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
@@ -1078,7 +1098,7 @@ func handlePublicChatOverlayStream(
 			return
 		}
 
-		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, r.PathValue("slug"))
+		p, enabled, err := resolvePublicChatOverlayProfile(r.Context(), profiles, remoteOverlayResolver, r.PathValue("slug"))
 		unavailable := err != nil || !enabled
 
 		w.Header().Set("Content-Type", "text/event-stream")

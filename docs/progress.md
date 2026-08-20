@@ -38126,3 +38126,107 @@ test.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add remote overlay capability tokens and wire chat overlays end-to-end
+
+Sixth product-code commit: `docs/remote-ingest.md` §12 - the local
+`publicSlug`/remote-capability-token separation - implemented and
+proven end-to-end for one full domain (chat overlays), with the
+identical, mechanical pattern remaining for the other three.
+
+### A deliberate architecture simplification, recorded before implementing
+The contract's own §12 explicitly permits a simpler architecture "if it
+provides equivalent properties." Rather than adding a
+`remoteCapabilityToken` column/lifecycle to each of four separate
+domain schemas (chat overlay, alert profile, audio, the goals-owned
+widget profiles), this commit adds ONE shared table and one small
+domain-agnostic package instead. `docs/remote-ingest.md` §12 records
+the reasoning in place before any code was written.
+
+### What changed
+- `internal/domain/remoteoverlay/capability.go` (new package):
+  `Domain` (closed set: chat-overlay/alert-profile/audio/widget),
+  `Capability`, `NewToken` (32 bytes via `crypto/rand`,
+  base64url-no-padding - matching `visualasset.NewPublicToken`'s own
+  256-bit precedent), and a `Repository` port (`Issue`/`Revoke`/`Get`/
+  `Resolve`).
+- `internal/storage/sqlite/migrations/0028_remote_overlay_capabilities.sql`
+  + `remoteoverlaycapability_repository.go`: one table,
+  `remote_overlay_capabilities(token PK, domain, local_slug, created_at,
+  UNIQUE(domain, local_slug))`. `Issue` runs delete-then-insert inside
+  one transaction, so a concurrent `Resolve` of the token being
+  replaced never observes a half-updated state. `Resolve` is scoped by
+  domain, not just token value - a token issued for one domain never
+  resolves under another.
+- `internal/httpapi/remote_overlay.go`: `withRemoteOverlaySecurity`
+  now marks a successfully-validated forwarded request in its own
+  request context (`withForwardedOverlayContext`/
+  `isForwardedOverlayRequest`, unexported context key - only this
+  middleware can ever set it); new `RemoteOverlayResolver` interface
+  and `resolvePublicSlug` helper: for a direct loopback request,
+  `pathSlug` is returned unchanged (zero behavior/cost change from
+  every prior stage); for a confirmed-forwarded request, `pathSlug` is
+  resolved as a capability token, and a miss returns exactly the same
+  "not found" outcome a direct request's unknown slug already
+  produces - no response-shape distinction an attacker could use to
+  enumerate valid tokens.
+- `internal/httpapi/chatoverlay.go`: `resolvePublicChatOverlayProfile`
+  (the one shared helper all three public chat-overlay handlers
+  already called) now resolves through `resolvePublicSlug` first,
+  returning `chatoverlaydomain.ErrPublicSlugNotFound` - the domain's
+  own existing not-found error - on a resolution miss, so
+  `writeChatOverlayError` needed no changes at all. Fixing this one
+  shared helper was sufficient for all three routes (`config`,
+  `items`, `stream`) rather than three separate edits.
+- `internal/httpapi/router.go`: new `Options.RemoteOverlayResolver`
+  field, threaded into `registerChatOverlayRoutes`.
+- `cmd/server/main.go`: constructs the shared
+  `RemoteOverlayCapabilityRepository` unconditionally (cheap - the
+  real gate is `RemoteOverlay.Enabled`, which is what actually allows
+  `isForwardedOverlayRequest` to ever become true) and wires it into
+  the router.
+
+### New tests
+`internal/storage/sqlite/remoteoverlaycapability_repository_test.go`:
+issue-then-resolve round trip; unknown token fails; resolution is
+domain-scoped (same token value under the wrong domain fails); a
+second `Issue` for the same profile invalidates the first token
+immediately; revoke removes the capability and is idempotent;
+`Get` reflects absence; two domains sharing the same `local_slug`
+value don't collide; an invalid domain is rejected by every method.
+`internal/httpapi/remote_overlay_chatoverlay_test.go` - full
+end-to-end proof, not just unit-level: a forwarded request with a
+freshly-issued token resolves and returns 200; the profile's own real
+local `publicSlug`, presented as a token, does NOT work remotely
+(the core property this whole design exists to guarantee); a direct
+loopback request still uses the real local slug unaffected by a
+capability existing at all; a revoked token stops resolving
+immediately; a valid token forwarded through the *management*
+hostname is rejected by `withRemoteOverlaySecurity` before the
+handler ever runs.
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go fmt ./...`: clean
+(auto-applied). `go test ./internal/httpapi/... ./internal/storage/sqlite/...
+./internal/remoteingest/...`: all pass, including every pre-existing
+chat-overlay test in the package unmodified.
+
+### What this commit does not do yet
+Alert profiles, audio, and supporter widgets are not yet wired to
+`resolvePublicSlug` - the identical mechanical change
+`resolvePublicChatOverlayProfile` just received, applied to each
+domain's own equivalent shared resolution helper, tracked as explicit
+remaining work rather than left ambiguous. No management HTTP API
+exists yet for issuing/rotating/revoking a capability (an operator
+cannot yet enable remote access for a profile through any route -
+only through calling the repository directly, as these tests do). No
+frontend UI. No `Caddyfile.self-hosted`. No CI network-namespace/RTMPS
+integration test.
+
+### Commits (chronological, this milestone)
+9. This entry - `feat(server): add remote overlay capability tokens
+   and wire chat overlays end-to-end`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

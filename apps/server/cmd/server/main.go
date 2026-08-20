@@ -772,6 +772,13 @@ func run() error {
 	// see internal/chatoverlay.DefaultRevisionCapacity's own doc
 	// comment.
 	chatOverlayProfileService := chatoverlaydomain.NewService(sqlite.NewChatOverlayRepository(db.DB), nil)
+
+	// docs/remote-ingest.md §12: one shared repository backs every
+	// overlay domain's remote capability tokens - cheap to construct
+	// unconditionally; the real gating is withRemoteOverlaySecurity's
+	// own RemoteOverlay.Enabled check (no forwarded request can ever
+	// reach a handler's resolution path unless that is true).
+	remoteOverlayCapabilities := sqlite.NewRemoteOverlayCapabilityRepository(db.DB)
 	chatOverlayAccountLabel := func(connectedAccountID string) (string, bool) {
 		acct, err := accountService.GetAccount(ctx, connectedAccountID)
 		if err != nil || acct.DisplayName == "" {
@@ -1096,8 +1103,9 @@ func run() error {
 		Shutdown:    shutdownCancel,
 		Updater:     updateManager,
 
-		RemoteManagement: remoteManagementOptions,
-		RemoteOverlay:    remoteOverlayOptions,
+		RemoteManagement:      remoteManagementOptions,
+		RemoteOverlay:         remoteOverlayOptions,
+		RemoteOverlayResolver: remoteOverlayCapabilities,
 
 		RemoteIngest:             remoteIngestService,
 		RemoteIngestRTMPSAddress: cfg.RemoteIngest.RTMPSAddress,

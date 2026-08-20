@@ -483,6 +483,40 @@ local `publicSlug`.**
 - Not logged, not sent to any telemetry (none exists in this project), never
   written to `docs/progress.md`, never included in an error message.
 
+**Implementation simplification (implementation commit, 2026-08-20)**: this
+section's own permission - "If a substantially simpler architecture provides
+equivalent properties, explain it in docs/remote-ingest.md BEFORE
+implementation" - is exercised here. Rather than adding a
+`remoteCapabilityToken` column to each of four separate domain
+schemas/repositories/services (`chatoverlay`, `alerts`, `audio`, the
+`goals`-owned widget profiles), a single shared mapping table,
+`remote_overlay_capabilities(token, domain, local_slug, created_at)`, plus
+one small domain package (`internal/domain/remoteoverlay`) and one SQLite
+repository, provides every property this section requires:
+
+- local `publicSlug` values remain completely untouched in every domain -
+  no schema change to `chatoverlay`, `alerts`, `audio`, or `goals` at all;
+- a capability row's mere existence for `(domain, local_slug)` is exactly
+  "remote access enabled for that profile" - no row means disabled, matching
+  the "nullable" model's own semantics without an actual nullable column
+  anywhere;
+- issuing a fresh token (`Issue`) atomically replaces any previous row for
+  that `(domain, local_slug)` - enable and rotate are the same operation
+  from the repository's point of view, exactly as
+  `internal/remoteingest.Manager.Provision`/`Rotate` already share
+  `generateAndApply` for the equivalent reason;
+- `Resolve(ctx, domain, token)` is the one lookup a forwarded overlay
+  request needs - it returns the real local slug only for a currently-valid
+  token, so a revoked or rotated-away token simply fails to resolve;
+- one small, uniform HTTP surface
+  (`/api/remote-overlay/{domain}/{slug}/{enable,rotate,disable,status}`)
+  replaces four near-duplicate per-domain route sets.
+
+This is a genuine simplification, not a scope reduction: every property
+this section's original per-domain-column design specified still holds,
+implemented with one shared table and one shared package instead of four
+parallel ones.
+
 ## 13. `/api/public/*` route remote-safety classification
 
 Every current route under `/api/public/*`

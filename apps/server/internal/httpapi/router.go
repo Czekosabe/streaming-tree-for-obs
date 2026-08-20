@@ -210,6 +210,15 @@ type Options struct {
 	// see withRemoteOverlaySecurity's own doc comment.
 	RemoteOverlay RemoteOverlayOptions
 
+	// RemoteOverlayResolver resolves a forwarded overlay request's
+	// {slug} path parameter to the real local slug (docs/remote-
+	// ingest.md §12). When nil (every build unless remote overlay
+	// exposure is explicitly wired), resolvePublicSlug's own nil check
+	// means a forwarded overlay request simply cannot resolve any
+	// token - not a panic, and not a silent fall-through to treating
+	// the token as a local slug.
+	RemoteOverlayResolver RemoteOverlayResolver
+
 	// RemoteIngest serves the Stage 20D2C remote-ingest credential-
 	// management API (/api/remote-ingest/*, docs/remote-ingest.md §8).
 	// When nil (every build unless --remote-ingest is active), those
@@ -284,7 +293,7 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.ChatOverlayProfiles != nil && opts.ChatOverlayRuntime != nil && opts.Accounts != nil {
-		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets, opts.VisualAssets)
+		registerChatOverlayRoutes(mux, logger, opts.Accounts, opts.ChatOverlayProfiles, opts.ChatOverlayRuntime, opts.OperatorChatAssets, opts.VisualAssets, opts.RemoteOverlayResolver)
 	}
 
 	if opts.Accounts != nil && opts.DeviceFlow != nil && opts.OutboundChat != nil {
