@@ -37529,3 +37529,118 @@ AskUserQuestion call was made. This entry is a pure journal commit
 (`docs/progress.md` only) and does not need, and will not receive, a
 manually dispatched CI run - accepted evidence belongs to the
 preceding commits that actually changed product/test/doc content.
+
+## docs: define Stage 20D2C remote ingest and overlay contract
+
+Starting Stage 20D2C (branch main, HEAD `8183215`, clean, 0/0). This
+is the final Stage 20D2 sub-stage: authenticated/encrypted remote OBS
+ingest, safe remote exposure of OBS Browser Source overlays on a
+separate hostname from the D2B management origin, and final combined
+native self-hosted validation. Not begun: Stage 20E, Stage 20C2.
+
+Per this stage's own governing task, `docs/remote-ingest.md` is
+written and committed before any product code.
+
+### Pre-implementation audit (real code, not roadmap prose)
+- `internal/runtime/mediamtx/config.go` `RenderConfig`: today's
+  generated config has no `authMethod`/`authInternalUsers` at all,
+  `rtmpEncryption: "no"` (plaintext), a single fixed `IngestPath`, and
+  both `RTMPAddress`/`APIAddress` unconditionally loopback-validated
+  by `config.loadMediaMTX` (`DefaultRTMPAddress = 127.0.0.1:1935`,
+  `DefaultAPIAddress = 127.0.0.1:9997`, `DefaultIngestPath = "live"`).
+- `cmd/server/main.go`: confirmed the exact existing
+  `--headless`/`--remote-management` CLI-flag and startup-refusal
+  pattern (`remoteManagementEnabled && !headlessMode` fails closed) -
+  the precedent this stage's own `--remote-ingest` flag mirrors.
+- `internal/domain/{chatoverlay,audio,alerts,goals}/ids.go`:
+  confirmed all four domains' `NewPublicSlug` generate an identical
+  20-byte (160-bit) `crypto/rand` hex token, each domain's own comment
+  cross-referencing the others as the shared convention, and each
+  already stating explicitly that this is "not sufficient
+  authentication for a server exposed to the public network - a
+  future remote-server stage must add real authentication before that
+  is safe."
+- `internal/domain/visualasset/asset.go` `NewPublicToken`: 32 bytes
+  (256 bits), the codebase's own existing precedent for an
+  Internet-facing capability-shaped value, reused as the target
+  entropy for this stage's new remote overlay capability tokens.
+- Full `/api/public/*` route inventory read directly from
+  `internal/httpapi/{audio,alerts,chatoverlay,public_widgets,
+  visualasset}.go` - 11 routes across 5 domains, classified in
+  `docs/remote-ingest.md` §13 (10 read-only + 1 renderer-lease-scoped
+  state mutation, none granting cross-profile access or global
+  mutation).
+- `internal/httpapi/remote_management.go`: confirmed the existing
+  `validateForwardedRequest`/`singleForwardedValue` forwarded-header
+  contract (single-value, no-comma-list, loopback-peer-required) -
+  reused as-is, checked against a second (overlay) origin, for this
+  stage's backend defense-in-depth requirement rather than inventing
+  a second mechanism.
+- `internal/runtime/branch/manager.go` /
+  `internal/runtime/mediamtx/supervisor.go`: confirmed branch FFmpeg's
+  own input URL is the exact same `rtmp://` `PublishURL` OBS would
+  publish to - a real conflict with a naive RTMPS-only MediaMTX
+  listener, resolved in the contract (§4) rather than glossed over.
+
+### Primary-source research (2026-08-20)
+- MediaMTX v1.19.3, fetched tag-exact from
+  `raw.githubusercontent.com/bluenviron/mediamtx/v1.19.3/...` (not
+  rolling docs): `rtmpEncryption` accepts `no`/`strict`/`optional`;
+  `"optional"` opens `rtmpAddress` and `rtmpsAddress`
+  simultaneously - the resolution to the branch-input conflict above;
+  `authInternalUsers` supports `sha256:`/`argon2:` hashed `pass`
+  values, per-user `ips` allowlist (empty = any IP), `path`-scoped
+  permissions (empty = any path, regex via `~` prefix), `user: any`
+  as a documented wildcard, and `api` as a valid permission action
+  alongside `publish`/`read`/`playback`; RTMP/RTMPS credentials are
+  passed via `?user=&pass=` query parameters on the URL itself (a
+  protocol-level fact, not a bug, with logging consequences recorded
+  in the contract's §7/§29).
+- Caddy (current docs, `caddyserver.com/docs/caddyfile/matchers`):
+  "`/foo/*` will _not_ match `/foo` or `/foobar`" - confirms the
+  PRE-20D2C `Caddyfile.remote-management` exclusion matcher
+  (`path /overlay/* /api/public/*`) does not match the bare
+  `/overlay` or `/api/public` root. Corrected in
+  `docs/remote-ingest.md` §14's `Caddyfile.self-hosted` design
+  (adds the exact-root patterns alongside the wildcard ones).
+- RFC 6265 §8.5 ("Weak Confidentiality"): "Cookies do not provide
+  isolation by port." - the exact primary-source basis for this
+  stage's mandatory management/overlay hostname separation (not
+  merely differing ports), and for a correction still owed to
+  `docs/remote-management.md`'s existing wording (tracked, not yet
+  made, in `docs/remote-ingest.md` §16).
+- systemd `LoadCredential=`: reused Stage 20D2A's own already-verified
+  research and precedent (`docs/linux-headless-server.md`) for RTMPS
+  key/certificate delivery rather than re-deriving it.
+
+### What `docs/remote-ingest.md` defines
+Threat model; explicit `--remote-ingest` enablement and its required
+`--headless`+`--remote-management` relation; the `rtmpEncryption:
+"optional"` RTMPS policy and why `"strict"` was rejected; the two-user
+MediaMTX `authInternalUsers` model (publish-only remote identity,
+loopback-only local read/api identity); credential generation/
+verifier-persistence/one-time-display/rotation/revoke lifecycle;
+operator-supplied TLS certificate/key policy and `LoadCredential=`
+delivery; the new ingest credential-management API surface; the
+streaming-safety `409 Conflict` gate around rotation/revoke; mandatory
+overlay/management hostname separation; backend defense-in-depth for
+forwarded overlay requests; the separate nullable remote-capability-
+token design (local `publicSlug`s never promoted to remote capability
+merely because their entropy is adequate); the full `/api/public/*`
+remote-safety classification; the two-origin Caddy policy; the native
+CI remote-network test model; final combined self-hosted acceptance
+criteria; and explicit Stage 20E deferrals.
+
+### What this commit does not do
+No product Go code changed. No MediaMTX config generation changed. No
+new HTTP route exists yet. No frontend UI exists yet. No CI workflow
+changed yet. This is the contract only, per this stage's own explicit
+requirement to define it before implementation.
+
+### Commits (chronological, this milestone)
+1. This entry - `docs: define Stage 20D2C remote ingest and overlay
+   contract`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
