@@ -39328,8 +39328,48 @@ budget.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-27. This entry - `ci: read the server's real log from stdout, not
-    stderr`
+27. `ci: read the server's real log from stdout, not stderr`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 14:20 — ci: filter the server-diagnostic dump to error/warning lines, GitHub truncated the flat tail
+
+### Real CI result: closer, but the annotation itself got cut off
+Commit `31f8738` was checked. The server's real stdout log is now
+captured and shows genuine progress through the isolated proxy: health
+check, session bootstrap, and `"remote login succeeded"` all logged
+correctly. But the annotation cut off exactly at `level=ERR` - checked
+directly (message length reported as 2,247 characters by the GitHub
+API itself, not a WebFetch summarization artifact - confirmed by
+asking for the message's own raw length and its literal last 400
+characters, which both independently showed the same cutoff point).
+This is GitHub's own annotation size ceiling, not this project's
+workflow tail - the flat 2000-character stdout slice this script was
+appending, once combined with the step-by-step output already ahead
+of it in the same message, exceeded whatever that real limit is
+before ever reaching the actual error line.
+
+### Fix
+Replaced the flat stdout tail with a filtered one: lines matching
+`level=ERR` or `level=WARN` (where the real error/warning content
+lives) plus the last 5 lines for surrounding context, deduplicated and
+capped at 1200 characters - far smaller than the previous 2000-character
+blind slice, and now prioritized toward the content that actually
+matters instead of truncating it away. The empty stderr tail (confirmed
+useless in the prior entry) was dropped entirely to free more of the
+budget for stdout.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+should be the run that finally shows the actual Go error behind the
+500.
+
+### Commits (chronological, this milestone)
+28. This entry - `ci: filter the server-diagnostic dump to
+    error/warning lines, GitHub truncated the flat tail`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

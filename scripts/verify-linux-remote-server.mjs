@@ -606,15 +606,21 @@ async function main() {
     // An "internal_error" HTTP response body is deliberately sanitized
     // (apps/server/internal/httpapi/remoteingest.go's writeRemoteIngestError)
     // - the real Go error only ever reaches the server's own log, via
-    // slog. main.go builds that logger with slog.NewTextHandler(os.Stdout, ...)
-    // - stdout, not stderr - confirmed by reading the real code after a
-    // first attempt at this diagnostic came back with an empty stderr
-    // tail. Appending both recent stdout and stderr here is what makes
-    // a real backend failure in one of these assertions diagnosable
-    // from the CI annotation alone, instead of just "internal_error"
-    // with no further detail.
-    const withServerDiag = (text) =>
-      `${text}\n--- recent server stdout (tail) ---\n${serverHandle.getStdout().slice(-2000)}\n--- recent server stderr (tail) ---\n${serverHandle.getStderr().slice(-500)}`;
+    // slog on stdout (main.go: slog.NewTextHandler(os.Stdout, ...), not
+    // stderr - confirmed by reading the real code after a first attempt
+    // came back with an empty stderr tail). A second attempt appending
+    // a flat 2000-char stdout tail came back truncated by GitHub's own
+    // annotation size limit before reaching the actual error line, so
+    // this filters to just the level=ERR/WARN lines (where the real
+    // error lives) plus a short recent-lines tail for context, capped
+    // well under that limit rather than a broad, mostly-irrelevant dump.
+    const withServerDiag = (text) => {
+      const lines = serverHandle.getStdout().split('\n');
+      const notable = lines.filter((l) => /level=(ERR|WARN)/.test(l));
+      const recent = lines.slice(-5);
+      const combined = [...new Set([...notable, ...recent])].join('\n');
+      return `${text}\n--- server stdout: error/warning lines + recent tail ---\n${combined.slice(-1200)}`;
+    };
 
     step('Start the management and overlay TLS proxy stand-ins on the host-side veth address');
     manageProxy = await startManagementProxy(pki.leaves[MANAGE_HOST]);
