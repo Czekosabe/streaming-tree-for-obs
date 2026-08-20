@@ -682,6 +682,18 @@ async function main() {
     const publisherSecret = provisionRes.body && provisionRes.body.secret;
     expect(typeof publisherSecret === 'string' && publisherSecret.length > 0, 'a plaintext publisher secret was returned exactly once', '');
 
+    // Supervisor.RequestStart launches MediaMTX off the caller's own
+    // goroutine (go s.launch(...); return nil) rather than waiting for
+    // readiness, so the provision API can genuinely return 200 before
+    // MediaMTX has actually finished restarting with the new
+    // authInternalUsers config - a real race, not a hypothetical one,
+    // confirmed by reading apps/server/internal/runtime/mediamtx/
+    // supervisor.go. Wait for readiness again before trusting the new
+    // credential config is actually the one MediaMTX is enforcing.
+    step('Wait for MediaMTX to finish restarting with the new remote-ingest credential');
+    const afterProvisionState = await waitForMediaMtxState(['ready'], 30_000);
+    expect(afterProvisionState === 'ready', 'MediaMTX becomes ready again after the credential-provisioning restart', withServerDiag(`state=${afterProvisionState}`));
+
     const rtmpsBase = `rtmps://${INGEST_HOST}:${RTMPS_PORT}`;
     const validPublishUrl = `${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
 

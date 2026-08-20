@@ -39417,8 +39417,64 @@ this is genuinely the last gap, the run should now reach the RTMPS
 accept/reject matrix for the first time.
 
 ### Commits (chronological, this milestone)
-29. This entry - `fix(ci): install MediaMTX before provisioning the
-    remote-ingest credential`
+29. `fix(ci): install MediaMTX before provisioning the remote-ingest
+    credential`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 15:00 — fix(ci): wait for MediaMTX readiness after provisioning, before the RTMPS matrix
+
+### Real CI result: past MediaMTX install, into the RTMPS matrix itself
+Commit `684ad5f` was checked. Steps 01-15 now all pass on linux-amd64
+- login, MediaMTX install, MediaMTX readiness, and remote-ingest
+credential provisioning all genuinely succeed through the isolated
+proxy for the first time this whole investigation. The failure moved
+into the RTMPS accept/reject matrix itself:
+
+```
+FAIL RTMPS with no credential is rejected
+FAILED: RTMPS with no credential is rejected
+```
+
+No `level=ERR`/`level=WARN` line accompanied it - MediaMTX itself
+logged nothing alarming, which reframed the question: not "why did
+MediaMTX accept this" but "was MediaMTX actually enforcing the new
+credential config yet when this ran." Read
+`apps/server/internal/runtime/mediamtx/supervisor.go` rather than
+guess at MediaMTX's own auth semantics: `RequestStart` sets `state =
+StateStarting` and then launches the process on a *separate goroutine*
+(`go s.launch(path, generation); return nil`) - it does not wait for
+readiness before returning. `RequestRestart` (called by credential
+provisioning) is `RequestStop` (synchronous) followed by this async
+`RequestStart`. That means `POST /api/remote-ingest/provision` can
+genuinely return 200 to the client before MediaMTX has actually
+finished restarting with the new `authInternalUsers` config - a real,
+confirmed race in this script's own assumptions, not a guess: the very
+next thing the script did after seeing 200 was immediately start the
+reject-matrix publishes, with no wait for the restart to actually
+land.
+
+### Fix
+Added an explicit `waitForMediaMtxState(['ready'], 30_000)` call right
+after the provisioning assertions and before constructing the RTMPS
+URLs, reusing the same helper already added for the install step -
+mirroring how this script already (correctly) waits for readiness
+after install rather than trusting an API response alone to mean the
+underlying process has caught up.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. This is
+offered as the best-evidenced next fix, not a certainty that it is the
+complete explanation - real validation is the next native Linux CI
+run, and if the reject-matrix failure recurs with different evidence,
+that will be investigated the same way as everything before it in this
+entry sequence: from real diagnostic output, not assumption.
+
+### Commits (chronological, this milestone)
+30. This entry - `fix(ci): wait for MediaMTX readiness after
+    provisioning, before the RTMPS matrix`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
