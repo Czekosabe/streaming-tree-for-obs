@@ -37304,3 +37304,84 @@ throughout Stage 20D2B.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: reconcile Stage 20D2B closing record
+
+Three small factual corrections to the Stage 20D2B closing record
+(commit `70b0e28`, "docs: record Stage 20D2B remote management
+regression"), per the PRE-20D2C governing task's own §11/§12/§13. None
+of these change any product behavior. Per this project's append-only
+journal rule, the original closing entry is left untouched - these
+corrections are recorded here instead.
+
+### §11 - Commit-count label correction
+The closing entry's "Commits (chronological, this milestone)" section
+header read "15 total", but its own numbered list ran 1 through 16
+(15 concrete pre-closing commits plus "16. This entry" for the closing
+commit `70b0e28` itself). Re-counted directly against real git
+history during this correction milestone:
+- `git log --oneline 1ad465a..d7bf962 | wc -l` -> 15 (every commit up
+  to, but not including, the closing commit)
+- `git log --oneline 1ad465a..70b0e28 | wc -l` -> 16 (including the
+  closing commit)
+
+The chronological list itself was already complete and correct at 16
+- nothing is missing from it. "15 total" in the header line was a
+counting-label error only: it counted the pre-closing commits and
+omitted the closing commit itself from the total, despite the closing
+commit being item 16 in the very same list. The correct total for the
+whole Stage 20D2B milestone (`dd2b399` through `70b0e28` inclusive) is
+**16 commits**, matching what was already reported in chat at the
+time. No product impact.
+
+### §12 - Operator-intervention accounting correction
+The closing entry counted "two genuine resume messages" (a system-
+framed "Continue from where you left off." and a literal operator
+"continue") as a single undifferentiated category. Re-audited against
+this session's own actual turn sequence at the point of that
+interruption/resumption: the "Continue from where you left off."
+message arrived framed as an automated harness/system continuation
+notice, not as a message the operator personally composed; the
+literal "continue" that followed it was operator-authored free text.
+These are two different kinds of event and should not have been
+merged into one count. Corrected accounting for Stage 20D2B:
+- Operator-authored resume/follow-up interventions: **1** (the
+  literal "continue")
+- System/harness continuation notices: **1** (the "Continue from
+  where you left off." message)
+- AskUserQuestion calls: **0** (unchanged - none were made during
+  Stage 20D2B)
+
+No evidence was available to further re-litigate the underlying
+interruption event itself beyond what the closing entry already
+recorded; only the categorization of the two messages is corrected
+here.
+
+### §13 - Linux-package cancelled-run re-audit
+Re-audited the closing entry's final stated CI gap: `linux-
+package.yml` run `32293899561` (triggered by commit `d478c11`),
+cancelled while queued, never started. Re-confirmed cheaply, without
+polling any API:
+- `git show --stat d478c11` touches exactly three files:
+  `apps/server/internal/httpapi/remote_management_test.go`,
+  `apps/server/internal/httpapi/router.go`, and `docs/progress.md`.
+  None of these are packaging, install, Secret-Service, or package-
+  build files - the commit is confirmed scoped entirely to remote-
+  management HTTP-origin behavior, exactly as the closing entry
+  claimed.
+- The immediately preceding package-relevant commit, `178614a`
+  ("fix(test): stabilize the tampered-verifier password test"), has
+  its own already-recorded green `linux-package.yml` run
+  (`32291463378`) from the Stage 20D2B closing evidence.
+
+This confirms the closing entry's own conclusion still holds: the
+cancelled run at `d478c11` is not evidence of a packaging defect, and
+does not need to be, and will not be, rerun solely to erase an honest
+historical cancellation.
+
+### Commits (chronological, this entry)
+1. This entry - `docs: reconcile Stage 20D2B closing record`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
