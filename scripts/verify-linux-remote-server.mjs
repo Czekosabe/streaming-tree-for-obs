@@ -562,6 +562,14 @@ async function main() {
 
     const cookieJar = join(pkiDir, 'cookies.txt');
 
+    step('Diagnostic: L3 (ping) and L4/TLS (verbose curl) connectivity probes, captured regardless of outcome');
+    const pingProbe = clientExecStatus('ping', ['-c', '2', '-W', '2', HOST_ADDR]);
+    console.log(`     diag ping ${HOST_ADDR} exit ${pingProbe.status}`);
+    console.log((pingProbe.stdout || '').trim().split('\n').map((l) => `     diag ${l}`).join('\n'));
+    const probe = clientExecStatus('curl', ['-v', '-sS', '--max-time', '8', '-o', '/dev/null', `${MANAGE_ORIGIN}/api/auth/session`]);
+    console.log(`     diag curl exit ${probe.status}`);
+    console.log((probe.stderr || '').trim().split('\n').map((l) => `     diag ${l}`).join('\n'));
+
     step('Log in as the administrator through the real management TLS proxy, from the isolated client namespace');
     const sessionBootstrap = remoteCurl('GET', `${MANAGE_ORIGIN}/api/auth/session`, { cookieJar });
     expect(sessionBootstrap.status === 200, 'GET /api/auth/session (unauthenticated bootstrap) returns 200', sessionBootstrap.text);

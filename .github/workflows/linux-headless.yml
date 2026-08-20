@@ -158,7 +158,7 @@ jobs:
       - name: Show remote-server verification diagnostics on failure
         if: failure()
         run: |
-          TAIL="$(tail -c 4000 /tmp/rs-verify.log 2>/dev/null || echo 'no output captured')"
+          TAIL="$(tail -c 6000 /tmp/rs-verify.log 2>/dev/null || echo 'no output captured')"
           ENCODED="${TAIL//$'\n'/%0A}"
           ENCODED="${ENCODED//$'\r'/}"
           echo "::error title=verify-linux-remote-server.mjs failure (${{ matrix.name }})::${ENCODED}"

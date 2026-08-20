@@ -39071,8 +39071,66 @@ Programmatically confirmed both new names are 14 characters. Real
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-22. This entry - `fix(ci): shorten the veth capability-probe interface
-    names`
+22. `fix(ci): shorten the veth capability-probe interface names`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 12:45 — ci: add ping/verbose-curl diagnostics ahead of the management-proxy login step
+
+### Real CI result, and a new, different failure past all the prior ones
+Commit `f2a5b7c` (the veth-naming fix) was checked after waiting out a
+second GitHub API rate-limit exhaustion (the reset time itself was
+read from the raw `resources.core.reset` unix timestamp and converted
+locally with `date -u -d @<ts>`, not trusted from the WebFetch tool's
+own prose summary of it, which had visibly hallucinated an impossible
+past date - a genuine reminder to verify a summarizing tool's derived
+claims against the raw field when the derived claim is itself
+load-bearing). Steps 01-09 now all pass on both architectures -
+package install, the veth capability probe, real namespace/veth
+creation, the ephemeral CA, credential provisioning, the real server
+starting healthy, and both TLS proxies starting - confirming both
+prior fixes were correct. A new failure appears at step 10:
+
+```
+[10] Log in as the administrator through the real management TLS proxy
+     FAIL curl GET https://manage-d2c.test:8714/api/auth/session failed to run
+          curl: (28) Connection timed out after 10002 milliseconds
+```
+
+This is the first real cross-namespace application-layer request in
+the script (everything before it either ran inside the host namespace
+or was pure namespace/veth plumbing) and curl's exit code 28 conflates
+several distinct possible phases (DNS, TCP connect, TLS handshake) -
+too coarse to diagnose from alone, and not something to guess at from
+here: `startManagementProxy` was re-read and confirmed to bind
+explicitly to `HOST_ADDR` (not an implicit 0.0.0.0 or 127.0.0.1
+default), and the real veth addresses used by `setUpNetwork()` were
+already confirmed within the interface-name length limit in the prior
+entry, so neither of the two most likely trivial causes apply here.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added an explicit diagnostic step immediately before the login step:
+an ICMP ping to `HOST_ADDR` from the client namespace (isolates
+whether this is basic L3 reachability or something TCP/TLS-specific)
+and a verbose (`curl -v`) probe of the exact same URL the login step
+uses next (isolates which connection phase actually stalls - DNS
+resolution, TCP SYN, or the TLS handshake). Both are logged
+unconditionally via `console.log`, not asserted with `expect()`, so
+they cannot themselves fail the run - they exist purely to make the
+next occurrence of this failure diagnosable from the CI annotation
+alone. Also raised the workflow's own diagnostic tail from 4000 to
+6000 characters so the added probe output does not crowd out the
+actual failure line at the tail of the captured log.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+23. This entry - `ci: add ping/verbose-curl diagnostics ahead of the
+    management-proxy login step`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
