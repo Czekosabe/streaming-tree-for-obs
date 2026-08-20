@@ -37240,3 +37240,67 @@ first-party TLS-proxy test harness.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## test: verify remote management does not expose public overlays
+
+### What changed
+`scripts/verify-linux-remote-management.mjs`:
+- The ephemeral TLS test proxy (`startTLSProxy`) now implements the
+  exact same `@excludedLocalOnlySurface` policy as the corrected
+  `docs/examples/Caddyfile.remote-management` - a request under
+  `/overlay/*` or `/api/public/*` receives a bare `404` from the proxy
+  itself, before the backend is ever reached; every other path is
+  forwarded exactly as before.
+- A new `verifyCaddyfileMatchesHarnessPolicy` check, run as this
+  script's very first step, reads the real committed Caddyfile
+  directly and confirms its `@excludedLocalOnlySurface` matcher and
+  `respond 404` block still match this script's own hardcoded policy -
+  the same "read the real committed file, don't trust a separately-
+  maintained model" discipline `scripts/verify-ci-routing.mjs` already
+  established, applied here so the Caddyfile and this test harness
+  cannot silently drift apart from each other the way the Caddyfile
+  and `docs/remote-management.md`'s own prose once did.
+- The previous "No remote overlay route is exposed through this proxy
+  configuration" scenario - which had only proved `/api/public/*` is
+  not *authentication*-gated, then incorrectly concluded from that
+  alone that it was "not exposed through this proxy configuration" -
+  is replaced with explicit, separate proofs of both halves: a direct
+  loopback request confirms the backend's own local-overlay contract
+  is genuinely unchanged (`/api/public/*` still unauthenticated,
+  `/overlay/*`'s SPA shell still served); a request through the real
+  TLS proxy confirms both paths now receive a genuine `404` from the
+  proxy itself, never reaching the backend; and four further proxy
+  requests (root, health, auth bootstrap, an authenticated management
+  read) confirm the exclusion is narrow, not a broad allowlist mistake
+  that would have also blocked legitimate management traffic.
+- A new `backendRequest` helper - one plain HTTP request straight to
+  the loopback backend, bypassing the TLS proxy entirely, needed to
+  make the "direct loopback" half of the above provable at all.
+- The whole-host socket audit was extended (governing task §14: "no
+  MediaMTX port is proxied") to check MediaMTX's own well-known
+  default ports (1935 RTMP, 9997 Control API) specifically for a non-
+  loopback binding - deliberately not a truly unscoped whole-host
+  audit, since a CI runner may have unrelated system listeners (sshd,
+  a telemetry agent) bound non-loopback for reasons outside this
+  application's own control, and asserting against those would be a
+  false failure rather than real evidence of anything this milestone
+  changed.
+
+### Validation
+`node --check scripts/verify-linux-remote-management.mjs`: clean. The
+two new self-check regexes were verified directly against the real
+committed Caddyfile locally (both match). This script cannot be
+executed end-to-end on this Windows development machine (Linux-only:
+real `.deb` install, real process model, real `ss` socket audit) -
+real validation happens via the native Linux CI run this commit
+triggers (`linux-headless.yml`, the only workflow this file's own path
+filter routes to), exactly like every other change to this script
+throughout Stage 20D2B.
+
+### Commits (chronological, this entry)
+1. This entry - `test: verify remote management does not expose
+   public overlays`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

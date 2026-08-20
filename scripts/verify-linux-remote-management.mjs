@@ -12,7 +12,17 @@
  * `node:https`/`node:tls`) that always overwrites X-Forwarded-Proto/
  * X-Forwarded-Host, exactly mirroring the documented Caddy reference
  * configuration's own confirmed default behavior
- * (docs/remote-management.md §2/§20).
+ * (docs/remote-management.md §2/§20), AND implements the exact same
+ * @excludedLocalOnlySurface routing policy the corrected
+ * docs/examples/Caddyfile.remote-management now uses (PRE-20D2C
+ * correction: an earlier version of both the Caddyfile and this test
+ * proxy forwarded every path, including /overlay/* and /api/public/*,
+ * contradicting the project's own stated D2B exposure boundary - see
+ * docs/remote-management.md §17). No `caddy` binary is installed in
+ * this CI environment (confirmed directly, not installed here solely
+ * for this check); the routing policy exercised is grounded in
+ * Caddy's own official documentation, not the literal Caddy binary -
+ * stated honestly, not claimed as more than it is.
  *
  * Requires a Linux release build to already exist at
  * build/release-linux/output/ - run
@@ -196,14 +206,43 @@ function readFileText(path) {
   return execFileSync('cat', [path], { encoding: 'utf8' });
 }
 
-/** The ephemeral TLS test proxy itself - docs/remote-management.md
- * §20's Caddy reference example, reimplemented in Node for a
- * self-contained CI test: terminates HTTPS, always OVERWRITES
- * X-Forwarded-Proto/X-Forwarded-Host/X-Forwarded-For with fixed,
- * correct values (never forwards a client-supplied one), proxies only
- * to the loopback backend. */
+/** excludedLocalOnlyPathPrefixes mirrors the corrected
+ * docs/examples/Caddyfile.remote-management's own
+ * @excludedLocalOnlySurface matcher exactly (`path /overlay/*
+ * /api/public/*`) - the local-only public-overlay surface never
+ * forwarded through the D2B management origin (docs/remote-
+ * management.md §17, PRE-20D2C correction). Kept as one named
+ * constant so the Caddyfile and this test harness cannot silently
+ * drift apart from each other again. */
+const excludedLocalOnlyPathPrefixes = ['/overlay/', '/api/public/'];
+
+function isExcludedLocalOnlyPath(urlPath) {
+  const pathname = urlPath.split('?')[0];
+  return excludedLocalOnlyPathPrefixes.some((prefix) => pathname.startsWith(prefix));
+}
+
+/** The ephemeral TLS test proxy itself - a first-party Node
+ * reimplementation of docs/examples/Caddyfile.remote-management's
+ * real, current routing policy (not the literal Caddy binary - no
+ * `caddy` binary is installed in this CI environment, and one is not
+ * installed here solely for this check, per this milestone's own
+ * governing task; the policy itself is grounded directly in Caddy's
+ * own official documentation, cited in docs/remote-management.md
+ * §2/§17). Terminates HTTPS, always OVERWRITES X-Forwarded-Proto/
+ * X-Forwarded-Host/X-Forwarded-For with fixed, correct values (never
+ * forwards a client-supplied one). Requests under
+ * excludedLocalOnlyPathPrefixes never reach the backend - answered
+ * with a bare 404 here, exactly like the Caddyfile's own
+ * `handle @excludedLocalOnlySurface { respond 404 }` block - every
+ * other path is proxied to the loopback backend. */
 function startTLSProxy(cert) {
   const server = createHttpsServer({ key: cert.keyPem, cert: cert.certPem }, (clientReq, clientRes) => {
+    if (isExcludedLocalOnlyPath(clientReq.url)) {
+      clientRes.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      clientRes.end('404 Not Found');
+      return;
+    }
+
     const headers = { ...clientReq.headers };
     delete headers['x-forwarded-for'];
     delete headers['x-forwarded-proto'];
@@ -270,11 +309,57 @@ function proxyRequest(cert, method, path, { body, headers = {}, cookie } = {}) {
   });
 }
 
+/** One plain HTTP request straight to the loopback backend, bypassing
+ * the TLS proxy entirely - used to prove the backend's own existing
+ * local contract (e.g. the public-overlay surface) is genuinely
+ * unchanged, independent of whatever the external management proxy
+ * does or does not forward (docs/remote-management.md §17: BACKEND
+ * AUTH CLASSIFICATION and REVERSE-PROXY INTERNET REACHABILITY are two
+ * different questions - this is the "backend" half of that pair). */
+function backendRequest(method, path) {
+  return new Promise((resolvePromise, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port: BACKEND_PORT, path, method, headers: { Accept: 'application/json' } }, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => {
+        let parsed = data;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          // Not JSON.
+        }
+        resolvePromise({ status: res.statusCode, headers: res.headers, body: parsed, text: data });
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 function extractSessionCookie(setCookieHeaders) {
   if (!Array.isArray(setCookieHeaders)) return null;
   const line = setCookieHeaders.find((c) => c.startsWith('__Host-streaming-tree-session='));
   if (!line) return null;
   return { raw: line, value: line.split(';')[0] };
+}
+
+/** Confirms excludedLocalOnlyPathPrefixes (this script's own hardcoded
+ * policy) actually matches the real, committed
+ * docs/examples/Caddyfile.remote-management - so the two cannot
+ * silently drift apart the way the Caddyfile and this document's own
+ * prose once did (the PRE-20D2C bug this milestone corrects). Mirrors
+ * scripts/verify-ci-routing.mjs's own established "read the real
+ * committed file, don't just trust a separately-maintained model"
+ * pattern. */
+function verifyCaddyfileMatchesHarnessPolicy() {
+  const caddyfilePath = join(REPO_ROOT, 'docs', 'examples', 'Caddyfile.remote-management');
+  const caddyfileContent = readFileText(caddyfilePath);
+  expect(/path\s+\/overlay\/\*\s+\/api\/public\/\*/.test(caddyfileContent),
+    'the committed Caddyfile\'s own @excludedLocalOnlySurface matcher still lists exactly /overlay/* and /api/public/*, matching this script\'s own hardcoded policy',
+    caddyfileContent);
+  expect(/handle\s+@excludedLocalOnlySurface\s*\{\s*respond\s+404/.test(caddyfileContent),
+    'the committed Caddyfile still responds 404 (not proxies) for the excluded surface',
+    caddyfileContent);
 }
 
 async function main() {
@@ -283,6 +368,9 @@ async function main() {
   if (process.platform !== 'linux') {
     fail('this script only runs on Linux', `process.platform = ${process.platform}`);
   }
+
+  step('The committed reference Caddyfile matches this script\'s own proxy-exclusion policy');
+  verifyCaddyfileMatchesHarnessPolicy();
 
   step('Verify the real .deb package exists and openssl is available');
   const debName = existsSync(OUTPUT_DIR) ? readdirSync(OUTPUT_DIR).find((n) => n.endsWith('.deb')) : undefined;
@@ -345,6 +433,22 @@ async function main() {
       const sockets = execFileSync('ss', ['-Hltn'], { encoding: 'utf8' });
       const nonLoopback = sockets.split('\n').filter((l) => l.includes(String(BACKEND_PORT))).filter((l) => !l.includes('127.0.0.1') && !l.includes('[::1]'));
       expect(nonLoopback.length === 0, 'no non-loopback listener exists for the backend port', sockets);
+
+      // governing task §14: "no MediaMTX port is proxied" - checks
+      // MediaMTX's own well-known default ports specifically (1935
+      // RTMP, 9997 Control API - docs/remote-management.md's own
+      // scope boundary), not a truly unscoped whole-host audit (a
+      // CI runner may legitimately have unrelated system listeners
+      // - sshd, a metadata/telemetry agent - bound non-loopback for
+      // reasons entirely outside this application's own control;
+      // asserting against those would be a false failure, not real
+      // evidence of anything this milestone changed).
+      step('MediaMTX default ports (RTMP 1935, Control API 9997) are not bound non-loopback');
+      for (const mediaMTXPort of ['1935', '9997']) {
+        const matches = sockets.split('\n').filter((l) => l.includes(`:${mediaMTXPort} `) || l.trim().endsWith(`:${mediaMTXPort}`));
+        const nonLoopbackMediaMTX = matches.filter((l) => !l.includes('127.0.0.1') && !l.includes('[::1]'));
+        expect(nonLoopbackMediaMTX.length === 0, `no non-loopback listener on MediaMTX's default port ${mediaMTXPort}`, matches);
+      }
 
       step('Start the real ephemeral TLS reverse proxy in front of the loopback backend');
       proxyServer = await startTLSProxy(cert);
@@ -442,20 +546,49 @@ async function main() {
       });
       expect(wrongOrigin.status === 403, 'shutdown with the wrong Origin is rejected', wrongOrigin);
 
-      step('No remote overlay route is exposed through this proxy configuration');
-      const overlayAttempt = await proxyRequest(cert, 'GET', '/api/public/chat-overlays/anything', { cookie: sessionCookie.value });
-      // /api/public/* is intentionally reachable through the backend
-      // itself (it is the existing local-overlay contract, unchanged -
-      // docs/remote-management.md §15/§35), but this proxy
-      // configuration is the D2B reference example, which this
-      // repository's own docs explicitly do not extend to overlay
-      // paths for real deployments; this assertion documents that the
-      // *authentication* boundary itself does not gate it (by design,
-      // matching desktop/local behavior) while the actual network
-      // exposure decision remains an operator/proxy-configuration
-      // concern outside this application's own code, per
-      // docs/remote-management.md §35.
-      expect(overlayAttempt.status !== 401, '/api/public/* is not gated by the authentication boundary (matches local overlay behavior)', overlayAttempt.status);
+      // PRE-20D2C correction (docs/remote-management.md §17): a prior
+      // version of this scenario only proved /api/public/* is not
+      // *authentication*-gated, then drew the wrong conclusion from
+      // that alone ("not exposed through this proxy configuration") -
+      // BACKEND AUTH CLASSIFICATION and REVERSE-PROXY INTERNET
+      // REACHABILITY are two different questions. This now proves
+      // both halves explicitly and separately: the backend's own
+      // local-overlay contract is unchanged (direct loopback request,
+      // bypassing the proxy entirely), and the external management
+      // proxy genuinely refuses to forward these paths at all (the
+      // proxy's own 404, per its corrected @excludedLocalOnlySurface
+      // policy - the backend is never even reached for these two
+      // requests).
+      step('Direct loopback backend: /api/public/* remains reachable (existing local-overlay contract, unchanged)');
+      const directPublic = await backendRequest('GET', '/api/public/chat-overlays/anything');
+      expect(directPublic.status !== 401, 'the backend itself still serves /api/public/* unauthenticated when reached directly (loopback)', directPublic.status);
+
+      step('External management proxy: /api/public/* is NOT forwarded (real 404 from the proxy itself)');
+      const externalPublic = await proxyRequest(cert, 'GET', '/api/public/chat-overlays/anything', { cookie: sessionCookie.value });
+      expect(externalPublic.status === 404, 'the external proxy refuses /api/public/*, the backend is never reached for it', externalPublic.status);
+
+      step('External management proxy: /overlay/* is NOT forwarded (real 404 from the proxy itself)');
+      const externalOverlay = await proxyRequest(cert, 'GET', '/overlay/chat/anything', { cookie: sessionCookie.value });
+      expect(externalOverlay.status === 404, 'the external proxy refuses /overlay/*, the backend is never reached for it', externalOverlay.status);
+
+      step('Direct loopback backend: /overlay/* (the SPA client-side route) remains reachable (existing local contract, unchanged)');
+      const directOverlay = await backendRequest('GET', '/overlay/chat/anything');
+      // /overlay/chat/:publicSlug is a client-side React Router route,
+      // not an API route - the packaged frontend's own SPA fallback
+      // (internal/httpapi/production.go) serves index.html (200) for
+      // any non-asset-like unmatched path, exactly as it does for
+      // every other client-side route.
+      expect(directOverlay.status === 200, 'the backend itself still serves the /overlay/* SPA shell when reached directly (loopback)', directOverlay.status);
+
+      step('External management proxy: the management SPA, health, auth bootstrap, and authenticated API remain reachable (the exclusion is narrow, not a broad allowlist mistake)');
+      const externalRoot = await proxyRequest(cert, 'GET', '/');
+      expect(externalRoot.status === 200, 'GET / (management SPA shell) still proxies correctly', externalRoot.status);
+      const externalHealthAgain = await proxyRequest(cert, 'GET', '/api/health');
+      expect(externalHealthAgain.status === 200, 'GET /api/health still proxies correctly', externalHealthAgain.status);
+      const externalAuthAgain = await proxyRequest(cert, 'GET', '/api/auth/session', { cookie: sessionCookie.value });
+      expect(externalAuthAgain.status === 200, 'GET /api/auth/session still proxies correctly', externalAuthAgain.status);
+      const externalManagementAgain = await proxyRequest(cert, 'GET', '/api/about', { cookie: sessionCookie.value });
+      expect(externalManagementAgain.status === 200, 'GET /api/about (authenticated management read) still proxies correctly', externalManagementAgain.status);
 
       step('Authenticated remote shutdown with valid session+CSRF+Origin succeeds');
       const shutdown = await proxyRequest(cert, 'POST', '/api/system/shutdown', {
