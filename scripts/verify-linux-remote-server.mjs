@@ -606,11 +606,15 @@ async function main() {
     // An "internal_error" HTTP response body is deliberately sanitized
     // (apps/server/internal/httpapi/remoteingest.go's writeRemoteIngestError)
     // - the real Go error only ever reaches the server's own log, via
-    // slog. Appending a recent stderr tail here is what makes a real
-    // backend failure in one of these assertions diagnosable from the
-    // CI annotation alone, instead of just "internal_error" with no
-    // further detail.
-    const withServerDiag = (text) => `${text}\n--- recent server stderr (tail) ---\n${serverHandle.getStderr().slice(-2000)}`;
+    // slog. main.go builds that logger with slog.NewTextHandler(os.Stdout, ...)
+    // - stdout, not stderr - confirmed by reading the real code after a
+    // first attempt at this diagnostic came back with an empty stderr
+    // tail. Appending both recent stdout and stderr here is what makes
+    // a real backend failure in one of these assertions diagnosable
+    // from the CI annotation alone, instead of just "internal_error"
+    // with no further detail.
+    const withServerDiag = (text) =>
+      `${text}\n--- recent server stdout (tail) ---\n${serverHandle.getStdout().slice(-2000)}\n--- recent server stderr (tail) ---\n${serverHandle.getStderr().slice(-500)}`;
 
     step('Start the management and overlay TLS proxy stand-ins on the host-side veth address');
     manageProxy = await startManagementProxy(pki.leaves[MANAGE_HOST]);

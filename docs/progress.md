@@ -39296,8 +39296,40 @@ instead of just the sanitized client-facing envelope.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-26. This entry - `ci: surface the real server-side error behind
-    remote-ingest provisioning's 500`
+26. `ci: surface the real server-side error behind remote-ingest
+    provisioning's 500`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 14:05 — ci: read the server's real log from stdout, not stderr
+
+### Real CI result: the previous diagnostic captured the wrong stream
+Commit `ba096e7` was checked. The `--- recent server stderr (tail)
+---` section in the annotation was empty - the diagnostic addition
+worked mechanically (no crash, ran cleanly) but captured nothing
+useful, because `apps/server/cmd/server/main.go:273` builds the
+application's slog logger with `slog.NewTextHandler(os.Stdout, ...)` -
+the real error log line goes to the server's stdout, not stderr. This
+was findable by reading the real code once the first attempt's empty
+result made clear something was wrong with the assumption, rather than
+guessing a second stream to check without checking.
+
+### Fix
+`withServerDiag()` now appends a tail of `serverHandle.getStdout()`
+(where the real slog error line actually lands) alongside a smaller
+stderr tail (kept for anything Go's runtime itself writes there, e.g.
+a panic), still within the existing 8000-character workflow tail
+budget.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+27. This entry - `ci: read the server's real log from stdout, not
+    stderr`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
