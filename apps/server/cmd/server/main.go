@@ -55,6 +55,7 @@ import (
 	"github.com/streaming-tree/server/internal/provider/twitch"
 	"github.com/streaming-tree/server/internal/provider/twitch/chatassets"
 	"github.com/streaming-tree/server/internal/provider/youtube"
+	"github.com/streaming-tree/server/internal/remoteingest"
 	"github.com/streaming-tree/server/internal/runtime/branch"
 	"github.com/streaming-tree/server/internal/runtime/browserlaunch"
 	"github.com/streaming-tree/server/internal/runtime/deviceflow"
@@ -509,6 +510,23 @@ func run() error {
 		logger.Info("remote management enabled", slog.String("external_origin", remoteManagementOrigin))
 	}
 
+	// docs/remote-ingest.md §6: a previously-provisioned remote-ingest
+	// credential must survive a service restart - read the stored
+	// verifier now (secretStore was just constructed above) and thread
+	// it into remoteIngestOptions before the MediaMTX supervisor is
+	// constructed further below, instead of always starting with no
+	// credential provisioned. A missing verifier is not an error here
+	// (first boot, or the operator has not provisioned one yet) -
+	// mediamtx.RenderConfig's own documented behavior for an empty
+	// verifier already handles that state correctly.
+	if remoteIngestEnabled {
+		verifier, _, verifierErr := auth.RemoteIngestPublisherVerifier(ctx, secretStore)
+		if verifierErr != nil {
+			return fmt.Errorf("reading the remote ingest publisher credential: %w", verifierErr)
+		}
+		remoteIngestOptions.PublisherPassVerifier = verifier
+	}
+
 	outputService := output.NewService(sqlite.NewOutputRepository(db.DB))
 
 	// Twitch and YouTube both have connected-account adapters in this
@@ -805,6 +823,21 @@ func run() error {
 		slog.String("rtmp", snapshot.Connection.ServerURL),
 	)
 
+	// docs/remote-ingest.md §8: constructed only when --remote-ingest is
+	// active, coordinating the secret store and the supervisor for
+	// provision/rotate/revoke (internal/remoteingest.Manager) - see
+	// router.go's own nil-means-not-registered convention for why a nil
+	// value here is sufficient to keep every route unregistered.
+	var remoteIngestService httpapi.RemoteIngestService
+	if remoteIngestEnabled {
+		remoteIngestService = &remoteingest.Manager{
+			Store:        secretStore,
+			Supervisor:   supervisor,
+			RTMPSAddress: cfg.RemoteIngest.RTMPSAddress,
+			IngestPath:   cfg.MediaMTX.IngestPath,
+		}
+	}
+
 	// Stage 11B: the automation runtime (scheduled messages, chat
 	// commands). Reuses outboundChatManager - no second outbound
 	// pipeline - and shares one Event Bus subscription for both command
@@ -1053,6 +1086,10 @@ func run() error {
 		Updater:     updateManager,
 
 		RemoteManagement: remoteManagementOptions,
+
+		RemoteIngest:             remoteIngestService,
+		RemoteIngestRTMPSAddress: cfg.RemoteIngest.RTMPSAddress,
+		RemoteIngestPath:         cfg.MediaMTX.IngestPath,
 	})
 
 	server := &http.Server{

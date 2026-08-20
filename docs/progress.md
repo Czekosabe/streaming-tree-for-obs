@@ -37966,3 +37966,91 @@ restart on rotation. No frontend UI.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): add the remote-ingest credential-management API and streaming-safety gate
+
+Fourth product-code commit: the HTTP API (docs/remote-ingest.md §8)
+and the streaming-safety gate (§9) around the credential layer two
+commits ago, plus a real supervised MediaMTX restart on every
+provision/rotate/revoke so a change actually takes effect.
+
+### What changed
+- `internal/runtime/mediamtx/supervisor.go`: new
+  `UpdateRemoteIngestCredential(verifier string)` - replaces the
+  running supervisor's own `RemoteIngestOptions.PublisherPassVerifier`
+  in place (copy-on-write, since the options struct is shared by
+  pointer with any in-flight `WriteConfig` call), taking effect on the
+  next `WriteConfig` call, which `RequestRestart` triggers. A no-op if
+  this supervisor was never constructed with `RemoteIngest` options.
+- `internal/remoteingest` (new package): `Manager` coordinates the
+  secret store (`internal/auth`'s credential functions) and the
+  MediaMTX supervisor - the two systems a provision/rotate/revoke
+  request must keep in sync. `Provision` refuses with
+  `ErrAlreadyProvisioned` if a credential already exists (use Rotate).
+  `Provision`/`Rotate`/`Revoke` all refuse with `ErrStreamingActive`
+  while MediaMTX currently reports the canonical path receiving a
+  stream (docs/remote-ingest.md §9) - checked *before* any store
+  mutation, so a refused call never partially applies. A successful
+  call re-reads the just-written verifier and pushes it into the
+  supervisor via `UpdateRemoteIngestCredential`, then calls
+  `RequestRestart` - a real, controlled restart, not a no-op or a
+  deferred-to-next-launch change. `Supervisor` is declared as a narrow
+  interface (`Snapshot`/`UpdateRemoteIngestCredential`/
+  `RequestRestart`) so tests drive a stub instead of a real MediaMTX
+  process.
+- `internal/httpapi/remoteingest.go` (new file):
+  `GET /api/remote-ingest/status` (configured/receiving/RTMPS
+  address/canonical path), `POST /api/remote-ingest/{provision,rotate,
+  revoke}`. Every route lives under `/api/remote-ingest/` - never
+  `/api/public/*` - so the existing `withRemoteManagementSecurity`
+  deny-by-default middleware already protects it with session/CSRF/
+  Origin checks; no route here adds a second, redundant check.
+  Provision/rotate responses carry the plaintext secret exactly once
+  with `Cache-Control: no-store`, mapped from `Manager`'s sentinel
+  errors to `409 Conflict` with stable error codes
+  (`already_provisioned`/`streaming_active`). Registered only when
+  `Options.RemoteIngest` is non-nil, the same nil-means-not-registered
+  convention every other optional route group already uses.
+- `cmd/server/main.go`: reads the previously-provisioned verifier (if
+  any) from the secret store right after it is constructed and threads
+  it into `remoteIngestOptions.PublisherPassVerifier` - a Stage 20D2C
+  credential now survives a service restart, closing the gap the two
+  commits that introduced `--remote-ingest` deliberately left open.
+  Constructs `*remoteingest.Manager` after the supervisor starts and
+  wires it into `httpapi.Options.RemoteIngest`.
+
+### New tests
+`internal/remoteingest/manager_test.go`: provision generates and
+applies a credential and triggers exactly one restart; provision
+refuses when already provisioned; provision/rotate/revoke all refuse
+while streaming is active *and* verify no restart/store-mutation
+happened on refusal; rotate produces a different secret and verifier
+each time and triggers its own restart; revoke clears the credential
+and is safe with nothing ever provisioned. `internal/httpapi/
+remoteingest_test.go`: versioned status response; routes absent when
+the service is nil; the one-time-secret contract (body + `Cache-
+Control: no-store`) for provision and rotate; a non-empty body is
+rejected; every sentinel error maps to 409; method-not-allowed for
+wrong verbs.
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go fmt ./...`: no
+files needed reformatting beyond what was auto-applied during
+development. `go test ./internal/httpapi/... ./internal/remoteingest/...
+./internal/runtime/mediamtx/... ./internal/auth/... ./internal/config/...
+./internal/secrets/...`: all pass.
+
+### What this commit does not do yet
+No backend forwarded-request defense-in-depth for the overlay origin
+(docs/remote-ingest.md §11). No remote capability tokens (§12). No
+frontend UI (§8's own UI requirements, §28 of the governing task). No
+`Caddyfile.self-hosted`. No CI network-namespace/RTMPS integration
+test.
+
+### Commits (chronological, this milestone)
+7. This entry - `feat(server): add the remote-ingest credential-
+   management API and streaming-safety gate`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

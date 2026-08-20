@@ -579,6 +579,29 @@ func (s *Supervisor) RequestStop(ctx context.Context) error {
 	return nil
 }
 
+// UpdateRemoteIngestCredential replaces the running supervisor's own
+// RemoteIngestOptions.PublisherPassVerifier (docs/remote-ingest.md
+// §6/§9) - takes effect on the next WriteConfig call, which
+// RequestRestart triggers; this method itself never touches the
+// MediaMTX process. A no-op if this supervisor was never constructed
+// with RemoteIngest options (desktop/D2A/D2B-only deployments) - it
+// mutates existing options, it never enables remote ingest for a
+// supervisor that was not given it at construction.
+func (s *Supervisor) UpdateRemoteIngestCredential(verifier string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.options.RemoteIngest == nil {
+		return
+	}
+	// Copy-on-write: RemoteIngestOptions is shared by pointer with
+	// whatever WriteConfig call may already be reading through the old
+	// value, so a fresh struct replaces it rather than mutating the
+	// existing one in place.
+	updated := *s.options.RemoteIngest
+	updated.PublisherPassVerifier = verifier
+	s.options.RemoteIngest = &updated
+}
+
 // RequestRestart performs one controlled stop followed by a start.
 func (s *Supervisor) RequestRestart(ctx context.Context) error {
 	s.mu.Lock()

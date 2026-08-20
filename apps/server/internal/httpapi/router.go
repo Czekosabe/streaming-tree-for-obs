@@ -202,6 +202,18 @@ type Options struct {
 	// exactly as it did before this stage - see
 	// withRemoteManagementSecurity's own doc comment.
 	RemoteManagement RemoteManagementOptions
+
+	// RemoteIngest serves the Stage 20D2C remote-ingest credential-
+	// management API (/api/remote-ingest/*, docs/remote-ingest.md §8).
+	// When nil (every build unless --remote-ingest is active), those
+	// routes are not registered - the same nil-means-not-registered
+	// convention as Updater/Runtime/every other optional service.
+	RemoteIngest RemoteIngestService
+	// RemoteIngestRTMPSAddress / RemoteIngestPath are the static,
+	// already-validated deployment facts GET /api/remote-ingest/status
+	// reports. Empty unless RemoteIngest is non-nil.
+	RemoteIngestRTMPSAddress string
+	RemoteIngestPath         string
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -231,6 +243,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Runtime != nil {
 		registerRuntimeRoutes(mux, logger, opts.Runtime)
+	}
+
+	if opts.RemoteIngest != nil {
+		registerRemoteIngestRoutes(mux, logger, opts.RemoteIngest, opts.RemoteIngestRTMPSAddress, opts.RemoteIngestPath)
 	}
 
 	if opts.FFmpegRuntime != nil {
