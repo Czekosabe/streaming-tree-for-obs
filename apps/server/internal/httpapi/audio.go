@@ -12,6 +12,7 @@ import (
 	audiort "github.com/streaming-tree/server/internal/audio"
 	domain "github.com/streaming-tree/server/internal/domain/audio"
 	engagement "github.com/streaming-tree/server/internal/domain/engagement"
+	"github.com/streaming-tree/server/internal/domain/remoteoverlay"
 	"github.com/streaming-tree/server/internal/provider/tts"
 )
 
@@ -62,7 +63,7 @@ type AudioService interface {
 // registerAudioRoutes wires the Stage 17A TTS/audio management API
 // (/api/audio/...) and the public Browser Source audio output API
 // (/api/public/audio/{slug}/...).
-func registerAudioRoutes(mux *http.ServeMux, logger *slog.Logger, svc AudioService) {
+func registerAudioRoutes(mux *http.ServeMux, logger *slog.Logger, svc AudioService, remoteOverlayResolver RemoteOverlayResolver) {
 	mux.HandleFunc("GET /api/audio/settings", handleGetAudioSettings(logger, svc))
 	mux.HandleFunc("PUT /api/audio/settings", handlePutAudioSettings(logger, svc))
 	mux.HandleFunc("/api/audio/settings", methodNotAllowed(logger, http.MethodGet, http.MethodPut))
@@ -98,13 +99,13 @@ func registerAudioRoutes(mux *http.ServeMux, logger *slog.Logger, svc AudioServi
 	mux.HandleFunc("/api/audio/test-speak", methodNotAllowed(logger, http.MethodPost))
 
 	limiter := newAudioStreamLimiter()
-	mux.HandleFunc("GET /api/public/audio/{slug}/stream", handlePublicAudioStream(logger, svc, limiter))
+	mux.HandleFunc("GET /api/public/audio/{slug}/stream", handlePublicAudioStream(logger, svc, limiter, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/audio/{slug}/stream", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/audio/{slug}/bytes/{token}", handlePublicAudioBytes(logger, svc))
+	mux.HandleFunc("GET /api/public/audio/{slug}/bytes/{token}", handlePublicAudioBytes(logger, svc, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/audio/{slug}/bytes/{token}", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("POST /api/public/audio/{slug}/ack", handlePublicAudioAck(logger, svc))
+	mux.HandleFunc("POST /api/public/audio/{slug}/ack", handlePublicAudioAck(logger, svc, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/audio/{slug}/ack", methodNotAllowed(logger, http.MethodPost))
 }
 
@@ -544,7 +545,7 @@ func (l *audioStreamLimiter) release(key string) {
 // (including a plain client navigation away) releases it via the
 // deferred DisconnectRenderer call, so a stale browser tab can never
 // keep blocking a fresh one.
-func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *audioStreamLimiter) http.HandlerFunc {
+func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *audioStreamLimiter, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -552,7 +553,16 @@ func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *aud
 			return
 		}
 
-		slug := r.PathValue("slug")
+		// presentedSlug is exactly what the client used to reach this
+		// endpoint - a remote capability token for a forwarded request,
+		// or the real local publicSlug for a direct one. It is echoed
+		// back into bytesUrl below unchanged, so the client's follow-up
+		// request to that URL resolves the same way this one did
+		// (docs/remote-ingest.md §11/§12) - resolvedSlug (the real
+		// local slug) is used only for the internal CurrentPublicSlug
+		// comparison, never exposed to the client.
+		presentedSlug := r.PathValue("slug")
+		resolvedSlug, resolvedOK, resolveErr := resolvePublicSlug(r.Context(), remoteOverlayResolver, remoteoverlay.DomainAudio, presentedSlug)
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -564,7 +574,7 @@ func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *aud
 		keepalive := time.NewTicker(audioSSEKeepalive)
 		defer keepalive.Stop()
 
-		if svc.CurrentPublicSlug() != slug {
+		if resolveErr != nil || !resolvedOK || svc.CurrentPublicSlug() != resolvedSlug {
 			_ = writeSSEEvent(w, "audio.gap", 0, map[string]string{"reason": "unknown_slug"})
 			flusher.Flush()
 			for {
@@ -578,12 +588,12 @@ func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *aud
 			}
 		}
 
-		if !limiter.acquire(slug) {
+		if !limiter.acquire(resolvedSlug) {
 			_ = writeSSEEvent(w, "audio.gap", 0, map[string]string{"reason": "stream_limit_reached"})
 			flusher.Flush()
 			return
 		}
-		defer limiter.release(slug)
+		defer limiter.release(resolvedSlug)
 
 		token, err := svc.ConnectRenderer()
 		if err != nil {
@@ -605,7 +615,7 @@ func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *aud
 			}
 			_ = writeSSEEvent(w, "audio.current", snap.Sequence, map[string]any{
 				"itemId":      snap.ItemID,
-				"bytesUrl":    "/api/public/audio/" + slug + "/bytes/" + snap.BytesToken,
+				"bytesUrl":    "/api/public/audio/" + presentedSlug + "/bytes/" + snap.BytesToken,
 				"contentType": snap.ContentType,
 				"volume":      snap.Volume,
 			})
@@ -639,9 +649,10 @@ func handlePublicAudioStream(logger *slog.Logger, svc AudioService, limiter *aud
 // synthesized item, so it is combined here with a freshly-read current
 // item id purely to reuse CurrentAudioBytes's existing double-check,
 // never as an additional secret the client must supply.
-func handlePublicAudioBytes(logger *slog.Logger, svc AudioService) http.HandlerFunc {
+func handlePublicAudioBytes(logger *slog.Logger, svc AudioService, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if svc.CurrentPublicSlug() != r.PathValue("slug") {
+		resolvedSlug, ok, err := resolvePublicSlug(r.Context(), remoteOverlayResolver, remoteoverlay.DomainAudio, r.PathValue("slug"))
+		if err != nil || !ok || svc.CurrentPublicSlug() != resolvedSlug {
 			writeError(w, logger, http.StatusNotFound, "audio_not_available", "No audio is currently available.")
 			return
 		}
@@ -672,9 +683,10 @@ type audioAckRequest struct {
 // handlePublicAudioAck applies one playback acknowledgement -
 // validated end to end by Manager.Ack itself (session/item/state);
 // this handler only decodes and translates the outcome.
-func handlePublicAudioAck(logger *slog.Logger, svc AudioService) http.HandlerFunc {
+func handlePublicAudioAck(logger *slog.Logger, svc AudioService, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if svc.CurrentPublicSlug() != r.PathValue("slug") {
+		resolvedSlug, ok, err := resolvePublicSlug(r.Context(), remoteOverlayResolver, remoteoverlay.DomainAudio, r.PathValue("slug"))
+		if err != nil || !ok || svc.CurrentPublicSlug() != resolvedSlug {
 			writeError(w, logger, http.StatusNotFound, "audio_not_available", "No audio is currently available.")
 			return
 		}

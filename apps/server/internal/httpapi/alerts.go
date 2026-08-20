@@ -13,6 +13,7 @@ import (
 
 	"github.com/streaming-tree/server/internal/alerts"
 	domain "github.com/streaming-tree/server/internal/domain/alerts"
+	"github.com/streaming-tree/server/internal/domain/remoteoverlay"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 )
 
@@ -68,7 +69,7 @@ const (
 // (/api/alert-profiles/..., /api/alert-rules/...) and the public,
 // unauthenticated alert API (/api/public/alert-profiles/...) an OBS
 // Browser Source actually loads.
-func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsService, assets VisualAssetService) {
+func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsService, assets VisualAssetService, remoteOverlayResolver RemoteOverlayResolver) {
 	mux.HandleFunc("GET /api/alert-event-types", handleListAlertEventTypes(logger))
 	mux.HandleFunc("/api/alert-event-types", methodNotAllowed(logger, http.MethodGet))
 
@@ -119,10 +120,10 @@ func registerAlertRoutes(mux *http.ServeMux, logger *slog.Logger, svc AlertsServ
 	mux.HandleFunc("/api/alert-rules/{id}/test", methodNotAllowed(logger, http.MethodPost))
 
 	streamLimiter := newAlertStreamLimiter()
-	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/config", handleGetPublicAlertProfileConfig(logger, svc))
+	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/config", handleGetPublicAlertProfileConfig(logger, svc, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/alert-profiles/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/stream", handlePublicAlertStream(logger, svc, assets, streamLimiter))
+	mux.HandleFunc("GET /api/public/alert-profiles/{slug}/stream", handlePublicAlertStream(logger, svc, assets, streamLimiter, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/alert-profiles/{slug}/stream", methodNotAllowed(logger, http.MethodGet))
 }
 
@@ -896,17 +897,28 @@ type publicAlertProfileConfigResponse struct {
 // found" and "disabled" identically for the caller (Part 40: the slug
 // is a locator, not authentication - the public API deliberately never
 // distinguishes the two to a viewer).
-func resolvePublicAlertProfile(ctx context.Context, svc AlertsService, slug string) (domain.Profile, bool) {
-	p, err := svc.GetProfileByPublicSlug(ctx, slug)
+// resolvePublicAlertProfile resolves the {slug} path parameter to a
+// profile - the real local publicSlug for a direct loopback request,
+// or (docs/remote-ingest.md §11/§12) a remote capability token for a
+// request confirmed forwarded through the overlay origin. A
+// resolution miss returns the same (Profile{}, false) an unknown or
+// disabled local slug already produces - this domain never
+// distinguishes those cases with a hard error (Part 40).
+func resolvePublicAlertProfile(ctx context.Context, svc AlertsService, resolver RemoteOverlayResolver, slug string) (domain.Profile, bool) {
+	realSlug, ok, err := resolvePublicSlug(ctx, resolver, remoteoverlay.DomainAlertProfile, slug)
+	if err != nil || !ok {
+		return domain.Profile{}, false
+	}
+	p, err := svc.GetProfileByPublicSlug(ctx, realSlug)
 	if err != nil || !p.Enabled {
 		return domain.Profile{}, false
 	}
 	return p, true
 }
 
-func handleGetPublicAlertProfileConfig(logger *slog.Logger, svc AlertsService) http.HandlerFunc {
+func handleGetPublicAlertProfileConfig(logger *slog.Logger, svc AlertsService, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, ok := resolvePublicAlertProfile(r.Context(), svc, r.PathValue("slug"))
+		p, ok := resolvePublicAlertProfile(r.Context(), svc, remoteOverlayResolver, r.PathValue("slug"))
 		if !ok {
 			// Never a hard error for an unknown/disabled slug (Part 40) -
 			// a safe, empty/default config instead.
@@ -1002,7 +1014,7 @@ func writeAlertRevision(w http.ResponseWriter, rev alerts.Revision, resolve publ
 // only. A fresh connection (no Last-Event-ID) never replays historical
 // show/hide revisions - only the current state, then live continuation
 // (Part 23: "no historical queue content").
-func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, assets VisualAssetService, limiter *alertStreamLimiter) http.HandlerFunc {
+func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, assets VisualAssetService, limiter *alertStreamLimiter, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -1011,7 +1023,7 @@ func handlePublicAlertStream(logger *slog.Logger, svc AlertsService, assets Visu
 		}
 		resolve := publicAssetResolverFor(r.Context(), assets)
 
-		p, available := resolvePublicAlertProfile(r.Context(), svc, r.PathValue("slug"))
+		p, available := resolvePublicAlertProfile(r.Context(), svc, remoteOverlayResolver, r.PathValue("slug"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")

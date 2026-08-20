@@ -305,7 +305,7 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.Alerts != nil {
-		registerAlertRoutes(mux, logger, opts.Alerts, opts.VisualAssets)
+		registerAlertRoutes(mux, logger, opts.Alerts, opts.VisualAssets, opts.RemoteOverlayResolver)
 		registerVisualDesignRoutes(mux, logger, opts.Alerts)
 	}
 
@@ -326,7 +326,7 @@ func NewRouter(opts Options) http.Handler {
 	}
 
 	if opts.Audio != nil {
-		registerAudioRoutes(mux, logger, opts.Audio)
+		registerAudioRoutes(mux, logger, opts.Audio, opts.RemoteOverlayResolver)
 	}
 
 	if opts.AudioAssets != nil {
@@ -335,7 +335,7 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Goals != nil {
 		registerGoalRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
-		registerPublicWidgetRoutes(mux, logger, opts.Goals, opts.SupporterWidgets)
+		registerPublicWidgetRoutes(mux, logger, opts.Goals, opts.SupporterWidgets, opts.RemoteOverlayResolver)
 	}
 
 	// localActionOrigins is opts.AllowedOrigins (the local dev-server

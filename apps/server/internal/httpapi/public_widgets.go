@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domain "github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/domain/remoteoverlay"
 	"github.com/streaming-tree/server/internal/supporterwidgets"
 )
 
@@ -33,13 +34,13 @@ const (
 // supporter-widgets.md §10). runtime may be nil in a test that never
 // exercises a Stage 18B kind - every such kind then renders its own
 // well-defined empty state.
-func registerPublicWidgetRoutes(mux *http.ServeMux, logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) {
+func registerPublicWidgetRoutes(mux *http.ServeMux, logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime, remoteOverlayResolver RemoteOverlayResolver) {
 	limiter := newWidgetStreamLimiter()
 
-	mux.HandleFunc("GET /api/public/widgets/{slug}/config", handleGetPublicWidgetConfig(logger, svc, runtime))
+	mux.HandleFunc("GET /api/public/widgets/{slug}/config", handleGetPublicWidgetConfig(logger, svc, runtime, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/widgets/{slug}/config", methodNotAllowed(logger, http.MethodGet))
 
-	mux.HandleFunc("GET /api/public/widgets/{slug}/stream", handlePublicWidgetStream(logger, svc, runtime, limiter))
+	mux.HandleFunc("GET /api/public/widgets/{slug}/stream", handlePublicWidgetStream(logger, svc, runtime, limiter, remoteOverlayResolver))
 	mux.HandleFunc("/api/public/widgets/{slug}/stream", methodNotAllowed(logger, http.MethodGet))
 }
 
@@ -78,8 +79,12 @@ func (l *widgetStreamLimiter) release(slug string) {
 // for an unknown/disabled slug (never distinguished from each other in
 // the response - see handleGetPublicWidgetConfig's own "never a hard
 // error" convention, mirroring resolvePublicAlertProfile exactly).
-func resolvePublicWidget(ctx context.Context, svc GoalsService, slug string) (domain.WidgetProfile, bool) {
-	p, err := svc.GetWidgetProfileByPublicSlug(ctx, slug)
+func resolvePublicWidget(ctx context.Context, svc GoalsService, resolver RemoteOverlayResolver, slug string) (domain.WidgetProfile, bool) {
+	realSlug, ok, err := resolvePublicSlug(ctx, resolver, remoteoverlay.DomainWidget, slug)
+	if err != nil || !ok {
+		return domain.WidgetProfile{}, false
+	}
+	p, err := svc.GetWidgetProfileByPublicSlug(ctx, realSlug)
 	if err != nil || !p.Enabled {
 		return domain.WidgetProfile{}, false
 	}
@@ -373,9 +378,9 @@ func widgetFingerprint(ctx context.Context, svc GoalsService, runtime SupporterW
 	}
 }
 
-func handleGetPublicWidgetConfig(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime) http.HandlerFunc {
+func handleGetPublicWidgetConfig(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, ok := resolvePublicWidget(r.Context(), svc, r.PathValue("slug"))
+		p, ok := resolvePublicWidget(r.Context(), svc, remoteOverlayResolver, r.PathValue("slug"))
 		if !ok {
 			writeJSON(w, logger, http.StatusOK, defaultPublicWidgetSnapshot())
 			return
@@ -393,7 +398,7 @@ func handleGetPublicWidgetConfig(logger *slog.Logger, svc GoalsService, runtime 
 // handlePublicChatOverlayStream's identical convention) - it opens a
 // normal 200 SSE connection, sends one safe/empty reset, and then idles
 // on keepalives only.
-func handlePublicWidgetStream(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime, limiter *widgetStreamLimiter) http.HandlerFunc {
+func handlePublicWidgetStream(logger *slog.Logger, svc GoalsService, runtime SupporterWidgetsRuntime, limiter *widgetStreamLimiter, remoteOverlayResolver RemoteOverlayResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := r.PathValue("slug")
 
@@ -419,7 +424,7 @@ func handlePublicWidgetStream(logger *slog.Logger, svc GoalsService, runtime Sup
 		var revision uint64 = 1
 		lastFingerprint := ""
 
-		p, resolvedOK := resolvePublicWidget(r.Context(), svc, slug)
+		p, resolvedOK := resolvePublicWidget(r.Context(), svc, remoteOverlayResolver, slug)
 		if resolvedOK {
 			_ = writeSSEEvent(w, "widget.reset", revision, buildPublicSnapshot(r.Context(), svc, runtime, revision, p))
 			lastFingerprint = widgetFingerprint(r.Context(), svc, runtime, p)
@@ -442,7 +447,7 @@ func handlePublicWidgetStream(logger *slog.Logger, svc GoalsService, runtime Sup
 				writeSSEComment(w, "keepalive")
 				flusher.Flush()
 			case <-poll.C:
-				p, resolvedOK := resolvePublicWidget(ctx, svc, slug)
+				p, resolvedOK := resolvePublicWidget(ctx, svc, remoteOverlayResolver, slug)
 				if !resolvedOK {
 					continue
 				}

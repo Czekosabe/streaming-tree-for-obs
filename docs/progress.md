@@ -38230,3 +38230,83 @@ integration test.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): wire alert profiles, audio, and supporter widgets to remote capability tokens
+
+Seventh product-code commit: applies the previous commit's proven
+mechanism (`resolvePublicSlug`/`isForwardedOverlayRequest`) to the
+three remaining overlay domains, completing `docs/remote-ingest.md`
+§12 across all four.
+
+### What changed
+- `internal/httpapi/alerts.go`: `resolvePublicAlertProfile` (the one
+  shared helper both public alert routes already called) now resolves
+  through `resolvePublicSlug` first - a resolution miss returns
+  `(Profile{}, false)`, the exact same outcome an unknown/disabled
+  local slug already produced, so this domain's existing "never a hard
+  error, always a safe default response" convention (Part 40) needed
+  no changes.
+- `internal/httpapi/audio.go`: audio has no per-profile shared
+  resolver - each of the three public handlers does its own inline
+  `svc.CurrentPublicSlug() != r.PathValue("slug")` comparison against
+  the one global slug this domain has. Fixed inline in all three. The
+  stream handler needed one subtlety the other domains don't have: it
+  embeds `{slug}` into a follow-up `bytesUrl` the client fetches next.
+  Introduced `presentedSlug` (the raw path value, echoed into
+  `bytesUrl` unchanged) versus `resolvedSlug` (the real local slug,
+  used only for the internal `CurrentPublicSlug` comparison and for
+  keying the stream-count limiter) - if the resolved slug had been
+  echoed instead, a remote client's follow-up request would have
+  carried a local slug value through the overlay origin, which is not
+  a valid capability token and would have failed to resolve, breaking
+  the just-established connection's own bytes fetch.
+- `internal/httpapi/public_widgets.go`: `resolvePublicWidget` (the
+  shared helper both public widget routes call, including inside the
+  stream handler's own poll loop) now resolves through
+  `resolvePublicSlug` first, mirroring alerts exactly - no per-request
+  URL-echo subtlety here, so no dual-slug tracking was needed.
+- `internal/httpapi/router.go`: `RemoteOverlayResolver` threaded
+  through `registerAlertRoutes`/`registerAudioRoutes`/
+  `registerPublicWidgetRoutes`'s own call sites, alongside the chat-
+  overlay wiring from the previous commit.
+
+### New tests
+`internal/httpapi/remote_overlay_audio_test.go` - targeted at audio's
+own unique dual-slug logic specifically, since it is genuinely new
+logic, not a mechanical repeat of the already-proven chat-overlay
+pattern: a forwarded stream request with a valid token connects and
+sends `audio.reset` (proving the token resolved); the profile's real
+local slug does not grant remote access to `/bytes/`; a forwarded
+`/ack` request with a valid token is not rejected at the proxy-
+boundary level (`403`) - business-logic outcomes for a synthetic,
+session-less ack remain `internal/audio`'s own package tests'
+responsibility, not this file's. Alerts and widgets are not given
+dedicated end-to-end integration tests in this commit - their
+resolution logic is structurally identical to the already end-to-end-
+proven chat-overlay/alerts pattern (no unique subtlety like audio's
+URL-echo requirement), and the full pre-existing `internal/httpapi`
+regression suite (proving zero direct-loopback behavior change) plus
+the already-tested shared `resolvePublicSlug`/repository logic is the
+evidence for this commit; a dedicated end-to-end test for each would
+be a reasonable, low-risk future addition, not a design gap.
+
+### Validation
+`go build ./...`: clean. `go vet ./...`: clean. `go fmt ./...`: clean.
+`go test ./internal/httpapi/... ./internal/storage/sqlite/...`: all
+pass, including every pre-existing alerts/audio/widgets test in the
+package unmodified - zero direct-loopback regression across all three
+domains.
+
+### What this commit does not do yet
+No management HTTP API for issuing/rotating/revoking a capability for
+any of these three domains (same gap as chat overlays - not yet
+addressed for any domain). No frontend UI. No `Caddyfile.self-hosted`.
+No CI network-namespace/RTMPS integration test.
+
+### Commits (chronological, this milestone)
+10. This entry - `feat(server): wire alert profiles, audio, and
+    supporter widgets to remote capability tokens`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
