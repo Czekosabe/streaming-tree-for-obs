@@ -12,6 +12,50 @@ type ConfigOptions struct {
 	RTMPAddress string
 	APIAddress  string
 	IngestPath  string
+
+	// RemoteIngest, when non-nil, is Stage 20D2C's explicit
+	// --remote-ingest opt-in (docs/remote-ingest.md §3/§4/§5). Nil is
+	// the default for every other deployment mode (desktop, plain
+	// --headless, --headless --remote-management without ingest) and
+	// produces byte-identical output to every prior stage - see
+	// TestRenderConfigGolden.
+	RemoteIngest *RemoteIngestOptions
+}
+
+// RemoteIngestOptions configures the additional RTMPS listener and
+// MediaMTX-native authentication Stage 20D2C adds (docs/remote-
+// ingest.md §4/§5). RTMPAddress/APIAddress above are never changed by
+// this - they stay the existing loopback-only listeners, unconditionally
+// validated loopback by config.loadMediaMTX exactly as before
+// (docs/remote-ingest.md §4's "optional" resolution): branch FFmpeg and
+// the Go backend's own Control API polling keep using them completely
+// unaffected by remote ingest being enabled.
+type RemoteIngestOptions struct {
+	// RTMPSAddress is the new, non-loopback-capable RTMPS listener a
+	// remote OBS instance publishes to. Never equal to RTMPAddress or
+	// APIAddress (config.loadRemoteIngest enforces this).
+	RTMPSAddress string
+
+	// ServerKeyPath / ServerCertPath are the operator-supplied TLS
+	// private key and certificate paths (docs/remote-ingest.md §8),
+	// delivered via systemd LoadCredential= and read once at startup -
+	// never a value this application generates or stores itself.
+	ServerKeyPath  string
+	ServerCertPath string
+
+	// PublisherUser is the fixed, non-secret remote-publisher service
+	// identity (docs/remote-ingest.md §5), e.g. "streaming-tree-obs".
+	// Not a secret; only PublisherPassVerifier is.
+	PublisherUser string
+
+	// PublisherPassVerifier is already the MediaMTX-native "sha256:
+	// <base64(sha256(secret))>" verifier (docs/remote-ingest.md §6) -
+	// never the plaintext secret. Empty means no remote-publisher
+	// credential is provisioned yet; RemoteIngest may still be non-nil
+	// in that state (the RTMPS listener and the local-only read/api
+	// identity are configured, but nothing can successfully publish
+	// until a credential is provisioned).
+	PublisherPassVerifier string
 }
 
 // ConfigFileName is the generated configuration inside the runtime directory.
@@ -61,11 +105,51 @@ func RenderConfig(opts ConfigOptions) string {
 	b.WriteString("apiAddress: " + opts.APIAddress + "\n")
 	b.WriteString("\n")
 
-	b.WriteString("# RTMP ingest: the only public-facing listener, loopback only.\n")
-	b.WriteString("rtmp: true\n")
-	b.WriteString("rtmpAddress: " + opts.RTMPAddress + "\n")
-	b.WriteString("rtmpEncryption: \"no\"\n")
-	b.WriteString("\n")
+	if opts.RemoteIngest == nil {
+		b.WriteString("# RTMP ingest: the only public-facing listener, loopback only.\n")
+		b.WriteString("rtmp: true\n")
+		b.WriteString("rtmpAddress: " + opts.RTMPAddress + "\n")
+		b.WriteString("rtmpEncryption: \"no\"\n")
+		b.WriteString("\n")
+	} else {
+		ri := opts.RemoteIngest
+		b.WriteString("# RTMP ingest: rtmpAddress stays loopback-only (branch FFmpeg's\n")
+		b.WriteString("# own input, unauthenticated within this application's own trust\n")
+		b.WriteString("# boundary); rtmpsAddress is the new Stage 20D2C remote-ingest\n")
+		b.WriteString("# listener a remote OBS instance publishes to over RTMPS. \"optional\"\n")
+		b.WriteString("# opens both simultaneously - see docs/remote-ingest.md §4 for why\n")
+		b.WriteString("# \"strict\" (RTMPS-only, one listener) was rejected: it would have\n")
+		b.WriteString("# forced branch FFmpeg's own loopback read onto RTMPS too.\n")
+		b.WriteString("rtmp: true\n")
+		b.WriteString("rtmpAddress: " + opts.RTMPAddress + "\n")
+		b.WriteString("rtmpEncryption: \"optional\"\n")
+		b.WriteString("rtmpsAddress: " + ri.RTMPSAddress + "\n")
+		b.WriteString("rtmpServerKey: " + ri.ServerKeyPath + "\n")
+		b.WriteString("rtmpServerCert: " + ri.ServerCertPath + "\n")
+		b.WriteString("\n")
+
+		b.WriteString("# Stage 20D2C: MediaMTX-native authentication. The remote publisher\n")
+		b.WriteString("# identity may only publish, to exactly the canonical path. The\n")
+		b.WriteString("# local identity is restricted to loopback callers (branch FFmpeg's\n")
+		b.WriteString("# own read, the Go backend's own Control API polling) and never\n")
+		b.WriteString("# needs a password - the loopback IP restriction is the boundary.\n")
+		b.WriteString("# A request matching neither entry is refused by MediaMTX itself.\n")
+		b.WriteString("authMethod: internal\n")
+		b.WriteString("authInternalUsers:\n")
+		b.WriteString("  - user: " + ri.PublisherUser + "\n")
+		b.WriteString("    pass: " + ri.PublisherPassVerifier + "\n")
+		b.WriteString("    ips: []\n")
+		b.WriteString("    permissions:\n")
+		b.WriteString("      - action: publish\n")
+		b.WriteString("        path: " + opts.IngestPath + "\n")
+		b.WriteString("  - user: any\n")
+		b.WriteString("    ips: [127.0.0.1, ::1]\n")
+		b.WriteString("    permissions:\n")
+		b.WriteString("      - action: read\n")
+		b.WriteString("        path: " + opts.IngestPath + "\n")
+		b.WriteString("      - action: api\n")
+		b.WriteString("\n")
+	}
 
 	b.WriteString("# Everything unused is disabled explicitly rather than left\n")
 	b.WriteString("# to upstream defaults, which would open extra listeners.\n")

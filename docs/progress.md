@@ -37695,3 +37695,73 @@ docs and the Node test harness only.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): generate the Stage 20D2C RTMPS/authenticated MediaMTX configuration
+
+First product-code commit of Stage 20D2C, implementing
+`docs/remote-ingest.md` §4/§5/§6's design in
+`internal/runtime/mediamtx/config.go`.
+
+### What changed
+- `ConfigOptions` gained a new `RemoteIngest *RemoteIngestOptions`
+  field (`RTMPSAddress`, `ServerKeyPath`, `ServerCertPath`,
+  `PublisherUser`, `PublisherPassVerifier`). Nil (the default for
+  every existing call site - `cmd/server/main.go`,
+  `cmd/testserver/main.go`) renders byte-identical output to every
+  prior stage - proven by a new
+  `TestRenderConfigNilRemoteIngestIsByteIdenticalToNoField` and by the
+  existing `TestRenderConfigGolden` continuing to pass unmodified.
+- When `RemoteIngest` is set, `RenderConfig` now emits
+  `rtmpEncryption: "optional"` (not `"strict"` - the contract's own §4
+  explains why: branch FFmpeg reads the same `rtmp://` URL OBS used to
+  publish to, and `"strict"` would have forced that internal read onto
+  RTMPS too), a new `rtmpsAddress`/`rtmpServerKey`/`rtmpServerCert`
+  block, and `authMethod: internal` with exactly two
+  `authInternalUsers` entries: the remote publisher (publish-only,
+  scoped to the canonical path, `ips: []`) and the local internal
+  identity (`user: any`, `ips: [127.0.0.1, ::1]`, read + api only,
+  never publish). `rtmpAddress` itself is untouched - still the
+  existing loopback-only listener.
+- `PublisherPassVerifier` is always the already-hashed
+  `sha256:<base64>` MediaMTX-native verifier (docs/remote-ingest.md
+  §6) - `RenderConfig` never receives or emits a plaintext secret.
+
+### New tests (`internal/runtime/mediamtx/config_test.go`)
+`TestRenderConfigNilRemoteIngestIsByteIdenticalToNoField`;
+`TestRenderConfigRemoteIngestKeepsRTMPAddressLoopback` (also asserts
+neither `"no"` nor `"strict"` leaks into the remote-ingest output);
+`TestRenderConfigRemoteIngestNeverContainsThePlaintextSecret` (exactly
+one `pass:` line, the `sha256:` form only);
+`TestRenderConfigRemoteIngestGrantsPublishOnlyToTheRemoteIdentity` and
+`TestRenderConfigRemoteIngestRestrictsTheLocalIdentityToLoopback`
+(isolate each user's own permission block and assert the exact
+action set - publish-only vs read+api-only, never overlapping);
+`TestRenderConfigRemoteIngestNeverBindsRTMPSToLoopbackOnly` (fixture
+sanity check - real startup-time enforcement is
+`config.loadRemoteIngest`, not yet implemented, next commit).
+
+### Validation
+`gofmt -l internal/runtime/mediamtx/`: clean. `go vet
+./internal/runtime/mediamtx/...`: clean. `go build ./...`: clean. `go
+test ./internal/runtime/mediamtx/...`: all tests pass, including every
+pre-existing test unmodified (the golden test's own byte-for-byte
+comparison is the strongest possible proof the non-D2C path is
+unaffected).
+
+### What this commit does not do yet
+No `--remote-ingest` CLI flag exists yet. No config-loading/validation
+for `RemoteIngestOptions`' fields exists yet (`loadRemoteIngest`,
+loopback-address rejection for `RTMPSAddress`, TLS file fail-closed
+checks). No credential generation/persistence/HTTP API exists yet. No
+overlay-origin hostname-separation validation exists yet. `main.go`
+does not construct a non-nil `RemoteIngest` anywhere yet - this
+commit is the rendering layer only, intentionally landed before the
+config/CLI wiring that will exercise it.
+
+### Commits (chronological, this milestone)
+3. This entry - `feat(server): generate the Stage 20D2C RTMPS/
+   authenticated MediaMTX configuration`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

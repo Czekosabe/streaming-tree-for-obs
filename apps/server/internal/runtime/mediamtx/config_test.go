@@ -244,6 +244,142 @@ func TestWriteConfigOverwritesAnExistingFile(t *testing.T) {
 	}
 }
 
+// renderRemoteIngest renders a configuration with Stage 20D2C remote
+// ingest enabled - a fixed, representative RemoteIngestOptions used by
+// every test below, mirroring renderDefault()'s own role for the
+// non-ingest path.
+func renderRemoteIngest() string {
+	return RenderConfig(ConfigOptions{
+		RTMPAddress: "127.0.0.1:1935",
+		APIAddress:  "127.0.0.1:9997",
+		IngestPath:  "live",
+		RemoteIngest: &RemoteIngestOptions{
+			RTMPSAddress:          "0.0.0.0:1936",
+			ServerKeyPath:         "/run/credentials/streaming-tree.service/streaming-tree-rtmps-key",
+			ServerCertPath:        "/run/credentials/streaming-tree.service/streaming-tree-rtmps-cert",
+			PublisherUser:         "streaming-tree-obs",
+			PublisherPassVerifier: "sha256:BdSWkrdV+ZxFBLUQQY7+7uv9RmiSVA8nrPmjGjJtZQQ=",
+		},
+	})
+}
+
+func TestRenderConfigNilRemoteIngestIsByteIdenticalToNoField(t *testing.T) {
+	// A ConfigOptions with RemoteIngest explicitly nil (the zero value)
+	// must render exactly like renderDefault() - every non-D2C
+	// deployment mode leaves this field unset.
+	got := RenderConfig(ConfigOptions{
+		RTMPAddress:  "127.0.0.1:1935",
+		APIAddress:   "127.0.0.1:9997",
+		IngestPath:   "live",
+		RemoteIngest: nil,
+	})
+	if got != renderDefault() {
+		t.Error("a nil RemoteIngest changed the generated configuration")
+	}
+}
+
+func TestRenderConfigRemoteIngestKeepsRTMPAddressLoopback(t *testing.T) {
+	config := renderRemoteIngest()
+
+	if !strings.Contains(config, "rtmpAddress: 127.0.0.1:1935") {
+		t.Error("rtmpAddress changed when remote ingest was enabled - branch FFmpeg's own loopback read must be unaffected")
+	}
+	if !strings.Contains(config, "rtmpsAddress: 0.0.0.0:1936") {
+		t.Error("rtmpsAddress is missing or wrong")
+	}
+	if !strings.Contains(config, "rtmpEncryption: \"optional\"") {
+		t.Error(`rtmpEncryption must be "optional" when remote ingest is enabled (docs/remote-ingest.md §4)`)
+	}
+	if strings.Contains(config, `rtmpEncryption: "no"`) {
+		t.Error("the plaintext-only rtmpEncryption value leaked into the remote-ingest configuration")
+	}
+	if strings.Contains(config, `rtmpEncryption: "strict"`) {
+		t.Error(`"strict" mode was explicitly rejected (docs/remote-ingest.md §4) - it would break branch FFmpeg's own loopback read`)
+	}
+}
+
+func TestRenderConfigRemoteIngestNeverContainsThePlaintextSecret(t *testing.T) {
+	// The verifier passed in is already "sha256:<base64>" - RenderConfig
+	// must never see or emit the plaintext secret itself. This test
+	// stands in for that guarantee by asserting the rendered output
+	// contains only the sha256: form and nothing resembling a second,
+	// unprefixed secret value.
+	config := renderRemoteIngest()
+
+	if !strings.Contains(config, "pass: sha256:BdSWkrdV+ZxFBLUQQY7+7uv9RmiSVA8nrPmjGjJtZQQ=") {
+		t.Error("the sha256: verifier is missing from the rendered configuration")
+	}
+	if strings.Count(config, "pass:") != 1 {
+		t.Errorf("expected exactly one pass: line, found %d", strings.Count(config, "pass:"))
+	}
+}
+
+func TestRenderConfigRemoteIngestGrantsPublishOnlyToTheRemoteIdentity(t *testing.T) {
+	config := renderRemoteIngest()
+
+	if !strings.Contains(config, "user: streaming-tree-obs") {
+		t.Error("the remote publisher identity is missing")
+	}
+	if !strings.Contains(config, "ips: []") {
+		t.Error("the remote publisher identity must allow any source IP (ips: [])")
+	}
+
+	// The remote-publisher block must grant exactly one permission
+	// (publish, to the canonical path) - verified by isolating the text
+	// between "user: streaming-tree-obs" and the next "  - user:".
+	start := strings.Index(config, "user: streaming-tree-obs")
+	rest := config[start:]
+	next := strings.Index(rest[1:], "  - user:")
+	block := rest
+	if next >= 0 {
+		block = rest[:next+1]
+	}
+	if !strings.Contains(block, "action: publish") {
+		t.Error("the remote publisher identity is missing its publish permission")
+	}
+	if strings.Contains(block, "action: read") || strings.Contains(block, "action: api") || strings.Contains(block, "action: playback") {
+		t.Error("the remote publisher identity must never be granted read/api/playback")
+	}
+	if !strings.Contains(block, "path: live") {
+		t.Error("the remote publisher's publish permission is not scoped to the canonical path")
+	}
+}
+
+func TestRenderConfigRemoteIngestRestrictsTheLocalIdentityToLoopback(t *testing.T) {
+	config := renderRemoteIngest()
+
+	if !strings.Contains(config, "user: any") {
+		t.Error("the local internal identity (user: any) is missing")
+	}
+	if !strings.Contains(config, "ips: [127.0.0.1, ::1]") {
+		t.Error("the local internal identity must be restricted to loopback IPs")
+	}
+
+	start := strings.Index(config, "user: any")
+	block := config[start:]
+	if !strings.Contains(block, "action: read") {
+		t.Error("the local internal identity is missing its read permission")
+	}
+	if !strings.Contains(block, "action: api") {
+		t.Error("the local internal identity is missing its api permission")
+	}
+	if strings.Contains(block, "action: publish") {
+		t.Error("the local internal identity must never be granted publish - only the remote credential may publish")
+	}
+}
+
+func TestRenderConfigRemoteIngestNeverBindsRTMPSToLoopbackOnly(t *testing.T) {
+	// This is a sanity check on the test fixture, not a runtime
+	// enforcement: config.loadRemoteIngest (apps/server/internal/config)
+	// is what actually rejects a loopback rtmpsAddress at startup. This
+	// guards against a future refactor accidentally making
+	// RenderConfig itself silently rewrite the address.
+	config := renderRemoteIngest()
+	if !strings.Contains(config, "rtmpsAddress: 0.0.0.0:1936") {
+		t.Error("rtmpsAddress was not rendered as given")
+	}
+}
+
 func TestConfigPathLivesInTheRuntimeDirectory(t *testing.T) {
 	path := ConfigPath("/data")
 
