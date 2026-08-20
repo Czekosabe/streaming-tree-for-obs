@@ -39026,8 +39026,53 @@ cause of the previous failure.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-21. This entry - `ci: capture the real veth-creation error instead of
-    a blank annotation`
+21. `ci: capture the real veth-creation error instead of a blank
+    annotation`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 12:20 — fix(ci): shorten the veth capability-probe interface names
+
+### Real root cause, from the previous commit's own diagnostic instrumentation
+Commit `abaf9d6`'s newly added real-error capture worked exactly as
+intended and immediately revealed the actual cause (one low-request
+GitHub annotations lookup):
+
+```
+argument "streamtree-veth-probe-p" is wrong: "name" not a valid ifname
+```
+
+Not a runner capability gap at all - a plain naming bug in the probe
+itself. Linux interface names are capped at `IFNAMSIZ`-1 = 15
+characters; `streamtree-veth-probe` (21 chars) and
+`streamtree-veth-probe-p` (23 chars) both exceed it, so `ip link add
+... type veth` rejected the name before ever touching CAP_NET_ADMIN.
+Network-namespace names (used one probe up, and which had already
+passed) have no such limit - they are just files under
+`/var/run/netns`, not kernel interface names, which is why only the
+veth probe hit this.
+
+Checked whether the *real* network setup (`setUpNetwork()`, not the
+probe) has the same bug before assuming it didn't: `VETH_HOST =
+'veth-d2c-host'` (13 chars) and `VETH_CLIENT = 'veth-d2c-client'` (15
+chars, exactly at the limit) are both within bounds - confirmed by
+counting programmatically, not by eye. Only the standalone
+capability-probe names needed fixing.
+
+### Fix
+Renamed the probe's veth pair to `st-probe-veth0`/`st-probe-veth1`
+(14 characters each).
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean.
+Programmatically confirmed both new names are 14 characters. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+22. This entry - `fix(ci): shorten the veth capability-probe interface
+    names`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

@@ -181,9 +181,13 @@ function verifyNetnsCapability() {
   }
   expect(netnsResult.ok, 'this runner can create a network namespace (ip netns add)', netnsResult.error || 'CAP_NET_ADMIN or root required');
 
-  const vethResult = shDetail('sudo', ['ip', 'link', 'add', 'streamtree-veth-probe', 'type', 'veth', 'peer', 'name', 'streamtree-veth-probe-p']);
+  // Linux interface names are capped at IFNAMSIZ-1 = 15 characters
+  // (unlike netns names above, which are just files under /var/run/netns
+  // and have no such limit) - kept short here so the probe itself can't
+  // fail on a naming bug unrelated to the capability it is testing.
+  const vethResult = shDetail('sudo', ['ip', 'link', 'add', 'st-probe-veth0', 'type', 'veth', 'peer', 'name', 'st-probe-veth1']);
   if (vethResult.ok) {
-    sh('sudo', ['ip', 'link', 'del', 'streamtree-veth-probe']);
+    sh('sudo', ['ip', 'link', 'del', 'st-probe-veth0']);
   }
   expect(vethResult.ok, 'this runner can create a veth pair (ip link add ... type veth)', vethResult.error || 'the veth kernel module may not be available');
 }
