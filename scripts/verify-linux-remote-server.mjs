@@ -367,9 +367,15 @@ function isOverlayAllowedPath(urlPath) {
 // stdout - no extra plumbing needed to surface a real server-side TLS
 // failure in the CI diagnostic tail.
 function attachTlsDiagnostics(server, label) {
+  // No per-connection success log (e.g. "secureConnection established")
+  // - the TLS handshake itself was proven working several commits ago,
+  // and one such line per request (there are now a couple dozen by the
+  // time a later step fails) was silently eating into GitHub's own
+  // annotation size limit, pushing more useful diagnostic content out
+  // of a failure's captured detail. Only genuine error conditions are
+  // still worth a line here.
   server.on('tlsClientError', (err) => console.log(`     diag [${label}] tlsClientError: ${err && err.message}`));
   server.on('clientError', (err) => console.log(`     diag [${label}] clientError: ${err && err.message}`));
-  server.on('secureConnection', () => console.log(`     diag [${label}] secureConnection established`));
   server.on('error', (err) => console.log(`     diag [${label}] server error: ${err && err.message}`));
 }
 
@@ -623,7 +629,13 @@ async function main() {
       const notable = lines.filter((l) => /level=(ERR|WARN)|mediamtx_message/.test(l));
       const recent = lines.slice(-5);
       const combined = [...new Set([...notable, ...recent])].join('\n');
-      return `${text}\n--- server stdout: error/warning + mediamtx lines + recent tail ---\n${combined.slice(-1200)}`;
+      // The mediamtx log content goes FIRST - GitHub's own annotation
+      // size limit (empirically ~2200-2900 chars, found the hard way
+      // twice already in docs/progress.md) cuts off whatever comes
+      // last in a long detail string, and that content is the more
+      // valuable evidence at this point in the investigation than a
+      // repeat of ffmpeg's own already-seen output.
+      return `--- server stdout: error/warning + mediamtx lines + recent tail ---\n${combined.slice(-1500)}\n--- caller detail ---\n${text.slice(0, 300)}`;
     };
 
     step('Start the management and overlay TLS proxy stand-ins on the host-side veth address');
@@ -725,7 +737,7 @@ async function main() {
       const lines = (result.stderr || '').trim().split('\n');
       const notable = lines.filter((l) => /rtmp|server|reject|refus|denia|denied|error|fail|connect/i.test(l));
       const combined = [...new Set([...notable, ...lines.slice(-5)])].join('\n');
-      return { ok: result.status === 0, exitCode: result.status, detail: combined.slice(0, 1200) };
+      return { ok: result.status === 0, exitCode: result.status, detail: combined.slice(0, 500) };
     }
 
     const plaintextTry = await tryPublish(`rtmp://${INGEST_HOST}:${RTMPS_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`);

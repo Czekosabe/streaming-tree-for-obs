@@ -39624,8 +39624,50 @@ specific publish attempt.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-33. This entry - `ci: capture MediaMTX's own log lines, filtered
-    stdout was still missing the real decision`
+33. `ci: capture MediaMTX's own log lines, filtered stdout was still
+    missing the real decision`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 16:20 — ci: reorder/shrink the diagnostic detail, GitHub's size limit ate it again
+
+### Real CI result: still no mediamtx_message content in the annotation
+Commit `d474902` was checked. The annotation had no `--- server
+stdout` section at all this time - GitHub's own size ceiling (~2200-
+2900 characters, established empirically twice already) cut the
+message off before reaching it. The detail string this script builds
+puts ffmpeg's own (already-seen, already-understood) output *before*
+the mediamtx log section, so a long ffmpeg detail crowds out the more
+valuable content behind it - the same class of ordering mistake, not
+a new one.
+
+Also identified a second, previously-unnoticed budget drain while
+investigating: `attachTlsDiagnostics()`'s `secureConnection` listener
+(added five entries ago to debug the original TLS-deadlock hang, and
+genuinely useful then) logs one line on *every* request through either
+proxy - by the time the RTMPS matrix runs, roughly two dozen such
+lines have already accumulated in the captured output ahead of any
+failure, silently eating into the same limited annotation budget for
+no remaining diagnostic value (the handshake itself was proven working
+several commits ago).
+
+### Fix
+Reordered `withServerDiag()` so the mediamtx log content comes first
+and a much-shortened caller detail (300 chars) comes last, rather than
+the reverse. Reduced `tryPublish()`'s own detail cap from 1200 to 500
+characters. Removed the `secureConnection` success log entirely
+(kept `tlsClientError`/`clientError`/`error`, which are genuinely
+still worth a line if they ever fire).
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+34. This entry - `ci: reorder/shrink the diagnostic detail, GitHub's
+    size limit ate it again`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
