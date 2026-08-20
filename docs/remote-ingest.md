@@ -769,3 +769,64 @@ public MediaMTX protocols (RTSP/HLS/WebRTC/SRT/MoQ remain disabled, unchanged
 from every prior stage). Actual human OBS configuration against a real
 RTMPS endpoint is explicitly Stage 20E's manual validation, never claimed as
 "tested in OBS" by this stage's automated FFmpeg-based proof.
+
+## 19. Operator provisioning sequence (systemd)
+
+Extends `docs/remote-management.md`'s own operator provisioning sequence -
+read that first. Remote ingest and remote overlay exposure are each enabled
+the same way D2B's own `--remote-management` already is: a systemd drop-in
+adding `Environment=` lines, never by editing the package-owned unit file
+directly (`scripts/systemd/streaming-tree.service` ships with neither
+feature enabled, exactly like it ships with `--remote-management` disabled).
+
+1. Complete D2B's own sequence first (master key, administrator password,
+   `--remote-management` drop-in, the management reverse-proxy site block).
+2. Provision the RTMPS certificate/key at an operator-chosen path outside
+   any package-owned directory (e.g. `/etc/streaming-tree/rtmps.key` /
+   `rtmps.crt`), with the same discipline §8 requires: root-owned, `0600`
+   for the key.
+3. `sudo systemctl edit streaming-tree.service` and add:
+
+   ```ini
+   [Service]
+   LoadCredential=streaming-tree-rtmps-key:/etc/streaming-tree/rtmps.key
+   LoadCredential=streaming-tree-rtmps-cert:/etc/streaming-tree/rtmps.crt
+   Environment=STREAMING_TREE_REMOTE_INGEST=true
+   Environment=STREAMING_TREE_REMOTE_INGEST_RTMPS_ADDRESS=0.0.0.0:1936
+   Environment=STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH=%d/streaming-tree-rtmps-key
+   Environment=STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH=%d/streaming-tree-rtmps-cert
+   ```
+
+   `%d` is systemd's own specifier for the credentials directory - "the
+   value of the `$CREDENTIALS_DIRECTORY` environment variable if
+   available" (`systemd.unit(5)`'s own specifier table, current official
+   documentation, fetched directly). `Environment=` itself resolves
+   specifiers rather than performing shell expansion, and this project's
+   own shipped unit already relies on exactly that: `Environment=
+   STREAMING_TREE_DATA_DIR=%S/streaming-tree` (the real, already-working
+   line in `scripts/systemd/streaming-tree.service`) uses the identical
+   mechanism with the `%S` (state directory) specifier - direct, concrete
+   precedent from this repository's own already-verified unit, not merely
+   an external doc lookup.
+4. To also enable remote overlay exposure, add to the same drop-in:
+
+   ```ini
+   Environment=STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN=https://overlay.your-domain.example.com
+   ```
+
+   (a different hostname from the management origin's own - §10's own
+   mandatory requirement, enforced at startup either way).
+5. Configure the overlay reverse-proxy site block from
+   `docs/examples/Caddyfile.self-hosted`'s own second site block, alongside
+   the management site block from step 1.
+6. Configure the host/cloud firewall to allow the chosen RTMPS port
+   (`1936` in the example above) - this application never does so itself
+   (§10 of the original governing task; unchanged).
+7. `sudo systemctl daemon-reload && sudo systemctl restart streaming-tree.service`.
+8. Through the authenticated management UI (`RemoteIngestPanel`), provision
+   the publisher credential - the one-time secret is shown exactly once;
+   configure OBS's custom RTMP service with the RTMPS server address and
+   this credential (`docs/remote-ingest.md` §28's own UX requirements).
+9. Through each overlay's own management surface (`RemoteOverlayPanel`),
+   enable remote access for the specific overlays that need it - never all
+   of them by default.

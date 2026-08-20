@@ -38768,3 +38768,55 @@ convention.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: define the Stage 20D2C systemd operator provisioning sequence
+
+New `docs/remote-ingest.md` §19, extending `docs/remote-management.md`'s
+own operator provisioning sequence rather than duplicating it. Remote
+ingest and remote overlay exposure are each enabled the same way D2B's
+own `--remote-management` already is: a `systemctl edit` drop-in
+adding `Environment=`/`LoadCredential=` lines, never by editing the
+package-owned unit file directly - the shipped
+`scripts/systemd/streaming-tree.service` ships with neither feature
+enabled, exactly like it already ships with `--remote-management`
+disabled.
+
+### The `%d` specifier, verified two ways
+The drop-in references the RTMPS key/cert `LoadCredential=` targets via
+systemd's `%d` specifier inside `Environment=` lines
+(`Environment=STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH=%d/streaming-tree-rtmps-key`).
+Verified this is real, not assumed: (1) `systemd.unit(5)`'s own current
+specifier table, fetched directly - `%d` is documented as "Credentials
+directory... the value of the `$CREDENTIALS_DIRECTORY` environment
+variable if available"; (2) concrete precedent already shipping in this
+exact repository - `scripts/systemd/streaming-tree.service`'s own
+existing `Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree` line
+uses the identical specifier-expansion-inside-`Environment=` mechanism
+with `%S` (state directory) instead of `%d` - direct proof from this
+project's own already-working unit, not merely an external doc lookup.
+
+### What the new section documents
+The full nine-step sequence: complete D2B's own sequence first;
+provision the RTMPS certificate/key outside any package-owned
+directory; the systemd drop-in (both `LoadCredential=` lines plus the
+four `Environment=` lines for `--remote-ingest`); the additional
+`Environment=` line for a remote overlay origin (a different hostname
+from management, enforced at startup either way); the overlay
+reverse-proxy site block from the already-shipped
+`Caddyfile.self-hosted`; the operator's own firewall configuration
+(never this application's job); `daemon-reload && restart`;
+provisioning the publisher credential through the real
+`RemoteIngestPanel` UI; enabling remote overlay access per-profile
+through `RemoteOverlayPanel`, never all profiles by default.
+
+### Validation
+Docs-only commit - no product Go/TypeScript source changed, no test
+suite affected.
+
+### Commits (chronological, this milestone)
+18. This entry - `docs: define the Stage 20D2C systemd operator
+    provisioning sequence`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
