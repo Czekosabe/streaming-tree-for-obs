@@ -38453,3 +38453,82 @@ CI network-namespace/RTMPS integration test.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## docs: audit visual-asset remote safety and add the combined self-hosted Caddyfile
+
+Visual-asset capability audit (docs/remote-ingest.md §13) plus
+`docs/examples/Caddyfile.self-hosted` (§14/§17) - both pending items
+this stage's own contract had left open.
+
+### Visual-asset audit finding
+`GET/HEAD /api/public/visual-assets/{token}` was never wired into
+§12's remote-capability-token substitution, and this commit records
+why that is correct rather than an oversight: the 256-bit
+`PublicToken` is already its own complete, independent capability -
+possession of an existing local visual-asset token grants remote
+access on its own once the overlay origin proxies the route at all,
+with no binding to whether the *referencing overlay* has remote access
+enabled. Audited directly against the real code
+(`internal/domain/visualasset/{service,blobstore,validation}.go`,
+`internal/httpapi/visualasset.go`) rather than assumed: no sequential-
+id path exists (`PublicBlobByToken` is a single keyed lookup, uniform
+`ErrNotFound` for both "wrong token" and "right token, blob missing" -
+no near-miss signal); `OpenBlob` is called only with the server-
+computed `SHA256` already resolved from that lookup, never with
+request-supplied text, so path traversal is structurally impossible,
+not merely filtered; `MediaType` is a closed seven-value set with no
+HTML/SVG/script-capable type ever accepted, and `VerifyTypeAgreement`
+cross-checks the real binary signature against both the declared type
+and the extension, so a mislabeled upload cannot smuggle an unsafe
+type in; Range support is the standard library's own
+`http.ServeContent`; the one route that could enumerate every token
+(`GET /api/visual-assets`) requires an authenticated management
+session, never `/api/public/*`. Documented honestly in
+`docs/remote-ingest.md` §13 - not claimed as cryptographically bound
+to the overlay-capability system when it structurally is not.
+
+### `docs/examples/Caddyfile.self-hosted`
+New standalone reference file, superseding
+`docs/examples/Caddyfile.remote-management` for any deployment using
+remote ingest and/or remote overlays (the D2B-only file remains
+unchanged and still shipped for a deployment that stops at D2B). Two
+site blocks on two different hostnames:
+
+- **Management** (`stream.example.com`): identical to the corrected
+  PRE-20D2C policy - excludes both the exact roots and the wildcard
+  descendants of `/overlay` and `/api/public`, 404s them, proxies
+  everything else.
+- **Overlay** (`overlay.example.com`): a narrow, audited allowlist -
+  `path /overlay/* /assets/* /api/public/*` - verified directly
+  against `internal/httpapi/production.go`'s own SPA-fallback handler
+  (any non-asset-like path under `/overlay/*` gets `index.html`,
+  exactly like every client-side route already does) and the real
+  embedded build output (`internal/webassets/embedded/assets/`), not
+  assumed. Documents explicitly why proxying the same single shared
+  JS/CSS bundle the management origin also serves is safe (client-side
+  code, no embedded secret, the real boundary is the backend API
+  surface - the same reasoning Stage 20D2B already established).
+  Everything not in the allowlist - `/api/auth/*`, every authenticated
+  management route including `/api/remote-ingest/*` and
+  `/api/remote-overlay/*`, `/api/about`, `/api/system/*`,
+  `/api/updates/*`, `/legal/*`, the bare site root - 404s.
+- A third "plane" (RTMPS ingest) is documented as deliberately absent
+  from this file: MediaMTX terminates its own TLS directly on its own
+  port, never routed through Caddy at all.
+
+`docs/remote-ingest.md` §13/§14 updated in place with both findings
+(dated notes, consistent with this document's own living-document
+discipline - no historical PRE-20D2C entry rewritten).
+
+### Validation
+No product Go source changed - this commit is docs and a reference
+config file only. `gofmt`/`go vet`/`go build`/`go test` are unaffected
+and were not re-run for this reason.
+
+### Commits (chronological, this milestone)
+13. This entry - `docs: audit visual-asset remote safety and add the
+    combined self-hosted Caddyfile`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

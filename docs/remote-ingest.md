@@ -540,11 +540,47 @@ visualasset}.go`), classified per the governing task's A/B/C scheme:
 No route in this namespace grants cross-profile enumeration (every lookup is
 keyed by an unguessable slug/token, never a sequential id), no route mutates
 global/management state, and no route requires promotion to a different
-authorization model than "possession of the correct capability value(s)." All
-eleven routes are class A+B: required by remote overlay rendering and safe
-for remote exposure, gated by the remote-capability-token substitution
-described in §12 - none is reachable remotely via its legacy local
-`publicSlug` alone.
+authorization model than "possession of the correct capability value(s)." Ten
+of the eleven routes are class A+B and gated by the remote-capability-token
+substitution described in §12 - none of those ten is reachable remotely via
+its legacy local `publicSlug` alone.
+
+**Visual-asset audit (implementation commit, 2026-08-20) - the eleventh route
+is honestly different, not identically gated:** `GET/HEAD /api/public/
+visual-assets/{token}` was deliberately never wired into §12's capability
+substitution. Audited directly (`internal/domain/visualasset/service.go`,
+`blobstore.go`, `validation.go`, `internal/httpapi/visualasset.go`):
+
+- The 256-bit `PublicToken` (`visualasset.NewPublicToken`, `crypto/rand`) is
+  itself the entire capability - there is no separate "remote" token layered
+  on top the way §12 adds one for the other four domains. **Possession of an
+  existing local visual-asset token already grants remote access once the
+  overlay origin proxies this route at all** - it is not bound to, or gated
+  by, whether the *referencing overlay* has ever had remote access enabled
+  for itself. This is the honest model, not a claimed cryptographic binding
+  that does not exist.
+- This is judged acceptable, not merely convenient, because: `PublicBlobByToken`
+  performs a single keyed lookup with no sequential id ever exposed
+  (`ErrNotFound` uniformly for "wrong token" and "right token, blob
+  vanished" - no near-miss signal); `OpenBlob` is called only with the
+  server-computed `SHA256` value already resolved from that lookup, never
+  with request-supplied text, so `filepath.Join(blobsDir, sha256Hex)` cannot
+  be steered by a caller - path traversal is structurally impossible, not
+  merely filtered; `MediaType` is a closed, seven-value set (PNG/JPEG/GIF/
+  WebP/WebM/MP4/WOFF2) with **no HTML/SVG/script-capable type ever
+  accepted**, and `VerifyTypeAgreement` cross-checks the upload's real
+  binary signature (`DetectSignature`) against both the declared type and
+  the file extension - an attacker cannot upload an SVG/HTML payload by
+  mislabeling it, because the stored `Content-Type` this route later serves
+  is never caller-controlled at serve time, only at a validated upload time;
+  Range support is the standard library's own `http.ServeContent` (206/416),
+  not a hand-rolled implementation; the one route that could enumerate every
+  token, `GET /api/visual-assets`, requires an authenticated management
+  session (never `/api/public/*`), so a remote, unauthenticated caller with
+  no token at all cannot discover any.
+- Net effect for the overlay-origin proxy (§14): `/api/public/visual-assets/*`
+  is included in the overlay host's allowlist on the strength of this
+  audit, not because it was mechanically swept in with the other ten routes.
 
 ## 14. Caddy reverse-proxy policy for both origins
 
@@ -587,6 +623,23 @@ path, including every authenticated management route, `/api/auth/*`,
 `/legal/*`, and the bare SPA management shell, is unreachable - unknown paths
 receive `404`, the same fail-closed default as the management host, never a
 "forward everything and rely on backend middleware" catch-all.
+
+**Implementation status (implementation commit, 2026-08-20)**:
+`docs/examples/Caddyfile.self-hosted` now exists as the real, standalone
+combined reference file described above - not merely a doc-comment sketch.
+Its overlay-host `@overlaySurface` matcher is exactly `path /overlay/*
+/assets/* /api/public/*`, verified directly against
+`internal/httpapi/production.go`'s own request handling (the SPA-fallback
+handler answers any non-asset-like path under `/overlay/*` with `index.html`,
+identically to every client-side route) and against the real embedded build
+output (`internal/webassets/embedded/assets/`) rather than assumed. One
+single-page-app bundle serves both the management UI and every public
+overlay - there is no separate "overlay-only" bundle to proxy instead, which
+is safe because the bundle is client-side code with no embedded secret and
+the real security boundary is the backend API surface, the same reasoning
+Stage 20D2B already applied to the management origin's own bundle.
+`docs/examples/Caddyfile.remote-management` (the D2B-only file) remains
+unchanged and still shipped for a deployment that stops at D2B.
 
 ## 15. Native CI remote-network test model
 

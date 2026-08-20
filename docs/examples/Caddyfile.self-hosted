@@ -1,0 +1,142 @@
+# Stage 20D2C combined self-hosted reference configuration
+# (docs/remote-ingest.md §14). This supersedes
+# docs/examples/Caddyfile.remote-management as the canonical reference
+# for a deployment that uses remote ingest and/or remote overlays; a
+# deployment that stops at Stage 20D2B (management only, no remote
+# ingest/overlay) can keep using the D2B-only file unchanged - it is
+# still shipped, still correct, and still the right choice for that
+# narrower deployment.
+#
+# This is operator-applied guidance, not something this repository's
+# own tooling installs, configures, or starts. Replace the two
+# hostnames below with your own domains, and set
+# STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN /
+# STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN to match exactly.
+#
+# THREE separate external security planes exist in a Stage 20D2C
+# deployment (docs/remote-ingest.md §2/§7):
+#   A. the management plane   - this file's first site block
+#   B. the overlay plane      - this file's second site block
+#   C. the RTMPS ingest plane - NOT a Caddy site block at all; MediaMTX
+#      terminates its own TLS directly on its own port. Caddy has no
+#      role in remote ingest - do not add one.
+#
+# MANAGEMENT and OVERLAY use DIFFERENT HOSTNAMES, never merely
+# different ports of the same hostname - RFC 6265 §8.5 ("Cookies do
+# not provide isolation by port") means a same-host/different-port
+# split would still share the management session cookie
+# (docs/remote-ingest.md §10, docs/remote-management.md §17).
+
+# ============================================================
+# A. MANAGEMENT PLANE
+# ============================================================
+stream.example.com {
+	# The local-only public-overlay/Browser-Source surface
+	# (/overlay/*, served by the embedded frontend's own client-side
+	# router) and the backend's own intentionally-unauthenticated
+	# public API (/api/public/*, the same routes /overlay/* pages call)
+	# are NEVER forwarded through this management origin - Stage
+	# 20D2C serves them from the separate overlay origin below
+	# instead, never sharing this origin's management session cookie.
+	#
+	# Both the exact root and the wildcard descendant form are listed
+	# explicitly: Caddy's own matcher documentation confirms `/foo/*`
+	# does not match the bare `/foo` (docs/remote-ingest.md §1/§14) -
+	# a wildcard-only matcher would leave the exact roots `/overlay`
+	# and `/api/public` unexcluded.
+	@excludedLocalOnlySurface {
+		path /overlay /overlay/* /api/public /api/public/*
+	}
+	handle @excludedLocalOnlySurface {
+		respond 404
+	}
+
+	# Everything else - the management SPA, its hashed static assets,
+	# /legal/*, /api/health, /api/auth/*, and every authenticated
+	# management /api/* route - is proxied to the loopback backend.
+	# Caddy overwrites (never trusts/passes through) client-supplied
+	# X-Forwarded-For/X-Forwarded-Proto/X-Forwarded-Host headers by
+	# default (docs/remote-management.md §2), so no additional header
+	# configuration is required for the application's own forwarding-
+	# header contract (docs/remote-management.md §8) to hold.
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+
+# ============================================================
+# B. OVERLAY PLANE
+# ============================================================
+overlay.example.com {
+	# Proxies ONLY the real Browser Source request graph, audited
+	# directly against the actual production frontend/backend
+	# (docs/remote-ingest.md §7/§13/§14), not a guess at what "should"
+	# be needed:
+	#
+	#   /overlay/*    - the embedded SPA's own client-side overlay
+	#                   routes (apps/web/src/App.tsx:
+	#                   /overlay/chat/:publicSlug,
+	#                   /overlay/alerts/:publicSlug,
+	#                   /overlay/audio/:publicSlug,
+	#                   /overlay/widgets/:publicSlug) - the backend's
+	#                   own production handler (internal/httpapi/
+	#                   production.go) answers any non-asset-like path
+	#                   here with the same index.html shell every
+	#                   client-side route already gets, exactly like
+	#                   Vite's own dev server does.
+	#   /assets/*     - the hashed JS/CSS bundle that shell needs to
+	#                   boot. This project ships one single-page-app
+	#                   bundle for both the management UI and every
+	#                   public overlay (internal/webassets/embedded/
+	#                   assets/) - there is no separate "overlay-only"
+	#                   bundle to proxy instead. This is safe: the
+	#                   bundle is client-side code with no embedded
+	#                   secret, and the real security boundary is the
+	#                   backend API surface below, not which JS file is
+	#                   served (the same reasoning Stage 20D2B already
+	#                   applied to the management origin's own bundle).
+	#   /api/public/* - the eleven routes docs/remote-ingest.md §13
+	#                   classifies A+B (required + safe for remote
+	#                   exposure): chat-overlays/alert-profiles/audio/
+	#                   widgets config+items+stream+bytes+ack (gated by
+	#                   the remote-capability-token substitution,
+	#                   docs/remote-ingest.md §11/§12 - the backend
+	#                   itself refuses a legacy local publicSlug
+	#                   presented through this origin) and
+	#                   visual-assets/{token} (its own independent
+	#                   256-bit capability, audited separately -
+	#                   docs/remote-ingest.md §13's own visual-asset
+	#                   audit note).
+	#
+	# Everything else - the bare site root, /legal/*, /api/auth/*,
+	# every authenticated management /api/* route (including
+	# /api/remote-ingest/* and /api/remote-overlay/*), /api/about,
+	# /api/system/*, /api/updates/* - is NOT in this allowlist and
+	# therefore 404s below. This is a narrow, audited allowlist, not
+	# "forward everything and rely on backend middleware" - the
+	# backend's own withRemoteOverlaySecurity middleware
+	# (docs/remote-ingest.md §11) is the second, independent boundary
+	# behind this one, exactly like the management origin's own
+	# forwarded-request validation - never the only one.
+	@overlaySurface {
+		path /overlay/* /assets/* /api/public/*
+	}
+	handle @overlaySurface {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# Do NOT add a third site block or handle_path directive proxying to:
+#   - the MediaMTX Control API (loopback-only, never proxied through
+#     either origin above);
+#   - the MediaMTX RTMP/RTMPS listeners (RTMPS is its own plane, C,
+#     with its own port and its own TLS termination - never routed
+#     through Caddy at all, on either hostname).
+# Do NOT remove either @excludedLocalOnlySurface or @overlaySurface
+# handle block merely to simplify this file - together they are the
+# actual security boundary between the three planes this document
+# defines, not redundant examples.
