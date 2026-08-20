@@ -206,19 +206,32 @@ function readFileText(path) {
   return execFileSync('cat', [path], { encoding: 'utf8' });
 }
 
-/** excludedLocalOnlyPathPrefixes mirrors the corrected
- * docs/examples/Caddyfile.remote-management's own
- * @excludedLocalOnlySurface matcher exactly (`path /overlay/*
- * /api/public/*`) - the local-only public-overlay surface never
- * forwarded through the D2B management origin (docs/remote-
- * management.md §17, PRE-20D2C correction). Kept as one named
- * constant so the Caddyfile and this test harness cannot silently
- * drift apart from each other again. */
+/** excludedLocalOnlyRoots/excludedLocalOnlyPathPrefixes mirror the
+ * corrected docs/examples/Caddyfile.remote-management's own
+ * @excludedLocalOnlySurface matcher exactly (`path /overlay /overlay/*
+ * /api/public /api/public/*`) - the local-only public-overlay surface
+ * never forwarded through the D2B management origin (docs/remote-
+ * management.md §17, PRE-20D2C correction). Kept as named constants so
+ * the Caddyfile and this test harness cannot silently drift apart from
+ * each other again.
+ *
+ * Stage 20D2C correction (docs/remote-ingest.md §1/§14): Caddy's own
+ * `path` matcher documentation confirms `/foo/*` does NOT match the
+ * bare `/foo` (no trailing segment) - so a prefix-only check here had
+ * the exact same gap the original Caddyfile matcher had. Both the
+ * exact root and the `/`-prefixed descendant form are checked
+ * explicitly below; a plain `startsWith` on `/overlay/` alone would
+ * silently let a request to exactly `/overlay` (no trailing slash)
+ * through to the backend. */
+const excludedLocalOnlyRoots = ['/overlay', '/api/public'];
 const excludedLocalOnlyPathPrefixes = ['/overlay/', '/api/public/'];
 
 function isExcludedLocalOnlyPath(urlPath) {
   const pathname = urlPath.split('?')[0];
-  return excludedLocalOnlyPathPrefixes.some((prefix) => pathname.startsWith(prefix));
+  return (
+    excludedLocalOnlyRoots.includes(pathname) ||
+    excludedLocalOnlyPathPrefixes.some((prefix) => pathname.startsWith(prefix))
+  );
 }
 
 /** The ephemeral TLS test proxy itself - a first-party Node
@@ -354,8 +367,8 @@ function extractSessionCookie(setCookieHeaders) {
 function verifyCaddyfileMatchesHarnessPolicy() {
   const caddyfilePath = join(REPO_ROOT, 'docs', 'examples', 'Caddyfile.remote-management');
   const caddyfileContent = readFileText(caddyfilePath);
-  expect(/path\s+\/overlay\/\*\s+\/api\/public\/\*/.test(caddyfileContent),
-    'the committed Caddyfile\'s own @excludedLocalOnlySurface matcher still lists exactly /overlay/* and /api/public/*, matching this script\'s own hardcoded policy',
+  expect(/path\s+\/overlay\s+\/overlay\/\*\s+\/api\/public\s+\/api\/public\/\*/.test(caddyfileContent),
+    'the committed Caddyfile\'s own @excludedLocalOnlySurface matcher still lists exactly /overlay, /overlay/*, /api/public and /api/public/*, matching this script\'s own hardcoded policy',
     caddyfileContent);
   expect(/handle\s+@excludedLocalOnlySurface\s*\{\s*respond\s+404/.test(caddyfileContent),
     'the committed Caddyfile still responds 404 (not proxies) for the excluded surface',

@@ -94,6 +94,28 @@ own close:**
   and other requests with the reverse proxy."* This is the official,
   idiomatic pattern selected for §20's fix - not an invented one.
 
+**Stage 20D2C correction research (2026-08-20), added after this
+document's own PRE-20D2C correction:**
+
+- Caddy's "Caddyfile matchers" documentation, re-checked: confirmed
+  directly - *"Slashes are significant. For example, `/foo*` will
+  match `/foo`, `/foobar`, `/foo/`, and `/foo/bar`, but `/foo/*` will
+  _not_ match `/foo` or `/foobar`."* This means the PRE-20D2C matcher
+  `path /overlay/* /api/public/*` never matched the bare `/overlay` or
+  `/api/public` root (no trailing segment) - a real, if narrow, gap in
+  the exclusion boundary, closed in `docs/remote-ingest.md` §14's
+  `Caddyfile.self-hosted` by adding the exact-root patterns alongside
+  the existing wildcard ones.
+- RFC 6265 §8.5 ("Weak Confidentiality"), fetched directly from
+  rfc-editor.org: *"Cookies do not provide isolation by port. If a
+  cookie is readable by a service running on one port, the cookie is
+  also readable by a service running on another port of the same
+  server."* This document's own §17 previously described the future
+  overlay origin as merely "a different origin entirely" - technically
+  imprecise, since a same-host, different-port split is a different
+  web Origin but the same cookie host. Corrected in §17 above; full
+  design in `docs/remote-ingest.md` §10.
+
 ## 3. Explicit remote-management mode (opt-in)
 
 A new boolean setting, `--remote-management` (mirroring the existing
@@ -485,14 +507,37 @@ D2C rule, recorded now rather than left implicit: **remote overlays
 must not share the authenticated management origin** - a separate
 capability origin (e.g. `overlay.example.com`) is the preferred future
 architecture, so a compromised or leaked overlay page can never read
-the management session cookie (different origin entirely), and
-management session cookies (`__Host-`-scoped, `Path=/`, no `Domain`)
-are never sent to any other origin regardless. This document does not
-implement that separate origin - it is explicit Stage 20D2C scope.
+the management session cookie.
+
+**Stage 20D2C correction (docs/remote-ingest.md §1/§10, 2026-08-20):**
+the previous paragraph's parenthetical - "different origin entirely" -
+is too broad if read as licensing a same-host, different-port split
+(e.g. `stream.example.com` on 443 for management,
+`stream.example.com:8443` for overlays). Verified directly against
+RFC 6265 §8.5 ("Weak Confidentiality"): *"Cookies do not provide
+isolation by port. If a cookie is readable by a service running on
+one port, the cookie is also readable by a service running on another
+port of the same server."* The `__Host-` prefix (Secure, `Path=/`, no
+`Domain`) restricts a cookie to one *host*, but a host is not a full
+web Origin - it says nothing about port. A same-host,
+different-port "separate origin" would therefore still receive the
+management session cookie on every request, defeating the entire
+point of this section. **The required property is HOSTNAME
+separation, not mere origin inequality**: Stage 20D2C's overlay origin
+config is validated to have a different host from the management
+origin, and changing only scheme or port between the two is rejected
+outright rather than accepted as sufficient. See
+`docs/remote-ingest.md` §10 for the corrected design and its own
+validation function.
+
 Existing slugs are not claimed strong enough for unconditional future
 Internet exposure merely because they were sufficient for a loopback-
 only threat model; a dedicated entropy/rotation/revocation review is
 explicit required-before-D2C future work, not assumed satisfied here.
+Stage 20D2C (`docs/remote-ingest.md` §12) performs that review and
+concludes: existing local slugs remain local-only; a separate,
+wider-entropy remote capability token is required for any overlay an
+operator explicitly exposes remotely.
 
 ## 18. Authentication API
 
@@ -541,7 +586,7 @@ audited, no unit change needed.
 ```caddyfile
 stream.example.com {
     @excludedLocalOnlySurface {
-        path /overlay/* /api/public/*
+        path /overlay /overlay/* /api/public /api/public/*
     }
     handle @excludedLocalOnlySurface {
         respond 404
@@ -564,16 +609,21 @@ confirmed default behavior, and proxies only to the loopback backend -
 never to the MediaMTX Control API or RTMP listener, both of which stay
 entirely unreferenced by the proxy configuration. The `@excludedLocal
 OnlySurface` `handle` block (§17's own PRE-20D2C correction) refuses
-`/overlay/*` and `/api/public/*` with a bare `404` before the catch-all
-`handle` block's own `reverse_proxy` ever runs - `handle` blocks are
-mutually exclusive and Caddy sorts them by its own built-in directive
-order regardless of the order they are written in the file (confirmed
-directly against Caddy's own current documentation, research date
-2026-08-19), so this is correct independent of block ordering in the
-file. The application is not installed, configured, or started by this
-repository's own tooling; this block is operator-applied guidance,
-documented in `docs/linux-headless-server.md`'s own provisioning-
-sequence style.
+`/overlay`, `/overlay/*`, `/api/public`, and `/api/public/*` with a
+bare `404` before the catch-all `handle` block's own `reverse_proxy`
+ever runs - `handle` blocks are mutually exclusive and Caddy sorts them
+by its own built-in directive order regardless of the order they are
+written in the file (confirmed directly against Caddy's own current
+documentation, research date 2026-08-19), so this is correct
+independent of block ordering in the file. The exact-root patterns
+(`/overlay`, `/api/public`, no trailing segment) were added during
+Stage 20D2C after confirming Caddy's own matcher documentation states
+`/foo/*` does not match the bare `/foo` (§2's Stage 20D2C correction
+research) - the wildcard-only version of this matcher had a real,
+narrow gap at exactly those two root paths. The application is not
+installed, configured, or started by this repository's own tooling;
+this block is operator-applied guidance, documented in
+`docs/linux-headless-server.md`'s own provisioning-sequence style.
 
 ## 21. Operator provisioning sequence
 

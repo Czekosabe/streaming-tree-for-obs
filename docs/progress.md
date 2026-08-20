@@ -37644,3 +37644,54 @@ requirement to define it before implementation.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## fix(docs): harden the D2B Caddy exclusion matcher and correct the cookie/origin wording
+
+Two corrections to living D2B documents, required by this stage's own
+governing task (§4) before further D2C work, both grounded in the
+primary-source research `docs/remote-ingest.md` §1 already recorded.
+
+### Caddy matcher exact-root gap
+Caddy's own current matcher documentation states `/foo/*` does not
+match the bare `/foo`. The PRE-20D2C exclusion matcher, `path
+/overlay/* /api/public/*`, therefore never matched a request to
+exactly `/overlay` or exactly `/api/public` (no trailing segment) -
+those two exact roots would have fallen through to the catch-all
+`handle` block and been proxied. Both the real reference file
+(`docs/examples/Caddyfile.remote-management`) and its inline copy in
+`docs/remote-management.md` §20 are corrected to
+`path /overlay /overlay/* /api/public /api/public/*`. The Node.js test
+harness (`scripts/verify-linux-remote-management.mjs`) had the
+identical gap in its own `isExcludedLocalOnlyPath` (a plain
+`startsWith('/overlay/')` check, which likewise never matched the bare
+`/overlay`) - fixed the same way, and its `verifyCaddyfileMatchesHarnessPolicy`
+self-check regex updated to require the hardened four-pattern form,
+re-verified locally to actually match the real committed Caddyfile.
+
+### Cookie/origin wording correction
+`docs/remote-management.md` §17 described a future separate overlay
+origin as protecting the management session cookie because it is "a
+different origin entirely." Verified against RFC 6265 §8.5 ("Weak
+Confidentiality"): cookies are not port-scoped, so a same-host,
+different-port split is a different web Origin but the same cookie
+host - the previous wording was too broad if read as licensing that
+split. Corrected in place (§17) to state the required property is
+HOSTNAME separation, not mere origin inequality, cross-referencing
+`docs/remote-ingest.md` §10's actual Stage 20D2C design and
+validation rule. §2's research log gained a new dated block recording
+both findings; the existing PRE-20D2C-dated research entries are left
+as they were (accurate as of their own research date), not rewritten.
+
+### Validation
+`node --check scripts/verify-linux-remote-management.mjs`: clean. Both
+self-check regexes re-verified locally against the real committed
+Caddyfile content (both match). No Go source changed - this commit is
+docs and the Node test harness only.
+
+### Commits (chronological, this milestone)
+2. This entry - `fix(docs): harden the D2B Caddy exclusion matcher and
+   correct the cookie/origin wording`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

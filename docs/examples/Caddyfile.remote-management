@@ -37,12 +37,20 @@ stream.example.com {
 	# are NEVER forwarded through this management origin. Both remain
 	# reachable only from the machine's own loopback interface - the
 	# same as every other mode this application has - never through
-	# this proxy. A future Stage 20D2C review may deliberately expose
-	# them through a SEPARATE capability origin (never this one, and
-	# never sharing this origin's management session cookie); this
-	# configuration does not anticipate or partially implement that.
+	# this proxy. Stage 20D2C (docs/remote-ingest.md) exposes them
+	# instead through a SEPARATE capability origin (never this one, and
+	# never sharing this origin's management session cookie - see
+	# docs/examples/Caddyfile.self-hosted for that combined reference).
+	#
+	# Stage 20D2C correction (docs/remote-ingest.md §1/§14): Caddy's own
+	# matcher documentation confirms `/foo/*` does NOT match the bare
+	# `/foo` (no trailing segment) - so a wildcard-only matcher here
+	# left the exact roots `/overlay` and `/api/public` unexcluded.
+	# Both exact roots are listed explicitly alongside the wildcards
+	# below so this boundary does not depend on the backend's own
+	# router happening to 404 an exact root today.
 	@excludedLocalOnlySurface {
-		path /overlay/* /api/public/*
+		path /overlay /overlay/* /api/public /api/public/*
 	}
 	handle @excludedLocalOnlySurface {
 		respond 404
