@@ -37799,3 +37799,86 @@ test ./internal/runtime/mediamtx/...`: all tests pass.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(server): wire the --remote-ingest flag, preconditions, and overlay-origin validation
+
+Second product-code commit of this stage: the config/CLI layer around
+the MediaMTX rendering work two commits ago, implementing
+`docs/remote-ingest.md` §3/§8/§10.
+
+### What changed
+- `internal/config/config.go`: new `RemoteIngestConfig` (`Enabled`,
+  `RTMPSAddress`, `ServerKeyPath`, `ServerCertPath`, `OverlayOrigin`),
+  loaded by a new `loadRemoteIngest()` mirroring `loadRemoteManagement`'s
+  own read-but-do-not-deeply-validate discipline. New
+  `ValidateRemoteIngestPreconditions(cfg)`: RTMPS address must be a
+  well-formed, non-empty `host:port` distinct from both existing
+  loopback MediaMTX addresses; TLS key/cert paths must be non-empty
+  (the actual files are read in `run()`, not here - config.go does
+  string-level validation only, file I/O happens in `main.go`,
+  mirroring how `secrets.LoadHeadlessMasterKey` is called from
+  `run()` rather than from `config.Load()`).
+- `ValidateRemoteManagementOrigin`'s body was extracted into a shared
+  `validateHTTPSOriginIdentity(key, origin, emptyMessage)` helper
+  (same behavior, verified by the existing origin tests still passing
+  unmodified) so the new `ValidateRemoteOverlayOrigin(overlayOrigin,
+  managementOrigin)` can reuse it. `ValidateRemoteOverlayOrigin` adds
+  exactly one more check on top: HOSTNAME equality between the two
+  origins is rejected (via a new `hostOnly` helper stripping any
+  port), per this stage's own §4/§10 correction - a same-host,
+  different-port pair is still rejected even though it is already a
+  valid, distinct web Origin on its own, because RFC 6265 §8.5 means
+  it shares the same cookie host.
+- `cmd/server/main.go`: new `--remote-ingest` CLI flag
+  (`remoteIngestCLIFlag`/`remoteIngestFlag`, mirroring
+  `remoteManagementCLIFlag`/`remoteManagementFlag`'s own naming
+  exactly for interface consistency); a new gating block immediately
+  after the existing remote-management gating requiring
+  `--remote-ingest` to imply `--remote-management` (which itself
+  already implies `--headless`); TLS key/cert files are `os.Stat`'d
+  and parsed with `tls.LoadX509KeyPair` at startup, failing closed on
+  any error before MediaMTX is ever started; a separately-gated
+  `STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN` check (remote overlay
+  exposure is an independent opt-in from remote ingest itself, per the
+  contract's own §10, but still requires `--remote-management`).
+  `mediamtx.Options` gained a `RemoteIngest *RemoteIngestOptions`
+  field, threaded through to `WriteConfig` inside `startProcess`
+  (previously hardcoded to the three original fields only).
+- `main.go` constructs a real `*mediamtx.RemoteIngestOptions` when
+  `--remote-ingest` is active, with `PublisherUser:
+  "streaming-tree-obs"` (a new `remoteIngestPublisherUser` constant)
+  but `PublisherPassVerifier` deliberately left empty - credential
+  generation/persistence is next, not yet implemented. The RTMPS
+  listener and local read/api identity come up correctly; nothing can
+  publish yet, exactly as the previous commit's safety fix intended.
+
+### Validation
+`gofmt -l`: clean on every touched package. `go vet ./...`: clean. `go
+build ./...`: clean. New tests in `internal/config/config_test.go`
+(`TestRemoteIngestDefaultsToDisabled`,
+`TestRemoteIngestReadsEveryEnvironmentVariable`,
+`TestRemoteIngestRejectsNonBooleanFlag`,
+`TestValidateRemoteIngestPreconditionsAcceptsAWellFormedConfig` +
+6-case rejection table, `TestValidateRemoteOverlayOriginRequiresA
+DifferentHostnameThanManagement` - explicitly proves the same-host-
+different-port case is rejected, not just same-host-same-port -
+`TestValidateRemoteOverlayOriginRejectsInvalidOrigins`): all pass,
+alongside every pre-existing `internal/config` and
+`internal/runtime/mediamtx` test unmodified. `cmd/server` has no test
+files (wiring-only, matching its existing convention) - covered by
+`go build`/`go vet` across the whole module.
+
+### What this commit does not do yet
+No credential generation/persistence/HTTP API. No backend forwarded-
+request defense-in-depth for the overlay origin. No remote capability
+tokens. No frontend UI. No `Caddyfile.self-hosted`. No CI changes.
+`--remote-ingest` is fully wired and fails closed correctly, but is
+not yet usable end-to-end without a publish credential.
+
+### Commits (chronological, this milestone)
+5. This entry - `feat(server): wire the --remote-ingest flag,
+   preconditions, and overlay-origin validation`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

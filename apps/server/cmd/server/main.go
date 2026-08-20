@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -85,6 +86,22 @@ var headlessMode bool
 // run.
 var remoteManagementFlag bool
 
+// remoteIngestFlag is set once, from the real command-line flag,
+// inside handleEarlyFlags - never inferred from --headless/
+// --remote-management alone (docs/remote-ingest.md §3). Read only
+// after handleEarlyFlags has run. Mirrors remoteManagementFlag's own
+// naming/lifecycle exactly for interface consistency with the
+// established --headless/--remote-management convention; the actual
+// enablement gate run() checks is cfg.RemoteIngest.Enabled
+// (STREAMING_TREE_REMOTE_INGEST), the same env-var-driven mechanism
+// every other RemoteManagement/RemoteIngest setting already uses.
+var remoteIngestFlag bool
+
+// remoteIngestPublisherUser is the fixed, non-secret remote-publisher
+// service identity (docs/remote-ingest.md §5) - not a secret, unlike
+// the per-deployment generated password/verifier.
+const remoteIngestPublisherUser = "streaming-tree-obs"
+
 func main() {
 	if handled := handleEarlyFlags(); handled {
 		return
@@ -123,6 +140,7 @@ func handleEarlyFlags() bool {
 	versionFlag := flag.Bool("version", false, "print version information and exit")
 	headlessFlag := flag.Bool("headless", false, "run without a browser/desktop UI, as an unattended Linux service (docs/linux-headless-server.md)")
 	remoteManagementCLIFlag := flag.Bool("remote-management", false, "enable the Stage 20D2B remote management/control plane - requires --headless (docs/remote-management.md)")
+	remoteIngestCLIFlag := flag.Bool("remote-ingest", false, "enable the Stage 20D2C authenticated/encrypted remote OBS ingest plane - requires --headless and --remote-management (docs/remote-ingest.md)")
 	updateHelperFlag := flag.Bool(updater.FlagUpdateHelper, false, "internal: run in update-helper mode")
 	parentPID := flag.Int(updater.FlagParentPID, 0, "internal: update-helper only")
 	candidate := flag.String(updater.FlagCandidate, "", "internal: update-helper only")
@@ -134,6 +152,7 @@ func handleEarlyFlags() bool {
 	flag.Parse()
 	headlessMode = *headlessFlag
 	remoteManagementFlag = *remoteManagementCLIFlag
+	remoteIngestFlag = *remoteIngestCLIFlag
 
 	if *provisionAdminPasswordFlag {
 		runProvisionAdminPassword(*forceProvision)
@@ -292,6 +311,71 @@ func run() error {
 			return err
 		}
 		remoteManagementOrigin = config.CanonicalRemoteManagementOrigin(cfg.RemoteManagement.ExternalOrigin)
+	}
+
+	// docs/remote-ingest.md §3: remote ingest requires both --headless
+	// and --remote-management, checked explicitly (never inferred from
+	// one another, GOOS, TLS file presence, or environment alone) -
+	// mirrors the remote-management-requires-headless check immediately
+	// above. Every other precondition (a valid RTMPS address distinct
+	// from the loopback MediaMTX addresses, a readable TLS key/
+	// certificate pair) is checked further below, before the MediaMTX
+	// supervisor is constructed - a deployment whose remote-ingest
+	// preconditions are not all met must fail before MediaMTX starts,
+	// never silently fall back to the loopback-only D2B behavior.
+	remoteIngestEnabled := cfg.RemoteIngest.Enabled
+	if remoteIngestEnabled && !remoteManagementEnabled {
+		return fmt.Errorf("--remote-ingest requires --remote-management (docs/remote-ingest.md §3)")
+	}
+	var remoteIngestOptions *mediamtx.RemoteIngestOptions
+	if remoteIngestEnabled {
+		if err := config.ValidateRemoteIngestPreconditions(cfg); err != nil {
+			return err
+		}
+		// docs/remote-ingest.md §8: the operator supplies the RTMPS
+		// certificate/key; this application never generates or issues
+		// one. Read once, here, and fail closed - the same "fail
+		// loudly at startup" philosophy the D2A master key already
+		// applies, rather than letting MediaMTX itself discover a
+		// missing/malformed file later with a less actionable error.
+		if _, err := os.Stat(cfg.RemoteIngest.ServerKeyPath); err != nil {
+			return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH: %q is not readable: %w", cfg.RemoteIngest.ServerKeyPath, err)
+		}
+		if _, err := os.Stat(cfg.RemoteIngest.ServerCertPath); err != nil {
+			return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH: %q is not readable: %w", cfg.RemoteIngest.ServerCertPath, err)
+		}
+		if _, err := tls.LoadX509KeyPair(cfg.RemoteIngest.ServerCertPath, cfg.RemoteIngest.ServerKeyPath); err != nil {
+			return fmt.Errorf("remote ingest TLS material does not form a valid key/certificate pair: %w", err)
+		}
+
+		remoteIngestOptions = &mediamtx.RemoteIngestOptions{
+			RTMPSAddress:   cfg.RemoteIngest.RTMPSAddress,
+			ServerKeyPath:  cfg.RemoteIngest.ServerKeyPath,
+			ServerCertPath: cfg.RemoteIngest.ServerCertPath,
+			PublisherUser:  remoteIngestPublisherUser,
+			// PublisherPassVerifier is deliberately left empty here:
+			// credential generation/persistence is not implemented
+			// yet (docs/remote-ingest.md §6/§8, tracked as this
+			// stage's next commit). RenderConfig's own documented
+			// behavior for an empty verifier is to omit the
+			// publisher entry entirely, so the RTMPS listener and
+			// local read/api identity come up correctly while
+			// nothing can yet publish.
+		}
+	}
+
+	// docs/remote-ingest.md §10: the remote overlay origin is an
+	// independent opt-in from remote ingest (an operator may want one
+	// without the other), but it still requires remote management to
+	// be enabled - it is validated against, and must differ in
+	// hostname from, the management origin.
+	if cfg.RemoteIngest.OverlayOrigin != "" {
+		if !remoteManagementEnabled {
+			return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN requires --remote-management (docs/remote-ingest.md §10)")
+		}
+		if err := config.ValidateRemoteOverlayOrigin(cfg.RemoteIngest.OverlayOrigin, remoteManagementOrigin); err != nil {
+			return err
+		}
 	}
 
 	// Packaged mode only (docs/windows-packaging.md §9): a second launch
@@ -708,6 +792,7 @@ func run() error {
 		AutoStart:      cfg.MediaMTX.AutoStart,
 		AutoRestart:    cfg.MediaMTX.AutoRestart,
 		ExecutablePath: cfg.MediaMTX.ExecutablePath,
+		RemoteIngest:   remoteIngestOptions,
 		Logger:         logger,
 	})
 	supervisor.Start(ctx)

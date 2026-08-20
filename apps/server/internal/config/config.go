@@ -89,6 +89,11 @@ type Config struct {
 	// never mutable through any HTTP route: no handler in this codebase
 	// ever re-invokes config.Load() or writes to process environment.
 	RemoteManagement RemoteManagementConfig
+
+	// RemoteIngest groups Stage 20D2C's remote-ingest/remote-overlay
+	// deployment settings (docs/remote-ingest.md §3) - read once here,
+	// same discipline as RemoteManagement above.
+	RemoteIngest RemoteIngestConfig
 }
 
 // RemoteManagementConfig groups Stage 20D2B's security-critical
@@ -105,6 +110,46 @@ type RemoteManagementConfig struct {
 	// browser clients use (docs/remote-management.md §6), e.g.
 	// "https://stream.example.com". Empty unless Enabled.
 	ExternalOrigin string
+}
+
+// RemoteIngestConfig groups Stage 20D2C's remote-ingest/remote-overlay
+// deployment settings (docs/remote-ingest.md §3/§8/§10) - never
+// persisted as an ordinary, remotely-editable application setting,
+// same discipline as RemoteManagementConfig.
+type RemoteIngestConfig struct {
+	// Enabled is the explicit --remote-ingest opt-in (docs/remote-
+	// ingest.md §3). Never inferred from --headless/--remote-management
+	// alone, GOOS, systemd, TLS file presence, or non-loopback
+	// interfaces; checked against --headless and --remote-management
+	// explicitly at startup.
+	Enabled bool
+
+	// RTMPSAddress is the new, non-loopback-capable RTMPS listener a
+	// remote OBS instance publishes to (docs/remote-ingest.md §4).
+	// Empty unless Enabled. Distinct from MediaMTX.RTMPAddress and
+	// MediaMTX.APIAddress, which stay loopback-only and unaffected by
+	// this setting.
+	RTMPSAddress string
+
+	// ServerKeyPath / ServerCertPath are the operator-supplied RTMPS
+	// TLS private key and certificate paths (docs/remote-ingest.md
+	// §8), typically delivered via systemd LoadCredential= into
+	// $CREDENTIALS_DIRECTORY. This package only validates that the
+	// values are present and well-formed paths; run() reads and
+	// fail-closes on the actual files at startup, the same discipline
+	// secrets.LoadHeadlessMasterKey already uses for the D2A master
+	// key. Empty unless Enabled.
+	ServerKeyPath  string
+	ServerCertPath string
+
+	// OverlayOrigin is the canonical external HTTPS origin remote
+	// Browser Source capability URLs use (docs/remote-ingest.md §10),
+	// e.g. "https://overlay.example.com". Empty unless remote overlay
+	// exposure is separately enabled - remote ingest and remote overlay
+	// exposure are independent opt-ins (an operator may want encrypted
+	// remote OBS publishing without ever exposing an overlay remotely,
+	// or vice versa), so this is not gated by Enabled above.
+	OverlayOrigin string
 }
 
 // FFmpegConfig configures FFmpeg executable resolution for destination
@@ -300,6 +345,12 @@ func Load() (Config, error) {
 	}
 	cfg.RemoteManagement = remoteManagement
 
+	remoteIngest, err := loadRemoteIngest()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.RemoteIngest = remoteIngest
+
 	return cfg, nil
 }
 
@@ -321,6 +372,38 @@ func loadRemoteManagement() (RemoteManagementConfig, error) {
 
 	if raw, ok := lookup("STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN"); ok {
 		cfg.ExternalOrigin = raw
+	}
+
+	return cfg, nil
+}
+
+// loadRemoteIngest reads the Stage 20D2C remote-ingest/remote-overlay
+// deployment settings, mirroring loadRemoteManagement's own discipline:
+// values are read but not deeply validated here (ValidateRemoteIngest
+// Preconditions/ValidateRemoteOverlayOrigin, called explicitly by
+// run() only when Enabled/OverlayOrigin is set), so a deployment that
+// never sets these variables pays no validation cost and cannot be
+// affected by a malformed value it does not use.
+func loadRemoteIngest() (RemoteIngestConfig, error) {
+	var cfg RemoteIngestConfig
+
+	enabled, err := lookupBool("STREAMING_TREE_REMOTE_INGEST", false)
+	if err != nil {
+		return RemoteIngestConfig{}, err
+	}
+	cfg.Enabled = enabled
+
+	if raw, ok := lookup("STREAMING_TREE_REMOTE_INGEST_RTMPS_ADDRESS"); ok {
+		cfg.RTMPSAddress = raw
+	}
+	if raw, ok := lookup("STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH"); ok {
+		cfg.ServerKeyPath = raw
+	}
+	if raw, ok := lookup("STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH"); ok {
+		cfg.ServerCertPath = raw
+	}
+	if raw, ok := lookup("STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN"); ok {
+		cfg.OverlayOrigin = raw
 	}
 
 	return cfg, nil
@@ -493,18 +576,58 @@ func ValidateHeadlessListenAddress(cfg Config) error {
 	return validateLoopbackAddress("STREAMING_TREE_HOST/STREAMING_TREE_PORT (headless mode)", cfg.Address())
 }
 
-// ValidateRemoteManagementOrigin strictly validates the configured
-// canonical external management origin (docs/remote-management.md
-// §6): scheme must be exactly "https" (no production insecure
-// fallback), a host is required, an explicit port is allowed, and no
-// userinfo/path/query/fragment is permitted - this is an origin
-// identity, never a URL with a meaningful path. Call only when
-// RemoteManagement.Enabled is true.
-func ValidateRemoteManagementOrigin(origin string) error {
-	const key = "STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN"
+// ValidateRemoteIngestPreconditions validates Stage 20D2C's remote-
+// ingest deployment settings (docs/remote-ingest.md §3/§8) once
+// RemoteIngest.Enabled is true. Call only after headless/remote-
+// management have already been confirmed by the caller (mirrors
+// run()'s own existing "--remote-management requires --headless"
+// ordering) - this function itself only checks values internal to
+// RemoteIngestConfig plus the two existing MediaMTX addresses, not the
+// headless/remote-management relationship, which is a startup-flow
+// decision main.go makes explicitly rather than something this
+// package infers.
+func ValidateRemoteIngestPreconditions(cfg Config) error {
+	const rtmpsKey = "STREAMING_TREE_REMOTE_INGEST_RTMPS_ADDRESS"
 
+	if cfg.RemoteIngest.RTMPSAddress == "" {
+		return fmt.Errorf("%s: must be set when remote ingest is enabled", rtmpsKey)
+	}
+	host, portText, err := net.SplitHostPort(cfg.RemoteIngest.RTMPSAddress)
+	if err != nil {
+		return fmt.Errorf("%s: %q must be in host:port form: %w", rtmpsKey, cfg.RemoteIngest.RTMPSAddress, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("%s: %q has an invalid port", rtmpsKey, cfg.RemoteIngest.RTMPSAddress)
+	}
+	if host == "" {
+		return fmt.Errorf("%s: %q must include a host (an empty host binds every interface implicitly - be explicit)", rtmpsKey, cfg.RemoteIngest.RTMPSAddress)
+	}
+	if cfg.RemoteIngest.RTMPSAddress == cfg.MediaMTX.RTMPAddress || cfg.RemoteIngest.RTMPSAddress == cfg.MediaMTX.APIAddress {
+		return fmt.Errorf("%s: must differ from the loopback RTMP/Control API addresses, both are %q/%q",
+			rtmpsKey, cfg.MediaMTX.RTMPAddress, cfg.MediaMTX.APIAddress)
+	}
+
+	if cfg.RemoteIngest.ServerKeyPath == "" {
+		return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH: must be set when remote ingest is enabled (docs/remote-ingest.md §8)")
+	}
+	if cfg.RemoteIngest.ServerCertPath == "" {
+		return fmt.Errorf("STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH: must be set when remote ingest is enabled (docs/remote-ingest.md §8)")
+	}
+
+	return nil
+}
+
+// validateHTTPSOriginIdentity is the shared strict-origin validator
+// behind both ValidateRemoteManagementOrigin (docs/remote-management.md
+// §6) and ValidateRemoteOverlayOrigin (docs/remote-ingest.md §10):
+// scheme must be exactly "https" (no insecure fallback), a host is
+// required, an explicit port is allowed, and no userinfo/path/query/
+// fragment is permitted - this is an origin identity, never a URL with
+// a meaningful path.
+func validateHTTPSOriginIdentity(key, origin, emptyMessage string) error {
 	if origin == "" {
-		return fmt.Errorf("%s: must be set when remote management is enabled", key)
+		return fmt.Errorf("%s: %s", key, emptyMessage)
 	}
 
 	parsed, err := neturl.Parse(origin)
@@ -537,6 +660,66 @@ func ValidateRemoteManagementOrigin(origin string) error {
 	}
 
 	return nil
+}
+
+// ValidateRemoteManagementOrigin strictly validates the configured
+// canonical external management origin (docs/remote-management.md
+// §6). Call only when RemoteManagement.Enabled is true.
+func ValidateRemoteManagementOrigin(origin string) error {
+	return validateHTTPSOriginIdentity(
+		"STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN", origin,
+		"must be set when remote management is enabled")
+}
+
+// ValidateRemoteOverlayOrigin strictly validates the configured
+// canonical external overlay origin (docs/remote-ingest.md §10) and
+// enforces the one property that matters beyond
+// validateHTTPSOriginIdentity's own checks: HOSTNAME separation from
+// the management origin. RFC 6265 §8.5 ("Cookies do not provide
+// isolation by port") means two origins differing only by port share
+// the same cookie host - changing only scheme or port between the two
+// configured origins is therefore rejected outright, not merely
+// discouraged, even though it would already be a different, valid web
+// Origin on its own. Call only when a remote overlay origin is
+// configured; managementOrigin must already have passed
+// ValidateRemoteManagementOrigin.
+func ValidateRemoteOverlayOrigin(overlayOrigin, managementOrigin string) error {
+	const key = "STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN"
+
+	if err := validateHTTPSOriginIdentity(key, overlayOrigin,
+		"must be set when remote overlay exposure is enabled"); err != nil {
+		return err
+	}
+
+	overlayHost, overlayErr := hostOnly(overlayOrigin)
+	managementHost, managementErr := hostOnly(managementOrigin)
+	if overlayErr != nil || managementErr != nil {
+		// Already validated by validateHTTPSOriginIdentity /
+		// ValidateRemoteManagementOrigin - a parse failure here would
+		// mean a caller invoked this out of order.
+		return fmt.Errorf("%s: cannot compare against an unvalidated management origin", key)
+	}
+	if overlayHost == managementHost {
+		return fmt.Errorf(
+			"%s: %q must use a different HOSTNAME than the management origin (%q) - "+
+				"changing only scheme or port is not sufficient, cookies are not port-scoped "+
+				"(RFC 6265 §8.5, docs/remote-ingest.md §10)",
+			key, overlayOrigin, managementOrigin)
+	}
+
+	return nil
+}
+
+// hostOnly returns origin's hostname with any port stripped - the
+// comparison ValidateRemoteOverlayOrigin needs, since RFC 6265 §8.5
+// means the port is not part of the security boundary this check
+// enforces.
+func hostOnly(origin string) (string, error) {
+	parsed, err := neturl.Parse(origin)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Hostname(), nil
 }
 
 // CanonicalRemoteManagementOrigin returns origin normalized to

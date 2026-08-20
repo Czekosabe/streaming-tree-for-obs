@@ -63,7 +63,14 @@ type Options struct {
 	AutoRestart bool
 	// ExecutablePath is the explicit override, empty when unset.
 	ExecutablePath string
-	Logger         *slog.Logger
+
+	// RemoteIngest is Stage 20D2C's explicit --remote-ingest opt-in
+	// (docs/remote-ingest.md §4/§5) - nil for every other deployment
+	// mode, threaded straight through to every WriteConfig call this
+	// supervisor makes.
+	RemoteIngest *RemoteIngestOptions
+
+	Logger *slog.Logger
 
 	// InstallerOptions are forwarded to the installer; tests use them to point
 	// at a fixture release server. Not reachable from any HTTP request.
@@ -230,9 +237,10 @@ func (s *Supervisor) launch(path string, generation uint64) {
 	}
 
 	configPath, err := WriteConfig(s.options.DataDir, ConfigOptions{
-		RTMPAddress: s.options.RTMPAddress,
-		APIAddress:  s.options.APIAddress,
-		IngestPath:  s.options.IngestPath,
+		RTMPAddress:  s.options.RTMPAddress,
+		APIAddress:   s.options.APIAddress,
+		IngestPath:   s.options.IngestPath,
+		RemoteIngest: s.options.RemoteIngest,
 	})
 	if err != nil {
 		s.failStart(generation, NewRuntimeError(CodeStartFailed,

@@ -29,6 +29,11 @@ func clearEnv(t *testing.T) {
 		"STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE",
 		"STREAMING_TREE_REMOTE_MANAGEMENT",
 		"STREAMING_TREE_REMOTE_MANAGEMENT_ORIGIN",
+		"STREAMING_TREE_REMOTE_INGEST",
+		"STREAMING_TREE_REMOTE_INGEST_RTMPS_ADDRESS",
+		"STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH",
+		"STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH",
+		"STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN",
 	} {
 		t.Setenv(key, "")
 	}
@@ -646,5 +651,169 @@ func TestCanonicalRemoteManagementOriginNormalizesForm(t *testing.T) {
 	want := "https://stream.example.com:8443"
 	if got != want {
 		t.Errorf("CanonicalRemoteManagementOrigin() = %q, want %q", got, want)
+	}
+}
+
+func TestRemoteIngestDefaultsToDisabled(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if cfg.RemoteIngest.Enabled {
+		t.Error("RemoteIngest.Enabled defaulted to true")
+	}
+	if cfg.RemoteIngest.RTMPSAddress != "" || cfg.RemoteIngest.ServerKeyPath != "" ||
+		cfg.RemoteIngest.ServerCertPath != "" || cfg.RemoteIngest.OverlayOrigin != "" {
+		t.Error("RemoteIngest fields are non-empty with nothing set")
+	}
+}
+
+func TestRemoteIngestReadsEveryEnvironmentVariable(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST", "true")
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST_RTMPS_ADDRESS", "0.0.0.0:1936")
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST_TLS_KEY_PATH", "/etc/streaming-tree/rtmps.key")
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST_TLS_CERT_PATH", "/etc/streaming-tree/rtmps.crt")
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST_OVERLAY_ORIGIN", "https://overlay.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+	if !cfg.RemoteIngest.Enabled {
+		t.Error("RemoteIngest.Enabled = false, want true")
+	}
+	if cfg.RemoteIngest.RTMPSAddress != "0.0.0.0:1936" {
+		t.Errorf("RTMPSAddress = %q", cfg.RemoteIngest.RTMPSAddress)
+	}
+	if cfg.RemoteIngest.ServerKeyPath != "/etc/streaming-tree/rtmps.key" {
+		t.Errorf("ServerKeyPath = %q", cfg.RemoteIngest.ServerKeyPath)
+	}
+	if cfg.RemoteIngest.ServerCertPath != "/etc/streaming-tree/rtmps.crt" {
+		t.Errorf("ServerCertPath = %q", cfg.RemoteIngest.ServerCertPath)
+	}
+	if cfg.RemoteIngest.OverlayOrigin != "https://overlay.example.com" {
+		t.Errorf("OverlayOrigin = %q", cfg.RemoteIngest.OverlayOrigin)
+	}
+}
+
+func TestRemoteIngestRejectsNonBooleanFlag(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("STREAMING_TREE_REMOTE_INGEST", "sure")
+
+	if _, err := Load(); err == nil {
+		t.Error("Load() with a non-boolean STREAMING_TREE_REMOTE_INGEST succeeded, want an error")
+	}
+}
+
+func TestValidateRemoteIngestPreconditionsAcceptsAWellFormedConfig(t *testing.T) {
+	cfg := Config{
+		MediaMTX: MediaMTXConfig{RTMPAddress: DefaultRTMPAddress, APIAddress: DefaultAPIAddress},
+		RemoteIngest: RemoteIngestConfig{
+			Enabled:        true,
+			RTMPSAddress:   "0.0.0.0:1936",
+			ServerKeyPath:  "/etc/streaming-tree/rtmps.key",
+			ServerCertPath: "/etc/streaming-tree/rtmps.crt",
+		},
+	}
+	if err := ValidateRemoteIngestPreconditions(cfg); err != nil {
+		t.Errorf("ValidateRemoteIngestPreconditions() = %v, want nil", err)
+	}
+}
+
+func TestValidateRemoteIngestPreconditionsRejectsInvalid(t *testing.T) {
+	base := func() Config {
+		return Config{
+			MediaMTX: MediaMTXConfig{RTMPAddress: DefaultRTMPAddress, APIAddress: DefaultAPIAddress},
+			RemoteIngest: RemoteIngestConfig{
+				Enabled:        true,
+				RTMPSAddress:   "0.0.0.0:1936",
+				ServerKeyPath:  "/etc/streaming-tree/rtmps.key",
+				ServerCertPath: "/etc/streaming-tree/rtmps.crt",
+			},
+		}
+	}
+
+	cases := map[string]func(Config) Config{
+		"empty RTMPS address": func(c Config) Config {
+			c.RemoteIngest.RTMPSAddress = ""
+			return c
+		},
+		"malformed RTMPS address": func(c Config) Config {
+			c.RemoteIngest.RTMPSAddress = "not-an-address"
+			return c
+		},
+		"RTMPS address collides with RTMPAddress": func(c Config) Config {
+			c.RemoteIngest.RTMPSAddress = c.MediaMTX.RTMPAddress
+			return c
+		},
+		"RTMPS address collides with APIAddress": func(c Config) Config {
+			c.RemoteIngest.RTMPSAddress = c.MediaMTX.APIAddress
+			return c
+		},
+		"empty key path": func(c Config) Config {
+			c.RemoteIngest.ServerKeyPath = ""
+			return c
+		},
+		"empty cert path": func(c Config) Config {
+			c.RemoteIngest.ServerCertPath = ""
+			return c
+		},
+	}
+
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateRemoteIngestPreconditions(mutate(base())); err == nil {
+				t.Error("ValidateRemoteIngestPreconditions() = nil, want an error")
+			}
+		})
+	}
+}
+
+func TestValidateRemoteOverlayOriginRequiresADifferentHostnameThanManagement(t *testing.T) {
+	management := "https://stream.example.com"
+
+	cases := map[string]struct {
+		overlay string
+		wantErr bool
+	}{
+		"different hostname":                {"https://overlay.example.com", false},
+		"same hostname, no port difference": {"https://stream.example.com", true},
+		"same hostname, different port": {
+			// RFC 6265 §8.5: cookies are not port-scoped, so this must
+			// still be rejected even though it is a different web
+			// Origin (docs/remote-ingest.md §10).
+			"https://stream.example.com:8443", true,
+		},
+		"same hostname, trailing slash": {"https://stream.example.com/", true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateRemoteOverlayOrigin(tc.overlay, management)
+			if tc.wantErr && err == nil {
+				t.Errorf("ValidateRemoteOverlayOrigin(%q, %q) = nil, want an error", tc.overlay, management)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ValidateRemoteOverlayOrigin(%q, %q) = %v, want nil", tc.overlay, management, err)
+			}
+		})
+	}
+}
+
+func TestValidateRemoteOverlayOriginRejectsInvalidOrigins(t *testing.T) {
+	management := "https://stream.example.com"
+	cases := []string{
+		"",
+		"http://overlay.example.com",          // insecure scheme
+		"overlay.example.com",                 // no scheme
+		"https://overlay.example.com/widgets", // path
+	}
+	for _, overlay := range cases {
+		if err := ValidateRemoteOverlayOrigin(overlay, management); err == nil {
+			t.Errorf("ValidateRemoteOverlayOrigin(%q, ...) = nil, want an error", overlay)
+		}
 	}
 }
