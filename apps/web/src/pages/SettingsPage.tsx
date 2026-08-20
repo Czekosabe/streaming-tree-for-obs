@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { ConnectedAccountsPanel } from '@/components/settings/ConnectedAccountsPanel';
+import { RemoteIngestPanel } from '@/components/settings/RemoteIngestPanel';
 import { YouTubeAccountsPanel } from '@/components/settings/YouTubeAccountsPanel';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
@@ -39,6 +40,7 @@ export function SettingsPage() {
 
         <ConnectedAccountsPanel />
         <YouTubeAccountsPanel />
+        <RemoteIngestPanel />
 
         <Panel>
           <PanelBody>

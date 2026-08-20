@@ -38600,3 +38600,70 @@ behavior changed.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## feat(web): add the remote-ingest credential management UI
+
+First frontend commit of Stage 20D2C: the operator UI for
+provisioning/rotating/revoking the remote-ingest publisher credential
+(docs/remote-ingest.md §28), wired into the existing Settings page
+rather than a new page.
+
+### What changed
+- `api/remote-ingest-schemas.ts` / `api/remote-ingest.ts`: Zod
+  contracts and thin fetch wrappers for
+  `/api/remote-ingest/{status,provision,rotate,revoke}`, mirroring the
+  existing `api/chat-overlay*.ts` convention exactly.
+- `hooks/use-remote-ingest.ts`: React Query hooks. The status query's
+  retry policy explicitly gives up immediately on a 404 (`ApiError.kind
+  === 'not-found'`) rather than retrying - a 404 here means
+  `--remote-ingest` is not active on this deployment, not a transient
+  failure. `isRemoteIngestUnavailable` is the one predicate every
+  consumer uses to decide whether to render anything at all.
+- `components/settings/RemoteIngestPanel.tsx`: renders nothing on a
+  deployment without the feature (the 404 case above); otherwise shows
+  the RTMPS endpoint/path/credential/receiving status, a "Generate
+  credential" action when unconfigured, "Rotate"/"Revoke" when
+  configured, `ConfirmDialog`s for both (rotate/revoke's own body text
+  explains the old credential/URL stops working and that this cannot
+  happen while a stream is actively being received), and a `Modal`
+  showing the new plaintext secret exactly once with an explicit "copy
+  this now - it cannot be shown again" warning and a copy button. The
+  secret lives only in component `useState`, cleared on unmount via a
+  `useEffect` cleanup - never written to localStorage/sessionStorage/
+  IndexedDB/the URL, and never kept in the React Query cache (the
+  mutation's own result, not a cached query). `409` responses map
+  `already_provisioned`/`streaming_active` error codes to specific
+  localized messages via `ApiError.code`.
+- Wired into `pages/SettingsPage.tsx`, next to the existing
+  `ConnectedAccountsPanel`/`YouTubeAccountsPanel` - no new page, no
+  separate overlay-management application, per the governing task's
+  own explicit instruction.
+- `i18n/resources/{en,pl}/pages.json`: new `settings.remoteIngest.*`
+  keys (English canonical + complete Polish), added to the existing
+  `pages` namespace rather than registering a new one - smaller,
+  more consistent diff for one settings-page feature.
+
+### Validation
+`npm run typecheck`: clean (one real bug caught and fixed before this
+commit - every `t()` call originally carried a redundant `pages:`
+namespace prefix despite `useTranslation('pages')` already scoping
+it, which the generated i18n key types correctly rejected). `npm run
+lint`: clean (the one pre-existing warning is in an unrelated file).
+`npm run i18n:check`: "2 languages (en, pl), 22 namespaces, no
+differences against en." `npm run test -- --run`: 104 test files,
+1410 tests, all pass, including every pre-existing `SettingsPage`
+test unmodified.
+
+### What this commit does not do yet
+No remote-overlay frontend UI (chat/alerts/audio/goal-and-supporter
+widgets). No native CI integration test exercises this UI (frontend
+tests are unit/component-level only, per the existing project
+convention).
+
+### Commits (chronological, this milestone)
+15. This entry - `feat(web): add the remote-ingest credential
+    management UI`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
