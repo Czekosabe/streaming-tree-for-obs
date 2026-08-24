@@ -1047,10 +1047,17 @@ async function main() {
     });
     // A curl cookie jar is scoped by domain per RFC 6265 - curl itself
     // will not attach the manage-host cookie to an overlay-host
-    // request. The request still succeeds/fails on its own merits
-    // (unknown slug), proving the overlay origin never required or
-    // consumed the management cookie at all.
-    expect(overlayWithManagementCookie.status === 200, 'the overlay origin answers without the management cookie (never required)', overlayWithManagementCookie.status === 200 ? overlayWithManagementCookie.text : withServerDiag(overlayWithManagementCookie.text));
+    // request. The request still succeeds/fails on its own merits: the
+    // slug is deliberately unknown, so the real, correct outcome is a
+    // 404 "not found" (confirmed by real CI evidence: {"error":
+    // "chat_overlay_not_found",...}) - anything else (a 401/403, or a
+    // hang) would mean the overlay origin required or waited on
+    // something cookie-related that it should not have. This
+    // assertion previously and incorrectly expected 200 for a slug it
+    // itself named "does-not-exist" - a real bug in the test's own
+    // expectation, never caught before now because nothing earlier in
+    // this script had ever run far enough to actually reach it.
+    expect(overlayWithManagementCookie.status === 404, 'the overlay origin answers without the management cookie (never required)', overlayWithManagementCookie.status === 404 ? overlayWithManagementCookie.text : withServerDiag(overlayWithManagementCookie.text));
 
     console.log(`\nAll ${stepCount} steps passed.`);
   } finally {

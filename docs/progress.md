@@ -40842,8 +40842,62 @@ commit triggers - if this diagnosis is correct, this should be the run
 where the positive path finally passes in full.
 
 ### Commits (chronological, this milestone)
-58. This entry - `fix(ci): add -re so ffmpeg publishes at real-time
-    pace instead of finishing in milliseconds`
+58. `fix(ci): add -re so ffmpeg publishes at real-time pace instead
+    of finishing in milliseconds`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — fix(ci): correct a real bug in the cookie-separation test's own expectation
+
+### Real CI result: the -re fix worked - the entire RTMPS positive path now passes
+Commit `f9fa053` was checked. `diag RTMPS same-credential publish from
+HOST namespace (no netns exec), ready=true` - the host-namespace probe
+now genuinely succeeds. The full server log confirms both real
+publishes now run for their actual nominal duration: the host probe
+opened at 08:29:39.514, published at 08:29:41.288, and closed at
+08:29:43.211 (~1.9s later, matching its real `-t 4`); the main
+positive-path publish opened at 08:29:43.429, published at
+08:29:45.162, and closed at 08:29:53.075 (~7.9s later, matching its
+real `-t 10`). The `-re` fix is confirmed correct - this whole RTMPS
+investigation, spanning dozens of commits, is resolved. The failure
+moved all the way to step 20 (the cookie-separation check), the very
+last real assertion in the script before cleanup - meaning every
+earlier step, including the full RTMPS accept/reject matrix and the
+positive path, now genuinely passes.
+
+Step 20's own failure turned out to be a real, pre-existing bug in
+the test's own expectation, not a product issue: it requests
+`/api/public/chat-overlays/does-not-exist/config` - a *deliberately*
+unknown slug, to prove the overlay origin answers without requiring
+the management cookie - but asserted `status === 200`. The real,
+correct API response for a genuinely unknown slug is a 404 (confirmed
+by the real response body: `{"error":"chat_overlay_not_found",...}`).
+The test's own comment already said the right thing ("the request
+still succeeds/fails on its own merits... unknown slug") - the
+assertion itself just never matched that comment. This was never
+caught before because nothing earlier in the script had ever run far
+enough, across this entire investigation, to actually reach step 20
+until this run.
+
+### Fix
+Changed the assertion to expect `404` instead of `200`, matching the
+real, correct behavior for a deliberately-unknown slug - the point of
+the test (the overlay origin answers on its own merits, never
+requiring or waiting on the management cookie) is unchanged; only the
+specific status code being checked for was wrong.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - step
+20 was the last real assertion before the script's own final cleanup,
+so if this fix is correct, the whole script should pass in full for
+the first time.
+
+### Commits (chronological, this milestone)
+59. This entry - `fix(ci): correct a real bug in the cookie-
+    separation test's own expectation`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
