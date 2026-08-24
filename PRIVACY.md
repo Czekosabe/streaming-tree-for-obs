@@ -110,6 +110,76 @@ or code path anywhere in this application - confirmed by direct source
 audit, not merely undocumented. If this ever changes, it will be a
 deliberate, separately documented product decision, not a silent addition.
 
+## Diagnostics and support bundle
+
+Streaming Tree includes an operator-facing diagnostics surface (Stage
+20E): a **Logs** page in the management UI, and an on-demand
+**support bundle** export, both backed by a bounded, in-memory record
+of recent backend log activity - never a second logging system, and
+never telemetry (see the section above: nothing here is sent
+anywhere automatically).
+
+**What is recorded.** Backend operational events - startup/shutdown,
+subsystem state changes (MediaMTX, ingest, destination branches),
+HTTP request lines, and recovered errors - each with a timestamp,
+severity, and the originating subsystem. This is operational logging
+about the application's own behavior, not a record of chat, donation,
+or viewer content: chat messages and donation events flow through a
+separate, dedicated in-memory pipeline that never passes through this
+logging path at all (verified directly - see
+`scripts/verify-operator-chat.mjs`).
+
+**Redaction, precisely stated.** Every captured entry is passed
+through centralized redaction before it is stored: capability-bearing
+URL segments (chat-overlay/alert/audio/widget public slugs,
+visual-asset tokens, remote-overlay capability paths) are replaced
+with a fixed placeholder, and free-text messages are scanned for
+secret-shaped values (long hex/base64 tokens, credential-bearing query
+fragments) before capture. Never captured, by construction: stream
+keys, OAuth access/refresh tokens, the administrator password or its
+verifier, the remote-ingest publisher password, session cookies, CSRF
+tokens, remote-overlay or visual-asset capability tokens, the headless
+master key, or TLS private key material. We do not claim these logs
+contain "nothing personal" without qualification - a connected
+account's display name or a destination's platform identifier can
+appear in an operational log line describing that account/destination
+by name; what we do say precisely is that credentials, tokens, and
+message/donation content never can, by the boundaries above.
+
+**Retention.** A fixed 2,000-entry in-memory ring buffer - not a file,
+not a database table. History does not survive a process restart; the
+oldest entries are silently discarded once the buffer is full, so
+memory use never grows without bound no matter how long the
+application runs.
+
+**Viewing logs.** The Logs page reads this same bounded buffer through
+`GET /api/logs`, filterable by severity, subsystem, and text search.
+On a local desktop install this works the same way every other local
+management route already does; on a headless remote-management
+deployment (Stage 20D2B), it requires the same authenticated session
+every other management route requires - never a route reachable
+without authentication, and never one that can read an arbitrary file
+from the server's filesystem.
+
+**Support bundle.** Generated only when you explicitly click "Export
+support bundle" - never automatically, never uploaded anywhere by this
+application. It contains: application version/commit, OS/architecture,
+packaged/headless mode, which optional features are enabled (remote
+management/ingest/overlay - never their configuration or credentials),
+the MediaMTX version and whether FFmpeg was found, high-level
+subsystem state (never a configured destination URL), updater status,
+and the same redacted recent log entries described above. It never
+contains: the
+SQLite database, your OS credential-store contents, the headless
+encrypted secret-store file, the master key, TLS private keys, stream
+keys, OAuth tokens, cookies, CSRF tokens, remote-overlay/remote-ingest
+tokens or credential-bearing URLs, or chat/donation history. This
+exclusion list is enforced by an automated test that seeds synthetic
+secret-shaped values into a real bundle and scans every byte of the
+result (`internal/support`'s own
+`TestSupportBundleNeverLeaksSecretShapedValues`), not merely stated
+here.
+
 ## Updater
 
 Streaming Tree includes an application updater (Stage 20B), active only in

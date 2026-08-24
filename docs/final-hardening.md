@@ -93,14 +93,19 @@ only (never automatic, never uploaded, never phoned home). Contents
 are bounded and enumerated explicitly in `internal/diagnostics`, not
 assembled by walking arbitrary state:
 
-**Included**: `buildinfo` fields (version, commit, packaged flag),
-OS/arch, headless/desktop mode, MediaMTX installed version, FFmpeg
-probe/capabilities, high-level subsystem state (MediaMTX state,
-remote-ingest receiving/not, branch states — never their configured
-destination URLs), recent redacted log entries from the ring buffer,
-sanitized configuration metadata (which features are *enabled*, never
-their credential values), updater status, and the platform-support
-summary from `docs/platform-support.md`'s own vocabulary.
+**Included** (`internal/support.Snapshot`, populated by
+`cmd/server/main.go` from services already in scope at startup):
+`buildinfo` fields (version, commit, packaged flag), OS/arch,
+headless/desktop mode, whether remote management/remote ingest/remote
+overlay are enabled (never their configuration or credentials),
+MediaMTX's version, whether FFmpeg was found and its version, a small
+high-level subsystem-state map (e.g. MediaMTX's own state — never a
+configured destination URL or per-branch detail), updater status, and
+recent redacted log entries from the ring buffer. Deliberately does
+**not** include an FFmpeg capability breakdown, per-branch state, or a
+platform-support-vocabulary summary — none of these are implemented in
+the real bundle; this list is kept in sync with the real `Snapshot`
+struct rather than aspirational.
 
 **Excluded, absolutely**: the SQLite database, the OS credential-store
 contents, the headless secrets store file, the master key, TLS private

@@ -44180,3 +44180,84 @@ this investigation.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: final documentation/privacy pass and honest pre-gate status (governing task §15/§16/§44/§45)
+
+### §15/§16 audit (no code change needed - confirmed already sound)
+Read every real `recover()` site in `apps/server` (two: `internal/
+httpapi/middleware.go`'s `withRecovery`, already redaction-hardened in
+this stage's own first entry; `internal/chatoverlay/manager.go`'s
+`dispatchOne`, narrowly scoped to one overlay's one upstream item, logs
+and continues rather than corrupting broader state - not a blanket
+recover). Read `cmd/server/main.go`'s fatal-startup-error path
+(`main()`, lines ~108-130): headless mode logs a structured line
+(captured by journald) and exits nonzero, no GUI dependency; a packaged
+desktop build shows a native alert via `nativealert.ShowFatalError`
+whose own doc comment already states the error text "follows this
+codebase's existing convention of never including a secret/token/
+credential." Confirmed this is correctly scoped to *startup* failures
+only (before the HTTP server exists, so pointing at the new Logs page
+would be actively misleading - nothing is serving it yet); the new
+Stage 20E diagnostics surface is correctly scoped to *post-startup*
+runtime observability instead, which is what it already does. No
+changes made - both sections were already sound.
+
+### §44: `PRIVACY.md` new "Diagnostics and support bundle" section
+The one real gap this pass found: `PRIVACY.md` said nothing about the
+diagnostics logging/support-bundle feature this stage added, even
+though it is a new, real, operator-facing capability that captures
+backend activity. Added a full section covering, precisely: what is
+recorded (operational events, never chat/donation content - cross-
+referenced against `scripts/verify-operator-chat.mjs`'s own already-
+passing "no chat message text ever appears in the backend's own
+stdout/stderr" assertion, not merely asserted here); the exact
+redaction model and its explicit boundary list; the 2,000-entry
+in-memory-only retention (no file, no database, no unbounded growth);
+how the Logs page is authorized (loopback-equivalent locally, the same
+authenticated session every other management route requires remotely);
+and the support bundle's exact inclusion/exclusion lists, cross-
+referenced against the automated
+`TestSupportBundleNeverLeaksSecretShapedValues` self-audit rather than
+asserted on its own. Deliberately does **not** claim these logs
+contain "nothing personal" unqualified - a connected account's display
+name or a destination's platform identifier can appear in an
+operational log line naming it; the precise claim is that credentials/
+tokens/message content never can, per the governing task's own
+explicit instruction not to overstate this.
+
+### §45: honest pre-gate status in `docs/project-overview.md`
+Stage 20E's own roadmap-table row updated from the stale "Planned" to
+**"In progress"**, listing exactly what autonomous work is complete
+(diagnostics/logging backend, redaction, support bundle, frontend Logs
+UI, dependency/license/version/release-manifest audits, the UX polish
+pass, the native Windows package-verification CI gate, full automated
+regression, the bounded soak check) and naming the one thing still
+pending: the single consolidated manual/physical verification gate.
+Explicitly restates, in the same row, that Stage 20 as a whole remains
+**Incomplete** regardless of 20E's own eventual outcome, because 20C2
+remains Planned - externally gated - never conflated with 20E's own
+completion the way the governing task's own §45/§46 explicitly warn
+against.
+
+### A self-check that found the new PRIVACY.md section itself was wrong
+Before committing, cross-read the new section against
+`internal/support/bundle.go`'s real `Snapshot` struct field-by-field
+rather than trusting the earlier design intent. Found two real
+inaccuracies: the bundle does **not** include an FFmpeg capability
+breakdown (only `FFmpegAvailable`/`FFmpegVersion` - no per-capability
+detail) or a platform-support-vocabulary summary
+(`PlatformSupportSummary` exists on the struct with `omitempty` but is
+never populated by `cmd/server/main.go`'s real wiring - a deliberate
+scope decision recorded, not implemented, when the diagnostics backend
+was first built). Corrected both `PRIVACY.md`'s new section and
+`docs/final-hardening.md` §C to list exactly the real, populated
+fields (including `updaterStatus`, which the original §C prose never
+actually named despite it being real) rather than the original,
+partly-aspirational design intent - `docs/final-hardening.md` §C now
+says explicitly that the FFmpeg-capability and platform-support-
+summary fields are not implemented, so a future reader is not misled
+by a contract document written before the code it describes.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
