@@ -1856,8 +1856,19 @@ async function main() {
     const audioEnableRes = await enableOverlayCapability('audio', audioLocalSlug);
     expect(audioEnableRes.status === 200 && typeof audioEnableRes.body.url === 'string', 'audio enable returns a remote capability URL', audioEnableRes.text);
     const audioToken1 = tokenFromCapabilityUrl(audioEnableRes.body.url);
-    const audioStream = await remoteCurl('GET', `${OVERLAY_ORIGIN}/api/public/audio/${audioToken1}/stream`, { maxTimeSeconds: 3 });
-    expect(typeof audioStream.text === 'string' && audioStream.text.includes('audio.reset'), 'the SSE stream connects and sends the initial audio.reset event through the overlay origin', audioStream.text.slice(0, 300));
+    // A real, deliberate curl --max-time cutoff (exit code 28), not
+    // remoteCurl's own generic helper: an SSE stream is intentionally
+    // long-lived (the server never signals "response complete"), so
+    // curl reliably exits nonzero here even after receiving a
+    // complete, valid event - confirmed by a real CI failure
+    // (docs/progress.md, PRE-20E.1) whose own captured stdout already
+    // contained a full, valid audio.reset event plus the __STATUS__
+    // footer despite curl's own exit(28). remoteCurl's own strict
+    // "nonzero curl exit is always a failure" assertion is correct for
+    // every other call site in this script, just not this one.
+    const audioStreamProbe = await clientExecStatus('curl', ['-sS', '-o', '-', '--max-time', '3', `${OVERLAY_ORIGIN}/api/public/audio/${audioToken1}/stream`]);
+    const audioStreamText = (audioStreamProbe.stdout || '') + (audioStreamProbe.stderr || '');
+    expect(audioStreamText.includes('audio.reset'), 'the SSE stream connects and sends the initial audio.reset event through the overlay origin', audioStreamText.slice(0, 300));
 
     step('Remote overlay: audio - the ack route accepts the valid remote capability (never rejected by the proxy boundary)');
     const audioAckRes = await remoteCurl('POST', `${OVERLAY_ORIGIN}/api/public/audio/${audioToken1}/ack`, { body: { token: 'x', itemId: 'y', kind: 'start' }, expectStatusOnly: true });

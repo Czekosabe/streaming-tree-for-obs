@@ -42564,3 +42564,51 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): stop treating an intentional SSE curl timeout as a hard failure
+
+### Real CI result: the alert-profile status fix worked - chat/alerts/goal/supporter/dashboard all passed
+Commit `b76ddf1` was checked by real CI: run `32734501119`. The whole
+chat overlay, alert profile, Stage 18A goal widget, Stage 18B
+supporter widget, and dashboard sequence passed cleanly - the script
+reached step 70, deep into the audio family, before its next failure:
+
+```
+curl GET .../api/public/audio/.../stream failed to run
+curl: (28) Operation timed out after 3002 milliseconds with 115 bytes received
+event: audio.reset
+data: {"rendererToken":"..."}
+
+event: audio.idle
+data: {}
+
+
+__STATUS__:200
+```
+
+### Real root cause
+Not a product defect: `remoteCurl`'s generic helper treats any
+nonzero curl exit as a hard failure, correct for every other call site
+in this script - but an SSE stream is intentionally long-lived (the
+server never signals "response complete" the way a normal HTTP
+response does), so a deliberate `--max-time` cutoff reliably exits
+curl with code 28 even after a complete, valid event has already been
+received - exactly what the failure's own captured stdout shows: a
+real `audio.reset` event and the `__STATUS__:200` footer, despite the
+nonzero exit.
+
+### Fix
+Replaced the `remoteCurl(...)` call for this one specific SSE probe
+with a direct `clientExecStatus('curl', [...])` call (bypassing
+`remoteCurl`'s own strict exit-code assertion, which remains correct
+and unchanged everywhere else), checking the captured stdout/stderr
+text directly for the expected `audio.reset` event instead of trusting
+curl's own exit code.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
