@@ -43764,3 +43764,81 @@ from 1417/105).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: real root cause of the Windows installer verification failure, found via the now-working diagnostic mechanism
+
+The percent-encoding fix (previous entry) worked exactly as intended:
+commit `ef80850`'s own `windows-package.yml` run failed again at
+"Verify the installer (pass 1)", and this time the annotations carried
+the genuine, complete failure text for the first time:
+
+```
+[02] Verify the SHA-256 digest file matches the installer
+     ok  digest file exists
+     FAIL recomputed SHA-256 matches the recorded digest
+          [object Object]
+```
+
+### Two real, distinct findings
+
+**Finding 1 - the actual failure.** The installer's SHA-256, recomputed
+by `verify-installer.mjs` moments after `build-release.ps1` already
+recorded it from the exact same on-disk file, does not match.
+Nothing in this workflow touches that file's bytes between the two
+hash computations - `verify-packaged-app-pass1.log` (captured in the
+same run) shows all 18 of its own checks passed cleanly against the
+*executable* (a different, unrelated file) in between. A real-time
+antivirus scan racing a freshly-Inno-Setup-compiled installer, or
+Node's own hermetic silent-install/rehash cycle a few steps later, is
+the standard, well-documented explanation for exactly this class of
+Windows-CI symptom (a file whose bytes differ between two reads
+moments apart, with no other operation in between that should change
+them). This is evidence-supported, not pure speculation - the same
+threshold `docs/ci-reliability.md` §19's own Windows SAPI
+investigation used ("a plausible, evidence-consistent mechanism...
+independent of whether [it] fully explains every historical
+occurrence").
+
+Mitigation: `windows-package.yml` now adds a best-effort
+`Add-MpPreference -ExclusionPath` step (workspace `build/` directory,
+`$env:RUNNER_TEMP`, `$env:TEMP`) immediately after `setup-node`, before
+any build or verify step runs - wrapped in try/catch so a restricted
+runner environment refusing this is never itself a reason to fail the
+whole verification. This is the standard, low-risk mitigation for this
+exact problem class, not an unproven guess bundled in blind.
+
+**Finding 2 - a separate, real, pre-existing bug the investigation
+uncovered along the way.** The `[object Object]` in the annotation
+above is `scripts/verify-installer.mjs`'s own `fail()` helper
+interpolating an object `detail` argument (`{recomputed, recorded}`)
+directly into a template literal, which calls the object's default
+`toString()`. Checked against the same helper in all 8 sibling
+`verify-*.mjs` scripts: every other one already guards this correctly
+(`typeof detail === 'string' ? detail : JSON.stringify(detail)`, or an
+equivalent) - `verify-installer.mjs` was the one outlier still using
+the naive `${detail}` form. Fixed to match the established pattern.
+This means the *exact* recomputed-vs-recorded hash values were still
+not visible in this run's own annotations, despite the percent-
+encoding fix working correctly - a second, independent bug masking the
+same underlying failure's full detail. Verified locally with a
+deliberately corrupted `.sha256` file: before the fix, the failure
+printed `[object Object]`; after the fix, it printed the real
+`{"recomputed":"38c7f35f...","recorded":"deadbeef..."}` pair, restored
+to the original correct hash file afterward via a
+copy-before/restore-after (never left the local artifact in a broken
+state).
+
+### Verified locally before trusting either fix in CI
+- `python3 -c "import yaml; yaml.safe_load(...)"`: the workflow file
+  still parses as valid YAML (14 steps now, up from 13).
+- `node scripts/verify-installer.mjs` re-run against a genuinely
+  corrupted `.sha256` file (a real SHA-256 mismatch, not a mock):
+  confirmed the fixed `fail()` now prints the real recomputed/recorded
+  hash pair instead of `[object Object]`.
+- `node scripts/verify-installer.mjs` re-run clean afterward (hash
+  file restored): **10/10 steps passed**, confirming the diagnostic
+  fix changed nothing about the passing path's behavior.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -36,7 +36,9 @@ function pass(message) {
 }
 function fail(message, detail) {
   console.error(`     FAIL ${message}`);
-  if (detail !== undefined) console.error(`          ${detail}`);
+  if (detail !== undefined) {
+    console.error(`          ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+  }
   throw new Error(message);
 }
 function expect(condition, message, detail) {

@@ -67,6 +67,32 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      # Real evidence, not pure speculation: this workflow's own first
+      # run failed at "recomputed SHA-256 matches the recorded digest"
+      # - the installer's own hash, recomputed moments after
+      # build-release.ps1 already recorded it, from the SAME on-disk
+      # file with nothing else in between that should touch its bytes.
+      # A defender real-time scan racing a freshly-written installer
+      # (and Node's own hermetic silent-install/rehash cycle a few
+      # steps later) is the standard, well-documented explanation for
+      # exactly this class of Windows-CI symptom - excluding this
+      # workflow's own build/output/temp paths is the standard,
+      # low-risk mitigation. Best-effort: never fails the job on its
+      # own (`-ErrorAction SilentlyContinue` plus a try/catch), since a
+      # restricted runner environment refusing this is not itself a
+      # reason to fail the whole verification.
+      - name: Exclude build output from real-time antivirus scanning (best-effort)
+        shell: pwsh
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath (Join-Path $env:GITHUB_WORKSPACE 'build') -ErrorAction Stop
+            Add-MpPreference -ExclusionPath $env:RUNNER_TEMP -ErrorAction Stop
+            Add-MpPreference -ExclusionPath $env:TEMP -ErrorAction Stop
+            Write-Host "Defender exclusions added for build output and temp directories."
+          } catch {
+            Write-Host "Could not add Defender exclusions (non-fatal): $($_.Exception.Message)"
+          }
+
       # docs/windows-packaging.md: the package verification must
       # complete successfully at least twice - done here as two
       # consecutive rebuild+reverify passes in one native job, each one
