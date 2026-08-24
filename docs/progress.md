@@ -40896,8 +40896,68 @@ so if this fix is correct, the whole script should pass in full for
 the first time.
 
 ### Commits (chronological, this milestone)
-59. This entry - `fix(ci): correct a real bug in the cookie-
-    separation test's own expectation`
+59. `fix(ci): correct a real bug in the cookie-separation test's own
+    expectation`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: clean up the debugging scaffolding now that the whole script passes
+
+### Confirmed: both architectures now pass in full
+Commit `2fbbbec` was checked: `headless (linux-amd64)` and `headless
+(linux-arm64)` both completed with conclusion `success`. Every
+assertion in `scripts/verify-linux-remote-server.mjs` - the full
+network-namespace/veth capability check, the ephemeral 3-host CA, the
+real authenticated management session, MediaMTX installation, the
+remote-ingest credential lifecycle, the complete RTMPS accept/reject
+matrix, the positive publish path (waiting -> receiving -> waiting),
+loopback-isolation checks, and cookie separation - passes on real,
+native Linux CI infrastructure for the first time. This closes out an
+extended investigation (docs/progress.md, commits `a4bd991` through
+`2fbbbec`) that traced the root causes through TLS, MediaMTX's real
+auth-matching source, ffmpeg's own RTMP URL parsing, and real-time
+input pacing.
+
+### Cleanup
+With the underlying bugs found and fixed, several diagnostic additions
+made purely to narrow down those bugs are no longer earning their
+keep as permanent script content:
+- Removed the standalone host-namespace RTMPS isolation probe (~55
+  lines) - it existed only to distinguish "namespace crossing" from
+  "RTMPS itself" as variables, a question now closed; it duplicated
+  the real, properly-timed positive-path test that follows it.
+- Removed `diagNotice()`, left with no remaining callers once that
+  probe was removed (`ghEscape()` and the `fail()`-side dedicated
+  `::error::` mechanism both stay - `fail()` still uses them for every
+  real failure).
+- Converted two log-only diagnostics into real, permanent assertions
+  instead of deleting them outright, since both check a genuine
+  invariant cheaply: the rendered `mediamtx.yml` now asserts it
+  contains the independently-recomputed verifier for the provisioned
+  secret (a real regression check on the whole provision -> store ->
+  render pipeline), and the `openssl s_client` TLS probe now asserts
+  a clean handshake instead of only logging one.
+- Trimmed several comments that had accumulated into blow-by-blow
+  investigation narration (citing specific past CI runs, hypotheses
+  that turned out wrong, exact bytes-vs-characters figures) down to
+  the concise, still-true invariant a future reader actually needs -
+  the full investigation history remains in this file, not scattered
+  as inline commentary that would rot as the code changes further.
+
+Net effect: `verify-linux-remote-server.mjs` shrank from 1,095 to 972
+lines despite gaining two new real assertions.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean.
+`node scripts/verify-ci-routing.mjs`: all checks pass (unaffected -
+no path/trigger changes in this cleanup). No dangling references to
+removed variables or functions confirmed by grep.
+
+### Commits (chronological, this milestone)
+60. This entry - `ci: clean up the debugging scaffolding now that
+    the whole script passes`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

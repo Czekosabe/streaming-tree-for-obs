@@ -133,17 +133,6 @@ function pass(message) {
 function ghEscape(s) {
   return String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }
-// A handful of specific diagnostic lines have turned out to matter
-// enough to guarantee visibility for, independent of GitHub's own
-// whole-log-tail annotation truncation (docs/progress.md) - used
-// sparingly (a ::notice:: per call, not a blanket log mirror, so this
-// does not become the same crowding problem in reverse).
-function diagNotice(message) {
-  console.log(`     diag ${message}`);
-  if (process.env.GITHUB_ACTIONS === 'true') {
-    console.log(`::notice title=${ghEscape(`verify-linux-remote-server.mjs: step ${stepCount}`)}::${ghEscape(message).slice(0, 2000)}`);
-  }
-}
 function fail(message, detail) {
   console.error(`     FAIL ${message}`);
   const detailText = detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : '';
@@ -640,32 +629,24 @@ async function main() {
     serverHandle = await startServer(dataDir, credentialsDir);
     expect(serverHandle.ready, 'the server became healthy', serverHandle.hasExited() ? `exited with code ${serverHandle.exitCode}\n${serverHandle.getStderr()}` : 'timed out');
 
-    // An "internal_error" HTTP response body is deliberately sanitized
-    // (apps/server/internal/httpapi/remoteingest.go's writeRemoteIngestError)
-    // - the real Go error only ever reaches the server's own log, via
-    // slog on stdout (main.go: slog.NewTextHandler(os.Stdout, ...), not
-    // stderr - confirmed by reading the real code after a first attempt
-    // came back with an empty stderr tail). A second attempt appending
-    // a flat 2000-char stdout tail came back truncated by GitHub's own
-    // annotation size limit before reaching the actual error line, so
-    // this filters instead of blindly tailing. MediaMTX's own log lines
-    // are relayed through the Go backend's logger (process.go's
-    // (*process).log) always at Go level=INFO, with MediaMTX's real
-    // level/message embedded as the mediamtx_level/mediamtx_message
-    // attributes - a plain level=ERR/WARN filter never catches these,
-    // so this also keeps every line mentioning "mediamtx_message"
-    // (where MediaMTX's own publish/auth decisions are actually logged).
+    // A backend-side "internal_error" response body is deliberately
+    // sanitized (apps/server/internal/httpapi/remoteingest.go's
+    // writeRemoteIngestError) - the real Go error only reaches the
+    // server's own stdout log (main.go: slog.NewTextHandler(os.Stdout)).
+    // MediaMTX's own log lines are relayed through that same logger
+    // always at Go level=INFO (process.go's (*process).log), with
+    // MediaMTX's real level/message embedded as the mediamtx_level/
+    // mediamtx_message attributes - so a level=ERR/WARN filter alone
+    // misses them; this also keeps every mediamtx_message line. Kept
+    // deliberately small: GitHub's own annotation size limit is well
+    // under what a full log tail needs, so the mediamtx content goes
+    // first (the more likely to matter) and the caller's own detail is
+    // capped short.
     const withServerDiag = (text) => {
       const lines = serverHandle.getStdout().split('\n');
       const notable = lines.filter((l) => /level=(ERR|WARN)|mediamtx_message/.test(l));
       const recent = lines.slice(-5);
       const combined = [...new Set([...notable, ...recent])].join('\n');
-      // The mediamtx log content goes FIRST - GitHub's own annotation
-      // size limit (empirically ~2200-2900 chars, found the hard way
-      // twice already in docs/progress.md) cuts off whatever comes
-      // last in a long detail string, and that content is the more
-      // valuable evidence at this point in the investigation than a
-      // repeat of ffmpeg's own already-seen output.
       return `--- server stdout: error/warning + mediamtx lines + recent tail ---\n${combined.slice(-1500)}\n--- caller detail ---\n${text.slice(0, 300)}`;
     };
 
@@ -743,24 +724,21 @@ async function main() {
 
     const rtmpsBase = `rtmps://${INGEST_HOST}:${RTMPS_PORT}`;
 
-    // Diagnostic: read the real, just-rendered mediamtx.yml directly
-    // off disk (this script runs in the host namespace, same
-    // filesystem as the server process) and independently recompute
-    // the expected "sha256:<base64(sha256(secret))>" verifier in plain
-    // JS, cross-checked against apps/server/internal/runtime/mediamtx/
-    // credential.go's own Go implementation and MediaMTX's own real
-    // conf/credential.go Check() logic (both separately verified
-    // against the pinned v1.19.3 source). This sidesteps every
-    // RTMP-client/protocol-parsing question entirely - either the
-    // stored verifier matches what it mathematically should be, or it
-    // does not.
+    step('The rendered mediamtx.yml carries the correct verifier for the provisioned secret');
+    // Reads the just-rendered config directly off disk (this script
+    // runs in the host namespace, the same filesystem as the server
+    // process) and independently recomputes the expected
+    // "sha256:<base64(sha256(secret))>" verifier in plain JS -
+    // cross-checked against apps/server/internal/runtime/mediamtx/
+    // credential.go's Go implementation and MediaMTX's own
+    // conf/credential.go Check() logic (both verified against the
+    // pinned v1.19.3 source). A real regression check on the whole
+    // provision -> store -> render pipeline, independent of anything
+    // RTMP-protocol-related.
     const expectedVerifier = 'sha256:' + createHash('sha256').update(publisherSecret).digest('base64');
     const configPath = join(dataDir, 'runtime', 'mediamtx.yml');
-    const configAuthLines = existsSync(configPath)
-      ? readFileSync(configPath, 'utf8').split('\n').filter((l) => /user:|pass:|ips:/.test(l)).join(' ')
-      : '(config file not found)';
-    console.log(`     diag rendered mediamtx.yml auth lines: ${configAuthLines.slice(0, 400)}`);
-    console.log(`     diag independently expected verifier: ${expectedVerifier}`);
+    const configContent = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+    expect(configContent.includes(expectedVerifier), 'the rendered config contains the verifier for the provisioned secret', configContent ? configContent.split('\n').filter((l) => /user:|pass:|ips:/.test(l)).join(' ').slice(0, 400) : '(config file not found)');
 
     step('MediaMTX Control API and the Go backend loopback port are unreachable from the isolated client namespace');
     expect(
@@ -774,38 +752,22 @@ async function main() {
       '',
     );
 
-    // Every reject-matrix assertion so far - and the valid-credential
-    // positive path further down - has come back rejected by
-    // MediaMTX's own Control API state, even with a correct credential
-    // and path. Before assuming an RTMP-layer path/query-parsing
-    // mismatch, rule out the more basic question: does the TLS
-    // handshake against the RTMPS listener even complete at all, for
-    // any client? openssl s_client speaks nothing but TLS - no RTMP -
-    // so a successful handshake here proves the listener itself and
-    // the ephemeral CA trust chain are fine, independent of anything
-    // RTMP-specific.
+    step('A real TLS handshake against the RTMPS listener succeeds, trusting only the ephemeral CA');
+    // openssl s_client speaks nothing but TLS - no RTMP - so a clean
+    // handshake here proves the listener and the ephemeral CA trust
+    // chain independently of anything RTMP-protocol-specific.
     const tlsProbe = await clientExecStatus('openssl', ['s_client', '-connect', `${INGEST_HOST}:${RTMPS_PORT}`, '-CAfile', pki.caCertPath, '-verify_return_error', '-brief'], { timeout: 8_000 });
-    console.log(`     diag openssl s_client -connect ${INGEST_HOST}:${RTMPS_PORT} exit ${tlsProbe.status}`);
-    console.log((tlsProbe.stdout || '').trim().split('\n').slice(0, 10).map((l) => `     diag out: ${l}`).join('\n'));
-    console.log((tlsProbe.stderr || '').trim().split('\n').slice(0, 10).map((l) => `     diag err: ${l}`).join('\n'));
+    expect(tlsProbe.status === 0, 'openssl s_client completes a verified TLS handshake', tlsProbe.status === 0 ? '' : `${(tlsProbe.stdout || '').trim().slice(-300)} | ${(tlsProbe.stderr || '').trim().slice(-300)}`);
 
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
-    // -re (read input at its own native frame rate) is the real,
-    // final answer to why the positive-path connection was accepted
-    // and then closed again within milliseconds every time
-    // (docs/progress.md) - a real client-side exitCode=0 with full,
-    // real per-frame libx264 stats for the whole nominal clip length
-    // proved ffmpeg was genuinely completing the entire encode (all
-    // input frames generated, encoded, and sent) in a tiny fraction of
-    // a real second, since a synthetic lavfi input with no pacing flag
-    // is generated and sent as fast as the CPU allows, not in real
-    // time. MediaMTX's own "closed: EOF" a few milliseconds after
-    // "publishing" was not a bug or a rejection at all - the publish
-    // had already genuinely finished and disconnected, long before any
-    // settle-time poll checking for a *sustained* "receiving" state
-    // could ever observe it. -re, a per-input option, does not
-    // automatically carry over to a later -i - repeated before each
-    // of the two lavfi inputs so video and audio stay paced together.
+    // -re (read input at its own native frame rate) is required: a
+    // synthetic lavfi input with no pacing flag is generated and sent
+    // as fast as the CPU allows, so a "clip" would finish (and the
+    // publisher disconnect) within milliseconds rather than lasting
+    // its nominal -t duration, defeating any mid-stream check. -re is
+    // a per-input option that does not carry over to a later -i, so it
+    // is repeated before each of the two lavfi inputs to keep video
+    // and audio paced together.
     const ffmpegBase = ['-re', '-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-re', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
 
     // Only used for the plaintext-RTMP-to-RTMPS-port case below now -
@@ -853,42 +815,22 @@ async function main() {
       });
     }
 
-    // Trusting ffmpeg's own exit code for these three auth-based
-    // rejections proved unreliable across an extended investigation
-    // (docs/progress.md) - not because MediaMTX or this project's own
-    // config was wrong (both were verified line-by-line against the
-    // pinned v1.19.3 source and are correct), but because embedding
-    // credentials as a URL query string
-    // (rtmps://host/live?user=X&pass=Y) and letting ffmpeg's own RTMP
-    // protocol handler auto-parse app/playpath out of it does not
-    // actually work with this ffmpeg build: real MediaMTX log evidence
-    // showed a connection using the exact same credential, path, and
-    // split via ffmpeg's -rtmp_app/-rtmp_playpath *explicit* override
-    // genuinely succeeded ("[path live] stream is available and
-    // online... is publishing to path 'live'"), while every auto-
-    // parsed-URL attempt never once produced that same log line, no
-    // matter how the credential was varied - the connection was simply
-    // never reaching MediaMTX as a real publish attempt at all,
-    // regardless of whether the embedded credential was right or
-    // wrong. GET /v3/paths/list's "ready" field for the target path,
-    // polled mid-stream, is MediaMTX's own ground truth for whether a
-    // publish attempt actually succeeded - the check every assertion
-    // below relies on. Every publish attempt below sets app/playpath
-    // explicitly via -rtmp_app/-rtmp_playpath - the proven-working
-    // shape - rather than relying on ffmpeg's own URL auto-parsing at
-    // all. (The plaintext-RTMP-to-RTMPS-port case above is a
-    // *different*, connection-establishment-level failure - the TLS
-    // handshake itself never completes - and ffmpeg's exit code
-    // reliably reports that one correctly, so it is left as-is.)
+    // Credentials are set via ffmpeg's own -rtmp_app/-rtmp_playpath,
+    // not embedded in the destination URL: this ffmpeg build's RTMP
+    // URL auto-parsing does not reliably split a
+    // rtmps://host/live?user=X&pass=Y-shaped query string into a
+    // publish MediaMTX ever logs as accepted (docs/progress.md). GET
+    // /v3/paths/list's "ready" field for the target path, polled
+    // mid-stream, is MediaMTX's own ground truth for whether a publish
+    // actually succeeded - ffmpeg's own exit code is not a reliable
+    // signal here (the plaintext-RTMP-to-RTMPS-port case above is
+    // different: a connection-establishment-level failure ffmpeg does
+    // report correctly).
     async function tryPublishAndCheckAccepted(app, playpath, pathName) {
-      // -rtmp_playpath only passed when non-empty - see the "closed:
-      // EOF" finding in docs/progress.md: a connection using an
-      // *explicit* empty -rtmp_playpath override reached "is
-      // publishing to path 'live'" in MediaMTX's own log and then
-      // closed again within milliseconds, never persisting for the
-      // clip's real duration. An empty playpath derived from a bare
-      // destination URL (no override flag at all) may not carry the
-      // same effect.
+      // -rtmp_playpath only passed when non-empty: an *explicit* empty
+      // override reaches MediaMTX's "publishing" state and then closes
+      // within milliseconds rather than persisting - omitting the flag
+      // entirely does not have that effect.
       const playpathArgs = playpath ? ['-rtmp_playpath', playpath] : [];
       const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -2), '-rtmp_app', app, ...playpathArgs, '-f', 'flv', `${rtmpsBase}/`]);
       let exited = false;
@@ -931,71 +873,12 @@ async function main() {
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(before.body && before.body.receiving === false, 'ingest status is waiting before any publish', before.status === 200 ? before.text : withServerDiag(before.text));
 
-    // Diagnostic: the reject-matrix passing does not actually prove
-    // RTMPS-through-the-namespace-boundary works at all for a valid
-    // credential - every reject case is *supposed* to show "not
-    // accepted" regardless of whether the underlying transport works,
-    // so it cannot discriminate "credentials correctly rejected" from
-    // "nothing works via this transport, so naturally nothing is ever
-    // accepted." Isolate the remaining variable directly: the exact
-    // same explicit app/playpath RTMPS publish, run from the HOST
-    // namespace this time (plain spawn, not clientSpawn's sudo ip
-    // netns exec) - RTMPS_PORT is bound to HOST_ADDR, a real address
-    // on this namespace's own veth interface, genuinely reachable
-    // without crossing into the client namespace at all. If this also
-    // fails to reach "ready", the problem is RTMPS/TLS itself, not
-    // namespace crossing; if it succeeds, namespace crossing is the
-    // remaining variable.
-    const hostRtmpsApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
-    const hostRtmpsProbe = spawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', hostRtmpsApp, '-f', 'flv', `${rtmpsBase}/`], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let hostRtmpsStderr = '';
-    hostRtmpsProbe.stderr.on('data', (c) => (hostRtmpsStderr += c.toString()));
-    let hostRtmpsExited = false;
-    let hostRtmpsExitCode = null;
-    hostRtmpsProbe.on('exit', (code) => {
-      hostRtmpsExited = true;
-      hostRtmpsExitCode = code;
-    });
-    await new Promise((r) => setTimeout(r, 2_500));
-    const hostRtmpsCheck = await hostFetchJson('/v3/paths/list');
-    const hostRtmpsItems = (hostRtmpsCheck.body && Array.isArray(hostRtmpsCheck.body.items)) ? hostRtmpsCheck.body.items : [];
-    const hostRtmpsMatched = hostRtmpsItems.find((p) => p && p.name === INGEST_PATH);
-    diagNotice(`RTMPS same-credential publish from HOST namespace (no netns exec), ready=${hostRtmpsMatched ? hostRtmpsMatched.ready : 'path not found'}`);
-    const hostRtmpsDeadline = Date.now() + 8_000;
-    while (!hostRtmpsExited && Date.now() < hostRtmpsDeadline) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    if (!hostRtmpsExited) hostRtmpsProbe.kill('SIGKILL');
-    // MediaMTX's own log shows this connection is accepted and then
-    // closes ("closed: EOF") within a few milliseconds of "is
-    // publishing", for a probe given a 4-*second* clip - server-side
-    // evidence alone cannot say why the client itself stopped sending
-    // so quickly. ffmpeg's own stderr, never actually captured for
-    // this specific probe before now, may show a real client-side
-    // error explaining the near-instant exit.
-    diagNotice(`ffmpeg host-namespace RTMPS probe: exitCode=${hostRtmpsExitCode}, stderr tail: ${hostRtmpsStderr.trim().split('\n').slice(-8).join(' | ').slice(0, 900)}`);
-    // The same mediamtx_message channel that showed a clean "opened ->
-    // available and online -> publishing" sequence for the plain-RTMP
-    // explicit-override proof (docs/progress.md) - checking it here
-    // for the RTMPS case specifically, since ready=false alone does
-    // not say whether MediaMTX rejected the connection outright or
-    // something else entirely happened (e.g. a TLS-layer close logged
-    // under a different message).
-    const hostRtmpsMediamtxLines = serverHandle
-      .getStdout()
-      .split('\n')
-      .filter((l) => l.includes('mediamtx_message'))
-      .slice(-4)
-      .join(' ~ ');
-    diagNotice(`mediamtx_message after the host-namespace RTMPS attempt: ${hostRtmpsMediamtxLines.slice(0, 700) || '(none)'}`);
-
     // Spawned (not spawnSync) specifically so this script can observe
     // the mid-stream "receiving" state, not merely the exit code once
     // the whole publish has already finished - a synchronous run would
     // never actually prove the waiting -> receiving transition.
-    // Explicit -rtmp_app/-rtmp_playpath, not a URL-embedded query
-    // string - the same proven-working shape as tryPublishAndCheckAccepted
-    // above.
+    // Explicit -rtmp_app/-rtmp_playpath (see ffmpegBase above), not a
+    // URL-embedded query string.
     let publishStderr = '';
     const publishApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
     const publishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '10', '-rtmp_app', publishApp, '-f', 'flv', `${rtmpsBase}/`]);
@@ -1047,16 +930,10 @@ async function main() {
     });
     // A curl cookie jar is scoped by domain per RFC 6265 - curl itself
     // will not attach the manage-host cookie to an overlay-host
-    // request. The request still succeeds/fails on its own merits: the
-    // slug is deliberately unknown, so the real, correct outcome is a
-    // 404 "not found" (confirmed by real CI evidence: {"error":
-    // "chat_overlay_not_found",...}) - anything else (a 401/403, or a
-    // hang) would mean the overlay origin required or waited on
-    // something cookie-related that it should not have. This
-    // assertion previously and incorrectly expected 200 for a slug it
-    // itself named "does-not-exist" - a real bug in the test's own
-    // expectation, never caught before now because nothing earlier in
-    // this script had ever run far enough to actually reach it.
+    // request. The slug is deliberately unknown, so the real, correct
+    // outcome is a 404 (not a 401/403, which would mean the overlay
+    // origin required or waited on something cookie-related that it
+    // should not have).
     expect(overlayWithManagementCookie.status === 404, 'the overlay origin answers without the management cookie (never required)', overlayWithManagementCookie.status === 404 ? overlayWithManagementCookie.text : withServerDiag(overlayWithManagementCookie.text));
 
     console.log(`\nAll ${stepCount} steps passed.`);
