@@ -1542,6 +1542,21 @@ async function main() {
     expect(!branchIsolationLog.includes(liveSecret), 'the remote publisher secret never appears in the service journal', '');
 
     step('Branch-to-sink: publisher disconnect returns ingest to waiting; the branch follows its real ingest-loss policy (waiting_for_ingest, still desired-running)');
+    // clientSpawn's child is `sudo ip netns exec NETNS_NAME ffmpeg ...` -
+    // Node's own child.kill() only signals the top-level `sudo`
+    // process. Every other clientSpawn kill site in this script has
+    // only ever been a rarely-exercised fallback (the publish it
+    // guards always finished naturally well within its own deadline
+    // first) - this is the first place that genuinely needs an
+    // actively-running client-namespace ffmpeg killed mid-stream, and
+    // a real CI failure (docs/progress.md, PRE-20E.1) showed
+    // `receiving: true` never clearing no matter how long the
+    // subsequent poll waited, consistent with the real ffmpeg process
+    // surviving as an orphan under sudo's own process tree. Killing it
+    // by name, from inside its own namespace, is the same pattern
+    // this script already relies on elsewhere (e.g. the final
+    // cleanup's own `pkill -f mediamtx`).
+    if (!branchPublishExited) clientExecOk('pkill', ['-9', '-f', 'ffmpeg']);
     if (!branchPublishExited) branchPublishChild.kill('SIGKILL');
     const branchDisconnectDeadline = Date.now() + 15_000;
     while (!branchPublishExited && Date.now() < branchDisconnectDeadline) {
@@ -1586,6 +1601,10 @@ async function main() {
     const branchAfterStop = await waitForBranchState(['idle', 'stopping'], 15_000);
     expect(branchAfterStop && (branchAfterStop.state === 'idle' || branchAfterStop.state === 'stopping'), 'the branch stops on explicit request', JSON.stringify(branchAfterStop));
 
+    // Same real reason as the branch-to-sink disconnect step above:
+    // kill the real client-namespace ffmpeg process by name, not just
+    // Node's own top-level `sudo` child handle.
+    if (!reconnectExited) clientExecOk('pkill', ['-9', '-f', 'ffmpeg']);
     if (!reconnectExited) reconnectChild.kill('SIGKILL');
     const reconnectExitDeadline = Date.now() + 15_000;
     while (!reconnectExited && Date.now() < reconnectExitDeadline) {

@@ -42469,3 +42469,57 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): kill the real client-namespace ffmpeg process by name, not just Node's own child handle
+
+### Real CI result: the poll widening had zero effect - `receiving` never cleared at all
+Commit `9c09e62` was checked by real CI: run `32731987379` - the
+identical failure, at the identical step 38, with the identical
+`receiving: true` detail, despite the poll window widening to 20
+real seconds. A real, indefinite disconnect-detection failure, not a
+timing-margin one: `ingestPollInterval` (`apps/server/internal/
+runtime/mediamtx/supervisor.go`) is a fast 1-second poll, and
+MediaMTX's own `readTimeout: 10s` should have surfaced a genuinely
+dead connection within roughly 11 seconds either way - 20 real seconds
+not being enough pointed at the publisher never actually being killed
+at all, not at detection merely being slow.
+
+### Real root cause
+`clientSpawn` runs every "remote" ffmpeg publisher as `sudo ip netns
+exec NETNS_NAME ffmpeg ...`. Node's own `child.kill('SIGKILL')` only
+signals the PID of the process it directly spawned - `sudo` itself -
+never its own descendants. Every other `clientSpawn`-based kill site
+in this script had only ever been a rarely-exercised fallback branch
+(the publish it guards always finished naturally, well within its own
+wait deadline, every time before now) - this was the *first* code path
+in the whole milestone that genuinely needed an actively-running
+client-namespace ffmpeg process killed mid-stream, and it never
+actually worked: the real `ffmpeg` process almost certainly survived
+as an orphan under `sudo`'s own process tree (a common `sudo`
+architecture, particularly with pty-related configurations, forks a
+monitor/child rather than exec-replacing itself), continuing to
+publish indefinitely - explaining why `receiving: true` never cleared
+no matter how long the poll waited.
+
+### Fix
+Both kill sites (the branch-to-sink disconnect step and the
+publisher-reconnect step) now also run `pkill -9 -f ffmpeg` *inside
+the client namespace itself* (via the same `clientExecOk` helper this
+script already uses for namespace-scoped commands elsewhere) before
+falling back to the Node-level `child.kill('SIGKILL')` - the identical
+"kill by name inside the process's own context" pattern this script's
+own final cleanup already relies on for `pkill -f mediamtx`. Safe at
+both sites: exactly one ffmpeg process is ever active in the client
+namespace at either point in this script's own sequential flow, so
+there is no risk of killing an unrelated process.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+this diagnosis is correct, `receiving` should now clear within the
+existing settle-poll window comfortably, not merely within a wider
+one.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
