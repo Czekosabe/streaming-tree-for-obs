@@ -68,6 +68,19 @@ log "Provisioning the administrator password under the real service identity (sy
 # state path. --pty keeps stdin/stdout attached for the interactive
 # hidden-input prompt; --collect removes the transient unit once it
 # exits, success or failure, so no leftover unit accumulates.
+#
+# The literal /var/lib/streaming-tree path is used instead of the
+# %S specifier the real unit *file* uses: %S/%d-style specifiers are
+# only expanded when systemd parses a property from a real unit
+# file's own [Service] section, never when the identical text is set
+# via `systemd-run --property=` on a transient unit - confirmed the
+# hard way (docs/progress.md, PRE-20E.1) via a real `mkdir /%S:
+# read-only file system` failure, the literal, unexpanded specifier
+# string passed straight through as a path. StateDirectory=
+# streaming-tree deterministically resolves under /var/lib for a
+# system unit (systemd.exec(5)) - not something that varies per host
+# or per run, so a literal path here is exactly as correct as the
+# specifier would have been, had it expanded.
 exec systemd-run \
   --pty \
   --collect \
@@ -75,5 +88,5 @@ exec systemd-run \
   --property="LoadCredential=streaming-tree-master-key:$MASTER_KEY_PATH" \
   --property="DynamicUser=yes" \
   --property="StateDirectory=streaming-tree" \
-  --property="Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree" \
+  --property="Environment=STREAMING_TREE_DATA_DIR=/var/lib/streaming-tree" \
   -- "${ARGS[@]}"

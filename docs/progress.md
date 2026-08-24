@@ -42012,3 +42012,60 @@ green run.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): stop relying on %S specifier expansion inside a systemd-run --property=
+
+### Real CI result: a genuine, real product-script bug, not a harness bug
+Commit `20d9d28` was checked by real CI: run `32721971375`, both
+architectures failed at step 8, "Provision the master key, RTMPS
+credential, and administrator password through the real systemd
+credential mechanism". The dedicated `::error::` annotation carried
+the real cause directly: `provision-admin-password: secret store
+unavailable: mkdir /%S: read-only file system` - the literal, two-
+character string `%S` was passed straight through as a path component,
+never expanded.
+
+### Real root cause
+`scripts/provision-admin-password.sh` - a real, shipped, operator-
+facing script `docs/remote-ingest.md` §19 itself documents as the
+provisioning mechanism - invokes `systemd-run --property=Environment=
+STREAMING_TREE_DATA_DIR=%S/streaming-tree`. `%S`/`%d`-style specifiers
+are only expanded when systemd parses a property from a real unit
+*file*'s own `[Service]` section (exactly how the shipped
+`scripts/systemd/streaming-tree.service` unit's own identical-looking
+`Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree` line correctly
+works) - never when the identical text is set via `systemd-run
+--property=` on a transient unit, which goes through a different,
+non-specifier-aware property-setting path. This script has apparently
+never been exercised against a real running systemd instance in CI
+before now: Stage 20D2A's own harness never provisions an
+administrator password at all, and Stage 20D2B's own harness
+(`verify-linux-remote-management.mjs`) already disclosed spawning the
+binary directly rather than going through systemd - so this real,
+user-facing bug in a real operator script had never been caught by
+any prior native CI run. This script's own harness reproduction
+(`scripts/verify-linux-remote-server.mjs`'s new
+`provisionAdminPasswordViaRealIdentity`) carried the exact same bug,
+copied from the same (until now, unverified) source.
+
+### Fix
+Both `scripts/provision-admin-password.sh` and
+`verify-linux-remote-server.mjs`'s own `provisionAdminPasswordViaRealIdentity`
+now pass the literal, real path (`/var/lib/streaming-tree`) instead of
+the `%S` specifier. This is exactly as correct as the specifier would
+have been had it expanded: `StateDirectory=streaming-tree` deterministically
+resolves under `/var/lib` for a system unit (`systemd.exec(5)`) -
+never something that varies per host or per run, so hardcoding the
+already-fixed real value carries no loss of correctness. Per this
+milestone's own governing instruction ("never workaround a real
+product bug in the harness"), the real operator-facing script was
+fixed directly, not merely routed around in the test.
+
+### Validation
+`bash -n scripts/provision-admin-password.sh`: clean. `node --check
+scripts/verify-linux-remote-server.mjs`: clean. Real validation is the
+next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

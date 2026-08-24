@@ -578,7 +578,16 @@ function deliverRtmpsCredentialFiles(rtmpsLeaf) {
  * --pty): stdin is not a terminal, so the real binary's own
  * readProvisioningPassword() reads exactly one line, no confirmation
  * round trip - the same non-interactive contract this script already
- * relied on before this change. */
+ * relied on before this change.
+ *
+ * A literal STATE_DIR (/var/lib/streaming-tree), not the %S specifier
+ * the real unit *file* uses - real CI evidence (a genuine `mkdir /%S:
+ * read-only file system` failure) proved %S/%d-style specifiers are
+ * only expanded when systemd parses a property from a real unit
+ * file's own [Service] section, never when the identical text is set
+ * via `systemd-run --property=` on a transient unit. The same real
+ * bug and fix landed in scripts/provision-admin-password.sh itself
+ * (docs/progress.md, PRE-20E.1) - this mirrors that fix exactly. */
 function provisionAdminPasswordViaRealIdentity() {
   const result = spawnSync(
     'sudo',
@@ -587,7 +596,7 @@ function provisionAdminPasswordViaRealIdentity() {
       `--property=LoadCredential=streaming-tree-master-key:${MASTER_KEY_PATH}`,
       '--property=DynamicUser=yes',
       '--property=StateDirectory=streaming-tree',
-      '--property=Environment=STREAMING_TREE_DATA_DIR=%S/streaming-tree',
+      `--property=Environment=STREAMING_TREE_DATA_DIR=${STATE_DIR}`,
       '--', INSTALLED_EXE_PATH, '--provision-admin-password', '--force',
     ],
     { input: `${ADMIN_PASSWORD}\n`, encoding: 'utf8' },
