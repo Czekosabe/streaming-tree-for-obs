@@ -1474,7 +1474,11 @@ async function main() {
 
     step('Branch-to-sink: publish from the isolated remote client, then explicitly request the destination to start');
     const branchTestApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${liveSecret}`;
-    const branchPublishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '25', '-rtmp_app', branchTestApp, '-f', 'flv', `${rtmpsBase}/`]);
+    // -t 65: comfortably longer than the 40s wait-for-live window plus
+    // the 15s sink-readiness check after it - the source publish
+    // itself must still be active for both, or the branch/sink never
+    // get the chance to observe it.
+    const branchPublishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '65', '-rtmp_app', branchTestApp, '-f', 'flv', `${rtmpsBase}/`]);
     let branchPublishExited = false;
     let branchPublishExitCode = null;
     branchPublishChild.on('exit', (code) => {
@@ -1505,7 +1509,14 @@ async function main() {
     }
 
     step('Branch-to-sink: the destination branch reaches live using the EXISTING production branch manager');
-    const liveBranch = await waitForBranchState(['live'], 20_000);
+    // 40s, not 20s: a real CI failure (docs/progress.md, PRE-20E.1)
+    // showed the branch genuinely starting (desiredRunning: true,
+    // blockers: [], lastError: null - no defect, just insufficient
+    // margin) and still sitting in "starting" 20s in, waiting for
+    // FFmpeg's own first -progress pipe:1 line to arrive - the same
+    // kind of settle-margin issue the credential-lifecycle publish
+    // helper needed more time for earlier this milestone.
+    const liveBranch = await waitForBranchState(['live'], 40_000);
     expect(liveBranch && liveBranch.state === 'live', 'the destination branch reaches live', JSON.stringify(liveBranch));
 
     step('Branch-to-sink: the local sink genuinely receives real, advancing media (not merely a socket connection)');
@@ -1545,13 +1556,15 @@ async function main() {
 
     step('Branch-to-sink: publisher reconnect - the branch auto-resumes to live per the EXISTING desired-running contract (no new behavior invented)');
     const reconnectApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${liveSecret}`;
-    const reconnectChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '15', '-rtmp_app', reconnectApp, '-f', 'flv', `${rtmpsBase}/`]);
+    // -t 65 for the same reason the main branch-to-sink publish above needs it.
+    const reconnectChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '65', '-rtmp_app', reconnectApp, '-f', 'flv', `${rtmpsBase}/`]);
     let reconnectExited = false;
     reconnectChild.on('exit', () => {
       reconnectExited = true;
     });
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
-    const branchAfterResume = await waitForBranchState(['live'], 20_000);
+    // 40s for the same real reason the first live-wait above needed it.
+    const branchAfterResume = await waitForBranchState(['live'], 40_000);
     expect(branchAfterResume && branchAfterResume.state === 'live', 'the branch auto-resumes to live once the source reconnects (branch.Manager.reconcileOnce -> attemptResume)', JSON.stringify(branchAfterResume));
 
     step('Branch-to-sink: an explicit stop is respected');

@@ -42380,3 +42380,51 @@ gets to execute and be judged on its own merits.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): give the destination-branch live/reconnect checks and their publishes real timing margin
+
+### Real CI result: the platformDir fix worked; a real settle-margin issue surfaced next
+Commit `91fb583` was checked by real CI: run `32729343880`. The sink
+MediaMTX binary copy now succeeds, and this run produced the script's
+own dedicated per-step `::error::` annotation for the first time this
+milestone ("verify-linux-remote-server.mjs: step 35"), carrying clean,
+complete detail:
+
+```
+the destination branch reaches live
+{"platformId":"pf_seed_twitch","state":"starting","desiredRunning":true,
+ "blockers":[],"startedAt":"2026-08-24T12:55:17...","restartCount":0,
+ "progress":null,"lastError":null}
+```
+
+`desiredRunning: true`, `blockers: []`, `lastError: null` - a
+genuinely healthy branch, mid-start, that simply had not yet produced
+its first FFmpeg `-progress pipe:1` line within the 20-second wait
+window. No defect; the same class of settle-margin issue the
+credential-lifecycle publish helper needed fixing for earlier this
+milestone.
+
+### Fix
+- Both `waitForBranchState(['live'], ...)` calls (the initial branch-
+  to-sink start and the publisher-reconnect auto-resume check)
+  widened from 20s to 40s.
+- Both synthetic publishes backing those checks widened from `-t 25`/
+  `-t 15` to `-t 65` - a wait window alone is not enough if the source
+  stream itself can end first: the publish must still be genuinely
+  active both when the branch finally reaches live (up to 40s in) and
+  through the sink-readiness check that follows it (a further 15s),
+  so 65s gives real margin over the 40s+15s=55s worst case, not merely
+  the common case.
+- The two "kill and wait for exit" 15-second deadlines elsewhere in
+  this same flow were checked and confirmed unaffected -
+  both explicitly `SIGKILL` the process *before* waiting, so they only
+  wait for OS-level cleanup after a forced kill, never for the
+  publish's own natural `-t` duration to elapse.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
