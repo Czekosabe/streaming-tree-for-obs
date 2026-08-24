@@ -218,13 +218,22 @@ jobs:
           TOTAL_BYTES="$(wc -c < /tmp/rs-verify-pass1.log 2>/dev/null || echo 0)"
           TOTAL_LINES="$(wc -l < /tmp/rs-verify-pass1.log 2>/dev/null || echo 0)"
           echo "::error title=verify-linux-remote-server.mjs pass 1 log stats (${{ matrix.name }})::total_bytes=${TOTAL_BYTES} total_lines=${TOTAL_LINES}"
-          TAIL="$(tail -c 12000 /tmp/rs-verify-pass1.log 2>/dev/null || echo '')"
-          LEN=${#TAIL}
+          # The WHOLE file (head -c bounds it only against a truly
+          # runaway log), not a tail: docs/progress.md, PRE-20E.1 found
+          # a real failure whose own detail (a lengthy journalctl dump)
+          # was large enough to push this script's own earlier
+          # diagnostic pass()/expect() output for prior steps out of a
+          # tail-based window entirely, even after the tail was already
+          # widened once - only the total log size (a real,
+          # transparently reported number) bounds how much this
+          # actually costs, not a magic tail constant.
+          WHOLE="$(head -c 60000 /tmp/rs-verify-pass1.log 2>/dev/null || echo '')"
+          LEN=${#WHOLE}
           CHUNK=3000
-          for i in 0 1 2 3; do
+          for i in 0 1 2 3 4 5 6 7 8 9; do
             START=$((i * CHUNK))
             if [ "$START" -ge "$LEN" ]; then break; fi
-            PART="${TAIL:$START:$CHUNK}"
+            PART="${WHOLE:$START:$CHUNK}"
             ENCODED="${PART//$'\n'/%0A}"
             ENCODED="${ENCODED//$'\r'/}"
             echo "::error title=verify-linux-remote-server.mjs failure - pass 1 chunk ${i} (${{ matrix.name }})::${ENCODED}"
@@ -268,13 +277,13 @@ jobs:
           TOTAL_BYTES="$(wc -c < /tmp/rs-verify-pass2.log 2>/dev/null || echo 0)"
           TOTAL_LINES="$(wc -l < /tmp/rs-verify-pass2.log 2>/dev/null || echo 0)"
           echo "::error title=verify-linux-remote-server.mjs pass 2 log stats (${{ matrix.name }})::total_bytes=${TOTAL_BYTES} total_lines=${TOTAL_LINES}"
-          TAIL="$(tail -c 12000 /tmp/rs-verify-pass2.log 2>/dev/null || echo '')"
-          LEN=${#TAIL}
+          WHOLE="$(head -c 60000 /tmp/rs-verify-pass2.log 2>/dev/null || echo '')"
+          LEN=${#WHOLE}
           CHUNK=3000
-          for i in 0 1 2 3; do
+          for i in 0 1 2 3 4 5 6 7 8 9; do
             START=$((i * CHUNK))
             if [ "$START" -ge "$LEN" ]; then break; fi
-            PART="${TAIL:$START:$CHUNK}"
+            PART="${WHOLE:$START:$CHUNK}"
             ENCODED="${PART//$'\n'/%0A}"
             ENCODED="${ENCODED//$'\r'/}"
             echo "::error title=verify-linux-remote-server.mjs failure - pass 2 chunk ${i} (${{ matrix.name }})::${ENCODED}"

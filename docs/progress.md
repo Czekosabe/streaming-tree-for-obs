@@ -42807,3 +42807,36 @@ it.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: capture the whole diagnostic log, not just its tail
+
+### Real CI result: the identical failure, and this time proof the new diagnostics were hidden, not absent
+Commit `7445993` was checked by real CI: run `32740936719` - the
+identical step-9 failure, identical error text. But `pass 2 log stats`
+this time reported `total_bytes=15287`, while the diagnostic chunks
+only ever covered the *last* 12000 bytes (`tail -c 12000`) - meaning
+roughly the first 3000 bytes of this run's own log, exactly where the
+new master-key-hash/secrets.json diagnostics from the previous commit
+would have printed their `pass()`/`expect()` output, were never
+captured at all. The previous entry's own new instrumentation may well
+have already answered the real question; it was simply never visible.
+
+### Fix
+Both diagnostic steps now capture the log from the *start*
+(`head -c 60000`, not `tail -c 12000`) across up to ten 3000-byte
+chunks instead of four - for a log this small (real logs so far have
+run 10-45KB) this captures the entire file; for a larger one, the real
+`total_bytes` figure already reported honestly shows how much was
+left uncovered, rather than silently guessing that a tail was always
+the right end of the file to look at.
+
+### Validation
+The workflow YAML change is a mechanical, reviewed rewrite of both
+diagnostic steps' own chunking logic, kept structurally identical to
+each other. Real validation is the next native Linux CI run this
+commit triggers - this should finally surface the master-key-hash and
+secrets.json diagnostic output from two commits ago.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
