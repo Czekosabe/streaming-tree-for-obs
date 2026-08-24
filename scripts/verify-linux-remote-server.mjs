@@ -932,9 +932,13 @@ async function main() {
     // remaining variable.
     const hostRtmpsApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
     const hostRtmpsProbe = spawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', hostRtmpsApp, '-f', 'flv', `${rtmpsBase}/`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let hostRtmpsStderr = '';
+    hostRtmpsProbe.stderr.on('data', (c) => (hostRtmpsStderr += c.toString()));
     let hostRtmpsExited = false;
-    hostRtmpsProbe.on('exit', () => {
+    let hostRtmpsExitCode = null;
+    hostRtmpsProbe.on('exit', (code) => {
       hostRtmpsExited = true;
+      hostRtmpsExitCode = code;
     });
     await new Promise((r) => setTimeout(r, 2_500));
     const hostRtmpsCheck = await hostFetchJson('/v3/paths/list');
@@ -946,6 +950,14 @@ async function main() {
       await new Promise((r) => setTimeout(r, 200));
     }
     if (!hostRtmpsExited) hostRtmpsProbe.kill('SIGKILL');
+    // MediaMTX's own log shows this connection is accepted and then
+    // closes ("closed: EOF") within a few milliseconds of "is
+    // publishing", for a probe given a 4-*second* clip - server-side
+    // evidence alone cannot say why the client itself stopped sending
+    // so quickly. ffmpeg's own stderr, never actually captured for
+    // this specific probe before now, may show a real client-side
+    // error explaining the near-instant exit.
+    diagNotice(`ffmpeg host-namespace RTMPS probe: exitCode=${hostRtmpsExitCode}, stderr tail: ${hostRtmpsStderr.trim().split('\n').slice(-8).join(' | ').slice(0, 900)}`);
     // The same mediamtx_message channel that showed a clean "opened ->
     // available and online -> publishing" sequence for the plain-RTMP
     // explicit-override proof (docs/progress.md) - checking it here

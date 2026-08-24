@@ -40749,8 +40749,45 @@ real clip duration instead of closing within milliseconds of being
 accepted.
 
 ### Commits (chronological, this milestone)
-56. This entry - `fix(ci): stop passing an explicit empty
-    -rtmp_playpath, it closes the stream almost immediately`
+56. `fix(ci): stop passing an explicit empty -rtmp_playpath, it
+    closes the stream almost immediately`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: capture ffmpeg's own stderr for the host-namespace RTMPS probe, never actually logged before
+
+### Real CI result: the near-instant close persists without the explicit empty playpath too
+Commit `d77d156` was checked. The exact same pattern recurred with the
+`-rtmp_playpath` flag removed entirely: `"opened"` at 07:56:02.622,
+`"is publishing to path 'live'"` at 07:56:02.879 (a real, ~257ms TLS+
+RTMP handshake), `"closed: EOF"` at 07:56:02.883 - 4 milliseconds
+later, for a probe given a 4-*second* clip. This rules out the
+explicit-empty-playpath hypothesis from the previous entry: the
+near-instant close is not caused by that flag.
+
+MediaMTX's own log can say the server-side read got an EOF, but not
+*why* the client stopped sending - that requires ffmpeg's own
+perspective. This host-namespace probe's stderr has been piped
+(`stdio: ['ignore', 'ignore', 'pipe']`) since it was first added, but
+never actually read or logged anywhere - a real gap, not a deliberate
+choice, now that the question has narrowed specifically to "why does
+the client-side connection end almost instantly."
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Captured `hostRtmpsProbe`'s stderr and exit code, added a `diagNotice()`
+reporting both - the tail of ffmpeg's own stderr may show a real
+client-side error or warning explaining the near-instant exit that
+MediaMTX's server-side log alone cannot reveal.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+57. This entry - `ci: capture ffmpeg's own stderr for the
+    host-namespace RTMPS probe, never actually logged before`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
