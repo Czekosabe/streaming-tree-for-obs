@@ -41445,3 +41445,80 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: prove the full remote-ingest credential lifecycle natively, not just provisioning
+
+### Starting state
+Real CI confirmed the previous commit's three new negatives (untrusted
+CA, wrong hostname, remote read) green on both `linux-amd64` and
+`linux-arm64`, two independent passes each (run `32715210127`, jobs
+`headless (linux-amd64)`/`headless (linux-arm64)` both `success`).
+Continuing PRE-20E — STAGE 20D2C CLOSURE / FINAL-EVIDENCE AUDIT §15,
+which explicitly requires native E2E proof of the full credential
+lifecycle - provision, non-recoverability, rotate, restart
+persistence, revoke, and the 409-while-receiving non-mutation
+guarantee for both rotate and revoke - and explicitly says not to
+infer this from Go unit tests alone.
+
+### Real finding: only provisioning and a mid-stream check were covered natively
+The final script proved provisioning and the waiting/receiving/waiting
+transition, but never called `/api/remote-ingest/rotate` or
+`/api/remote-ingest/revoke` at all. The 409-while-receiving behavior
+existed only as Go-level unit tests
+(`TestPostRemoteIngestRotateStreamingActiveReturns409`,
+`TestPostRemoteIngestRevokeStreamingActiveReturns409` in
+`apps/server/internal/httpapi/remoteingest_test.go`) - real coverage
+of the HTTP contract, but not what this audit requires: native proof
+through the real isolated network boundary.
+
+Before writing the assertions, `apps/server/internal/remoteingest/
+manager.go`'s `Rotate`/`Revoke`/`generateAndApply` were read to
+confirm the actual guarantee: both check `IngestReceiving()` and
+return `ErrStreamingActive` *before* touching the secret store or
+calling `applyStoredVerifier` (which triggers the MediaMTX restart) -
+so a real 409 structurally proves no mutation and no restart, not
+merely that the HTTP layer reported a conflict. `config.go:457`
+confirms `AutoStart: true` by default, so MediaMTX genuinely
+relaunches on its own after a real service restart, without the
+script needing to reinstall or reinstruct it.
+
+### Fix
+Added a new "credential lifecycle" section to `scripts/verify-linux-
+remote-server.mjs`, inserted right after the existing positive-path
+publish test (which already proved provisioning + waiting/receiving/
+waiting) and before the loopback-listener check:
+- `publishAndConfirmAccepted(secret)`: a reusable helper mirroring the
+  positive path's own settle-then-check pattern (a full publish with
+  a real settle wait, not the fast reject-matrix's 1.5s window, which
+  the script's own existing comment already documents as unreliable
+  for proving *acceptance* specifically);
+- rotate while not streaming: 200, a new secret different from the
+  original, old credential rejected afterward, new credential
+  publishes successfully;
+- a real service restart (`forceStop` then `startServer` against the
+  same `dataDir`/`credentialsDir`, with a fresh login afterward rather
+  than assuming a specific session-persistence model): the rotated
+  credential still publishes successfully, the pre-rotate credential
+  is still rejected;
+- revoke while not streaming: 200, the revoked credential rejected
+  afterward - nothing can authenticate until provision/rotate is
+  called again;
+- rotate-while-receiving: reprovision a live credential, start a real
+  publish, confirm `receiving: true`, call rotate mid-stream and
+  assert 409, confirm `GET /v3/config/global/get` still answers
+  immediately (no restart triggered), then let the in-flight publish
+  - still using the credential the refused rotate never touched - run
+  to a clean, successful completion, proving no mutation;
+- revoke-while-receiving: the same pattern, reusing the still-live
+  credential from the rotate-while-receiving case, proving the same
+  409/no-mutation/no-restart guarantee for revoke.
+Updated the script's own top-of-file scope comment to list the full
+lifecycle as covered, not just provisioning.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

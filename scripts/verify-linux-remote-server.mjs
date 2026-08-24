@@ -42,7 +42,14 @@
  *     genuinely issued from the isolated client namespace through the
  *     real TLS management-proxy stand-in;
  *   - real remote-ingest credential provisioning through that
- *     authenticated API;
+ *     authenticated API, plus the full lifecycle beyond first
+ *     provisioning: rotate (old credential rejected, new accepted);
+ *     the rotated credential survives a real service restart against
+ *     the same data directory; revoke (nothing can authenticate
+ *     afterward); rotate-while-receiving and revoke-while-receiving
+ *     both refused with 409, each proven to mutate nothing by letting
+ *     the in-flight publish that was using the live credential run to
+ *     a clean completion afterward;
  *   - the RTMPS publish accept/reject matrix (docs/remote-ingest.md
  *     §5's own permission model) via a real synthetic FFmpeg
  *     publisher, run from the isolated namespace: plaintext RTMP,
@@ -963,6 +970,134 @@ async function main() {
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
     const after = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(after.body && after.body.receiving === false, 'ingest status returns to waiting after the publisher disconnects', after.status === 200 ? after.text : withServerDiag(after.text));
+
+    // --- credential lifecycle: rotate, restart persistence, revoke, ------
+    // --- and the 409-while-receiving non-mutation guarantee for both -----
+    // apps/server/internal/remoteingest/manager.go's own Rotate/Revoke
+    // both check IngestReceiving() and return ErrStreamingActive
+    // *before* touching the secret store or requesting a MediaMTX
+    // restart - so a real 409 here structurally proves no mutation and
+    // no restart happened, not merely that the HTTP layer reported one.
+    // A full publish+settle (not the fast reject-matrix's 1.5s window)
+    // is used to prove *acceptance*, mirroring the already-established
+    // reason the positive path above needs real settle time too.
+    async function publishAndConfirmAccepted(secret) {
+      const app = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${secret}`;
+      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', app, '-f', 'flv', `${rtmpsBase}/`]);
+      let exited = false;
+      let exitCode = null;
+      let stderr = '';
+      child.stderr.on('data', (c) => (stderr += c.toString()));
+      child.on('exit', (code) => {
+        exited = true;
+        exitCode = code;
+      });
+      await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+      const statusRes = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+      const receiving = !!(statusRes.body && statusRes.body.receiving);
+      const deadline = Date.now() + 10_000;
+      while (!exited && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      if (!exited) child.kill('SIGKILL');
+      return { receiving, exited, exitCode, detail: stderr.slice(-800) };
+    }
+
+    step('Credential lifecycle: rotate replaces the credential (old rejected, new accepted)');
+    const rotateRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/rotate`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
+    expect(rotateRes.status === 200, 'POST /api/remote-ingest/rotate succeeds while not streaming', rotateRes.status === 200 ? rotateRes.text : withServerDiag(rotateRes.text));
+    const rotatedSecret = rotateRes.body && rotateRes.body.secret;
+    expect(typeof rotatedSecret === 'string' && rotatedSecret.length > 0 && rotatedSecret !== publisherSecret, 'rotate returns a new, different plaintext secret (never recoverable/reused from the original)', rotateRes.text);
+    const afterRotateState = await waitForMediaMtxState(['ready'], 30_000);
+    expect(afterRotateState === 'ready', 'MediaMTX becomes ready again after the rotate-triggered restart', withServerDiag(`state=${afterRotateState}`));
+
+    const oldRejectedAfterRotate = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', INGEST_PATH);
+    expect(!oldRejectedAfterRotate.accepted, 'the pre-rotate credential is rejected after rotation', oldRejectedAfterRotate.accepted ? oldRejectedAfterRotate.snapshot : '');
+    const newAcceptedAfterRotate = await publishAndConfirmAccepted(rotatedSecret);
+    expect(newAcceptedAfterRotate.receiving && newAcceptedAfterRotate.exited && newAcceptedAfterRotate.exitCode === 0, 'the newly rotated credential publishes successfully', JSON.stringify(newAcceptedAfterRotate));
+
+    step('Credential lifecycle: a service restart preserves the rotated credential (new still accepted, old still rejected)');
+    await forceStop(serverHandle);
+    serverHandle = await startServer(dataDir, credentialsDir);
+    expect(serverHandle.ready, 'the server becomes healthy again after a real restart against the same data directory', serverHandle.hasExited() ? `exited with code ${serverHandle.exitCode}\n${serverHandle.getStderr()}` : 'timed out');
+    // A fresh session is obtained unconditionally rather than assuming
+    // a specific session-persistence model survives the restart - the
+    // credential-lifecycle claim under test is about the secret store
+    // and MediaMTX config, not about session survival.
+    const reloginRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/auth/login`, { body: { password: ADMIN_PASSWORD }, headers: { Origin: MANAGE_ORIGIN }, cookieJar });
+    expect(reloginRes.status === 200, 'logging in again after the restart succeeds', reloginRes.status === 200 ? reloginRes.text : withServerDiag(reloginRes.text));
+    const csrfTokenAfterRestart = reloginRes.body && reloginRes.body.csrfToken;
+    const afterRestartMediaMtxState = await waitForMediaMtxState(['ready'], 30_000);
+    expect(afterRestartMediaMtxState === 'ready', 'MediaMTX auto-starts and becomes ready again after the service restart', withServerDiag(`state=${afterRestartMediaMtxState}`));
+
+    const newStillAcceptedAfterRestart = await publishAndConfirmAccepted(rotatedSecret);
+    expect(newStillAcceptedAfterRestart.receiving && newStillAcceptedAfterRestart.exited && newStillAcceptedAfterRestart.exitCode === 0, 'the rotated credential still publishes successfully after a real service restart', JSON.stringify(newStillAcceptedAfterRestart));
+    const oldStillRejectedAfterRestart = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', INGEST_PATH);
+    expect(!oldStillRejectedAfterRestart.accepted, 'the pre-rotate credential is still rejected after a real service restart', oldStillRejectedAfterRestart.accepted ? oldStillRejectedAfterRestart.snapshot : '');
+
+    step('Credential lifecycle: revoke removes the credential (nothing can authenticate afterward)');
+    const revokeRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/revoke`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(revokeRes.status === 200, 'POST /api/remote-ingest/revoke succeeds while not streaming', revokeRes.status === 200 ? revokeRes.text : withServerDiag(revokeRes.text));
+    const afterRevokeState = await waitForMediaMtxState(['ready'], 30_000);
+    expect(afterRevokeState === 'ready', 'MediaMTX becomes ready again after the revoke-triggered restart', withServerDiag(`state=${afterRevokeState}`));
+    const rejectedAfterRevoke = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${rotatedSecret}`, '', INGEST_PATH);
+    expect(!rejectedAfterRevoke.accepted, 'the revoked credential is rejected - nothing can authenticate until provision/rotate is called again', rejectedAfterRevoke.accepted ? rejectedAfterRevoke.snapshot : '');
+
+    step('Credential lifecycle: rotate while receiving is refused with 409 and mutates nothing');
+    const reprovisionRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/provision`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(reprovisionRes.status === 200, 'provisioning again after a revoke succeeds', reprovisionRes.status === 200 ? reprovisionRes.text : withServerDiag(reprovisionRes.text));
+    const liveSecret = reprovisionRes.body && reprovisionRes.body.secret;
+    const afterReprovisionState = await waitForMediaMtxState(['ready'], 30_000);
+    expect(afterReprovisionState === 'ready', 'MediaMTX becomes ready again after the reprovision-triggered restart', withServerDiag(`state=${afterReprovisionState}`));
+
+    const rotateWhileReceivingApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${liveSecret}`;
+    const rotateWhileReceivingChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '6', '-rtmp_app', rotateWhileReceivingApp, '-f', 'flv', `${rtmpsBase}/`]);
+    let rotateWhileReceivingExited = false;
+    let rotateWhileReceivingExitCode = null;
+    rotateWhileReceivingChild.on('exit', (code) => {
+      rotateWhileReceivingExited = true;
+      rotateWhileReceivingExitCode = code;
+    });
+    await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+    const receivingForRotate409 = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(receivingForRotate409.body && receivingForRotate409.body.receiving === true, 'ingest status is receiving before the rotate-while-receiving attempt', receivingForRotate409.status === 200 ? receivingForRotate409.text : withServerDiag(receivingForRotate409.text));
+    const rotateWhileReceivingRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/rotate`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(rotateWhileReceivingRes.status === 409, 'rotate while receiving is refused with 409, not applied', rotateWhileReceivingRes.status === 409 ? '' : withServerDiag(rotateWhileReceivingRes.text));
+    const mediaMtxStateRightAfterRotate409 = await hostFetchJson('/v3/config/global/get');
+    expect(mediaMtxStateRightAfterRotate409.status === 200, 'MediaMTX Control API is still answering immediately after the refused rotate (no restart was triggered)', JSON.stringify(mediaMtxStateRightAfterRotate409.body).slice(0, 300));
+
+    const rotate409Deadline = Date.now() + 15_000;
+    while (!rotateWhileReceivingExited && Date.now() < rotate409Deadline) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    if (!rotateWhileReceivingExited) rotateWhileReceivingChild.kill('SIGKILL');
+    expect(rotateWhileReceivingExited && rotateWhileReceivingExitCode === 0, 'the in-flight publish, using the credential the refused rotate never touched, completes successfully - proving no mutation', `exited=${rotateWhileReceivingExited} code=${rotateWhileReceivingExitCode}`);
+    await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+
+    step('Credential lifecycle: revoke while receiving is refused with 409 and mutates nothing');
+    const revokeWhileReceivingApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${liveSecret}`;
+    const revokeWhileReceivingChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '6', '-rtmp_app', revokeWhileReceivingApp, '-f', 'flv', `${rtmpsBase}/`]);
+    let revokeWhileReceivingExited = false;
+    let revokeWhileReceivingExitCode = null;
+    revokeWhileReceivingChild.on('exit', (code) => {
+      revokeWhileReceivingExited = true;
+      revokeWhileReceivingExitCode = code;
+    });
+    await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+    const receivingForRevoke409 = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(receivingForRevoke409.body && receivingForRevoke409.body.receiving === true, 'ingest status is receiving before the revoke-while-receiving attempt', receivingForRevoke409.status === 200 ? receivingForRevoke409.text : withServerDiag(receivingForRevoke409.text));
+    const revokeWhileReceivingRes = await remoteCurl('POST', `${MANAGE_ORIGIN}/api/remote-ingest/revoke`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    expect(revokeWhileReceivingRes.status === 409, 'revoke while receiving is refused with 409, not applied', revokeWhileReceivingRes.status === 409 ? '' : withServerDiag(revokeWhileReceivingRes.text));
+    const mediaMtxStateRightAfterRevoke409 = await hostFetchJson('/v3/config/global/get');
+    expect(mediaMtxStateRightAfterRevoke409.status === 200, 'MediaMTX Control API is still answering immediately after the refused revoke (no restart was triggered)', JSON.stringify(mediaMtxStateRightAfterRevoke409.body).slice(0, 300));
+
+    const revoke409Deadline = Date.now() + 15_000;
+    while (!revokeWhileReceivingExited && Date.now() < revoke409Deadline) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    if (!revokeWhileReceivingExited) revokeWhileReceivingChild.kill('SIGKILL');
+    expect(revokeWhileReceivingExited && revokeWhileReceivingExitCode === 0, 'the in-flight publish, using the credential the refused revoke never touched, completes successfully - proving no mutation', `exited=${revokeWhileReceivingExited} code=${revokeWhileReceivingExitCode}`);
+    await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
 
     step('MediaMTX exposes the plaintext RTMP listener only on loopback - branch reads are unaffected by remote ingest');
     expect(
