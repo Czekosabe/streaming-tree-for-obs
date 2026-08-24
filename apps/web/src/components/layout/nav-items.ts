@@ -28,7 +28,7 @@ export type NavItem = {
 export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/', labelKey: 'items.dashboard', icon: LayoutDashboard, planned: false },
   { to: '/platforms', labelKey: 'items.platforms', icon: Tv, planned: true },
-  { to: '/streams', labelKey: 'items.streams', icon: Radio, planned: true },
+  { to: '/streams', labelKey: 'items.streams', icon: Radio, planned: false },
   { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: true },
   { to: '/engagement', labelKey: 'items.engagement', icon: Activity, planned: false },
   { to: '/chat', labelKey: 'items.chat', icon: MessageSquare, planned: false },
@@ -37,6 +37,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/alerts', labelKey: 'items.alerts', icon: Bell, planned: false },
   { to: '/audio', labelKey: 'items.audio', icon: Volume2, planned: false },
   { to: '/goals', labelKey: 'items.goals', icon: Target, planned: false },
-  { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: true },
-  { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: true },
+  { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: false },
+  { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: false },
 ];

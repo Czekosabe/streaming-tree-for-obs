@@ -44261,3 +44261,35 @@ by a contract document written before the code it describes.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: stale "Planned" sidebar badge on three fully-real pages
+
+A genuinely new finding, not covered by the earlier UX-polish audit
+(which read individual page components, never the shared nav config):
+`apps/web/src/components/layout/nav-items.ts`'s `NAV_ITEMS` list still
+marked `/streams`, `/settings`, and `/logs` as `planned: true` -
+`SidebarNav.tsx` renders a visible "PLANNED" badge (with a tooltip)
+next to any item with that flag set, on every single page load, in
+the primary navigation. All three routes have been real, fully-
+implemented pages for a long time (`StreamsPage.tsx`/`SettingsPage.tsx`
+predate this stage entirely; `LogsPage.tsx` was this stage's own third
+commit) - meaning the app's own main navigation has been telling every
+operator that live ingest control, connected-account settings, and
+now the new diagnostics page were all still "planned," continuously,
+this whole time. This is a more severe instance of exactly the "stale
+planned text for completed functionality" category the earlier
+UX-polish entry already fixed once for `PlaceholderPage`'s own bullet
+copy - found only now because that pass read page components, not the
+separate, shared sidebar config those pages never touch. `/platforms`
+and `/metadata` correctly remain `planned: true` - both are still
+genuinely `PlaceholderPage`-rendered routes.
+
+### Verification
+`npm run typecheck`, `npm run lint` (0 errors, same one pre-existing
+warning): clean. `npm run test -- --run`: **1420/1420** (unchanged
+count - no test previously asserted on `NAV_ITEMS`, confirming this
+sat undetected until now).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
