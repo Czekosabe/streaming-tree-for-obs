@@ -41881,3 +41881,134 @@ fixed.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this correction. No
 AskUserQuestion call was made.
+
+## 2026-08-24 — test: close the branch-to-sink, remote-overlay-matrix, and real-systemd acceptance gaps
+
+### Starting state
+PRE-20E.1 requires closing the three mandatory Stage 20D2C acceptance
+gaps `docs/remote-ingest.md` §17 actually names - a real destination-
+branch-to-sink E2E, the remote-overlay E2E matrix across every real
+product family, and the full real packaged/systemd service lifecycle -
+inside the same two-independent-passes-per-architecture structure the
+prior audit already fixed, never regressing any of it.
+
+### Research
+Two background investigations grounded every claim below in real code
+before writing assertions against it, never guessed:
+- `apps/server/internal/runtime/branch/manager.go`/`command.go`:
+  branch starts are always an explicit `StartBranch` call, never
+  automatic on ingest; there is no generic "test" destination kind,
+  but any of the four seeded platforms (`twitch`/`youtube`/`kick`/
+  `tiktok`) can be pointed at an arbitrary local sink via `PUT /api/
+  platforms/{id}/output` - never a real provider or credential; the
+  branch's own FFmpeg `-i` input is unconditionally `Supervisor.
+  Snapshot().Connection.PublishURL`, the loopback `rtmpAddress`/
+  `IngestPath` - structurally never the RTMPS remote-publisher URL,
+  confirmed by reading `config.go`'s own `RenderConfig`; on ingest
+  loss, `reconcileOnce`/`attemptResume` auto-resume any branch that is
+  still `desiredRunning`, an existing, real, established contract, not
+  something to invent; `scripts/verify-ffmpeg-branches.mjs` already
+  establishes the exact, already-proven sink pattern (a second,
+  directly-run MediaMTX instance, Control API `/v3/paths/list`
+  `ready`+`tracks.length>0` as the real "media arrived" proof) and
+  confirms `cmd/testserver` (the fake-credential-store integration
+  build) has no remote-ingest support at all - the branch-to-sink test
+  has to run inside the same real-`cmd/server` harness as the RTMPS/
+  credential work, not a separate lighter one.
+- `apps/server/internal/httpapi/remote_overlay_*_test.go`: per-domain
+  behavior on an invalid/legacy/revoked token genuinely differs and
+  was read directly rather than assumed uniform - chat-overlay and
+  audio (bytes/ack routes) hard-404; alert-profile and widget (every
+  kind, confirmed by `apps/server/internal/domain/goals/widget_kinds.go`
+  to include `dashboard` as just another `WidgetProfileKind` resolved
+  through the identical `remoteoverlay.DomainWidget` capability, never
+  a separate key) both return a safe default snapshot and never hard-
+  error (Part 40's own documented contract). Audio's own real
+  constraint was also confirmed directly: `apps/server/internal/
+  provider/tts/stub.go` (`//go:build !windows`) is unconditionally
+  what the real Linux production binary uses, and it is always
+  unavailable - there is no supported TTS provider on Linux at all, so
+  the real bytesUrl-echoes-presented-token property literally cannot
+  be produced by the real production binary in this environment. This
+  is an honest, pre-existing platform constraint (already established
+  by Stage 20D2A's own "TTS honestly unavailable" finding), not a gap
+  introduced or closable by more harness engineering - documented as
+  such rather than faked.
+
+### The real systemd conversion
+`scripts/verify-linux-remote-server.mjs`'s entire process-management
+layer was replaced: the server is now installed, provisioned
+(`LoadCredential=` for the master key and RTMPS cert/key, `systemd-run
+--pipe` for the administrator password under the exact real service
+identity, mirroring `scripts/provision-admin-password.sh`'s own
+established mechanism), and started via a real `systemctl edit`-
+equivalent drop-in (`/etc/systemd/system/streaming-tree.service.d/
+d2c-verify.conf`) layering remote-management/remote-ingest onto the
+shipped, disabled-by-default unit - `daemon-reload`, `enable --now`,
+`restart`, `disable --now`, never a directly spawned test binary.
+`STREAMING_TREE_DATA_DIR` is now the real, fixed `StateDirectory=`
+path (`/var/lib/streaming-tree`), not a per-run mkdtemp directory, so
+every pass explicitly clears it (and the drop-in and `/etc/streaming-
+tree`) at the start - no pass-1 dependency. Diagnostics moved from a
+captured child-process stdout pipe to `journalctl -u streaming-
+tree.service`, since the process is no longer this script's own
+direct child.
+
+A real `systemctl restart` also **simplifies** the credential-
+lifecycle restart-persistence scenario the prior audit's own fix
+touched: systemd's default `KillMode=control-group` tears down the
+whole cgroup (MediaMTX included) on restart, so the orphaned-
+MediaMTX-child bug that direct-spawn path needed a manual `pkill`
+workaround for structurally cannot recur here - the workaround was
+removed, not merely left in place unnecessarily.
+
+### What was added
+- **Package-install safe-default proof**: the unit is not enabled and
+  the service is not active immediately after `dpkg -i`, before any
+  provisioning.
+- **D2A hardening survives D2C**: `DynamicUser=yes`, `NoNewPrivileges=
+  yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
+  `CapabilityBoundingSet=`, `RestrictAddressFamilies=...` all still
+  present in the effective (unit + drop-in) configuration; the real
+  running MainPID and the real running MediaMTX child process are both
+  confirmed non-root and running under the identical UID (inherited,
+  never separately elevated).
+- **Destination-branch-to-sink E2E**: a real local sink MediaMTX
+  instance (the same managed-installer binary, copied out and run
+  directly - never backend-managed, standing in for an external
+  platform); a seeded `twitch` platform pointed at it with a fake,
+  non-provider stream key; a real remote RTMPS publish; an explicit
+  branch start; the branch reaching `live` via the real production
+  branch manager; the sink's own Control API proving real decoded
+  tracks arrived; a journal scan proving the remote publisher secret
+  never appears; publisher disconnect driving the real
+  `waiting_for_ingest`/`desiredRunning: true` policy; reconnect proving
+  the existing auto-resume contract; an explicit stop respected.
+- **Remote-overlay E2E matrix**: chat overlay and audio via a hard-
+  fail-domain test path (local slug/invalid/revoked → 404); alert
+  profile, a real Stage 18A goal widget (referencing a real goal),
+  a real Stage 18B supporter widget, and a dashboard (composing a real
+  child widget) via a safe-default-domain test path (local slug/
+  invalid/revoked → 200 with a fingerprinted safe default, never the
+  real profile) - each proving local-slug rejection, a working valid
+  capability, rotate invalidating the old token, disable, and
+  management-host exclusion, all issued/exercised through the real
+  `/api/remote-overlay/{domain}/{slug}/...` management API and the
+  real remote HTTPS overlay boundary from the isolated client. A real
+  managed visual asset (a genuine 1x1 PNG, uploaded through the
+  authenticated multipart API) is also proven reachable through the
+  overlay origin by its own independent capability token, with an
+  invalid token 404ing and no list/enumeration route exposed.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean
+throughout. Real validation is the next native Linux CI run this
+commit triggers - given the size of this change (roughly 735 new
+lines, touching the process-management foundation every other section
+depends on), real failures are expected and will each be diagnosed
+from real annotation/journal evidence, never assumed fixed without a
+green run.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
