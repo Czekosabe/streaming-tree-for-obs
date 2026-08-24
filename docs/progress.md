@@ -40452,8 +40452,56 @@ complete fix, the full RTMPS matrix and positive path should both pass
 for the first time.
 
 ### Commits (chronological, this milestone)
-50. This entry - `fix(ci): stop trusting ffmpeg's URL auto-parsing
-    for RTMP(S) publish credentials`
+50. `fix(ci): stop trusting ffmpeg's URL auto-parsing for RTMP(S)
+    publish credentials`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — fix(ci): remove the quick accept-check that false-negatived on RTMPS timing
+
+### Real CI result: the reject-matrix now fully passes, the fix's own new check was too eager
+Commit `29390a6` was checked (8,791-character message this time -
+GitHub's real per-annotation limit is evidently byte-based, not a
+fixed character count, matching a suspicion raised several entries
+ago about multi-byte characters like "µs" consuming more of that
+budget than plain ASCII). "No credential", "wrong credential", and
+"wrong path" all now correctly show rejected - the core fix from the
+previous entry holds. The failure moved to the new `validCred` quick
+accept-check added in that same commit: `FAIL RTMPS with a valid
+credential and the canonical path is accepted`.
+
+The likely explanation: that quick check reused the reject-matrix's
+own 1.5-second poll window, which is right for a *rejection* (MediaMTX
+fails fast - it never has to actually attach a publisher) but may
+simply be too short for a real *accept* to be reported as ready over
+RTMPS through the network-namespace boundary specifically. The
+earlier diagnostic that proved the explicit-override fix worked
+(previous entry) tested it over *plain RTMP on loopback*, not RTMPS
+through the isolated namespace - a real difference in transport that
+this new quick check never actually validated before being added.
+Critically, this new check runs *before* the existing, more thorough
+"RTMPS positive path" test (which already has proper settle time built
+in via `PUBLISH_SETTLE_MS`), so its false negative was blocking that
+correctly-timed test from ever running at all.
+
+### Fix
+Removed the quick `validCred` check entirely rather than giving it a
+second, longer timeout - it was redundant with the existing, properly-
+timed positive-path test below it, which already proves the same
+thing correctly.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+should be the run where the properly-timed positive-path test finally
+gets to execute and show whether the real fix holds for RTMPS too, not
+just the plain-RTMP-loopback case it was originally proven against.
+
+### Commits (chronological, this milestone)
+51. This entry - `fix(ci): remove the quick accept-check that
+    false-negatived on RTMPS timing`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

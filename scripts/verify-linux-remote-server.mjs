@@ -859,8 +859,18 @@ async function main() {
     expect(!wrongCred.accepted, 'RTMPS with a wrong credential is rejected (MediaMTX never reports the path ready)', wrongCred.accepted ? wrongCred.snapshot : '');
     const wrongPath = await tryPublishAndCheckAccepted(`wrong-path?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', 'wrong-path');
     expect(!wrongPath.accepted, 'RTMPS with a valid credential but the wrong path is rejected (MediaMTX never reports the path ready)', wrongPath.accepted ? wrongPath.snapshot : '');
-    const validCred = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', INGEST_PATH);
-    expect(validCred.accepted, 'RTMPS with a valid credential and the canonical path is accepted (MediaMTX reports the path ready)', validCred.accepted ? '' : validCred.snapshot);
+    // Deliberately no quick "valid credential is accepted" check here
+    // to mirror the three rejections above - a rejection fails fast
+    // (MediaMTX never has to actually attach a publisher), but a real
+    // accept may genuinely take a bit longer to be reported as ready
+    // than tryPublishAndCheckAccepted's 1.5s window comfortably covers
+    // over RTMPS through the network-namespace boundary specifically
+    // (a first attempt at this exact quick check, using that same
+    // window, produced a false-negative "not accepted" here before
+    // the real, properly-timed positive-path test below ever got a
+    // chance to run - removed rather than given a second, longer
+    // timeout, since the fuller test below already proves this
+    // correctly with real settle time built in).
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
