@@ -177,6 +177,18 @@ const RTMPS_CERT_PATH = `${ETC_DIR}/rtmps.crt`;
 // exactly like a real deployment's own persistent state.
 const STATE_DIR = '/var/lib/streaming-tree';
 
+// journalctl's own "YYYY-MM-DD HH:MM:SS" --since format (system/local
+// time, matching journald's own default interpretation - this runner
+// is UTC either way) - captured once, at module load, so every
+// serverJournal() call in this invocation scopes to only this
+// invocation's own entries, never a prior pass's leftover journal
+// content for the same long-lived systemd unit.
+function formatForJournalctlSince(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+const SCRIPT_START_TIME = formatForJournalctlSince(new Date());
+
 // --- network topology --------------------------------------------------
 // Host (default) namespace keeps the real server process and both
 // reverse-proxy stand-ins; the isolated namespace is where every
@@ -651,10 +663,22 @@ function readRootFile(path) {
 
 /** Tails the real unit's own journald output - the only diagnostic
  * source once the service is systemd-managed rather than a direct
- * child process this script itself holds a stdout/stderr pipe to. */
+ * child process this script itself holds a stdout/stderr pipe to.
+ *
+ * Scoped with `--since SCRIPT_START_TIME`, not merely `-n <count>`:
+ * .github/workflows/linux-headless.yml runs this script twice per
+ * architecture as two separate process invocations, but journald
+ * itself is a single OS-level log that persists across both - a real
+ * CI failure (docs/progress.md, PRE-20E.1) showed pass 2's own
+ * `-n 200` tail entirely crowded out by pass 1's own leftover
+ * branch-to-sink polling noise (150+ log lines from a single earlier
+ * `waitForBranchState` call alone), making pass 2's own genuinely new
+ * entries invisible. `--since` guarantees only entries from *this*
+ * invocation are ever shown, regardless of how much older content
+ * exists for the same unit. */
 function serverJournal(lines = 400) {
   try {
-    return execFileSync('sudo', ['journalctl', '-u', UNIT_NAME, '--no-pager', '-n', String(lines)], { encoding: 'utf8', timeout: 10_000 });
+    return execFileSync('sudo', ['journalctl', '-u', UNIT_NAME, '--no-pager', '--since', SCRIPT_START_TIME, '-n', String(lines)], { encoding: 'utf8', timeout: 10_000 });
   } catch {
     return '(journalctl unavailable)';
   }

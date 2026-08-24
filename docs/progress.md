@@ -42647,3 +42647,51 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): scope serverJournal() to this invocation's own start time
+
+### Real CI result: pass 1 fully passed for the first time - branch-to-sink, the whole overlay matrix, and the visual asset all green
+Commit `9f6be54` was checked by real CI: run `32736575738`. Pass 1
+completed with **zero** failure annotations of its own - the first
+time in this milestone the entire pass 1 sequence (RTMPS, credential
+lifecycle, branch-to-sink, the full remote-overlay E2E matrix across
+every family, and the visual-asset proof) has gone fully green in a
+single run. Pass 2 then failed at step 9 ("the real systemd-managed
+service became active and healthy"), with its own diagnostic tail
+showing ~150 lines of `GET /api/runtime/branches` request-log entries
+at ~530ms intervals (matching `waitForBranchState`'s own 500ms poll
+interval almost exactly) from PID 9335, ending mid-line.
+
+### Real, evidence-grounded diagnosis
+This is a diagnostic-scoping defect, not necessarily evidence of a
+real leftover-process bug: `serverJournal()`'s `journalctl -u
+UNIT_NAME -n <count>` tails the *unit's* log, which - since journald
+persists entries across restarts - still contained pass 1's own
+~150+ lines of branch-polling traffic (`waitForBranchState` alone can
+issue dozens of requests per call, and this run made several such
+calls). If pass 2's own genuinely new startup log content had not yet
+reached 200 lines by the time of the failure, pass 1's old entries
+could dominate or entirely fill the tail window, making pass 2's own
+real diagnostic content invisible - exactly consistent with what was
+observed. Whether pass 2 also has a real underlying startup problem of
+its own remains genuinely open; this fix is what is needed either way
+to find out for certain.
+
+### Fix
+Added `SCRIPT_START_TIME` (captured once at module load, formatted for
+journalctl's own `--since "YYYY-MM-DD HH:MM:SS"` syntax) and passed it
+to every `journalctl` call `serverJournal()` makes. Since each of the
+workflow's two passes is a genuinely separate `node` process
+invocation, this guarantees every journal query in a given invocation
+only ever shows that invocation's own entries, regardless of how much
+older content exists in the same long-lived systemd unit's journal.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+should finally show pass 2's own real startup diagnostic content,
+whatever it turns out to say.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
