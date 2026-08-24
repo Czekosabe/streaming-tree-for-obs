@@ -762,6 +762,39 @@ async function main() {
     }
     if (!plainExited) plainProbe.kill('SIGKILL');
 
+    // The verifier itself is now proven correct (previous entry), so
+    // whatever remains is about what actually reaches MediaMTX over
+    // the wire. Force the exact app/playpath split ffmpeg's own
+    // automatic URL parsing was hand-traced to produce
+    // (docs/progress.md) - the *entire* "live?user=...&pass=..."
+    // string as "app", empty playpath - explicitly via ffmpeg's own
+    // -rtmp_app/-rtmp_playpath private options, which override
+    // whatever its automatic parsing would otherwise do. If this
+    // explicit, unambiguous version also fails, the automatic-parsing
+    // hypothesis was correct and something else entirely is wrong; if
+    // it succeeds, ffmpeg's automatic parsing was not actually doing
+    // what the hand trace concluded.
+    const explicitApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
+    const explicitProbe = spawn(
+      'ffmpeg',
+      ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-rtmp_app', explicitApp, '-rtmp_playpath', '', '-f', 'flv', `rtmp://127.0.0.1:${MEDIAMTX_RTMP_PORT}/`],
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    let explicitExited = false;
+    explicitProbe.on('exit', () => {
+      explicitExited = true;
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+    const explicitPathsCheck = await hostFetchJson('/v3/paths/list');
+    const explicitItems = (explicitPathsCheck.body && Array.isArray(explicitPathsCheck.body.items)) ? explicitPathsCheck.body.items : [];
+    const explicitMatched = explicitItems.find((p) => p && p.name === INGEST_PATH);
+    console.log(`     diag explicit -rtmp_app override (same split as the auto-parse trace), ready=${explicitMatched ? explicitMatched.ready : 'path not found'}`);
+    const explicitDeadline = Date.now() + 5_000;
+    while (!explicitExited && Date.now() < explicitDeadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!explicitExited) explicitProbe.kill('SIGKILL');
+
     step('MediaMTX Control API and the Go backend loopback port are unreachable from the isolated client namespace');
     expect(
       !clientExecOk('curl', ['-sS', '--max-time', '3', `http://${HOST_ADDR}:${MEDIAMTX_API_PORT}/v3/config/global/get`]),

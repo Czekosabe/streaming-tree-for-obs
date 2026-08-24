@@ -40275,8 +40275,57 @@ relying on it in CI. Real validation is the next native Linux CI run
 this commit triggers.
 
 ### Commits (chronological, this milestone)
-47. This entry - `ci: read the real rendered mediamtx.yml verifier
-    directly, sidestepping RTMP-parsing questions`
+47. `ci: read the real rendered mediamtx.yml verifier directly,
+    sidestepping RTMP-parsing questions`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: force the exact app/playpath split via -rtmp_app, bypassing ffmpeg's automatic URL parsing
+
+### Real CI result: the credential is proven correct, byte for byte
+Commit `2159175` was checked. The rendered `mediamtx.yml` and the
+independently-recomputed expectation matched exactly:
+`sha256:bW4Zv07h8+xxY6pUPWpjhJHIuiBqIo3t6Gq86I5HbqE=` in both. This
+closes the credential/config question completely - the stored
+verifier, the plaintext secret returned to the client, and this
+script's own independent SHA-256/base64 computation (itself cross-
+checked against real `openssl` output before being trusted) all
+agree. Combined with the already-clean TLS handshake, the already-
+verified-correct MediaMTX auth-matching source, and the plain-RTMP
+result two entries ago, every piece of the pipeline server-side of
+the wire has now been individually confirmed correct. What remains
+unverified is only what actually crosses the wire from ffmpeg to
+MediaMTX.
+
+### Fix (a real, decisive experiment, not just another diagnostic)
+Rather than continue reasoning indirectly about ffmpeg's automatic
+URL-splitting, forced it directly: ffmpeg's own `-rtmp_app`/
+`-rtmp_playpath` private options ("This option overrides the parameter
+specified in the URI", per ffmpeg's own protocol documentation) let
+this script set `app` and `playpath` explicitly, bypassing whatever
+`rtmp_open`'s automatic parsing would otherwise decide. Set `app` to
+the *entire* `"live?user=...&pass=..."` string with an explicit empty
+playpath - exactly the split the earlier hand-trace of `rtmp_open`
+concluded ffmpeg's automatic parsing already produces for this
+project's URL shape. If this explicit, unambiguous version also fails
+against the loopback listener, the hand-traced hypothesis about what
+ffmpeg sends was correct all along and the real cause lies elsewhere
+entirely; if it succeeds, ffmpeg's automatic parsing was not actually
+doing what that trace concluded, and the fix belongs in how this
+script constructs its ffmpeg invocations, not in any product code.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; `-rtmp_playpath
+''` is passed through Node's `spawn` as a literal argv entry (no shell
+involved, so no quoting ambiguity). Real validation is the next native
+Linux CI run this commit triggers - this is intended as the most
+decisive experiment run so far on this specific question.
+
+### Commits (chronological, this milestone)
+48. This entry - `ci: force the exact app/playpath split via
+    -rtmp_app, bypassing ffmpeg's automatic URL parsing`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
