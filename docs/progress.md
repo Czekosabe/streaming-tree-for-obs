@@ -40066,8 +40066,42 @@ string-handling by hand.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-42. This entry - `ci: log ffmpeg's own real app/playpath split via
-    -v debug`
+42. `ci: log ffmpeg's own real app/playpath split via -v debug`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: check ffmpeg's debug log after the full settle wait, not right after the quick poll
+
+### Real CI result: the check ran too early to see anything
+Commit `bd0e548` was checked. The annotation showed `"(no \"Proto = \"
+line found yet in captured stderr)"` - `-v debug` did not fail to log
+the line; the check for it simply ran too soon. ffmpeg's stderr is a
+pipe here, not a TTY, and C stdio commonly switches a non-TTY stream
+from line-buffered to fully-buffered - a single ~80-byte debug line
+printed early in the connection can sit unflushed in that buffer until
+enough later output (per-frame debug spam, once `-v debug` really gets
+going) accumulates to trigger a flush. The check ran right after an
+8×250ms = 2-second poll loop, which may simply not have been long
+enough for that first flush to happen yet.
+
+### Fix
+Moved the "Proto = " extraction from immediately after the 2-second
+rtmpconns poll to after the existing `PUBLISH_SETTLE_MS` wait (several
+more seconds into the real 10-second publish) - giving the buffer far
+more time to have flushed by the time it's checked. Also widened the
+fallback message to report how many bytes of stderr were captured so
+far, so even a continued miss is more diagnosable than a bare "not
+found."
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+43. This entry - `ci: check ffmpeg's debug log after the full settle
+    wait, not right after the quick poll`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

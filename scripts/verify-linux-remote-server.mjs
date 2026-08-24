@@ -880,10 +880,17 @@ async function main() {
         console.log(`     diag rtmpconns/list at t=${(i + 1) * 250}ms: ${JSON.stringify(items).slice(0, 700)}`);
       }
     }
-    const protoLine = publishStderr.split('\n').find((l) => l.startsWith('Proto = '));
-    console.log(`     diag ffmpeg's own app/fname split: ${protoLine || '(no "Proto = " line found yet in captured stderr)'}`);
-
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+    // Checked here rather than right after the quick rtmpconns poll
+    // above: ffmpeg's stderr is a pipe, not a TTY, so its C runtime
+    // may fully-buffer it rather than line-buffer it - a single short
+    // debug line printed early in the connection can sit unflushed
+    // until enough later per-frame debug spam accumulates to fill that
+    // buffer. Checking after the full PUBLISH_SETTLE_MS wait (several
+    // seconds further into a real 10-second encode) gives that buffer
+    // every chance to have flushed.
+    const protoLine = publishStderr.split('\n').find((l) => l.startsWith('Proto = '));
+    console.log(`     diag ffmpeg's own app/fname split: ${protoLine || '(no "Proto = " line found in captured stderr - ' + publishStderr.length + ' bytes captured so far)'}`);
     // MediaMTX's own /v3/paths/list is the same ground truth the
     // reject-matrix above now trusts instead of ffmpeg's exit code -
     // check it directly here too, so a failure below shows whether
