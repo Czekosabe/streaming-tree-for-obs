@@ -43600,3 +43600,69 @@ practice, a fix is made once real evidence supports one, not before.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: fix a real bug in the Windows diagnostic-capture mechanism itself
+
+The diagnostic-capture mechanism added in the immediately preceding
+entry worked exactly as designed operationally (captured
+`verify-installer-pass1.log`/`verify-packaged-app-pass1.log`,
+correctly gated on `if: failure()`), and its very first real CI run
+(commit `87cb507`) again failed at "Verify the installer (pass 1)" -
+but reading the resulting annotations found a second, genuine bug in
+the mechanism itself: `verify-installer-pass1.log`'s annotation
+(titled "(lines 1-17)", confirming the file really did contain that
+many lines) showed a message body of only 38 bytes - exactly the
+length of its first line, `"Stage 20A installer smoke verification"`,
+and nothing else.
+
+### Root cause
+GitHub Actions parses a workflow command (`::error title=...::message`)
+as a single log line. The chunk-building code joined multiple log
+lines with a **raw** newline character before embedding them in the
+`Write-Host "::error ...::$chunk"` string. An unescaped newline inside
+a workflow-command's message silently ends the command at that point -
+everything after the chunk's own first line falls out of the
+recognized annotation and becomes ordinary, unstructured log text
+(which the raw-log-download endpoint would show, but that endpoint
+returned `403` for this same commit's own earlier run, per the
+previous entry). This explains the exact observed symptom: every
+chunk's annotation showed only its first line, silently, with no error
+of its own - `verify-packaged-app-pass1.log`'s chunks happened to each
+start on a real, informative "ok ..." line (since that script's own
+20-line-per-step-family output made most chunk-starting lines
+individually meaningful), which is why that log's diagnostics looked
+superficially complete while `verify-installer-pass1.log`'s chunk 1
+started right on the script's own generic startup banner, revealing
+nothing about the real failure.
+
+### The fix
+`GET .../actions/jobs/{id}/logs` returning `403 Requires admin rights`
+(confirmed again, same as the prior entry) means percent-encoding is
+the only way to recover the WHOLE real failure text through the
+publicly-readable annotations API - GitHub's own documented
+workflow-command escaping (`%` → `%25`, CR → `%0D`, LF → `%0A`, `%`
+encoded first so its own encoded form is never re-encoded) is now
+applied to each chunk before it is embedded in the `::error::` command.
+
+### Verified locally before trusting it in CI, twice
+- The chunking logic was re-verified against a synthetic 25-line log
+  containing literal `%` characters: exactly 2 `::error::` commands
+  were emitted, and counting `-split "`n"` on each full emitted line
+  confirmed exactly **1** raw newline-delimited line per command (the
+  correctness property this whole mechanism depends on) - not 20/5, as
+  the pre-fix version would have produced.
+- The encoded output was inspected directly: every literal `%` in the
+  fake log became `%25`, every line break between log lines became a
+  literal `%0A` sequence, and no raw `` `n `` survived inside a single
+  emitted annotation line.
+
+### What this does NOT yet explain
+The real root cause of "Verify the installer (pass 1)" itself failing
+is still unknown - this fix only repairs the mechanism meant to reveal
+it. The next real CI run against this commit (windows-package.yml's
+own path filter includes itself) will carry the genuinely complete
+annotation content for the first time.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -156,7 +156,16 @@ jobs:
               $end = [Math]::Min($i + $chunkSize - 1, $lines.Count - 1)
               $chunk = ($lines[$i..$end] -join "`n")
               if ([string]::IsNullOrWhiteSpace($chunk)) { continue }
-              Write-Host "::error title=$($log.Name) (lines $($i + 1)-$($end + 1))::$chunk"
+              # A GitHub Actions workflow-command message is parsed as a
+              # single log line - an embedded raw newline silently ends
+              # the command early, so everything after the chunk's own
+              # first line would otherwise be dropped from the
+              # annotation without any error. Percent-encoding (%25,
+              # %0D, %0A - "%" first, so its own encoded form is never
+              # re-encoded) is GitHub's own documented escaping for
+              # workflow-command values.
+              $encoded = $chunk -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A'
+              Write-Host "::error title=$($log.Name) (lines $($i + 1)-$($end + 1))::$encoded"
             }
           }
 
