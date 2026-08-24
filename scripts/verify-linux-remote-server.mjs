@@ -890,7 +890,18 @@ async function main() {
     // seconds further into a real 10-second encode) gives that buffer
     // every chance to have flushed.
     const protoLine = publishStderr.split('\n').find((l) => l.startsWith('Proto = '));
-    console.log(`     diag ffmpeg's own app/fname split: ${protoLine || '(no "Proto = " line found in captured stderr - ' + publishStderr.length + ' bytes captured so far)'}`);
+    if (protoLine) {
+      console.log(`     diag ffmpeg's own app/fname split: ${protoLine}`);
+    } else {
+      // 5353 bytes flowed through in the prior CI run with no "Proto ="
+      // anywhere in them - not a buffering delay, the line genuinely
+      // does not appear for this invocation. Print the real, raw start
+      // of stderr instead of continuing to search for one specific,
+      // apparently-absent line - ffmpeg's connection/protocol setup
+      // output lives early, before per-frame encoder spam dominates.
+      console.log(`     diag no "Proto = " line anywhere in ${publishStderr.length} captured bytes; raw start of stderr:`);
+      console.log(publishStderr.slice(0, 900).split('\n').map((l) => `     diag | ${l}`).join('\n'));
+    }
     // MediaMTX's own /v3/paths/list is the same ground truth the
     // reject-matrix above now trusts instead of ffmpeg's exit code -
     // check it directly here too, so a failure below shows whether

@@ -40100,8 +40100,40 @@ found."
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-43. This entry - `ci: check ffmpeg's debug log after the full settle
-    wait, not right after the quick poll`
+43. `ci: check ffmpeg's debug log after the full settle wait, not
+    right after the quick poll`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: dump raw ffmpeg stderr instead of continuing to search for one absent line
+
+### Real CI result: not a buffering delay - the line genuinely never appears
+Commit `ac89648` was checked. 5,353 bytes of ffmpeg's `-v debug`
+output were captured this time (real output is clearly flowing, no
+buffering delay), and the literal string `"Proto = "` does not appear
+anywhere in any of it. Continuing to search for that one specific line
+stopped being a productive use of another CI round-trip - whatever
+ffmpeg is doing, it is not printing this particular debug statement
+for this invocation, for a reason not worth guessing at further from
+outside.
+
+### Fix
+Replaced the single-line search with a raw dump of the first 900
+characters of captured stderr on a miss - ffmpeg's own real connection/
+protocol setup output lives early, before per-frame encoder debug
+spam dominates the later bytes, so this should surface whatever
+*is* actually being logged instead of continuing to hunt for a line
+that may not exist in this ffmpeg build/version at all.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+44. This entry - `ci: dump raw ffmpeg stderr instead of continuing
+    to search for one absent line`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
