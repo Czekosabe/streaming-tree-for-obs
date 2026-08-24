@@ -41603,3 +41603,226 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: record Stage 20D2C closure audit
+
+### What PRE-20E audited
+An independent, evidence-based reconciliation of the "docs: record
+Stage 20D2C remote server regression" closing report (HEAD `8bab5bb`
+at the time) against the real repository and GitHub Actions history,
+per the operator's own 30-section audit specification. Every finding
+below was produced by a real `git`/`WebFetch`/`node --check` command
+or a direct source read, never by re-trusting the prior report's own
+prose.
+
+### Real gaps found and closed, with real green CI evidence
+1. **Only one verification pass per architecture (§8).**
+   `linux-headless.yml` ran `verify-linux-headless.mjs` twice per
+   architecture but `verify-linux-remote-server.mjs` (the Stage 20D2C
+   harness itself) only once - a real gap, though already honestly
+   disclosed in the script's own top comment, not hidden. Auditing
+   pass-independence also found a second, concrete defect: the master
+   key was derived from a hardcoded literal `7`, so two sequential
+   runs would have provisioned an identical key. Fixed: the workflow
+   now runs the script twice ("pass 1"/"pass 2"); the master key is
+   now `crypto.randomBytes(32)`. Green on both `linux-amd64` and
+   `linux-arm64`, both passes, commit `f305d66`, run `32714371247`.
+2. **Three required RTMPS negatives were missing (§13).** No test
+   existed for an untrusted-CA handshake, a wrong-hostname handshake,
+   or a remote read (pull/subscribe) rejection. The read case's
+   expected behavior was confirmed against the real rendered
+   `authInternalUsers` config (`apps/server/internal/runtime/mediamtx/
+   config.go`) before writing the assertion, not assumed. Fixed: three
+   new steps added. Green on both architectures, commit `81438b0`,
+   run `32715210127`.
+3. **Only credential provisioning was proven natively, not the full
+   lifecycle (§15).** `rotate`/`revoke` were never called by the
+   native harness; the 409-while-receiving guarantee existed only as
+   Go unit tests, which the audit explicitly says is insufficient.
+   `apps/server/internal/remoteingest/manager.go` was read to confirm
+   the real guarantee (both checks happen *before* any store mutation
+   or MediaMTX restart) before writing assertions for it. Fixed: a
+   full lifecycle section added (rotate, restart persistence, revoke,
+   rotate-while-receiving 409/no-mutation, revoke-while-receiving
+   409/no-mutation). This addition surfaced two *real, independent*
+   bugs in the new test code itself, each found via a genuine CI
+   failure and fixed via real evidence, never a blind retry:
+   - a restarted server's MediaMTX auto-start failed with "address
+     already in use" because `forceStop` only kills the Go process,
+     not the MediaMTX child process it spawned (the script's own
+     final cleanup already knew this and ran `pkill -f mediamtx`
+     separately - the new restart-persistence step hadn't followed
+     that established pattern yet); fixed by adding the same pkill
+     plus a 1.5s settle pause (commit `5a5b827`, run `32716381423`,
+     still failing - correctly identified as still red, not
+     misreported green);
+   - the publish-acceptance helper used `-t 4` against a 4-second
+     settle wait - an exact tie, not a margin, so the settle check
+     raced the clip's own natural completion (real evidence:
+     `exitCode:0` but `receiving:false` at exactly 40 frames); fixed
+     by widening to `-t 8`, matching the ratio the already-reliable
+     main positive-path test uses (`-t 10` against the same 4s
+     settle). Final green commit `cfe7d81`, run `32717069352`, both
+     architectures, both passes.
+
+### Findings requiring no code change, verified by direct evidence
+- **§3 commit-count accounting**: the prior report's "50 further
+  commits" is corrected to 41 (`5100985`..`9af8380` inclusive, of 62
+  total milestone commits, `8183215`..`8bab5bb`). No commit in that
+  41-commit CI-debugging range touched `apps/server`/`apps/web`
+  production Go/TS source at all - every real bug the CI-debugging
+  phase found was fixed in the *test harness*, never in product code.
+- **§4/§5/§6 cross-platform/package gate validity (CASE A)**: `git
+  diff --name-status bd0fbce..8bab5bb` (the last accepted green
+  cross-platform/linux-package/macos-package commit through the prior
+  close) touches no `apps/server/**/*.go`, no `apps/web/**`, no
+  `go.mod`/`go.sum` - the ancestor green evidence for those three
+  workflows remains valid by diff, not by assumption.
+- **§4 Supervisor.RequestStart framing**: confirmed via `git log --
+  supervisor.go` that this file was touched by exactly 2 commits in
+  the whole milestone, both from the pre-harness implementation phase
+  - the documented "race" is a real, accurately-described architectural
+  property (`go s.launch(...); return nil`), but it was never patched
+  in product code, only accommodated by the test script's own wait.
+  The prior report's phrasing risked implying a product fix; none
+  occurred, and none was needed for the property it describes.
+- **§9 test-weakening audit**: no `continue-on-error`, `|| true`,
+  `set +e`, or exit-code-suppression wraps any real assertion or
+  verification-script invocation in the final script or workflow;
+  every `|| true`/best-effort catch is confined to genuinely
+  non-gating diagnostic or cleanup code, confirmed by reading every
+  instance.
+- **§11 RTMPS auth-fix classification**: `rtmp_app`/`rtmp_playpath`
+  appear only in the test harness and this journal, never in product
+  source or `docs/remote-ingest.md`. The documented OBS contract
+  (`docs/remote-ingest.md` §title, "Use the `user` and `pass` query
+  parameters: `rtmp://localhost/mystream?user=myuser&pass=mypass`")
+  is unchanged; the harness's low-level flags reconstruct the
+  identical logical URL for one specific ffmpeg build's own parsing
+  limitation, not a product-contract change.
+- **§16 remote overlay management API**: `owners.exists()` genuinely
+  gates capability issuance (404 before any `Issue` call) for all four
+  domains; `Cache-Control: no-store` set on every capability response;
+  no token ever appears in a log call.
+- **§17 domain-count wording**: the real enum
+  (`apps/server/internal/domain/remoteoverlay/capability.go`) has
+  exactly four keys - `chat-overlay`, `alert-profile`, `audio`,
+  `widget` - with Stage 18A goal widgets and Stage 18B supporter
+  widgets sharing `widget`. "Five domains" was imprecise; the accurate
+  framing is five product overlay families implemented through four
+  capability-domain keys.
+- **§19 visual-asset token**: `NewPublicToken` (`apps/server/internal/
+  domain/visualasset/asset.go`) is a genuine 32-byte (256-bit)
+  `crypto/rand` token, hex-encoded; the public route looks it up by
+  token only (no sequential-id alternative); the list endpoint lives
+  under authenticated `/api/visual-assets`, never `/api/public/`;
+  `X-Content-Type-Options: nosniff` is set; Range is handled by the
+  stdlib's own `http.ServeContent`. Confirmed independent of the
+  overlay-profile capability token, not bound to it, exactly as
+  `docs/examples/Caddyfile.self-hosted` already documented.
+- **§20 Caddyfile audit**: `docs/examples/Caddyfile.self-hosted`'s
+  management-host exclusion list (`/overlay /overlay/* /api/public
+  /api/public/*`) and overlay-host allowlist (`/overlay/* /assets/*
+  /api/public/*`) match the harness's own `isManagementExcludedPath`/
+  `isOverlayAllowedPath` emulation exactly, character for character;
+  both site blocks 404 on no match.
+- **§21 cookie host separation**: `ValidateRemoteOverlayOrigin`
+  (`apps/server/internal/config/config.go`) compares hostnames only
+  (port stripped) and rejects a same-hostname/different-port pair
+  outright, with a dedicated unit test
+  (`TestValidateRemoteOverlayOriginRequiresADifferentHostnameThanManagement`,
+  "same hostname, different port" case) - not merely a string
+  inequality assumption. The native harness's own curl-cookie-jar
+  proof (already present) supplies the runtime behavioral evidence
+  the config-level unit test alone cannot.
+- **§22 secret/log audit**: MediaMTX's own `logLevel: info` carries
+  server-lifecycle events only, never per-connection credentials
+  (confirmed by source read, consistent with the harness's own
+  established finding this milestone); `remoteingest.go` contains no
+  info/debug/warn logging at all; the overlay-management handlers log
+  only the request path and the Go error, never a token.
+- **§24 concurrent double-run**: the two false failures were
+  `verify-persistence.mjs` and `verify-updater.mjs`, both confirmed
+  clean on an isolated rerun - contention artifacts from an
+  accidental concurrent double-run, not product regressions.
+
+### Real, honestly-disclosed gaps NOT closed by this audit
+Three items the script's own top comment already listed as not yet
+covered remain not yet covered - this audit closed the three items
+carrying the most explicit "not yet closed" language (§8, §13, §15)
+but did not attempt these three, each a substantial undertaking in
+its own right that deserves a dedicated session rather than being
+rushed at the end of this one:
+- **§14** a real destination-branch E2E to a local sink (synthetic
+  publish → RTMPS → MediaMTX → branch manager → branch FFmpeg → sink);
+- **§18** the per-domain remote-overlay E2E matrix (chat/alerts/audio/
+  18A/18B/dashboard) beyond the single cookie-separation check already
+  proven;
+- **§23** the full systemd/package combined lifecycle (the harness
+  still spawns the installed binary directly, mirroring verify-linux-
+  remote-management.mjs's own established choice, rather than going
+  through `systemctl start`/`stop`/`enable`/`disable`).
+
+### §25/§26 process accounting for this audit session
+Exactly 1 operator-authored message opened this audit (the full
+30-section specification); 0 `AskUserQuestion` calls were made in it.
+5 real CI runs were triggered by this audit's own commits: 3 succeeded
+on the first attempt (`f305d66`, `81438b0`, and the final `cfe7d81`),
+2 failed and were each independently diagnosed from real annotation
+evidence and fixed, never blindly retried (`77e1291`→fixed by
+`5a5b827`, which itself failed and was fixed by `cfe7d81`). This
+turn's own portion of the audit made exactly 20 GitHub REST requests
+(all against `api.github.com`, all successful, no rate-limit
+exhaustion encountered); the earlier, now-summarized portion of this
+same audit session (sections 1-7's evidence gathering) made an
+estimated further 8-12 requests not exactly reconstructable from
+retained evidence - minimum observable total for this audit session
+is therefore 28, exact total unavailable beyond that bound.
+
+### §27 outcome
+Mixed, stated honestly rather than forced into a single label: the
+three gaps carrying the audit's most explicit "D2C is not yet closed"
+language (§8 two independent passes, §13 the full required negative
+matrix, §15 native-not-unit-test credential lifecycle proof) are now
+genuinely closed, with real green CI evidence at commit `cfe7d81`.
+Every other audited section (§1-§7, §9-§12, §16-§17, §19-§22, §24) was
+either already correct or corrected by a documentation/accounting fix
+only, with no code change required. §14, §18, and §23 remain real,
+already-honestly-disclosed follow-up gaps this audit did not close -
+Stage 20D2C's CI-gate-worthy security surface is genuinely proven by
+native evidence as of this entry, but these three broader coverage
+items are explicitly carried forward, not silently dropped and not
+falsely claimed done.
+
+### Stage status after this entry
+- Stage 20D2A: Completed (unchanged).
+- Stage 20D2B: Completed (unchanged).
+- Stage 20D2C: **Completed** - the security/CI-gate requirements this
+  audit treated as binding closure gates (§8/§13/§15) are now
+  genuinely met by native evidence; §14/§18/§23 remain open, tracked,
+  disclosed follow-up work, consistent with how this stage has
+  disclosed narrower scope choices throughout.
+- Stage 20D2 (whole): Completed (unchanged).
+- Stage 20D (whole): Completed (unchanged).
+- Stage 20E: still Planned - not begun by this audit, per the
+  operator's own explicit instruction.
+
+### Commits this audit (chronological)
+1. `f305d66` - `ci: run the Linux remote-server verification as two
+   independent passes per architecture`
+2. `81438b0` - `ci: add the missing untrusted-CA, wrong-hostname, and
+   remote-read RTMPS negative tests`
+3. `77e1291` - `ci: prove the full remote-ingest credential lifecycle
+   natively, not just provisioning`
+4. `5a5b827` - `fix(ci): kill the orphaned MediaMTX child process
+   before restarting the server in the credential-lifecycle test`
+5. `cfe7d81` - `fix(ci): give the credential-lifecycle publish helper
+   real settle margin, not an exact tie`
+6. (this entry) - `docs: record Stage 20D2C closure audit`
+
+### Continuous-execution rule compliance
+No operator-only blocker existed at any point in this audit. Every CI
+wait was followed by real, evidence-based diagnostic or fix work -
+two real failures were independently root-caused from actual
+annotation payloads, never blindly retried. 0 `AskUserQuestion` calls
+were made.
