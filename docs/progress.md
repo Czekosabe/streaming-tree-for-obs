@@ -44002,3 +44002,74 @@ now-resolved investigation is this stage's most recent set of entries).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — test: bounded resource-stability soak check (governing task §26)
+
+Adds `scripts/soak-test.mjs` - not one of the 24 canonical scripts and
+never invoked from CI, a manually-run, one-time evidence-gathering
+tool using only synthetic/local infrastructure. Reuses the real
+topology `scripts/verify-ffmpeg-branches.mjs` already establishes
+(synthetic FFmpeg publisher -> source MediaMTX -> two independent real
+FFmpeg destination branches -> two sink MediaMTX instances) but
+replaces that script's one-shot assertion sequence with a **bounded
+4-minute monitoring window** (`SOAK_DURATION_MS`, the one place the
+duration is set - explicitly not hours, per the governing task's own
+"not hours for optics, but a useful bounded duration" wording),
+sampling every 15 seconds: OS process count and total working-set
+memory for `streaming-tree-server`/`testserver`/`ffmpeg`/`mediamtx`,
+the `GET /api/logs` diagnostics response size and entry count, and a
+running byte count from one long-lived SSE connection to
+`/api/engagement/stream` kept open for the entire window. Destination
+1 is stopped and restarted roughly every 30 seconds (a real stop/start
+transition, not a static topology). No invented rigid pass/fail
+threshold is applied to the memory trend - the full sample series is
+printed and a human reads it, exactly as the governing task requires.
+
+### A real bug the first run found, in the tool itself
+The first run's process sampler silently returned nothing for every
+sample (`processes=n/a` throughout) - `Get-Process | Where-Object {
+Name -eq '...' }` is invalid PowerShell (`Name` inside a
+`Where-Object` scriptblock is not automatically the pipeline object's
+property; it must be `$_.Name`), which PowerShell reported as a
+`CommandNotFoundException` on stderr with a non-zero exit code the
+script's own `if (code !== 0) return null` correctly treated as "no
+sample" rather than crashing the whole run - the soak logic itself
+still completed cleanly, only the memory-sampling side channel was
+silently empty. Verified the fix directly, twice, before re-running
+the full soak: an empty-match-set case (`Measure-Object` on zero
+matching processes produces no output object at all, correctly handled
+by the script's existing `JSON.parse(out || '{}')` fallback) and a
+real non-empty case (`Count: 5, Sum: 407400448` for real running
+`powershell`/`node` processes).
+
+### Real evidence from the corrected run
+- **Process count**: exactly **7** for every one of 15 samples across
+  the full 240-second window (1 backend + 2 branch FFmpeg + 1
+  synthetic-publisher FFmpeg + 3 MediaMTX instances - matches the real
+  topology exactly) - no unexpected child accumulation from the
+  periodic stop/start cycling.
+- **Working-set memory**: 219.2 MB at t=1s, plateauing in a ~222-224
+  MB band from roughly t=33s onward, ending at 223.3 MB at t=225s
+  (+4.1 MB total, almost entirely front-loaded warm-up, not a
+  monotonic climb across the window) - no sign of an unbounded leak
+  over this bounded window.
+- **Diagnostics ring buffer**: `GET /api/logs`'s own reported entry
+  count plateaued at exactly 50 from t=33s onward - bounded, matching
+  `docs/final-hardening.md` §D's own design, never approaching the
+  2,000-entry cap.
+- **SSE connection**: stayed open and error-free for the entire
+  window, receiving periodic heartbeat bytes.
+- **Shutdown**: after stopping both branches, the publisher, the
+  backend, and both sinks, a final process sample found **zero**
+  matching processes remaining - no orphaned child survived the real
+  shutdown sequence.
+
+No leak, orphan-process accumulation, or unbounded growth was found in
+this bounded run. Per the governing task's own instruction, a
+genuinely discovered leak would itself be recorded here as a real
+Stage 20E defect - none was found, stated honestly rather than
+implied by omission.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
