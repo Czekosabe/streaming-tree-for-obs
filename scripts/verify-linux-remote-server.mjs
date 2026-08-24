@@ -176,6 +176,17 @@ const RTMPS_CERT_PATH = `${ETC_DIR}/rtmps.crt`;
 // by the shipped unit itself) - fixed, not a per-run mkdtemp directory,
 // exactly like a real deployment's own persistent state.
 const STATE_DIR = '/var/lib/streaming-tree';
+// systemd.exec(5)'s own documented DynamicUser=/StateDirectory=
+// behavior: the real backing data lives under /var/lib/private/<name>,
+// with STATE_DIR itself created as a *symlink* to it - `rm -rf
+// STATE_DIR` alone only ever deletes the symlink, never the real
+// directory underneath. A real CI failure (docs/progress.md,
+// PRE-20E.1) proved this the hard way: pass 1's own encrypted secrets
+// survived completely intact under /var/lib/private/streaming-tree
+// after "removing" STATE_DIR, and pass 2's freshly generated master
+// key could never decrypt them, crash-looping the service. Both paths
+// must be wiped for a genuinely fresh state.
+const STATE_DIR_PRIVATE = '/var/lib/private/streaming-tree';
 
 // journalctl's own "YYYY-MM-DD HH:MM:SS" --since format (system/local
 // time, matching journald's own default interpretation - this runner
@@ -948,7 +959,11 @@ async function main() {
   }
   removeAndVerify(DROPIN_DIR, 'the systemd drop-in directory');
   removeAndVerify(ETC_DIR, 'the /etc/streaming-tree credentials directory');
-  removeAndVerify(STATE_DIR, 'the state directory (database, MediaMTX install)');
+  removeAndVerify(STATE_DIR, 'the state directory symlink (database, MediaMTX install)');
+  // The real backing directory DynamicUser=/StateDirectory= actually
+  // writes to - removing only the STATE_DIR symlink above leaves this
+  // completely untouched (systemd.exec(5)'s own documented layout).
+  removeAndVerify(STATE_DIR_PRIVATE, 'the real state directory backing store under /var/lib/private');
   if (shOk('dpkg', ['-s', PACKAGE_NAME])) {
     execFileSync('sudo', ['dpkg', '-r', PACKAGE_NAME], { stdio: 'ignore' });
   }
@@ -2076,6 +2091,14 @@ async function main() {
     }
     try {
       execFileSync('sudo', ['rm', '-rf', STATE_DIR], { stdio: 'ignore' });
+    } catch {
+      // Nothing to remove - fine.
+    }
+    try {
+      // The real backing directory behind the STATE_DIR symlink
+      // (systemd.exec(5)'s own DynamicUser=/StateDirectory= layout) -
+      // removing only the symlink above leaves it behind untouched.
+      execFileSync('sudo', ['rm', '-rf', STATE_DIR_PRIVATE], { stdio: 'ignore' });
     } catch {
       // Nothing to remove - fine.
     }

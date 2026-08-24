@@ -42840,3 +42840,60 @@ secrets.json diagnostic output from two commits ago.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): also remove /var/lib/private/streaming-tree, the real StateDirectory= backing store
+
+### Real CI result: the whole-log capture worked - the smoking gun was finally visible
+Commit `80dff5e` was checked by real CI: run `32742283566`. The whole
+log was finally captured from the start, and step 8's own new
+diagnostic output answered the question completely:
+
+```
+[08] Provision the master key...
+     ok  the master key file content is stable across provisioning, admin-password setup, and server start
+     ok  secrets.json does not exist before admin-password provisioning (genuinely fresh state)
+     ok  secrets.json after admin-password provisioning: {
+  "format": "streaming-tree-headless-secrets", "version": 1,
+  "entries": {
+    "admin-password:default": "...",
+    "destination-stream-key:pf_seed_twitch": "...",
+    "remote-ingest-publisher-password:default": "..."
+  }
+}
+```
+
+`secrets.json` was empty immediately before `--provision-admin-
+password` ran, and immediately after it - a call that only ever sets
+the admin password - it already contained a *destination stream key*
+and a *remote-ingest publisher password* too, values that could only
+have come from an *earlier, fully completed* run of this same script
+(pass 1's own branch-to-sink and credential-lifecycle sections).
+
+### Real root cause
+`systemd.exec(5)`'s own documented `DynamicUser=`/`StateDirectory=`
+behavior: the real backing data is stored under `/var/lib/private/
+<name>`, with the path the unit actually sees (`STATE_DIR`,
+`/var/lib/streaming-tree`) created as a **symlink** to it. `rm -rf
+STATE_DIR` - even the *verified* version from two commits ago - only
+ever deleted the symlink; the real directory and pass 1's still-fully-
+intact encrypted secrets underneath survived completely untouched.
+`removeAndVerify`'s own `sudo test -e STATE_DIR` check correctly
+reported the symlink gone, which is exactly why it never caught this -
+the check was verifying the right *symptom* (path gone) while missing
+the wrong *object* (the symlink, not the real directory).
+
+### Fix
+Added `STATE_DIR_PRIVATE` (`/var/lib/private/streaming-tree`) and
+removed it everywhere `STATE_DIR` was already being removed: the
+per-pass fresh-state wipe (now also `removeAndVerify`-checked, not
+merely `rm -rf`-and-hope) and the script's own final cleanup.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+is a high-confidence fix grounded directly in documented systemd
+behavior plus an exact-matching real symptom, not a guess.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
