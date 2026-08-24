@@ -43098,3 +43098,62 @@ change was still genuinely verified by real, final native CI evidence
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this correction. No
 AskUserQuestion call was made.
+
+## 2026-08-24 — docs: define Stage 20E final hardening and manual verification contract
+
+### Real current-state audit, before writing anything
+A research pass across `apps/server`, `apps/web`, and the docs tree
+found the real, current architecture Stage 20E has to extend, not
+guess at:
+- **Logging**: a single `log/slog` instance,
+  `slog.NewTextHandler(os.Stdout, ...)`, identical in headless and
+  desktop mode - no file sink anywhere, no divergence by mode.
+- **Access-log redaction is real but incomplete**: `internal/httpapi/
+  middleware.go`'s `redactLoggedPath` only covers `/api/public/chat-
+  overlays/{slug}` - it does not redact `/api/public/visual-assets/
+  {token}`, `/overlay/{capability}` and the other remote-overlay
+  surface paths, or the alert-profile/audio/widget public slugs. A
+  second, independent gap: `withRecovery`'s own panic-log line uses
+  the raw, unredacted `r.URL.Path` even though `withLogging`'s own
+  path is partially redacted.
+- **The Logs page is a pure placeholder** (`apps/web/src/pages/
+  PlannedPages.tsx`'s `LogsPage`), not backed by any API - its own
+  existing "planned" keys (`backendLogs`, `ffmpegOutput`,
+  `diagnosticBundle`) are effectively a pre-existing spec sketch this
+  stage now implements for real.
+- **No dependency-audit tooling exists** (`govulncheck`/`npm audit`
+  wired into nothing) - a genuine gap to fill, not something already
+  covered elsewhere.
+- `buildinfo` already carries every product/creator-identity field a
+  support bundle needs (version, commit, packaged flag, creator
+  identity, license) - to be reused, not re-derived.
+- `docs/platform-support.md` §1 already defines the exact evidence
+  vocabulary (Supported / Automated-build verified / Native CI
+  verified / Cross-compilation verified / Planned / Experimental /
+  Deferred / Unsupported / Not verified) this stage reuses verbatim.
+
+### Contract
+Wrote `docs/final-hardening.md`, defining (before any product code):
+diagnostics/logging architecture (a bounded 2,000-entry in-memory ring
+buffer wrapping the existing logger, deliberately not a rotating file
+- headless already has journald, desktop's real gap is visibility not
+durability, and no new on-disk schema avoids a migration surface);
+centralized path/text redaction (extending, not duplicating, the
+existing partial redaction); the support-bundle model (explicit
+inclusion/exclusion lists); log retention bounds; remote-management
+authorization for diagnostics routes; startup/failure diagnostics;
+the release-candidate automated gate; the dependency/security audit
+approach; the packaging matrix; the updater compatibility gate; final
+manual UX/OBS verification scope; platform evidence vocabulary reuse;
+the Stage 20C2 external-signing limitation (unchanged); the public-
+release/tag policy (none, this stage); and final Stage 20E/Stage 20
+completion semantics.
+
+### Validation
+Read back in full after writing; internally consistent with the real
+architecture the audit above found, not with assumed/older roadmap
+prose.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
