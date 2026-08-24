@@ -42897,3 +42897,169 @@ behavior plus an exact-matching real symptom, not a guess.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: record Stage 20D2C acceptance-gap closure
+
+### Final native acceptance: both architectures, both passes, fully green
+Commit `c23effc` was checked by real CI: run `32743711031`. Both
+`headless (linux-amd64)` and `headless (linux-arm64)` succeeded, each
+completing pass 1 and pass 2 of `verify-linux-remote-server.mjs` in
+full - the real `.deb`-installed, systemd-managed service lifecycle;
+D2A hardening surviving under it; the full RTMPS accept/reject matrix;
+the complete remote-ingest credential lifecycle (provision, rotate,
+a real `systemctl restart`, revoke, rotate/revoke-while-receiving 409
+with proven non-mutation); a real destination-branch-to-sink E2E using
+the existing production branch manager, a real local sink, real
+ingest-loss/reconnect/auto-resume behavior, and a real journal scan
+proving publisher-credential isolation; the full remote-overlay E2E
+matrix across chat overlay, alert profiles, audio (SSE/ack/bytes,
+legacy-slug/rotate/disable), Stage 18A goal widgets, Stage 18B
+supporter widgets, and dashboards, plus a real managed visual asset
+reachable by its own independent capability token; and complete,
+verified cleanup - no owned process, network namespace, systemd
+drop-in, or state directory left behind.
+
+### What this closes
+`docs/remote-ingest.md` §17's own binding acceptance criteria - a real
+destination branch reaching a local sink, and remote overlay enable/
+rotate/disable across the real product families - are now genuinely
+proven by native evidence, not merely disclosed as deferred. Combined
+with the prior PRE-20E audit's own closure of §8 (two independent
+passes) and §13/§15 (the full negative matrix and credential
+lifecycle), every mandatory gate this stage's own governing contract
+names is now closed by real, reproducible, native CI evidence.
+
+### The real debugging arc (19 real CI runs, each a genuine root cause)
+Every failure below was independently diagnosed from real annotation/
+journal evidence and fixed on its own merits - never a blind retry,
+never a workaround masking a real defect:
+1. `%S` specifier silently unexpanded inside `systemd-run --property=`
+   (a real bug in the shipped `scripts/provision-admin-password.sh`
+   too, fixed there directly, not merely routed around);
+2-4. three iterations chasing an apparently-silent process death that
+   turned out to be GitHub's own annotation size limit hiding real,
+   already-passing content, not a hang - ruled out via a bounded
+   `execFileSync` timeout that changed nothing, and via `process.
+   exit()` fixes to the crash handlers that also changed nothing;
+5-6. an OOM/memory-pressure hypothesis raised and then *definitively
+   ruled out* by real `free -h`/`df -h`/`dmesg` evidence (15Gi free
+   memory, 85G free disk, no kernel OOM-killer activity) - a second
+   real bug (a missing `set -o pipefail`) in the diagnostic step
+   itself was found and fixed along the way;
+7. chunked annotations finally revealed the real failure: the sink
+   MediaMTX binary path was missing a real `<platformDir>` segment
+   (`apps/server/internal/runtime/mediamtx/resolver.go`'s own
+   `InstallDir`/`ManagedExecutablePath`);
+8-9. the destination branch needed real settle margin to reach `live`,
+   and its own backing publish needed to outlast that margin;
+10. `receiving` never cleared after a simulated disconnect - not a
+   timing issue (poll widening had zero effect) but a real bug: `sudo
+   ip netns exec ... ffmpeg`'s real process survives `child.kill()`,
+   which only signals the top-level `sudo`; fixed by killing the real
+   process by name inside its own namespace;
+11. a wrong assumed HTTP status code (`200` vs the real `201`) for
+   `POST /api/alert-profiles`;
+12. an intentional SSE `curl --max-time` cutoff (exit 28) wrongly
+   treated as a hard failure by the generic `remoteCurl` helper;
+13. a manual multipart upload missing its `Origin` header, tripping
+   the same CSRF/Origin validation every other authenticated route
+   already correctly enforces;
+14. pass 1 finally went fully green end to end - pass 2 then failed at
+   its own first-ever service start;
+15-19. five real iterations tracing *why*: journal-query scoping
+   (`--since`) to stop pass-1's own leftover log noise from hiding
+   pass-2's real content; a verified (not merely assumed) fresh-state
+   removal between passes; master-key-hash and `secrets.json`
+   instrumentation; fixing the diagnostic tail itself to capture the
+   whole (small) log instead of missing its own first few KB; and
+   finally the real root cause - `systemd.exec(5)`'s own documented
+   `DynamicUser=`/`StateDirectory=` behavior stores the real data
+   under `/var/lib/private/streaming-tree`, with the path this script
+   was removing (`/var/lib/streaming-tree`) merely a *symlink* to it -
+   pass 1's fully-encrypted secrets survived completely intact
+   underneath, undecryptable by pass 2's fresh master key.
+
+### No product source changed
+Every commit in this corrective milestone touched only
+`scripts/verify-linux-remote-server.mjs`, `.github/workflows/
+linux-headless.yml`, `scripts/provision-admin-password.sh`, and this
+journal - never `apps/server/**` or `apps/web/**`. Per this
+milestone's own governing instruction, no cross-platform or package CI
+run was manufactured for this reason; the ancestor green evidence for
+those three workflows (already reconciled by diff in the prior PRE-20E
+audit) remains valid, since nothing they watch changed here either.
+No local regression rerun was required for the same reason - only
+native CI plus this milestone's own focused validation
+(`node --check`, `bash -n` on every changed script, reviewed at every
+step) applies.
+
+### Correcting the prior audit's own record, honestly, append-only
+The original Stage 20D2C close at `8bab5bb` claimed completion before
+the mandatory native evidence actually existed. The PRE-20E audit at
+`6498662` correctly *found* the same three gaps this milestone has now
+closed, but incorrectly classified them as deferrable "broader
+coverage" rather than the binding acceptance gates `docs/remote-
+ingest.md` §17 already named them as. This corrective milestone
+(PRE-20E.1) closed those gates for real, with reproducible native
+evidence, not by rationalizing the gap away. No historical journal
+entry has been edited to reflect this - this entry is the append-only
+record of the correction, consistent with every other entry in this
+file.
+
+### Stage status after this entry
+- Stage 20D2A: Completed (unchanged).
+- Stage 20D2B: Completed (unchanged).
+- Stage 20D2C: **Completed, and now actually accepted** - every
+  mandatory gate `docs/remote-ingest.md` §17 names is closed by real,
+  reproducible native CI evidence (run `32743711031`, commit
+  `c23effc`), not merely disclosed as deferred.
+- Stage 20D2 (whole): Completed (unchanged).
+- Stage 20D (whole): Completed (unchanged).
+- Stage 20C2: Planned - externally gated on real Apple Developer
+  signing/notarization credentials (unchanged).
+- Stage 20E: Planned - not begun by this milestone, per the operator's
+  own explicit instruction. Logs/diagnostics/final release hardening/
+  manual verification not covered by 20A-20D (unchanged).
+- Stage 20 (whole): **Incomplete** - 20C2 and 20E remain Planned.
+
+### Commits this corrective milestone (PRE-20E.1, chronological)
+1. `60c6892` - `docs: correct the Stage 20D2C closure acceptance interpretation`
+2. `20d9d28` - `test: close the branch-to-sink, remote-overlay-matrix, and real-systemd acceptance gaps`
+3. `1cba675` - `fix(ci): stop relying on %S specifier expansion inside a systemd-run --property=`
+4. `1266166` - `ci: capture unhandled rejections/exceptions and widen the remote-server diagnostic tail`
+5. `24311da` - `fix(ci): exit explicitly from the crash handlers and bound the new sudo cat/journalctl calls with a timeout`
+6. `4657251` - `ci: add explicit OOM-kill/disk-pressure diagnostics to the remote-server failure path`
+7. `05baba9` - `fix(ci): stop silently dropping the OOM/memory diagnostic annotation`
+8. `cfbf9c4` - `ci: split the remote-server diagnostic tail into several smaller annotations`
+9. `91fb583` - `fix(ci): include the platformDir path segment when locating the managed MediaMTX binary for the sink`
+10. `93152a8` - `fix(ci): give the destination-branch live/reconnect checks and their publishes real timing margin`
+11. `9c09e62` - `fix(ci): poll for the post-SIGKILL ingest-loss detection instead of one fixed settle wait`
+12. `fbdef7a` - `fix(ci): kill the real client-namespace ffmpeg process by name, not just Node's own child handle`
+13. `b76ddf1` - `fix(ci): expect 201, not 200, from POST /api/alert-profiles`
+14. `8365ba0` - `fix(ci): stop treating an intentional SSE curl timeout as a hard failure`
+15. `9f6be54` - `fix(ci): send Origin on the manual multipart visual-asset upload`
+16. `adeb89c` - `fix(ci): scope serverJournal() to this invocation's own start time`
+17. `bb449ed` - `fix(ci): verify the fresh-state removal between passes instead of silently trusting it`
+18. `7445993` - `ci: hash the master key and dump secrets.json across provisioning to find the real cause`
+19. `80dff5e` - `ci: capture the whole diagnostic log, not just its tail`
+20. `c23effc` - `fix(ci): also remove /var/lib/private/streaming-tree, the real StateDirectory= backing store`
+21. (this entry) - `docs: record Stage 20D2C acceptance-gap closure`
+
+### Process accounting for this corrective milestone
+0 `AskUserQuestion` calls were made. 19 real CI runs were triggered
+by this milestone's own commits, the last of which was the first to
+succeed - every failure before it was independently root-caused from
+real evidence (annotations, journal content, or explicitly-added
+diagnostics) before the next fix was attempted; none was a blind
+retry. This turn's own GitHub REST request count was not tallied
+in real time across a session this long; a bounded, honest estimate
+based on the real query pattern used (typically a head-sha lookup, a
+status check, a jobs lookup, and one to several annotation reads per
+CI run, plus occasional retries on transient `504`s) is approximately
+110-150 requests for this corrective milestone alone. No rate-limit
+exhaustion was encountered.
+
+### Continuous-execution rule compliance
+No operator-only blocker existed at any point in this corrective
+milestone. Every CI wait was followed by real, evidence-based
+diagnostic or fix work. 0 `AskUserQuestion` calls were made.
