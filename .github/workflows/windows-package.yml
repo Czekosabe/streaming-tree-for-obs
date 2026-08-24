@@ -1,0 +1,112 @@
+name: Windows package verification
+
+# Stage 20A/20E native Windows package-verification gate, NOT a release
+# workflow: no publication, no secrets, no code signing (no production
+# code-signing certificate exists for this project yet - see docs/
+# windows-packaging.md §20), no artifact upload. Builds and verifies the
+# real, unsigned Inno Setup installer on a real, native, GitHub-hosted
+# Windows runner, then discards everything when the ephemeral runner is
+# destroyed. Inno Setup 6 ships pre-installed on the windows-2022
+# runner image, so no install step is needed here - see docs/
+# windows-packaging.md for the full architecture this workflow proves,
+# and .github/workflows/cross-platform.yml for the separate,
+# lighter-weight portability gate this workflow does not replace.
+#
+# Only one target exists today: scripts/build-release.ps1 always builds
+# GOOS=windows/GOARCH=amd64 - there is no Windows ARM64 release target
+# to add a second matrix entry for (docs/platform-support.md).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - "apps/web/**"
+      - "scripts/build-release.ps1"
+      - "scripts/verify-packaged-app.mjs"
+      - "scripts/verify-installer.mjs"
+      - "scripts/verify-updater.mjs"
+      - "scripts/installer/streaming-tree.iss"
+      - "LICENSE"
+      - "PRIVACY.md"
+      - "LEGAL.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - ".github/workflows/windows-package.yml"
+
+# docs/ci-reliability.md §5: scoped to this workflow's own identity
+# plus the ref, so a superseded run on the same branch is cancelled
+# without ever touching a different workflow's concurrency group.
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (windows-amd64)
+    # Pinned rather than windows-latest: this workflow's own
+    # correctness depends on Inno Setup being pre-installed, a fact
+    # confirmed for windows-2022 specifically - "latest" is free to
+    # move to a newer image at any time without that guarantee.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # docs/windows-packaging.md: the package verification must
+      # complete successfully at least twice - done here as two
+      # consecutive rebuild+reverify passes in one native job, each one
+      # a real, independent build and a real, independent verification
+      # run, not a cached re-check of the first pass. Each pass
+      # verifies both the staged packaged-runtime executable
+      # (verify-packaged-app.mjs) and the real Inno Setup installer's
+      # own silent install/uninstall flow (verify-installer.mjs).
+      - name: Build the Windows release package (pass 1)
+        run: powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+ci1"
+
+      - name: Verify the packaged runtime (pass 1)
+        run: node scripts/verify-packaged-app.mjs
+
+      - name: Verify the installer (pass 1)
+        run: node scripts/verify-installer.mjs
+
+      - name: Build the Windows release package (pass 2)
+        run: powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+ci2"
+
+      - name: Verify the packaged runtime (pass 2)
+        run: node scripts/verify-packaged-app.mjs
+
+      - name: Verify the installer (pass 2)
+        run: node scripts/verify-installer.mjs
+
+      # Self-contained: builds its own OLD/NEW -IntegrationTest release
+      # pair via build-release.ps1 and drives a real update-check/
+      # download/verify/install-handoff cycle against a fake local
+      # update API - see docs/updater.md §41. Run once, not per pass
+      # above, since it never reads either pass's own output.
+      - name: Verify updater compatibility
+        run: node scripts/verify-updater.mjs
+
+      # Backstop only: build-release.ps1 and every verify-*.mjs script
+      # above already clean up their own test-owned processes and
+      # installed/staged directories on every path, including failure.
+      # This step exists in case a step above was killed abruptly
+      # (e.g. a job timeout) before its own cleanup ran - never treated
+      # as evidence of a passing verification on its own.
+      - name: Clean up any leftover process or build output
+        if: always()
+        run: |
+          Get-Process -Name 'streaming-tree-server' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:GITHUB_WORKSPACE 'build/release')

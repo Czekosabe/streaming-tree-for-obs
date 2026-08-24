@@ -43462,3 +43462,78 @@ from 1410/104 - the 7 new `LogsPage.test.tsx` tests).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: add the missing native Windows package-verification gate
+
+Closes governing task §21's own finding: `.github/workflows/`
+previously had `cross-platform.yml`, `linux-headless.yml`,
+`linux-package.yml`, `macos-package.yml` - no Windows equivalent, even
+though Stage 20A's own local tooling (`scripts/build-release.ps1`,
+`scripts/installer/streaming-tree.iss`, `scripts/verify-packaged-
+app.mjs`, `scripts/verify-installer.mjs`, `scripts/verify-
+updater.mjs`) has existed since that stage. Feasibility was confirmed
+earlier this stage via GitHub's own `runner-images` repository
+documentation: Inno Setup 6.7.1 ships pre-installed on the
+`windows-2022` runner image, so no install step is required.
+
+### New `.github/workflows/windows-package.yml`
+Modeled structurally on `macos-package.yml` (two independent
+rebuild+reverify passes, `concurrency` scoped to this workflow's own
+identity plus ref, `permissions: contents: read`, a best-effort
+`if: always()` cleanup step) with the differences the real tooling
+requires:
+- `runs-on: windows-2022`, pinned rather than `windows-latest` -
+  this workflow's correctness depends on Inno Setup being
+  pre-installed, a fact confirmed for `windows-2022` specifically;
+  "latest" is free to move to a different image at any time without
+  that guarantee.
+- A single matrix target (`windows-amd64`) rather than the
+  two-or-more entries `macos-package.yml`/`cross-platform.yml` use -
+  `build-release.ps1` always builds `GOOS=windows/GOARCH=amd64`; there
+  is no Windows ARM64 release target to add a second entry for.
+- Each pass runs both `verify-packaged-app.mjs` (the staged runtime
+  executable) and `verify-installer.mjs` (the real Inno Setup silent
+  install/uninstall flow) - Windows is the one platform whose
+  packaged-runtime and installer verification live in two separate
+  scripts rather than one combined one.
+- One additional step beyond the macOS/Linux template:
+  `verify-updater.mjs`, run once (not per pass, since it builds its
+  own OLD/NEW `-IntegrationTest` release pair internally and never
+  reads either pass's own build output) - `docs/final-hardening.md`
+  §J's own "updater compatibility gate" requirement, and the one
+  workflow where this is straightforward to add since Windows is
+  currently the only platform with a real updater install-handoff
+  path (macOS/Linux remain `platform_unsupported` for install).
+
+### Verified locally before being trusted in CI
+Every command the workflow runs was executed for real on this same
+Windows machine first, in the same working directory, with Inno Setup
+already present at
+`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe` (the exact path
+`build-release.ps1` itself checks first):
+- `powershell -File scripts/build-release.ps1 -Version
+  "0.1.0-dev+localtest"`: real Inno Setup compile succeeded, real
+  SHA-256 digest generated.
+- `node scripts/verify-packaged-app.mjs`: **18/18 steps passed**
+  (health/about, production frontend serving, SPA client-route
+  fallback, path-traversal rejection, all four legal-document routes,
+  second-launch single-instance detection, graceful shutdown).
+- `node scripts/verify-installer.mjs`: **10/10 steps passed** (silent
+  install into a hermetic directory, installed files/`--version`
+  correct, real health/About checks against the installed executable,
+  silent uninstall, application-data marker correctly survives
+  uninstall).
+- `node scripts/verify-updater.mjs`: **14/14 steps passed** (rejects a
+  tag/manifest-version mismatch, rejects a tampered download against
+  its manifest SHA-256, a real check/download/verify/install-and-
+  restart cycle through a real Inno Setup silent upgrade, the restarted
+  app reports the real new version, the one-shot post-update outcome
+  surfaces exactly once then clears, silent uninstall).
+- Local smoke-test build output was git-ignored by design
+  (`apps/server/internal/webassets/{embedded,legal}/*`, `/build/`) -
+  confirmed via `git check-ignore -v` and `git status --short` showing
+  only the new workflow file, nothing else, after the local run.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
