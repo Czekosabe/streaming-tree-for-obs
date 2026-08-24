@@ -1018,6 +1018,26 @@ async function main() {
 
     step('Credential lifecycle: a service restart preserves the rotated credential (new still accepted, old still rejected)');
     await forceStop(serverHandle);
+    // forceStop only kills the Go server process itself - MediaMTX is
+    // a separate child process it spawned, and SIGKILL to the parent
+    // does not cascade to it, so it is left running (and still
+    // holding its listener ports) unless killed explicitly - exactly
+    // the same reason the script's own final cleanup below runs
+    // `pkill -f mediamtx` as its own separate step after forceStop,
+    // never assuming it alone is enough. Confirmed via a real CI
+    // failure this addition alone left uncovered: the restarted
+    // server's own MediaMTX auto-start failed with "address already
+    // in use" on the orphaned old instance's still-bound RTMP port.
+    try {
+      execFileSync('sudo', ['pkill', '-f', 'mediamtx'], { stdio: 'ignore' });
+    } catch {
+      // Nothing left running - fine.
+    }
+    // A brief pause for the kernel to actually release the port
+    // before the new server process's own MediaMTX auto-start tries
+    // to bind it again - pkill sends SIGTERM and returns immediately,
+    // it does not wait for the process to actually exit.
+    await new Promise((r) => setTimeout(r, 1500));
     serverHandle = await startServer(dataDir, credentialsDir);
     expect(serverHandle.ready, 'the server becomes healthy again after a real restart against the same data directory', serverHandle.hasExited() ? `exited with code ${serverHandle.exitCode}\n${serverHandle.getStderr()}` : 'timed out');
     // A fresh session is obtained unconditionally rather than assuming

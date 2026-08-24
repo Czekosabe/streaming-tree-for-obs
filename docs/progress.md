@@ -41522,3 +41522,47 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): kill the orphaned MediaMTX child process before restarting the server in the credential-lifecycle test
+
+### Real CI result: a genuine failure, both architectures, both at pass 1
+Commit `77e1291` (the credential-lifecycle addition) was checked by
+real CI: run `32715654735`, both `headless (linux-amd64)` and
+`headless (linux-arm64)` **failed**, both at "Verify the remote-server
+contract (pass 1)" - pass 2 correctly skipped after pass 1's failure
+(`fail-fast` within the single job's own step sequence, not the
+matrix-level `fail-fast: false`). The dedicated `::error::` annotation
+for step 25 ("MediaMTX auto-starts and becomes ready again after the
+service restart") carried the real cause directly from the server's
+own captured stdout: MediaMTX's own startup log reported
+`127.0.0.1:8712` (the configured `MEDIAMTX_RTMP_PORT`) already in use.
+
+### Real root cause
+`forceStop(handle)` only sends `SIGKILL` to the Go server process
+itself. MediaMTX is a *separate child process* the Supervisor spawns
+(`process.go`) - `SIGKILL` to a parent does not cascade to a child on
+Linux, so the old MediaMTX instance was left running, still bound to
+its listener ports, exactly the reason this same script's own final
+cleanup already runs `pkill -f mediamtx` as its own separate step
+*after* `forceStop` and never assumes killing the parent alone is
+enough - the new restart-persistence test simply hadn't followed that
+same already-established pattern.
+
+### Fix
+Added the identical best-effort `sudo pkill -f mediamtx` (wrapped in
+try/catch, matching the final cleanup's own tolerance for "nothing
+left running") between `forceStop(serverHandle)` and the new
+`startServer(dataDir, credentialsDir)` call, plus a 1.5-second pause
+afterward - `pkill` sends `SIGTERM` and returns immediately, it does
+not wait for the target to actually exit and release its ports, so a
+new bind attempt issued immediately afterward could still race it.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+this diagnosis is correct, this should be the run where the
+credential-lifecycle addition finally passes in full.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
