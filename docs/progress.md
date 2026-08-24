@@ -42428,3 +42428,44 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): poll for the post-SIGKILL ingest-loss detection instead of one fixed settle wait
+
+### Real CI result: the live/reconnect timing fix worked; the branch reached live for real
+Commit `93152a8` was checked by real CI: run `32730584441`. The
+branch genuinely reached `live` this time (steps up through 35-37 all
+passed) and the dedicated per-step annotation moved to step 38, with
+clean detail:
+
+```
+ingest status returns to waiting after the publisher disconnects
+{"version":1,"configured":true,"receiving":true,"rtmpsAddress":"10.201.0.1:8713","ingestPath":"live"}
+```
+
+`receiving` was still `true` after the one fixed `PUBLISH_SETTLE_MS`
+wait following the publisher's `SIGKILL`.
+
+### Real, evidence-grounded diagnosis
+This step deliberately `SIGKILL`s the publisher rather than letting it
+exit naturally, to simulate a genuine abrupt ingest loss (closer to a
+real network drop than the graceful stream completion the *original*
+positive-path disconnect check - which already passes reliably
+elsewhere in this same script - relies on). Skipping the RTMP
+protocol's own close handshake means MediaMTX has to detect the loss
+by TCP-level means instead, which genuinely takes longer than the
+fixed settle window tuned for a graceful completion elsewhere.
+
+### Fix
+Replaced the single fixed-settle-then-check with a bounded poll (up to
+20s, `PUBLISH_SETTLE_MS` per iteration): re-fetch `/api/remote-ingest/
+status` repeatedly until `receiving: false` or the deadline is
+reached, rather than trusting one fixed wait to always be enough for
+this specific, deliberately-abrupt disconnect path.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

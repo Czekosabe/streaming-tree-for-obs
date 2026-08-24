@@ -1547,8 +1547,21 @@ async function main() {
     while (!branchPublishExited && Date.now() < branchDisconnectDeadline) {
       await new Promise((r) => setTimeout(r, 300));
     }
-    await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
-    const afterBranchDisconnect = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    // A poll, not a single fixed-settle check: SIGKILLing the
+    // publisher (a deliberately abrupt ingest-loss simulation, closer
+    // to a real network drop than a graceful stream completion) skips
+    // the RTMP protocol's own close handshake, so MediaMTX detects the
+    // loss via TCP-level means, which took genuinely longer than the
+    // fixed PUBLISH_SETTLE_MS this same check used for a *naturally*
+    // completed publish elsewhere in this script (a real CI failure,
+    // docs/progress.md, PRE-20E.1, showed `receiving: true` still true
+    // after only one settle wait).
+    const disconnectSettleDeadline = Date.now() + 20_000;
+    let afterBranchDisconnect;
+    do {
+      await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
+      afterBranchDisconnect = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken: csrfTokenAfterRestart });
+    } while ((!afterBranchDisconnect.body || afterBranchDisconnect.body.receiving !== false) && Date.now() < disconnectSettleDeadline);
     expect(afterBranchDisconnect.body && afterBranchDisconnect.body.receiving === false, 'ingest status returns to waiting after the publisher disconnects', afterBranchDisconnect.text);
     const branchAfterLoss = await waitForBranchState(['waiting_for_ingest'], 15_000);
     expect(branchAfterLoss && branchAfterLoss.state === 'waiting_for_ingest', 'the branch transitions to waiting_for_ingest (not stopped, not an error)', JSON.stringify(branchAfterLoss));
