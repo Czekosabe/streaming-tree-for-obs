@@ -43890,3 +43890,61 @@ file changed, so no CI re-execution is required or expected for it
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: the actual root cause of the Windows installer verification failure (not what the previous entry guessed)
+
+The Defender-exclusion mitigation (previous entry) did not fix it -
+commit `a19c881`'s own `windows-package.yml` run failed again at the
+exact same step, but this time the now-completely-working diagnostic
+mechanism (percent-encoding fix + the `fail()` detail fix, both from
+even earlier entries) finally surfaced the real, complete failure
+detail:
+
+```
+FAIL recomputed SHA-256 matches the recorded digest
+     {"recomputed":"","recorded":"64695956655fd41de9628541b98dad096f00e6673e4bf28ab0483b521cecf08e"}
+```
+
+**The recomputed value is an empty string** - not a different-but-real
+hash. This immediately falsifies the previous entry's own hypothesis
+(a file whose bytes genuinely differ between two reads): an actual
+byte-level mismatch produces a different 64-character hex string, not
+nothing at all. An empty string means the *subprocess computing it
+produced no stdout at all* - `scripts/verify-installer.mjs` shelled
+out to a standalone `powershell.exe -Command "(Get-FileHash
+...).Hash.ToLower()"` and only ever read `hashResult.out` (stdout);
+`hashResult.err` (stderr) was captured but never surfaced when the
+comparison failed, so the real underlying PowerShell error was
+silently discarded on every prior run too - this diagnostic gap
+existed even before this stage's own investigation began.
+
+**Recorded honestly: the previous entry's Defender-exclusion
+mitigation was chasing the wrong mechanism.** It is left in place
+regardless - a legitimate, low-risk, best-effort step that causes no
+harm even though it was not the fix for this specific bug - rather
+than churned out for its own sake.
+
+### The actual fix
+Removed the external `powershell.exe`/`Get-FileHash` subprocess
+entirely. `scripts/verify-installer.mjs` now computes the SHA-256
+digest natively with Node's own `node:crypto` (`createHash('sha256')`
+streamed over `createReadStream`) - eliminating the whole class of
+failure this investigation kept running into (a subprocess that can
+silently fail with no diagnosable reason), not merely working around
+one instance of it. This is a strictly more robust implementation on
+its own merits, independent of ever fully explaining why the
+`powershell.exe` subprocess specifically produced empty stdout on the
+GitHub-hosted runner and not locally.
+
+### Verified locally before trusting it in CI, a third time
+`node scripts/verify-installer.mjs` re-run clean: **10/10 steps
+passed**, including step 2 now computing the digest with zero external
+subprocess involvement. The `run()` helper and its underlying `spawn`
+import remain in the file, still used correctly for the real installer/
+uninstaller process invocations (`/VERYSILENT` silent install/
+uninstall, `--version`, the app process itself) - only the hash
+computation's own subprocess was removed.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

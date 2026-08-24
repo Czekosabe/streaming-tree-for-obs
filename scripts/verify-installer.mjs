@@ -16,7 +16,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,24 @@ function run(command, args, options = {}) {
   });
 }
 
+/** Lowercase-hex SHA-256 of path, computed natively in Node - no
+ * external `powershell.exe`/`Get-FileHash` subprocess. Removes an
+ * entire class of failure this script had no way to diagnose (a
+ * subprocess silently producing empty stdout on a real CI run, with
+ * its real stderr never surfaced) - hashing is exactly the kind of
+ * operation Node's own standard library already does natively and
+ * deterministically, with no platform-specific quoting/PATH/shell
+ * concerns at all. */
+function sha256File(path) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const hash = createHash('sha256');
+    const stream = createReadStream(path);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolvePromise(hash.digest('hex')));
+    stream.on('error', rejectPromise);
+  });
+}
+
 async function main() {
   console.log('Stage 20A installer smoke verification');
 
@@ -71,13 +90,10 @@ async function main() {
   step('Verify the SHA-256 digest file matches the installer');
   const hashFile = `${installerPath}.sha256`;
   expect(existsSync(hashFile), 'digest file exists', hashFile);
-  const hashResult = await run('powershell', [
-    '-NoProfile', '-Command',
-    `(Get-FileHash -Path '${installerPath}' -Algorithm SHA256).Hash.ToLower()`,
-  ]);
+  const recomputedHash = await sha256File(installerPath);
   const recordedHash = readFileSync(hashFile, 'utf8').split(/\s+/)[0];
-  expect(hashResult.out.trim() === recordedHash, 'recomputed SHA-256 matches the recorded digest', {
-    recomputed: hashResult.out.trim(),
+  expect(recomputedHash === recordedHash, 'recomputed SHA-256 matches the recorded digest', {
+    recomputed: recomputedHash,
     recorded: recordedHash,
   });
 
