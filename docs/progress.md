@@ -42124,3 +42124,57 @@ which the next investigation will pursue.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): exit explicitly from the crash handlers and bound the new sudo cat/journalctl calls with a timeout
+
+### Real CI result: the handlers did not fire either - both architectures died at the identical point
+Commit `1266166` was checked by real CI: run `32724135473`, both
+architectures still failed - but this time at the SAME point in both
+(`linux-amd64` and `linux-arm64`), mid-print of step 19 ("The rendered
+mediamtx.yml carries the correct verifier..."), not the step-25 point
+the previous run died at. Critically, neither the new
+`unhandledRejection` nor `uncaughtException` handler produced any
+output at all - ruling out a JS-catchable rejection/exception as the
+cause, and narrowing the real candidate to either a synchronous child-
+process call hanging with nothing to bound it, or a genuine external
+kill (OOM, runner-level) neither this script nor Node itself could
+ever observe or report on.
+
+### Two real, independent problems found by re-reading the new handlers
+1. **The crash handlers themselves were unsafe.** Node's own
+   documentation is explicit: it is not safe to resume normal
+   operation after `uncaughtException` - a handler that only logs and
+   sets `process.exitCode` without calling `process.exit()` can leave
+   the process alive in a corrupted state, with whatever `await` chain
+   the original error interrupted now stuck forever - the *opposite*
+   of the intended diagnostic improvement, and a plausible explanation
+   for the totally silent hang immediately after step 19's print.
+2. **The two new `readRootFile`/`serverJournal` helpers had no
+   timeout.** Both shell out to `sudo` (`cat`, `journalctl`)
+   synchronously via `execFileSync` with no `timeout` option - if
+   either genuinely blocks for any reason, the whole script hangs
+   indefinitely with nothing to convert that into a diagnosable
+   failure. `readRootFile(configPath)` is called immediately after
+   step 19's own `step()` print, exactly where both architectures'
+   logs stop.
+
+### Fix
+- Both crash handlers now call `process.exit(1)` explicitly after
+  logging, matching Node's own documented safe-shutdown guidance.
+- `readRootFile` and `serverJournal` both now pass `timeout: 10_000`
+  to `execFileSync`, converting a possible hang into a normal,
+  catchable, diagnosable error instead of silence.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+`readRootFile`'s call was genuinely the hang, this run will now show a
+clean timeout error at step 19 instead of silence, closing the
+diagnosis for good; if the log still ends with no message at all even
+with a 10-second bound in place, that rules out a hang in this
+specific call too and points more strongly toward an external kill
+outside this script's own observability.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

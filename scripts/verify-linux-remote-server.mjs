@@ -637,7 +637,13 @@ function writeRemoteServerDropIn() {
  * DynamicUser has taken ownership of it. */
 function readRootFile(path) {
   try {
-    return execFileSync('sudo', ['cat', path], { encoding: 'utf8' });
+    // A bounded timeout, not an unbounded execFileSync call - two real
+    // CI runs (docs/progress.md, PRE-20E.1) died silently with no
+    // catchable JS error at all, consistent with a synchronous child
+    // process hanging forever with nothing to time it out. A timeout
+    // here turns a possible hang into a diagnosable failure instead of
+    // silence, whatever the real underlying cause turns out to be.
+    return execFileSync('sudo', ['cat', path], { encoding: 'utf8', timeout: 10_000 });
   } catch {
     return '';
   }
@@ -648,7 +654,7 @@ function readRootFile(path) {
  * child process this script itself holds a stdout/stderr pipe to. */
 function serverJournal(lines = 400) {
   try {
-    return execFileSync('sudo', ['journalctl', '-u', UNIT_NAME, '--no-pager', '-n', String(lines)], { encoding: 'utf8' });
+    return execFileSync('sudo', ['journalctl', '-u', UNIT_NAME, '--no-pager', '-n', String(lines)], { encoding: 'utf8', timeout: 10_000 });
   } catch {
     return '(journalctl unavailable)';
   }
@@ -1935,12 +1941,18 @@ async function main() {
 process.on('unhandledRejection', (reason) => {
   console.error('\nFAILED: unhandled promise rejection');
   console.error(reason);
-  process.exitCode = 1;
+  // Node's own docs: it is not safe to resume normal operation after
+  // an uncaught exception/unhandled rejection - an explicit exit is
+  // required, or the process can hang indefinitely in a corrupted
+  // state instead of terminating (a first version of this handler
+  // omitted this and, if anything, made an already-unexplained CI
+  // failure's symptom worse, not better - docs/progress.md).
+  process.exit(1);
 });
 process.on('uncaughtException', (err) => {
   console.error('\nFAILED: uncaught exception');
   console.error(err);
-  process.exitCode = 1;
+  process.exit(1);
 });
 
 main().catch((err) => {
