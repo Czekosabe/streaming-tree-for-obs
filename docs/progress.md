@@ -40132,8 +40132,42 @@ that may not exist in this ffmpeg build/version at all.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-44. This entry - `ci: dump raw ffmpeg stderr instead of continuing
-    to search for one absent line`
+44. `ci: dump raw ffmpeg stderr instead of continuing to search for
+    one absent line`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: shrink the ffmpeg stderr dump, it was cut off after a single line
+
+### Real CI result: GitHub's annotation limit again, now the dominant obstacle
+Commit `d8b9795` was checked. The annotation cut off right after the
+very first line of the new 900-character dump
+(`"ffmpeg version 6.1.1-3ubuntu5 Copyright..."`) - by 18 steps into
+this run, the accumulated "ok" lines from every earlier passing
+assertion (real, load-bearing test coverage, not something to trim
+away) leave very little of GitHub's own real annotation budget
+remaining for anything added this late in the script. This has now
+recurred often enough across this whole investigation (docs/
+progress.md) that it is clearly the dominant remaining obstacle to
+seeing new evidence for this specific test, more than any actual
+mystery about ffmpeg's behavior.
+
+### Fix
+Replaced the 900-character multi-line dump with a single, deliberately
+tiny line: the "Proto = " search result (or "absent") plus a
+JSON-quoted 150-character stderr prefix - small enough to reliably
+survive alongside everything already ahead of it in the annotation,
+where the 900-character version could not.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+45. This entry - `ci: shrink the ffmpeg stderr dump, it was cut off
+    after a single line`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
