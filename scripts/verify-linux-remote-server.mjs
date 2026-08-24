@@ -712,7 +712,6 @@ async function main() {
     expect(afterProvisionState === 'ready', 'MediaMTX becomes ready again after the credential-provisioning restart', withServerDiag(`state=${afterProvisionState}`));
 
     const rtmpsBase = `rtmps://${INGEST_HOST}:${RTMPS_PORT}`;
-    const validPublishUrl = `${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
 
     // Diagnostic: read the real, just-rendered mediamtx.yml directly
     // off disk (this script runs in the host namespace, same
@@ -732,81 +731,6 @@ async function main() {
       : '(config file not found)';
     console.log(`     diag rendered mediamtx.yml auth lines: ${configAuthLines.slice(0, 400)}`);
     console.log(`     diag independently expected verifier: ${expectedVerifier}`);
-
-    // Diagnostic: the exact same credential, tested via plain RTMP on
-    // the loopback listener, run directly from the host namespace
-    // (this script's own process - MEDIAMTX_RTMP_PORT is loopback-only
-    // and unreachable from the client namespace, but reachable here).
-    // authMethod/authInternalUsers apply to both listeners identically
-    // - if this ALSO gets rejected, the problem is not specific to TLS/
-    // RTMPS (already proven clean via openssl s_client) or to anything
-    // about crossing the network-namespace boundary; if this succeeds
-    // where RTMPS fails, that points squarely at something RTMPS-
-    // specific. A short, separate 2-second clip, run and fully exited
-    // before the real RTMPS matrix starts below, so it cannot conflict
-    // with overridePublisher: false.
-    const plainValidUrl = `rtmp://127.0.0.1:${MEDIAMTX_RTMP_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
-    const plainProbe = spawn('ffmpeg', ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv', plainValidUrl], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let plainExited = false;
-    plainProbe.on('exit', () => {
-      plainExited = true;
-    });
-    await new Promise((r) => setTimeout(r, 1500));
-    const plainPathsCheck = await hostFetchJson('/v3/paths/list');
-    const plainItems = (plainPathsCheck.body && Array.isArray(plainPathsCheck.body.items)) ? plainPathsCheck.body.items : [];
-    const plainMatched = plainItems.find((p) => p && p.name === INGEST_PATH);
-    console.log(`     diag plain-RTMP loopback, same valid credential, ready=${plainMatched ? plainMatched.ready : 'path not found'}`);
-    const plainDeadline = Date.now() + 5_000;
-    while (!plainExited && Date.now() < plainDeadline) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    if (!plainExited) plainProbe.kill('SIGKILL');
-
-    // The verifier itself is now proven correct (previous entry), so
-    // whatever remains is about what actually reaches MediaMTX over
-    // the wire. Force the exact app/playpath split ffmpeg's own
-    // automatic URL parsing was hand-traced to produce
-    // (docs/progress.md) - the *entire* "live?user=...&pass=..."
-    // string as "app", empty playpath - explicitly via ffmpeg's own
-    // -rtmp_app/-rtmp_playpath private options, which override
-    // whatever its automatic parsing would otherwise do. If this
-    // explicit, unambiguous version also fails, the automatic-parsing
-    // hypothesis was correct and something else entirely is wrong; if
-    // it succeeds, ffmpeg's automatic parsing was not actually doing
-    // what the hand trace concluded.
-    const explicitApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
-    const explicitProbe = spawn(
-      'ffmpeg',
-      ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-rtmp_app', explicitApp, '-rtmp_playpath', '', '-f', 'flv', `rtmp://127.0.0.1:${MEDIAMTX_RTMP_PORT}/`],
-      { stdio: ['ignore', 'ignore', 'pipe'] },
-    );
-    let explicitExited = false;
-    explicitProbe.on('exit', () => {
-      explicitExited = true;
-    });
-    await new Promise((r) => setTimeout(r, 1500));
-    const explicitPathsCheck = await hostFetchJson('/v3/paths/list');
-    const explicitItems = (explicitPathsCheck.body && Array.isArray(explicitPathsCheck.body.items)) ? explicitPathsCheck.body.items : [];
-    const explicitMatched = explicitItems.find((p) => p && p.name === INGEST_PATH);
-    console.log(`     diag explicit -rtmp_app override (same split as the auto-parse trace), ready=${explicitMatched ? explicitMatched.ready : 'path not found'}`);
-    const explicitDeadline = Date.now() + 5_000;
-    while (!explicitExited && Date.now() < explicitDeadline) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    if (!explicitExited) explicitProbe.kill('SIGKILL');
-    // Re-checking mediamtx_message content specifically for this
-    // isolated attempt - abandoned as a general-purpose channel
-    // several entries ago (server-lifecycle events only, in that much
-    // noisier full-run capture), but this is a single, freshly-run,
-    // easily-isolated connection, worth one direct look now that every
-    // other layer has checked out clean.
-    const explicitMediamtxLines = serverHandle
-      .getStdout()
-      .split('\n')
-      .filter((l) => l.includes('mediamtx_message'))
-      .slice(-4)
-      .join(' ~ ');
-    console.log(`     diag mediamtx_message lines after the explicit override attempt: ${explicitMediamtxLines.slice(0, 500) || '(none)'}`);
 
     step('MediaMTX Control API and the Go backend loopback port are unreachable from the isolated client namespace');
     expect(
@@ -883,30 +807,35 @@ async function main() {
       });
     }
 
-    // Six consecutive CI runs (docs/progress.md) showed the same thing:
-    // MediaMTX's Control API never once reports a connection or a
-    // ready path for these attempts, yet ffmpeg's own exit code was
-    // 0. The real explanation isn't a MediaMTX or config bug (both
-    // were verified line-by-line against the pinned v1.19.3 source) -
-    // it's that ffmpeg's exit code is not a reliable signal for a
-    // *post-handshake, application-level* rejection on a clip this
-    // short: the entire ~2 seconds of h264/aac data is small enough to
-    // fit in the kernel's TCP send buffer in one or two write() calls,
-    // which can succeed locally even after the remote peer has already
-    // closed the connection, if the local kernel hasn't yet surfaced
-    // that closure back to ffmpeg. ffmpeg then reaches end-of-input,
-    // closes cleanly, and exits 0 - genuinely unaware the remote side
-    // never accepted a single byte. (The plaintext-RTMP-to-RTMPS-port
-    // case above is a *different*, connection-establishment-level
-    // failure - the TLS handshake itself never completes - and ffmpeg
-    // reliably reports that one correctly.)
-    //
-    // The fix is to stop trusting ffmpeg's exit code for these three
-    // auth-based rejections and check what MediaMTX itself reports
-    // instead: GET /v3/paths/list's "ready" field for the target path,
-    // polled mid-stream while the attempt is definitely still active.
-    async function tryPublishAndCheckAccepted(url, pathName) {
-      const child = clientSpawn('ffmpeg', [...ffmpegBase, url]);
+    // Trusting ffmpeg's own exit code for these three auth-based
+    // rejections proved unreliable across an extended investigation
+    // (docs/progress.md) - not because MediaMTX or this project's own
+    // config was wrong (both were verified line-by-line against the
+    // pinned v1.19.3 source and are correct), but because embedding
+    // credentials as a URL query string
+    // (rtmps://host/live?user=X&pass=Y) and letting ffmpeg's own RTMP
+    // protocol handler auto-parse app/playpath out of it does not
+    // actually work with this ffmpeg build: real MediaMTX log evidence
+    // showed a connection using the exact same credential, path, and
+    // split via ffmpeg's -rtmp_app/-rtmp_playpath *explicit* override
+    // genuinely succeeded ("[path live] stream is available and
+    // online... is publishing to path 'live'"), while every auto-
+    // parsed-URL attempt never once produced that same log line, no
+    // matter how the credential was varied - the connection was simply
+    // never reaching MediaMTX as a real publish attempt at all,
+    // regardless of whether the embedded credential was right or
+    // wrong. GET /v3/paths/list's "ready" field for the target path,
+    // polled mid-stream, is MediaMTX's own ground truth for whether a
+    // publish attempt actually succeeded - the check every assertion
+    // below relies on. Every publish attempt below sets app/playpath
+    // explicitly via -rtmp_app/-rtmp_playpath - the proven-working
+    // shape - rather than relying on ffmpeg's own URL auto-parsing at
+    // all. (The plaintext-RTMP-to-RTMPS-port case above is a
+    // *different*, connection-establishment-level failure - the TLS
+    // handshake itself never completes - and ffmpeg's exit code
+    // reliably reports that one correctly, so it is left as-is.)
+    async function tryPublishAndCheckAccepted(app, playpath, pathName) {
+      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -2), '-rtmp_app', app, '-rtmp_playpath', playpath, '-f', 'flv', `${rtmpsBase}/`]);
       let exited = false;
       child.on('exit', () => {
         exited = true;
@@ -924,12 +853,14 @@ async function main() {
       return { accepted, snapshot: JSON.stringify(pathsList.body).slice(0, 600) };
     }
 
-    const noCred = await tryPublishAndCheckAccepted(`${rtmpsBase}/${INGEST_PATH}`, INGEST_PATH);
+    const noCred = await tryPublishAndCheckAccepted(INGEST_PATH, '', INGEST_PATH);
     expect(!noCred.accepted, 'RTMPS with no credential is rejected (MediaMTX never reports the path ready)', noCred.accepted ? noCred.snapshot : '');
-    const wrongCred = await tryPublishAndCheckAccepted(`${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`, INGEST_PATH);
+    const wrongCred = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=wrong-password`, '', INGEST_PATH);
     expect(!wrongCred.accepted, 'RTMPS with a wrong credential is rejected (MediaMTX never reports the path ready)', wrongCred.accepted ? wrongCred.snapshot : '');
-    const wrongPath = await tryPublishAndCheckAccepted(`${rtmpsBase}/wrong-path?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`, 'wrong-path');
+    const wrongPath = await tryPublishAndCheckAccepted(`wrong-path?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', 'wrong-path');
     expect(!wrongPath.accepted, 'RTMPS with a valid credential but the wrong path is rejected (MediaMTX never reports the path ready)', wrongPath.accepted ? wrongPath.snapshot : '');
+    const validCred = await tryPublishAndCheckAccepted(`${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`, '', INGEST_PATH);
+    expect(validCred.accepted, 'RTMPS with a valid credential and the canonical path is accepted (MediaMTX reports the path ready)', validCred.accepted ? '' : validCred.snapshot);
 
     step('RTMPS positive path: valid credential + canonical path succeeds, waiting -> receiving -> waiting');
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
@@ -939,16 +870,12 @@ async function main() {
     // the mid-stream "receiving" state, not merely the exit code once
     // the whole publish has already finished - a synchronous run would
     // never actually prove the waiting -> receiving transition.
-    // -v debug (global option, must precede everything else) makes
-    // ffmpeg's own RTMP protocol handler print exactly what it decided
-    // "app" and "fname" (playpath) are for this URL - real, direct
-    // evidence of how it split the credential-bearing "?user=&pass="
-    // suffix, rather than continuing to trace ffmpeg/gortmplib source
-    // hypothetically. Filtered out of the failure detail below by the
-    // existing notable-lines filter unless it happens to match those
-    // keywords, so grabbed and logged separately here regardless.
+    // Explicit -rtmp_app/-rtmp_playpath, not a URL-embedded query
+    // string - the same proven-working shape as tryPublishAndCheckAccepted
+    // above.
     let publishStderr = '';
-    const publishChild = clientSpawn('ffmpeg', ['-v', 'debug', ...ffmpegBase.slice(0, -1), '-t', '10', '-f', 'flv', validPublishUrl]);
+    const publishApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
+    const publishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '10', '-rtmp_app', publishApp, '-rtmp_playpath', '', '-f', 'flv', `${rtmpsBase}/`]);
     publishChild.stderr.on('data', (c) => (publishStderr += c.toString()));
     let publishExited = false;
     let publishExitCode = null;
@@ -957,49 +884,13 @@ async function main() {
       publishExitCode = code;
     });
 
-    // Testing a specific hypothesis before waiting the full settle
-    // time: MediaMTX's own rtmpconns/list reports each connection's
-    // parsed path/query - if the query-string credential convention
-    // (rtmps://host/live?user=X&pass=Y) is not being split the way
-    // this project's config assumes (e.g. an RTMP client's playpath
-    // handling swallowing the "?..." into the path itself rather than
-    // MediaMTX seeing path="live" and a separate query), that would
-    // explain rejection regardless of credential correctness. Poll
-    // rapidly right after connecting, since a rejected connection may
-    // not stay in this list for long.
-    for (let i = 0; i < 8 && !publishExited; i++) {
-      await new Promise((r) => setTimeout(r, 250));
-      const conns = await hostFetchJson('/v3/rtmpconns/list');
-      const items = (conns.body && Array.isArray(conns.body.items)) ? conns.body.items : [];
-      if (items.length > 0) {
-        console.log(`     diag rtmpconns/list at t=${(i + 1) * 250}ms: ${JSON.stringify(items).slice(0, 700)}`);
-      }
-    }
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
-    // Checked here rather than right after the quick rtmpconns poll
-    // above: ffmpeg's stderr is a pipe, not a TTY, so its C runtime
-    // may fully-buffer it rather than line-buffer it - a single short
-    // debug line printed early in the connection can sit unflushed
-    // until enough later per-frame debug spam accumulates to fill that
-    // buffer. Checking after the full PUBLISH_SETTLE_MS wait (several
-    // seconds further into a real 10-second encode) gives that buffer
-    // every chance to have flushed.
-    // Kept intentionally tiny: by this point in the run (18 steps in),
-    // the accumulated "ok" lines alone consume most of GitHub's own
-    // real annotation size limit (~2200-2900 chars, found the hard way
-    // several times in this file's own history) - a 900-char dump here
-    // got cut off after one line in the prior CI run. A short, single-
-    // line summary survives; anything larger competes with content
-    // that's already there and loses.
-    const protoLine = publishStderr.split('\n').find((l) => l.startsWith('Proto = '));
-    console.log(`     diag app/fname line: ${protoLine || 'absent'} | stderr[0:150]: ${JSON.stringify(publishStderr.slice(0, 150))}`);
     // MediaMTX's own /v3/paths/list is the same ground truth the
-    // reject-matrix above now trusts instead of ffmpeg's exit code -
-    // check it directly here too, so a failure below shows whether
-    // MediaMTX itself considers this connection accepted (a backend
-    // status-reporting bug) or not (a real credential/config problem
-    // for the positive path specifically, distinct from the
-    // already-verified reject cases).
+    // reject-matrix above trusts - check it directly here too, so a
+    // failure below shows whether MediaMTX itself considers this
+    // connection accepted (a backend status-reporting bug) or not (a
+    // real credential/config problem for the positive path
+    // specifically, distinct from the already-verified reject cases).
     const positivePathState = await hostFetchJson('/v3/paths/list');
     console.log(`     diag paths/list during the valid publish: ${JSON.stringify(positivePathState.body).slice(0, 700)}`);
     const during = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });

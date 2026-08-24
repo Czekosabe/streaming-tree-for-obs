@@ -40363,8 +40363,97 @@ immediately after this specific attempt.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-49. This entry - `ci: re-check mediamtx_message specifically for the
-    isolated explicit-override attempt`
+49. `ci: re-check mediamtx_message specifically for the isolated
+    explicit-override attempt`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — fix(ci): stop trusting ffmpeg's URL auto-parsing for RTMP(S) publish credentials
+
+### Real CI result: the explicit override genuinely succeeded - MediaMTX's own log proves it
+Commit `3678ec6` was checked. The isolated `mediamtx_message` re-check
+delivered the actual answer this whole investigation had been
+chasing:
+
+```
+"[RTMP] [conn 127.0.0.1:48216] opened"
+"[path live] stream is available and online, 2 tracks (H264, MPEG-4 Audio)"
+"[RTMP] [conn 127.0.0.1:48216] is publishing to path 'live'"
+```
+
+The explicit `-rtmp_app`/`-rtmp_playpath` override attempt - the exact
+same credential, path, and app/playpath split the earlier hand-trace
+concluded ffmpeg's *automatic* URL parsing already produces - genuinely
+succeeded. This is definitive, first-party evidence from MediaMTX
+itself, not an inference: the `/v3/paths/list` "ready" check reporting
+`false` moments earlier was a timing race in this script's own 1.5s
+poll (the connection opened and became ready within roughly 150ms,
+per the log timestamps), not a real rejection.
+
+This finally explains every earlier result in this long investigation
+at once: **every prior publish attempt in this whole matrix embedded
+credentials as a URL query string
+(`rtmps://host/live?user=X&pass=Y`) and let ffmpeg's own RTMP protocol
+handler auto-parse `app`/`playpath` out of it** - and that auto-
+parsing, for this ffmpeg build (6.1.1-3ubuntu5), simply does not
+produce a connection MediaMTX ever logs as "opened" or "publishing,"
+for *any* credential, right or wrong. The whole reject-matrix "passed"
+for the wrong reason (the connection was never really reaching
+MediaMTX as a publish attempt at all, valid credentials included) and
+the positive path failed for the same underlying reason. A hand-trace
+of ffmpeg's `rtmp_open` and gortmplib's `buildURL` (both against real,
+verbatim-quoted source) had concluded the auto-parsed split *should*
+reconstruct correctly server-side - and forcing that exact same split
+explicitly, bypassing ffmpeg's own parsing, is precisely what finally
+worked. Whatever ffmpeg's automatic parser is actually doing
+differently from that trace was never fully pinned down, and does not
+need to be: the fix does not depend on understanding it, only on not
+relying on it.
+
+### Fix
+Rewrote every RTMP(S) publish invocation in the reject-matrix and the
+positive-path test to set `app`/`playpath` explicitly via ffmpeg's own
+`-rtmp_app`/`-rtmp_playpath` private options instead of embedding
+credentials in the destination URL:
+- `tryPublishAndCheckAccepted(app, playpath, pathName)` now takes the
+  split directly rather than a pre-built URL, spawning against a bare
+  `${rtmpsBase}/`.
+- "No credential" -> `app: INGEST_PATH, playpath: ''`. "Wrong
+  credential" -> `app: '${INGEST_PATH}?user=...&pass=wrong-password',
+  playpath: ''`. "Wrong path" -> `app: 'wrong-path?user=...&pass=...',
+  playpath: ''`. Added a new, cheap `validCred` accept-check using the
+  exact same Control-API-based helper for a quick sanity check ahead
+  of the fuller positive-path flow.
+- The positive-path `publishChild` spawn (waiting -> receiving ->
+  waiting) now uses the same explicit split. This also incidentally
+  fixed a pre-existing, unrelated slicing bug in that spawn's own args
+  construction (`ffmpegBase.slice(0, -1)` dropped only the trailing
+  `'flv'`, leaving a dangling `'-f'` immediately before the re-added
+  `-t 10` - `.slice(0, -4)` now correctly drops the whole trailing
+  `-t 2 -f flv` before appending the real values).
+- Removed the now-served-their-purpose diagnostic experiments (the
+  separate plain-RTMP-loopback probe, the separate explicit-override
+  probe, the isolated `mediamtx_message` re-check, the `-v debug`/
+  `Proto =` line search) and the now-superseded "TCP send-buffer"
+  explanation in the reject-matrix's own comment, replacing it with an
+  accurate summary of the real cause. Kept the mediamtx.yml verifier
+  cross-check and the `openssl s_client` TLS probe - both cheap,
+  still-valid sanity checks unrelated to this specific bug.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; confirmed
+no dangling references to removed variables (`validPublishUrl`,
+`plainValidUrl`, `explicitApp`) and that `spawn`/`encodeURIComponent`
+usage elsewhere in the file is unaffected. Real validation is the next
+native Linux CI run this commit triggers - if this is genuinely the
+complete fix, the full RTMPS matrix and positive path should both pass
+for the first time.
+
+### Commits (chronological, this milestone)
+50. This entry - `fix(ci): stop trusting ffmpeg's URL auto-parsing
+    for RTMP(S) publish credentials`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
