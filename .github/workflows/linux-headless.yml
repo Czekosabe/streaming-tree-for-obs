@@ -203,13 +203,32 @@ jobs:
           ENCODED_OOM="${ENCODED_OOM//$'\r'/}"
           echo "::error title=OOM/memory diagnostics - pass 1 (${{ matrix.name }})::${ENCODED_OOM}"
 
+      # docs/progress.md, PRE-20E.1: GitHub's own real annotation
+      # message size limit is smaller than any `tail -c` value sent to
+      # it - already established earlier this milestone, rediscovered
+      # the hard way again here (widening the tail from 8000 to 16000
+      # bytes changed nothing about what was visible). One giant
+      # annotation is replaced with several smaller chunks instead, so
+      # content nearer the real end of the log is never silently
+      # dropped by GitHub's own truncation of a single oversized
+      # message.
       - name: Show remote-server verification diagnostics on failure (pass 1)
         if: failure()
         run: |
-          TAIL="$(tail -c 16000 /tmp/rs-verify-pass1.log 2>/dev/null || echo 'no output captured')"
-          ENCODED="${TAIL//$'\n'/%0A}"
-          ENCODED="${ENCODED//$'\r'/}"
-          echo "::error title=verify-linux-remote-server.mjs failure - pass 1 (${{ matrix.name }})::${ENCODED}"
+          TOTAL_BYTES="$(wc -c < /tmp/rs-verify-pass1.log 2>/dev/null || echo 0)"
+          TOTAL_LINES="$(wc -l < /tmp/rs-verify-pass1.log 2>/dev/null || echo 0)"
+          echo "::error title=verify-linux-remote-server.mjs pass 1 log stats (${{ matrix.name }})::total_bytes=${TOTAL_BYTES} total_lines=${TOTAL_LINES}"
+          TAIL="$(tail -c 12000 /tmp/rs-verify-pass1.log 2>/dev/null || echo '')"
+          LEN=${#TAIL}
+          CHUNK=3000
+          for i in 0 1 2 3; do
+            START=$((i * CHUNK))
+            if [ "$START" -ge "$LEN" ]; then break; fi
+            PART="${TAIL:$START:$CHUNK}"
+            ENCODED="${PART//$'\n'/%0A}"
+            ENCODED="${ENCODED//$'\r'/}"
+            echo "::error title=verify-linux-remote-server.mjs failure - pass 1 chunk ${i} (${{ matrix.name }})::${ENCODED}"
+          done
 
       # A second, fully independent pass (docs/progress.md: Stage
       # 20D2C closure audit §8) - not a rerun of the same state. The
@@ -246,10 +265,20 @@ jobs:
       - name: Show remote-server verification diagnostics on failure (pass 2)
         if: failure()
         run: |
-          TAIL="$(tail -c 16000 /tmp/rs-verify-pass2.log 2>/dev/null || echo 'no output captured')"
-          ENCODED="${TAIL//$'\n'/%0A}"
-          ENCODED="${ENCODED//$'\r'/}"
-          echo "::error title=verify-linux-remote-server.mjs failure - pass 2 (${{ matrix.name }})::${ENCODED}"
+          TOTAL_BYTES="$(wc -c < /tmp/rs-verify-pass2.log 2>/dev/null || echo 0)"
+          TOTAL_LINES="$(wc -l < /tmp/rs-verify-pass2.log 2>/dev/null || echo 0)"
+          echo "::error title=verify-linux-remote-server.mjs pass 2 log stats (${{ matrix.name }})::total_bytes=${TOTAL_BYTES} total_lines=${TOTAL_LINES}"
+          TAIL="$(tail -c 12000 /tmp/rs-verify-pass2.log 2>/dev/null || echo '')"
+          LEN=${#TAIL}
+          CHUNK=3000
+          for i in 0 1 2 3; do
+            START=$((i * CHUNK))
+            if [ "$START" -ge "$LEN" ]; then break; fi
+            PART="${TAIL:$START:$CHUNK}"
+            ENCODED="${PART//$'\n'/%0A}"
+            ENCODED="${ENCODED//$'\r'/}"
+            echo "::error title=verify-linux-remote-server.mjs failure - pass 2 chunk ${i} (${{ matrix.name }})::${ENCODED}"
+          done
 
       - name: Clean up any leftover process, service, package, or network namespace
         if: always()

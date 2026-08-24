@@ -42275,3 +42275,58 @@ the open OOM question, whichever way it comes out.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: split the remote-server diagnostic tail into several smaller annotations
+
+### Real CI result: OOM definitively ruled out; the identical cutoff finally explained
+Commit `05baba9` was checked by real CI: run `32727298229`. The
+rewritten OOM/memory annotation now finally appeared, with real
+numbers: 15Gi total memory, 10Gi genuinely free, 14Gi available; 145G
+disk, 85G available (42% used); no dmesg OOM-killer evidence at all.
+An external OOM kill is now definitively ruled out as the cause.
+
+The main failure annotation still ended at the exact same text as the
+three prior runs - "[19] The rendered mediamtx.yml carries the
+correct verif" - character-for-character identical, despite this
+being the fourth different commit in a row (a real %S fix, real
+process.exit() handler fixes, a real execFileSync timeout, and now a
+confirmed-healthy resource state) to produce that exact same cutoff.
+An external, resource-driven, or timing-driven kill would not
+reliably reproduce the identical byte position of the identical
+partial word four times running under four different code paths -
+this consistency is the real tell.
+
+### Real root cause of the *investigation* itself, not the original failure
+This project's own history (already noted in this exact script's own
+comments, from earlier this milestone) already established that
+GitHub's real annotation message size limit is smaller than whatever
+`tail -c` value is sent to it - rediscovered the hard way again here:
+widening the tail from 8000 to 16000 bytes changed nothing about what
+was visible, because GitHub's own truncation of the emitted
+*annotation*, not this workflow's own `tail -c` sizing, was the actual
+bottleneck the whole time. Every one of the last several diagnostic
+iterations was staring at the same GitHub-side truncation boundary,
+not at the real end of the captured log - the actual failure detail
+past "verif" may have existed in the log file all along, simply never
+visible through a single oversized annotation.
+
+### Fix
+The single, giant `tail -c 16000` annotation is replaced with: one
+small stats annotation (real total byte count and line count of the
+captured log), followed by up to four separate ~3000-byte chunk
+annotations covering the same 12000-byte tail - each comfortably under
+any plausible real GitHub limit, so content nearer the true end of the
+file is never silently dropped by one annotation's own truncation
+again.
+
+### Validation
+The workflow YAML change is a mechanical, reviewed rewrite of the
+existing diagnostic steps' own structure, applied identically to pass
+1 and pass 2. Real validation is the next native Linux CI run this
+commit triggers - this should finally surface whatever real content
+exists past the "verif" cutoff, closing this diagnostic detour for
+good, whatever it turns out to say.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
