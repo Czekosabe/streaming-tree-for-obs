@@ -790,7 +790,23 @@ async function main() {
     console.log((tlsProbe.stderr || '').trim().split('\n').slice(0, 10).map((l) => `     diag err: ${l}`).join('\n'));
 
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
-    const ffmpegBase = ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
+    // -re (read input at its own native frame rate) is the real,
+    // final answer to why the positive-path connection was accepted
+    // and then closed again within milliseconds every time
+    // (docs/progress.md) - a real client-side exitCode=0 with full,
+    // real per-frame libx264 stats for the whole nominal clip length
+    // proved ffmpeg was genuinely completing the entire encode (all
+    // input frames generated, encoded, and sent) in a tiny fraction of
+    // a real second, since a synthetic lavfi input with no pacing flag
+    // is generated and sent as fast as the CPU allows, not in real
+    // time. MediaMTX's own "closed: EOF" a few milliseconds after
+    // "publishing" was not a bug or a rejection at all - the publish
+    // had already genuinely finished and disconnected, long before any
+    // settle-time poll checking for a *sustained* "receiving" state
+    // could ever observe it. -re, a per-input option, does not
+    // automatically carry over to a later -i - repeated before each
+    // of the two lavfi inputs so video and audio stay paced together.
+    const ffmpegBase = ['-re', '-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-re', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv'];
 
     // Only used for the plaintext-RTMP-to-RTMPS-port case below now -
     // a connection-establishment-level failure (the TLS handshake

@@ -40786,8 +40786,64 @@ MediaMTX's server-side log alone cannot reveal.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-57. This entry - `ci: capture ffmpeg's own stderr for the
-    host-namespace RTMPS probe, never actually logged before`
+57. `ci: capture ffmpeg's own stderr for the host-namespace RTMPS
+    probe, never actually logged before`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — fix(ci): add -re so ffmpeg publishes at real-time pace instead of finishing in milliseconds
+
+### Real CI result: exitCode=0 with full, real per-frame encoder stats for the whole clip
+Commit `9eca8f8` was checked. ffmpeg's own stderr, captured for the
+first time for this probe, told the real story: `exitCode=0`, and a
+complete set of real libx264 statistics for the *entire* clip
+(`frame I:1`, `frame P:39` - 40 frames, matching a 4-second clip at
+10fps exactly, plus real `kb/s`/`Qavg` summary numbers only printed on
+a clean, fully-completed encode). ffmpeg was not crashing, erroring,
+or being cut off - it was genuinely finishing the *entire* nominal
+clip, encode and all, and this happened in the same handful of
+milliseconds MediaMTX's own log showed between "is publishing" and
+"closed: EOF".
+
+The real explanation, obvious in hindsight: none of these ffmpeg
+invocations ever passed `-re` (read input at its own native frame
+rate). Without it, a synthetic `lavfi` input (`testsrc`/`sine`) is
+generated, encoded, and sent as fast as the CPU allows - not in real
+time - so a "4-second" or "10-second" clip can complete in a small
+fraction of one real second on a fast CI runner. MediaMTX's "closed:
+EOF" a few milliseconds after "is publishing" was never a bug, a
+rejection, or anything RTMPS/namespace-specific at all: the publish
+had already genuinely finished and cleanly disconnected, long before
+any settle-time poll checking for a *sustained* "receiving" state
+could ever have a chance to observe it. This retroactively explains
+every "ready=false"/"receiving: false" result the positive-path test
+(and the isolation probes built to diagnose it) produced across this
+entire stretch of the investigation.
+
+### Fix
+Added `-re` to `ffmpegBase`, repeated before *each* of the two
+`lavfi` inputs (video and audio) - `-re` is a per-input option that
+does not automatically carry over to a later `-i`, so both need it to
+stay paced together. This affects every ffmpeg invocation built from
+`ffmpegBase` (the full reject-matrix, the positive-path publish, and
+the host-namespace isolation probe), making every one of them
+genuinely run for its real nominal duration instead of finishing
+almost instantly.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; confirmed
+the various `ffmpegBase.slice(0, -N)` call sites still correctly drop
+only the intended trailing elements (the new `-re` flags were inserted
+near the start of the array, not the end, so slicing from the end is
+unaffected). Real validation is the next native Linux CI run this
+commit triggers - if this diagnosis is correct, this should be the run
+where the positive path finally passes in full.
+
+### Commits (chronological, this milestone)
+58. This entry - `fix(ci): add -re so ffmpeg publishes at real-time
+    pace instead of finishing in milliseconds`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
