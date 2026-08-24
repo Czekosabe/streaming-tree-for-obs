@@ -42228,3 +42228,50 @@ resource limits too and reopens the investigation.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): stop silently dropping the OOM/memory diagnostic annotation
+
+### Real CI result: the new diagnostic step ran (success) but produced no visible annotation at all
+Commit `4657251` was checked by real CI: run `32726303375`, both
+architectures failed at the identical point as before. The new "Check
+for an OOM kill or memory pressure on failure" step itself completed
+successfully (its own `if: failure()` condition triggered and it
+exited 0) - but no annotation from it appears anywhere in the run's
+real annotation list, while every other expected annotation
+(including the log tail) is present.
+
+### Real root cause
+The step's own pipeline - `sudo dmesg -T | grep -iE '...' | tail -c
+3000 || echo 'fallback'` - never had `set -o pipefail`. Without it,
+the pipeline's reported exit status is only the *last* command's
+(`tail`), which succeeds (status 0) even when `grep` finds nothing
+(`grep`'s own real "no match" exit status, 1, never propagates). The
+`|| echo 'no dmesg oom evidence found'` fallback therefore never
+actually fires on a genuine no-match, leaving the captured variable
+truly empty - and GitHub Actions apparently drops a workflow-command
+annotation with an empty message body entirely rather than emitting
+an empty one, which is why it was completely absent rather than
+merely uninformative. Separately, `free -h`/`df -h` were only ever
+sent to plain step stdout, invisible through this environment's
+unauthenticated annotation-only access.
+
+### Fix
+Rewrote both pass 1 and pass 2 diagnostic steps: `free -h`, `df -h /
+/tmp`, and the `dmesg` OOM scan are now folded into one combined
+string with an explicit non-empty fallback (`if [ -z "$OOM" ]; then
+OOM="(no dmesg oom-killer evidence found)"; fi`), guaranteeing the
+resulting annotation always has real, visible content - either actual
+OOM-killer evidence, or an explicit, honest statement that none was
+found, plus the real memory/disk figures either way, never silently
+absent again.
+
+### Validation
+The workflow YAML change is a mechanical, reviewed rewrite of two
+already-reviewed steps, kept structurally identical to each other.
+Real validation is the next native Linux CI run this commit triggers -
+this should finally produce a real, visible, trustworthy answer to
+the open OOM question, whichever way it comes out.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

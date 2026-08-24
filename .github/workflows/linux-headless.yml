@@ -175,13 +175,31 @@ jobs:
       - name: Check for an OOM kill or memory pressure on failure (pass 1)
         if: failure()
         run: |
-          echo "--- free -h ---"
-          free -h || true
-          echo "--- df -h ---"
-          df -h / /tmp || true
-          echo "--- dmesg (oom/kill) ---"
-          OOM="$(sudo dmesg -T 2>/dev/null | grep -iE 'killed process|out of memory|oom' | tail -c 3000 || echo 'no dmesg oom evidence found')"
-          ENCODED_OOM="${OOM//$'\n'/%0A}"
+          # A first version of this step relied on `grep | tail || echo
+          # fallback` without `set -o pipefail` - grep's own real "no
+          # match" exit code (1) never propagated through the pipe
+          # without it, so the fallback text never actually fired, and
+          # a genuinely empty result was silently dropped as an
+          # annotation entirely (not even an empty one appeared) -
+          # discovered the hard way (docs/progress.md, PRE-20E.1) when
+          # the expected annotation was simply missing. free -h/df -h
+          # are folded into the SAME annotation now too, since plain
+          # stdout here is otherwise invisible without authenticated
+          # raw-log access this environment does not have.
+          MEM="$(free -h 2>&1 || true)"
+          DISK="$(df -h / /tmp 2>&1 || true)"
+          OOM="$(sudo dmesg -T 2>&1 | grep -iE 'killed process|out of memory|oom' || true)"
+          if [ -z "$OOM" ]; then
+            OOM="(no dmesg oom-killer evidence found)"
+          fi
+          COMBINED="--- free -h ---
+          ${MEM}
+          --- df -h / /tmp ---
+          ${DISK}
+          --- dmesg (oom/kill scan) ---
+          ${OOM}"
+          COMBINED="${COMBINED:0:3000}"
+          ENCODED_OOM="${COMBINED//$'\n'/%0A}"
           ENCODED_OOM="${ENCODED_OOM//$'\r'/}"
           echo "::error title=OOM/memory diagnostics - pass 1 (${{ matrix.name }})::${ENCODED_OOM}"
 
@@ -208,13 +226,20 @@ jobs:
       - name: Check for an OOM kill or memory pressure on failure (pass 2)
         if: failure()
         run: |
-          echo "--- free -h ---"
-          free -h || true
-          echo "--- df -h ---"
-          df -h / /tmp || true
-          echo "--- dmesg (oom/kill) ---"
-          OOM="$(sudo dmesg -T 2>/dev/null | grep -iE 'killed process|out of memory|oom' | tail -c 3000 || echo 'no dmesg oom evidence found')"
-          ENCODED_OOM="${OOM//$'\n'/%0A}"
+          MEM="$(free -h 2>&1 || true)"
+          DISK="$(df -h / /tmp 2>&1 || true)"
+          OOM="$(sudo dmesg -T 2>&1 | grep -iE 'killed process|out of memory|oom' || true)"
+          if [ -z "$OOM" ]; then
+            OOM="(no dmesg oom-killer evidence found)"
+          fi
+          COMBINED="--- free -h ---
+          ${MEM}
+          --- df -h / /tmp ---
+          ${DISK}
+          --- dmesg (oom/kill scan) ---
+          ${OOM}"
+          COMBINED="${COMBINED:0:3000}"
+          ENCODED_OOM="${COMBINED//$'\n'/%0A}"
           ENCODED_OOM="${ENCODED_OOM//$'\r'/}"
           echo "::error title=OOM/memory diagnostics - pass 2 (${{ matrix.name }})::${ENCODED_OOM}"
 
