@@ -128,10 +128,29 @@ function step(message) {
 function pass(message) {
   console.log(`     ok  ${message}`);
 }
+// GitHub Actions workflow-command escaping (data, not property) per
+// the documented rules: %, \r, \n only.
+function ghEscape(s) {
+  return String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
 function fail(message, detail) {
   console.error(`     FAIL ${message}`);
-  if (detail !== undefined) {
-    console.error(`          ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+  const detailText = detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : '';
+  if (detailText) {
+    console.error(`          ${detailText}`);
+  }
+  // The workflow's own diagnostic step tails the *entire* combined
+  // log and emits one ::error:: for it - by step 17+, everything
+  // printed before a late failure routinely eats GitHub's own real
+  // annotation size limit (found the hard way, repeatedly, in
+  // docs/progress.md) before the actual failure's own detail is ever
+  // reached. Emitting a second, dedicated ::error:: directly from
+  // here, right at the point of failure, gives this specific
+  // detail its own fresh annotation budget instead of competing with
+  // everything printed earlier in the same run.
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const body = detailText ? `${message}\n${detailText}` : message;
+    console.log(`::error title=${ghEscape(`verify-linux-remote-server.mjs: step ${stepCount}`)}::${ghEscape(body).slice(0, 3000)}`);
   }
   throw new Error(message);
 }

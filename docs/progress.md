@@ -40500,8 +40500,60 @@ gets to execute and show whether the real fix holds for RTMPS too, not
 just the plain-RTMP-loopback case it was originally proven against.
 
 ### Commits (chronological, this milestone)
-51. This entry - `fix(ci): remove the quick accept-check that
-    false-negatived on RTMPS timing`
+51. `fix(ci): remove the quick accept-check that false-negatived on
+    RTMPS timing`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: emit a dedicated ::error:: annotation at the point of failure, not just the outer log tail
+
+### Real CI result: the whole reject matrix now passes; the annotation truncated again, structurally
+Commit `4c89902` was checked. All four RTMPS accept/reject-matrix
+assertions passed cleanly this time (steps 01-17 all "ok") - real
+confirmation the credential/URL fix holds. The run then failed inside
+step 18 ("RTMPS positive path"), but the annotation cut off at the
+literal step header itself (`"[18] RTMPS posit"`), before a single
+character of that step's own content - not because that step's own
+detail was too large, but because steps 01-17's legitimate "ok" output
+(17 real steps' worth, several with multiple sub-assertions) had
+already consumed essentially the entire ~4,800-byte annotation on
+their own by that point. Searched the message for JS error indicators
+(TypeError, ReferenceError, stack frames) to rule out a script crash
+rather than a real assertion failure - none found.
+
+This is now a structural problem, not a one-off sizing mistake:
+`.github/workflows/linux-headless.yml`'s own diagnostic step tails the
+*entire* combined script log from the very start and emits one
+`::error::` for it, so a failure late in an 18+ step run is
+increasingly likely to have its own detail crowded out by everything
+genuinely useful that was already printed before it - shrinking
+individual diagnostics further (already tried repeatedly across this
+whole investigation) has hit diminishing returns against real,
+necessary step coverage.
+
+### Fix
+`fail()` now also emits its own, dedicated `::error::` workflow
+command directly from the point of failure - properly escaped per
+GitHub's documented data-escaping rules (`%`, `\r`, `\n`) and capped
+at 3000 bytes, titled with the step number so it's identifiable
+without competing for space with anything printed earlier in the same
+run. This runs alongside (not instead of) the workflow's own existing
+tail-based annotation, which still gives useful surrounding-steps
+context when it fits - the new one guarantees the failure's own
+message/detail specifically survives regardless of how much real
+output came before it.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+step 18 fails again, this should finally show its actual detail
+instead of a truncated step header.
+
+### Commits (chronological, this milestone)
+52. This entry - `ci: emit a dedicated ::error:: annotation at the
+    point of failure, not just the outer log tail`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
