@@ -161,6 +161,30 @@ jobs:
           set -o pipefail
           node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify-pass1.log
 
+      # docs/progress.md, PRE-20E.1: two consecutive real CI failures
+      # died with no catchable JS-level error at all (no unhandled-
+      # rejection/exception message, no effect from adding a timeout
+      # to the one synchronous child-process call nearest the observed
+      # cutoff), consistent with an external kill (most plausibly the
+      # kernel OOM-killer, which SIGKILLs a process with nothing any
+      # userspace handler can intercept) rather than an application-
+      # level bug. This is its own diagnostic step, separate from the
+      # main log-tail annotation below, so OOM/memory evidence never
+      # competes with the script's own output for the same byte
+      # budget.
+      - name: Check for an OOM kill or memory pressure on failure (pass 1)
+        if: failure()
+        run: |
+          echo "--- free -h ---"
+          free -h || true
+          echo "--- df -h ---"
+          df -h / /tmp || true
+          echo "--- dmesg (oom/kill) ---"
+          OOM="$(sudo dmesg -T 2>/dev/null | grep -iE 'killed process|out of memory|oom' | tail -c 3000 || echo 'no dmesg oom evidence found')"
+          ENCODED_OOM="${OOM//$'\n'/%0A}"
+          ENCODED_OOM="${ENCODED_OOM//$'\r'/}"
+          echo "::error title=OOM/memory diagnostics - pass 1 (${{ matrix.name }})::${ENCODED_OOM}"
+
       - name: Show remote-server verification diagnostics on failure (pass 1)
         if: failure()
         run: |
@@ -180,6 +204,19 @@ jobs:
         run: |
           set -o pipefail
           node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify-pass2.log
+
+      - name: Check for an OOM kill or memory pressure on failure (pass 2)
+        if: failure()
+        run: |
+          echo "--- free -h ---"
+          free -h || true
+          echo "--- df -h ---"
+          df -h / /tmp || true
+          echo "--- dmesg (oom/kill) ---"
+          OOM="$(sudo dmesg -T 2>/dev/null | grep -iE 'killed process|out of memory|oom' | tail -c 3000 || echo 'no dmesg oom evidence found')"
+          ENCODED_OOM="${OOM//$'\n'/%0A}"
+          ENCODED_OOM="${ENCODED_OOM//$'\r'/}"
+          echo "::error title=OOM/memory diagnostics - pass 2 (${{ matrix.name }})::${ENCODED_OOM}"
 
       - name: Show remote-server verification diagnostics on failure (pass 2)
         if: failure()

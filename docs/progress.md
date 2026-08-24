@@ -42178,3 +42178,53 @@ outside this script's own observability.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: add explicit OOM-kill/disk-pressure diagnostics to the remote-server failure path
+
+### Real CI result: the timeout had zero observable effect - the hang hypothesis is ruled out
+Commit `24311da` was checked by real CI: run `32725260781`, both
+architectures still failed, at the *identical* cutoff text
+("[19] The rendered mediamtx.yml carries the correct verif") as the
+previous run, with an almost identical step duration (~75-81 real
+seconds) despite `readRootFile` now carrying a 10-second
+`execFileSync` timeout. If that call had genuinely been hanging
+without a bound, adding one should have changed the observed
+behavior - it did not, at all. Combined with the crash handlers
+(now correctly calling `process.exit()`) still never firing, a hang
+in this script's own code is ruled out as the explanation.
+
+### Real, evidence-based reasoning
+A consistent *absolute* elapsed time to failure, independent of which
+line of code is currently executing, is the signature of an external
+kill (most plausibly the kernel OOM-killer, which sends a real SIGKILL
+no userspace handler - `uncaughtException`, `unhandledRejection`, or
+otherwise - can ever intercept), not an application-level bug this
+script could catch or report on itself. `cancel-in-progress` was
+separately ruled out: every failed run's own `conclusion` field reads
+`failure`, never `cancelled`.
+
+### Fix (diagnostic, not yet a resolution)
+Added a new step, "Check for an OOM kill or memory pressure on
+failure", immediately after each pass's own verification step in
+`.github/workflows/linux-headless.yml` - `free -h`, `df -h / /tmp`,
+and a `dmesg -T` scan for `killed process`/`out of memory`/`oom`
+lines, each as its own dedicated `::error::` annotation, deliberately
+separate from the main log-tail annotation so OOM evidence never
+competes with the script's own output for the same byte budget. This
+is intentionally diagnostic-only, not a guessed fix - the real
+resolution (reduce memory/disk pressure, or something else entirely)
+depends on what this evidence actually shows on the next real
+failure, per this milestone's own "no blind retry" discipline.
+
+### Validation
+The workflow YAML change is a mechanical, reviewed addition (two new
+steps, matching the existing steps' own structure and indentation
+exactly). Real validation is the next native Linux CI run this commit
+triggers - if `dmesg` shows a real OOM-kill event, that closes the
+diagnosis and points directly at what to fix; if `free`/`df` are both
+healthy and `dmesg` shows nothing, that rules out this platform's own
+resource limits too and reopens the investigation.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
