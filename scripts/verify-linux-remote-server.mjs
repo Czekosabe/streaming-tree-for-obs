@@ -72,6 +72,7 @@
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpsServer } from 'node:https';
 import { request as httpRequest } from 'node:http';
@@ -712,6 +713,25 @@ async function main() {
 
     const rtmpsBase = `rtmps://${INGEST_HOST}:${RTMPS_PORT}`;
     const validPublishUrl = `${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
+
+    // Diagnostic: read the real, just-rendered mediamtx.yml directly
+    // off disk (this script runs in the host namespace, same
+    // filesystem as the server process) and independently recompute
+    // the expected "sha256:<base64(sha256(secret))>" verifier in plain
+    // JS, cross-checked against apps/server/internal/runtime/mediamtx/
+    // credential.go's own Go implementation and MediaMTX's own real
+    // conf/credential.go Check() logic (both separately verified
+    // against the pinned v1.19.3 source). This sidesteps every
+    // RTMP-client/protocol-parsing question entirely - either the
+    // stored verifier matches what it mathematically should be, or it
+    // does not.
+    const expectedVerifier = 'sha256:' + createHash('sha256').update(publisherSecret).digest('base64');
+    const configPath = join(dataDir, 'runtime', 'mediamtx.yml');
+    const configAuthLines = existsSync(configPath)
+      ? readFileSync(configPath, 'utf8').split('\n').filter((l) => /user:|pass:|ips:/.test(l)).join(' ')
+      : '(config file not found)';
+    console.log(`     diag rendered mediamtx.yml auth lines: ${configAuthLines.slice(0, 400)}`);
+    console.log(`     diag independently expected verifier: ${expectedVerifier}`);
 
     // Diagnostic: the exact same credential, tested via plain RTMP on
     // the loopback listener, run directly from the host namespace

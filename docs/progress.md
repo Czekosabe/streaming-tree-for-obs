@@ -40222,8 +40222,61 @@ textual definition in the same block) resolves correctly. Real
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-46. This entry - `ci: test the exact same valid credential over
-    plain RTMP on loopback`
+46. `ci: test the exact same valid credential over plain RTMP on
+    loopback`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: read the real rendered mediamtx.yml verifier directly, sidestepping RTMP-parsing questions
+
+### Real CI result: plain RTMP fails too, ruling out TLS/RTMPS and the network boundary entirely
+Commit `5f77ad2` was checked. `diag plain-RTMP loopback, same valid
+credential, ready=false` - the identical credential and path, over
+plain unencrypted RTMP, from the host namespace directly (no TLS, no
+network-namespace crossing, no ffmpeg-vs-MediaMTX URL-splitting
+question, since this reuses the same URL-based invocation but the
+transport itself is now eliminated as a variable along with the
+namespace boundary). Genuinely rejected all the same. This rules out
+TLS/RTMPS, the ephemeral CA, and the isolated network namespace as
+possible causes - the credential mismatch, whatever it is, is
+reproducible in the simplest possible RTMP connection.
+
+Every step-by-step trace of the credential/config pipeline had already
+checked out clean: `HeadlessStore.Set`/`Get` are synchronous,
+mutex-protected, and read fresh from disk on every call (no caching
+layer that could explain a stale re-read); `Supervisor.
+UpdateRemoteIngestCredential` does a correct copy-on-write swap under
+its own mutex; `DefaultIngestPath = "live"` matches this script's own
+`INGEST_PATH` exactly; and MediaMTX's real `sha256:` credential format
+and constant-time comparison (`internal/conf/credential.go`, quoted
+verbatim from the pinned v1.19.3 source) match this project's own
+`PublisherPassVerifierFor` byte for byte.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Rather than continue reasoning about RTMP/URL parsing indirectly,
+read the real, just-rendered `mediamtx.yml` directly off disk (this
+script runs in the host namespace, the same filesystem as the server
+process) and independently recompute the expected `sha256:
+<base64(sha256(secret))>` verifier in plain JS - cross-checked locally
+against a real `openssl dgst -sha256 -binary | openssl base64`
+invocation before trusting it (`r7ubbHwm17XOSH1+7TYiM1LzFercFOOb3TD+
+CPt8hVU=` from both, byte for byte). This sidesteps every RTMP-
+client/protocol-parsing question entirely: either the verifier
+actually written into MediaMTX's config matches what it mathematically
+should be for this run's real secret, or it does not - a direct,
+unambiguous answer instead of another round of inference.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. The
+SHA-256/base64 computation was verified locally against openssl before
+relying on it in CI. Real validation is the next native Linux CI run
+this commit triggers.
+
+### Commits (chronological, this milestone)
+47. This entry - `ci: read the real rendered mediamtx.yml verifier
+    directly, sidestepping RTMP-parsing questions`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
