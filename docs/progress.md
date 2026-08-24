@@ -43063,3 +43063,38 @@ exhaustion was encountered.
 No operator-only blocker existed at any point in this corrective
 milestone. Every CI wait was followed by real, evidence-based
 diagnostic or fix work. 0 `AskUserQuestion` calls were made.
+
+## 2026-08-24 — docs: correct "no product source changed" wording in the PRE-20E.1 closing entry
+
+### The prior entry's heading, read alone, overstates what "no product source changed" meant
+The PRE-20E.1 closing entry's own "No product source changed" section
+already correctly *named* `scripts/provision-admin-password.sh` as one
+of the files that changed, and correctly scoped its own "no cross-
+platform/package CI needed" reasoning to "never `apps/server/**` or
+`apps/web/**`" - not to "nothing changed at all". But the heading
+itself, read in isolation (as a reader skimming section titles would),
+overstates that scope: `provision-admin-password.sh` is staged into
+the real Linux `.deb` by `scripts/build-release-linux.sh` and is
+therefore genuinely shipped operator tooling, not merely a CI-only
+script, even though it is not shared Go/frontend source.
+
+### Correction
+No shared Go/frontend source (`apps/server/**`, `apps/web/**`)
+changed in the PRE-20E.1 corrective milestone - that part of the
+prior reasoning is accurate and unchanged. One shipped Linux
+provisioning script, `scripts/provision-admin-password.sh`, genuinely
+did change (a real `systemd-run --property=` specifier-expansion bug,
+fixed at the source). The final `linux-headless.yml` native evidence
+(run `32743711031`) exercised the real `.deb` package and the fixed
+provisioning flow directly - `provisionAdminPasswordViaRealIdentity()`
+in `scripts/verify-linux-remote-server.mjs` calls the real
+`systemd-run` mechanism this script's own fix corrected, and both
+architectures' final green run genuinely exercised it. This is why no
+cross-platform compile rerun was required (no shared compiled source
+changed), while the one relevant Linux packaged/headless path that did
+change was still genuinely verified by real, final native CI evidence
+- not skipped, not merely assumed safe.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this correction. No
+AskUserQuestion call was made.
