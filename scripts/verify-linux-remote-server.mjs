@@ -1754,7 +1754,12 @@ async function main() {
       (slugOrToken) => `/api/public/alert-profiles/${slugOrToken}/config`,
       async () => {
         const created = await remoteCurlLocal('POST', `${MANAGE_ORIGIN}/api/alert-profiles`, { name: 'D2C Alert Profile' });
-        expect(created.status === 200, 'alert profile created', created.text);
+        // 201, not 200: handleCreateAlertProfile (apps/server/internal/
+        // httpapi/alerts.go) uses http.StatusCreated, matching the
+        // goals/widget-profiles create handlers - a real CI failure
+        // (docs/progress.md, PRE-20E.1) showed this test's own wrong
+        // assumption of 200, not a real product defect.
+        expect(created.status === 201, 'alert profile created', created.text);
         const configured = await remoteCurlLocal('PUT', `${MANAGE_ORIGIN}/api/alert-profiles/${created.body.id}`, {
           name: 'D2C Alert Profile', enabled: true, language: 'en', theme: 'large', position: 'top', textAlign: 'center',
           maxQueueItems: 100, maximumQueueAgeSeconds: 120,

@@ -42523,3 +42523,44 @@ one.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): expect 201, not 200, from POST /api/alert-profiles
+
+### Real CI result: the real ffmpeg-kill fix worked - the script reached the overlay matrix
+Commit `fbdef7a` was checked by real CI: run `32733337612`. The
+disconnect/reconnect steps passed cleanly this time - `receiving`
+genuinely cleared once the real client-namespace `ffmpeg` process was
+actually killed by name, confirming that diagnosis. The script
+progressed all the way into the remote-overlay E2E matrix, reaching
+step 49 before its next failure - a dedicated, clean annotation:
+
+```
+alert profile created
+{"id":"alprof_...","publicSlug":"...","theme":"minimal","position":"bottom",...}
+```
+
+### Real root cause
+A test-code assumption error, not a product defect: this test assumed
+`POST /api/alert-profiles` returns `200`, mirroring the chat-overlay
+create handler's own real `http.StatusOK` - but
+`handleCreateAlertProfile` (`apps/server/internal/httpapi/alerts.go`)
+actually uses `http.StatusCreated` (`201`), matching the goals/widget-
+profiles create handlers this same test already correctly expected
+`201` from. The real response body shown in the failure detail was a
+perfectly valid, successful creation - only this test's own status-
+code expectation was wrong.
+
+### Fix
+Corrected the expectation to `created.status === 201`. The other
+creation-status assertions in the same overlay-matrix section (chat-
+overlay `200`, goals/widget-profiles/dashboard-child `201`) were
+re-checked directly against their own real handlers and confirmed
+already correct - only the alert-profile one needed fixing.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
