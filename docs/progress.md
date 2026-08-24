@@ -42330,3 +42330,53 @@ good, whatever it turns out to say.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): include the platformDir path segment when locating the managed MediaMTX binary for the sink
+
+### Real CI result: the chunked annotations finally worked - a clean, complete stack trace
+Commit `cfbf9c4` was checked by real CI: run `32728321831`. The
+chunked annotations resolved the whole mystery at once: chunks 0-2
+show every step from 1 through 31 passing cleanly - the full RTMPS
+accept/reject matrix, the real remote-read rejection, and the entire
+credential lifecycle (rotate, a real `systemctl restart` preserving
+the rotated credential, revoke, rotate-while-receiving 409/no-
+mutation, revoke-while-receiving 409/no-mutation) all `ok`. The
+"[19]...verif" cutoff every prior run appeared to die at was never a
+real failure point at all - it was purely where GitHub's own
+annotation truncation happened to land in a single oversized message,
+exactly as the previous entry concluded. Chunk 3 then shows a clean,
+complete stack trace - `process.exit()` now correctly firing through
+`main().catch()`, printing the full error rather than losing it:
+
+```
+Error: Command failed: sudo cp /var/lib/streaming-tree/runtime/mediamtx/v1.19.3/mediamtx /tmp/d2c-sink-mediamtx-...
+cp: cannot stat '/var/lib/streaming-tree/runtime/mediamtx/v1.19.3/mediamtx': No such file or directory
+    at findManagedMediaMtxExecutable (.../verify-linux-remote-server.mjs:749:3)
+```
+
+### Real root cause
+`findManagedMediaMtxExecutable()`'s guessed install path
+(`runtime/mediamtx/<version>/mediamtx`) was simply wrong. The real
+path, confirmed by reading `apps/server/internal/runtime/mediamtx/
+resolver.go`'s own `InstallDir`/`ManagedExecutablePath` functions, is
+`runtime/mediamtx/<version>/<platformDir>/<executableName>` -
+`platformDir` (`"linux-amd64"`/`"linux-arm64"`,
+`apps/server/internal/runtime/mediamtx/platform.go`) is a real path
+segment this function's first version omitted entirely.
+
+### Fix
+`findManagedMediaMtxExecutable()` now derives `platformDir` from
+`process.arch` (`'arm64'` → `'linux-arm64'`, otherwise
+`'linux-amd64'`) and includes it in the constructed path, matching
+the real installer's own layout exactly.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - with
+steps 1-31 already proven solid by this same run's own evidence, this
+should be the run where the branch-to-sink section itself finally
+gets to execute and be judged on its own merits.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

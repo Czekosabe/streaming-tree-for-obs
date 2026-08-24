@@ -738,13 +738,22 @@ function renderSinkConfig(apiAddress, rtmpAddress) {
 /** Copies the already-downloaded managed MediaMTX binary out of the
  * DynamicUser-owned state directory into a path this script's own
  * unprivileged user can execute directly - the sink is intentionally
- * NOT backend-managed (it stands in for an external platform). */
+ * NOT backend-managed (it stands in for an external platform).
+ *
+ * The real install path (apps/server/internal/runtime/mediamtx/
+ * resolver.go's own InstallDir/ManagedExecutablePath) is
+ * runtime/mediamtx/<version>/<platformDir>/<executableName> - a real
+ * CI failure (docs/progress.md, PRE-20E.1) proved a first version of
+ * this function was missing the <platformDir> ("linux-amd64"/
+ * "linux-arm64") segment entirely, guessing runtime/mediamtx/<version>/
+ * mediamtx directly. */
 function findManagedMediaMtxExecutable() {
+  const platformDir = process.arch === 'arm64' ? 'linux-arm64' : 'linux-amd64';
   const root = join(STATE_DIR, 'runtime', 'mediamtx');
   const versionsOut = execFileSync('sudo', ['ls', root], { encoding: 'utf8' }).trim();
   const version = versionsOut.split('\n').map((l) => l.trim()).filter(Boolean)[0];
   if (!version) fail('locating the managed MediaMTX executable for the sink', `no version directory under ${root}`);
-  const exePath = join(root, version, 'mediamtx');
+  const exePath = join(root, version, platformDir, 'mediamtx');
   const tmpExe = join(tmpdir(), `d2c-sink-mediamtx-${randomBytes(6).toString('hex')}`);
   sh('sudo', ['cp', exePath, tmpExe]);
   sh('sudo', ['chown', userInfo().username, tmpExe]);
