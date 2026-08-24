@@ -1924,7 +1924,27 @@ async function main() {
   }
 }
 
+// A prior CI run (docs/progress.md, PRE-20E.1) ended abruptly with no
+// "FAILED:" text at all - the log simply stopped mid-write, consistent
+// with an unhandled promise rejection or uncaught exception bypassing
+// main().catch() entirely (Node's own default behavior for those is an
+// abrupt process exit with minimal diagnostics). These two handlers
+// close that diagnostic gap for good, whatever the real cause turns
+// out to be - and main().catch() below now prints the full error
+// (stack included), not merely its message, for the same reason.
+process.on('unhandledRejection', (reason) => {
+  console.error('\nFAILED: unhandled promise rejection');
+  console.error(reason);
+  process.exitCode = 1;
+});
+process.on('uncaughtException', (err) => {
+  console.error('\nFAILED: uncaught exception');
+  console.error(err);
+  process.exitCode = 1;
+});
+
 main().catch((err) => {
-  console.error(`\nFAILED: ${err.message}`);
+  console.error('\nFAILED:');
+  console.error(err);
   process.exitCode = 1;
 });

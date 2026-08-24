@@ -42069,3 +42069,58 @@ next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: capture unhandled rejections/exceptions and widen the remote-server diagnostic tail
+
+### Real CI result: an unexplained mid-log termination, no clean failure message
+Commit `1cba675` was checked by real CI: run `32722912796`, both
+architectures failed, progressing much further than before - the
+entire real-systemd conversion, the D2A-hardening-survives-D2C check,
+credential provisioning, and the full RTMPS accept/reject matrix all
+passed (`ok` for every one of steps 1-24). The captured log then stops
+abruptly mid-write of a diagnostic JSON line inside step 25 (the RTMPS
+positive-path check), with no "FAILED:" text, no stack trace, and no
+dedicated per-step `::error::` annotation from the script's own
+`fail()` mechanism - the failing step's own recorded duration (81
+real seconds) rules out an external multi-minute hang, but the total
+absence of a clean error message is inconsistent with any of this
+script's own `expect()`/`fail()` calls actually firing.
+
+### Real, evidence-grounded diagnosis
+This pattern - abrupt termination, no message, nothing caught by
+`main().catch()` - is exactly what an unhandled promise rejection or
+an uncaught exception outside the main() promise chain looks like in
+Node: by default, the process exits with minimal diagnostic output,
+and neither condition was ever guarded against anywhere in this
+script. Separately, `main().catch((err) => console.error(\`FAILED:
+${err.message}\`))` was itself found to only ever print the error's
+*message*, never its stack - a second, independent gap that would
+have made even a normal caught failure harder to root-cause than
+necessary.
+
+### Fix
+- Added `process.on('unhandledRejection', ...)` and
+  `process.on('uncaughtException', ...)` handlers at the top level,
+  each logging the full reason/error and setting a nonzero exit code -
+  whatever the real underlying cause turns out to be, the next run
+  will surface it directly instead of silently truncating.
+- `main().catch()` now logs the full error object (stack included),
+  not merely `.message`.
+- `.github/workflows/linux-headless.yml`'s own diagnostic-tail steps
+  for `verify-linux-remote-server.mjs` widened from `tail -c 8000` to
+  `tail -c 16000` - the 8000-byte cap was itself part of why this
+  failure's real cause wasn't visible in the first captured evidence.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. The
+workflow YAML change is a single-line tail-size edit, reviewed by
+direct diff. Real validation is the next native Linux CI run this
+commit triggers - if the real cause is an unhandled rejection/
+exception, this run will name it directly; if the log still ends with
+no message at all, that will itself rule out this diagnosis and point
+toward something more infrastructure-level (e.g. a resource limit),
+which the next investigation will pursue.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
