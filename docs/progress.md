@@ -41826,3 +41826,58 @@ wait was followed by real, evidence-based diagnostic or fix work -
 two real failures were independently root-caused from actual
 annotation payloads, never blindly retried. 0 `AskUserQuestion` calls
 were made.
+
+## 2026-08-24 — docs: correct the Stage 20D2C closure acceptance interpretation
+
+### The prior audit's conclusion was wrong, even though its findings were right
+The PRE-20E closure audit (previous entry, commit `6498662`) correctly
+FOUND three real, unclosed gaps - a branch-to-sink E2E, the per-domain
+remote-overlay E2E matrix, and the full systemd/package lifecycle -
+but then incorrectly classified them as "broader coverage" that could
+be carried forward while still marking Stage 20D2C Completed.
+
+That classification is inconsistent with the governing contract this
+project itself already committed to. `docs/remote-ingest.md` §17,
+"Final combined self-hosted acceptance criteria", states plainly:
+
+> Stage 20D2C is not complete until, on native Linux CI, on both
+> `linux-amd64` and `linux-arm64`, across two independent passes
+> each: ... the real `.deb` package installs, provisions master key +
+> admin password + RTMPS credential, and starts under systemd; ... a
+> real destination branch starts from the remote-published stream and
+> reaches a local sink; ... remote overlay enable/rotate/disable
+> behaves per §12, with the legacy local `publicSlug` never granting
+> remote access; ...
+
+This is not new information - it was already the binding contract
+before the prior audit ran. The prior audit read it, quoted the
+gaps accurately in its own findings, and then still wrote "Stage
+20D2C: Completed" in its closing entry. That was the actual error:
+not a missed gap, but a status conclusion contradicting evidence the
+same entry itself presented.
+
+### What this correction does and does not do
+- No completed implementation is rolled back. Every commit and every
+  piece of product/harness code from the original Stage 20D2C
+  milestone and the PRE-20E audit remains exactly as it is.
+- Stage 20D2C's status marker is left as previously written for now
+  (append-only discipline - historical entries are never edited).
+  This entry itself is the record that the marker was premature.
+- Stage 20D2C becomes genuinely, honestly accepted as Completed only
+  once native CI evidence exists for all three gaps, per §17's own
+  criteria - not before.
+
+### Next
+Close the three gaps for real: a native branch-to-sink E2E using the
+existing production branch manager and a local fake sink (never
+Twitch/YouTube/Kick/TikTok or real credentials); the remote-overlay
+E2E matrix across chat/alerts/audio/Stage 18A goal widget/Stage 18B
+supporter widget; and the full real `.deb`-installed, systemd-managed
+service lifecycle (not the direct-spawn test binary the harness has
+used until now). All three inside the same two-independent-passes-
+per-architecture structure the prior audit already established and
+fixed.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this correction. No
+AskUserQuestion call was made.
