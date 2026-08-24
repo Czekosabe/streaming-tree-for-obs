@@ -43537,3 +43537,66 @@ already present at
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: add Windows verification failure-diagnostic capture
+
+`windows-package.yml`'s very first real CI run (commit `22c5e48`)
+failed at "Verify the installer (pass 1)" - the same class of problem
+`docs/ci-reliability.md` §1's own point 3 already documents for
+`cross-platform.yml`'s Windows job: a native step failing with nothing
+beyond a generic Checks-API "exit code 1" annotation. Confirmed
+directly: `GET .../actions/jobs/{id}/logs` returned `403 Must have
+admin rights to Repository` for this same run, exactly matching
+`docs/ci-reliability.md`'s own earlier-recorded finding for the raw
+job-log endpoint. This workflow had zero diagnostic capture of its
+own, unlike `cross-platform.yml`, which already solved this problem
+for `go test` failures - closing that gap is the real, warranted fix
+this entry records (per `docs/ci-reliability.md` §13: a genuine
+workflow-file improvement, not a synthetic change manufactured merely
+to re-trigger CI).
+
+### What changed
+Every `verify-*.mjs`/build step's combined stdout/stderr is now also
+saved to `$env:RUNNER_TEMP\*.log` via `Tee-Object`. A new `if:
+failure()` step reads every captured log and emits its content as
+`::error::` annotations, chunked in fixed 20-line groups from the
+**start** of each file (never a tail-only slice - this project's own
+prior debugging history found a tail-based approach can silently drop
+the actual failure reason). A second `if: failure()` step uploads the
+raw logs as a short-lived `actions/upload-artifact@v7` artifact
+(`retention-days: 5`, `if-no-files-found: ignore`) - ephemeral
+diagnostic data only, no binaries, no credentials, no environment
+dump, never uploaded on a successful run.
+
+### Verified locally before being trusted in CI
+- `python3 -c "import yaml; yaml.safe_load(...)"`: the rewritten
+  workflow file parses as valid YAML with the expected 13 steps in
+  order.
+- A direct PowerShell test proved the core correctness property this
+  mechanism depends on: `node -e "...; process.exit(1)" | Tee-Object
+  -FilePath ...` followed by `$LASTEXITCODE` reports **1** (the real
+  failure propagates through the pipe, since `Tee-Object` is a cmdlet
+  and never overwrites `$LASTEXITCODE` the way piping through a second
+  *native* command would) - a matching exit-0 case reports **0**.
+  PowerShell needs no `pipefail`-equivalent workaround for this, unlike
+  bash. This is not a theoretical claim; both cases were executed for
+  real on this machine.
+- The chunking logic itself was executed against a synthetic 45-line
+  fake log plus an empty log: produced exactly 3 correctly-bounded
+  `::error::` chunks (lines 1-20, 21-40, 41-45) for the real content
+  and silently skipped the empty file, with no error.
+
+### What this entry does NOT claim
+The root cause of the original "Verify the installer (pass 1)"
+failure is still unknown - this entry adds the mechanism that will
+reveal it on the next occurrence, exactly like `docs/ci-reliability.md`
+§17-§19's own Windows SAPI investigation did for `cross-platform.yml`.
+No speculative fix (e.g. a Windows Defender exclusion for the
+freshly-written installer/executable, a plausible but unproven
+hypothesis for this class of Windows-CI-Inno-Setup-install problem)
+was added in this same commit - per this project's own established
+practice, a fix is made once real evidence supports one, not before.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

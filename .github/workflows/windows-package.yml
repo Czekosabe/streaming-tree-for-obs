@@ -3,14 +3,16 @@ name: Windows package verification
 # Stage 20A/20E native Windows package-verification gate, NOT a release
 # workflow: no publication, no secrets, no code signing (no production
 # code-signing certificate exists for this project yet - see docs/
-# windows-packaging.md §20), no artifact upload. Builds and verifies the
-# real, unsigned Inno Setup installer on a real, native, GitHub-hosted
-# Windows runner, then discards everything when the ephemeral runner is
-# destroyed. Inno Setup 6 ships pre-installed on the windows-2022
-# runner image, so no install step is needed here - see docs/
-# windows-packaging.md for the full architecture this workflow proves,
-# and .github/workflows/cross-platform.yml for the separate,
-# lighter-weight portability gate this workflow does not replace.
+# windows-packaging.md §20), no artifact upload of the package itself
+# (only ephemeral failure-diagnostic logs, see below). Builds and
+# verifies the real, unsigned Inno Setup installer on a real, native,
+# GitHub-hosted Windows runner, then discards everything when the
+# ephemeral runner is destroyed. Inno Setup 6 ships pre-installed on
+# the windows-2022 runner image, so no install step is needed here -
+# see docs/windows-packaging.md for the full architecture this
+# workflow proves, and .github/workflows/cross-platform.yml for the
+# separate, lighter-weight portability gate this workflow does not
+# replace.
 #
 # Only one target exists today: scripts/build-release.ps1 always builds
 # GOOS=windows/GOARCH=amd64 - there is no Windows ARM64 release target
@@ -73,23 +75,46 @@ jobs:
       # verifies both the staged packaged-runtime executable
       # (verify-packaged-app.mjs) and the real Inno Setup installer's
       # own silent install/uninstall flow (verify-installer.mjs).
+      #
+      # Every verification script's combined stdout/stderr is also
+      # saved to $env:RUNNER_TEMP - docs/ci-reliability.md §7's own
+      # established mechanism for this exact problem (a native Windows
+      # step failing with nothing beyond a generic Checks-API "exit
+      # code 1"). $LASTEXITCODE still reflects node's real exit code
+      # after Tee-Object, since Tee-Object is a cmdlet, not a native
+      # command, and does not overwrite it - no pipefail-equivalent
+      # workaround is needed in PowerShell the way bash requires one.
       - name: Build the Windows release package (pass 1)
+        shell: pwsh
         run: powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+ci1"
 
       - name: Verify the packaged runtime (pass 1)
-        run: node scripts/verify-packaged-app.mjs
+        shell: pwsh
+        run: |
+          node scripts/verify-packaged-app.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-packaged-app-pass1.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify the installer (pass 1)
-        run: node scripts/verify-installer.mjs
+        shell: pwsh
+        run: |
+          node scripts/verify-installer.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-installer-pass1.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build the Windows release package (pass 2)
+        shell: pwsh
         run: powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+ci2"
 
       - name: Verify the packaged runtime (pass 2)
-        run: node scripts/verify-packaged-app.mjs
+        shell: pwsh
+        run: |
+          node scripts/verify-packaged-app.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-packaged-app-pass2.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify the installer (pass 2)
-        run: node scripts/verify-installer.mjs
+        shell: pwsh
+        run: |
+          node scripts/verify-installer.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-installer-pass2.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Self-contained: builds its own OLD/NEW -IntegrationTest release
       # pair via build-release.ps1 and drives a real update-check/
@@ -97,7 +122,55 @@ jobs:
       # update API - see docs/updater.md §41. Run once, not per pass
       # above, since it never reads either pass's own output.
       - name: Verify updater compatibility
-        run: node scripts/verify-updater.mjs
+        shell: pwsh
+        run: |
+          node scripts/verify-updater.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-updater.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Adds zero output to a normal successful run. On a failure,
+      # prints every captured log's content as ::error:: annotations so
+      # the real failure reason surfaces on the commit/PR checks view
+      # without needing raw job-log download access (which requires
+      # repository-admin rights even on a public repository, confirmed
+      # directly against this repository's own logs endpoint - see
+      # docs/ci-reliability.md). Chunked in fixed-size line groups from
+      # the START of each file, never a tail-only slice, so the actual
+      # failing step's own output is never silently dropped by a length
+      # limit the way an earlier debugging session in this project once
+      # found tail-based truncation could do.
+      - name: Extract verification failure diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = Get-ChildItem -Path $env:RUNNER_TEMP -Filter '*.log' -ErrorAction SilentlyContinue
+          if ($null -eq $logs -or $logs.Count -eq 0) {
+            Write-Host "No verification log files were captured before the failure."
+            exit 0
+          }
+          foreach ($log in $logs) {
+            $content = Get-Content -Path $log.FullName -Raw -ErrorAction SilentlyContinue
+            if ([string]::IsNullOrEmpty($content)) { continue }
+            $lines = $content -split "`r?`n"
+            $chunkSize = 20
+            for ($i = 0; $i -lt $lines.Count; $i += $chunkSize) {
+              $end = [Math]::Min($i + $chunkSize - 1, $lines.Count - 1)
+              $chunk = ($lines[$i..$end] -join "`n")
+              if ([string]::IsNullOrWhiteSpace($chunk)) { continue }
+              Write-Host "::error title=$($log.Name) (lines $($i + 1)-$($end + 1))::$chunk"
+            }
+          }
+
+      # Short-lived, ephemeral diagnostic data only - raw verification
+      # script output, no binaries, no SQLite state, no credentials, no
+      # environment dump. Never uploaded on a successful run.
+      - name: Upload verification failure logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-package-failure-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/*.log
+          retention-days: 5
+          if-no-files-found: ignore
 
       # Backstop only: build-release.ps1 and every verify-*.mjs script
       # above already clean up their own test-owned processes and
@@ -107,6 +180,7 @@ jobs:
       # as evidence of a passing verification on its own.
       - name: Clean up any leftover process or build output
         if: always()
+        shell: pwsh
         run: |
           Get-Process -Name 'streaming-tree-server' -ErrorAction SilentlyContinue | Stop-Process -Force
           Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $env:GITHUB_WORKSPACE 'build/release')
