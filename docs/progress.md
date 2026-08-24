@@ -41381,3 +41381,67 @@ confirming both `headless (linux-amd64)` and `headless
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. This is part of the PRE-20E closure audit, not a return to
 product feature work.
+
+## 2026-08-24 — ci: add the missing untrusted-CA, wrong-hostname, and remote-read RTMPS negative tests
+
+### Starting state
+Continuing PRE-20E — STAGE 20D2C CLOSURE / FINAL-EVIDENCE AUDIT §13,
+which requires enumerating every RTMPS negative the Stage 20D2C
+contract calls for and confirming each is actually present in the
+final `scripts/verify-linux-remote-server.mjs`, not merely assumed
+from the feature list.
+
+### Real finding: three required negatives were missing
+Direct search of the final script (`untrusted`, `hostname`, `SNI`,
+`remote read`, `subscribe`, `playback`) found no matches outside a
+few unrelated hostname-resolution comments. Three negatives the audit
+explicitly requires were never implemented:
+- a TLS handshake trusting an unrelated CA (proving real chain-of-
+  trust verification, not merely "some CA" acceptance);
+- a TLS handshake against the correct CA but the wrong expected
+  hostname (proving the leaf certificate's `subjectAltName` scoping
+  is actually enforced, not just chain validity);
+- a remote read (pull/subscribe) of the ingest path, which must be
+  rejected even while a real publish is active.
+
+For the read case specifically, `apps/server/internal/runtime/
+mediamtx/config.go`'s own rendered `authInternalUsers` was read to
+confirm the *correct* expected behavior before writing an assertion
+for it, rather than guessing: the publisher entry grants `action:
+publish` only (no `ips` restriction, but no read permission either);
+the `any` entry grants `action: read`/`api` but only to `ips:
+[127.0.0.1, ::1]`. A request from the isolated, non-loopback client
+namespace matches neither entry, so MediaMTX itself has no permission
+to allow it - the rejection is a structural consequence of the real
+rendered config, not an assumption.
+
+### Fix
+Added three new `step()`/`expect()` blocks to
+`scripts/verify-linux-remote-server.mjs`:
+- immediately after the existing positive TLS handshake check: a
+  second, wholly independent self-signed CA is generated fresh
+  (`untrusted-ca-cert.pem`, never used to sign anything the server
+  presents) and an `openssl s_client -CAfile <that CA>
+  -verify_return_error` handshake against the real RTMPS listener is
+  asserted to fail; then a handshake using the *correct* CA but
+  `-verify_hostname wrong-host-d2c.test` (not in the leaf's SAN,
+  which is only `DNS:ingest-d2c.test`) is asserted to fail too;
+- during the existing positive-path publish window (after `during.
+  body.receiving === true` is confirmed, before the publish is
+  allowed to finish) a real ffmpeg read attempt against
+  `${rtmpsBase}/${INGEST_PATH}` is spawned with `-t 1` (bounds its
+  own duration if wrongly accepted) inside an 8-second outer timeout
+  (bounds a hang if wrongly accepted and never completing), and
+  asserted to exit non-zero. Run while a real publish is active
+  specifically so this proves a genuine permission rejection, not
+  merely "nothing was available to read".
+Updated the script's own top-of-file scope comment to list all three
+as now covered.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -35,7 +35,9 @@
  *     fallback to localhost);
  *   - a real, freshly generated 3-host ephemeral CA, installed into
  *     the trust store, used for genuine TLS verification on every
- *     positive-path request (no -k/--insecure);
+ *     positive-path request (no -k/--insecure); a handshake trusting
+ *     only an unrelated CA is rejected, and a handshake against the
+ *     correct CA but the wrong expected hostname is rejected too;
  *   - the real authenticated management session/CSRF login flow,
  *     genuinely issued from the isolated client namespace through the
  *     real TLS management-proxy stand-in;
@@ -46,7 +48,8 @@
  *     publisher, run from the isolated namespace: plaintext RTMP,
  *     RTMPS with no/wrong credential, RTMPS with the wrong path all
  *     rejected; RTMPS with the correct credential and canonical path
- *     accepted;
+ *     accepted; a remote read (pull/subscribe) of the ingest path is
+ *     rejected even while that same valid publish is active;
  *   - MediaMTX Control API and the Go backend's own loopback port
  *     confirmed unreachable from the isolated namespace (a structural
  *     consequence of each network namespace owning its own loopback,
@@ -776,6 +779,25 @@ async function main() {
     const tlsProbe = await clientExecStatus('openssl', ['s_client', '-connect', `${INGEST_HOST}:${RTMPS_PORT}`, '-CAfile', pki.caCertPath, '-verify_return_error', '-brief'], { timeout: 8_000 });
     expect(tlsProbe.status === 0, 'openssl s_client completes a verified TLS handshake', tlsProbe.status === 0 ? '' : `${(tlsProbe.stdout || '').trim().slice(-300)} | ${(tlsProbe.stderr || '').trim().slice(-300)}`);
 
+    step('A TLS handshake trusting an unrelated CA (not the one that signed the RTMPS listener leaf cert) is rejected');
+    // A second, wholly independent self-signed CA, generated fresh and
+    // never used to sign anything the server presents - proves the
+    // client genuinely verifies the certificate chain rather than
+    // accepting whatever the listener happens to present.
+    const untrustedCaCert = join(pkiDir, 'untrusted-ca-cert.pem');
+    const untrustedCaKey = join(pkiDir, 'untrusted-ca-key.pem');
+    sh('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', untrustedCaKey, '-out', untrustedCaCert, '-days', '1', '-subj', '/CN=streaming-tree-d2c-untrusted-ca']);
+    const untrustedCaProbe = await clientExecStatus('openssl', ['s_client', '-connect', `${INGEST_HOST}:${RTMPS_PORT}`, '-CAfile', untrustedCaCert, '-verify_return_error', '-brief'], { timeout: 8_000 });
+    expect(untrustedCaProbe.status !== 0, 'a handshake trusting only an unrelated CA fails verification', untrustedCaProbe.status !== 0 ? '' : `${(untrustedCaProbe.stdout || '').trim().slice(-300)} | ${(untrustedCaProbe.stderr || '').trim().slice(-300)}`);
+
+    step('A TLS handshake with the correct CA but the wrong expected hostname is rejected');
+    // The real ephemeral CA (the correct trust root), but a hostname
+    // check against a name that is not in the leaf certificate's own
+    // subjectAltName (only DNS:ingest-d2c.test) - proves hostname
+    // scoping is real, not merely chain-of-trust verification.
+    const wrongHostnameProbe = await clientExecStatus('openssl', ['s_client', '-connect', `${INGEST_HOST}:${RTMPS_PORT}`, '-CAfile', pki.caCertPath, '-verify_hostname', 'wrong-host-d2c.test', '-verify_return_error', '-brief'], { timeout: 8_000 });
+    expect(wrongHostnameProbe.status !== 0, 'a handshake verified against the wrong expected hostname fails', wrongHostnameProbe.status !== 0 ? '' : `${(wrongHostnameProbe.stdout || '').trim().slice(-300)} | ${(wrongHostnameProbe.stderr || '').trim().slice(-300)}`);
+
     step('RTMPS accept/reject matrix, from the isolated client namespace, via real ffmpeg (docs/remote-ingest.md §5/§11)');
     // -re (read input at its own native frame rate) is required: a
     // synthetic lavfi input with no pacing flag is generated and sent
@@ -918,6 +940,18 @@ async function main() {
     console.log(`     diag paths/list during the valid publish: ${JSON.stringify(positivePathState.body).slice(0, 700)}`);
     const during = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(during.body && during.body.receiving === true, 'ingest status becomes receiving while the publish is active', during.status === 200 ? during.text : withServerDiag(during.text));
+
+    step('A remote read (pull/subscribe) of the ingest path over RTMPS is rejected, even while a real publish is active');
+    // apps/server/internal/runtime/mediamtx/config.go's own rendered
+    // authInternalUsers only grants "action: read" to the "any" user
+    // scoped to ips: [127.0.0.1, ::1] - a request from this isolated,
+    // non-loopback client namespace matches neither that entry (wrong
+    // source IP) nor the publisher entry (wrong action), so MediaMTX
+    // itself has no matching permission and must refuse the read.
+    // Run while the valid publish above is still active so a real
+    // rejection is being proven, not merely "nothing to read yet".
+    const readProbe = await clientExecStatus('ffmpeg', ['-y', '-i', `${rtmpsBase}/${INGEST_PATH}`, '-t', '1', '-f', 'null', '-'], { timeout: 8_000 });
+    expect(readProbe.status !== 0, 'a remote RTMPS read attempt against the ingest path is rejected', readProbe.status !== 0 ? '' : `${(readProbe.stderr || '').trim().slice(-400)}`);
 
     const publishDeadline = Date.now() + 20_000;
     while (!publishExited && Date.now() < publishDeadline) {
