@@ -937,6 +937,20 @@ async function main() {
       await new Promise((r) => setTimeout(r, 200));
     }
     if (!hostRtmpsExited) hostRtmpsProbe.kill('SIGKILL');
+    // The same mediamtx_message channel that showed a clean "opened ->
+    // available and online -> publishing" sequence for the plain-RTMP
+    // explicit-override proof (docs/progress.md) - checking it here
+    // for the RTMPS case specifically, since ready=false alone does
+    // not say whether MediaMTX rejected the connection outright or
+    // something else entirely happened (e.g. a TLS-layer close logged
+    // under a different message).
+    const hostRtmpsMediamtxLines = serverHandle
+      .getStdout()
+      .split('\n')
+      .filter((l) => l.includes('mediamtx_message'))
+      .slice(-4)
+      .join(' ~ ');
+    diagNotice(`mediamtx_message after the host-namespace RTMPS attempt: ${hostRtmpsMediamtxLines.slice(0, 700) || '(none)'}`);
 
     // Spawned (not spawnSync) specifically so this script can observe
     // the mid-stream "receiving" state, not merely the exit code once

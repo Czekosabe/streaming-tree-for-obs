@@ -40640,8 +40640,57 @@ or failed, settling whether namespace-crossing or RTMPS/TLS itself is
 the remaining variable.
 
 ### Commits (chronological, this milestone)
-54. This entry - `ci: give the host-namespace RTMPS isolation
-    diagnostic its own guaranteed notice`
+54. `ci: give the host-namespace RTMPS isolation diagnostic its own
+    guaranteed notice`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: check MediaMTX's own log for the isolated host-namespace RTMPS attempt
+
+### Real CI result: network-namespace crossing ruled out completely
+Commit `c738976` was checked. The `diagNotice()` mechanism worked -
+its `::notice::` delivered cleanly: `"RTMPS same-credential publish
+from HOST namespace (no netns exec), ready=false"`. Even with the
+network-namespace boundary removed entirely (no `sudo ip netns exec`,
+a real address on the host namespace's own interface,
+`clientSpawn` not used at all), the exact same explicit
+`-rtmp_app`/`-rtmp_playpath` publish that proved to work over plain
+RTMP still fails over RTMPS specifically. Combined with every earlier
+result, this narrows the remaining variable to exactly one thing:
+RTMPS (TLS-wrapped RTMP) itself, not the namespace, not the
+credential, not the URL-parsing question already fixed.
+
+Checked MediaMTX's own real server code for how its RTMPS listener
+differs from its plain RTMP listener
+(`internal/servers/rtmp/server.go`): both converge on the same
+connection-handling code with no encryption-conditional auth logic
+visible - but the setup chain wraps the base TCP listener in a
+`proxy.Listener` (PROXY-protocol-aware, gated by a `TrustedProxies`
+config this project never sets) *before* the TLS listener wraps that,
+for the encrypted case specifically. Whether that wrapping order
+changes what IP or connection state MediaMTX ends up working with for
+a TLS connection specifically was not resolved by reading the code
+alone.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added a `mediamtx_message` check for this specific host-namespace
+RTMPS attempt, using the same channel that showed a complete, clean
+"opened -> available and online -> publishing" sequence for the
+proven-working plain-RTMP case - if MediaMTX logs anything different
+(a TLS-layer close, a different rejection reason, or nothing at all)
+for the RTMPS case, this should reveal it directly, using
+`diagNotice()` so it survives independent of the outer log-tail
+truncation this whole investigation has repeatedly run into.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+55. This entry - `ci: check MediaMTX's own log for the isolated
+    host-namespace RTMPS attempt`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
