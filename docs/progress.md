@@ -40324,8 +40324,47 @@ Linux CI run this commit triggers - this is intended as the most
 decisive experiment run so far on this specific question.
 
 ### Commits (chronological, this milestone)
-48. This entry - `ci: force the exact app/playpath split via
-    -rtmp_app, bypassing ffmpeg's automatic URL parsing`
+48. `ci: force the exact app/playpath split via -rtmp_app, bypassing
+    ffmpeg's automatic URL parsing`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: re-check mediamtx_message specifically for the isolated explicit-override attempt
+
+### Real CI result: the explicit override also fails, ruling out ffmpeg's own auto-parsing entirely
+Commit `d0d4b6d` was checked. `diag explicit -rtmp_app override (same
+split as the auto-parse trace), ready=false` - forcing the exact
+app/playpath split the hand-trace concluded ffmpeg's automatic parsing
+already produces still fails, exactly the same way. This rules out
+ffmpeg's own URL-splitting ambiguity as the cause entirely: the split
+being tested was deliberately unambiguous, set directly via ffmpeg's
+own documented override options, with no URL auto-parsing involved at
+all. Combined with the previous entries (TLS clean, plain RTMP fails
+identically, credential/config verified byte-for-byte correct), every
+individually-controllable variable in this pipeline has now checked
+out clean, and the mystery remains open.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Filtering for `mediamtx_message` content was abandoned as a general
+technique several entries ago (it only ever showed server-lifecycle
+events in that earlier, much noisier full-run capture) - but that was
+checked across a long, busy run with many other connections
+generating log volume. This explicit-override attempt is short,
+isolated, and freshly captured, worth one more direct look at whatever
+MediaMTX itself logged specifically around it, now that every other
+individually-testable variable has been ruled out. Logs the last 4
+`mediamtx_message`-bearing lines from the server's own stdout
+immediately after this specific attempt.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+49. This entry - `ci: re-check mediamtx_message specifically for the
+    isolated explicit-override attempt`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

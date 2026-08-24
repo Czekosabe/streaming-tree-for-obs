@@ -794,6 +794,19 @@ async function main() {
       await new Promise((r) => setTimeout(r, 200));
     }
     if (!explicitExited) explicitProbe.kill('SIGKILL');
+    // Re-checking mediamtx_message content specifically for this
+    // isolated attempt - abandoned as a general-purpose channel
+    // several entries ago (server-lifecycle events only, in that much
+    // noisier full-run capture), but this is a single, freshly-run,
+    // easily-isolated connection, worth one direct look now that every
+    // other layer has checked out clean.
+    const explicitMediamtxLines = serverHandle
+      .getStdout()
+      .split('\n')
+      .filter((l) => l.includes('mediamtx_message'))
+      .slice(-4)
+      .join(' ~ ');
+    console.log(`     diag mediamtx_message lines after the explicit override attempt: ${explicitMediamtxLines.slice(0, 500) || '(none)'}`);
 
     step('MediaMTX Control API and the Go backend loopback port are unreachable from the isolated client namespace');
     expect(
