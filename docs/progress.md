@@ -44073,3 +44073,110 @@ implied by omission.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: the deterministic root cause of the whole windows-package.yml investigation, reproduced and fixed locally
+
+Commit `f1065ab`'s own `windows-package.yml` run made real progress -
+both installer-verification passes now show a clean "10 steps passed.
+PASS" - but the job still failed overall, with no annotation for
+`verify-packaged-app-pass2.log` or `verify-updater.log` at all (GitHub
+Actions' own per-job annotation count is capped; the uploaded artifact
+- 6,876 bytes - could not be downloaded without authentication, the
+same `403`/`401` gap this whole investigation has run into
+repeatedly). Rather than keep guessing from partial CI evidence, this
+entry closes the investigation by installing PowerShell 7 (`pwsh`)
+locally via `winget install --id Microsoft.PowerShell --scope user`
+(a well-known, official, reversible Microsoft tool) specifically to
+reproduce the exact three-process nesting `windows-package.yml`'s own
+`shell: pwsh` steps create (`pwsh` → `node` → a nested
+`powershell.exe`) - something this development machine's own default
+shell tool (Windows PowerShell 5.1, invoked directly, never nested
+under `pwsh`) had never actually exercised despite this stage's
+several earlier "verified locally" claims.
+
+### The real, deterministic, 100%-reproducible root cause
+`node scripts/verify-updater.mjs`, run nested under `pwsh` exactly
+like CI (`pwsh -NoProfile -Command "node scripts/verify-updater.mjs"`)
+failed immediately and deterministically - reproduced twice, not once
+- inside its own call to `scripts/build-release.ps1`:
+
+```
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name
+of a cmdlet, function, script file, or operable program.
+```
+
+`Get-FileHash` is a real, ordinarily-always-available built-in cmdlet
+(`Microsoft.PowerShell.Utility`) - it fails to auto-load specifically
+when Windows PowerShell 5.1 (`powershell.exe`) is spawned as a
+grandchild of `pwsh` (PowerShell 7) via an intervening `node` process,
+most plausibly a `$env:PSModulePath` inheritance gap across the
+pwsh/Windows-PowerShell version boundary in that specific nesting
+depth - `build-release.ps1` invoked *directly* as a `pwsh` step's own
+child (no `node` in between, e.g. the workflow's own "Build the
+Windows release package" steps) never exercises this, which is
+exactly why those steps kept succeeding throughout this whole
+investigation while `verify-installer.mjs`'s inline `Get-FileHash`
+call and `verify-updater.mjs`'s own call into `build-release.ps1`
+both failed - both go through `node`.
+
+This retroactively explains the entry two above this one precisely:
+the recomputed SHA-256 was an empty string not because the file's
+bytes changed, but because `Get-FileHash` itself could not run at all
+in that nested context, leaving `hashResult.out` empty and the real
+`CommandNotFoundException` sitting unsurfaced in `hashResult.err`
+(exactly the gap that entry's own `fail()`-detail fix, still correct
+and still valuable on its own merits, could not by itself have shown
+without this deeper investigation).
+
+### The actual fix: `scripts/build-release.ps1`
+Replaced the `Get-FileHash` cmdlet call with .NET's own
+`[System.Security.Cryptography.SHA256]` type, called directly
+(`Create()`/`ComputeHash()` over a `System.IO.File]::OpenRead` stream,
+`[System.BitConverter]::ToString()` for the hex encoding) - .NET Base
+Class Library types need no PowerShell module resolution of any kind,
+on any PowerShell version, at any nesting depth. This is a real
+robustness improvement to the release script itself, not merely a
+test-only workaround: every future invocation of `build-release.ps1`,
+nested or not, benefits.
+
+`scripts/verify-updater.mjs`'s `buildRelease()` also now resolves
+`powershell.exe`'s full path explicitly
+(`$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`)
+rather than relying on a bare `'powershell'` name and Node's own PATH
+lookup inside `spawn()` - a genuine, if inconsistently-reproducible,
+`spawn powershell ENOENT` was also observed once during this same
+investigation from this exact nested shape; the explicit path removes
+that ambiguity regardless of whether it was ever the primary cause.
+Its own error-reporting on a non-zero exit code was also widened to
+show the complete stdout/stderr, not a tail slice, so a future failure
+here is fully diagnosable without another round of platform archaeology.
+
+`docs/updater.md` §39's own prose was corrected: the release
+manifest's `sha256` field was already computed independently in Go by
+`cmd/releasemanifest`, never actually shared with the PowerShell
+sidecar-file computation the old text implied.
+
+### Verified locally, nested under pwsh exactly like CI, twice
+- `pwsh -NoProfile -Command "... powershell -File scripts/build-release.ps1 -Version '0.8.0-hashfix'"`:
+  completed with no error; the SHA-256 sidecar value it produced was
+  independently cross-checked against `pwsh`'s own `(Get-FileHash
+  ...).Hash.ToLower()` on the same file and matched exactly
+  (`dd671452...`).
+- `pwsh -NoProfile -Command "... node scripts/verify-updater.mjs"`:
+  **14/14 steps passed** - the full real update cycle (manifest-
+  mismatch rejection, tampered-download hash-mismatch rejection, real
+  check/download/verify, the real Inno Setup silent-upgrade-and-
+  restart external-helper handoff, the one-shot post-update result,
+  silent uninstall) all passing in the exact three-process-deep nested
+  shell shape that had been failing.
+
+The locally-installed `pwsh` and every scratch reproduction file/
+directory used while isolating this (`C:\nospacetest`, a temporary
+`subst Z:` drive mapping, and several one-off `.mjs` repro scripts
+under the session scratchpad) were removed again once the real fix was
+confirmed - nothing beyond the three files above is left changed by
+this investigation.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

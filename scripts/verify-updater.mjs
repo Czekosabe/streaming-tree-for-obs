@@ -84,13 +84,38 @@ function run(command, args, options = {}) {
   });
 }
 
+/** Resolves a full, unambiguous path to powershell.exe rather than
+ * relying on a bare 'powershell' name and Node's own PATH lookup
+ * inside spawn() - a real `spawn powershell ENOENT` was observed from
+ * this exact nested pwsh -> node -> powershell.exe shape while
+ * investigating a separate Stage 20E CI failure, and while it was not
+ * reliably reproducible (suggesting a transient PATH-resolution race
+ * under this specific nesting rather than a deterministic bug), an
+ * explicit full path removes the ambiguity entirely regardless of the
+ * exact mechanism. Falls back to the bare name on any platform where
+ * the well-known path does not exist (non-Windows, or a future
+ * Windows layout change) rather than hard-failing here. */
+function resolvePowerShellExecutable() {
+  if (process.platform !== 'win32') return 'powershell';
+  const systemRoot = process.env.SystemRoot ?? process.env.windir ?? 'C:\\Windows';
+  const fullPath = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  return existsSync(fullPath) ? fullPath : 'powershell';
+}
+
 async function buildRelease(version) {
-  const result = await run('powershell', [
+  const result = await run(resolvePowerShellExecutable(), [
     '-ExecutionPolicy', 'Bypass', '-File', 'scripts/build-release.ps1',
     '-Version', version, '-IntegrationTest',
   ], { cwd: REPO_ROOT });
   if (result.code !== 0) {
-    throw new Error(`build-release.ps1 -Version ${version} -IntegrationTest failed:\n${result.out}\n${result.err}`);
+    // Full detail, not a tail slice: this failure has previously been
+    // hard to diagnose from CI alone (docs/progress.md's own Stage
+    // 20E entries), so nothing here is trimmed - a CI-side annotation
+    // step is what bounds this for display, not this script.
+    throw new Error(
+      `build-release.ps1 -Version ${version} -IntegrationTest failed (exit code ${result.code}):\n`
+      + `--- stdout ---\n${result.out}\n--- stderr ---\n${result.err}`,
+    );
   }
 }
 

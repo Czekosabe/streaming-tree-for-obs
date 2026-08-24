@@ -245,10 +245,33 @@ if (-not $Installer) {
 }
 
 # --- 9. Generate a SHA-256 digest --------------------------------------------
+# .NET's own SHA256 type directly, not the Get-FileHash cmdlet: a real
+# Stage 20E CI investigation found Get-FileHash unavailable
+# ("CommandNotFoundException") when this script runs nested three
+# processes deep (a GitHub Actions pwsh step launching node, which
+# launches this script's own powershell.exe) - the built-in
+# Microsoft.PowerShell.Utility module's auto-load did not resolve in
+# that specific nesting, most plausibly a PSModulePath inheritance gap
+# across the pwsh/Windows PowerShell boundary. The .NET types below
+# need no module resolution of any kind, on any PowerShell version,
+# nested or not.
 Write-Step 'Generating the SHA-256 digest'
-$Hash = Get-FileHash -Path $Installer.FullName -Algorithm SHA256
+$Sha256Algorithm = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $FileStream = [System.IO.File]::OpenRead($Installer.FullName)
+    try {
+        $HashBytes = $Sha256Algorithm.ComputeHash($FileStream)
+    }
+    finally {
+        $FileStream.Dispose()
+    }
+}
+finally {
+    $Sha256Algorithm.Dispose()
+}
+$HashHex = ([System.BitConverter]::ToString($HashBytes) -replace '-', '').ToLower()
 $HashFile = "$($Installer.FullName).sha256"
-"$($Hash.Hash.ToLower())  $($Installer.Name)" | Out-File -FilePath $HashFile -Encoding ascii -NoNewline
+"$HashHex  $($Installer.Name)" | Out-File -FilePath $HashFile -Encoding ascii -NoNewline
 
 # --- 10. Generate the Stage 20B release manifest ----------------------------
 # Only attempted for a strict "major.minor.patch" version - see
