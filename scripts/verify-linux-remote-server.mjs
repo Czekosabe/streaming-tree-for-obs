@@ -996,9 +996,40 @@ async function main() {
 
     step('Provision the master key, RTMPS credential, and administrator password through the real systemd credential mechanism');
     provisionMasterKey();
+    // Diagnostic only (docs/progress.md, PRE-20E.1): a real,
+    // reproducible "wrong master key or tampered data" failure
+    // reading the remote-ingest publisher credential at first-ever
+    // server startup, surviving even a *verified* fresh-state wipe of
+    // STATE_DIR/ETC_DIR, has no explanation yet from static reading
+    // alone. Hashing the key file's real content at each stage that
+    // touches it narrows down whether it is ever silently
+    // regenerated/mismatched between the admin-password provisioning
+    // run and the real server's own later read of the identical path.
+    const secretsJsonPath = join(STATE_DIR, 'secrets.json');
+    const masterKeyHashAfterProvision = createHash('sha256').update(readRootFile(MASTER_KEY_PATH)).digest('hex');
+    const secretsJsonBeforeAdminPassword = readRootFile(secretsJsonPath);
     deliverRtmpsCredentialFiles(pki.leaves[INGEST_HOST]);
     provisionAdminPasswordViaRealIdentity();
+    const masterKeyHashAfterAdminPassword = createHash('sha256').update(readRootFile(MASTER_KEY_PATH)).digest('hex');
+    const secretsJsonAfterAdminPassword = readRootFile(secretsJsonPath);
     writeRemoteServerDropIn();
+    const masterKeyHashBeforeStart = createHash('sha256').update(readRootFile(MASTER_KEY_PATH)).digest('hex');
+    expect(
+      masterKeyHashAfterProvision === masterKeyHashAfterAdminPassword && masterKeyHashAfterAdminPassword === masterKeyHashBeforeStart,
+      'the master key file content is stable across provisioning, admin-password setup, and server start',
+      `afterProvision=${masterKeyHashAfterProvision} afterAdminPassword=${masterKeyHashAfterAdminPassword} beforeStart=${masterKeyHashBeforeStart}`,
+    );
+    // secrets.json holds only encrypted ciphertext + non-secret
+    // metadata (never plaintext), so logging its full content here is
+    // safe - this is the file auth.RemoteIngestPublisherVerifier
+    // actually reads from (STATE_DIR/secrets.json, apps/server/cmd/
+    // server/main.go:223/486), not the SQLite database the "database
+    // ready" log line refers to. Confirms whether it exists / already
+    // carries a remote-ingest key *before* the real server ever
+    // starts, which would mean something other than the real
+    // provisioning API wrote to it.
+    expect(secretsJsonBeforeAdminPassword === '', 'secrets.json does not exist before admin-password provisioning (genuinely fresh state)', secretsJsonBeforeAdminPassword.slice(0, 500));
+    pass(`secrets.json after admin-password provisioning: ${secretsJsonAfterAdminPassword.slice(0, 500)}`);
     pass('master key + RTMPS key/cert delivered via LoadCredential=, administrator password verifier provisioned under the real service identity, drop-in written');
 
     const dataDir = STATE_DIR;

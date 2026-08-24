@@ -42750,3 +42750,60 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — ci: hash the master key and dump secrets.json across provisioning to find the real cause
+
+### Real CI result: the verified-removal fix had no effect - the identical failure persists
+Commit `bb449ed` was checked by real CI: run `32739310513`, pass 2
+still crash-loops on the identical "reading the remote ingest
+publisher credential: secret store failure: authentication failed
+(wrong master key or tampered data)" - despite `removeAndVerify`
+confirming (no new failure raised) that `STATE_DIR`/`ETC_DIR`/
+`DROPIN_DIR` were all genuinely absent before this pass's own fresh
+install. The prior diagnosis (a leftover pass-1 database) is now
+disproven by this same evidence: a database that provably didn't
+exist cannot be the source of undecryptable stale data.
+
+### Real, source-grounded re-investigation
+Reading `apps/server/cmd/server/main.go:534-536` directly: this error
+comes from `auth.RemoteIngestPublisherVerifier`, called
+*unconditionally* on every startup when remote-ingest is enabled - a
+genuinely missing verifier is explicitly not an error
+(`secrets.ErrNotFound` is handled), so a fatal decrypt failure here
+can only mean the secret store already holds *something* under that
+key that the current master key cannot open. Reading
+`RemoteIngestPublisherVerifier` (`apps/server/internal/auth/
+remoteingestcredential.go`) confirms it reads through `secrets.
+SecretStore.Get`, and `main.go:223/486` confirms the real headless
+store backing it is a **JSON file**, `STATE_DIR/secrets.json` - not
+the SQLite database the "database ready" log line refers to. Two
+completely separate storage mechanisms live under the same
+`STATE_DIR`, and the prior investigation had only been reasoning
+about the SQLite one.
+
+### Fix (diagnostic, not yet a resolution)
+Added real, evidence-producing instrumentation around the exact
+provisioning sequence:
+- SHA-256 hashes of the master key file's content after provisioning,
+  after admin-password setup, and immediately before server start,
+  with a real `expect()` that all three match (never silently
+  assumed stable).
+- The full content of `secrets.json` read and logged (safe - it holds
+  only ciphertext and non-secret metadata, never plaintext) both
+  before admin-password provisioning (asserted empty/absent - a real,
+  loud failure if that assumption is wrong) and immediately after it,
+  directly answering whether the real provisioning API is the only
+  thing that ever touches this file before the server's own first
+  read of it.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+should finally pinpoint whether the master key genuinely changes
+between provisioning and server start, or whether `secrets.json`
+already carries unexpected content before the real server ever reads
+it.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
