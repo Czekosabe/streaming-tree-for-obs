@@ -713,6 +713,35 @@ async function main() {
     const rtmpsBase = `rtmps://${INGEST_HOST}:${RTMPS_PORT}`;
     const validPublishUrl = `${rtmpsBase}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
 
+    // Diagnostic: the exact same credential, tested via plain RTMP on
+    // the loopback listener, run directly from the host namespace
+    // (this script's own process - MEDIAMTX_RTMP_PORT is loopback-only
+    // and unreachable from the client namespace, but reachable here).
+    // authMethod/authInternalUsers apply to both listeners identically
+    // - if this ALSO gets rejected, the problem is not specific to TLS/
+    // RTMPS (already proven clean via openssl s_client) or to anything
+    // about crossing the network-namespace boundary; if this succeeds
+    // where RTMPS fails, that points squarely at something RTMPS-
+    // specific. A short, separate 2-second clip, run and fully exited
+    // before the real RTMPS matrix starts below, so it cannot conflict
+    // with overridePublisher: false.
+    const plainValidUrl = `rtmp://127.0.0.1:${MEDIAMTX_RTMP_PORT}/${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${encodeURIComponent(publisherSecret)}`;
+    const plainProbe = spawn('ffmpeg', ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-f', 'lavfi', '-i', 'sine=frequency=1000', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-c:a', 'aac', '-t', '2', '-f', 'flv', plainValidUrl], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let plainExited = false;
+    plainProbe.on('exit', () => {
+      plainExited = true;
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+    const plainPathsCheck = await hostFetchJson('/v3/paths/list');
+    const plainItems = (plainPathsCheck.body && Array.isArray(plainPathsCheck.body.items)) ? plainPathsCheck.body.items : [];
+    const plainMatched = plainItems.find((p) => p && p.name === INGEST_PATH);
+    console.log(`     diag plain-RTMP loopback, same valid credential, ready=${plainMatched ? plainMatched.ready : 'path not found'}`);
+    const plainDeadline = Date.now() + 5_000;
+    while (!plainExited && Date.now() < plainDeadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!plainExited) plainProbe.kill('SIGKILL');
+
     step('MediaMTX Control API and the Go backend loopback port are unreachable from the isolated client namespace');
     expect(
       !clientExecOk('curl', ['-sS', '--max-time', '3', `http://${HOST_ADDR}:${MEDIAMTX_API_PORT}/v3/config/global/get`]),

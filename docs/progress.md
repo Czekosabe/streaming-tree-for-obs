@@ -40166,8 +40166,64 @@ where the 900-character version could not.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-45. This entry - `ci: shrink the ffmpeg stderr dump, it was cut off
-    after a single line`
+45. `ci: shrink the ffmpeg stderr dump, it was cut off after a
+    single line`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: test the exact same valid credential over plain RTMP on loopback
+
+### Real CI result: ffmpeg's own debug line is absent, not delayed - and a hand-traced hypothesis didn't hold up
+Commit `7d34ad4` was checked. `diag app/fname line: absent |
+stderr[0:150]: "ffmpeg version 6.1.1-3ubuntu5..."` - confirming the
+"Proto = " debug statement genuinely never fires for this ffmpeg
+build/protocol combination, not a flush-timing artifact. Rather than
+keep hunting for ffmpeg-side evidence that may not exist in this
+build, hand-traced the URL-splitting hypothesis all the way through
+both codebases' actual string handling: ffmpeg's `rtmp_open` (path
+with no further "/" after "live") puts the *entire*
+"live?user=X&pass=Y" into `app`, leaving the `publish` command's own
+stream name empty; gortmplib's `buildURL` concatenates `"/" + app`
+first and only appends `"/" + streamKey` when non-empty - so even
+with ffmpeg's unusual split, the final reconstructed `Path`/`RawQuery`
+still comes out correct (`"/live"` / `"user=X&pass=Y"`). The
+URL-splitting hypothesis does not actually explain the failure once
+traced through by hand rather than assumed.
+
+Also realized while reasoning about this: ffmpeg's single-CLI-URL
+syntax is what introduces this specific ambiguity in the first place -
+a real OBS client has separate "Server" and "Stream Key" fields and
+sends the Stream Key content verbatim as the RTMP playpath, no URL-
+style `?` parsing involved at all. Whatever this bug turns out to be,
+it is unlikely to be an artifact of ffmpeg's own URL auto-splitting
+specifically.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added a genuinely new, decisive experiment rather than continuing to
+refine ffmpeg-stderr diagnostics: the exact same valid credential and
+path, published over plain (non-TLS) RTMP to the loopback-only
+listener, run directly from the host namespace (this script's own
+process - unlike the client namespace, it can reach
+`MEDIAMTX_RTMP_PORT`). `authMethod`/`authInternalUsers` apply
+identically to both listeners. If this also gets rejected, the
+problem is not specific to TLS/RTMPS (already proven clean via
+`openssl s_client`) or to the network-namespace boundary; if it
+succeeds where RTMPS fails, that points squarely at something RTMPS-
+specific. A short, separate 2-second clip that fully exits before the
+real RTMPS matrix starts, so it cannot conflict with
+`overridePublisher: false`.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean; confirmed
+`hostFetchJson` (a hoisted function declaration used before its later
+textual definition in the same block) resolves correctly. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+46. This entry - `ci: test the exact same valid credential over
+    plain RTMP on loopback`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
