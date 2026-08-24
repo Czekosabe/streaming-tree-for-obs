@@ -41027,9 +41027,281 @@ document genuinely never implemented 20D2C itself, the same reasoning
 applied to linux-headless-server.md above).
 
 ### Commits (chronological, this milestone)
-61. This entry - `docs: reflect Stage 20D2C completion across living
-    docs`
+61. `docs: reflect Stage 20D2C completion across living docs`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: record Stage 20D2C remote server regression
+
+### Status
+Completed. Stage 20D2C is closed. Stage 20D2 (20D2A + 20D2B + 20D2C)
+and Stage 20D (20D1 + 20D2) are each now complete as wholes. Stage 20
+as a whole remains Incomplete: 20C2 (externally gated on real Apple
+Developer credentials) and 20E (logs/diagnostics/final hardening/
+manual verification) are still Planned.
+
+### Starting state
+Branch `main`, upstream `origin/main`, canonical remote
+`https://github.com/Czekosabe/streaming-tree-for-obs.git`, starting
+HEAD `8183215`, clean tree, ahead/behind `0 0` - re-verified directly
+rather than trusted from an earlier status update, per the governing
+task's own explicit instruction after a prior turn's report had been
+challenged. Git identity `Czekosabe <kacper2280@tlen.pl>`, matching
+the required identity exactly.
+
+### What Stage 20D2C establishes
+Three independent security planes for a self-hosted, Linux-headless
+deployment, never collapsed into one hostname or one credential: the
+management and overlay HTTPS origins (distinguished by hostname, not
+merely port, per RFC 6265 §8.5 - cookies are not port-scoped), and a
+genuinely separate RTMPS ingest plane terminated directly by MediaMTX,
+never proxied through anything.
+
+- An explicit `--remote-ingest` opt-in, refused without both
+  `--headless` and `--remote-management`. `rtmpEncryption: "optional"`
+  opens a new non-loopback `rtmpsAddress` (RTMPS) alongside the
+  existing loopback-only `rtmpAddress` branch FFmpeg's own read
+  continues to use unchanged.
+- MediaMTX-native `authInternalUsers` authentication: a machine-
+  generated 256-bit publisher secret, its plaintext shown exactly
+  once and only its `sha256:<base64(sha256(secret))>` verifier stored
+  afterward; publish-only, scoped to the canonical ingest path; a
+  separate loopback-restricted identity for branch FFmpeg's own read
+  and the Go backend's own Control API polling.
+- A credential-management HTTP API (provision/rotate/revoke) behind
+  the existing Stage 20D2B deny-by-default auth, with a streaming-
+  safety `409 Conflict` gate on rotate/revoke while actively
+  receiving.
+- A shared, domain-agnostic remote-overlay capability-token system
+  (256-bit, separate from and never granted by the legacy local
+  `publicSlug`) covering all five public overlay domains - chat
+  overlay, alert profile, audio, goal widgets, and supporter widgets -
+  with backend defense-in-depth behind the reverse proxy, never
+  relying on proxy-layer routing alone.
+- Operator-supplied TLS certificates via systemd `LoadCredential=`
+  only - never an embedded ACME client or an application-managed CA.
+- `docs/examples/Caddyfile.self-hosted`, the combined reference
+  configuration for both origins, and a documented systemd operator
+  provisioning sequence.
+- A visual-asset remote-safety audit concluding, honestly, that the
+  existing 256-bit visual-asset token already *is* its own complete
+  capability (structurally safe against path traversal/content-type
+  spoofing/enumeration) - not retrofitted onto the new capability
+  system, and documented as a deliberately different, disclosed model
+  rather than an oversight.
+- A native Linux CI verification harness
+  (`scripts/verify-linux-remote-server.mjs`) proving the full
+  contract - real network-namespace/veth isolation (never localhost
+  relabeled as remote), a real ephemeral 3-host TLS CA, a real
+  MediaMTX installation, the complete RTMPS accept/reject matrix via a
+  real synthetic FFmpeg publisher, the positive publish path
+  (waiting -> receiving -> waiting), MediaMTX Control API and Go
+  backend loopback-port unreachability from the isolated namespace,
+  and cookie separation between the management and overlay origins -
+  now genuinely green on both `linux-amd64` and `linux-arm64`.
+
+### The native CI harness took far longer than the feature work itself
+The product implementation (contract doc through frontend wiring,
+commits `aafd408` through `bd0fbce`) landed in nineteen commits with
+comparatively few surprises. Getting the new native CI harness
+(`e59a11f` onward) to a genuine, evidence-backed green took fifty
+further commits and was, honestly, the dominant cost of this
+milestone. In rough chronological order, real, independently-verified
+root causes were found and fixed for: a `.deb` install-order
+assumption that didn't hold once a sibling script's own cleanup ran
+first; a veth interface name exceeding Linux's `IFNAMSIZ` limit; a
+same-process event-loop deadlock between the in-process TLS proxies
+and this script's own synchronous client-side `curl` calls; MediaMTX
+never being installed before remote-ingest tried to use it; a real
+async-restart race in `Supervisor.RequestStart` that let the
+provisioning API return before MediaMTX had actually picked up the
+new credential; and, the largest single finding, that this ffmpeg
+build's own RTMP URL auto-parsing does not reliably turn
+`rtmps://host/live?user=X&pass=Y` into a publish MediaMTX ever
+recognizes as accepted, resolved by setting `-rtmp_app`/
+`-rtmp_playpath` explicitly instead of relying on that parsing at all
+- and, once that was fixed, a final missing `-re` (real-time input
+pacing) flag that had been letting every synthetic clip complete in
+milliseconds rather than lasting its nominal duration, which is what
+had actually been producing every "rejected" or "not yet ready"
+reading for the valid-credential path throughout that whole stretch.
+Several rounds were also spent on GitHub's own real (and, it turned
+out, byte- rather than character-based) annotation size limit
+repeatedly truncating diagnostic evidence before it was useful -
+eventually solved structurally by having the script emit its own
+dedicated `::error::`/`::notice::` workflow commands at the exact
+point of failure, rather than depending solely on the workflow's own
+whole-log-tail mechanism. Two bugs found late in this process were in
+the test script's own assertions, not the product: the cookie-
+separation check expected `200` for a URL it had itself named
+`does-not-exist`, and a quick accept-check added mid-investigation
+used a poll window too short for RTMPS's own real handshake latency,
+blocking a properly-timed test below it from ever running. Once every
+root cause was fixed, the debugging-only diagnostics that found them
+were removed or converted into permanent assertions (`9af8380`) rather
+than left as clutter.
+
+### Final CI evidence (§21)
+`linux-headless.yml`: both `headless (linux-amd64)` and `headless
+(linux-arm64)` completed with conclusion `success` at commit
+`9af8380` (the cleanup commit, itself independently re-verified green
+after the two log-only diagnostics it converted into real assertions
+could in principle have failed differently than expected - they did
+not). `cross-platform.yml`, `linux-package.yml`, and `macos-package.yml`
+each checked via one low-request lookup of their own most recent run:
+all three show conclusion `success` at commit `bd0fbce`, an ancestor
+of current HEAD that none of the CI-debugging or docs commits since
+re-triggered (confirmed against `scripts/verify-ci-routing.mjs`'s own
+path-filter model, itself re-run clean). All four CI workflows are
+genuinely green at current HEAD - no partial-green was accepted at any
+point, and no failure was diagnosed by guessing rather than real
+evidence.
+
+### Local regression (§20)
+Go: `gofmt -l .` clean, `go vet ./...` clean, `go vet -tags integration
+./...` clean, `go build ./...` clean, `go build -tags integration
+./...` clean, `go test -count=1 ./...` all packages passing. Frontend:
+`npm run i18n:check` (22 namespaces, no differences against en), `npm
+run typecheck` clean, `npm run lint` clean (one pre-existing,
+unrelated warning), `npm run test -- --run` (1,410 tests passing, 104
+files), `npm run build` clean. All 24 canonical local integration
+scripts plus `verify-packaged-app.mjs` (25 scripts total) run and
+passing - the first attempt at running them accidentally raced two
+copies of the same batch concurrently (a background-task tracking
+mistake, not a product issue), producing two false failures
+(`verify-persistence.mjs`, `verify-updater.mjs`) that both re-ran
+clean in isolation, confirmed as contention artifacts rather than real
+regressions before being accepted.
+
+### Stage status after this entry
+- Stage 20D2A: Completed (unchanged).
+- Stage 20D2B: Completed (unchanged).
+- Stage 20D2C: **Completed.**
+- Stage 20D2 (whole): **Completed.**
+- Stage 20D (whole): **Completed.**
+- Stage 20C2: Planned - externally gated on real Apple Developer
+  signing/notarization credentials (unchanged).
+- Stage 20E: Planned - logs/diagnostics/final release hardening/
+  manual verification not covered by 20A-20D (unchanged).
+- Stage 20 (whole): **Incomplete** - 20C2 and 20E remain Planned.
+
+### Commits this milestone (chronological)
+1. `aafd408` - `docs: define Stage 20D2C remote ingest and overlay contract`
+2. `8537122` - `fix(docs): harden the D2B Caddy exclusion matcher and correct the cookie/origin wording`
+3. `fb25d78` - `feat(server): generate the Stage 20D2C RTMPS/authenticated MediaMTX configuration`
+4. `80813b7` - `fix(server): omit the remote-publisher MediaMTX entry until a credential is provisioned`
+5. `26cbcf3` - `feat(server): wire the --remote-ingest flag, preconditions, and overlay-origin validation`
+6. `bc6b464` - `feat(server): generate and store the remote-ingest publisher credential`
+7. `3461ae9` - `feat(server): add the remote-ingest credential-management API and streaming-safety gate`
+8. `06c67f5` - `feat(server): add backend defense-in-depth for the remote overlay origin`
+9. `d442d9a` - `feat(server): add remote overlay capability tokens and wire chat overlays end-to-end`
+10. `6392713` - `feat(server): wire alert profiles, audio, and supporter widgets to remote capability tokens`
+11. `bf1a4a1` - `test: prove Stage 18A goal widgets resolve through remote overlay capabilities`
+12. `78a5757` - `feat(server): add the remote-overlay capability management API`
+13. `70476e6` - `docs: audit visual-asset remote safety and add the combined self-hosted Caddyfile`
+14. `7da63d7` - `docs: disclose Stage 20D2C in PRIVACY.md and audit MediaMTX credential logging`
+15. `4a130d8` - `feat(web): add the remote-ingest credential management UI`
+16. `9d8d9fa` - `fix(server): return the current remote overlay URL from status`
+17. `bd0fbce` - `feat(web): add remote overlay controls to all five overlay management surfaces`
+18. `f6c1b88` - `docs: define the Stage 20D2C systemd operator provisioning sequence`
+19. `e59a11f` - `ci: add the Stage 20D2C native remote-server verification harness`
+20. `5100985` - `fix(ci): install the .deb before the Stage 20D2C remote-server verification runs`
+21. `abaf9d6` - `ci: capture the real veth-creation error instead of a blank annotation`
+22. `f2a5b7c` - `fix(ci): shorten the veth capability-probe interface names`
+23. `ffe8325` - `ci: add ping/verbose-curl diagnostics ahead of the management-proxy login step`
+24. `e6dc387` - `fix(ci): stop the remote-server verification script deadlocking itself`
+25. `dd4208d` - `ci: remove the now-obsolete verbose diagnostic probe, widen the tail further`
+26. `ba096e7` - `ci: surface the real server-side error behind remote-ingest provisioning's 500`
+27. `31f8738` - `ci: read the server's real log from stdout, not stderr`
+28. `dd301c5` - `ci: filter the server-diagnostic dump to error/warning lines`
+29. `684ad5f` - `fix(ci): install MediaMTX before provisioning the remote-ingest credential`
+30. `2c8ed9a` - `fix(ci): wait for MediaMTX readiness after provisioning, before the RTMPS matrix`
+31. `e1bd295` - `ci: capture ffmpeg's own stderr for the RTMPS reject-matrix`
+32. `ae2b82d` - `ci: widen the ffmpeg diagnostic filter, the blind tail missed the actual rejection text`
+33. `d474902` - `ci: capture MediaMTX's own log lines, filtered stdout was still missing the real decision`
+34. `5994704` - `ci: reorder/shrink the diagnostic detail, GitHub's size limit ate it again`
+35. `2a27071` - `ci: wait for MediaMTX's own log line to flush before capturing it`
+36. `9db7a30` - `ci: query the MediaMTX Control API mid-stream instead of relying on its log`
+37. `c578d13` - `ci: poll the Control API during the real failing attempt, not a separate premature one`
+38. `a4bd991` - `fix(ci): stop trusting ffmpeg's exit code for the RTMPS auth-reject matrix`
+39. `3b2831d` - `ci: check MediaMTX's own path-ready state during the positive-path publish too`
+40. `5437268` - `ci: poll rtmpconns/list rapidly to test a URL-splitting hypothesis for the positive path`
+41. `103e1a2` - `ci: test raw TLS handshake against the RTMPS listener directly`
+42. `bd0e548` - `ci: log ffmpeg's own real app/playpath split via -v debug`
+43. `ac89648` - `ci: check ffmpeg's debug log after the full settle wait, not right after the quick poll`
+44. `d8b9795` - `ci: dump raw ffmpeg stderr instead of continuing to search for one absent line`
+45. `7d34ad4` - `ci: shrink the ffmpeg stderr dump, it was cut off after a single line`
+46. `5f77ad2` - `ci: test the exact same valid credential over plain RTMP on loopback`
+47. `2159175` - `ci: read the real rendered mediamtx.yml verifier directly, sidestepping RTMP-parsing questions`
+48. `d0d4b6d` - `ci: force the exact app/playpath split via -rtmp_app, bypassing ffmpeg's automatic URL parsing`
+49. `3678ec6` - `ci: re-check mediamtx_message specifically for the isolated explicit-override attempt`
+50. `29390a6` - `fix(ci): stop trusting ffmpeg's URL auto-parsing for RTMP(S) publish credentials`
+51. `4c89902` - `fix(ci): remove the quick accept-check that false-negatived on RTMPS timing`
+52. `50148fd` - `ci: emit a dedicated ::error:: annotation at the point of failure`
+53. `0c92230` - `ci: isolate namespace-crossing from RTMPS/TLS itself for the positive path`
+54. `c738976` - `ci: give the host-namespace RTMPS isolation diagnostic its own guaranteed notice`
+55. `34fdc30` - `ci: check MediaMTX's own log for the isolated host-namespace RTMPS attempt`
+56. `d77d156` - `fix(ci): stop passing an explicit empty -rtmp_playpath, it closes the stream almost immediately`
+57. `9eca8f8` - `ci: capture ffmpeg's own stderr for the host-namespace RTMPS probe`
+58. `f9fa053` - `fix(ci): add -re so ffmpeg publishes at real-time pace instead of finishing in milliseconds`
+59. `2fbbbec` - `fix(ci): correct a real bug in the cookie-separation test's own expectation`
+60. `9af8380` - `ci: clean up the debugging scaffolding now that the whole script passes`
+61. `fe00da9` - `docs: reflect Stage 20D2C completion across living docs`
+62. This entry - `docs: record Stage 20D2C remote server regression`
+
+Every commit subject above exactly matches its own journal entry
+heading. Every logical commit was pushed to `origin/main` immediately
+after being made, verified synchronized (`0 0`) before the next one
+began - no commits were accumulated locally and pushed only at the
+end.
+
+### Process-transparency disclosure (required by the governing task)
+- **GitHub REST API usage**: not exactly countable after the fact, but
+  a reasonable estimate is on the order of 130-170 requests total
+  across this milestone's CI-debugging phase (roughly fifty check/
+  annotation lookups, most needing 2-3 calls each for status then
+  annotation detail, occasionally a third for a specific line), plus
+  roughly 15-20 further requests for primary-source research against
+  `raw.githubusercontent.com`/the GitHub API's own tree/contents
+  endpoints (MediaMTX's and gortmplib's pinned-version source,
+  ffmpeg's `rtmpproto.c`). The unauthenticated 60/hour quota was
+  confirmed exhausted at least once during this milestone (visible in
+  the conversation as a `403 Forbidden` on a status check, followed by
+  an explicit `/rate_limit` read and a wait for the real, raw
+  `reset` timestamp - converted locally with `date`, not trusted from
+  a summarizing tool's own prose after that same tool had already
+  produced other unrelated hallucinations earlier in this milestone).
+- **Idle turns**: none identified in the portion of this milestone
+  visible in the current context - every background wait for a CI
+  result was immediately followed by real diagnostic or fix work using
+  that result, never a turn ending on passive "still waiting" language
+  while approved work remained. An earlier turn, prior to this
+  session's context compaction, was flagged by the operator's own
+  second governing message as having ended with monitoring-adjacent
+  language while work remained - that correction is what the second
+  governing message's own explicit "do not idle" instruction was
+  responding to, and is disclosed here rather than omitted.
+- **Operator interventions**: the operator sent a message whose only
+  content was the literal word "continue" at least twice across this
+  milestone - once before this session's context compaction (noted in
+  the pre-compaction summary carried into this context) and once
+  after, visible directly in this session's own transcript. Both are
+  counted here as genuine resume-only interventions, not minimized as
+  mere continuation formality.
+- **AskUserQuestion**: zero calls throughout this entire milestone.
+  Every design decision this milestone required (the RTMPS-vs-STRICT
+  encryption mode choice, the shared-table capability-system
+  simplification, the visual-asset honesty finding, every native-CI
+  root cause and fix) was made autonomously and recorded with its own
+  reasoning in this journal, not deferred to the operator.
+
+### Continuous-execution rule compliance
+Fifty-plus background CI-result waits this milestone were each
+followed immediately by real, evidence-based diagnostic or fix work -
+never passive re-polling, never a blind retry of the same commit, and
+never a claim of success without a genuinely green check-run result
+fetched and read. No turn in the portion of this milestone visible in
+the current context ended on monitoring language while approved work
+remained.
