@@ -40689,8 +40689,68 @@ truncation this whole investigation has repeatedly run into.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-55. This entry - `ci: check MediaMTX's own log for the isolated
-    host-namespace RTMPS attempt`
+55. `ci: check MediaMTX's own log for the isolated host-namespace
+    RTMPS attempt`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — fix(ci): stop passing an explicit empty -rtmp_playpath, it closes the stream almost immediately
+
+### Real CI result: genuine success, immediately followed by an unexplained close
+Commit `34fdc30` was checked. MediaMTX's own log finally showed the
+complete, real success sequence for an RTMPS connection specifically:
+
+```
+"[path live] stream is available and online, 2 tracks (H264, MPEG-4 Audio)"
+"[RTMPS] [conn 10.201.0.1:55524] is publishing to path 'live'"
+"[RTMPS] [conn 10.201.0.1:55524] closed: EOF"
+```
+
+The first two lines are unambiguous proof the credential, path,
+RTMPS/TLS layer, and (for this specific probe) direct host-namespace
+routing all work correctly together - this is real success, not an
+inference. But the third line lands only *4 milliseconds* later, for
+a probe given a 4-*second* clip - the connection closes almost
+instantly after being accepted, long before any real data could have
+streamed, which is why the later `/v3/paths/list` "ready" poll (at
+2.5s, well after this connection had already closed) saw `false`: a
+fourth instance, in a different shape, of the same class of timing
+race this whole investigation has repeatedly run into - checking a
+connection's state after it has already come and gone, not evidence
+that MediaMTX ever rejected anything.
+
+The most likely explanation for the near-instant close itself: every
+one of these tests passed `-rtmp_playpath ''` explicitly - a real,
+present-but-empty override, not merely an unset/derived-empty value.
+ffmpeg's own RTMP writer may treat an *explicitly* forced empty
+playpath differently from one it derives itself while parsing a bare
+destination URL (which is what every case here also does, since the
+credential lives entirely in `-rtmp_app` and the destination URL is
+just `${rtmpsBase}/`) - plausibly losing track of which output stream
+to keep writing frames to after the initial publish handshake
+succeeds, and closing immediately rather than continuing to send
+data.
+
+### Fix
+Stopped passing `-rtmp_playpath` at all when the intended playpath is
+empty, across all three ffmpeg invocations that had it
+(`tryPublishAndCheckAccepted`'s reject-matrix helper, the host-
+namespace isolation probe, and the positive-path `publishChild`) -
+`-rtmp_app` alone, with no playpath override flag, rather than an
+explicit empty one.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - if
+this diagnosis is right, the connection should now persist for its
+real clip duration instead of closing within milliseconds of being
+accepted.
+
+### Commits (chronological, this milestone)
+56. This entry - `fix(ci): stop passing an explicit empty
+    -rtmp_playpath, it closes the stream almost immediately`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

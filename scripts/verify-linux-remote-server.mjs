@@ -865,7 +865,16 @@ async function main() {
     // handshake itself never completes - and ffmpeg's exit code
     // reliably reports that one correctly, so it is left as-is.)
     async function tryPublishAndCheckAccepted(app, playpath, pathName) {
-      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -2), '-rtmp_app', app, '-rtmp_playpath', playpath, '-f', 'flv', `${rtmpsBase}/`]);
+      // -rtmp_playpath only passed when non-empty - see the "closed:
+      // EOF" finding in docs/progress.md: a connection using an
+      // *explicit* empty -rtmp_playpath override reached "is
+      // publishing to path 'live'" in MediaMTX's own log and then
+      // closed again within milliseconds, never persisting for the
+      // clip's real duration. An empty playpath derived from a bare
+      // destination URL (no override flag at all) may not carry the
+      // same effect.
+      const playpathArgs = playpath ? ['-rtmp_playpath', playpath] : [];
+      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -2), '-rtmp_app', app, ...playpathArgs, '-f', 'flv', `${rtmpsBase}/`]);
       let exited = false;
       child.on('exit', () => {
         exited = true;
@@ -922,7 +931,7 @@ async function main() {
     // namespace crossing; if it succeeds, namespace crossing is the
     // remaining variable.
     const hostRtmpsApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
-    const hostRtmpsProbe = spawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', hostRtmpsApp, '-rtmp_playpath', '', '-f', 'flv', `${rtmpsBase}/`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const hostRtmpsProbe = spawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', hostRtmpsApp, '-f', 'flv', `${rtmpsBase}/`], { stdio: ['ignore', 'ignore', 'pipe'] });
     let hostRtmpsExited = false;
     hostRtmpsProbe.on('exit', () => {
       hostRtmpsExited = true;
@@ -961,7 +970,7 @@ async function main() {
     // above.
     let publishStderr = '';
     const publishApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
-    const publishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '10', '-rtmp_app', publishApp, '-rtmp_playpath', '', '-f', 'flv', `${rtmpsBase}/`]);
+    const publishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '10', '-rtmp_app', publishApp, '-f', 'flv', `${rtmpsBase}/`]);
     publishChild.stderr.on('data', (c) => (publishStderr += c.toString()));
     let publishExited = false;
     let publishExitCode = null;
