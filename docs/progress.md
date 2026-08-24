@@ -40552,8 +40552,55 @@ step 18 fails again, this should finally show its actual detail
 instead of a truncated step header.
 
 ### Commits (chronological, this milestone)
-52. This entry - `ci: emit a dedicated ::error:: annotation at the
-    point of failure, not just the outer log tail`
+52. `ci: emit a dedicated ::error:: annotation at the point of
+    failure, not just the outer log tail`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: isolate namespace-crossing from RTMPS/TLS itself for the positive path
+
+### Real CI result: the dedicated annotation worked, and revealed the real signal cleanly
+Commit `50148fd` was checked. The new dedicated `::error::` delivered
+exactly the intended result - a clean, complete, uncompeted failure
+message: `"ingest status becomes receiving while the publish is
+active"` with `receiving: false`, even with the full
+`PUBLISH_SETTLE_MS` = 4s settle time (well beyond the 1.5s window that
+produced a false negative for the now-removed quick check two entries
+ago).
+
+Realized something important about the reject-matrix's own passing
+status before assuming this is a new, separate bug: every one of its
+four cases is *supposed* to show "not accepted," so the matrix passing
+cannot by itself distinguish "credentials are being correctly
+evaluated over RTMPS through the namespace boundary" from "nothing at
+all works over that specific transport, so naturally nothing is ever
+accepted, valid credentials included." The positive-path test is the
+only one of the five RTMPS attempts in this whole file where "not
+accepted" is a genuine failure signal rather than trivially consistent
+with either explanation - and it is the one still failing.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added one more isolating experiment: the exact same explicit
+`-rtmp_app`/`-rtmp_playpath` RTMPS publish with the valid credential,
+run directly from the *host* namespace (plain `spawn`, not
+`clientSpawn`'s `sudo ip netns exec`) - `RTMPS_PORT` is bound to
+`HOST_ADDR`, a real address on an interface that genuinely belongs to
+the host namespace, reachable without crossing into the client
+namespace at all. If this also fails to reach "ready," the remaining
+problem is RTMPS/TLS itself (already partly ruled out by a clean
+`openssl s_client` handshake, but that used a different client and no
+RTMP layer); if it succeeds, network-namespace crossing specifically
+is the one remaining variable.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+53. This entry - `ci: isolate namespace-crossing from RTMPS/TLS
+    itself for the positive path`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

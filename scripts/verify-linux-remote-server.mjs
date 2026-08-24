@@ -895,6 +895,38 @@ async function main() {
     const before = await remoteCurl('GET', `${MANAGE_ORIGIN}/api/remote-ingest/status`, { headers: { Origin: MANAGE_ORIGIN }, cookieJar, csrfToken });
     expect(before.body && before.body.receiving === false, 'ingest status is waiting before any publish', before.status === 200 ? before.text : withServerDiag(before.text));
 
+    // Diagnostic: the reject-matrix passing does not actually prove
+    // RTMPS-through-the-namespace-boundary works at all for a valid
+    // credential - every reject case is *supposed* to show "not
+    // accepted" regardless of whether the underlying transport works,
+    // so it cannot discriminate "credentials correctly rejected" from
+    // "nothing works via this transport, so naturally nothing is ever
+    // accepted." Isolate the remaining variable directly: the exact
+    // same explicit app/playpath RTMPS publish, run from the HOST
+    // namespace this time (plain spawn, not clientSpawn's sudo ip
+    // netns exec) - RTMPS_PORT is bound to HOST_ADDR, a real address
+    // on this namespace's own veth interface, genuinely reachable
+    // without crossing into the client namespace at all. If this also
+    // fails to reach "ready", the problem is RTMPS/TLS itself, not
+    // namespace crossing; if it succeeds, namespace crossing is the
+    // remaining variable.
+    const hostRtmpsApp = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${publisherSecret}`;
+    const hostRtmpsProbe = spawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', hostRtmpsApp, '-rtmp_playpath', '', '-f', 'flv', `${rtmpsBase}/`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let hostRtmpsExited = false;
+    hostRtmpsProbe.on('exit', () => {
+      hostRtmpsExited = true;
+    });
+    await new Promise((r) => setTimeout(r, 2_500));
+    const hostRtmpsCheck = await hostFetchJson('/v3/paths/list');
+    const hostRtmpsItems = (hostRtmpsCheck.body && Array.isArray(hostRtmpsCheck.body.items)) ? hostRtmpsCheck.body.items : [];
+    const hostRtmpsMatched = hostRtmpsItems.find((p) => p && p.name === INGEST_PATH);
+    console.log(`     diag RTMPS same-credential publish from HOST namespace (no netns exec), ready=${hostRtmpsMatched ? hostRtmpsMatched.ready : 'path not found'}`);
+    const hostRtmpsDeadline = Date.now() + 8_000;
+    while (!hostRtmpsExited && Date.now() < hostRtmpsDeadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!hostRtmpsExited) hostRtmpsProbe.kill('SIGKILL');
+
     // Spawned (not spawnSync) specifically so this script can observe
     // the mid-stream "receiving" state, not merely the exit code once
     // the whole publish has already finished - a synchronous run would
