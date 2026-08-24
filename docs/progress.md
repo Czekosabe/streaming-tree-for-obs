@@ -41305,3 +41305,79 @@ never a claim of success without a genuinely green check-run result
 fetched and read. No turn in the portion of this milestone visible in
 the current context ended on monitoring language while approved work
 remained.
+
+## 2026-08-24 — ci: run the Linux remote-server verification as two independent passes per architecture
+
+### Starting state
+PRE-20E — STAGE 20D2C CLOSURE / FINAL-EVIDENCE AUDIT (an explicit
+operator instruction to independently reconcile the prior "docs:
+record Stage 20D2C remote server regression" report against the real
+repository and CI history before Stage 20E may begin) requires
+proving, not assuming, that Stage 20D2C's own contract for two
+independent complete build/verification passes on both `linux-amd64`
+and `linux-arm64` was actually met.
+
+### Real finding: only one pass existed, and it was already honestly disclosed as such
+`.github/workflows/linux-headless.yml` runs
+`scripts/verify-linux-headless.mjs` twice per architecture (`pass 1`/
+`pass 2`, each preceded by its own `build-release-linux.sh` build with
+a distinct version string) - but `scripts/verify-linux-remote-
+server.mjs` (the Stage 20D2C harness itself) was invoked only *once*
+per architecture, immediately after `verify-linux-remote-
+management.mjs`. This was not a silent gap: the script's own top-of-
+file comment already listed "two independent passes per architecture"
+under "It does NOT yet cover", tracked as disclosed follow-up work,
+mirroring how Stage 20D2B's own scope choices were disclosed. Still,
+per this audit's own explicit rule ("If it performs only one: D2C is
+not yet closed; fix verification and obtain green evidence"), a
+disclosed gap is still a gap - the correct response is to close it,
+not merely re-state it.
+
+### A second, real concrete defect found while checking pass-independence
+Auditing what state two sequential invocations of the script would
+actually share turned up a genuine reuse bug, not just a missing
+step: `provisionCredentialsDir(masterKeyByte, rtmpsLeaf)` derived the
+32-byte master key from a fixed formula (`(i * 13 + masterKeyByte) %
+256`) seeded by a hardcoded literal `7`. Every mkdtemp data/
+credentials/PKI directory, the ephemeral CA, and the server-issued
+remote-ingest publisher secret were already fresh per invocation, but
+this one value was not - two runs of the unmodified script back to
+back would have provisioned the *identical* master key, which is
+exactly the kind of state reuse the audit's own checklist (data
+directory, master key, admin password, ingest credential, overlay
+capabilities, certificates, network namespace, veth interface,
+MediaMTX instance/state) calls out by name.
+
+### Fix
+- `scripts/verify-linux-remote-server.mjs`: `provisionCredentialsDir`
+  now takes only `rtmpsLeaf` and derives the master key via
+  `node:crypto` `randomBytes(32)` - genuinely random per invocation,
+  matching how a real master key is actually generated, not a
+  formula that happened to vary only if fed a different seed.
+- `.github/workflows/linux-headless.yml`: the single "Verify the
+  remote-server (remote ingest + remote overlay) contract" step is
+  now two steps, "(pass 1)" and "(pass 2)", each teeing to its own log
+  (`/tmp/rs-verify-pass1.log` / `-pass2.log`) with its own
+  `if: failure()` diagnostics step, mirroring the existing pass 1/
+  pass 2 naming already used for `verify-linux-headless.mjs`.
+- Both files' top-of-file comments updated to state plainly what is
+  and is not shared across the two passes: fresh per pass are the
+  data/credentials/PKI directories, the master key, the ephemeral CA
+  and leaf certificates, the reinstalled `.deb`, and the reinstalled
+  MediaMTX instance (a new instance under the new data directory, not
+  a restart of the same one); the network namespace and veth pair use
+  the same fixed names both times but are deleted by pass 1's own
+  cleanup and recreated from scratch for pass 2 - no live kernel
+  object, connection, or routing state survives between passes.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers -
+confirming both `headless (linux-amd64)` and `headless
+(linux-arm64)` complete two full, genuinely independent
+`verify-linux-remote-server.mjs` passes each.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This is part of the PRE-20E closure audit, not a return to
+product feature work.

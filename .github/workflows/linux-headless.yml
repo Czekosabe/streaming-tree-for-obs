@@ -31,7 +31,13 @@ name: Linux headless service verification
 # helper, not canonical script #25 either. Requires real network-
 # namespace/CAP_NET_ADMIN capability and ffmpeg; the script itself
 # verifies both are genuinely available before attempting anything,
-# and fails loudly rather than silently downgrading if not.
+# and fails loudly rather than silently downgrading if not. Run twice
+# per architecture (pass 1/pass 2, docs/progress.md: Stage 20D2C
+# closure audit §8) - the script's own top-of-file comment records
+# exactly what is fresh across the two passes (master key, PKI, data
+# directory, MediaMTX instance) versus what reuses the same fixed
+# name but not the same live kernel object (the network namespace and
+# veth interface, torn down and recreated between passes).
 
 on:
   workflow_dispatch:
@@ -150,18 +156,38 @@ jobs:
       - name: Install iproute2/ffmpeg for the Stage 20D2C remote-server verification
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 ffmpeg
 
-      - name: Verify the remote-server (remote ingest + remote overlay) contract
+      - name: Verify the remote-server (remote ingest + remote overlay) contract (pass 1)
         run: |
           set -o pipefail
-          node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify.log
+          node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify-pass1.log
 
-      - name: Show remote-server verification diagnostics on failure
+      - name: Show remote-server verification diagnostics on failure (pass 1)
         if: failure()
         run: |
-          TAIL="$(tail -c 8000 /tmp/rs-verify.log 2>/dev/null || echo 'no output captured')"
+          TAIL="$(tail -c 8000 /tmp/rs-verify-pass1.log 2>/dev/null || echo 'no output captured')"
           ENCODED="${TAIL//$'\n'/%0A}"
           ENCODED="${ENCODED//$'\r'/}"
-          echo "::error title=verify-linux-remote-server.mjs failure (${{ matrix.name }})::${ENCODED}"
+          echo "::error title=verify-linux-remote-server.mjs failure - pass 1 (${{ matrix.name }})::${ENCODED}"
+
+      # A second, fully independent pass (docs/progress.md: Stage
+      # 20D2C closure audit §8) - not a rerun of the same state. The
+      # script itself reinstalls the .deb, regenerates the ephemeral
+      # CA, generates a new random master key, and reinstalls MediaMTX
+      # into a brand-new data directory; the network namespace/veth
+      # pair are torn down by pass 1's own cleanup and recreated here
+      # from scratch.
+      - name: Verify the remote-server (remote ingest + remote overlay) contract (pass 2)
+        run: |
+          set -o pipefail
+          node scripts/verify-linux-remote-server.mjs 2>&1 | tee /tmp/rs-verify-pass2.log
+
+      - name: Show remote-server verification diagnostics on failure (pass 2)
+        if: failure()
+        run: |
+          TAIL="$(tail -c 8000 /tmp/rs-verify-pass2.log 2>/dev/null || echo 'no output captured')"
+          ENCODED="${TAIL//$'\n'/%0A}"
+          ENCODED="${ENCODED//$'\r'/}"
+          echo "::error title=verify-linux-remote-server.mjs failure - pass 2 (${{ matrix.name }})::${ENCODED}"
 
       - name: Clean up any leftover process, service, package, or network namespace
         if: always()

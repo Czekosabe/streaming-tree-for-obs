@@ -58,21 +58,34 @@
  *     genuinely scoped by curl's own RFC 6265 cookie-jar handling,
  *     is never sent to the overlay origin.
  *
+ * .github/workflows/linux-headless.yml invokes this script twice per
+ * architecture ("pass 1"/"pass 2"), and every piece of per-run state
+ * this script itself controls is generated fresh on each invocation -
+ * a new mkdtemp data/credentials/PKI directory, a new random 32-byte
+ * master key (node:crypto randomBytes, not a fixed formula), a new
+ * ephemeral CA and leaf certificates, a freshly reinstalled .deb, and
+ * a freshly reinstalled MediaMTX instance under the new data
+ * directory. The remote-ingest publisher secret itself is generated
+ * server-side (POST /api/remote-ingest/provision), independently of
+ * this script, on every run. The network-namespace/veth pair use the
+ * same fixed names both passes, but the kernel objects themselves are
+ * deleted in this script's own cleanup and recreated from scratch on
+ * the next invocation - never left up and reused live.
+ *
  * It does NOT yet cover: the full systemd/package combined lifecycle
  * (this run spawns the installed binary directly, mirroring verify-
  * linux-remote-management.mjs's own established choice, rather than
  * going through systemctl); a real destination-branch E2E to a local
  * sink; the per-domain remote-overlay E2E matrix beyond the cookie
- * check above; two independent passes per architecture. These are
- * tracked as explicit follow-up work in docs/progress.md, not
- * silently left unmentioned.
+ * check above. These are tracked as explicit follow-up work in
+ * docs/progress.md, not silently left unmentioned.
  *
  * Usage:  node scripts/verify-linux-remote-server.mjs
  * Exits non-zero on the first failed expectation.
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpsServer } from 'node:https';
 import { request as httpRequest } from 'node:http';
@@ -447,10 +460,14 @@ function proxyToBackend(clientReq, clientRes, forwardedHost) {
 }
 
 // --- server process -------------------------------------------------------
-function provisionCredentialsDir(masterKeyByte, rtmpsLeaf) {
+function provisionCredentialsDir(rtmpsLeaf) {
   const dir = mkdtempSync(join(tmpdir(), 'streamtree-d2c-creds-'));
-  const key = Buffer.alloc(32);
-  for (let i = 0; i < 32; i += 1) key[i] = (i * 13 + masterKeyByte) % 256;
+  // Genuinely random per invocation (not a formula seeded by a fixed
+  // byte) - two independent passes of this script in the same
+  // workflow job (docs/progress.md: Stage 20D2C closure audit §8)
+  // must never provision the same master key, exactly like two real,
+  // separate deployments never would.
+  const key = randomBytes(32);
   writeFileSync(join(dir, 'streaming-tree-master-key'), key, { mode: 0o600 });
   writeFileSync(join(dir, 'streaming-tree-rtmps-key'), rtmpsLeaf.keyPem, { mode: 0o600 });
   writeFileSync(join(dir, 'streaming-tree-rtmps-cert'), rtmpsLeaf.certPem, { mode: 0o644 });
@@ -621,7 +638,7 @@ async function main() {
 
     step('Provision the master key, RTMPS credential, and administrator password');
     const dataDir = mkdtempSync(join(tmpdir(), 'streamtree-d2c-data-'));
-    const credentialsDir = provisionCredentialsDir(7, pki.leaves[INGEST_HOST]);
+    const credentialsDir = provisionCredentialsDir(pki.leaves[INGEST_HOST]);
     provisionAdminPassword(dataDir, credentialsDir);
     pass('master key + RTMPS key/cert + administrator password verifier provisioned');
 
