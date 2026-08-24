@@ -42695,3 +42695,58 @@ whatever it turns out to say.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): verify the fresh-state removal between passes instead of silently trusting it
+
+### Real CI result: the journal scoping fix worked perfectly - the real cause was finally visible
+Commit `adeb89c` was checked by real CI: run `32737874180`. The
+properly-scoped journal immediately showed the real problem, with a
+full, unambiguous stack of real systemd/application log lines:
+
+```
+level=INFO msg="database ready" path=/var/lib/streaming-tree/streaming-tree.db journal_mode=wal
+level=INFO msg="remote management enabled" external_origin=https://manage-d2c.test:8714
+level=ERROR msg="server terminated with an error" error="reading the remote ingest publisher credential: secret store failure: authentication failed (wrong master key or tampered data)"
+streaming-tree.service: Main process exited, code=exited, status=1/FAILURE
+streaming-tree.service: Scheduled restart job, restart counter is at 1.
+```
+
+(repeating, restart counter climbing)
+
+### Real root cause
+Pass 1's own SQLite database (`/var/lib/streaming-tree/streaming-
+tree.db`), still holding pass 1's remote-ingest publisher credential
+encrypted under pass 1's own random master key, survived into pass 2.
+Pass 2 provisions a *new*, independently random master key
+(`provisionMasterKey()`), which can never decrypt pass 1's leftover
+encrypted secret - the server correctly refuses to start rather than
+silently treat "tampered/undecryptable data" as absent, and
+`Restart=on-failure` just keeps retrying the same doomed startup.
+The real defect was in this script's own "fresh state per pass"
+cleanup: every removal (`rm -rf DROPIN_DIR/ETC_DIR/STATE_DIR`) was
+wrapped in a try/catch that silently discarded the result - success
+was always *assumed*, never actually confirmed, so a removal that
+quietly failed (most plausibly racing the just-issued `systemctl
+disable --now`, which does not guarantee every file handle the
+process held is released the instant the command returns) was
+invisible.
+
+### Fix
+- After `stopAndDisableServerViaSystemd()`, poll `systemctl is-active`
+  (up to 15s) until the unit genuinely leaves `active`/`activating`/
+  `deactivating`, rather than assuming the stop is complete the moment
+  the command returns.
+- A new `removeAndVerify(path, label)` helper replaces the silent
+  try/catch pattern for all three cleanup paths: `rm -rf`, then
+  `sudo test -e` to confirm it is actually gone, with one retry before
+  a real, loud `expect()` failure if it still exists - "no pass-1
+  dependency" is now something this script actually proves about
+  itself before each pass, not merely assumes.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

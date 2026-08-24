@@ -901,22 +901,54 @@ async function main() {
   // pass of this same two-pass script, left anything behind. Covers the
   // real systemd service/drop-in/credential paths this script now owns,
   // on top of the package itself.
+  //
+  // A real CI failure (docs/progress.md, PRE-20E.1) proved this used to
+  // matter more than it looked like: pass 2's server crash-looped with
+  // "secret store failure: authentication failed (wrong master key or
+  // tampered data)" reading the *remote-ingest publisher credential* -
+  // pass 1's own leftover SQLite database (still holding secrets
+  // encrypted under pass 1's own random master key) survived into pass
+  // 2, whose freshly generated master key could never decrypt them.
+  // Silently swallowing every removal's own result (the original
+  // try/catch-and-ignore pattern) made this invisible - `rm -rf`
+  // "succeeding" was assumed, never actually confirmed. Both the
+  // service-stop and every removal below are now explicitly verified,
+  // and failure to reach a genuinely clean state is a real, loud
+  // `fail()`, never a silent continue.
   stopAndDisableServerViaSystemd();
-  try {
-    execFileSync('sudo', ['rm', '-rf', DROPIN_DIR], { stdio: 'ignore' });
-  } catch {
-    // Nothing to remove - fine.
+  const stopConfirmDeadline = Date.now() + 15_000;
+  let serviceStopped = false;
+  while (Date.now() < stopConfirmDeadline) {
+    let activeState = '';
+    try {
+      activeState = execFileSync('systemctl', ['is-active', UNIT_NAME], { encoding: 'utf8' }).trim();
+    } catch (err) {
+      activeState = (err.stdout || '').toString().trim();
+    }
+    if (activeState !== 'active' && activeState !== 'activating' && activeState !== 'deactivating') {
+      serviceStopped = true;
+      break;
+    }
+    execFileSync('sleep', ['0.3']);
   }
-  try {
-    execFileSync('sudo', ['rm', '-rf', ETC_DIR], { stdio: 'ignore' });
-  } catch {
-    // Nothing to remove - fine.
+  expect(serviceStopped, 'any prior-pass service instance is genuinely stopped before this pass begins fresh state removal', 'systemctl is-active never settled to inactive/failed within 15s');
+
+  function removeAndVerify(path, label) {
+    execFileSync('sudo', ['rm', '-rf', path], { stdio: 'ignore' });
+    let stillExists = shOk('sudo', ['test', '-e', path]);
+    if (stillExists) {
+      // One retry - a removal racing something still releasing a file
+      // handle from the just-confirmed-stopped service is plausible;
+      // a second, genuinely still-present result after that is a real
+      // problem, not a timing fluke.
+      execFileSync('sudo', ['rm', '-rf', path], { stdio: 'ignore' });
+      stillExists = shOk('sudo', ['test', '-e', path]);
+    }
+    expect(!stillExists, `${label} is genuinely removed before this pass's fresh install (no pass-1 dependency)`, `${path} still exists after rm -rf (twice)`);
   }
-  try {
-    execFileSync('sudo', ['rm', '-rf', STATE_DIR], { stdio: 'ignore' });
-  } catch {
-    // Nothing to remove - fine.
-  }
+  removeAndVerify(DROPIN_DIR, 'the systemd drop-in directory');
+  removeAndVerify(ETC_DIR, 'the /etc/streaming-tree credentials directory');
+  removeAndVerify(STATE_DIR, 'the state directory (database, MediaMTX install)');
   if (shOk('dpkg', ['-s', PACKAGE_NAME])) {
     execFileSync('sudo', ['dpkg', '-r', PACKAGE_NAME], { stdio: 'ignore' });
   }
