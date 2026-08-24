@@ -40012,8 +40012,62 @@ investigated so far.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-41. This entry - `ci: test raw TLS handshake against the RTMPS
-    listener directly`
+41. `ci: test raw TLS handshake against the RTMPS listener directly`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-20 19:10 — ci: log ffmpeg's own real app/playpath split via -v debug
+
+### Real CI result: TLS is completely clean, ruling out the listener/certificate
+Commit `103e1a2` was checked. `openssl s_client` against the RTMPS
+listener came back completely clean: TLS 1.3, correct peer certificate
+(`CN = ingest-d2c.test`), `Verification: OK`, `DONE`, exit 0. This
+rules out the listener and the ephemeral CA trust chain entirely - the
+problem is definitively above the TLS layer, at the RTMP application
+protocol.
+
+Traced ffmpeg's own real URL-splitting logic in `rtmpproto.c`
+(`rtmp_open`'s app/fname parsing block, quoted and re-verified
+literally after an earlier WebFetch summary made an incorrect claim
+about `url.ParseRequestURI` not parsing query strings - checked
+against basic, well-established Go stdlib semantics and confirmed
+wrong, a good reminder that a summarized "finding" is not the same as
+verified fact in this session, generally, not just for CI annotations)
+against gortmplib's real `buildURL(tcURL, app, streamKey)` (confirmed,
+via its two literal call sites, that `app` comes from the RTMP
+`connect` command and `streamKey` comes from `publish`'s own stream-
+name argument). For this project's URL shape
+(`rtmps://host/live?user=X&pass=Y`, no path segment after "live"),
+ffmpeg's parser takes its "no slash found" branch and puts the
+*entire* "live?user=X&pass=Y" string into `app`, leaving the publish
+command's own stream name empty - a different split than assumed, but
+tracing `buildURL`'s own concatenation (`"/" + app` then, only if
+non-empty, `+ "/" + streamKey`) through by hand suggests the final
+reconstructed `Path`/`RawQuery` split still comes out correct either
+way. Static tracing through two separate third-party codebases' string
+handling reached its limit of usefulness here - not confident enough
+in either direction to act on without real, direct evidence.
+
+### Fix (diagnostic instrumentation, not a guessed root-cause fix)
+Added `-v debug` (ffmpeg's own global verbosity flag, must precede
+every other argument) to the positive-path publish specifically.
+ffmpeg's own RTMP protocol handler logs a single line - `"Proto = %s,
+path = %s, app = %s, fname = %s"` (found and quoted verbatim from
+`rtmpproto.c`) - stating exactly what it decided `app` and `fname`
+(playpath) are for this URL. That line is extracted from the captured
+stderr and logged, giving real, direct evidence of ffmpeg's actual
+behavior instead of continuing to trace two different C/Go codebases'
+string-handling by hand.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Commits (chronological, this milestone)
+42. This entry - `ci: log ffmpeg's own real app/playpath split via
+    -v debug`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

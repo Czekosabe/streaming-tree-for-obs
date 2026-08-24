@@ -844,8 +844,16 @@ async function main() {
     // the mid-stream "receiving" state, not merely the exit code once
     // the whole publish has already finished - a synchronous run would
     // never actually prove the waiting -> receiving transition.
+    // -v debug (global option, must precede everything else) makes
+    // ffmpeg's own RTMP protocol handler print exactly what it decided
+    // "app" and "fname" (playpath) are for this URL - real, direct
+    // evidence of how it split the credential-bearing "?user=&pass="
+    // suffix, rather than continuing to trace ffmpeg/gortmplib source
+    // hypothetically. Filtered out of the failure detail below by the
+    // existing notable-lines filter unless it happens to match those
+    // keywords, so grabbed and logged separately here regardless.
     let publishStderr = '';
-    const publishChild = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -1), '-t', '10', '-f', 'flv', validPublishUrl]);
+    const publishChild = clientSpawn('ffmpeg', ['-v', 'debug', ...ffmpegBase.slice(0, -1), '-t', '10', '-f', 'flv', validPublishUrl]);
     publishChild.stderr.on('data', (c) => (publishStderr += c.toString()));
     let publishExited = false;
     let publishExitCode = null;
@@ -872,6 +880,8 @@ async function main() {
         console.log(`     diag rtmpconns/list at t=${(i + 1) * 250}ms: ${JSON.stringify(items).slice(0, 700)}`);
       }
     }
+    const protoLine = publishStderr.split('\n').find((l) => l.startsWith('Proto = '));
+    console.log(`     diag ffmpeg's own app/fname split: ${protoLine || '(no "Proto = " line found yet in captured stderr)'}`);
 
     await new Promise((r) => setTimeout(r, PUBLISH_SETTLE_MS));
     // MediaMTX's own /v3/paths/list is the same ground truth the
