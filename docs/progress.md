@@ -41566,3 +41566,40 @@ credential-lifecycle addition finally passes in full.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): give the credential-lifecycle publish helper real settle margin, not an exact tie
+
+### Real CI result: the MediaMTX-restart-race fix worked; a second, different bug surfaced
+Commit `5a5b827` was checked by real CI: run `32716381423`, both
+architectures still failed, but no longer on the previous "address
+already in use" cause - the dedicated `::error::` for step 25 now
+carried a full, structured detail payload:
+`{"receiving":false,"exited":true,"exitCode":0,"detail":"...40
+frames...time=00:00:03.99..."}`. The publish itself succeeded
+cleanly (exit 0, a complete real encode), but the settle-time status
+check never observed `receiving: true`.
+
+### Real root cause
+`publishAndConfirmAccepted`'s ffmpeg clip used `-t 4` against the same
+`PUBLISH_SETTLE_MS` (4000ms) the check waits before polling status -
+an exact tie, not a margin. The 40-frame/3.99s clip genuinely finished
+at almost exactly the same instant the settle check fired, so the
+poll sometimes lands after the publisher has already disconnected.
+The already-proven-reliable main positive-path test above never has
+this problem because it uses `-t 10` against the identical 4-second
+settle wait, leaving a real 6-second margin where the publish is
+unambiguously still active.
+
+### Fix
+Changed `publishAndConfirmAccepted`'s clip duration from `-t 4` to
+`-t 8`, restoring a real ~4-second margin between the settle check and
+the clip's own natural end, consistent with the ratio the main
+positive-path test already uses successfully.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -982,8 +982,16 @@ async function main() {
     // is used to prove *acceptance*, mirroring the already-established
     // reason the positive path above needs real settle time too.
     async function publishAndConfirmAccepted(secret) {
+      // -t 8, not 4: PUBLISH_SETTLE_MS (4s) needs a real margin before
+      // the clip's own natural end, exactly like the main positive-
+      // path test above uses -t 10 against the same 4s settle wait -
+      // a first version of this helper used -t 4 (equal to the settle
+      // wait itself) and a real CI failure showed the settle check
+      // racing the publish's own completion: exitCode 0, but
+      // receiving:false, at exactly 40 frames (a clean 4.0s clip
+      // finishing right as the check fired), not a real rejection.
       const app = `${INGEST_PATH}?user=${PUBLISHER_USER}&pass=${secret}`;
-      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '4', '-rtmp_app', app, '-f', 'flv', `${rtmpsBase}/`]);
+      const child = clientSpawn('ffmpeg', [...ffmpegBase.slice(0, -4), '-t', '8', '-rtmp_app', app, '-f', 'flv', `${rtmpsBase}/`]);
       let exited = false;
       let exitCode = null;
       let stderr = '';
