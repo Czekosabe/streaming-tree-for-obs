@@ -43842,3 +43842,51 @@ state).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: write the Stage 20E manual verification checklist
+
+Adds `docs/manual-verification.md`, the real, ID-based checklist
+governing task §29 requires, written before any operator is asked to
+test anything (§37's own ordering requirement - all remaining
+autonomous work continues first).
+
+Twelve sessions (A-L), matching the governing task's own list exactly:
+A Windows desktop packaged app, B browser/UI navigation, C local OBS
+ingest, D outgoing destination branch streaming, E Browser Source
+overlays, F connected-account authentication, G updater UX (without a
+fake public release), H Linux desktop, I Linux headless + real OBS
+RTMPS, J macOS unsigned package, K diagnostics (Logs page + support
+bundle), L install/uninstall/restart/recovery UX. Every item has a
+stable ID, precondition, exact action, and expected visible result.
+Sessions requiring hardware this environment cannot guarantee (H/I/J)
+are explicitly marked as recordable via "Not verified — environment
+unavailable" rather than silently omitted or forced - per
+`docs/final-hardening.md` §M/§N, a platform's status is never
+downgraded for missing hardware, but never gains an unearned
+physical-verification claim either.
+
+The manual-testing secret rule (governing task §30) is stated once,
+prominently, at the top, rather than repeated per item: never paste a
+stream key, OAuth token, admin password, master key, RTMPS password,
+session cookie, CSRF token, remote-overlay capability URL, or TLS key
+into chat - report PASS/FAIL with a redacted description instead.
+Individual items reinforce this at the specific points a secret would
+otherwise naturally appear (e.g. C-1's stream key, I-2's provisioned
+credential, K-9's bundle byte-scan).
+
+Session D-5 and Session L-3 specifically exercise two of this stage's
+own new/changed behaviors: the "Stop all" confirmation prompt added in
+the UX-polish entry above, and the requirement that a force-killed app
+never silently resumes a live outgoing branch on its own next launch.
+Session K exercises the diagnostics/support-bundle work from the
+earlier entries in this stage end to end, including a manual
+byte-level secret scan of the exported bundle as a human complement to
+the automated `TestSupportBundleNeverLeaksSecretShapedValues` self-audit.
+
+This document is pure documentation - no source, script, or workflow
+file changed, so no CI re-execution is required or expected for it
+(`docs/ci-reliability.md` §14).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
