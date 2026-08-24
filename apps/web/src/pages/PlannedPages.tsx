@@ -15,12 +15,7 @@ export function PlatformsPage() {
       titleKey="platforms.title"
       descriptionKey="platforms.description"
       icon={Tv}
-      plannedKeys={[
-        'platforms.planned.manageBranches',
-        'platforms.planned.oauth',
-        'platforms.planned.credentials',
-        'platforms.planned.encoding',
-      ]}
+      plannedKeys={['platforms.planned.encoding']}
     />
   );
 }
@@ -34,12 +29,7 @@ export function MetadataPage() {
       titleKey="metadata.title"
       descriptionKey="metadata.description"
       icon={SlidersHorizontal}
-      plannedKeys={[
-        'metadata.planned.presets',
-        'metadata.planned.overrides',
-        'metadata.planned.push',
-        'metadata.planned.history',
-      ]}
+      plannedKeys={['metadata.planned.presets', 'metadata.planned.history']}
     />
   );
 }

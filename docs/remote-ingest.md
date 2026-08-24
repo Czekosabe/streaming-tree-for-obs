@@ -1,8 +1,12 @@
 # Stage 20D2C - remote OBS ingest and remote overlay capability plane
 
-This document is the governing contract for Stage 20D2C. It is written and
+This document is the governing contract for Stage 20D2C. It was written and
 committed before any Stage 20D2C product code, per the milestone's own
-requirement. It builds directly on:
+requirement at the time; Stage 20D2C is now **Completed** (see
+`docs/platform-support.md`) and this contract remains the authoritative
+reference for its real, shipped behavior - the frontend
+(`RemoteIngestPanel.tsx`) and backend both implement exactly what is
+described below. It builds directly on:
 
 - Stage 20D2A (`docs/linux-headless-server.md`) - the headless service
   foundation and the encrypted headless secret store;

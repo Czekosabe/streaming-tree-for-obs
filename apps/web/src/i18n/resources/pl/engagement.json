@@ -3,6 +3,7 @@
     "title": "Magistrala zdarzeń",
     "description": "Wyłącznie w pamięci - resetuje się przy każdym restarcie backendu.",
     "loading": "Wczytywanie stanu magistrali zdarzeń…",
+    "unavailable": "Nie udało się wczytać stanu magistrali zdarzeń.",
     "retained": "Zachowane zdarzenia",
     "oldestSequence": "Najstarszy numer sekwencji",
     "newestSequence": "Najnowszy numer sekwencji",

@@ -5,11 +5,8 @@
   },
   "platforms": {
     "title": "Platformy",
-    "description": "Podłączanie i konfiguracja celów drzewa transmisji.",
+    "description": "Dodawanie, łączenie i konfiguracja celów działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok nie jest jeszcze zbudowany.",
     "planned": {
-      "manageBranches": "Dodawanie i usuwanie gałęzi transmisji",
-      "oauth": "Logowanie OAuth dla każdej platformy",
-      "credentials": "Klucze transmisji w magazynie poświadczeń systemu, nigdy w przeglądarce",
       "encoding": "Profil kodowania dla każdej gałęzi (bitrate, rozdzielczość, odstęp klatek kluczowych)"
     }
   },
@@ -25,11 +22,9 @@
   },
   "metadata": {
     "title": "Metadane",
-    "description": "Zestawy metadanych transmisji współdzielone przez platformy.",
+    "description": "Edycja i wysyłanie metadanych tytułu/kategorii dla poszczególnych platform działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok, z zestawami wielokrotnego użytku współdzielonymi przez platformy, nie jest jeszcze zbudowany.",
     "planned": {
       "presets": "Zestawy wielokrotnego użytku stosowane na kilku platformach naraz",
-      "overrides": "Nadpisania dla pojedynczych platform oparte na modelu możliwości",
-      "push": "Wysyłanie metadanych do API platform przed wejściem na żywo",
       "history": "Historia wcześniej używanych tytułów i kategorii"
     }
   },

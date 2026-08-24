@@ -10,6 +10,7 @@ import { RuntimeControls } from '@/components/runtime/RuntimeControls';
 import { runtimeErrorMessage } from '@/components/runtime/runtime-error-message';
 import { StartEnabledConfirmDialog } from '@/components/runtime/StartEnabledConfirmDialog';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import {
@@ -299,9 +300,13 @@ function BranchTablePanel() {
   const stopAllMutation = useStopAllBranchesMutation();
 
   const [confirmingStartEnabled, setConfirmingStartEnabled] = useState(false);
+  const [confirmingStopAll, setConfirmingStopAll] = useState(false);
 
   const platforms = platformsQuery.data ?? [];
   const bulkBusy = startEnabledMutation.isPending || stopAllMutation.isPending;
+  const liveBranchCount = platforms.filter(
+    (platform) => branchFor(branchesQuery.data, platform.id)?.state === 'live',
+  ).length;
 
   return (
     <Panel>
@@ -322,7 +327,19 @@ function BranchTablePanel() {
             size="sm"
             disabled={bulkBusy}
             icon={<Square className="size-3.5" />}
-            onClick={() => stopAllMutation.mutate()}
+            onClick={() => {
+              // A destination that is not actually live yet (only
+              // "starting"/blocked/idle) has nothing a viewer would
+              // notice stop - only ask for confirmation when this
+              // action would really interrupt a real, currently-
+              // sending stream (governing task's own "stop all
+              // branches" destructive-action requirement).
+              if (liveBranchCount > 0) {
+                setConfirmingStopAll(true);
+              } else {
+                stopAllMutation.mutate();
+              }
+            }}
           >
             {t('runtime:branch.stopAll')}
           </Button>
@@ -427,6 +444,21 @@ function BranchTablePanel() {
           })
         }
         onCancel={() => setConfirmingStartEnabled(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmingStopAll}
+        title={t('runtime:branch.confirmStopAll.title')}
+        message={t('runtime:branch.confirmStopAll.body', { count: liveBranchCount })}
+        confirmLabel={t('runtime:branch.confirmStopAll.confirm')}
+        destructive
+        busy={stopAllMutation.isPending}
+        onConfirm={() =>
+          stopAllMutation.mutate(undefined, {
+            onSuccess: () => setConfirmingStopAll(false),
+          })
+        }
+        onCancel={() => setConfirmingStopAll(false)}
       />
     </Panel>
   );

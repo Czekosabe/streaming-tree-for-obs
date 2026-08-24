@@ -43,7 +43,8 @@
     "accountsConnected_one": "{{count}} konto uczestniczy",
     "accountsConnected_few": "{{count}} konta uczestniczą",
     "accountsConnected_many": "{{count}} kont uczestniczy",
-    "accountsConnected_other": "{{count}} konta uczestniczy"
+    "accountsConnected_other": "{{count}} konta uczestniczy",
+    "accountsUnavailable": "Nie udało się wczytać podłączonych kont, więc czat może się nie pojawić nawet jeśli połączenie na żywo powyżej jest aktywne."
   },
   "empty": "Brak wiadomości.",
   "deletedMessagePlaceholder": "Wiadomość usunięta",

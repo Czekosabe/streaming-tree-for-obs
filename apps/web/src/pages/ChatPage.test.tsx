@@ -113,6 +113,12 @@ beforeEach(() => {
 });
 
 describe('ChatPage', () => {
+  it('shows an inline notice when the connected-account list fails to load', async () => {
+    vi.mocked(accountsApi).fetchAccounts.mockRejectedValue(new Error('network down'));
+    renderPage();
+    expect(await screen.findByText(/connected accounts could not be loaded/i)).toBeInTheDocument();
+  });
+
   it('shows the empty state before any message arrives', async () => {
     renderPage();
     expect(await screen.findByText(/no messages yet/i)).toBeInTheDocument();

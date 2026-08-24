@@ -43666,3 +43666,101 @@ annotation content for the first time.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: frontend UX polish audit (governing task §27/§28/§35)
+
+A background Explore agent audited the frontend for release-blocking
+polish defects (stale placeholder text, broken links, missing loading/
+error states, unlabeled controls, missing destructive-action
+confirmation, secrets retained after modal close, untranslated
+strings, overflow hazards) plus a README/docs operator-journey pass.
+Six of eight categories, and the README pass, found nothing. Two
+categories found real, verified issues; both were spot-checked against
+the actual source (not trusted blindly) before any fix:
+
+### Missing loading/error states (§27)
+- `ChatPage.tsx`: `accountsQuery` had no error branch - if the
+  connected-accounts list failed to load, chat would silently show
+  empty with the live-stream status chip as the only clue. Added an
+  inline notice (`chat:status.accountsUnavailable`) alongside the
+  existing gap-warning banners.
+- `OverlaysPage.tsx`: `useChatOverlaysQuery` had no loading/error
+  branch at all - a fetch failure was indistinguishable from
+  "genuinely zero overlays yet." Added the same
+  loading/error/success three-way branch `StreamsPage.tsx` already
+  established, including a retry button.
+- `EngagementPage.tsx`: only `status.isLoading` was checked - on a
+  real fetch error (`isLoading` false, `data` still `undefined`) it
+  showed the "loading" copy **forever**, not a stuck state a screen
+  reader or a human would ever resolve on their own. Added an
+  `isError` branch ahead of the loading check.
+
+### Missing destructive-action confirmation (§27/§35 - "stop all
+branches" is explicitly named in the governing task's own list)
+`StreamsPage.tsx`'s "Stop all" fired `stopAllMutation.mutate()`
+immediately, with no confirmation, while the equally bulk "Start
+enabled" button beside it already goes through
+`StartEnabledConfirmDialog`. Fixed using the existing generic
+`ConfirmDialog` component (no new bespoke dialog needed) - gated on
+whether any branch is genuinely live right now (`liveBranchCount > 0`):
+stopping something that isn't actually live yet interrupts nothing a
+viewer would notice, so confirming would be needless friction for a
+no-op-shaped action; stopping a real, currently-sending branch shows a
+pluralized, count-aware message naming exactly how many streams will
+end. Polish-only fix, not a redesign - reused the existing component
+and the existing bulk-mutation hook unchanged.
+
+**Known gap, stated honestly**: no automated test was added for this
+specific `StreamsPage.tsx` change - unlike `ChatPage`/`OverlaysPage`/
+`EngagementPage`, no test file exists yet for `StreamsPage.tsx`, and
+building one from scratch (multi-hook branch/platform/runtime/ffmpeg
+schema mocking) was judged disproportionate to a polish-scope fix that
+is purely additive and fails safe (worst case: the confirmation prompt
+doesn't appear, which is exactly today's pre-fix behavior, never a
+regression beyond it). This exact interaction is one of the governing
+task's own required manual destructive-action UX inspection items
+(§35), so it will receive real human verification at the upcoming
+manual gate regardless.
+
+### Stale placeholder copy describing already-completed functionality
+The agent found `/platforms` and `/metadata`'s placeholder bullets
+describing OAuth sign-in, OS-credential-store stream-key storage,
+per-platform metadata overrides, and pushing metadata to platform APIs
+as merely "planned" - all four are real and already reachable from the
+Dashboard (`ConnectedAccountsPanel`/`YouTubeAccountsPanel`,
+`StreamKeySection`, `MetadataEditor`/`MetadataForm`). Each claim was
+independently verified against the real component/wiring before
+touching any copy (not trusted from the audit report alone) - adding
+and removing platforms was found to be a fifth stale bullet the audit
+itself hadn't flagged (`AddPlatformDialog`, delete actions in
+`PlatformSettingsDialog`/`AccountLinkSection`), also removed. Both
+placeholders' descriptions now say plainly that this functionality
+already works from the Dashboard and only this dedicated view isn't
+built yet; `plannedKeys` was trimmed to the two/one items that are
+genuinely still unbuilt (per-branch encoding profiles; metadata
+presets and title/category history). English and Polish both updated.
+
+### `docs/remote-ingest.md` stale opening framing
+Still opened with "written and committed before any Stage 20D2C
+product code" even though Stage 20D2C is now Completed and its
+frontend (`RemoteIngestPanel.tsx`) fully implements the contract -
+`README.md` links to it as the authoritative reference, so a reader
+following that link would see framing implying the feature might not
+exist yet. Corrected to state plainly that the stage is Completed and
+the document remains the authoritative reference for its real, shipped
+behavior.
+
+### Verification
+`npm run typecheck`, `npm run lint` (0 errors, same one pre-existing
+warning), `npm run i18n:check` ("23 namespaces, no differences"),
+`npm run build`: all clean. Three new targeted tests (one per page with
+an existing test file: `OverlaysPage.test.tsx`, `EngagementPage.test.tsx`,
+`ChatPage.test.tsx`) each assert the new error-state text appears
+(and, for Overlays, that it's distinct from the empty-state text; for
+Engagement, that the old permanent-loading text is gone).
+`npm run test -- --run`: **1420 tests passed across 105 files** (up
+from 1417/105).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

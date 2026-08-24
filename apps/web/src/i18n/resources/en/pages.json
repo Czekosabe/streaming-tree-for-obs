@@ -5,11 +5,8 @@
   },
   "platforms": {
     "title": "Platforms",
-    "description": "Connect and configure destinations for the streaming tree.",
+    "description": "Adding, connecting and configuring destinations already works from the Dashboard's platform cards. This dedicated view is not built yet.",
     "planned": {
-      "manageBranches": "Adding and removing platform branches",
-      "oauth": "OAuth sign-in per platform",
-      "credentials": "Stream keys stored in the OS credential store, never in the browser",
       "encoding": "Per-branch encoding profile (bitrate, resolution, keyframe interval)"
     }
   },
@@ -25,11 +22,9 @@
   },
   "metadata": {
     "title": "Metadata",
-    "description": "Stream metadata presets shared across platforms.",
+    "description": "Editing and pushing per-platform title/category metadata already works from the Dashboard's platform cards. This dedicated view, with reusable presets shared across platforms, is not built yet.",
     "planned": {
       "presets": "Reusable presets applied to several platforms at once",
-      "overrides": "Per-platform overrides driven by the capability model",
-      "push": "Pushing metadata to platform APIs before going live",
       "history": "History of previously used titles and categories"
     }
   },

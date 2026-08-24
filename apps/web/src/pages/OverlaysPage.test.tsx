@@ -163,6 +163,14 @@ describe('OverlaysPage', () => {
     await waitFor(() => expect(chatOverlayApi.deleteChatOverlay).toHaveBeenCalledWith('ov_1'));
   });
 
+  it('shows an error state, distinct from the empty state, when the overlay list fails to load', async () => {
+    vi.mocked(chatOverlayApi).fetchChatOverlays.mockRejectedValue(new Error('network down'));
+    renderPage();
+
+    expect(await screen.findByText(/overlays could not be loaded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no overlays yet/i)).not.toBeInTheDocument();
+  });
+
   it('never renders a blocked term value or hidden-user list from another overlay implicitly (only what the mocked API for THIS overlay returns)', async () => {
     const profile = baseProfile();
     vi.mocked(chatOverlayApi).fetchChatOverlays.mockResolvedValue([profile]);

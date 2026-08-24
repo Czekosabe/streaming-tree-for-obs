@@ -1,7 +1,10 @@
 {
   "page": {
     "title": "Overlays",
-    "description": "OBS Browser Source chat overlays - a public, read-only, filtered view of your chat for the stream itself. For the private operator view, see Chat."
+    "description": "OBS Browser Source chat overlays - a public, read-only, filtered view of your chat for the stream itself. For the private operator view, see Chat.",
+    "loading": "Loading overlays...",
+    "unavailable": "Overlays could not be loaded.",
+    "retryAction": "Try again"
   },
   "list": {
     "empty": "No overlays yet. Create one to get a Browser Source URL.",

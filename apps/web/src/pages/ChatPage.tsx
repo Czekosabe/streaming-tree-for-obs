@@ -176,6 +176,9 @@ export function ChatPage() {
             {status.data?.busGap === true && (
               <span className="w-full text-status-starting">{t('chat:status.busGapWarning')}</span>
             )}
+            {accountsQuery.isError && (
+              <span className="w-full text-status-error">{t('chat:status.accountsUnavailable')}</span>
+            )}
           </PanelBody>
         </Panel>
 

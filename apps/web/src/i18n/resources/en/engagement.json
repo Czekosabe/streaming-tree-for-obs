@@ -3,6 +3,7 @@
     "title": "Event Bus",
     "description": "In-memory only - resets on every backend restart.",
     "loading": "Loading Event Bus status…",
+    "unavailable": "Event Bus status could not be loaded.",
     "retained": "Retained events",
     "oldestSequence": "Oldest sequence",
     "newestSequence": "Newest sequence",

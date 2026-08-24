@@ -36,7 +36,9 @@ export function EngagementPage() {
         <Panel>
           <PanelHeader title={t('engagement:status.title')} description={t('engagement:status.description')} />
           <PanelBody>
-            {status.isLoading || status.data === undefined ? (
+            {status.isError ? (
+              <p className="text-xs text-status-error">{t('engagement:status.unavailable')}</p>
+            ) : status.isLoading || status.data === undefined ? (
               <p className="text-xs text-ink-faint">{t('engagement:status.loading')}</p>
             ) : (
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-4">

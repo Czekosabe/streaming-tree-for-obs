@@ -200,6 +200,12 @@
     },
     "startSingleNote": "This begins real outgoing transmission to this destination's platform.",
     "resultAccepted": "Started",
-    "resultConflict": "Already running"
+    "resultConflict": "Already running",
+    "confirmStopAll": {
+      "title": "Stop all outputs?",
+      "body_one": "This immediately stops {{count}} destination that is currently sending. Viewers watching that stream will see it end.",
+      "body_other": "This immediately stops {{count}} destinations that are currently sending. Viewers watching those streams will see them end.",
+      "confirm": "Stop all outputs"
+    }
   }
 }

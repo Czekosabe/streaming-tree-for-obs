@@ -41,7 +41,8 @@
     "busGapWarning": "Some events were missed before this projection started listening. History before this point may be incomplete.",
     "retainedCount": "{{count}} retained",
     "accountsConnected_one": "{{count}} account contributing",
-    "accountsConnected_other": "{{count}} accounts contributing"
+    "accountsConnected_other": "{{count}} accounts contributing",
+    "accountsUnavailable": "Connected accounts could not be loaded, so no chat may appear even if the live connection above is open."
   },
   "empty": "No messages yet.",
   "deletedMessagePlaceholder": "Message deleted",

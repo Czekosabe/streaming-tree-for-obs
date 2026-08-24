@@ -52,6 +52,16 @@ describe('EngagementPage', () => {
     expect(await screen.findByText('0/1000')).toBeInTheDocument();
   });
 
+  it('shows an error state, not a stuck "loading" message, when the Event Bus status request fails', async () => {
+    vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([]);
+    vi.mocked(engagementApi).fetchEngagementStatus.mockRejectedValue(new Error('network down'));
+
+    renderPage();
+
+    expect(await screen.findByText(/event bus status could not be loaded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/loading event bus status/i)).not.toBeInTheDocument();
+  });
+
   it('shows a clear empty state when no Twitch or YouTube account is connected', async () => {
     vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([]);
     vi.mocked(engagementApi).fetchEngagementStatus.mockResolvedValue({

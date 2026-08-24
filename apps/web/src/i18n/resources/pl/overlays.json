@@ -1,7 +1,10 @@
 {
   "page": {
     "title": "Nakładki",
-    "description": "Nakładki czatu OBS Browser Source - publiczny, tylko do odczytu, filtrowany widok czatu na potrzeby samej transmisji. Prywatny widok operatora znajduje się w zakładce Czat."
+    "description": "Nakładki czatu OBS Browser Source - publiczny, tylko do odczytu, filtrowany widok czatu na potrzeby samej transmisji. Prywatny widok operatora znajduje się w zakładce Czat.",
+    "loading": "Wczytywanie nakładek...",
+    "unavailable": "Nie udało się wczytać nakładek.",
+    "retryAction": "Spróbuj ponownie"
   },
   "list": {
     "empty": "Brak nakładek. Utwórz jedną, aby uzyskać adres URL Browser Source.",

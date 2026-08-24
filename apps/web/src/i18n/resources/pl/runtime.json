@@ -204,6 +204,14 @@
     },
     "startSingleNote": "To rozpoczyna rzeczywistą transmisję wychodzącą na platformę tego celu.",
     "resultAccepted": "Uruchomiono",
-    "resultConflict": "Już działa"
+    "resultConflict": "Już działa",
+    "confirmStopAll": {
+      "title": "Zatrzymać wszystkie transmisje?",
+      "body_one": "Ta czynność natychmiast zatrzyma {{count}} trwającą transmisję. Widzowie oglądający ten strumień zobaczą jego zakończenie.",
+      "body_few": "Ta czynność natychmiast zatrzyma {{count}} trwające transmisje. Widzowie oglądający te strumienie zobaczą ich zakończenie.",
+      "body_many": "Ta czynność natychmiast zatrzyma {{count}} trwających transmisji. Widzowie oglądający te strumienie zobaczą ich zakończenie.",
+      "body_other": "Ta czynność natychmiast zatrzyma {{count}} trwających transmisji. Widzowie oglądający te strumienie zobaczą ich zakończenie.",
+      "confirm": "Zatrzymaj wszystkie transmisje"
+    }
   }
 }
