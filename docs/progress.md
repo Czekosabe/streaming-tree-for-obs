@@ -43157,3 +43157,133 @@ prose.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — feat: add the Stage 20E diagnostics logging backend and support bundle
+
+Implements `docs/final-hardening.md` §A/§B/§C/§E: the bounded,
+redacted operator diagnostics surface, wired into both real server
+binaries. Product code only from this point on wraps the existing
+single `log/slog` logger - no second logging universe.
+
+### New `internal/diagnostics` package
+- `RedactPath(path string) string` (`redact.go`) - centralized,
+  route-aware redaction. Enumerates every real capability-bearing
+  route this project registers (sourced directly from the mux
+  registrations, not inferred): `/api/public/chat-overlays/*`,
+  `/api/public/alert-profiles/*`, `/api/public/widgets/*`,
+  `/api/public/visual-assets/*`, `/api/public/audio/*` (including its
+  one two-capability-segment case, `.../bytes/{token}`), every
+  `/overlay/{chat,alerts,audio,widgets}/*` Browser Source route, and
+  every `/api/remote-overlay/{domain}/{slug}/*` management route.
+  Supersedes `internal/httpapi/middleware.go`'s old
+  `redactLoggedPath`, which this stage's earlier audit found covered
+  only the chat-overlay case.
+- `RedactText(s string) string` - defense-in-depth free-text scanner
+  for secret-shaped substrings (32+ char hex/base64url runs,
+  `user=...&pass=...` query fragments) in messages/error text that
+  `RedactPath` never sees, since it only inspects request paths.
+- `Recorder` (`recorder.go`) - a fixed 2,000-entry ring buffer
+  (`RingCapacity`), safe for concurrent writers, with a
+  newest-first, filterable, cursor-paginated `Snapshot(Filter)` method
+  (severity/subsystem/search/before-cursor, bounded by
+  `DefaultLimit`=200/`MaxLimit`=2000 regardless of what a caller
+  requests).
+- `Handler` (`handler.go`) - an `slog.Handler` wrapping the real
+  handler: delegates every record to it completely unchanged (proved
+  by test - headless/journald output stays byte-for-byte identical),
+  then separately captures a redacted copy (`RedactText` applied to
+  the message and every string/error attribute) into the `Recorder`.
+  Subsystem is derived automatically from the logging call site's
+  program counter (`runtime.FuncForPC` -> package name) rather than
+  requiring every existing call site to attach one by hand.
+- 20 unit tests across `redact_test.go`/`recorder_test.go`, including
+  a same-message diff test proving the real handler's output keeps a
+  raw secret-shaped token unredacted (the byte-for-byte-unchanged
+  contract) while the captured ring-buffer copy of the same record
+  does not.
+
+### New `GET /api/logs` and `POST /api/diagnostics/support-bundle`
+`internal/httpapi/logs.go`: registered only when
+`Options.Diagnostics`/`Options.DiagnosticsBundle` are non-nil (the
+same nil-means-not-registered convention as every other optional
+route group), never under `/api/public/*`. No new auth logic was
+written - both routes ride the single existing
+`withRemoteManagementSecurity` middleware already applied to every
+`/api/` route: a no-op for local desktop/loopback use (matching every
+other local route), session auth for the read-only `GET /api/logs`,
+and session + CSRF + Origin for the state-creating
+`POST .../support-bundle` once remote management is enabled - exactly
+`docs/final-hardening.md` §E's design, requiring zero new
+authorization code.
+
+`internal/httpapi/middleware.go`: both `withLogging` and (the
+previously-unredacted) `withRecovery` now call the centralized
+`diagnostics.RedactPath` - closing the real gap the earlier audit
+found in the panic-recovery log line. The old
+`redactLoggedPath`/`publicChatOverlayPathPrefix` and their dedicated
+test file were removed as fully superseded (equivalent and broader
+coverage now lives in `internal/diagnostics/redact_test.go`); the
+existing `TestAccessLogNeverContainsOAuthSecrets` regression test
+(which does not depend on the exact placeholder text) still passes
+unchanged.
+
+### New `internal/support` package (the bundle generator)
+`bundle.go`: `Builder.BuildSupportBundle` produces one deterministic
+ZIP (`manifest.json` + `logs.json`) from a caller-supplied `Snapshot`
+(plain, already-sanitized fields only - this package imports nothing
+from `internal/httpapi` or any domain-service package, so what a
+bundle can ever contain is fully determined by what its caller puts
+into a `Snapshot`) plus the `Recorder`'s own redacted entries. The
+filename is entirely app-controlled
+(`streaming-tree-support-<version>-<UTC timestamp>.zip`), never
+derived from request input.
+
+`bundle_test.go` - the §14 self-audit: seeds seven synthetic
+secret-shaped values through the real logger path (stream key, OAuth
+access/refresh tokens, remote-overlay capability token, session
+cookie, CSRF token, an RTMPS `pass=` fragment), generates a real
+bundle, unzips it, and scans every recovered byte, asserting none of
+the seven appear verbatim AND that a distinct non-secret marker
+message plus non-secret manifest/subsystem-state data DO appear (so
+the test cannot pass merely because the bundle came out empty). A
+second test asserts the filename is safe (correct prefix/suffix, no
+path-separator characters).
+
+### Wiring (`cmd/server/main.go`, `cmd/testserver/main.go`)
+Both binaries now construct one `diagnostics.Recorder`, wrap their
+existing `slog.NewTextHandler(os.Stdout, ...)` in
+`diagnostics.NewHandler` before `slog.SetDefault` - the one seam - and
+build a `support.Snapshot`-gathering closure from services already in
+scope (MediaMTX supervisor snapshot, branch manager's `FFmpegStatus`,
+`buildinfo.CommitInfo`/`EffectiveVersion`/`Packaged`, `runtime.GOOS`/
+`GOARCH`/`Version()`); `cmd/server` additionally reports
+remote-management/remote-ingest/remote-overlay enabled flags and the
+real updater status. `cmd/testserver` (the `-tags integration` twin
+used by the 24 canonical integration scripts) omits those
+remote-management/updater fields since it never constructs them,
+matching its own existing "identical wiring, minus what does not
+apply" pattern for every other subsystem. Both `Diagnostics` and
+`DiagnosticsBundle` are passed into `httpapi.Options`.
+
+### Verification
+- `go build ./...` and `go build -tags integration ./...`: both clean.
+- `go vet ./...` and `go vet -tags integration ./...`: both clean.
+- `go test ./...` (full backend suite, all packages): all green,
+  including the new `internal/diagnostics` (20 tests) and
+  `internal/support` (2 tests, including the secret self-audit)
+  packages.
+- `gofmt -l .` across the whole `apps/server` module: no output (fully
+  formatted).
+
+### Deliberately not yet done (tracked, not forgotten)
+No frontend Logs UI yet (still the Stage 20E placeholder page) - the
+backend API this stage's contract requires it to call now exists.
+`GET /api/logs`'s `nextCursor` pagination and filter query parameters
+have unit coverage only at the `Recorder.Snapshot` level so far, not
+yet an HTTP-level integration test - planned alongside the frontend
+work in the next logical commit, once there is a real caller to
+exercise the full request/response contract against.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

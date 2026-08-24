@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/streaming-tree/server/internal/diagnostics"
 )
 
 // middleware is the standard decorator signature used by the chain below.
@@ -51,7 +53,7 @@ func withRecovery(logger *slog.Logger) middleware {
 				if recovered := recover(); recovered != nil {
 					logger.Error("panic recovered in handler",
 						slog.Any("panic", recovered),
-						slog.String("path", r.URL.Path),
+						slog.String("path", diagnostics.RedactPath(r.URL.Path)),
 					)
 					writeError(w, logger, http.StatusInternalServerError,
 						"internal_error", "The server encountered an unexpected error.")
@@ -73,36 +75,12 @@ func withLogging(logger *slog.Logger) middleware {
 
 			logger.Info("request",
 				slog.String("method", r.Method),
-				slog.String("path", redactLoggedPath(r.URL.Path)),
+				slog.String("path", diagnostics.RedactPath(r.URL.Path)),
 				slog.Int("status", recorder.status),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
 	}
-}
-
-// publicChatOverlayPathPrefix is every public chat-overlay route's own
-// path prefix, up to (and including) the trailing slash before the
-// public slug segment.
-const publicChatOverlayPathPrefix = "/api/public/chat-overlays/"
-
-// redactLoggedPath replaces a public overlay's own slug segment with a
-// fixed placeholder before it ever reaches the access log - the slug is
-// the unguessable part of a Browser Source URL (see
-// internal/domain/chatoverlay's own doc comment on why it is never
-// logged), and the ordinary per-request access log would otherwise leak
-// it via the request path alone, on every single request a live OBS
-// Browser Source makes.
-func redactLoggedPath(path string) string {
-	if !strings.HasPrefix(path, publicChatOverlayPathPrefix) {
-		return path
-	}
-	rest := path[len(publicChatOverlayPathPrefix):]
-	slashIdx := strings.IndexByte(rest, '/')
-	if slashIdx < 0 {
-		return publicChatOverlayPathPrefix + "{slug}"
-	}
-	return publicChatOverlayPathPrefix + "{slug}" + rest[slashIdx:]
 }
 
 // withCORS answers pre-flight requests and adds CORS headers for the configured

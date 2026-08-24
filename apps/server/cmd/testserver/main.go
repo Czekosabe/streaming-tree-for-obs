@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/diagnostics"
 	"github.com/streaming-tree/server/internal/domain/account"
 	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	"github.com/streaming-tree/server/internal/domain/audioasset"
@@ -75,6 +77,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
+	"github.com/streaming-tree/server/internal/support"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 
 	"google.golang.org/grpc/credentials"
@@ -89,9 +92,14 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	// Stage 20E: identical wiring to cmd/server's own diagnostics
+	// handler - the real stdout handler is unchanged, every record
+	// additionally lands, redacted, in a bounded ring buffer.
+	diagnosticsRecorder := diagnostics.NewRecorder()
+	logger := slog.New(diagnostics.NewHandler(
+		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+		diagnosticsRecorder,
+	))
 	slog.SetDefault(logger)
 	logger.Warn("running the integration TEST server: credentials are held in an in-memory fake store, not the OS keychain")
 
@@ -514,6 +522,32 @@ func run() error {
 	})
 	branchManager.Start(ctx)
 
+	// Stage 20E support bundle - identical wiring to cmd/server, minus
+	// the remote-management/remote-ingest/updater fields this simpler
+	// integration twin never constructs.
+	supportBundleSnapshot := func(ctx context.Context) (support.Snapshot, error) {
+		mediamtxSnapshot := supervisor.Snapshot()
+		ffmpegStatus := branchManager.FFmpegStatus()
+		commit, dirty, _ := buildinfo.CommitInfo()
+
+		return support.Snapshot{
+			Version:          buildinfo.EffectiveVersion(),
+			Commit:           commit,
+			CommitDirty:      dirty,
+			Packaged:         buildinfo.Packaged(),
+			OS:               runtime.GOOS,
+			Arch:             runtime.GOARCH,
+			GoRuntimeVersion: runtime.Version(),
+			MediaMTXVersion:  mediamtxSnapshot.MediaMTX.SupportedVersion,
+			FFmpegAvailable:  ffmpegStatus.Compatible,
+			FFmpegVersion:    ffmpegStatus.Version,
+			SubsystemStates: map[string]string{
+				"mediamtx": string(mediamtxSnapshot.MediaMTX.State),
+			},
+		}, nil
+	}
+	diagnosticsBundleBuilder := support.NewBuilder(diagnosticsRecorder, supportBundleSnapshot)
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:          logger,
 		AllowedOrigins:  cfg.AllowedOrigins,
@@ -560,6 +594,9 @@ func run() error {
 
 		Goals:            goalsDomainService,
 		SupporterWidgets: supporterWidgetsManager,
+
+		Diagnostics:       diagnosticsRecorder,
+		DiagnosticsBundle: diagnosticsBundleBuilder,
 	})
 	// Test-only fake-TTS-provider control routes - see
 	// audio_testonly.go's own doc comment; never present in cmd/server.

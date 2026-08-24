@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/streaming-tree/server/internal/diagnostics"
 )
 
 // Options carries everything the router needs from the caller.
@@ -247,6 +249,22 @@ type Options struct {
 	// reports. Empty unless RemoteIngest is non-nil.
 	RemoteIngestRTMPSAddress string
 	RemoteIngestPath         string
+
+	// Diagnostics serves the Stage 20E diagnostics API
+	// (GET /api/logs, POST /api/diagnostics/support-bundle,
+	// docs/final-hardening.md §A/§E). When nil, those routes are not
+	// registered - the same nil-means-not-registered convention as
+	// every other optional service. Never registered under
+	// /api/public/*: local desktop use relies on loopback-only
+	// exposure exactly like every other /api/ route, and a remote-
+	// management deployment gates it through the same
+	// withRemoteManagementSecurity middleware as everything else under
+	// /api/.
+	Diagnostics *diagnostics.Recorder
+	// DiagnosticsBundle builds the Stage 20E support bundle
+	// (docs/final-hardening.md §C). Required alongside Diagnostics for
+	// POST /api/diagnostics/support-bundle to register.
+	DiagnosticsBundle SupportBundleBuilder
 }
 
 // NewRouter builds the fully decorated HTTP handler.
@@ -289,6 +307,10 @@ func NewRouter(opts Options) http.Handler {
 	if opts.FFmpegRuntime != nil {
 		mux.HandleFunc("GET /api/runtime/ffmpeg", handleGetFFmpegStatus(logger, opts.FFmpegRuntime))
 		mux.HandleFunc("/api/runtime/ffmpeg", methodNotAllowed(logger, http.MethodGet))
+	}
+
+	if opts.Diagnostics != nil {
+		registerDiagnosticsRoutes(mux, logger, opts.Diagnostics, opts.DiagnosticsBundle)
 	}
 
 	if opts.Branches != nil {

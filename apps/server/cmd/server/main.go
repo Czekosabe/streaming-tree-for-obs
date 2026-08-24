@@ -29,6 +29,7 @@ import (
 	"github.com/streaming-tree/server/internal/chatautomation"
 	co "github.com/streaming-tree/server/internal/chatoverlay"
 	"github.com/streaming-tree/server/internal/config"
+	"github.com/streaming-tree/server/internal/diagnostics"
 	"github.com/streaming-tree/server/internal/domain/account"
 	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	"github.com/streaming-tree/server/internal/domain/audioasset"
@@ -69,6 +70,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
+	"github.com/streaming-tree/server/internal/support"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 	"github.com/streaming-tree/server/internal/updater"
 	"github.com/streaming-tree/server/internal/updater/manifest"
@@ -270,9 +272,17 @@ var newUpdaterClient = func(installedVersion string) *updater.Client {
 // run holds the real main so that every exit path can return an error and still
 // let deferred cleanup happen (os.Exit in main would skip it).
 func run() error {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	// Stage 20E (docs/final-hardening.md §A): the real stdout handler
+	// stays exactly as before - headless/journald output is
+	// byte-for-byte unaffected - but every record additionally lands,
+	// redacted, in a bounded in-memory ring buffer that backs the new
+	// GET /api/logs API and the support bundle below. This is the one
+	// seam; nothing else about logging changes.
+	diagnosticsRecorder := diagnostics.NewRecorder()
+	logger := slog.New(diagnostics.NewHandler(
+		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+		diagnosticsRecorder,
+	))
 	slog.SetDefault(logger)
 
 	cfg, err := config.Load()
@@ -1051,6 +1061,39 @@ func run() error {
 	})
 	updateManager.Start(ctx)
 
+	// Stage 20E support bundle (docs/final-hardening.md §C): every
+	// field gathered here is already a non-secret fact this process
+	// has in scope - the snapshot function never reaches into the
+	// database, the secret store, or any credential/token value.
+	supportBundleSnapshot := func(ctx context.Context) (support.Snapshot, error) {
+		mediamtxSnapshot := supervisor.Snapshot()
+		ffmpegStatus := branchManager.FFmpegStatus()
+		commit, dirty, _ := buildinfo.CommitInfo()
+
+		snap := support.Snapshot{
+			Version:          buildinfo.EffectiveVersion(),
+			Commit:           commit,
+			CommitDirty:      dirty,
+			Packaged:         buildinfo.Packaged(),
+			OS:               runtime.GOOS,
+			Arch:             runtime.GOARCH,
+			GoRuntimeVersion: runtime.Version(),
+			Headless:         headlessMode,
+			RemoteManagement: remoteManagementOptions.Enabled,
+			RemoteIngest:     remoteIngestEnabled,
+			RemoteOverlay:    remoteOverlayOptions.Enabled,
+			MediaMTXVersion:  mediamtxSnapshot.MediaMTX.SupportedVersion,
+			FFmpegAvailable:  ffmpegStatus.Compatible,
+			FFmpegVersion:    ffmpegStatus.Version,
+			SubsystemStates: map[string]string{
+				"mediamtx": string(mediamtxSnapshot.MediaMTX.State),
+			},
+			UpdaterStatus: string(updateManager.Status(ctx).State),
+		}
+		return snap, nil
+	}
+	diagnosticsBundleBuilder := support.NewBuilder(diagnosticsRecorder, supportBundleSnapshot)
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:          logger,
 		AllowedOrigins:  cfg.AllowedOrigins,
@@ -1123,6 +1166,9 @@ func run() error {
 		RemoteIngest:             remoteIngestService,
 		RemoteIngestRTMPSAddress: cfg.RemoteIngest.RTMPSAddress,
 		RemoteIngestPath:         cfg.MediaMTX.IngestPath,
+
+		Diagnostics:       diagnosticsRecorder,
+		DiagnosticsBundle: diagnosticsBundleBuilder,
 	})
 
 	server := &http.Server{
