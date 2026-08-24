@@ -1896,9 +1896,15 @@ async function main() {
     // real decodable image, not a placeholder string.
     const tinyPng = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a4944415478da6360000002000155a2415a0000000049454e44ae426082', 'hex');
     writeFileSync(tinyPngPath, tinyPng);
+    // A real CI failure (docs/progress.md, PRE-20E.1) showed
+    // "origin_not_allowed" - every other state-changing request in
+    // this script goes through remoteCurl, which always sets Origin;
+    // this one manual curl call (needed for a real multipart upload,
+    // which remoteCurl's own JSON-only body handling cannot do) had
+    // no Origin header at all.
     const uploadRes = await clientExecStatus('curl', [
       '-sS', '-o', '-', '-w', '\n__STATUS__:%{http_code}', '--max-time', '10',
-      '-X', 'POST', '-H', `X-CSRF-Token: ${csrfTokenAfterRestart}`, '-b', cookieJar, '-c', cookieJar,
+      '-X', 'POST', '-H', `Origin: ${MANAGE_ORIGIN}`, '-H', `X-CSRF-Token: ${csrfTokenAfterRestart}`, '-b', cookieJar, '-c', cookieJar,
       '-F', `file=@${tinyPngPath};type=image/png`, '-F', 'displayName=D2C Visual Asset',
       `${MANAGE_ORIGIN}/api/visual-assets`,
     ]);

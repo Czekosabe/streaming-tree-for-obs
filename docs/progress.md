@@ -42612,3 +42612,38 @@ validation is the next native Linux CI run this commit triggers.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix(ci): send Origin on the manual multipart visual-asset upload
+
+### Real CI result: the SSE-timeout fix worked - the whole audio family passed
+Commit `8365ba0` was checked by real CI: run `32735548884`. The audio
+family's SSE stream, ack, rotate, and disable checks all passed
+cleanly - the script reached step 74, the visual-asset upload, before
+its next failure:
+
+```
+a real visual asset uploads successfully through the authenticated management API
+{"error":"origin_not_allowed","message":"This origin is not permitted to perform this action."}
+```
+
+### Real root cause
+A real gap in this one manual `curl` call, not a product defect: every
+other state-changing request in this script goes through the
+`remoteCurl` helper, which always sets `Origin` - this one call
+(hand-written because a real multipart file upload needs curl's own
+`-F` flags, which `remoteCurl`'s JSON-only body handling cannot
+produce) never set an `Origin` header at all, tripping the same
+CSRF/Origin validation every other authenticated management route
+already correctly enforces.
+
+### Fix
+Added `-H "Origin: ${MANAGE_ORIGIN}"` to the upload's curl invocation,
+matching every other authenticated request in this script.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
