@@ -40956,8 +40956,79 @@ no path/trigger changes in this cleanup). No dangling references to
 removed variables or functions confirmed by grep.
 
 ### Commits (chronological, this milestone)
-60. This entry - `ci: clean up the debugging scaffolding now that
-    the whole script passes`
+60. `ci: clean up the debugging scaffolding now that the whole
+    script passes`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — docs: reflect Stage 20D2C completion across living docs
+
+### Final CI evidence collected (§21)
+Beyond `linux-headless.yml` (confirmed green above, both architectures,
+including the cleanup commit `9af8380`), checked the other three
+workflows' most recent runs via a single low-request lookup each:
+`cross-platform.yml`, `linux-package.yml`, and `macos-package.yml` all
+show `conclusion: success` at commit `bd0fbce` (an ancestor of current
+HEAD) - none were re-triggered by any commit since, since none of
+those commits touched `apps/server/**`/`apps/web/**`/the other paths
+those workflows watch (confirmed against `scripts/verify-ci-routing.mjs`'s
+own model, itself re-run clean during the prior cleanup commit). All
+four CI workflows are genuinely green at current HEAD.
+
+### Docs updated
+- `docs/project-overview.md`: the roadmap table's 20D2C row -
+  **Completed**, stage 20D2 (and 20D) as a whole now complete.
+- `docs/platform-support.md`: §9's own status line and "what remains
+  unimplemented" list updated; §10 rewritten from Stage 20D2C's old
+  pre-implementation planning prose ("Remote OBS ingest is a separate
+  security boundary," describing MediaMTX config options not yet
+  selected) to an accurate summary of what was actually built
+  (MediaMTX-native `authInternalUsers` RTMPS auth, the credential
+  lifecycle, the shared remote-overlay capability system, the
+  Caddyfile), pointing to `remote-ingest.md` for the full contract;
+  the roadmap table and its own "Stage 20 as a whole" summary line;
+  two further stale "20D2C still Planned/not started" mentions
+  corrected in place (the historical "PRE-20D2C correction" audit
+  entries themselves were left untouched, per this project's own
+  append-only correction discipline).
+- `README.md`: the roadmap table's 20D2C row, and four prose mentions
+  of "Stage 20's remaining work" / "remote overlay exposure... remains
+  out of scope until Stage 20D2C" corrected to reflect completion.
+- `docs/linux-headless-server.md`: the 20D2B/20D2C bullet list's
+  "(future)" labels annotated with their real, current Completed
+  status and a `remote-ingest.md` cross-reference; "Stage 20D2 as a
+  whole remains Incomplete" corrected to Complete. Left this
+  document's own "20D2A only" scope-boundary language (§1/§19)
+  untouched - still true, since this document genuinely never
+  implemented 20D2B/20D2C itself.
+- `docs/obs-browser-source.md`: added a Stage 20D2C entry to the
+  established "Factual status update (stage N, completed)" chain
+  (last previously updated at stage 14B) - the remote-overlay
+  capability-token system changes nothing about the OBS-level Browser
+  Source contract this document researched; a capability token in the
+  URL works identically to a local `publicSlug` at the OBS/CEF layer,
+  confirmed via the same real code-reading this whole milestone relied
+  on (the embedded frontend's client-side routing passes the URL
+  segment through unchanged). Noted, matching every other entry in
+  this chain, that no real OBS installation was used for this stage's
+  own verification either.
+- `PRIVACY.md`: checked, already accurate (written in present tense
+  describing the real, implemented `--remote-ingest` behavior) - no
+  change needed.
+
+Deliberately not touched: `docs/remote-management.md`'s own dated
+"PRE-20D2C correction"/"Stage 20D2C correction" entries (a historical
+audit trail of research and fixes made *during* this milestone,
+correctly dated and already accurate as history) and its own "this
+document defines 20D2B only" scope statement (still true - that
+document genuinely never implemented 20D2C itself, the same reasoning
+applied to linux-headless-server.md above).
+
+### Commits (chronological, this milestone)
+61. This entry - `docs: reflect Stage 20D2C completion across living
+    docs`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call

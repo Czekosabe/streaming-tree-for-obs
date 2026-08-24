@@ -1129,7 +1129,7 @@ it is architected; this table only tracks status and dependencies.
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (see [linux-headless-server.md](linux-headless-server.md)) | **Completed** |
 | 20D2B | Secure remote management/control plane: single-administrator authentication, sessions, CSRF, TLS/reverse-proxy contract (see [remote-management.md](remote-management.md)) | **Completed** |
-| 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy (see [platform-support.md](platform-support.md) §10) | Planned |
+| 20D2C | Remote OBS ingest/data plane: MediaMTX-native authenticated/encrypted RTMPS ingest, a shared remote-overlay capability-token system across all five public overlay domains, and a native Linux CI harness proving the full contract through a genuinely isolated network namespace (see [remote-ingest.md](remote-ingest.md)) | **Completed** — stage 20D2 (and stage 20D) as a whole is now complete |
 | 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
 
 Key dependencies:

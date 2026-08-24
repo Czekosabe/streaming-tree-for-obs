@@ -11,18 +11,21 @@ independently-completable milestones, each with its own threat model:
   foundation and secure headless secret storage - **loopback-only**, no
   remote exposure of any kind. This is infrastructure other stages build
   on, not a remote product.
-- **20D2B** (future): the secure remote management/control plane -
-  authentication, sessions, CSRF, trusted origins, a reverse-proxy/TLS
-  contract, remote-safe shutdown/actions, and a public-overlay exposure
-  policy. Nothing in 20D2A implements any of this.
-- **20D2C** (future): the remote OBS ingest/data plane - authenticated/
-  encrypted ingest, MediaMTX remote-ingest policy, and final combined
-  self-hosted deployment validation.
+- **20D2B** (at the time this document was first written: future; now
+  Completed - see [remote-management.md](remote-management.md)): the
+  secure remote management/control plane - authentication, sessions,
+  CSRF, trusted origins, a reverse-proxy/TLS contract, remote-safe
+  shutdown/actions, and a public-overlay exposure policy. Nothing in
+  20D2A itself implements any of this.
+- **20D2C** (at the time this document was first written: future; now
+  Completed - see [remote-ingest.md](remote-ingest.md)): the remote
+  OBS ingest/data plane and the remote-overlay capability-token
+  system, and final combined self-hosted deployment validation.
 
-Stage 20D2 as a whole remains **Incomplete** until all three are done.
+Stage 20D2 as a whole is now **Complete** - all three parts are done.
 Stage 20E (logs/diagnostics beyond this milestone's basic operational
 logging, final release hardening/signing, final manual/platform
-verification) is untouched by this milestone.
+verification) remains untouched by any of 20D2A/B/C.
 
 **This document defines 20D2A only.** It explicitly does not implement,
 and must not be read as implementing, any 20D2B or 20D2C capability.

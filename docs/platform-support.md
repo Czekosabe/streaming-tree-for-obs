@@ -387,18 +387,21 @@ degrading or pretending a provider exists.
 
 ## 9. Linux headless / self-hosted server mode
 
-**Status: Stage 20D2A Completed, Stage 20D2B Completed** (see
+**Status: Stage 20D2A Completed, Stage 20D2B Completed, Stage 20D2C
+Completed - stage 20D2 as a whole is now complete** (see
 [linux-headless-server.md](linux-headless-server.md) for the 20D2A
-contract and [remote-management.md](remote-management.md) for the
-20D2B contract) **- the backend HTTP listener remains loopback-only in
-every mode; remote reachability is provided only by an operator-
-supplied same-host HTTPS reverse proxy, and only when explicitly
-opted into.** Stage 20D2 as a whole is split into three parts, each
-with its own threat model: 20D2A (a real unattended-service
-foundation, loopback-only), 20D2B (the secure remote management/
-control plane - authentication, sessions, CSRF, the reverse-proxy
-contract), and 20D2C (the future remote OBS ingest/data plane, still
-untouched).
+contract, [remote-management.md](remote-management.md) for the 20D2B
+contract, and [remote-ingest.md](remote-ingest.md) for the full 20D2C
+contract) **- the backend HTTP listener remains loopback-only in every
+mode; remote reachability is provided only by an operator-supplied
+same-host HTTPS reverse proxy for the management/overlay origins, plus
+MediaMTX's own real RTMPS termination for ingest, and only when
+explicitly opted into.** Stage 20D2 as a whole is split into three
+parts, each with its own threat model: 20D2A (a real unattended-
+service foundation, loopback-only), 20D2B (the secure remote
+management/control plane - authentication, sessions, CSRF, the
+reverse-proxy contract), and 20D2C (the remote OBS ingest/data plane
+and the remote-overlay capability system, §10).
 
 **What 20D2A actually implements**, real and native-CI-verified: an
 explicit `--headless` CLI flag (never inferred from `runtime.GOOS`/
@@ -439,50 +442,55 @@ styles); and remote-safe shutdown (session + CSRF + Origin, on top of
 the existing local Origin check, reusing the exact same graceful-
 shutdown path).
 
-**What remains exactly as unimplemented as before** - Stage 20D2C's
-own scope, untouched:
-
-- **Remote OBS ingest and ingest authentication/transport security.**
-  See §10 - Stage 20D2C's own scope, untouched.
-- **Remote overlay exposure.** Overlay/alert/widget routes remain
-  loopback-only in every mode - Stage 20D2B's reference reverse-proxy
-  configuration deliberately excludes `/overlay/*`/`/api/public/*`
-  from the proxied surface (a Caddy `handle` block responding `404`
-  for those paths before the catch-all proxy handle ever runs - a
-  PRE-20D2C correction: the reference configuration's own first
-  version was a bare, matcher-less `reverse_proxy`, which Caddy's own
-  documented semantics forward every path through, contradicting this
-  exact claim until corrected; see
-  [remote-management.md](remote-management.md) §17); a future D2C-
-  scoped review is required before any such exposure, including a
-  dedicated `publicSlug` entropy/rotation/revocation audit and an
-  origin-separation decision (a distinct overlay capability origin,
-  never sharing the management session cookie).
-
 This **still cannot** be obtained by simply setting a bind address like
 `STREAMING_TREE_HOST=0.0.0.0` - in headless mode, doing so is now an
 explicit, actively-rejected startup error rather than merely an
 unsupported configuration.
 
-## 10. Remote OBS ingest is a separate security boundary
+## 10. Remote OBS ingest and the remote-overlay capability plane - solved by Stage 20D2C
 
-MediaMTX's RTMP listener and Control API are deliberately loopback-only
-today, and this milestone does not weaken that. Per MediaMTX's own
-upstream configuration reference (`mediamtx.yml`, checked during this
-milestone's research), the project already ships optional building blocks
-for a future authenticated/encrypted ingest path - `rtmpEncryption`
-(`no`/`strict`/`optional`) with `rtmpServerKey`/`rtmpServerCert` for RTMPS,
-an internal user database, external HTTP auth, or JWT/JWKS auth for the
-Control API, `rtmpTrustedProxies` and `apiTrustedProxies` for IP-based
-trust, and per-user IP allowlisting - but selecting and wiring any of this
-is explicitly deferred to a dedicated future server-security stage, not
-decided here. Binding an unauthenticated RTMP listener to `0.0.0.0` is
-explicitly rejected as a way to "fix" remote ingest; a safe model
-(authenticated RTMP/RTMPS, SRT if justified, a VPN/private-network
-deployment expectation, or an explicit MediaMTX auth mechanism) needs its
-own threat-model milestone. The MediaMTX Control API must remain private
-and must never become remotely exposed as a side effect of any future
-change.
+**Status: Completed** (see [remote-ingest.md](remote-ingest.md) for
+the full governing contract). Three independent security planes, never
+collapsed into one hostname or one credential: the management/overlay
+HTTPS origins (§9, distinguished by hostname per RFC 6265 - cookies
+are not port-scoped), and the RTMPS ingest plane, which is MediaMTX's
+own real TLS termination, never proxied through anything.
+
+**What Stage 20D2C actually implements**, real and native-CI-verified
+through a genuinely isolated Linux network namespace (a veth pair, not
+localhost relabeled as remote):
+
+- An explicit `--remote-ingest` opt-in, refused without both
+  `--headless` and `--remote-management`. `rtmpEncryption: "optional"`
+  opens a new non-loopback `rtmpsAddress` (RTMPS) alongside the
+  existing loopback-only `rtmpAddress` (branch FFmpeg's own read) -
+  never `"strict"`, which would have forced that internal read onto
+  RTMPS too.
+- MediaMTX-native `authInternalUsers` authentication: a machine-
+  generated 256-bit publisher secret, stored only as its
+  `sha256:<base64(sha256(secret))>` verifier (never the plaintext,
+  never Argon2id - a machine-generated capability, not a human-chosen
+  password), publish-only and scoped to the canonical ingest path; a
+  separate loopback-restricted identity preserves branch FFmpeg's own
+  read and the Go backend's own Control API polling unchanged.
+- A credential-management HTTP API (provision/rotate/revoke) behind
+  the existing Stage 20D2B deny-by-default auth, with a streaming-
+  safety `409 Conflict` gate on rotate/revoke while actively receiving.
+- A shared, domain-agnostic remote-overlay capability-token system
+  (256-bit, separate from and never granted by the legacy local
+  `publicSlug`) covering all five public overlay domains (chat
+  overlay, alert profile, audio, goal widgets, supporter widgets) -
+  backend defense-in-depth behind the reverse proxy, never relying on
+  proxy-layer routing alone.
+- Operator-supplied TLS certificates via systemd `LoadCredential=`
+  only - never an embedded ACME client or an application-managed CA.
+- `docs/examples/Caddyfile.self-hosted`, the combined reference
+  configuration for both the management and overlay origins.
+
+MediaMTX's Control API remains private and is never remotely exposed
+as a side effect of this or any future change - proven, not merely
+documented, by the native CI harness's own confirmation that it is
+structurally unreachable from the isolated client network namespace.
 
 ## 11. Headless secret storage - solved by Stage 20D2A
 
@@ -628,11 +636,11 @@ desktop-packaging.md §22) produces
 | 20D1 | Linux local/desktop runtime and packaging: a real `.deb` for the Debian/Ubuntu family, native x64/ARM64 CI package verification (§8, see [linux-desktop-packaging.md](linux-desktop-packaging.md)) | **Completed** |
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (§9, §11, see [linux-headless-server.md](linux-headless-server.md)) | **Completed** |
 | 20D2B | Secure remote management/control plane: single-administrator authentication, opaque sessions, CSRF, strict Origin/forwarded-header contract, login rate limiting, remote-safe shutdown - no remote overlay/ingest exposure yet (§9, see [remote-management.md](remote-management.md)) | **Completed** |
-| 20D2C | Remote OBS ingest/data plane: authenticated/encrypted ingest, MediaMTX remote-ingest policy, final combined self-hosted validation (§10) | Planned |
+| 20D2C | Remote OBS ingest/data plane: MediaMTX-native authenticated/encrypted RTMPS ingest, the remote-overlay capability-token system, final combined self-hosted validation (§10) | **Completed** — stage 20D2 (and stage 20D) as a whole is now complete |
 | 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
 
 Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, 20D1,
-20D2A, and 20D2B are Completed; 20C2, 20D2C, and 20E remain Planned.
+20D2A, 20D2B, and 20D2C are Completed; 20C2 and 20E remain Planned.
 20C2 is externally gated on real Apple Developer signing/notarization
 credentials this project does not have - it is not blocked on any
 further engineering decision.
@@ -674,12 +682,14 @@ current below, one line per original claim:
   reachability is provided entirely by an operator-supplied same-host
   HTTPS reverse proxy (see [remote-management.md](remote-management.md)),
   never by the application binding a non-loopback interface itself.
-  MediaMTX's RTMP listener and Control API remain loopback-only and
-  unexposed by any proxy configuration this project documents. Only
-  Stage 20D2C (remote OBS ingest, still Planned/not started) could ever
-  revisit MediaMTX's own loopback-only policy, under its own
-  separately-designed threat model - 20D2B did not, and does not,
-  touch it.
+  MediaMTX's plain RTMP listener and Control API remain loopback-only
+  and unexposed by any proxy configuration this project documents.
+  Stage 20D2C (now Completed - see §10) is the stage that revisited
+  MediaMTX's own ingest policy, under its own separately-designed
+  threat model: it adds a *new*, non-loopback RTMPS listener alongside
+  the unchanged loopback-only plain listener, never removes or weakens
+  the loopback restriction this note describes - 20D2B itself did not,
+  and does not, touch it.
 - No remote authentication system, no TLS termination, no headless
   secret-storage fallback of any kind - **since implemented, in two
   parts**: Stage 20D2A shipped a real, native-CI-verified AES-256-GCM
@@ -692,8 +702,9 @@ current below, one line per original claim:
   itself still performs no TLS termination of its own (that remains
   the operator-supplied reverse proxy's job by design, not a gap); no
   embedded ACME/certificate issuance exists or is planned for this
-  application. Remote overlay exposure and remote OBS ingest remain
-  Stage 20D2C's own unsolved scope, not addressed by 20D2A or 20D2B.
+  application. Remote overlay exposure and remote OBS ingest were
+  Stage 20D2C's own scope, not addressed by 20D2A or 20D2B - Stage
+  20D2C is now Completed (§10).
 - No macOS/Linux TTS implementation - **still true**: both remain
   honestly reported as unavailable (`Capabilities.Available == false`),
   with a real native provider left as separate future feature work on

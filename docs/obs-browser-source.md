@@ -92,6 +92,25 @@ guaranteed to stay accurate forever.
 > custom-font rendering **inside an actual OBS CEF browser source were
 > not manually verified** as part of Stage 14B and remain open until a
 > future manual verification pass.
+>
+> **Factual status update (stage 20D2C, completed):** the remote-
+> overlay capability-token system (see
+> [remote-ingest.md](remote-ingest.md)) changed nothing about this
+> document's own OBS-level research either - every overlay/alert/widget
+> route's URL structure, transparent background, and lack of any
+> OBS-specific permission remain exactly as researched here, whether
+> the trailing path segment is a local `publicSlug` or a remote
+> capability token. The embedded frontend's own client-side routing
+> passes whatever value appears in the URL straight through to the
+> public API unchanged, so a capability token works identically to a
+> local slug at the OBS/Browser-Source layer - only the *value* an
+> operator pastes into OBS's URL field differs (a local origin plus
+> `publicSlug`, or a remote overlay origin plus capability token), never
+> how OBS itself treats that URL. As with every prior stage, **no real
+> OBS installation was used** for Stage 20D2C's own verification -
+> Stage 20D2C's own testing was native Linux CI (a real, isolated
+> network namespace) plus unit/integration coverage, not manual OBS
+> verification.
 
 ## Sources inspected
 
