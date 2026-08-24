@@ -93,3 +93,26 @@ export function toDurationParts(totalSeconds: number): DurationParts {
   }
   return { hours: 0, minutes: '0', seconds: String(rest), unit: 'seconds' };
 }
+
+const timestampFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function timestampFormatter(locale: string): Intl.DateTimeFormat {
+  const cached = timestampFormatters.get(locale);
+  if (cached !== undefined) return cached;
+
+  const formatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  });
+  timestampFormatters.set(locale, formatter);
+  return formatter;
+}
+
+/** An RFC 3339 timestamp -> a locale-aware, human-readable date/time.
+ * Returns the raw value unchanged if it cannot be parsed, so a
+ * malformed value is still visible rather than silently hidden. */
+export function formatTimestamp(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return timestampFormatter(locale).format(date);
+}

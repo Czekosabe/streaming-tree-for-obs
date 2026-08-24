@@ -301,3 +301,24 @@ export async function apiDelete(path: string): Promise<void> {
 export async function apiPostNoContent(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'POST', body });
 }
+
+/**
+ * POST with no request body whose response is a binary file (the
+ * Stage 20E support-bundle export) - reuses `send`'s own CSRF/timeout/
+ * error-envelope handling exactly, so this endpoint is protected under
+ * remote management the same way every other unsafe `/api/` route
+ * already is, without duplicating that logic with a raw `fetch` call.
+ * The filename comes from the response's own Content-Disposition
+ * header - never from anything the caller supplies.
+ */
+export async function apiPostBlob(
+  path: string,
+  options: { timeoutMs?: number } = {},
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await send(path, { method: 'POST', ...options });
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? 'support-bundle.zip';
+  return { blob, filename };
+}

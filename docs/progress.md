@@ -43351,3 +43351,114 @@ vulnerabilities**.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — feat: replace the Logs placeholder with the real Stage 20E diagnostics UI
+
+Implements `docs/final-hardening.md` §K/§Q and governing task §11:
+`GET /api/logs`/`POST /api/diagnostics/support-bundle` (added in the
+prior "diagnostics logging backend" entry) now have a real, English +
+complete-Polish frontend consumer. `apps/web/src/pages/PlannedPages.tsx`'s
+`LogsPage` placeholder is gone, following the same "no longer a
+placeholder, lives in its own file" pattern `StreamsPage`/`SettingsPage`
+already established.
+
+### A CI finding investigated first, before this frontend work began
+The prior commit's (`fcdb74e`) `cross-platform.yml` run showed
+`backend (windows-amd64)` failing with `go test failure` in
+`github.com/streaming-tree/server/internal/alerts ::
+TestManagerRealEventsGroupEndToEnd` - a package this stage's own
+changes never touch. Diagnosed rather than blindly retried: read the
+test (a real async Event-Bus-driven end-to-end grouping test with a
+generous 5-second `waitUntil` budget, gated only by real goroutine
+scheduling, not by the test's own fake clock), confirmed it passed on
+the other 4/5 platforms for the same commit and passed locally on this
+same Windows machine. The very next commit's (`67c4d2a`) independent
+`cross-platform.yml` run then passed cleanly on all 5 backend
+platforms plus frontend, with zero code change to `internal/alerts` in
+between - confirming this was one-off Windows GitHub Actions runner
+scheduling contention, not a real regression or a deterministic flake
+worth hardening further right now. `linux-headless.yml`/
+`linux-package.yml`/`macos-package.yml` were also all green for
+`67c4d2a`. Recorded here per the governing task's own "no known-flake
+assumption" rule: this is not an assumption, it is what the evidence
+from an independent, non-blind re-run actually shows.
+
+### `apps/web/src/lib/api-client.ts`: new `apiPostBlob`
+One small addition reusing the existing private `send()` helper (which
+already applies the CSRF-token-on-unsafe-methods/timeout/error-envelope
+handling every other route gets) rather than duplicating that logic
+with a raw `fetch` call the way the pre-existing
+`api/visualpackage.ts` does for its own binary endpoints. Returns the
+response body as a `Blob` plus the filename from the response's own
+`Content-Disposition` header - the filename is never something the
+caller supplies, matching the backend's own app-controlled-filename
+guarantee.
+
+### `apps/web/src/lib/format.ts`: new `formatTimestamp`
+Locale-aware (`Intl.DateTimeFormat`, cached per locale, mirroring the
+file's existing `formatBytes`/`formatSpeed` caching pattern), falling
+back to the raw ISO string unchanged when a value cannot be parsed -
+a malformed timestamp stays visible rather than silently disappearing.
+
+### New `api/logs-schemas.ts` / `api/logs.ts`
+Zod shapes mirroring `internal/diagnostics.Entry`'s JSON tags exactly.
+`fetchLogs` builds its query string only from parameters actually
+supplied (severity/subsystem/search/limit/before), matching the
+existing `api/engagement.ts` convention for the same kind of optional
+query-parameter endpoint. `fetchSupportBundle` is a thin wrapper over
+the new `apiPostBlob`.
+
+### New `hooks/use-logs.ts`
+`useLogsQuery` uses TanStack Query's `useInfiniteQuery` (a new
+pattern for this codebase - not used anywhere else yet, but an
+already-present capability of the `@tanstack/react-query` dependency
+already in use everywhere, not a new dependency) keyed on cursor,
+matching the backend's own `before`-cursor pagination contract
+exactly. Deliberately does not auto-poll - the governing task's own
+"no fake live terminal" requirement - refresh is one explicit action.
+`useSupportBundleMutation` triggers a real browser download via the
+existing `models/visualtemplate.ts`'s `downloadBlob` helper (already
+used by the Stage 14B package export feature), rather than
+introducing a second download-triggering helper.
+
+### New `pages/LogsPage.tsx`
+Severity filter (select), free-text subsystem/search filters
+(300ms-debounced, so typing does not issue a request per keystroke),
+an explicit refresh button, loading/backend-unavailable/empty/
+empty-filtered states, a persistent redaction notice ("stream keys,
+tokens, passwords... are automatically removed... before they are
+stored"), a per-entry copy-to-clipboard button, "load older" cursor
+pagination, and a separate support-bundle export panel with its own
+exporting/success/failure states. Severity badges reuse the existing
+`--color-status-warning` design token (defined in `index.css` but
+unused anywhere until now) alongside the existing
+live/starting/error/offline tokens, giving DEBUG/INFO/WARN/ERROR four
+visually distinct, semantically consistent colors without inventing a
+new palette.
+
+### New i18n namespace `logs` (23rd namespace)
+Registered in `i18n/config.ts`'s `NAMESPACES` and `i18n/resources.ts`,
+with complete English and Polish translations
+(`resources/{en,pl}/logs.json`). `pages.json`'s old placeholder
+`logs.*` keys were deliberately left in place, unused - the same
+precedent already set for `streams`/`settings` after those pages
+graduated from `PlaceholderPage`, not cleaned up when they graduated
+either.
+
+### New test: `pages/LogsPage.test.tsx`
+Seven tests mocking `@/api/logs` and `@/models/visualtemplate`:
+empty state, a fetched entry rendering its severity/subsystem/message,
+the backend-unavailable error state, severity-filter re-fetching,
+cursor-based "load older" pagination, and both the success and failure
+paths of the support-bundle export action.
+
+### Verification
+`npm run typecheck`, `npm run lint` (0 errors; same one pre-existing
+warning as the previous entry), `npm run i18n:check` ("23 namespaces,
+no differences"), `npm run build`: all clean.
+`npm run test -- --run`: **1417 tests passed across 105 files** (up
+from 1410/104 - the 7 new `LogsPage.test.tsx` tests).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

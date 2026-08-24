@@ -1,0 +1,44 @@
+{
+  "page": {
+    "title": "Logs",
+    "description": "Diagnostics captured from the backend, redacted before they ever reach this page."
+  },
+  "redactionNotice": "Stream keys, tokens, passwords and other secrets are automatically removed from these entries before they are stored.",
+  "filters": {
+    "severityLabel": "Severity",
+    "severityAll": "All severities",
+    "severity": {
+      "DEBUG": "Debug",
+      "INFO": "Info",
+      "WARN": "Warning",
+      "ERROR": "Error"
+    },
+    "subsystemLabel": "Subsystem",
+    "subsystemPlaceholder": "e.g. chatoverlay",
+    "searchLabel": "Search",
+    "searchPlaceholder": "Search message text",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "clearFilters": "Clear filters"
+  },
+  "list": {
+    "loading": "Loading logs...",
+    "backendUnavailable": "Logs are unavailable right now.",
+    "empty": "No log entries yet.",
+    "emptyFiltered": "No log entries match the current filters.",
+    "loadOlder": "Load older entries",
+    "loadingOlder": "Loading...",
+    "copyEntry": "Copy this entry",
+    "copied": "Copied",
+    "subsystemColumn": "Subsystem",
+    "timeColumn": "Time"
+  },
+  "supportBundle": {
+    "heading": "Support bundle",
+    "description": "Downloads a single file with version, platform, dependency and recent redacted-log information you can attach to a bug report. It never includes credentials, tokens, or the contents of your database.",
+    "export": "Export support bundle",
+    "exporting": "Generating...",
+    "success": "Support bundle downloaded.",
+    "failure": "The support bundle could not be generated."
+  }
+}

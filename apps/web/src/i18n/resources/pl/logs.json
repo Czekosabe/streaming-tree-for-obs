@@ -1,0 +1,44 @@
+{
+  "page": {
+    "title": "Logi",
+    "description": "Diagnostyka przechwycona z backendu, oczyszczona z danych wrażliwych, zanim trafi na tę stronę."
+  },
+  "redactionNotice": "Klucze strumienia, tokeny, hasła i inne dane wrażliwe są automatycznie usuwane z tych wpisów przed ich zapisaniem.",
+  "filters": {
+    "severityLabel": "Poziom ważności",
+    "severityAll": "Wszystkie poziomy",
+    "severity": {
+      "DEBUG": "Debugowanie",
+      "INFO": "Informacja",
+      "WARN": "Ostrzeżenie",
+      "ERROR": "Błąd"
+    },
+    "subsystemLabel": "Podsystem",
+    "subsystemPlaceholder": "np. chatoverlay",
+    "searchLabel": "Szukaj",
+    "searchPlaceholder": "Szukaj w treści wiadomości",
+    "refresh": "Odśwież",
+    "refreshing": "Odświeżanie...",
+    "clearFilters": "Wyczyść filtry"
+  },
+  "list": {
+    "loading": "Wczytywanie logów...",
+    "backendUnavailable": "Logi są obecnie niedostępne.",
+    "empty": "Brak wpisów w logu.",
+    "emptyFiltered": "Żaden wpis nie pasuje do bieżących filtrów.",
+    "loadOlder": "Wczytaj starsze wpisy",
+    "loadingOlder": "Wczytywanie...",
+    "copyEntry": "Skopiuj ten wpis",
+    "copied": "Skopiowano",
+    "subsystemColumn": "Podsystem",
+    "timeColumn": "Czas"
+  },
+  "supportBundle": {
+    "heading": "Pakiet diagnostyczny",
+    "description": "Pobiera jeden plik z informacjami o wersji, platformie, zależnościach i ostatnich zredagowanych logach, który możesz dołączyć do zgłoszenia błędu. Nigdy nie zawiera danych uwierzytelniających, tokenów ani zawartości bazy danych.",
+    "export": "Eksportuj pakiet diagnostyczny",
+    "exporting": "Generowanie...",
+    "success": "Pakiet diagnostyczny pobrany.",
+    "failure": "Nie udało się wygenerować pakietu diagnostycznego."
+  }
+}

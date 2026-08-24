@@ -12,6 +12,7 @@ import enDashboard from './resources/en/dashboard.json';
 import enEngagement from './resources/en/engagement.json';
 import enErrors from './resources/en/errors.json';
 import enGoals from './resources/en/goals.json';
+import enLogs from './resources/en/logs.json';
 import enMetadata from './resources/en/metadata.json';
 import enNavigation from './resources/en/navigation.json';
 import enOverlays from './resources/en/overlays.json';
@@ -34,6 +35,7 @@ import plDashboard from './resources/pl/dashboard.json';
 import plEngagement from './resources/pl/engagement.json';
 import plErrors from './resources/pl/errors.json';
 import plGoals from './resources/pl/goals.json';
+import plLogs from './resources/pl/logs.json';
 import plMetadata from './resources/pl/metadata.json';
 import plNavigation from './resources/pl/navigation.json';
 import plOverlays from './resources/pl/overlays.json';
@@ -76,6 +78,7 @@ export const enResources = {
   about: enAbout,
   updates: enUpdates,
   auth: enAuth,
+  logs: enLogs,
 } as const;
 
 const plResources = {
@@ -101,6 +104,7 @@ const plResources = {
   about: plAbout,
   updates: plUpdates,
   auth: plAuth,
+  logs: plLogs,
 } as const;
 
 export const resources = {

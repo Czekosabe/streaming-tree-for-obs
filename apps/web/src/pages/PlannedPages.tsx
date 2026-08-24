@@ -1,4 +1,4 @@
-import { FileText, SlidersHorizontal, Tv } from 'lucide-react';
+import { SlidersHorizontal, Tv } from 'lucide-react';
 
 import { PlaceholderPage } from './PlaceholderPage';
 
@@ -47,17 +47,5 @@ export function MetadataPage() {
 // SettingsPage is no longer a placeholder: it shows real connected-account
 // management and lives in its own file, `SettingsPage.tsx`.
 
-export function LogsPage() {
-  return (
-    <PlaceholderPage
-      titleKey="logs.title"
-      descriptionKey="logs.description"
-      icon={FileText}
-      plannedKeys={[
-        'logs.planned.backendLogs',
-        'logs.planned.ffmpegOutput',
-        'logs.planned.diagnosticBundle',
-      ]}
-    />
-  );
-}
+// LogsPage is no longer a placeholder: it shows the real Stage 20E
+// diagnostics API and lives in its own file, `LogsPage.tsx`.
