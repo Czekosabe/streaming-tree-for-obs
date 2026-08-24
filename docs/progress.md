@@ -43948,3 +43948,57 @@ computation's own subprocess was removed.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — docs: record the full local 24-canonical-integration-script regression
+
+Governing task §25's own requirement, run locally on this real Windows
+machine (from the repository root, exactly matching `README.md`'s own
+documented command sequence) against the tree at commit `fb39b22`
+(the manual-verification-checklist commit) - the two commits since
+(`f1065ab`, `a19c881`) only changed `scripts/verify-installer.mjs`
+(the platform-specific installer helper, not one of the 24) and
+workflow/doc files, so this evidence remains current for HEAD; per
+`docs/ci-reliability.md` §9's own final-evidence model, this entry
+names the exact evidence-bearing commit rather than implying a later
+docs/tooling-only commit was itself re-verified.
+
+All 24/24 scripts passed, run in four batches of six, each script's
+own real fake-provider/real-dependency setup and teardown intact:
+
+**Batch 1**: `verify-persistence.mjs`, `verify-mediamtx-runtime.mjs`,
+`verify-ffmpeg-branches.mjs`, `verify-twitch-account-integration.mjs`,
+`verify-youtube-account-integration.mjs`, `verify-twitch-engagement.mjs`
+- all PASSED.
+
+**Batch 2**: `verify-operator-chat.mjs`, `verify-chat-overlay.mjs`,
+`verify-twitch-outbound-chat.mjs`, `verify-chat-automation.mjs`,
+`verify-alerts.mjs`, `verify-alert-advanced-queue.mjs` - all PASSED.
+
+**Batch 3**: `verify-alert-designer.mjs`,
+`verify-chat-overlay-designer.mjs`, `verify-visual-templates.mjs`,
+`verify-visual-template-packages.mjs`, `verify-youtube-engagement.mjs`,
+`verify-streamelements-donations.mjs` - all PASSED.
+
+**Batch 4**: `verify-tts-audio.mjs`, `verify-alert-audio.mjs`,
+`verify-goals-widgets.mjs`, `verify-supporter-widgets.mjs`,
+`verify-packaged-app.mjs` (18/18 steps), `verify-updater.mjs` (14/14
+steps) - all PASSED.
+
+Every script's own secret-scanning assertions (each one greps its own
+captured HTTP/SSE/backend-output bytes for the specific fake
+tokens/credentials/refresh-tokens/session-ids it issued during that
+run) reported zero leaks, consistent with every prior run of these
+scripts across this project's history.
+
+This is separate from, and in addition to, the full backend (`go
+build`/`go vet`/`go test`, all green) and full frontend (`npm run
+typecheck`/`lint`/`i18n:check`/`build`/`test`, 1420/1420) regression
+already recorded in this stage's own earlier entries, and separate
+from the native-CI package-workflow evidence (`cross-platform.yml`,
+`linux-package.yml`, `linux-headless.yml`, `macos-package.yml`, all
+green for the relevant commits; `windows-package.yml`'s own
+now-resolved investigation is this stage's most recent set of entries).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
