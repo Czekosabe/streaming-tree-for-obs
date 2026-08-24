@@ -133,6 +133,17 @@ function pass(message) {
 function ghEscape(s) {
   return String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }
+// A handful of specific diagnostic lines have turned out to matter
+// enough to guarantee visibility for, independent of GitHub's own
+// whole-log-tail annotation truncation (docs/progress.md) - used
+// sparingly (a ::notice:: per call, not a blanket log mirror, so this
+// does not become the same crowding problem in reverse).
+function diagNotice(message) {
+  console.log(`     diag ${message}`);
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    console.log(`::notice title=${ghEscape(`verify-linux-remote-server.mjs: step ${stepCount}`)}::${ghEscape(message).slice(0, 2000)}`);
+  }
+}
 function fail(message, detail) {
   console.error(`     FAIL ${message}`);
   const detailText = detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)) : '';
@@ -920,7 +931,7 @@ async function main() {
     const hostRtmpsCheck = await hostFetchJson('/v3/paths/list');
     const hostRtmpsItems = (hostRtmpsCheck.body && Array.isArray(hostRtmpsCheck.body.items)) ? hostRtmpsCheck.body.items : [];
     const hostRtmpsMatched = hostRtmpsItems.find((p) => p && p.name === INGEST_PATH);
-    console.log(`     diag RTMPS same-credential publish from HOST namespace (no netns exec), ready=${hostRtmpsMatched ? hostRtmpsMatched.ready : 'path not found'}`);
+    diagNotice(`RTMPS same-credential publish from HOST namespace (no netns exec), ready=${hostRtmpsMatched ? hostRtmpsMatched.ready : 'path not found'}`);
     const hostRtmpsDeadline = Date.now() + 8_000;
     while (!hostRtmpsExited && Date.now() < hostRtmpsDeadline) {
       await new Promise((r) => setTimeout(r, 200));

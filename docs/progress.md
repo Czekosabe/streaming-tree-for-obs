@@ -40599,8 +40599,49 @@ is the one remaining variable.
 validation is the next native Linux CI run this commit triggers.
 
 ### Commits (chronological, this milestone)
-53. This entry - `ci: isolate namespace-crossing from RTMPS/TLS
-    itself for the positive path`
+53. `ci: isolate namespace-crossing from RTMPS/TLS itself for the
+    positive path`
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
+
+## 2026-08-24 — ci: give the host-namespace RTMPS isolation diagnostic its own guaranteed notice
+
+### Real CI result: the dedicated failure annotation worked; the new diagnostic line still got lost
+Commit `0c92230` was checked. The dedicated `::error::` (added two
+entries ago) worked exactly as designed - a clean, complete,
+five-annotation set with `verify-linux-remote-server.mjs: step 18`
+showing the same `receiving: false` failure, guaranteed and
+uncompeted. But the *new* diagnostic added in that same commit - the
+host-namespace RTMPS isolation probe's own result - was not in any of
+the five annotations. That mechanism only guarantees the *failing
+assertion's* own message/detail; a separate `console.log` diagnostic
+line still only exists in the outer, whole-log-tail annotation, which
+is still truncating at the same `"[18] RTMPS posit"` point as before -
+the new diagnostic runs early in step 18, before the point where that
+outer tail gives up, but the tail itself still could not reach it.
+
+### Fix
+Added `diagNotice()`, a small, deliberately narrow helper: logs
+normally *and* emits its own `::notice::` workflow command, using the
+same escaping and step-numbered title as `fail()`'s dedicated
+`::error::`. Used only for this one specific diagnostic line, not as
+a blanket replacement for `console.log` - the intent is to guarantee
+visibility for individually-identified, currently-load-bearing
+diagnostics, not to recreate the same crowding problem in reverse by
+turning every log line into its own annotation.
+
+### Validation
+`node --check scripts/verify-linux-remote-server.mjs`: clean. Real
+validation is the next native Linux CI run this commit triggers - this
+should finally show whether the host-namespace RTMPS probe succeeded
+or failed, settling whether namespace-crossing or RTMPS/TLS itself is
+the remaining variable.
+
+### Commits (chronological, this milestone)
+54. This entry - `ci: give the host-namespace RTMPS isolation
+    diagnostic its own guaranteed notice`
 
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
