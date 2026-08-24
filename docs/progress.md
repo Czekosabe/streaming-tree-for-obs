@@ -43287,3 +43287,67 @@ exercise the full request/response contract against.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — chore: apply Stage 20E's final dependency/security audit fixes
+
+Applies the fixes this stage's earlier `govulncheck`/`npm audit` audit
+(recorded in the "docs: define Stage 20E final hardening and manual
+verification contract" entry above) diagnosed but had not yet applied
+- `docs/final-hardening.md` §H, governing task §17.
+
+### Go toolchain: 1.25.0 → 1.26.6 (`apps/server/go.mod`)
+The audit found six reachable `govulncheck` findings
+(GO-2026-6218/6091/6090/6089/5972/5026), all Go-stdlib issues, all
+"Fixed in: go1.26.6". Raised the `go` directive itself (not a separate
+`toolchain` line - `go 1.26.6` alone was sufficient for
+`GOTOOLCHAIN=auto` to fetch and use it) so CI's own
+`actions/setup-go@v5 with go-version-file` picks up the identical
+patched version this local build now uses. Local toolchain confirmed
+via `go version`: `go1.26.6`.
+
+### `github.com/dvsekhvalnov/jose2go`: v1.5.0 → v1.7.0 (indirect, via `internal/secrets`'s OS-keyring path)
+Fixes the two real, reachable findings the audit found
+(GO-2025-4123, GO-2023-2409) - `go get .../jose2go@v1.7.0 && go mod
+tidy`.
+
+### Re-verification after both Go-side fixes
+`go run golang.org/x/vuln/cmd/govulncheck@latest ./...`: **0
+reachable vulnerabilities** (down from 8). One honestly-recorded
+unreachable/no-fix finding remains and is left unresolved on purpose:
+GO-2026-5932 (`golang.org/x/crypto/openpgp` is unmaintained/unsafe by
+design, "Fixed in: N/A") - this project depends on
+`golang.org/x/crypto` but never imports its `openpgp` subpackage,
+confirmed both by direct audit and by govulncheck's own "your code
+doesn't appear to call these" classification. Per
+`docs/final-hardening.md` §H, this is not claimed as "zero
+vulnerabilities" - it is recorded as zero *reachable*, one *upstream/
+no-fix, not reachable*.
+
+### `nanoid` (frontend, dev-only): `npm audit fix`
+The one HIGH-severity npm audit finding (`nanoid <3.3.18`,
+GHSA-2v37-7h3g-55p8, CWE-835) was pulled in transitively via
+`vite@6.4.3 → postcss@8.5.25 → nanoid@3.3.17` - already confirmed
+dev-only/build-time in this stage's earlier audit, never part of the
+shipped runtime bundle. `npm audit fix` resolved it via a single
+lockfile-only patch bump (`package-lock.json`: 7 insertions, 6
+deletions; `package.json` itself unchanged - no direct-dependency
+version bump, let alone a major one). `npm audit` afterward: **0
+vulnerabilities**.
+
+### Full regression after all three fixes
+- Backend: `go build ./...`, `go build -tags integration ./...`,
+  `go vet ./...`, `go vet -tags integration ./...`: all clean.
+  `go test ./...` (full suite, every package): all green.
+- Frontend: `npm run typecheck`, `npm run i18n:check`, `npm run lint`
+  (0 errors; the one pre-existing `react-refresh/only-export-
+  components` warning on `auth-context.tsx` predates this change and
+  is untouched by it), `npm run build`: all clean.
+  `npm run test -- --run`: **1410 tests passed across 104 files**. The
+  console `Error: Not implemented: HTMLMediaElement.prototype.
+  load/play` lines during the run are jsdom's own known limitation
+  (no real `<audio>` playback in a DOM-emulation test environment),
+  not a real failure - the run's own final tally shows 0 failed.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
