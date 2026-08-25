@@ -44715,3 +44715,143 @@ structurally identical change to the same already-proven mechanism.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — feat: Windows system-tray icon for desktop mode
+
+**Why now, in this order**: the console-flashing fix (entry above) is
+Windows-lifecycle hardening found by the same real physical/manual
+Windows use that motivated this tray requirement in the first place -
+closing the browser tab does not stop the backend, and a desktop
+operator with no visible window and no console has no way to see the
+app is still running, reopen it, or quit it, short of Task Manager.
+
+### Audit of the existing lifecycle, before writing any tray code
+Read directly: `internal/runtime/singleinstance` (`CreateMutexW`,
+guarantees at most one backend and therefore at most one tray icon per
+session), `internal/runtime/browserlaunch` (`ShellExecuteW`, reused
+unchanged for the tray's Open actions), `internal/runtime/nativealert`
+(`MessageBoxW`, plain English, never localized - the tray's own menu
+text follows this same precedent), `cmd/server/main.go`'s
+`signal.NotifyContext` `stop` (the **one** shutdown trigger the web
+UI's Quit action and the updater's install handoff already both
+converge on), `updater.Manager.Status(ctx).State` (already distinguishes
+every state the tray's "Check for updates" item needs), and confirmed:
+no `.ico` file, no icon resource, no `IconFilename` anywhere in this
+repository or the Inno Setup script. Full detail: `docs/windows-tray.md`.
+
+### Implementation: raw Win32 syscalls, researched before written
+No third-party systray library, no CGO, no Electron/WebView2/Tauri, no
+separate helper process - `internal/runtime/tray` follows this
+project's own established per-platform pattern (`_windows.go` real
+implementation, `_other.go` honest no-op) via `syscall.NewLazyDLL`/
+`NewProc`, the exact mechanism `golang.org/x/sys/windows` itself thinly
+wraps and the one `browserlaunch`/`nativealert`/`singleinstance` already
+use. Every struct layout and call sequence (`NOTIFYICONDATAW`'s exact
+field order, `NOTIFYICON_VERSION_4`'s modern callback shape, the
+documented `SetForegroundWindow`/`TrackPopupMenu`/`PostMessage(WM_NULL)`
+menu-dismissal fix, `CreateIconFromResourceEx`'s required
+`dwVer = 0x00030000`) was researched against learn.microsoft.com's
+current API reference first, since a wrong struct layout here is a
+memory-safety bug, not a compile error - full citations in
+`docs/windows-tray.md` §2.
+
+Two real bugs were found and fixed before this ever reached working
+code, both while writing it, not by guessing:
+1. A struct-literal field-name-casing bug (`wndClassExW`'s fields are
+   unexported/lowercase; an early draft tried to set them by their
+   Win32-style capitalized names) - would not compile; fixed before any
+   test ran.
+2. `LookupIconIdFromDirectoryEx`, the documented API for picking a
+   `.ico`'s best-fitting frame, did not behave as documented against a
+   real single-frame PNG-compressed icon in practice - it returned an
+   out-of-range "best fit" id (caught by `TestLoadIconFromICOBytesRealAsset`
+   actually calling it, not by inspection). Frame selection is now done
+   directly in Go instead (`selectClosestFrame`), simpler and fully
+   within this project's own control - the same test now passes by
+   actually creating and destroying a real `HICON`.
+
+An optional "Copy Dashboard URL" menu item was implemented, then
+removed: its correct clipboard implementation needs a `uintptr`-to-
+`unsafe.Pointer` conversion `go vet`'s `unsafeptr` check only accepts
+directly inside a raw `syscall.Syscall` call, not through
+`syscall.LazyProc.Call` (this file's own consistent style throughout).
+Rather than introduce one inconsistent calling convention for an
+explicitly-optional feature, it was dropped - `docs/windows-tray.md` §7
+records this honestly.
+
+### Icon: an honest placeholder, not invented branding
+No final branding art exists for this project
+(`apps/web/src/components/layout/BrandMark.tsx`'s own doc comment: "No
+third-party logo or artwork is used anywhere in the application").
+`scripts/generate-tray-icon.go` (a one-off `//go:build ignore` tool)
+reuses BrandMark's own existing neutral identity - the rounded-square
+gradient from `--color-accent` (`#8b5cf6`) to `--color-accent-deep`
+(`#6d28d9`) - but renders a plain white ring-and-dot glyph rather than
+attempting to reproduce BrandMark's Lucide "Network" icon pixel-for-
+pixel, which would be illegible at real 16x16 tray size and dishonest
+as a faithful reproduction. Generated once, committed as
+`internal/runtime/tray/assets/tray.ico` (618 bytes), embedded via
+`go:embed`. Visually verified by extracting and viewing the PNG frame
+directly, not just by the byte count. Recorded as a real limitation to
+replace once real branding art exists (`docs/windows-tray.md` §5/§9),
+not silently left unmentioned.
+
+### Wiring (`cmd/server/main.go`)
+Created alongside the existing browser-launch call, under the exact
+same conditions (`buildinfo.Packaged() && !headlessMode && !cfg.TestNoUI`)
+- never in headless mode, never during automated test/CI runs. Menu
+callbacks reuse existing mechanisms directly: `OnOpenDashboard`/
+`OnOpenLogs` call `browserlaunch.Open`; `StatusLabel` reads
+`supervisor.Snapshot()` (the same in-process MediaMTX/ingest truth
+`/api/runtime` already serves - two new small pure functions,
+`trayIngestStatusLabel`/`trayUpdatesLabel`, map that and
+`updateManager.Status(ctx).State` onto the tray's own short text,
+never a second state computation); `OnCheckForUpdates` calls
+`updateManager.CheckNow`; `OnQuit` is `stop` itself, passed through
+unchanged. `shutdownRuntime` (the one function web-Quit/tray-Quit/
+Ctrl+C/SIGTERM/the updater's install handoff all already converge on)
+now stops the tray first, unconditionally, before every other manager -
+`Handle.Stop()` blocks until the tray's own full Win32 teardown sequence
+has actually completed, so this is a real guarantee, not a best-effort
+signal.
+
+### New regression coverage
+`tray_windows_test.go` (Windows CI only): `loadIconFromICOBytes`
+against the real embedded icon (a genuine `HICON` is created and
+destroyed, not mocked) and a table of malformed inputs (empty,
+truncated header, truncated directory) confirming safe failure, never
+an out-of-bounds read; `copyUTF16`'s truncation/NUL-termination
+behavior. The full click-handling/menu/message-loop machinery is not
+meaningfully unit-testable (it needs a real desktop session) - covered
+instead by new Session A items A-11 through A-18 in
+`docs/manual-verification.md`, and G-1 was corrected to describe the
+new honest manual/test-build eligibility behavior (§2's own fix,
+earlier in this remediation cycle) instead of the stale "up to date"-
+only description it had before.
+
+### Verification
+`gofmt -l .` clean; `go vet ./...` clean; cross-compiled clean for
+`GOOS=linux` and `GOOS=windows`; `go build ./...` clean; `go test ./...`
+- full backend suite, every package, all passing, including the new
+`internal/runtime/tray` package's own tests actually exercising real
+Win32 calls on this native Windows host.
+
+### CI note: one investigated, confirmed-unrelated flake
+The previous entry's commit's own Cross-platform portability gate came
+back green on its second natural check; its one earlier macOS failure
+(`dial tcp: lookup proxy.golang.org: no such host` - a runner-side DNS
+resolution failure fetching Go modules, confirmed by the annotation
+text itself, nothing to do with any code in this remediation cycle) is
+resolved. Separately, that same commit's Cross-platform portability gate
+showed one Windows-amd64 `go test` failure at package level in
+`internal/chatoverlay` - a package untouched by anything in this
+session. Investigated, not assumed: `go test -count=1
+./internal/chatoverlay/...` reproduces cleanly and quickly (0.35s, every
+test passing) on this same native Windows host; the CI failure carried
+no specific failing test name (`(package-level)`), consistent with a
+transient CI-runner hiccup rather than a real regression. This commit's
+own push will re-run that workflow fresh.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

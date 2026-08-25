@@ -68,6 +68,14 @@ equivalent of the CI package job).
 | A-8 | Reinstall over the existing install (same version or the next commit's build) without uninstalling first. | Install completes; existing configuration/data survives (destinations, connected accounts) — not wiped. |
 | A-9 | Uninstall via Windows "Apps & Features". | Uninstall completes without error; the Start Menu entry is gone. |
 | A-10 | After uninstall, check the per-user AppData data directory. | Application data (SQLite DB, credentials) is left in place, not deleted — uninstalling the program must never delete an operator's stream configuration/history. |
+| A-11 | After launch (A-2), look at the Windows notification area (system tray). | Exactly one Streaming Tree icon is present — a rounded violet-gradient square with a white ring-and-dot mark (a deliberately simple placeholder, not final branding art — see docs/windows-tray.md §5). |
+| A-12 | Left-click the tray icon. | The Dashboard opens in the default browser (same as A-2's launch behavior) — never a second backend/second port bind. |
+| A-13 | Right-click the tray icon. | A context menu appears: Open Streaming Tree, Open Logs & Diagnostics, a grayed status line reading "Ingest: ...", Check for updates, Quit Streaming Tree — in that order, with separators as visually distinct groups. |
+| A-14 | Click "Open Logs & Diagnostics" from the tray menu. | The browser opens directly to the Logs & Diagnostics page (`/logs`), not the Dashboard. |
+| A-15 | Right-click the tray icon again while OBS is/isn't connected (compare against Session C's state). | The grayed status line matches the real ingest state shown on the Streams page ("Not installed" / "Waiting" / "Receiving") — never stale, never contradicting the web UI. |
+| A-16 | Click "Check for updates" from the tray menu (on this build's real eligibility — see G-1). | If grayed: nothing happens (correctly refused). If enabled: behaves the same as triggering a check from the web Updates panel — check `docs/updater.md` §43 for what "eligible" means for the exact build under test. |
+| A-17 | Click "Quit Streaming Tree" from the tray menu. | The backend process actually exits (check Task Manager for `streaming-tree-server.exe`, same as A-7) **and** the tray icon disappears immediately — never left behind after the process is gone. |
+| A-18 | Relaunch the app, then use the web UI's own Quit action (A-7) instead of the tray's Quit. | The tray icon disappears too — every shutdown path removes it, not only the tray's own Quit item. |
 
 ## Session B — browser/UI navigation
 
@@ -135,7 +143,7 @@ Precondition: a packaged build (Session A's install, or the packaged equivalent 
 
 | ID | Action | Expected result |
 | --- | --- | --- |
-| G-1 | Open the update-check UI (Settings/About, wherever it lives) on a packaged build. | It reports a real check result — "up to date" against the real GitHub API, or a real error if genuinely offline — never a placeholder/fake success. |
+| G-1 | Open the update-check UI (Settings/About, wherever it lives) on a packaged build. | On a manual/test build (any version not shaped `major.minor.patch`, e.g. `0.1.0-manualtest+<commit>`): an honest "Manual/test build — automatic updates are unavailable for this build." message, no check button, no misleading failure (docs/updater.md §43). On a real strict-production-version build: a real check result against the real GitHub API — "up to date," "no Stable release has been published yet" (a calm, non-error state — §43), or a real error if genuinely offline — never a placeholder/fake success. |
 | G-2 | If a newer real release genuinely exists at test time, attempt the real check/download/install flow. | Progress is shown; install-and-restart works and the restarted app reports the new version. If no newer release exists, record this item as **Not verified — no newer release available to test against**, not a failure. |
 | G-3 | On macOS/Linux (if that platform's session below is being run): open the same update-check UI. | It correctly reports `platform_unsupported` for install (no fabricated install-handoff) — this is documented, expected behavior, not a bug to report. |
 

@@ -65,6 +65,7 @@ import (
 	"github.com/streaming-tree/server/internal/runtime/nativealert"
 	"github.com/streaming-tree/server/internal/runtime/singleinstance"
 	"github.com/streaming-tree/server/internal/runtime/streamelementsengagement"
+	"github.com/streaming-tree/server/internal/runtime/tray"
 	"github.com/streaming-tree/server/internal/runtime/twitchengagement"
 	"github.com/streaming-tree/server/internal/runtime/youtubeauth"
 	"github.com/streaming-tree/server/internal/runtime/youtubeengagement"
@@ -267,6 +268,41 @@ func runProvisionAdminPassword(force bool) {
 // that file's own doc comment for the full reasoning.
 var newUpdaterClient = func(installedVersion string) *updater.Client {
 	return updater.NewClient(installedVersion)
+}
+
+// trayIngestStatusLabel maps a runtime snapshot onto the tray's own
+// concise status item (docs/windows-tray.md) - the same underlying
+// truth internal/httpapi's /api/runtime response and the web
+// dashboard's SystemStatusPill already read, just condensed into one
+// short native-menu line instead of a translated web component.
+func trayIngestStatusLabel(snapshot mediamtx.Snapshot) string {
+	if snapshot.MediaMTX.State == mediamtx.StateMissing {
+		return "Ingest: Not installed"
+	}
+	switch snapshot.Ingest.State {
+	case mediamtx.IngestReceiving:
+		return "Ingest: Receiving"
+	case mediamtx.IngestWaiting:
+		return "Ingest: Waiting"
+	case mediamtx.IngestError:
+		return "Ingest: Error"
+	default:
+		return "Ingest: Not ready"
+	}
+}
+
+// trayUpdatesLabel reports the tray's "Check for updates" item text and
+// whether it should be enabled - disabled (grayed, per
+// docs/windows-tray.md) for exactly the three permanent, non-
+// actionable updater states (docs/updater.md §11/§35/§43), so the
+// tray never offers an action the updater would just refuse.
+func trayUpdatesLabel(state updater.State) (string, bool) {
+	switch state {
+	case updater.StateDisabled, updater.StateManualBuild, updater.StatePlatformUnsupported:
+		return "Check for updates", false
+	default:
+		return "Check for updates", true
+	}
 }
 
 // run holds the real main so that every exit path can return an error and still
@@ -1185,7 +1221,17 @@ func run() error {
 	// MediaMTX on the way out, and no branch is left trying to reconnect to
 	// an input that is itself mid-shutdown), reaping every child process so
 	// the backend never leaves one behind.
+	// Set below, only in desktop packaged mode - referenced here (not
+	// assigned yet) so shutdownRuntime always stops the tray icon on
+	// every shutdown path (web UI Quit, tray Quit, Ctrl+C/SIGTERM, and
+	// the updater's install handoff all converge on this one function),
+	// exactly like every manager below it (docs/windows-tray.md).
+	var trayHandle tray.Handle
+
 	shutdownRuntime := func(shutdownCtx context.Context) {
+		if trayHandle != nil {
+			trayHandle.Stop()
+		}
 		updateManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
@@ -1233,6 +1279,50 @@ func run() error {
 		} else if openErr := browserlaunch.Open(managementURL); openErr != nil {
 			logger.Warn("failed to open the default browser",
 				slog.Any("error", openErr), slog.String("url", managementURL))
+		}
+
+		// Desktop mode only (never --headless, never test mode - the
+		// same conditions that gate the real browser launch above):
+		// the Stage 20E tray icon (docs/windows-tray.md). closing the
+		// browser tab does not stop the backend, and this is the one
+		// persistent piece of desktop UI that lets an operator reopen
+		// it, see its status, or quit it without Task Manager. A
+		// failure to create it (e.g. a non-Windows packaged build, or
+		// a real Windows API failure) is logged and never fatal - the
+		// rest of the application runs identically without a tray.
+		if !headlessMode && !cfg.TestNoUI {
+			logsURL := managementURL + "logs"
+			trayOpts := tray.Options{
+				Tooltip: buildinfo.ProductName,
+				IconICO: tray.IconICO,
+				OnOpenDashboard: func() {
+					if openErr := browserlaunch.Open(managementURL); openErr != nil {
+						logger.Warn("tray: failed to open the dashboard", slog.Any("error", openErr))
+					}
+				},
+				OnOpenLogs: func() {
+					if openErr := browserlaunch.Open(logsURL); openErr != nil {
+						logger.Warn("tray: failed to open logs & diagnostics", slog.Any("error", openErr))
+					}
+				},
+				StatusLabel: func() string {
+					return trayIngestStatusLabel(supervisor.Snapshot())
+				},
+				UpdatesLabel: func() (string, bool) {
+					return trayUpdatesLabel(updateManager.Status(context.Background()).State)
+				},
+				OnCheckForUpdates: func() {
+					if checkErr := updateManager.CheckNow(context.Background()); checkErr != nil {
+						logger.Info("tray: check for updates did not start", slog.Any("error", checkErr))
+					}
+				},
+				OnQuit: stop,
+			}
+			if handle, trayErr := tray.Run(trayOpts); trayErr != nil {
+				logger.Info("tray icon not available", slog.Any("error", trayErr))
+			} else {
+				trayHandle = handle
+			}
 		}
 	}
 
