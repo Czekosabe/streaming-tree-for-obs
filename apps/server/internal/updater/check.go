@@ -22,6 +22,9 @@ func (m *Manager) CheckNow(ctx context.Context) error {
 	if !m.releaseBuild {
 		return ErrDisabled
 	}
+	if m.manualBuild {
+		return ErrManualBuild
+	}
 	if m.platformUnsupported {
 		return ErrPlatformUnsupported
 	}
@@ -43,6 +46,16 @@ func (m *Manager) CheckNow(ctx context.Context) error {
 	m.checking = false
 
 	if err != nil {
+		if errors.Is(err, ErrNoStableRelease) {
+			// Not a failure - GitHub answered normally and told us this
+			// repository has no published Stable release yet (see
+			// ErrNoStableRelease). Treated as a successful check, in a
+			// distinct, non-alarming state, never StateError.
+			m.state = StateNoReleaseYet
+			m.lastErrorCode = ""
+			m.lastSuccessfulCheckAt = m.clock()
+			return nil
+		}
 		m.state = StateError
 		m.lastErrorCode = classifyCheckError(err)
 		return err

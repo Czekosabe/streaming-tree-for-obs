@@ -47,6 +47,29 @@ export function UpdatesPanel() {
     );
   }
 
+  // A packaged build whose injected version is not a strict
+  // major.minor.patch production version - e.g. a manual/test build
+  // built and verified locally (docs/windows-packaging.md) - reports
+  // this state permanently. Shown honestly instead of a check button
+  // that would only ever come back refused: this is not a failure, and
+  // it is a different reason than the development-build notice above
+  // (this build really was produced by the release script - it simply
+  // is not the kind of version the production updater ever applies to).
+  if (status.state === 'manual_build') {
+    return (
+      <Panel>
+        <PanelHeader title={t('panel.heading')} icon={<Download className="size-4" />} />
+        <PanelBody className="space-y-2">
+          <p className="text-sm text-ink">
+            <span className="text-ink-muted">{t('panel.currentVersionLabel')}: </span>
+            {status.currentVersion}
+          </p>
+          <p className="text-sm text-ink-muted">{t('panel.manualBuildNotice')}</p>
+        </PanelBody>
+      </Panel>
+    );
+  }
+
   // docs/macos-packaging.md §20, docs/linux-desktop-packaging.md §20: a
   // release build whose platform has no usable update-install path at
   // all (macOS since Stage 20C1, Linux since Stage 20D1) reports this
@@ -122,6 +145,9 @@ export function UpdatesPanel() {
 
         {status.state === 'up_to_date' && (
           <p className="text-xs text-ink-muted">{t('state.upToDate')}</p>
+        )}
+        {status.state === 'no_release_published' && (
+          <p className="text-xs text-ink-muted">{t('state.noReleaseYet')}</p>
         )}
         {status.state === 'error' && (
           <p className="text-xs text-status-error">{t(updateErrorKey(status.lastErrorCode))}</p>

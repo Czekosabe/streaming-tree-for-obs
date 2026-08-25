@@ -37,6 +37,9 @@ func (m *Manager) Install(ctx context.Context) error {
 	if !m.releaseBuild {
 		return ErrDisabled
 	}
+	if m.manualBuild {
+		return ErrManualBuild
+	}
 	if m.platformUnsupported {
 		return ErrPlatformUnsupported
 	}

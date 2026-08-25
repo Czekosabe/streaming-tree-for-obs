@@ -6,7 +6,10 @@
 // GET /api/about rather than keeping its own copy (see internal/httpapi/about.go).
 package buildinfo
 
-import "runtime/debug"
+import (
+	"regexp"
+	"runtime/debug"
+)
 
 // ServiceName is reported by the health endpoint and used in log lines.
 const ServiceName = "streaming-tree-server"
@@ -92,6 +95,37 @@ func EffectiveVersion() string {
 // not a public release.
 func IsReleaseBuild() bool {
 	return releaseVersion != ""
+}
+
+// strictProductionVersionPattern mirrors scripts/build-release.ps1's own
+// `-Version` gate (`^\d+\.\d+\.\d+$`) exactly - the script already uses
+// this same test to decide whether a build gets real release-manifest
+// metadata at all (see docs/updater.md §5). Keeping this pattern
+// identical to the script's is deliberate: the two must never drift, or
+// a build the script considers "not a real release version" could still
+// end up eligible for production update checking here, or vice versa.
+var strictProductionVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// IsStrictProductionVersion reports whether the release build script's
+// injected version (see EffectiveVersion) is a strict major.minor.patch
+// production release version, with no manual/test label, pre-release
+// suffix, or build-metadata suffix.
+//
+// This is deliberately narrower than IsReleaseBuild(): a manual/test
+// packaged build (e.g. version "0.1.0-manualtest+<commit>", built and
+// verified locally per docs/windows-packaging.md) really was produced
+// by the release script, so IsReleaseBuild() stays true for it (About,
+// CommitInfo, and packaging-identity checks all need that to stay
+// honest) - but such a build must never participate in production
+// update checking, since the release pipeline itself refuses to
+// generate real release-manifest metadata for a version shaped like
+// that (see build-release.ps1's own identical gate above), so there is
+// nothing a manual/test build could ever successfully check against.
+// See docs/updater.md's manual/test-build eligibility section for the
+// full contract; callers needing "is this build eligible for the
+// production updater" should use this, not IsReleaseBuild() alone.
+func IsStrictProductionVersion() bool {
+	return strictProductionVersionPattern.MatchString(releaseVersion)
 }
 
 // CommitInfo reports the VCS revision this binary was built from. A release

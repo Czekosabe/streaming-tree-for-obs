@@ -44394,3 +44394,140 @@ whole app that opens a dialog.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: honest updater eligibility for manual/test builds and undistinguished no-release-yet checks
+
+**Context: `a0e2fb8`'s CI was fully green (all five native workflows)
+before this work began and is preserved unregressed by it** - it was
+not re-run, not described as pending, and nothing in this entry
+required touching the modal-layering fix from the entry above (verified
+unchanged: no edits touched `Modal.tsx`/`z-layers.ts`/`index.css`/
+`TopBar.tsx`/`Sidebar.tsx`/`Modal.test.tsx`). Separately, additional
+manual observations reported against the *installed `681389a`* build (an
+updater screenshot reading "Could not check for updates. This will be
+retried automatically.", and a briefly-flashing console window while
+the app ran) were **not** re-derived from that old build - they were
+reproduced/audited against current source before any code changed, per
+the operator's explicit instruction. This entry addresses the updater
+observation; a briefly-flashing-console investigation follows in a
+later entry, together with the Windows tray hardening.
+
+### Root cause, found by direct source audit of the full contract (client, manager, buildinfo, build script, frontend)
+Two real, distinct bugs, both in `apps/server/internal/updater` and
+`internal/buildinfo`:
+
+1. **`buildinfo.IsReleaseBuild()`** is `releaseVersion != ""` - true for
+   *any* injected version, including a manual/test label such as
+   `0.1.0-manualtest+a0e2fb8`. `updater.Manager` gates its entire
+   automatic-check loop and every manual action on this one boolean, so
+   a locally-built manual/test artifact silently became eligible for
+   the *production* updater, and since this repository has never
+   published a Stable GitHub Release, every automatic and manual check
+   against the real GitHub API failed the same way a genuine network
+   outage would.
+2. **`Client.FetchLatestRelease`** collapsed GitHub's 404 response from
+   `/releases/latest` - its own documented "resource not found" status,
+   confirmed against GitHub's REST API reference, and the response it
+   gives when a repository has no published release at all - into the
+   exact same `ErrRequestFailed` used for a real network/API failure.
+   There was no way for the manager, or the operator, to tell "this
+   repository simply has no Stable release yet" (an expected state for
+   this project right now) apart from "GitHub could not be reached".
+
+Together these explain the reported screenshot precisely: a manual/test
+build participated in production checking at all (bug 1), and once it
+did, the resulting 404 was shown as an indistinguishable "check failed,
+will retry" state (bug 2).
+
+### The fix
+1. **New `buildinfo.IsStrictProductionVersion()`**: matches the
+   injected version against `^\d+\.\d+\.\d+$` - deliberately identical
+   to `scripts/build-release.ps1`'s own `-Version` gate (§39 of
+   `docs/updater.md`), which already refuses to generate real release-
+   manifest metadata for anything that doesn't match. The two gates are
+   kept textually identical so they can never drift apart. This is
+   narrower than `IsReleaseBuild()`, not a replacement for it - a
+   manual/test build stays `IsReleaseBuild() == true` (About/CommitInfo
+   need that to stay honest); it is simply not eligible for the
+   production updater.
+2. **New `updater.StateManualBuild`** (`"manual_build"`), wired via a
+   new `Options.ProductionVersion` field, decided once at construction
+   and permanent for the process's life - following
+   `StatePlatformUnsupported`'s existing pattern exactly. In this state:
+   automatic polling never begins regardless of the persisted
+   preference; `CheckNow`/`Download`/`Install` all refuse immediately
+   with a new `ErrManualBuild` sentinel, never touching the network;
+   `Status()` reports `installBlocked: true` /
+   `blockerCode: "manual_build"` while still honestly showing
+   `currentVersion` (the manual/test version stays visible, never
+   hidden). The frontend (`UpdatesPanel.tsx`) shows a distinct notice -
+   "Manual/test build — automatic updates are unavailable for this
+   build." - deliberately different wording from the ordinary
+   development-build notice, since this build really was produced by
+   the release script; no automatic-check toggle or check button is
+   rendered, the same as the existing platform-unsupported branch.
+3. **New `updater.ErrNoStableRelease`/`StateNoReleaseYet`**
+   (`"no_release_published"`): the client now returns this sentinel
+   specifically for a 404, and `CheckNow` treats it as a **successful**
+   check (`lastSuccessfulCheckAt` still advances, no error code set),
+   landing in this new, calm state rather than `StateError`. The
+   frontend shows "No Stable release has been published yet." instead
+   of red "check failed" text. This path only matters for a real
+   strict-production-version build with no Stable release published
+   yet - a manual/test build never reaches it, since `StateManualBuild`
+   refuses the check before any GitHub request is made.
+4. `cmd/server/main.go` wires `ProductionVersion:
+   buildinfo.IsStrictProductionVersion()` into the manager.
+   `docs/updater.md` gained a new §43 documenting the full contract.
+   Both new frontend states/copy shipped in English and Polish
+   (`i18n/resources/{en,pl}/updates.json`).
+
+### New regression coverage
+Go: `buildinfo.TestIsStrictProductionVersion` (grammar table, including
+`0.1.0-manualtest+a0e2fb8`/`v0.1.0`/`0.1.0.0`/`latest` all correctly
+rejected) and `TestIsStrictProductionVersionNarrowerThanIsReleaseBuild`
+(locks the deliberate gap between the two gates);
+`updater.TestManualBuildNeverStartsOrActs` (mirrors
+`TestPlatformUnsupportedNeverStartsOrActs` exactly - asserts the loop
+never starts and every action refuses) and
+`TestCheckNowNoStableReleasePublished`; `client_test.go`'s
+`TestFetchLatestReleaseNoStableReleasePublished` (asserts the 404
+response is `ErrNoStableRelease` and explicitly *not* also
+`ErrRequestFailed`). Frontend: `UpdatesPanel.test.tsx` gained a
+manual-build-notice case and a no-release-yet case, alongside the
+existing development-build/platform-unsupported cases they were modeled
+on. Three pre-existing manager tests
+(`TestPlatformUnsupportedNeverStartsOrActs`, `newTestManager`'s helper
+covering every other manager test) needed `ProductionVersion: true`
+added to their `Options` literals - without it, the new default-false
+zero value would have made every existing manager test hit
+`StateManualBuild` instead of the state each test actually means to
+exercise, which the full pre-existing suite passing confirmed.
+
+### Verification
+Backend: `go build ./...`, `go vet ./...`, `gofmt -l .` (clean) on
+every touched package; `go test ./...` - the entire backend suite,
+every package, **all passing** (no regression anywhere, including
+`internal/httpapi`, `internal/storage/sqlite`, `internal/runtime/*`).
+Frontend: `npx tsc --noEmit` clean; `npx vitest run` -
+**1427/1427 tests passing across 106 files** (up from 1425/106 - the 2
+new `UpdatesPanel.test.tsx` cases), confirming no regression to the
+modal fix or anything else already covered.
+
+### Correction to a prior verbal report (governing task §5)
+The `a0e2fb8` installer rebuild's own handoff report described one
+transient local `verify-installer.mjs` failure (Inno Setup exit code 2,
+no output, immediately followed by a manual run of the same unchanged
+artifact succeeding, then the automated script passing 10/10 on retry)
+as "consistent with local antivirus scanning a freshly-built
+executable". **That attribution was not backed by evidence** - no
+Defender log, file-lock, or process observation was actually gathered
+at the time - and must not be treated as an established root cause. The
+only evidence that actually exists: one attempt exited 2 with no
+diagnostic output; the same unchanged artifact succeeded immediately
+afterward, manually and then via the automated script. This entry
+records that honestly, superseding the earlier verbal framing.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

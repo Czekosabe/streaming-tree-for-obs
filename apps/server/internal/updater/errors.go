@@ -38,4 +38,14 @@ var (
 	// have small, fixed bounds distinct from the installer's own
 	// download-size bound (manifest.MaxArtifactSizeBytes).
 	ErrResponseTooLarge = errors.New("github api response too large")
+
+	// ErrNoStableRelease means GitHub's own /releases/latest endpoint
+	// returned 404 - its documented "resource not found" status, and
+	// the response GitHub gives when the repository has no published
+	// Stable release yet. Deliberately a distinct sentinel from
+	// ErrRequestFailed: this is an expected, well-understood repository
+	// state, not a network/API failure, and callers must be able to
+	// tell the two apart rather than showing the same "check failed,
+	// try again later" message for both.
+	ErrNoStableRelease = errors.New("no stable release has been published yet")
 )

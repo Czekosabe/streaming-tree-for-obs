@@ -11,12 +11,14 @@
     "checkButton": "Sprawdź aktualizacje",
     "checking": "Sprawdzanie…",
     "developmentBuildNotice": "Aktualizacje są dostępne w spakowanych wersjach wydania.",
-    "platformUnsupportedNotice": "Automatyczne aktualizacje nie są jeszcze dostępne na tej platformie. Najnowsze wydanie zawsze można pobrać ręcznie z GitHuba."
+    "platformUnsupportedNotice": "Automatyczne aktualizacje nie są jeszcze dostępne na tej platformie. Najnowsze wydanie zawsze można pobrać ręcznie z GitHuba.",
+    "manualBuildNotice": "Wersja ręczna/testowa — automatyczne aktualizacje są niedostępne dla tej wersji."
   },
   "state": {
     "upToDate": "Masz najnowszą wersję.",
     "available": "Dostępna jest nowa wersja.",
-    "checkFailed": "Ostatnie sprawdzenie się nie powiodło. Zostanie powtórzone automatycznie."
+    "checkFailed": "Ostatnie sprawdzenie się nie powiodło. Zostanie powtórzone automatycznie.",
+    "noReleaseYet": "Nie opublikowano jeszcze żadnego stabilnego wydania."
   },
   "available": {
     "versionLabel": "Wersja {{version}}",
@@ -42,6 +44,7 @@
     "not_installed_context": "Ta kopia Streaming Tree nie może automatycznie instalować aktualizacji.",
     "no_verified_candidate": "Aktualizacja jeszcze się nie pobrała.",
     "platform_unsupported": "Automatyczna instalacja nie jest jeszcze dostępna na tej platformie.",
+    "manual_build": "To wersja ręczna/testowa. Automatyczne aktualizacje są dla niej niedostępne.",
     "generic": "Nie można teraz zainstalować aktualizacji."
   },
   "error": {

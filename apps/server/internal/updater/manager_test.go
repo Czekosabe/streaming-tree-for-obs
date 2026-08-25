@@ -88,13 +88,14 @@ func TestPlatformUnsupportedNeverStartsOrActs(t *testing.T) {
 	// contacted it, the test would hang/fail rather than returning
 	// ErrPlatformUnsupported immediately.
 	m := NewManager(Options{
-		Client:         newClient("http://unused.invalid", "0.1.0"),
-		Settings:       newTestSettings(),
-		Branches:       &fakeBranches{},
-		Handoff:        &fakeHandoff{available: false, blockerCode: BlockerPlatformUnsupported},
-		ReleaseBuild:   true,
-		CurrentVersion: "0.1.0",
-		Identity:       manifest.Identity{OS: manifest.OSDarwin, Arch: manifest.ArchARM64, Kind: manifest.KindDMG},
+		Client:            newClient("http://unused.invalid", "0.1.0"),
+		Settings:          newTestSettings(),
+		Branches:          &fakeBranches{},
+		Handoff:           &fakeHandoff{available: false, blockerCode: BlockerPlatformUnsupported},
+		ReleaseBuild:      true,
+		ProductionVersion: true,
+		CurrentVersion:    "0.1.0",
+		Identity:          manifest.Identity{OS: manifest.OSDarwin, Arch: manifest.ArchARM64, Kind: manifest.KindDMG},
 	})
 
 	if got := m.Status(context.Background()).State; got != StatePlatformUnsupported {
@@ -123,6 +124,92 @@ func TestPlatformUnsupportedNeverStartsOrActs(t *testing.T) {
 
 	if got := m.Status(context.Background()).State; got != StatePlatformUnsupported {
 		t.Fatalf("State after actions = %q, want %q", got, StatePlatformUnsupported)
+	}
+}
+
+func TestManualBuildNeverStartsOrActs(t *testing.T) {
+	// A packaged build whose injected version is not a strict
+	// major.minor.patch production version (ProductionVersion: false -
+	// e.g. a manual/test build such as "0.1.0-manualtest+abc") must
+	// never begin automatic polling and must refuse every manual action
+	// outright, exactly like a platform-unsupported build does - the
+	// release pipeline itself refuses to generate real release-manifest
+	// metadata for a version shaped like this, so there is nothing such
+	// a build could ever successfully check against. The client here
+	// points at an unused URL: if CheckNow ever actually contacted it,
+	// the test would hang/fail rather than returning ErrManualBuild
+	// immediately.
+	m := NewManager(Options{
+		Client:            newClient("http://unused.invalid", "0.1.0-manualtest+abc"),
+		Settings:          newTestSettings(),
+		Branches:          &fakeBranches{},
+		Handoff:           &fakeHandoff{available: true},
+		ReleaseBuild:      true,
+		ProductionVersion: false,
+		CurrentVersion:    "0.1.0-manualtest+abc",
+		Identity:          manifest.Identity{OS: manifest.OSWindows, Arch: manifest.ArchAMD64, Kind: manifest.KindInstaller},
+	})
+
+	status := m.Status(context.Background())
+	if status.State != StateManualBuild {
+		t.Fatalf("initial State = %q, want %q", status.State, StateManualBuild)
+	}
+	if !status.InstallBlocked || status.BlockerCode != BlockerManualBuild {
+		t.Fatalf("InstallBlocked/BlockerCode = %v/%q, want true/%q", status.InstallBlocked, status.BlockerCode, BlockerManualBuild)
+	}
+	if status.CurrentVersion != "0.1.0-manualtest+abc" {
+		t.Fatalf("CurrentVersion = %q, want it still reported honestly", status.CurrentVersion)
+	}
+
+	if err := m.CheckNow(context.Background()); err != ErrManualBuild {
+		t.Fatalf("CheckNow() error = %v, want ErrManualBuild", err)
+	}
+	if err := m.Download(context.Background()); err != ErrManualBuild {
+		t.Fatalf("Download() error = %v, want ErrManualBuild", err)
+	}
+	if err := m.Install(context.Background()); err != ErrManualBuild {
+		t.Fatalf("Install() error = %v, want ErrManualBuild", err)
+	}
+
+	// Enabling AutoCheck must not start the background loop on a
+	// manual/test build - if it did, m.stopCh would become non-nil.
+	if err := m.SetAutoCheck(context.Background(), true); err != nil {
+		t.Fatalf("SetAutoCheck() error = %v", err)
+	}
+	m.Start(context.Background())
+	if m.stopCh != nil {
+		t.Fatal("Start() began the automatic check loop on a manual/test build")
+	}
+
+	if got := m.Status(context.Background()).State; got != StateManualBuild {
+		t.Fatalf("State after actions = %q, want %q", got, StateManualBuild)
+	}
+}
+
+func TestCheckNowNoStableReleasePublished(t *testing.T) {
+	// GitHub's documented 404 for /releases/latest - this repository has
+	// no published Stable release yet. Must be treated as a successful
+	// check in a distinct, non-alarming state, never as StateError -
+	// see ErrNoStableRelease/StateNoReleaseYet.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+	m := newTestManager(t, server, "0.1.0")
+
+	if err := m.CheckNow(context.Background()); err != nil {
+		t.Fatalf("CheckNow() error = %v, want nil (no Stable release yet is not a failure)", err)
+	}
+
+	status := m.Status(context.Background())
+	if status.State != StateNoReleaseYet {
+		t.Fatalf("State = %q, want %q", status.State, StateNoReleaseYet)
+	}
+	if status.LastErrorCode != "" {
+		t.Fatalf("LastErrorCode = %q, want empty - this is not an error state", status.LastErrorCode)
+	}
+	if status.LastSuccessfulCheckAt == "" {
+		t.Fatal("LastSuccessfulCheckAt not set - a 404 'no release yet' is still a successful check")
 	}
 }
 
@@ -299,14 +386,15 @@ func newTestManager(t *testing.T, server *httptest.Server, currentVersion string
 	t.Helper()
 	dataDir := t.TempDir()
 	return NewManager(Options{
-		Client:         newClient(server.URL, currentVersion),
-		Settings:       newTestSettings(),
-		Branches:       &fakeBranches{},
-		Handoff:        &fakeHandoff{available: true},
-		DataDir:        dataDir,
-		ReleaseBuild:   true,
-		CurrentVersion: currentVersion,
-		Identity:       manifest.Identity{OS: manifest.OSWindows, Arch: manifest.ArchAMD64, Kind: manifest.KindInstaller},
+		Client:            newClient(server.URL, currentVersion),
+		Settings:          newTestSettings(),
+		Branches:          &fakeBranches{},
+		Handoff:           &fakeHandoff{available: true},
+		DataDir:           dataDir,
+		ReleaseBuild:      true,
+		ProductionVersion: true,
+		CurrentVersion:    currentVersion,
+		Identity:          manifest.Identity{OS: manifest.OSWindows, Arch: manifest.ArchAMD64, Kind: manifest.KindInstaller},
 	})
 }
 

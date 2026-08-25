@@ -231,6 +231,18 @@ func (c *Client) FetchLatestRelease(ctx context.Context, etag string) (LatestRel
 		return LatestReleaseResult{}, ErrRateLimited
 	}
 
+	// GitHub documents 404 as this endpoint's "resource not found"
+	// status (docs/updater.md's manual/test-build eligibility section,
+	// researched against GitHub's own REST API reference) - the
+	// response it gives when the repository has no published Stable
+	// release at all, which is an expected, well-understood state for
+	// this project (no Stable release has ever been published) rather
+	// than a network/API failure. Checked before the generic
+	// non-200 branch below so the two are never collapsed together.
+	if resp.StatusCode == http.StatusNotFound {
+		return LatestReleaseResult{}, ErrNoStableRelease
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return LatestReleaseResult{}, fmt.Errorf("%w: unexpected status %d", ErrRequestFailed, resp.StatusCode)
 	}

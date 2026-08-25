@@ -58,6 +58,35 @@ describe('UpdatesPanel', () => {
     expect(screen.queryByRole('switch', { name: /automatically check for updates/i })).not.toBeInTheDocument();
   });
 
+  it('shows the honest manual/test-build notice and no controls for a build with a non-strict version', async () => {
+    updates.fetchUpdateStatus.mockResolvedValue(
+      status({
+        state: 'manual_build',
+        currentVersion: '0.1.0-manualtest+a0e2fb8',
+        installBlocked: true,
+        blockerCode: 'manual_build',
+      }),
+    );
+
+    renderWithProviders(<UpdatesPanel />);
+
+    expect(await screen.findByText('0.1.0-manualtest+a0e2fb8')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Manual/test build — automatic updates are unavailable for this build.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /check for updates/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /automatically check for updates/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a calm, non-error notice when no Stable release has been published yet', async () => {
+    updates.fetchUpdateStatus.mockResolvedValue(status({ state: 'no_release_published' }));
+
+    renderWithProviders(<UpdatesPanel />);
+
+    expect(await screen.findByText('No Stable release has been published yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/could not check for updates/i)).not.toBeInTheDocument();
+  });
+
   it('shows the current version and up-to-date state in a release build', async () => {
     updates.fetchUpdateStatus.mockResolvedValue(status({ state: 'up_to_date', currentVersion: '0.2.0' }));
 

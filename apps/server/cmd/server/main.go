@@ -1042,13 +1042,14 @@ func run() error {
 	// traffic or install action outside a packaged release build.
 	updateSettingsService := updatersettings.NewService(sqlite.NewUpdateSettingsRepository(db.DB), nil)
 	updateManager := updater.NewManager(updater.Options{
-		Client:         newUpdaterClient(buildinfo.EffectiveVersion()),
-		Settings:       updateSettingsService,
-		Branches:       branchManager,
-		Handoff:        updater.NewPlatformHandoff(cfg.DataDir),
-		DataDir:        cfg.DataDir,
-		ReleaseBuild:   buildinfo.IsReleaseBuild(),
-		CurrentVersion: buildinfo.EffectiveVersion(),
+		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
+		Settings:          updateSettingsService,
+		Branches:          branchManager,
+		Handoff:           updater.NewPlatformHandoff(cfg.DataDir),
+		DataDir:           cfg.DataDir,
+		ReleaseBuild:      buildinfo.IsReleaseBuild(),
+		CurrentVersion:    buildinfo.EffectiveVersion(),
+		ProductionVersion: buildinfo.IsStrictProductionVersion(),
 		Identity: manifest.Identity{
 			OS: manifest.OS(runtime.GOOS), Arch: manifest.Arch(runtime.GOARCH), Kind: manifest.KindInstaller,
 		},

@@ -15,6 +15,7 @@ const BLOCKER_KEYS: Record<string, UpdatesKey> = {
   not_installed_context: 'blocked.not_installed_context',
   no_verified_candidate: 'blocked.no_verified_candidate',
   platform_unsupported: 'blocked.platform_unsupported',
+  manual_build: 'blocked.manual_build',
 };
 
 /** Translation key for one install-blocker code, or the generic fallback. */

@@ -11,12 +11,14 @@
     "checkButton": "Check for updates",
     "checking": "Checking…",
     "developmentBuildNotice": "Updates are available in packaged release builds.",
-    "platformUnsupportedNotice": "Automatic updates are not yet available on this platform. You can always download the latest release manually from GitHub."
+    "platformUnsupportedNotice": "Automatic updates are not yet available on this platform. You can always download the latest release manually from GitHub.",
+    "manualBuildNotice": "Manual/test build — automatic updates are unavailable for this build."
   },
   "state": {
     "upToDate": "You're up to date.",
     "available": "A new version is available.",
-    "checkFailed": "The last check could not complete. It will be retried automatically."
+    "checkFailed": "The last check could not complete. It will be retried automatically.",
+    "noReleaseYet": "No Stable release has been published yet."
   },
   "available": {
     "versionLabel": "Version {{version}}",
@@ -42,6 +44,7 @@
     "not_installed_context": "This copy of Streaming Tree cannot install updates automatically.",
     "no_verified_candidate": "The update has not finished downloading yet.",
     "platform_unsupported": "Automatic installation is not available on this platform yet.",
+    "manual_build": "This is a manual/test build. Automatic updates are unavailable for it.",
     "generic": "The update cannot be installed right now."
   },
   "error": {

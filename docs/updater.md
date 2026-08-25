@@ -1043,3 +1043,87 @@ repository.
   *download* — an operator can download and verify an update while
   streaming; this is intentional (§17) and not a limitation to fix
   later, restated here only so it is not mistaken for an oversight.
+
+## 43. Manual/test-build eligibility (Stage 20E remediation)
+
+A real physical/manual Windows test of a locally-built manual/test
+packaged artifact (version `0.1.0-manualtest+<commit>`, built per
+docs/windows-packaging.md's own manual-test build path) surfaced a real
+bug: `IsReleaseBuild()` (§35) is `releaseVersion != ""` — true for *any*
+injected version, including a manual/test label. Such a build therefore
+started the full production automatic-check loop (§10) against the real
+GitHub API, and since this repository has never published a Stable
+release, every check failed with the same generic "check failed" state
+(§30/§35's error surface) a genuine network/API failure would also
+produce — shown to the operator as "Could not check for updates. This
+will be retried automatically.", which is misleading for a build that
+was never eligible to check in the first place.
+
+**`buildinfo.IsStrictProductionVersion()`** closes this gap: it reports
+whether the injected version matches `^\d+\.\d+\.\d+$` exactly — the
+same strict-semver gate `scripts/build-release.ps1` already uses (its
+own `-Version` regex) to decide whether to generate real release-
+manifest metadata at all (§39). The two gates are deliberately kept
+identical so a version the script considers "not a real release
+version" can never end up eligible for production update checking here,
+or vice versa. `IsStrictProductionVersion()` is narrower than
+`IsReleaseBuild()`, not a replacement for it: a manual/test build stays
+`IsReleaseBuild() == true` (About/CommitInfo/packaging-identity checks
+all still need that to stay honest — §31/§40), it is simply not the
+kind of version the production updater ever applies to.
+
+`updater.Manager` now takes this as `Options.ProductionVersion`
+(wired from `buildinfo.IsStrictProductionVersion()` in `cmd/server`).
+When `ReleaseBuild` is true but `ProductionVersion` is false, the
+manager starts, and stays, in a new state, `StateManualBuild`
+(`"manual_build"`) — decided once at construction and permanent for the
+life of the process, following `StatePlatformUnsupported`'s (§11)
+existing pattern exactly:
+
+- automatic polling never begins, regardless of the persisted
+  `AutoCheck` preference (§10);
+- `CheckNow`/`Download`/`Install` all refuse immediately with the new
+  `ErrManualBuild` sentinel, never touching the network;
+- `Status()` reports `state: "manual_build"`, `installBlocked: true`,
+  `blockerCode: "manual_build"`, and still honestly reports
+  `currentVersion` (the manual/test version stays visible - it is never
+  hidden or replaced);
+- the frontend shows a distinct notice, "Manual/test build — automatic
+  updates are unavailable for this build." (English) / "Wersja
+  ręczna/testowa — automatyczne aktualizacje są niedostępne dla tej
+  wersji." (Polish) — deliberately different copy from the ordinary
+  development-build notice (§35), since this build really was produced
+  by the release script; it is simply the wrong kind of version for
+  production update participation. No automatic-check toggle or "Check
+  for updates" button is rendered in this state, the same way none is
+  rendered for `platform_unsupported` (§31).
+
+**Distinguishing "no Stable release published yet" from a real
+failure.** Separately, `Client.FetchLatestRelease` previously collapsed
+GitHub's 404 response from `/releases/latest` (its own documented
+"resource not found" status, confirmed against GitHub's REST API
+reference — this is the response GitHub gives when a repository has no
+published release at all) into the same generic `ErrRequestFailed` as
+any other unexpected status, including a real network/DNS/5xx failure.
+A new sentinel, `ErrNoStableRelease`, now distinguishes the two: the
+client returns it specifically for a 404, and `Manager.CheckNow` treats
+it as a **successful** check (`lastSuccessfulCheckAt` still advances, no
+error code is set) landing in a new, calm, non-alarming state,
+`StateNoReleaseYet` (`"no_release_published"`) — never `StateError`.
+The frontend shows "No Stable release has been published yet." instead
+of the red "check failed" error text. This applies only to a real
+strict-production-version build that has not yet had a Stable release
+published for it; a manual/test build never reaches this code path at
+all, since `StateManualBuild` refuses the check before any GitHub
+request is made.
+
+Both gates are covered by tests: `buildinfo.TestIsStrictProductionVersion`
+and `TestIsStrictProductionVersionNarrowerThanIsReleaseBuild`;
+`updater.TestManualBuildNeverStartsOrActs`,
+`TestCheckNowNoStableReleasePublished`, and
+`client_test.go`'s `TestFetchLatestReleaseNoStableReleasePublished`;
+`UpdatesPanel.test.tsx`'s manual-build and no-release-yet cases. No
+GitHub Release was created to test any of this — the no-Stable-release
+path is exercised entirely against a local fake GitHub API server
+(`newTestServer`/`httptest`), the same pattern every other client test
+in this package already uses.

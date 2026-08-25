@@ -170,6 +170,26 @@ func TestFetchLatestReleaseUnexpectedStatus(t *testing.T) {
 	}
 }
 
+func TestFetchLatestReleaseNoStableReleasePublished(t *testing.T) {
+	// GitHub's documented "resource not found" status for
+	// /releases/latest - the response it gives when the repository has
+	// no published Stable release yet. Must be distinguishable from a
+	// genuine network/API failure (docs/updater.md's manual/test-build
+	// eligibility section) rather than collapsed into the same
+	// ErrRequestFailed as TestFetchLatestReleaseUnexpectedStatus below.
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	_, err := client.FetchLatestRelease(context.Background(), "")
+	if !errors.Is(err, ErrNoStableRelease) {
+		t.Fatalf("error = %v, want ErrNoStableRelease", err)
+	}
+	if errors.Is(err, ErrRequestFailed) {
+		t.Fatal("ErrNoStableRelease must not also be ErrRequestFailed - callers need to tell the two apart")
+	}
+}
+
 func TestFetchLatestReleaseOversizedResponse(t *testing.T) {
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

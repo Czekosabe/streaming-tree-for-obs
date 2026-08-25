@@ -24,6 +24,12 @@ var ErrDisabled = errors.New("updater is disabled in a development build")
 // ErrDisabled does for a development build.
 var ErrPlatformUnsupported = errors.New("updater is not available on this platform")
 
+// ErrManualBuild means the manager was asked to act on a release build
+// whose version is not a strict production version (StateManualBuild) -
+// every check/download/install operation refuses outright, the same
+// way ErrDisabled/ErrPlatformUnsupported do.
+var ErrManualBuild = errors.New("updater is not available for a manual/test build")
+
 const (
 	// startupCheckDelayBase/Jitter is the short, randomized delay before
 	// the very first automatic check after a successful startup
@@ -57,6 +63,14 @@ type Options struct {
 	ReleaseBuild   bool
 	CurrentVersion string
 	Identity       manifest.Identity
+
+	// ProductionVersion reports whether CurrentVersion is a strict
+	// major.minor.patch production release version (see
+	// buildinfo.IsStrictProductionVersion) - false for a manual/test
+	// packaged build. A ReleaseBuild with ProductionVersion == false
+	// starts, and stays, in StateManualBuild instead of StateIdle: see
+	// that state's own doc comment.
+	ProductionVersion bool
 
 	// OnHandoffBegun is called once Install has successfully launched
 	// the platform handoff (docs/updater.md §21/§24) - production
@@ -92,6 +106,11 @@ type Manager struct {
 	// releaseBuild/currentVersion/identity above, since it too is
 	// immutable after NewManager returns.
 	platformUnsupported bool
+
+	// manualBuild is decided once at construction from ProductionVersion
+	// and never changes afterward (see StateManualBuild) - read without
+	// m.mu, the same way platformUnsupported is.
+	manualBuild bool
 
 	clock func() time.Time
 	rand  *rand.Rand
@@ -161,10 +180,18 @@ func NewManager(opts Options) *Manager {
 	// itself make CheckNow/Start believe an install is actually possible
 	// here (docs/macos-packaging.md §20).
 	platformUnsupported := false
+	manualBuild := false
 	state := StateIdle
-	if !opts.ReleaseBuild {
+	switch {
+	case !opts.ReleaseBuild:
 		state = StateDisabled
-	} else if opts.Handoff != nil {
+	case !opts.ProductionVersion:
+		// Checked before the Handoff/platform check below: a manual/test
+		// build is ineligible for the production updater regardless of
+		// what this platform's install path looks like.
+		manualBuild = true
+		state = StateManualBuild
+	case opts.Handoff != nil:
 		if ok, code := opts.Handoff.Available(); !ok && code == BlockerPlatformUnsupported {
 			platformUnsupported = true
 			state = StatePlatformUnsupported
@@ -182,6 +209,7 @@ func NewManager(opts Options) *Manager {
 		identity:            opts.Identity,
 		onHandoffBegun:      opts.OnHandoffBegun,
 		platformUnsupported: platformUnsupported,
+		manualBuild:         manualBuild,
 		clock:               clock,
 		rand:                rng,
 		logger:              logger,
@@ -207,7 +235,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.autoCheck = prefs.AutoCheck
 	m.mu.Unlock()
 
-	if !m.releaseBuild || !prefs.AutoCheck || m.platformUnsupported {
+	if !m.releaseBuild || !prefs.AutoCheck || m.platformUnsupported || m.manualBuild {
 		return
 	}
 
@@ -273,7 +301,7 @@ func (m *Manager) SetAutoCheck(ctx context.Context, enabled bool) error {
 	m.autoCheck = enabled
 	m.mu.Unlock()
 
-	if !m.releaseBuild || m.platformUnsupported {
+	if !m.releaseBuild || m.platformUnsupported || m.manualBuild {
 		return nil
 	}
 
@@ -328,6 +356,11 @@ func (m *Manager) Status(ctx context.Context) Status {
 	m.mu.Unlock()
 
 	if !m.releaseBuild {
+		return s
+	}
+	if m.manualBuild {
+		s.InstallBlocked = true
+		s.BlockerCode = BlockerManualBuild
 		return s
 	}
 

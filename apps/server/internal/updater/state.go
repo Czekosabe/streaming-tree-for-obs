@@ -30,6 +30,31 @@ const (
 	// preference or of whether the release manifest happens to list an
 	// artifact for this platform's identity.
 	StatePlatformUnsupported State = "platform_unsupported"
+	// StateManualBuild means this is a release build (produced by the
+	// release build script), but its injected version is not a strict
+	// major.minor.patch production version (buildinfo.IsStrictProductionVersion()
+	// == false) - e.g. a manual/test build such as
+	// "0.1.0-manualtest+<commit>". Distinct from StateDisabled (which
+	// means "not a release build at all") and from StateError (this is
+	// not a failure - the build is simply not the kind of build the
+	// production updater ever applies to, since the release pipeline
+	// itself refuses to generate real release-manifest metadata for a
+	// version shaped like this). Set once at construction and permanent
+	// for the life of the process, the same way StatePlatformUnsupported
+	// is: automatic polling never begins in this state, and
+	// CheckNow/Download/Install all refuse immediately, regardless of
+	// the persisted AutoCheck preference.
+	StateManualBuild State = "manual_build"
+	// StateNoReleaseYet means the most recent check reached GitHub
+	// successfully and GitHub reported (via a 404 from /releases/latest)
+	// that this repository has no published Stable release yet. This is
+	// a normal, well-understood outcome, not a failure: lastSuccessfulCheckAt
+	// still advances and no error code is set, exactly like
+	// StateUpToDate. Distinct from StateError, which is reserved for an
+	// actual network/API failure or a genuinely malformed response -
+	// the two must never be presented identically (see
+	// ErrNoStableRelease).
+	StateNoReleaseYet State = "no_release_published"
 )
 
 // Blocker codes - stable, machine-readable, surfaced to the frontend
@@ -39,6 +64,10 @@ const (
 	BlockerNotInstalledCtx     = "not_installed_context"
 	BlockerNoCandidate         = "no_verified_candidate"
 	BlockerPlatformUnsupported = "platform_unsupported"
+	// BlockerManualBuild mirrors StateManualBuild's own string value,
+	// the same convention BlockerPlatformUnsupported/StatePlatformUnsupported
+	// already follow.
+	BlockerManualBuild = "manual_build"
 )
 
 // Error codes - stable, machine-readable, never a raw error string
