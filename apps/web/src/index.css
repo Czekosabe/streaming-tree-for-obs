@@ -177,8 +177,27 @@
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/*
+ * Deliberately no `both`/`forwards` fill-mode: the "to" keyframe's
+ * `transform: translateY(0)` is visually a no-op, but a *held*
+ * non-`none` transform value - which `forwards`/`both` would hold
+ * indefinitely after the 260ms animation ends - establishes a new
+ * CSS stacking context on the element for as long as it holds
+ * (CSS Transforms spec: any computed transform other than the
+ * keyword `none` does this, identity transforms included). That
+ * stacking context is not visible on its own, but it silently
+ * changes how the element's z-index/paint order is resolved against
+ * unrelated siblings elsewhere in the page (a real Stage 20E manual-
+ * test finding: it let plain dashboard content, using this same
+ * entrance animation, render above an open modal dialog). Without a
+ * fill-mode, the animation's effect - including its `transform` -
+ * is released once the animation ends, and the element reverts to
+ * its ordinary (non-animated) computed style, which never
+ * establishes a stacking context here. The visible fade/rise effect
+ * during the 260ms itself is unchanged either way.
+ */
 @utility animate-fade-rise {
-  animation: fade-rise 260ms ease-out both;
+  animation: fade-rise 260ms ease-out;
 }
 
 /*

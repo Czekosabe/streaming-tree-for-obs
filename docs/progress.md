@@ -44293,3 +44293,104 @@ sat undetected until now).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-24 — fix: modal-layering defect found by the real manual Windows test (Session A), not by CI
+
+**This failure was discovered by the operator's real physical/manual
+Windows packaged-app test, not by any automated CI check** - stated
+explicitly per the governing task's own requirement: every automated
+gate (backend/frontend regression, all 5 native CI workflows) was
+green on commit `681389a` before this was found, and none of them
+exercise real browser layout/paint, which is what this defect lived
+in. Reported: on the real installed packaged app, opening a modal on
+the Dashboard, the four platform cards rendered visibly above the
+modal/backdrop, obscuring its content and controls; a status
+indicator and part of the notification area were also affected.
+Recorded as the applicable manual-verification item(s): **FAIL**.
+
+### Root cause, found by direct source audit (not by guessing)
+`apps/web/src/index.css`'s `animate-fade-rise` utility:
+`animation: fade-rise 260ms ease-out both;`. The `fade-rise` keyframe's
+`to` state sets `transform: translateY(0)` - visually a no-op, but the
+`both` fill-mode holds that value **indefinitely** after the 260ms
+animation ends, and per the CSS Transforms spec, any computed
+`transform` other than the literal keyword `none` - identity
+transforms included - establishes a new stacking context on the
+element, permanently. `PlatformGrid.tsx`'s `<li>` wrapping every
+platform card uses this exact class, meaning every card silently
+carried its own permanent stacking context, which changed how the
+browser resolved paint order against a modal dialog rendered elsewhere
+in the tree - with no explicit competing z-index anywhere (a full
+repo-wide audit found exactly six real z-index usages, none of them
+higher than the modal's own `z-50`). `MetadataEditor.tsx`'s tab panel
+uses the same class and was equally affected in principle.
+`components/ui/Modal.tsx`'s own panel also uses `animate-fade-rise`,
+independently confirming the same lingering-transform mechanism was
+present on the modal itself too. `animate-pulse-ring` (the status
+dot's own animation) was independently audited and ruled out - it only
+ever animates `opacity`/`box-shadow`, never `transform`, and the
+element it's applied to cannot structurally escape its own containing
+element regardless.
+
+### The fix - a root-cause CSS fix plus a structural guarantee, not a z-index patch
+1. **`animate-fade-rise`** no longer specifies a fill-mode (dropped
+   `both`): the animation's visible effect during its 260ms is
+   completely unchanged; once it ends, its effect - including the
+   `transform` - is released, and the element reverts to its ordinary,
+   non-stacking-context-creating computed style. Fixes all three real
+   usages (`PlatformGrid`, `MetadataEditor`, `Modal`'s own panel) at
+   the source, not per call site.
+2. **`components/ui/Modal.tsx` now renders through a React portal**
+   (`createPortal(..., document.body)`) instead of inline wherever it
+   is used. This is the structural fix explicitly asked for: a
+   portal-rendered modal no longer depends on *any* ancestor between
+   it and `<body>` staying free of transform/filter/opacity/isolation/
+   will-change/contain side effects, now or in any future change
+   elsewhere in the app - the exact class of bug this entry fixes
+   becomes structurally impossible to reintroduce through this
+   component, not merely patched for its one currently-known trigger.
+   `ConfirmDialog` and every feature-specific dialog built on `Modal`
+   inherit this automatically, with no changes of their own needed.
+3. **New `apps/web/src/lib/z-layers.ts`**: one shared, documented,
+   ordered `APP_LAYER_Z` scale (`topBar` z-30, `mobileSidebarDrawer`
+   z-40, `modal` z-50) replacing the three previously-hardcoded,
+   uncoordinated z-index literals in `TopBar.tsx`/`Sidebar.tsx`/
+   `Modal.tsx` - the "one coherent application-wide layering scale"
+   requested, rather than an ever-increasing per-component number. The
+   mobile drawer's z-index was deliberately lowered relative to the
+   modal (it previously tied with it at `z-50`) so a dialog opened
+   while the drawer is open is guaranteed to render above it, not by
+   coincidence.
+
+Keyboard/focus-trap/Escape/backdrop-dismiss behavior (Modal's own
+`useEffect`, operating on `document`, not on any DOM subtree) is
+completely unaffected by the portal conversion - verified, not merely
+assumed (see tests below).
+
+### New regression coverage: `components/ui/Modal.test.tsx`
+jsdom has no real layout/paint engine, so "which element visually
+paints on top" cannot be asserted directly - what *is* meaningfully
+testable, and what this file adds, five tests: (1) the dialog element
+renders as a descendant of `document.body` and explicitly **not** as a
+descendant of its own render root - the structural portal guarantee,
+directly regression-testing the fix; (2) focus moves into the panel on
+open and returns to the opener when it closes; (3) Escape is a no-op
+while `dismissible={false}`; (4) clicking the backdrop closes a
+dismissible modal; (5) Tab wraps from the panel's last focusable
+control back to its first. Two of these caught real bugs in the test
+itself while writing it (the header's own Close button is the panel's
+true first focusable element, not "the first child button" as
+initially assumed) - fixed in the test, not in `Modal`, before this
+entry was written.
+
+### Verification
+`npm run typecheck`, `npm run lint` (0 errors, same one pre-existing
+warning), `npm run build`: all clean. `npm run test -- --run`: **1425
+tests passed across 106 files** (up from 1420/105 - the 5 new
+`Modal.test.tsx` tests), confirming the portal conversion and shared
+z-index scale are fully transparent to every existing test across the
+whole app that opens a dialog.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

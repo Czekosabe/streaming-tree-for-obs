@@ -2,6 +2,8 @@ import { Menu } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { APP_LAYER_Z } from '@/lib/z-layers';
+
 import { SystemStatusPill } from '../system/SystemStatusPill';
 import { LanguageSwitcher } from '../ui/LanguageSwitcher';
 
@@ -20,7 +22,7 @@ export function TopBar({ title, description, actions, onOpenMenu }: TopBarProps)
   const { t } = useTranslation('common');
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
+    <header className={`sticky top-0 ${APP_LAYER_Z.topBar} border-b border-line bg-canvas/85 backdrop-blur-md`}>
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
         <button
           type="button"

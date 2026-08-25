@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
+import { APP_LAYER_Z } from '@/lib/z-layers';
 
 import { BrandMark } from './BrandMark';
 import { SidebarFooter } from './SidebarFooter';
@@ -71,7 +72,7 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
 
   return (
     <div
-      className={cn('fixed inset-0 z-50 lg:hidden', open ? '' : 'pointer-events-none')}
+      className={cn('fixed inset-0 lg:hidden', APP_LAYER_Z.mobileSidebarDrawer, open ? '' : 'pointer-events-none')}
       aria-hidden={!open}
     >
       <div

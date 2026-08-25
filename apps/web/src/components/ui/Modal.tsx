@@ -1,8 +1,10 @@
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/cn';
+import { APP_LAYER_Z } from '@/lib/z-layers';
 
 type ModalProps = {
   open: boolean;
@@ -99,8 +101,20 @@ export function Modal({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  // Rendered through a portal directly under <body>, deliberately never
+  // as a descendant of any page content. A modal that renders inline
+  // depends on every ancestor between it and <body> staying free of
+  // anything that creates its own CSS stacking context (transform,
+  // filter, opacity < 1, isolation, will-change, contain) - a
+  // dependency nothing enforces, and a real Stage 20E manual test
+  // found broken in practice (an unrelated entrance animation
+  // elsewhere on the page ended up outranking this dialog). A portal
+  // makes the question moot instead of relying on the rest of the
+  // app never regressing it: see `lib/z-layers.ts`'s `APP_LAYER_Z`
+  // for the one shared z-index scale every fixed/sticky overlay in
+  // the app now draws from.
+  return createPortal(
+    <div className={cn('fixed inset-0 flex items-center justify-center p-4', APP_LAYER_Z.modal)}>
       <div
         role="presentation"
         onClick={dismissible ? onClose : undefined}
@@ -152,6 +166,7 @@ export function Modal({
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
