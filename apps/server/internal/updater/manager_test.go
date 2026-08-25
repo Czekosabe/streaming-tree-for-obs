@@ -87,14 +87,23 @@ func TestPlatformUnsupportedNeverStartsOrActs(t *testing.T) {
 	// The client here points at an unused URL: if CheckNow ever actually
 	// contacted it, the test would hang/fail rather than returning
 	// ErrPlatformUnsupported immediately.
+	//
+	// ProductionVersion is deliberately false here, mirroring every real
+	// macOS/Linux CI package-verification build (scripts/build-release-
+	// macos.sh/-linux.sh are always invoked with a non-strict version
+	// like "0.1.0-dev+ci1", never a real production version) - this is
+	// the exact combination that regressed once before StateManualBuild
+	// was ordered to preempt StatePlatformUnsupported: platform support
+	// is a permanent, structural fact independent of version
+	// eligibility, and must still win here.
 	m := NewManager(Options{
-		Client:            newClient("http://unused.invalid", "0.1.0"),
+		Client:            newClient("http://unused.invalid", "0.1.0-dev+ci1"),
 		Settings:          newTestSettings(),
 		Branches:          &fakeBranches{},
 		Handoff:           &fakeHandoff{available: false, blockerCode: BlockerPlatformUnsupported},
 		ReleaseBuild:      true,
-		ProductionVersion: true,
-		CurrentVersion:    "0.1.0",
+		ProductionVersion: false,
+		CurrentVersion:    "0.1.0-dev+ci1",
 		Identity:          manifest.Identity{OS: manifest.OSDarwin, Arch: manifest.ArchARM64, Kind: manifest.KindDMG},
 	})
 

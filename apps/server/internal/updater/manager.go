@@ -182,19 +182,31 @@ func NewManager(opts Options) *Manager {
 	platformUnsupported := false
 	manualBuild := false
 	state := StateIdle
-	switch {
-	case !opts.ReleaseBuild:
+	if !opts.ReleaseBuild {
 		state = StateDisabled
-	case !opts.ProductionVersion:
-		// Checked before the Handoff/platform check below: a manual/test
-		// build is ineligible for the production updater regardless of
-		// what this platform's install path looks like.
-		manualBuild = true
-		state = StateManualBuild
-	case opts.Handoff != nil:
-		if ok, code := opts.Handoff.Available(); !ok && code == BlockerPlatformUnsupported {
-			platformUnsupported = true
-			state = StatePlatformUnsupported
+	} else {
+		// Platform support is checked first, deliberately: it is a
+		// permanent, structural fact about this platform (§20 of
+		// docs/macos-packaging.md - there is no install mechanism here
+		// at all yet, for any version), independent of whether this
+		// particular build happens to carry a strict production
+		// version. A non-strict version (every CI package-verification
+		// build uses one, e.g. "0.1.0-dev+ci1") must still report
+		// platform_unsupported on a structurally-unsupported platform,
+		// not manual_build - docs/macos-packaging.md's/docs/
+		// linux-desktop-packaging.md's own verify-*-package.mjs assert
+		// exactly this. Version eligibility (manual_build) is checked
+		// second, and only applies once the platform question is
+		// already settled.
+		if opts.Handoff != nil {
+			if ok, code := opts.Handoff.Available(); !ok && code == BlockerPlatformUnsupported {
+				platformUnsupported = true
+				state = StatePlatformUnsupported
+			}
+		}
+		if !platformUnsupported && !opts.ProductionVersion {
+			manualBuild = true
+			state = StateManualBuild
 		}
 	}
 

@@ -44531,3 +44531,69 @@ records that honestly, superseding the earlier verbal framing.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix(ci): platform-unsupported must outrank manual-build ineligibility, not the other way round
+
+**Found by real native CI, not by guessing or by the operator** - the
+previous entry's commit (`e20cb57`) triggered all five native workflows
+(every one of them matches on `apps/server/**`/`apps/web/**`, per each
+workflow's own path filter); three came back **failure**: "Linux
+headless service verification", "Linux package verification", "macOS
+package verification". "Cross-platform portability gate" and "Windows
+package verification" (which runs `verify-updater.mjs`, the most
+updater-specific test that exists) both passed - a real, useful signal
+that narrowed this down immediately.
+
+### Root cause, found by reading the three failing verify scripts, not by log access (unauthenticated API, no `gh` CLI - docs/ci-reliability.md)
+All three failing jobs stopped at their own "Verify the ... package"
+step with a plain "exit code 1" - no richer diagnostic annotation
+exists for these workflows (unlike windows-package.yml's own
+::error::-based capture, added earlier this stage). Reading
+`verify-linux-package.mjs`, `verify-macos-package.mjs`, and
+`verify-linux-headless.mjs` directly found the exact shared assertion:
+all three build their packaged binary with a deliberately non-strict
+version (`build-release-macos.sh --version "0.1.0-dev+ci1"`, the exact
+same convention `build-release.ps1`'s own Windows CI steps use), then
+assert `GET /api/updates/status` returns `state: "platform_unsupported"`
+on these platforms (docs/macos-packaging.md/docs/linux-desktop-
+packaging.md §20 - there is no install mechanism on Linux/macOS yet at
+all, for any version). The previous entry's `NewManager` checked
+`!opts.ProductionVersion` *before* the `Handoff`/platform check, so a
+non-strict CI version now short-circuited straight to the new
+`StateManualBuild` before the platform check ever ran - exactly what
+every one of these CI builds is, since none of them (nor any real
+manual/test build) has ever carried a strict production version. A real
+regression in the previous commit, not a pre-existing flake: confirmed
+by checking the known-good `a0e2fb8` baseline's own macOS run - it
+carries the exact same harmless "Restore cache failed: ... go.sum"
+warning these three failing runs also show (ruled out as an unrelated,
+pre-existing artifact, not the actual cause), and by direct comparison
+of `OLD_VERSION = '0.9.0'`/`NEW_VERSION = '0.9.1'` in
+`verify-updater.mjs` (both strict, which is exactly why Windows's own
+updater-specific test was unaffected).
+
+### The fix
+`updater.NewManager` now checks platform support *before* version
+eligibility: the Handoff's static platform-unsupported answer is
+evaluated first (a permanent, structural fact about the platform,
+independent of any particular build's version), and `ProductionVersion`
+is only consulted afterward, and only when the platform itself is
+otherwise fine. `platformUnsupported`/`manualBuild` are mutually
+exclusive by construction as a result - a platform with no install path
+at all always reports `platform_unsupported`, regardless of whether its
+own build happens to carry a real production version or a manual/test
+one; a manual/test build on a platform that *does* have a real install
+path (Windows, today) reports `manual_build`, exactly as intended.
+
+### New regression coverage
+`TestPlatformUnsupportedNeverStartsOrActs` now builds its `Options`
+with `ProductionVersion: false` and a `"0.1.0-dev+ci1"`-style version -
+deliberately mirroring the real CI scenario that broke, so this
+specific ordering regression cannot silently return. `go test ./...`:
+full backend suite green (after restoring the two tracked `.gitkeep`
+placeholders a local build for the console-flashing investigation below
+had overwritten, per this project's established convention).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
