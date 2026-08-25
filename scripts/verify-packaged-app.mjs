@@ -246,6 +246,36 @@ async function main() {
     expect(cssAsset.status === 200, 'CSS asset status is 200', cssAsset.status);
     expect((cssAsset.headers.get('content-type') ?? '').includes('css'), 'CSS asset content-type is text/css', cssAsset.headers.get('content-type'));
 
+    step('The favicon is served through the same hashed, immutably-cacheable asset path as JS/CSS (Stage 20E)');
+    // A real physical/manual Windows test reported the browser tab not
+    // visibly showing the new logo. Traced to the favicon previously
+    // being served from a static, unversioned /favicon.ico with no
+    // explicit Cache-Control at all (internal/httpapi/production.go's
+    // applyAssetCaching only covers assets/) - a real risk of a stale
+    // browser-cached favicon surviving a packaged app upgrade. Fixed by
+    // moving it into Vite's own hashed asset pipeline
+    // (apps/web/src/assets/favicon.ico, referenced by a relative path
+    // in index.html rather than living under public/) - this proves
+    // both halves of that fix against the real production server: the
+    // old unversioned path is gone, and the new hashed path is
+    // correctly immutable-cacheable.
+    const faviconLinkMatch = root.text.match(/<link rel="icon" href="(\/assets\/favicon-[\w.-]+\.ico)"/);
+    expect(faviconLinkMatch !== null, 'index.html references a hashed favicon asset', root.text.slice(0, 300));
+    const oldFavicon = await request('GET', '/favicon.ico');
+    expect(oldFavicon.status === 404, 'the old unversioned /favicon.ico is gone, not silently still served', oldFavicon.status);
+    const favicon = await request('GET', faviconLinkMatch[1]);
+    expect(favicon.status === 200, 'the hashed favicon asset is served', favicon.status);
+    expect(
+      (favicon.headers.get('content-type') ?? '').includes('icon'),
+      'favicon content-type identifies it as an icon',
+      favicon.headers.get('content-type'),
+    );
+    expect(
+      favicon.headers.get('cache-control') === 'public, max-age=31536000, immutable',
+      'the hashed favicon is safely immutable-cacheable, unlike the old unversioned path',
+      favicon.headers.get('cache-control'),
+    );
+
     step('React Router client routes all resolve to the SPA entry point');
     for (const route of [
       '/settings',

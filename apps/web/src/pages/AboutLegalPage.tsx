@@ -1,7 +1,8 @@
-import { ExternalLink, Heart, Power, Scale, ScrollText } from 'lucide-react';
+import { ExternalLink, Heart, Power, Scale } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import brandEmblem from '@/assets/brand-emblem.png';
 import { UpdatesPanel } from '@/components/about/UpdatesPanel';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -176,7 +177,7 @@ export function AboutLegalPage() {
               <PanelHeader
                 title={data.productName}
                 description={t('about:product.description')}
-                icon={<ScrollText className="size-4" />}
+                icon={<img src={brandEmblem} alt="" className="size-5" />}
               />
               <PanelBody className="space-y-3">
                 <VersionLine data={data} />

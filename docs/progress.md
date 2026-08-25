@@ -45280,3 +45280,90 @@ restarts, even though the updater's own contract is unchanged).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix: web app UI still showed the old placeholder brand mark, and the favicon risked stale caching across upgrades
+
+**Real physical/manual Windows finding**: the previous branding entry
+integrated the operator's real logo into the tray, executable, and
+installer, but the web application's own sidebar/header still showed
+the old generic Lucide "Network" icon placeholder, and the browser tab
+did not clearly show the new logo either.
+
+### Audit of every visible brand surface (the operator's own required checklist)
+Read every candidate surface directly, not assumed: `LoginPage.tsx` (no
+brand mark at all, on any of its paths - including the remote-
+management login, which reuses the same component - nothing to
+"replace" there, since it never had one; left as-is rather than adding
+new UI beyond what was asked), the mobile sidebar (already correctly
+shares `BrandMark` via `SidebarContent` - no separate instance to fix),
+`AboutLegalPage.tsx` (a second, independent identity block - a
+`ScrollText` icon + the product name - genuinely inconsistent with
+`BrandMark` and in scope), the app-shell bootstrap/loading state (no
+splash exists, by design - nothing to touch), and confirmed no other
+hardcoded brand-mark rendering exists anywhere else in `apps/web/src`.
+
+### The fix - one more derivative from the same single canonical source
+`scripts/generate-branding-assets.go` now also writes
+`apps/web/src/assets/brand-emblem.png` - reusing the *same*
+already-computed 256px frame the icon sets already needed
+(`webEmblemSize`), never a separately cropped/resized copy of the
+source artwork. `BrandMark.tsx` now renders this real image instead of
+the generic `Network` icon, keeping the existing "Streaming Tree / for
+OBS" text lockup exactly as before (the full wordmark image is not
+used here either - illegible at this size, same reasoning the tray icon
+crop already established). `AboutLegalPage.tsx`'s own separate identity
+block now uses the same emblem instead of its own inconsistent
+`ScrollText` icon.
+
+### The favicon: a real caching defect, not just "the file exists"
+Read `internal/httpapi/production.go` directly rather than assuming:
+`applyAssetCaching` sets a long, safely-immutable `Cache-Control` only
+for paths under `assets/` (Vite's own content-hashed directory); the
+favicon was being served from a static, unversioned `/favicon.ico`
+under `public/` with **no explicit `Cache-Control` at all**, which a
+browser can cache heuristically for an unpredictable, potentially long
+time - and since the URL never changes across a packaged app upgrade
+even when the favicon's own bytes do, a browser that already cached the
+old placeholder favicon before this fix existed had no way to discover
+the new one short of the operator manually clearing browser data.
+Fixed by moving the favicon out of `public/` (copied verbatim, un-
+hashed) into `apps/web/src/assets/favicon.ico`, referenced from
+`index.html` by a relative path so Vite's own HTML asset pipeline
+fingerprints it exactly like every JS/CSS bundle already is - this
+makes the existing, already-safe `assets/` immutable-cache policy apply
+to it too, and guarantees any future favicon change gets a new URL
+rather than colliding with a stale cached copy.
+
+### Verified against the real production server, not just "the file exists"
+Started the real packaged app and confirmed with real HTTP requests:
+the old `/favicon.ico` now returns a real 404 (not silently still
+served); `GET /` includes `<link rel="icon"
+href="/assets/favicon-XJVU7Jj_.ico" ...>`; that hashed path returns 200
+with `Content-Type: image/x-icon` and `Cache-Control: public,
+max-age=31536000, immutable`. Now also asserted automatically by
+`scripts/verify-packaged-app.mjs`'s new favicon step (added to the same
+file the previous entry's manifest step was added to - both steps
+landed together against the same combined build, see that entry's own
+verification numbers), so this cannot silently regress.
+
+### New regression coverage
+`BrandMark.test.tsx` (new): confirms the rendered `<img>`'s `src` is
+the canonical generated emblem asset (not a generic icon), and that the
+existing textual product-name lockup is unchanged. `AboutLegalPage.test.tsx`
+(pre-existing, all 11 cases still passing) confirms no regression to
+that page's own behavior.
+
+### Verification
+`npm run i18n:check`/`typecheck`/`lint` clean (the one pre-existing,
+unrelated warning); `npm run build` confirmed
+`dist/assets/brand-emblem-*.png` and `dist/assets/favicon-*.ico` both
+present with real content hashes; `npx vitest run` - **1429/1429**
+tests passing (the 2 new `BrandMark.test.tsx` cases). Backend
+`gofmt`/`go vet`/`go build` clean (only `scripts/generate-branding-
+assets.go` changed on the Go side here, itself a `//go:build ignore`
+tool). `node scripts/verify-packaged-app.mjs`: **20/20 passed**
+(combined with the previous entry's manifest step - see that entry).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
