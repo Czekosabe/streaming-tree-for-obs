@@ -45488,3 +45488,61 @@ and the About & Legal page's own identity block).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix(ci): TestSubscribeAfterEvictionReportsGap raced its own async event consumption, not the projection under test
+
+**A real, reproduced defect - not classified as a CI flake merely
+because a similar-looking failure happened before, because the
+package passes locally most of the time, or because a later clean run
+might pass. The operator explicitly required this standard, and this
+entry meets it.** The previous entry's Cross-platform portability gate
+came back 4 of 5 green; the failure was on `backend (macos-amd64)`, not
+the same Windows job any earlier chatoverlay failure hit, and - unlike
+those - it named a specific test:
+`internal/operatorchat :: TestSubscribeAfterEvictionReportsGap`.
+
+### Reproduced locally, then root-caused by reading the real code
+`go test -count=100 -run TestSubscribeAfterEvictionReportsGap
+./internal/operatorchat/...` reproduced the exact same failure on this
+Windows development machine within the first 100 iterations - proof
+this is a genuine, platform-independent bug, not a macOS-runner-
+specific circumstance. Reading `internal/operatorchat/projection.go`'s
+real `Subscribe`/`ItemsAfter`/`hasGapLocked` found them correctly
+atomic (both the retained-item list and the gap computation are read
+under the same lock in a single call) - the production code is not the
+bug. The test itself is: `b.Publish` (an `engagement.Bus`) hands events
+to the projection's own background consumer goroutine asynchronously,
+so after 4 publishes the test polled `p.ItemsAfter(0, 0)` waiting for
+`len(items) == 2` before proceeding - but with capacity 2, that
+condition is already true as soon as just the **first two** of the
+four publishes have been consumed, since two items exactly fill the
+ring with no eviction needed yet. The test could reach its
+`Subscribe(1)` assertion before the third and fourth events - and the
+eviction they trigger - had actually landed, intermittently observing
+"no gap" where a real one exists once eviction does happen.
+
+### The fix
+Wait on `p.Snapshot().NewestSequence == 4` instead - the only condition
+that actually confirms every publish has been consumed (and therefore
+that any necessary eviction has already happened), rather than a
+retained-count that can be coincidentally satisfied partway through.
+
+### Verification
+`go test -count=300 -run TestSubscribeAfterEvictionReportsGap
+./internal/operatorchat/...`: **300/300 passed**, zero failures (the
+unfixed version failed within the first 6 iterations of a 100-run
+stress test). Full `internal/operatorchat` suite: all tests still
+passing. As a related check (not because this was assumed to be the
+same bug, but because it shares the same async-projection-consumption
+shape): `go test -count=50 ./internal/chatoverlay/...` - the package an
+earlier entry investigated and could not reproduce a specific failure
+in - stress-tested here again, 50/50 passed. That package's own two
+earlier isolated failures remain unreproduced and are not claimed to be
+resolved by this fix; they are a genuinely separate, still-open
+question, honestly left open rather than folded into this entry's own
+confirmed fix. `gofmt`/`go vet`/`go build` clean; cross-compiled clean
+for `GOOS=linux` and `GOOS=windows`; full `go test ./...` clean.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

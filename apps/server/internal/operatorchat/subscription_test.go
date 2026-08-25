@@ -108,14 +108,25 @@ func TestSubscribeAfterEvictionReportsGap(t *testing.T) {
 		b.Publish(chatMessageEvent("acct_1", "msg", "dedupe_"+string(rune('a'+i)), "u1", "viewer", "hi"))
 	}
 
+	// A real, reproducible bug (found by direct stress-testing after a
+	// real CI failure, not by guessing): b.Publish hands events off to
+	// the projection's own background consumer goroutine
+	// asynchronously, so "len(items) == 2" is already true as soon as
+	// just the *first two* of the four publishes above have been
+	// consumed - capacity 2 is already full with no eviction needed
+	// yet at that point. Waiting on that condition let the test
+	// proceed to Subscribe(1) before eviction had actually happened,
+	// intermittently observing no gap where a real one exists.
+	// NewestSequence reaching 4 is the only correct signal that every
+	// publish has actually landed and any necessary eviction has
+	// already happened.
 	deadline := time.Now().Add(time.Second)
 	for {
-		items, _ := p.ItemsAfter(0, 0)
-		if len(items) == 2 {
+		if p.Snapshot().NewestSequence == 4 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for the ring to fill and evict")
+			t.Fatal("timed out waiting for all four publishes to be consumed")
 		}
 		time.Sleep(time.Millisecond)
 	}
