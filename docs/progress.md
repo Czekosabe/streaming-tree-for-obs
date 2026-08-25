@@ -45466,3 +45466,25 @@ process-lifecycle tests it sits alongside.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — docs: extend the manual-verification checklist for this cycle's DPI/branding/port-1935 fixes
+
+New/updated `docs/manual-verification.md` items for the three fixes in
+this cycle's preceding entries: A-13/A-13b (tray menu crispness,
+compared against another normal Windows tray app, at the operator's own
+scale and - if practical - one non-100% scale too - deliberately not
+claimed as verified by automated tooling; the underlying DPI-awareness
+mechanism was, but the crispness judgment itself is not), A-19 (a
+"port already in use" ingest failure after several install/uninstall/
+restart cycles - explicitly asks to record which of the two real causes
+was actually found: a genuine external owner, or a stale Streaming-
+Tree-owned process this cycle's Job Object fix should now prevent), and
+B-6/B-7/B-8 (the web sidebar brand mark, the browser tab favicon - with
+an explicit hard-refresh note since a browser that cached the old
+favicon before this fix existed may still show it until a hard refresh,
+which is the fix's own documented, expected behavior, not a new bug -
+and the About & Legal page's own identity block).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
