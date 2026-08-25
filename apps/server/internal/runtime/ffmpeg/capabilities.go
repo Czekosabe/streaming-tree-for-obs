@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/streaming-tree/server/internal/runtime/procutil"
 )
 
 // Capabilities records what a probed FFmpeg binary can actually do.
@@ -106,6 +108,7 @@ func runProbe(ctx context.Context, path string, args ...string) (string, error) 
 	defer cancel()
 
 	cmd := exec.CommandContext(probeCtx, path, args...)
+	procutil.HideConsoleWindow(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &out, max: maxProbeOutputBytes}
 	cmd.Stderr = cmd.Stdout
@@ -142,6 +145,7 @@ func probeProgress(ctx context.Context, path string) bool {
 		"-progress", "pipe:1",
 		"-y", outputPath,
 	)
+	procutil.HideConsoleWindow(cmd)
 
 	var out bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &out, max: maxProbeOutputBytes}

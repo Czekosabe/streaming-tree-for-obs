@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/streaming-tree/server/internal/runtime/procutil"
 )
 
 // BinarySource records where the executable in use came from.
@@ -210,6 +212,7 @@ func probeVersion(ctx context.Context, path string) (string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(probeCtx, path, "--version")
+	procutil.HideConsoleWindow(cmd)
 	// A hostile or broken binary could print a great deal; the output is
 	// bounded by reading it into memory only through CombinedOutput and then
 	// truncating before it reaches a message.

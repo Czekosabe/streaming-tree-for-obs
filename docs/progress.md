@@ -44597,3 +44597,121 @@ had overwritten, per this project's established convention).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix: stop child processes from flashing a console window during normal Windows operation
+
+**Investigated per the operator's explicit instruction, safely, and with
+a real reproduction and a real fix - not by guessing.** The operator
+reported a CMD/console-like window briefly flashing while the installed
+`681389a` build ran, and explicitly warned that Claude/tooling was also
+active on the machine at the time, so the flashing window could easily
+have been unrelated. The instruction was specific and security-
+critical: identify the real parent process via a bounded Windows
+process-start trace capturing **only** timestamp, process/executable
+name, executable path, PID, and parent PID/name - explicitly never
+command-line arguments, since a provider or FFmpeg command can carry a
+secret.
+
+### Step 1: stale-process audit
+`Get-CimInstance Win32_Process` (selecting only `ProcessId`,
+`ParentProcessId`, `Name`, `ExecutablePath`, `CreationDate` - never
+`CommandLine`) found no leftover Claude/dev/build/watch process from
+earlier work this session: no orphaned `go.exe`, `streaming-tree-
+server.exe`, `npm`/`node` watcher, or lingering build process. Nothing
+needed stopping before observing.
+
+### Step 2: observe the real app, built from current source, safely
+The old `681389a` install was not running any more, so this reproduced
+against a fresh build of **current source** (per the operator's own
+instruction: audit against current source, not the old build) - a
+release-flagged executable (`build-release.ps1 -SkipInstaller`, so no
+Inno Setup install/uninstall cycle was needed just to observe this),
+run directly from a hermetic temporary data directory, with the real,
+un-suppressed lifecycle (`STREAMING_TREE_TEST_NO_UI` deliberately left
+unset, unlike `verify-packaged-app.mjs`'s own convention, since that
+flag exists specifically to suppress the real browser-launch/native-
+dialog side effects this investigation needed to see). A baseline
+process snapshot was taken immediately before launch; every process
+that appeared afterward, for a bounded ~100 second window covering
+startup and idle, was recorded with only the fields the operator
+authorized.
+
+### Root cause, found directly in the trace, not by guessing
+Four `ffmpeg.exe` processes appeared as direct children of
+`streaming-tree-server.exe`'s own PID within the first ~3 seconds
+(`internal/runtime/ffmpeg/capabilities.go`'s startup dependency probe:
+`-version`, `-protocols`, `-muxers`, and a real short encode to confirm
+`-progress` works) - and three of the four immediately spawned their
+own `conhost.exe` child. **This is the flash.** The server binary is
+built with `-H=windowsgui` (docs/windows-packaging.md §7/§13)
+specifically so it never owns a console window - but `ffmpeg.exe` is an
+ordinary console-subsystem executable, and neither of `os/exec`'s two
+calls here (nor any other child-process spawn in this codebase) told
+Windows to suppress the console it allocates for a child like that.
+Reading every other `exec.Command`/`exec.CommandContext` call site in
+`apps/server` found the exact same gap, systemically, in six places:
+FFmpeg's own capability probes (2 sites, confirmed above), the real
+per-branch FFmpeg publish process (`branch/process_windows.go`), the
+MediaMTX server process itself (`mediamtx/process_windows.go`),
+MediaMTX's own `--version` probe (`mediamtx/resolver.go`), and three
+sites inside the Windows update-helper (`updater/helper_windows.go`'s
+install command, restart command, and post-install `--version` check,
+plus the helper-launch command in `updater/handoff_windows.go`) - every
+one of these is a real, if less frequently triggered, console-flash
+risk the same class of bug applies to. **This is Streaming Tree's own
+code, confirmed directly, not third-party or unrelated background
+activity** - the trace's other new processes (Docker Desktop's own
+`docker.exe`/`conhost.exe` pairs, Brave, this session's own concurrent
+CI-monitoring `bash`/`curl`/`sleep` chain, Windows Terminal) all traced
+to clearly unrelated parent chains, none touching the app's own PID.
+
+### The fix
+New package **`internal/runtime/procutil`**, `HideConsoleWindow(cmd
+*exec.Cmd)`: sets `syscall.SysProcAttr.HideWindow = true` on Windows
+(preserving any `SysProcAttr` fields a caller already set), a no-op on
+every other platform - the one place this Windows-only concept lives,
+callable from ordinary cross-platform files without a build tag of
+their own. Applied at all six sites above: the two FFmpeg capability-
+probe calls and MediaMTX's `--version` probe call `procutil.
+HideConsoleWindow(cmd)` directly; the real FFmpeg publish process and
+the real MediaMTX server process already had their own platform-
+specific `configureProcessAttributes` (Windows: `CREATE_NEW_PROCESS_
+GROUP`, for signal-delivery reasons unrelated to this) - `HideWindow:
+true` was added directly into that same existing struct literal in
+both `process_windows.go` files, rather than introduced as a second
+`SysProcAttr` write; the three update-helper sites and the helper-
+launch command call `procutil.HideConsoleWindow(cmd)` too, for
+consistency and defense in depth, even though two of them (the
+restarted app itself, and the helper - both are copies of the same
+`-H=windowsgui` binary) were likely already GUI-subsystem executables
+in practice.
+
+### New regression coverage
+`procutil`'s own tests (Windows-tagged: `HideConsoleWindow` sets
+`HideWindow` and preserves a caller's existing `SysProcAttr` fields;
+non-Windows-tagged: confirmed as a safe no-op) - this is the boundary
+that is meaningfully unit-testable; the console-flash itself is a
+Windows-visual, cross-process effect that a Go unit test cannot observe
+directly, which is why this was verified by the real process trace
+below instead.
+
+### Verification
+`go build ./...`/`go vet ./...`/`gofmt -l .` clean; cross-compiled
+clean for `GOOS=linux` and `GOOS=windows` (an unrelated, pre-existing
+`GOOS=darwin` local cross-compile limitation was checked and confirmed
+harmless - `internal/runtime/nativealert`'s real macOS implementation
+uses Objective-C/CGO, which macOS CI itself builds natively on a real
+macOS runner; it does not cross-compile from a non-macOS host, and
+never has, unrelated to anything touched here). `go test ./...`: full
+backend suite green. **Re-ran the exact same real-binary process trace
+against a fresh build carrying this fix**: all four `ffmpeg.exe`
+children still appear as before (confirming the probe itself still
+ran), and this time **zero** of them spawned a `conhost.exe` - the
+fix is confirmed working by direct observation, not merely by the code
+compiling. MediaMTX's own fix could not be observed the same way (no
+MediaMTX binary is installed in this environment) but is the
+structurally identical change to the same already-proven mechanism.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

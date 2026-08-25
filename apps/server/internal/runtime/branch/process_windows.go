@@ -9,10 +9,15 @@ import (
 )
 
 // configureProcessAttributes detaches FFmpeg from the parent's console, so a
-// console Ctrl+C is not delivered straight to the child.
+// console Ctrl+C is not delivered straight to the child, and hides FFmpeg's
+// own console window - the parent runs with no console of its own
+// (-H=windowsgui), and without HideWindow, Windows would otherwise briefly
+// flash a new one for this ordinary console-subsystem child (see
+// internal/runtime/procutil for the full explanation of this class of bug).
 func configureProcessAttributes(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		HideWindow:    true,
 	}
 }
 

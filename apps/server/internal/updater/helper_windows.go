@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/streaming-tree/server/internal/runtime/procutil"
 )
 
 const (
@@ -106,6 +108,7 @@ func proceedWithInstall(args HelperArgs, result *HandoffResult) HandoffResult {
 	logPath := filepath.Join(stagingDir, "install.log")
 	installCmd := exec.Command(args.CandidatePath, //nolint:gosec // candidatePath is application-verified, not user input.
 		"/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG="+logPath)
+	procutil.HideConsoleWindow(installCmd)
 
 	installDone := make(chan error, 1)
 	if err := installCmd.Start(); err != nil {
@@ -147,6 +150,7 @@ func proceedWithInstall(args HelperArgs, result *HandoffResult) HandoffResult {
 	// result for the freshly-restarted process to read once.
 	time.Sleep(restartLaunchDelay)
 	restartCmd := exec.Command(args.TargetExePath) //nolint:gosec // targetExePath is application-verified, not user input.
+	procutil.HideConsoleWindow(restartCmd)
 	if err := restartCmd.Start(); err != nil {
 		result.Outcome = OutcomeRestartFailed
 		return *result
@@ -216,7 +220,9 @@ func copyForHash(hasher interface{ Write([]byte) (int, error) }, f *os.File) (in
 // reuses the existing, unchanged buildinfo/--version output rather than
 // inventing a second version-reporting mechanism.
 func readInstalledVersion(exePath string) (string, error) {
-	out, err := exec.Command(exePath, "--version").Output() //nolint:gosec // exePath is application-verified, not user input.
+	cmd := exec.Command(exePath, "--version") //nolint:gosec // exePath is application-verified, not user input.
+	procutil.HideConsoleWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}

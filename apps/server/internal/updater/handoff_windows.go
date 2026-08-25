@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+
+	"github.com/streaming-tree/server/internal/runtime/procutil"
 )
 
 // WindowsHandoff is the real Handoff implementation for packaged
@@ -93,6 +95,7 @@ func (h *WindowsHandoff) Begin(ctx context.Context, candidatePath, expectedVersi
 		"-"+FlagExpectedVersion, helperArgs.ExpectedVersion,
 	)
 	cmd.Dir = stagingDir
+	procutil.HideConsoleWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("launch update helper: %w", err)
 	}

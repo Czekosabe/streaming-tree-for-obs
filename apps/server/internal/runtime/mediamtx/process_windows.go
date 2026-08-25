@@ -11,10 +11,15 @@ import (
 // configureProcessAttributes detaches MediaMTX from the parent's console.
 //
 // CREATE_NEW_PROCESS_GROUP stops a console Ctrl+C from being delivered straight
-// to the child, so the supervisor decides when it stops.
+// to the child, so the supervisor decides when it stops. HideWindow hides
+// MediaMTX's own console window - the parent runs with no console of its own
+// (-H=windowsgui), and without it, Windows would otherwise briefly flash a
+// new one for this ordinary console-subsystem child (see
+// internal/runtime/procutil for the full explanation of this class of bug).
 func configureProcessAttributes(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		HideWindow:    true,
 	}
 }
 
