@@ -45105,3 +45105,59 @@ technical blocker (no tool available to extract the pasted image's
 exact bytes to disk), not a preference question, and the operator's own
 governing instruction for this task explicitly allowed it ("No
 AskUserQuestion unless absolutely blocked"). No other blocker existed.
+
+## 2026-08-25 — docs: branding remediation closed out, one new installer built
+
+**Final local automated verification, against the exact commit
+(`314abee`) this entry's installer is built from:**
+`node scripts/verify-packaged-app.mjs`: **18/18 passed.**
+`node scripts/verify-installer.mjs`: **10/10 passed**, against the
+installer built below.
+
+**CI on the same commit: 4 of 5 native workflows green** (Linux
+headless service verification, Linux package verification, macOS
+package verification, Windows package verification). The Cross-
+platform portability gate's Windows-amd64 `go test` step failed at
+package level in `internal/chatoverlay` - **the same package, the same
+"(package-level)" failure signature, on a completely different, earlier
+commit in this session's own console-flashing-fix entry**, which was
+investigated then and found to reproduce cleanly locally with no
+specific failing test named. Reproduced clean again here, on this exact
+commit: `go test -count=1 ./internal/chatoverlay/...` - all tests pass
+in 0.37s. This package has no connection whatsoever to anything in this
+branding entry (icons, the tray, `go-winres`, the `.iss` script) or to
+the earlier console-flashing entry that first surfaced it. Two of
+`chatoverlay`'s own tests use real 100ms timers
+(`TestProjectionExpiryRemovesItemAfterLifetime`,
+`TestProjectionExpiryTimerFiresForEarliestFirst`) - a plausible,
+concrete mechanism for a genuine, intermittent, CI-runner-load-
+dependent timing flake distinct from any code-correctness bug, and
+consistent with this being the second, unrelated occurrence rather than
+a regression. Not investigated further or "fixed" here: doing so would
+be scope creep on a task explicitly scoped to branding/tray UX, and the
+task's own verification requirement ("run the relevant automated
+checks") does not carry this cycle's earlier stricter "all CI green
+before handing off an installer" gate.
+
+### The one new installer
+
+- **Absolute path:** `D:\Miki\Programowanie\Streaming Tree for OBS\build\release\output\StreamingTreeForOBS-0.1.0-manualtest+314abee-windows-amd64-setup.exe`
+- **Embedded version:** `0.1.0-manualtest+314abee` (confirmed via the
+  staged executable's own `--version` output)
+- **Full commit SHA:** `314abee46a03f56af4fb93e03e6b57a2f8e49b82`
+  (confirmed the same way: `commit
+  314abee46a03f56af4fb93e03e6b57a2f8e49b82`)
+- **SHA-256:**
+  `984c0a4b452a4e90e81dce3f75130a42dfda38c16a5434f54efb55519adb96cd`
+  (the recorded `.sha256` file's value, independently recomputed with
+  `sha256sum` and confirmed identical)
+- **Signed status:** **Unsigned** - unchanged, no code-signing
+  certificate exists for this project.
+
+No GitHub Release, no tag. Stage 20E is still not marked Completed.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this closing entry. No
+AskUserQuestion call was made (the one earlier in this cycle, to obtain
+the real logo's filesystem path, is recorded in the entry above and not
+repeated here).
