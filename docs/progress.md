@@ -45161,3 +45161,29 @@ No operator-only blocker exists for this closing entry. No
 AskUserQuestion call was made (the one earlier in this cycle, to obtain
 the real logo's filesystem path, is recorded in the entry above and not
 repeated here).
+
+## 2026-08-25 — docs: correct the previous entry's "closed out" framing - it was not a complete green gate
+
+**Append-only correction, per the operator's own explicit instruction -
+the entry above is left unedited.** Its own heading and body are
+factually accurate about what they report (4 of 5 workflows green,
+`internal/chatoverlay` investigated and reproduced clean locally), but
+the entry's own title - "branding remediation closed out" - overstated
+the state of the work: this cycle's own governing contract requires the
+final relevant cross-platform gate to be fully green and terminal
+before a candidate is handed off, and it was not. The chat-facing
+summary sent alongside that commit was worse - it opened with "Windows
+Branding Remediation — Complete," which is not an accurate description
+of a candidate with a red CI job, regardless of how well-diagnosed that
+job's failure was. Both should have said "4 of 5 green, one
+investigated-but-unresolved failure remains" - not "closed out" or
+"Complete." A real physical/manual Windows retest of that same
+candidate additionally found further defects (tray tooltip absent,
+stale placeholder branding still visible in the web UI, an unversioned
+favicon, and - found during this cycle's own further audit, not by the
+operator - a real orphaned-MediaMTX lifecycle defect) - all addressed
+in the entries that follow this one.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
