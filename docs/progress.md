@@ -45367,3 +45367,102 @@ tool). `node scripts/verify-packaged-app.mjs`: **20/20 passed**
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix: MediaMTX/FFmpeg children could outlive an ungracefully-terminated parent, leaving port 1935 stuck occupied
+
+**Investigated per the operator's own explicit instruction before this
+cycle's next candidate, audited with real evidence, not assumed to be
+either a product defect or dismissed as unrelated.**
+
+### Safe process audit (command-line arguments never captured, per the operator's own security rule)
+`Get-NetTCPConnection -LocalPort 1935` on this development machine
+found a real, currently-listening `mediamtx.exe` at this project's own
+managed-binary path
+(`%AppData%\Roaming\StreamingTree\runtime\mediamtx\v1.19.3\windows-amd64\
+mediamtx.exe`) - confirmed Streaming-Tree-owned, not an unrelated
+application. Its own parent process ID no longer resolved to any
+running process at all: an orphan, running independently with no
+`streaming-tree-server.exe` above it. Only PID, executable name,
+executable path, and parent PID were ever captured - never a command
+line, consistent with the same constraint this cycle's earlier console-
+flashing investigation already followed.
+
+### Root cause, confirmed by reading the real supervisor code
+Neither `internal/runtime/mediamtx/process_windows.go` nor
+`internal/runtime/branch/process_windows.go` (nor anything else in the
+codebase - confirmed by a full-repo grep) ever associates a spawned
+child with a Windows Job Object. `CREATE_NEW_PROCESS_GROUP` (already
+set on both, for signal-delivery reasons unrelated to this) only
+affects Ctrl+C/Ctrl+Break propagation, not process lifetime. Windows
+has no default parent-child lifetime link at all: a child survives its
+parent's death unless something explicit prevents it. This project's
+own graceful shutdown path (web Quit, tray Quit, Ctrl+C/SIGTERM) already
+stops every owned child correctly - confirmed again by this cycle's own
+`verify-packaged-app.mjs`/`verify-installer.mjs`/`verify-updater.mjs`
+runs, all of which exercise it repeatedly - so the gap is specifically
+an *ungraceful* parent termination: a crash, an unhandled panic, Task
+Manager "End Task", or anything else Windows allows to happen without
+giving the dying process a chance to run its own shutdown sequence.
+This specific orphan most likely originated from this session's own
+manual DPI-verification testing (a `Stop-Process -Force` against a live
+packaged app's PID, done directly rather than through the app's real
+Quit action) - but the underlying gap is real and would apply to any
+ungraceful termination, from any cause, not only this session's own
+testing.
+
+### The fix - a Windows Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+New `internal/runtime/procutil` files (`childjob.go`,
+`childjob_windows.go`, `childjob_other.go`): a single, lazily-created,
+process-lifetime Job Object, deliberately never explicitly closed by
+this codebase's own code - the entire mechanism relies on Windows
+itself closing that handle (along with every other handle the server
+process holds) the instant the process exits, for *any* reason,
+cooperative or not, which is exactly what
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` turns into "terminate every
+process still in the job." `AssignToChildJob(cmd)` is called
+immediately after `cmd.Start()` succeeds in both
+`mediamtx/process.go` and `branch/process.go` (MediaMTX and every
+branch's own FFmpeg process) - best-effort: a failure here is logged
+and never fatal, since the rest of the application must keep working
+even if this safety net cannot be set up. Every struct layout and flag
+value (`JOBOBJECT_BASIC_LIMIT_INFORMATION`,
+`JOBOBJECT_EXTENDED_LIMIT_INFORMATION`, `JOB_OBJECT_LIMIT_KILL_ON_JOB_
+CLOSE = 0x2000`, `JobObjectExtendedLimitInformation = 9`) was verified
+against learn.microsoft.com's current API reference before being
+written, the same discipline this cycle's DPI-manifest work already
+established. Explicitly scoped to the real defect actually found on
+Windows - whether the same class of orphaning is possible on Linux/
+macOS was not audited here and is not claimed to already be safe (see
+`childjob_other.go`'s own doc comment).
+
+### Verified end to end, not just "the flag looks set"
+`TestChildJobHasKillOnCloseFlag` reads the flag back out through the
+real `QueryInformationJobObject` API (not by trusting
+`SetInformationJobObject` returned success, or by trusting the struct
+literal was written correctly) - proving the struct layout is actually
+correct, not just plausible-looking. `TestAssignToChildJobSucceeds`
+spawns a real child process and confirms a real `AssignProcessToJobObject`
+call succeeds against it. Beyond both of those: a minimal standalone
+harness (parent process spawns a real child, enrolls it via this same
+package, then sits idle) was built and run, and the parent was force-
+killed from *outside* via `Stop-Process -Force` - the exact same
+mechanism as Task Manager "End Task" - while the child was independently
+confirmed alive immediately beforehand. The child was confirmed gone
+within one second of the parent's forced termination. This is the
+real, physical reproduction of the exact bug this fix addresses, not
+just a unit test in isolation. The original orphaned `mediamtx.exe`
+this investigation found was then stopped and port 1935 confirmed free
+again.
+
+### Verification
+`gofmt`/`go vet`/`go build` clean; cross-compiled clean for
+`GOOS=linux` and `GOOS=windows`. `go test
+./internal/runtime/mediamtx/... ./internal/runtime/branch/...
+./internal/runtime/procutil/...`: all passing, including the pre-
+existing MediaMTX supervisor tests that themselves spawn and reap real
+test processes - confirming this change does not disturb the existing
+process-lifecycle tests it sits alongside.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

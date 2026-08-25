@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/streaming-tree/server/internal/runtime/procutil"
 )
 
 // maxLogLineBytes bounds one captured stderr line.
@@ -61,6 +63,15 @@ func startProcess(
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start ffmpeg: %w", err)
+	}
+	// Best-effort safety net (real fix on Windows, honest no-op
+	// elsewhere for now - see internal/runtime/procutil's own doc
+	// comments): ensures this FFmpeg process cannot outlive this
+	// process even on an ungraceful termination that never reaches a
+	// graceful stop below. Only PID/process-handle plumbing here -
+	// never touches or logs cmd's own arguments.
+	if jobErr := procutil.AssignToChildJob(cmd); jobErr != nil {
+		logger.Warn("could not enroll ffmpeg in the child-process safety net", slog.Any("error", jobErr))
 	}
 
 	p := &process{
