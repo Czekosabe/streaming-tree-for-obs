@@ -45187,3 +45187,96 @@ in the entries that follow this one.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix: DPI-unaware tray/exe rendering, and complete the real logo's icon/version pipeline
+
+**Real physical/manual Windows finding, treated as a real defect, not
+argued with**: the tray's native popup menu text was visibly blurry
+compared to another normal Windows tray application at the same
+display scale.
+
+### Audit before any fix - the real built exe's manifest, not source alone
+`--manifest none` was a deliberate choice in the previous branding
+entry, to keep that remediation scoped to icon/tooltip identity only.
+Confirmed by direct resource extraction (`FindResource`/`LoadResource`/
+`LockResource` for `RT_MANIFEST`, id 24, against the real
+`streaming-tree-server.exe` this project's own build pipeline had
+already produced) that no manifest at all was embedded - not inferred
+from the build script's own flag, verified against the actual binary.
+Combined with a repo-wide grep confirming no `SetProcessDpiAwareness*`
+call exists anywhere either, this means the process ran under Windows'
+documented default, `DPI_AWARENESS_CONTEXT_UNAWARE`.
+
+### Root cause, confirmed via Microsoft's own current documentation
+Researched primary API docs before writing any fix (dpiAware/
+dpiAwareness manifest elements, PerMonitorV2, `SetProcessDpiAwareness
+Context`, `GetWindowDpiAwarenessContext`). The direct, documented answer
+to "does this actually fix a native popup menu specifically": *"All
+NTUSER menus created in Per Monitor v2 contexts will be scaling in a
+per-monitor fashion"* - a process-wide manifest declaration is
+sufficient; no menu-specific API call is needed, and none was added.
+
+### The fix, and a real bug found and fixed while building it
+`apps/server/cmd/server/winres/winres.json` (new, replacing the old
+`go-winres simply` command-line invocation the previous entry
+documented) sets `"dpi-awareness": "per monitor v2"`, which `go-winres`
+compiles into the exact Microsoft-documented fallback manifest
+(`dpiAwareness="permonitorv2,system"`). Two real bugs were found and
+fixed while wiring this, both by direct evidence, not guessing:
+1. `go-winres`'s own array-of-icon-files JSON path always decodes every
+   array element as a plain raster image, even when it ends in `.ico` -
+   a `["tray.ico"]` list fails with "image: unknown format"; only a
+   bare-string `"tray.ico"` value takes the dedicated ICO-container fast
+   path. Found by reading `github.com/tc-hib/go-winres`'s own source
+   after the array form failed.
+2. Leaving `FileVersion`/`ProductVersion` blank in the version-info
+   JSON block (while filling `ProductName`/`FileDescription`) produced
+   a `StringFileInfo` resource that looked correct in a raw byte dump
+   but which `.NET`'s own `FileVersionInfo` (which Explorer's Properties
+   dialog reads through) silently failed to parse at all - every field
+   came back empty, including the ones that were filled in. Found by
+   comparing the raw resource bytes (present, correct) against the
+   parsed result (empty) after the same regeneration. Fixed by giving
+   every string field a real value.
+
+### Verified, not just embedded - real Win32 evidence at every layer
+Re-extracted the real `RT_MANIFEST` resource from the rebuilt exe and
+confirmed the exact expected XML. Built a **real packaged
+(`buildinfo.Packaged() == true`) executable** (a plain `go build`
+doesn't initialize the tray at all) and queried its own live hidden
+tray window's DPI context directly via `GetWindowDpiAwarenessContext` +
+`AreDpiAwarenessContextsEqual` against
+`DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` - **confirmed true**, and
+confirmed *not* v1 (ruling out a "per monitor but only v1" false
+positive). `GetDpiForWindow` on that same live window reported 120 DPI
+(125% scale) on this development machine's own real monitor - not the
+96 DPI (100%) an earlier, DPI-*unaware* measurement tool on this same
+machine had reported as "the system DPI": a live demonstration, on real
+hardware, of the exact DPI-virtualization mechanism this fix addresses
+(an unaware caller gets a virtualized, not a real, answer).
+
+### New regression coverage
+`scripts/check-windows-manifest.go` (new, `//go:build ignore`, same
+Win32 extraction sequence used for the audit above) is now invoked by
+`scripts/verify-packaged-app.mjs` against the real staged exe on every
+run, asserting the manifest is present, declares `permonitorv2`,
+`dpiAware=true`, and `asInvoker` (never auto-elevates) - real,
+deterministic, CI-integrated verification, not something left to only
+be checked by hand. `apps/server/cmd/server/README-icon.txt` rewritten
+to document the full corrected regeneration procedure and both bugs
+above, so they cannot resurface silently.
+
+### Verification
+`gofmt`/`go vet`/`go build` clean; cross-compiled clean for
+`GOOS=linux` and `GOOS=windows` with the new `.syso` present.
+`node scripts/verify-packaged-app.mjs`: **20/20 passed** (18 from the
+previous entry + this entry's new manifest step + the following
+entry's new favicon step, verified together against one combined
+build). `node scripts/verify-installer.mjs`: **10/10 passed.**
+`node scripts/verify-updater.mjs`: **14/14 passed** (re-run since this
+entry's changes touch the same executable the updater installs/
+restarts, even though the updater's own contract is unchanged).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

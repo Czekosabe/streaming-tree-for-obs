@@ -166,6 +166,31 @@ async function main() {
   expect(versionOutput.includes('GPL-3.0-or-later'), '--version prints the licence identifier', versionOutput);
   expect(/commit [0-9a-f]{12}/.test(versionOutput), '--version prints a real commit hash', versionOutput);
 
+  step('Verify the embedded manifest declares Per-Monitor-V2 DPI awareness (Stage 20E)');
+  // A real physical/manual Windows test found the tray's native popup
+  // menu visibly blurry - traced to the executable carrying no
+  // application manifest at all, so it ran DPI-unaware
+  // (apps/server/cmd/server/README-icon.txt has the full root-cause
+  // writeup). This extracts the REAL RT_MANIFEST resource from the
+  // built .exe the exact same way Windows itself reads it
+  // (FindResource/LoadResource/LockResource), not by trusting
+  // winres.json's own source content alone.
+  const manifestXML = await new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('go', ['run', join(REPO_ROOT, 'scripts', 'check-windows-manifest.go'), STAGED_EXE], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c.toString()));
+    child.stderr.on('data', (c) => (err += c.toString()));
+    child.on('exit', (code) => (code === 0 ? resolvePromise(out) : rejectPromise(new Error(`check-windows-manifest exited ${code}: ${err}`))));
+    setTimeout(() => rejectPromise(new Error('check-windows-manifest timed out')), 15_000);
+  });
+  expect(manifestXML.includes('<dpiAwareness'), 'a manifest is embedded and declares dpiAwareness', manifestXML);
+  expect(manifestXML.includes('permonitorv2'), 'dpiAwareness includes permonitorv2', manifestXML);
+  expect(manifestXML.includes('<dpiAware') && manifestXML.includes('>true<'), 'the legacy dpiAware fallback is also true', manifestXML);
+  expect(manifestXML.includes('asInvoker'), 'execution level is asInvoker (never auto-elevates)', manifestXML);
+
   const dataDir = mkdtempSync(join(tmpdir(), 'streaming-tree-packaged-verify-'));
   console.log(`Temporary application-data directory: ${dataDir}`);
   console.log('The real user AppData directory is never touched.');
