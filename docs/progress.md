@@ -44855,3 +44855,122 @@ own push will re-run that workflow fresh.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — docs: combined updater/console-flash/tray remediation cycle closed out, one new manual-test installer built
+
+**This closes the combined remediation cycle the operator opened after
+`a0e2fb8`'s manual test - `a0e2fb8` itself is untouched and was never
+re-run: its five workflows were already green before this cycle began,
+confirmed again in the very first entry of this cycle.** Recorded here,
+together, exactly as the operator's own closing instructions require:
+
+- **The updater screenshot** ("Could not check for updates. This will
+  be retried automatically.") was observed against the installed
+  `681389a` build, not `a0e2fb8` and not any build in this cycle -
+  reproduced/audited against current source before any code changed,
+  per instruction, and found to be a real bug (§2's entry above), now
+  fixed.
+- **The console-flashing window's source was genuinely unknown** at the
+  start of this cycle, investigated with a safe, command-line-free
+  Windows process-start trace, and found to be **Streaming Tree's own
+  code** - FFmpeg capability-probe children (and, structurally,
+  MediaMTX) spawned without a Windows console-hide flag, confirmed by
+  direct observation of a `conhost.exe` child appearing under the
+  server's own PID, then confirmed fixed by re-running the identical
+  trace against the fix and observing zero such children afterward.
+- **The tray requirement** came directly from this same physical/manual
+  Windows lifecycle use: closing the browser tab does not stop the
+  backend, and there was no way to reopen or quit it, or see it was
+  still running, without Task Manager.
+- **Antivirus was never treated as a proven root cause** for the
+  earlier `a0e2fb8` transient installer-verification failure - the
+  correction entry above states only the evidence that actually exists.
+
+### Final local automated verification, against the exact current HEAD (`1b72886`)
+`node scripts/verify-packaged-app.mjs`: **18/18 passed.**
+`node scripts/verify-installer.mjs`: **10/10 passed**, against the
+exact installer built below (re-run a second time after the updater
+integration test's own internal builds had overwritten
+`build/release/output/` with its own 0.9.0/0.9.1 artifacts - the
+installer below is a fresh rebuild from the same unchanged commit, not
+the one produced during that intermediate run).
+`node scripts/verify-updater.mjs`: **14/14 passed** - the real
+production update path (a genuine `0.9.0` → `0.9.1` upgrade, strict
+production versions, through a local fake GitHub API server, a real
+Inno Setup silent upgrade, and a real restart) remains fully correct
+after this cycle's updater-eligibility changes, run since the updater
+was the one component in this cycle whose contract actually changed.
+
+### CI, on the exact same commit
+All five native workflows green on `1b72886`: Linux headless service
+verification, Linux package verification, macOS package verification,
+Cross-platform portability gate, Windows package verification - the
+same run that also confirms both of this cycle's two earlier
+investigated-and-diagnosed-as-transient failures (the macOS
+`proxy.golang.org` DNS lookup failure, the Windows `chatoverlay`
+package-level `go test` flake) do not reproduce: this commit's own
+fresh run is clean end to end, exactly as their diagnosis predicted.
+
+### The one new manual-test installer
+
+- **Absolute path:** `D:\Miki\Programowanie\Streaming Tree for OBS\build\release\output\StreamingTreeForOBS-0.1.0-manualtest+1b72886-windows-amd64-setup.exe`
+- **Embedded version:** `0.1.0-manualtest+1b72886` (confirmed via the
+  installed executable's own `--version` output during
+  `verify-installer.mjs`'s step 05, and independently via the staged
+  executable directly: `Streaming Tree for OBS 0.1.0-manualtest+1b72886`)
+- **Full commit SHA:** `1b72886e98923fdee74fb5141434c782e2e4430f`
+  (confirmed via the same `--version` output: `commit
+  1b72886e98923fdee74fb5141434c782e2e4430f`)
+- **SHA-256:**
+  `135835cefe01b0f0df1f167e3654d958258f6e52b6f99fd512e0b2bd561e78c7`
+  (the recorded `.sha256` file's own value, independently recomputed
+  with `sha256sum` and confirmed identical, and separately verified
+  against the recorded digest by `verify-installer.mjs` step 02)
+- **Signed status:** **Unsigned** - unchanged since Stage 20A/20B, no
+  code-signing certificate exists for this project
+  (docs/windows-packaging.md §20, docs/updater.md §36).
+- Built with a manual/test version string, deliberately - not a strict
+  `major.minor.patch` production version, so it correctly reports the
+  new honest `manual_build` updater state (§2's own fix) rather than
+  participating in production update checking.
+
+This is a manual-test artifact for the operator's own local
+install/uninstall testing and this cycle's targeted retest (below) -
+**no GitHub Release was created, no Git tag was created.**
+
+### What to retest (only the four items this cycle actually touched)
+Per the operator's own instruction: do not repeat unrelated
+manual-verification items that already passed. Retest only:
+
+**A. Dashboard/MediaMTX modal layering** (docs/manual-verification.md
+Session A/B, the modal-related items) - confirm the `a0e2fb8` fix is
+still correct in this build (it was not touched again this cycle, but
+this is the first installer built since it was fixed that also carries
+every other change in this cycle).
+**B. Windows tray** - new checklist items A-11 through A-18 in
+`docs/manual-verification.md`: the icon appears exactly once; Open
+Streaming Tree; Open Logs & Diagnostics; the status line matches real
+ingest state; Check for updates (grayed, correctly, for this
+manual/test build - see docs/updater.md §43); Quit Streaming Tree
+removes both the process and the icon; the icon is also removed when
+quitting from the web UI instead.
+**C. Updates page** - honest manual/test-build status (docs/updater.md
+§43, checklist item G-1 as revised above): no misleading production
+behavior, no unwanted automatic checks.
+**D. Console flashing** - with Claude/build/watch processes stopped and
+the app idle for a reasonable interval, confirm no Streaming-Tree-owned
+console window appears (the specific mechanism found and fixed this
+cycle: FFmpeg capability probes at startup, and MediaMTX once it is
+actually installed and started).
+
+After these four pass, the remaining Stage 20E manual checklist
+continues from wherever the operator's own existing progress through
+`docs/manual-verification.md` last left off.
+
+**Stage 20E is explicitly not marked Completed by this entry.** The
+manual gate resumes now, with this exact installer, for the four
+targeted items above.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
