@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+// A real bug, found by re-reading this package's own NOTIFYICONDATAW
+// construction against the documented NIF_* flag table: adding the
+// icon under NOTIFYICON_VERSION_4 without NIF_SHOWTIP silently
+// suppresses the standard hover tooltip entirely, so the tray showed
+// no "Streaming Tree for OBS" identification on hover at all. This
+// locks the fix.
+func TestAddIconFlagsIncludesShowTip(t *testing.T) {
+	flags := addIconFlags()
+	if flags&nifShowTip == 0 {
+		t.Fatalf("addIconFlags() = %#x, missing NIF_SHOWTIP (%#x) - the hover tooltip would be suppressed under NOTIFYICON_VERSION_4", flags, uint32(nifShowTip))
+	}
+	if flags&nifTip == 0 {
+		t.Fatalf("addIconFlags() = %#x, missing NIF_TIP (%#x) - szTip would never be read at all", flags, uint32(nifTip))
+	}
+}
+
 func TestLoadIconFromICOBytesRealAsset(t *testing.T) {
 	hIcon, err := loadIconFromICOBytes(IconICO)
 	if err != nil {

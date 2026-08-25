@@ -59,6 +59,16 @@ const (
 	nifMessage = 0x00000001
 	nifIcon    = 0x00000002
 	nifTip     = 0x00000004
+	// nifShowTip forces the standard hover tooltip under
+	// NOTIFYICON_VERSION_4 (see notifyIconVersion4 below) - without it,
+	// Vista+'s modern tray callback shape suppresses szTip's plain
+	// tooltip entirely in favor of a richer pop-up mechanism this
+	// package does not implement, which is exactly why the tray showed
+	// no hover identification at all before this flag was added: a real
+	// bug, found by re-reading this file's own construction of
+	// NOTIFYICONDATAW against the documented NIF_* flag table, not by
+	// guessing.
+	nifShowTip = 0x00000080
 
 	notifyIconVersion4 = 4
 
@@ -319,9 +329,20 @@ func (h *handle) setup() error {
 // TaskbarCreated handler in wndProc reuses identically to restore the
 // icon after Explorer itself restarts (docs/windows-tray.md; see
 // taskbarCreatedMsg's own doc comment).
+// addIconFlags is the exact UFlags value the icon is added with -
+// pulled out as its own pure function so the tooltip regression this
+// fixed (NIF_SHOWTIP was missing, which silently suppresses the
+// standard hover tooltip once NOTIFYICON_VERSION_4 is requested - see
+// nifShowTip's own doc comment) is directly, meaningfully unit-
+// testable, not just something a human has to notice by re-reading
+// the Shell_NotifyIconW call site.
+func addIconFlags() uint32 {
+	return nifMessage | nifIcon | nifTip | nifShowTip
+}
+
 func (h *handle) addIcon() (ret uintptr, callErr error) {
 	nid := h.buildNotifyIconData()
-	nid.UFlags = nifMessage | nifIcon | nifTip
+	nid.UFlags = addIconFlags()
 	ret, _, callErr = procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
 	if ret == 0 {
 		return ret, callErr

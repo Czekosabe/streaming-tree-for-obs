@@ -44974,3 +44974,134 @@ targeted items above.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-25 — fix: Windows branding remediation - real logo, tray tooltip bug, single-source icon pipeline
+
+**Found by the operator's real manual Windows retest of the previous
+entry's installer, exactly as instructed: treated as real defects, not
+argued with.** Two real problems: the tray icon had no hover tooltip
+identifying it, and the packaged app used the earlier placeholder
+identity rather than the project's real, final logo once the operator
+provided one directly in chat.
+
+### Getting the real source asset
+The pasted chat image had no filesystem path this session's tools could
+reach (checked: TEMP, VS Code global/workspace storage, Windows Recent
+Items - genuinely not discoverable, not merely unsearched). Rather than
+approximate the logo from what could only be perceived, not read back
+byte-for-byte - which the operator explicitly ruled out ("do not invent
+a different logo") - **one `AskUserQuestion` call** asked where to save
+it; the operator placed the real file at `assets/branding/streaming
+tree for obs logo.png` (renamed to `streaming-tree-logo.png` for a
+script-safe filename, same bytes), confirmed via a second
+`AskUserQuestion` round-trip. This is the one exception to this
+remediation cycle's otherwise-unbroken "no AskUserQuestion" streak, and
+it was a real, verified blocker, not a preference question.
+
+### Root cause 1: the tooltip, found by re-reading the package's own Win32 call against the documented flag table
+`addIcon()` requests `NOTIFYICON_VERSION_4` immediately after `NIM_ADD`
+(§2 of the original tray entry - the modern, per-monitor-DPI-aware
+callback shape). Windows' own documented behavior for that version:
+once requested, the standard `szTip` tooltip is suppressed by default
+in favor of a richer pop-up mechanism this package never implements,
+unless the icon is also flagged `NIF_SHOWTIP` (`0x00000080`) - which
+the original implementation never set. The tooltip text itself
+(`buildinfo.ProductName`) was already correct; Windows was simply never
+showing it. Fixed by adding `NIF_SHOWTIP` to the `NIM_ADD` flags,
+pulled into its own pure `addIconFlags()` function specifically so this
+exact regression is unit-testable (`TestAddIconFlagsIncludesShowTip`,
+new).
+
+### Root cause 2: branding, not a code bug - no real logo existed until now
+Confirmed by the earlier tray entry's own §5: "No final branding art
+exists for this project." The operator's provided logo closes that gap.
+
+### Single-source pipeline (the operator's own §3 requirement)
+`assets/branding/streaming-tree-logo.png` (1024x1024, real alpha
+transparency - confirmed by sampling actual corner-pixel alpha values,
+not assumed from how this project's own PNG-preview tooling renders
+transparency as a dark gradient) is the **one** canonical asset. A new
+`scripts/generate-branding-assets.go` (`//go:build ignore`, replacing
+the old placeholder-only `generate-tray-icon.go`, deleted) crops it to
+the emblem alone - the wordmark text is illegible at 16x16 and is
+deliberately excluded from every icon-sized derivative, never
+redrawn/approximated, only cropped from the real asset - and area-
+average downsamples it (premultiplied-alpha-correct blending, avoiding
+dark-fringe artifacts at the transparency edge) to a standard 16/24/32/
+48/64/128/256 size set, writing exactly two files:
+`internal/runtime/tray/assets/tray.ico` and `apps/web/public/
+favicon.ico`. Every other Windows icon surface then derives from
+`tray.ico` itself, never a second copy of the artwork:
+
+- **Executable icon**: `apps/server/cmd/server/rsrc_windows_amd64.syso`,
+  a checked-in Windows resource object generated once via `go-winres`
+  (pure Go, no gcc/`windres` needed - confirmed neither is installed
+  here) pointed at `tray.ico`. Go's toolchain links any `*.syso` file in
+  a main package directory automatically - no build-script change. The
+  `_windows_amd64` suffix uses the exact same filename-based build-
+  constraint mechanism every `_windows.go` file in this codebase
+  already relies on; cross-compiling `GOOS=linux`/`darwin` was
+  re-verified unaffected by its presence. Also carries `ProductName`/
+  `FileDescription` = "Streaming Tree for OBS" in the exe's own
+  version-info resource.
+- **Installer icon**: `scripts/installer/streaming-tree.iss`'s new
+  `SetupIconFile` directive, pointed at the same `tray.ico`.
+- **Start Menu shortcut / "Apps & Features" entry**: no new directive
+  needed - both already default to the target exe's own icon, which now
+  carries the real artwork via the `.syso` above.
+- **Web favicon**: `apps/web/index.html` gained `<link rel="icon"
+  href="/favicon.ico" sizes="any" />`; Vite's own `public/` convention
+  copies the file into the production build automatically.
+- **Taskbar icon**: this application has no traditional taskbar-visible
+  native window (the tray's own hidden window is never shown); the
+  favicon above is the closest real analog for this architecture.
+
+### Verification
+`gofmt -l .`/`go vet ./...` clean; cross-compiled clean for `GOOS=linux`
+and `GOOS=windows` with the new `.syso` present (confirming it does not
+interfere with non-Windows builds); `go build ./...`/`go test ./...` -
+full backend suite green, including the new tooltip-regression test.
+Frontend: `npx tsc --noEmit` clean, `npm run lint` clean (the same one
+pre-existing unrelated warning), `npm run build` confirmed
+`dist/favicon.ico` present and linked, `npx vitest run` - **1427/1427**
+tests still passing.
+
+Real Win32 verification, not just code review: the compiled
+`streaming-tree-server.exe`'s own icon was extracted via .NET's
+`Icon.ExtractAssociatedIcon` and visually confirmed to be the real
+logo (both at first, before `ProductName`/`FileDescription` were
+populated, and again after - the version-info fields were confirmed via
+`(Get-Item ...).VersionInfo`, empty on the first attempt, correctly
+populated once `--product-version`/`--file-version` were also passed to
+`go-winres`, a real bug in the first invocation, fixed before finishing).
+The compiled installer's own icon was extracted and confirmed the same
+way. A real (non-hermetic) silent install was performed specifically to
+inspect the actual Start Menu shortcut Windows creates: its
+`IconLocation` read `,0` (correctly inheriting the target exe's own
+icon resource, no separate file needed) and its extracted icon matched
+the real logo - then immediately silently uninstalled, confirmed to
+leave no shortcut and no install directory behind.
+
+`node scripts/verify-packaged-app.mjs`: **18/18 passed.**
+`node scripts/verify-installer.mjs`: **10/10 passed**, against a real
+installer built with every change in this entry.
+
+### Docs updated to stop describing the now-superseded placeholder as current
+`docs/windows-tray.md` §5 rewritten (the original placeholder-icon
+reasoning kept as historical §5a, not deleted - the emblem-vs-wordmark
+crop decision it established carried forward directly); new §5b (web
+favicon) and §5c (the tooltip bug's exact root cause). §9's "no real
+branding art" limitation removed - no longer true. `docs/manual-
+verification.md`'s A-11 item corrected (no longer describes the
+placeholder), and two new items added: A-11b (the tooltip itself,
+directly targeting the regression just fixed) and A-11c (Explorer
+Properties dialog, checking the exe icon and file-description metadata
+the operator specifically asked for).
+
+### Continuous-execution rule compliance
+This entry required **one AskUserQuestion round-trip** (two calls) to
+obtain the real source asset's filesystem path - a genuine, verified
+technical blocker (no tool available to extract the pasted image's
+exact bytes to disk), not a preference question, and the operator's own
+governing instruction for this task explicitly allowed it ("No
+AskUserQuestion unless absolutely blocked"). No other blocker existed.

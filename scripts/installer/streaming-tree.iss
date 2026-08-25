@@ -66,6 +66,17 @@ OutputBaseFilename=StreamingTreeForOBS-{#MyAppVersion}-windows-amd64-setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+; The compiled Setup.exe's own icon - the one canonical icon
+; (internal/runtime/tray/assets/tray.ico, itself generated from
+; assets/branding/streaming-tree-logo.png by
+; scripts/generate-branding-assets.go), not a second copy. The
+; installed application's own Start Menu shortcut and "Apps &
+; Features"/uninstall entry (UninstallDisplayIcon below) need no
+; equivalent directive: both already default to {#MyAppExeName}'s own
+; icon, which carries the same artwork via its embedded resource (see
+; apps/server/cmd/server/README-icon.txt).
+SetupIconFile=..\..\apps\server\internal\runtime\tray\assets\tray.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 ; No custom license-acceptance page is added here: the installer does not
 ; need to gate on it, since Streaming Tree's own GPL licence governs use of
 ; the software, not installation itself - LICENSE is still installed and
