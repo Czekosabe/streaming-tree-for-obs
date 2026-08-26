@@ -3,16 +3,22 @@ name: Windows package verification
 # Stage 20A/20E native Windows package-verification gate, NOT a release
 # workflow: no publication, no secrets, no code signing (no production
 # code-signing certificate exists for this project yet - see docs/
-# windows-packaging.md §20), no artifact upload of the package itself
-# (only ephemeral failure-diagnostic logs, see below). Builds and
+# windows-packaging.md §20), no GitHub Release, no Git tag. Builds and
 # verifies the real, unsigned Inno Setup installer on a real, native,
-# GitHub-hosted Windows runner, then discards everything when the
-# ephemeral runner is destroyed. Inno Setup 6 ships pre-installed on
-# the windows-2022 runner image, so no install step is needed here -
-# see docs/windows-packaging.md for the full architecture this
-# workflow proves, and .github/workflows/cross-platform.yml for the
-# separate, lighter-weight portability gate this workflow does not
-# replace.
+# GitHub-hosted Windows runner. On success, the verified installer is
+# also uploaded as a short-retention GitHub Actions artifact (see the
+# "Stage the verified installer..."/"Upload the verified Windows
+# installer..." steps below) purely so a tester on a second machine can
+# download the exact CI-built, CI-verified candidate without needing
+# the developer's own machine - this is a manual/test release-candidate
+# distribution mechanism only, never a production update source; the
+# Stage 20B updater still only trusts canonical GitHub Releases. Every
+# other build/staging path is still discarded when the ephemeral runner
+# is destroyed. Inno Setup 6 ships pre-installed on the windows-2022
+# runner image, so no install step is needed here - see docs/
+# windows-packaging.md for the full architecture this workflow proves,
+# and .github/workflows/cross-platform.yml for the separate,
+# lighter-weight portability gate this workflow does not replace.
 #
 # Only one target exists today: scripts/build-release.ps1 always builds
 # GOOS=windows/GOARCH=amd64 - there is no Windows ARM64 release target
@@ -66,6 +72,22 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+
+      # Identifies the manual-test distribution artifact uploaded below
+      # (docs/windows-packaging.md release-candidate distribution
+      # section) - resolved once, early, so both the build version and
+      # the artifact name derive from the same value as the real
+      # workflow head commit.
+      - name: Resolve short commit SHA for the manual-test artifact
+        id: shortsha
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse --short=12 HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sha)) {
+            Write-Host "::error::Could not resolve the short commit SHA."
+            exit 1
+          }
+          "sha=$sha" >> $env:GITHUB_OUTPUT
 
       # Real evidence, not pure speculation: this workflow's own first
       # run failed at "recomputed SHA-256 matches the recorded digest"
@@ -126,9 +148,15 @@ jobs:
           node scripts/verify-installer.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-installer-pass1.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # Pass 2 is built under a manual-test-identifiable version (rather
+      # than another anonymous "-dev+ci2") specifically so its own
+      # already-verified output below can double as the release-
+      # candidate distributed to testers - a separate pass 3 rebuild
+      # solely for upload would duplicate an existing, already-passing
+      # build+verify cycle for no benefit.
       - name: Build the Windows release package (pass 2)
         shell: pwsh
-        run: powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+ci2"
+        run: powershell -File scripts/build-release.ps1 -Version "0.1.0-manualtest+${{ steps.shortsha.outputs.sha }}"
 
       - name: Verify the packaged runtime (pass 2)
         shell: pwsh
@@ -141,6 +169,73 @@ jobs:
         run: |
           node scripts/verify-installer.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\verify-installer-pass2.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # This is a TEST/release-candidate distribution mechanism only,
+      # not the Stage 20B production updater source (that remains
+      # canonical GitHub Releases, unchanged). Runs only now that pass
+      # 2's own installer has actually passed both verification
+      # scripts above - never publishes a package that failed
+      # verification under a normal-looking name. Must run before
+      # "Verify updater compatibility" below: that step rebuilds its
+      # own separate 0.9.0/0.9.1 test release pair into this same
+      # build/release/output directory and would otherwise silently
+      # overwrite the artifact staged here (a real failure mode hit
+      # twice locally this project's own history - see docs/
+      # windows-packaging.md).
+      - name: Stage the verified installer for upload (manual-test artifact, not a release)
+        id: stage_artifact
+        shell: pwsh
+        run: |
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE 'build/release/output'
+          $installer = Get-ChildItem -Path $outputDir -Filter '*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host "::error::No installer .exe found in $outputDir to stage for upload."
+            exit 1
+          }
+          $sha256File = "$($installer.FullName).sha256"
+          if (-not (Test-Path $sha256File)) {
+            Write-Host "::error::No .sha256 sidecar found for $($installer.Name)."
+            exit 1
+          }
+
+          $fullSha = (git rev-parse HEAD).Trim()
+          $version = "0.1.0-manualtest+${{ steps.shortsha.outputs.sha }}"
+
+          $artifactDir = Join-Path $env:RUNNER_TEMP 'windows-artifact-upload'
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          Copy-Item -Path $installer.FullName -Destination $artifactDir
+          Copy-Item -Path $sha256File -Destination $artifactDir
+
+          # Deliberately only these six lines - no secrets, no build
+          # paths, no environment values.
+          $buildInfoLines = @(
+            'product: Streaming Tree for OBS',
+            "version: $version",
+            "commit: $fullSha",
+            'os: windows',
+            'architecture: amd64',
+            'unsigned: true'
+          )
+          [System.IO.File]::WriteAllLines((Join-Path $artifactDir 'BUILD-INFO.txt'), $buildInfoLines)
+
+          Write-Host "Staged artifact contents:"
+          Get-ChildItem $artifactDir | ForEach-Object { Write-Host "  $($_.Name)" }
+          "dir=$artifactDir" >> $env:GITHUB_OUTPUT
+          "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+
+      # Test/release-candidate distribution only (see the header comment
+      # at the top of this workflow) - the application updater never
+      # reads Actions artifacts, and this is not a GitHub Release. 14
+      # days is a bounded manual-testing window, not permanent hosting;
+      # a real production binary is later hosted through a canonical
+      # GitHub Release instead.
+      - name: Upload the verified Windows installer (manual-test artifact, not a release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamingTreeForOBS-0.1.0-manualtest-${{ steps.shortsha.outputs.sha }}-windows-amd64
+          path: ${{ steps.stage_artifact.outputs.dir }}/*
+          retention-days: 14
+          if-no-files-found: error
 
       # Self-contained: builds its own OLD/NEW -IntegrationTest release
       # pair via build-release.ps1 and drives a real update-check/

@@ -45546,3 +45546,78 @@ for `GOOS=linux` and `GOOS=windows`; full `go test ./...` clean.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-26 — ci: publish the verified Windows installer as a short-retention GitHub Actions artifact, not a release
+
+**A real distribution gap, found by the operator through physical
+testing, not a hypothetical.** After receiving the DPI/branding/port-
+1935 remediation candidate at `7f5550f`, the operator reported the real
+installer only existed on the developer's own machine
+(`build/release/output/StreamingTreeForOBS-...-setup.exe`), making
+physical testing on a second Windows computer unnecessarily hard. The
+operator was explicit about the boundaries of the fix: no committed
+`.exe` binaries, no GitHub Release, no Git tag, no change to updater
+behavior or the Stage 20B canonical-Release contract - a short-
+retention CI artifact only.
+
+### Audit first
+Read `.github/workflows/windows-package.yml`,
+`scripts/build-release.ps1`, `scripts/verify-installer.mjs`, and
+`scripts/verify-packaged-app.mjs` before changing anything. Found: the
+workflow already runs two full independent build+verify passes
+(`build-release.ps1` under `-Version "0.1.0-dev+ci1"` then
+`"0.1.0-dev+ci2"`, each followed by `verify-packaged-app.mjs` and
+`verify-installer.mjs`) purely to prove build reproducibility; neither
+pass's output was ever uploaded - only ephemeral failure-diagnostic
+logs on a failed run. `build-release.ps1` writes the installer and its
+`.sha256` sidecar into a directory (`build/release/output`) that it
+fully clears before each build, so pass 2's own output - once verified
+- is already exactly the right shape to reuse for distribution, with
+no separate build needed. The workflow's `permissions: contents: read`
+needed no change: `actions/upload-artifact` (already in use elsewhere
+in this same workflow for failure logs, at `@v7`) authenticates via its
+own runtime token, not the `contents` scope.
+
+One real hazard, confirmed by re-reading `scripts/verify-updater.mjs`:
+it rebuilds its own separate 0.9.0/0.9.1 `-IntegrationTest` release
+pair into this exact same `build/release/output` directory, silently
+overwriting whatever was staged there - the same clobbering behavior
+that twice cost real local rebuild time earlier this remediation cycle
+(see the DPI/branding/port-1935 entries above). The new upload step
+therefore has to run - and does run - immediately after pass 2's own
+`verify-installer.mjs` step, strictly before the "Verify updater
+compatibility" step.
+
+### The fix
+Pass 2 is now built as `0.1.0-manualtest+<shortsha>` (the short commit
+SHA resolved once, early in the job) instead of an anonymous
+`-dev+ci2`, so its own embedded `--version` output and the artifact
+name both carry real, meaningful identity. A new step, gated to run
+only after both of pass 2's verification scripts have already passed,
+stages the installer, its `.sha256` sidecar, and a small generated
+`BUILD-INFO.txt` (product, version, full commit SHA, `os: windows`,
+`architecture: amd64`, `unsigned: true` - no secrets, no paths, no
+environment values) into an isolated temp directory, then
+`actions/upload-artifact@v7` uploads it as
+`StreamingTreeForOBS-0.1.0-manualtest-<shortsha>-windows-amd64` with
+`retention-days: 14`. A verification-failed run never reaches this
+step, so a failed package can never be uploaded under a
+normal-looking, successful-looking name. The workflow's own header
+comment was corrected to describe this (it previously stated no
+artifact upload of the package itself at all).
+
+Also documented: `docs/windows-packaging.md` gained a new §25
+recording this mechanism's exact boundaries (not a Release, not an
+updater source, 14-day retention, workflow-only) so it isn't only
+described in a workflow YAML comment.
+
+### What this deliberately does not change
+The application updater still only ever reads canonical GitHub
+Releases on the Stable channel (`docs/updater.md`, unchanged) - it has
+no code path that reads an Actions artifact URL at all. No tag was
+created. No GitHub Release was created. No production binary was
+committed to Git.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
