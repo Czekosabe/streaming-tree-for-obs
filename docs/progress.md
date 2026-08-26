@@ -45621,3 +45621,61 @@ committed to Git.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-26 — ci: publish the verified macOS DMG and Linux .deb as GitHub Actions artifacts too
+
+The operator's own instruction for the Windows distribution-gap fix
+above explicitly scoped this as optional and conditional: only extend
+the same mechanism to macOS/Linux if doing so is "a small, symmetric
+workflow-only change" - explicitly not a reason to touch either
+platform's actual packaging implementation. Read
+`.github/workflows/macos-package.yml` and `linux-package.yml`,
+`scripts/build-release-macos.sh`, and `scripts/build-release-linux.sh`:
+both workflows already run the identical two-pass build+verify
+structure the Windows workflow does (`-Version "0.1.0-dev+ci1"` then
+`"...ci2"`, no `verify-updater.mjs`-equivalent step present in either
+one to race against), and both build scripts already produce a single
+named artifact (`StreamingTreeForOBS-$VERSION-darwin-$GOARCH_VALUE.dmg`
+/ `...-linux-$GOARCH_VALUE.deb`) plus a `.sha256` sidecar in their own
+output directory. This was confirmed to genuinely be the small,
+symmetric case the operator described - the same three-step pattern
+(resolve short SHA, build pass 2 under `0.1.0-manualtest+<shortsha>`,
+stage+upload only after pass 2's own verify script passes) applies
+directly, with no `verify-updater.mjs`-style clobber hazard to guard
+against on either platform.
+
+### The fix
+Both workflows gained: an early short-commit-SHA resolution step; pass
+2's build renamed from `-dev+ci2` to `0.1.0-manualtest+<shortsha>`; a
+staging step (matrix-aware, since both platforms build two
+architectures each) that locates the verified DMG/`.deb` and its
+`.sha256` sidecar, and writes the same `BUILD-INFO.txt` shape as the
+Windows fix (product, version, full commit SHA, `os`, `architecture`,
+`unsigned: true`); and an `actions/upload-artifact@v7` step named
+`StreamingTreeForOBS-0.1.0-manualtest-<shortsha>-darwin-<arch>` /
+`...-linux-<arch>` with `retention-days: 14`, gated the same way -
+after verification, never before. Each workflow's own header comment
+was corrected to match (both previously stated no artifact upload at
+all). `docs/windows-packaging.md` §25 (added in the prior entry) was
+written to already describe this macOS/Linux mirroring, since it was
+anticipated as likely at the time that entry was written.
+
+### Validation
+`python3 -c "import yaml; yaml.safe_load(...)"` against all three
+modified workflow files parses cleanly. No `actionlint` binary was
+available in this environment to run beyond that; syntax was otherwise
+verified by direct, careful reading against the already-working
+Windows workflow's own equivalent steps (already exercised by a real
+CI run - see the prior entry) and against each platform's own real
+build-script output-path/filename logic read directly from
+`build-release-macos.sh`/`build-release-linux.sh`, not assumed.
+
+### What this deliberately does not change
+Neither `build-release-macos.sh` nor `build-release-linux.sh` was
+modified - this is a workflow-only addition, per the operator's own
+explicit scope boundary. No Release, no tag, no updater behavior change
+on either platform, identical to the Windows entry above.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

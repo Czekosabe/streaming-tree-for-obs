@@ -1,14 +1,20 @@
 name: Linux package verification
 
 # Stage 20D1 native Linux package-verification gate, NOT a release
-# workflow: no publication, no secrets, no artifact upload (docs/
-# linux-desktop-packaging.md §23/§25). Builds and verifies the real,
-# CGO-disabled, statically-linked .deb package on real, native, GitHub-
-# hosted Ubuntu runners (both x64 and ARM64), then discards everything
-# when the ephemeral runner is destroyed. See docs/linux-desktop-
-# packaging.md for the full architecture this workflow proves, and
-# .github/workflows/cross-platform.yml for the separate, lighter-weight
-# portability gate this workflow does not replace.
+# workflow: no publication, no secrets, no GitHub Release, no Git tag
+# (docs/linux-desktop-packaging.md §23/§25). Builds and verifies the
+# real, CGO-disabled, statically-linked .deb package on real, native,
+# GitHub-hosted Ubuntu runners (both x64 and ARM64). On success, the
+# verified .deb is also uploaded as a short-retention GitHub Actions
+# artifact purely so a tester can download the exact CI-built,
+# CI-verified candidate on a second machine - a manual/test
+# release-candidate distribution mechanism only, mirroring
+# windows-package.yml, never a production update source. Every other
+# build/staging path is still discarded when the ephemeral runner is
+# destroyed. See docs/linux-desktop-packaging.md for the full
+# architecture this workflow proves, and .github/workflows/
+# cross-platform.yml for the separate, lighter-weight portability gate
+# this workflow does not replace.
 #
 # scripts/verify-linux-package.mjs is a platform-specific CI
 # verification helper, explicitly not canonical local integration
@@ -71,6 +77,15 @@ jobs:
       - name: Install an ephemeral D-Bus session + Secret Service for the credential-store smoke test
         run: sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring || true
 
+      # Identifies the manual-test distribution artifact uploaded below
+      # (release-candidate distribution, mirroring windows-package.yml)
+      # - resolved once, early, so both the build version and the
+      # artifact name derive from the same value as the real workflow
+      # head commit.
+      - name: Resolve short commit SHA for the manual-test artifact
+        id: shortsha
+        run: echo "sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
       # docs/linux-desktop-packaging.md §15: proves the real Secret
       # Service backend against a real, hermetic, ephemeral session -
       # never a real user credential, no committed secret, torn down
@@ -108,11 +123,71 @@ jobs:
       - name: Verify the Linux package (pass 1)
         run: node scripts/verify-linux-package.mjs
 
+      # Pass 2 is built under a manual-test-identifiable version
+      # (rather than another anonymous "-dev+ci2") specifically so its
+      # own already-verified output below can double as the release
+      # candidate distributed to testers - a separate pass 3 rebuild
+      # solely for upload would duplicate an existing, already-passing
+      # build+verify cycle for no benefit.
       - name: Build the Linux release package (pass 2)
-        run: bash scripts/build-release-linux.sh --version "0.1.0-dev+ci2"
+        run: bash scripts/build-release-linux.sh --version "0.1.0-manualtest+${{ steps.shortsha.outputs.sha }}"
 
       - name: Verify the Linux package (pass 2)
         run: node scripts/verify-linux-package.mjs
+
+      # Test/release-candidate distribution only, not the Stage 20B
+      # production updater source (canonical GitHub Releases, unchanged)
+      # and not a GitHub Release itself. Runs only now that pass 2's own
+      # .deb has actually passed verification above - never publishes a
+      # package that failed verification under a normal-looking name.
+      - name: Stage the verified .deb for upload (manual-test artifact, not a release)
+        id: stage_artifact
+        run: |
+          set -euo pipefail
+          output_dir="build/release-linux/output"
+          deb="$(find "$output_dir" -maxdepth 1 -name '*.deb' | head -n1)"
+          if [ -z "$deb" ]; then
+            echo "::error::No .deb found in $output_dir to stage for upload."
+            exit 1
+          fi
+          if [ ! -f "$deb.sha256" ]; then
+            echo "::error::No .sha256 sidecar found for $deb."
+            exit 1
+          fi
+
+          full_sha="$(git rev-parse HEAD)"
+          version="0.1.0-manualtest+${{ steps.shortsha.outputs.sha }}"
+          artifact_dir="$RUNNER_TEMP/linux-artifact-upload-${{ matrix.name }}"
+          mkdir -p "$artifact_dir"
+          cp "$deb" "$artifact_dir/"
+          cp "$deb.sha256" "$artifact_dir/"
+
+          arch="${{ matrix.name == 'linux-arm64' && 'arm64' || 'amd64' }}"
+          {
+            echo "product: Streaming Tree for OBS"
+            echo "version: $version"
+            echo "commit: $full_sha"
+            echo "os: linux"
+            echo "architecture: $arch"
+            echo "unsigned: true"
+          } > "$artifact_dir/BUILD-INFO.txt"
+
+          echo "Staged artifact contents:"
+          ls -la "$artifact_dir"
+          echo "dir=$artifact_dir" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+
+      # 14 days is a bounded manual-testing window, not permanent
+      # hosting - a real production binary is later hosted through a
+      # canonical GitHub Release instead. The application updater never
+      # reads Actions artifacts.
+      - name: Upload the verified Linux .deb (manual-test artifact, not a release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamingTreeForOBS-0.1.0-manualtest-${{ steps.shortsha.outputs.sha }}-linux-${{ steps.stage_artifact.outputs.arch }}
+          path: ${{ steps.stage_artifact.outputs.dir }}/*
+          retention-days: 14
+          if-no-files-found: error
 
       # Backstop only: both build-release-linux.sh and
       # verify-linux-package.mjs already clean up their own test-owned
