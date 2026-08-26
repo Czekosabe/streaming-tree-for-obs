@@ -46,6 +46,26 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
 
+  // A caller's onClose is almost never a stable reference (typically an
+  // inline arrow or an unmemoized handler recreated on every render), and
+  // dismissible is frequently derived from in-flight state (`!busy`).
+  // Reading both through a ref that's kept current on every render - rather
+  // than putting them in the lifecycle effect's own dependency array below -
+  // is what lets that effect depend on `open` alone. Without this, typing
+  // into any controlled input inside the modal re-renders the caller with a
+  // new onClose identity, re-runs the whole effect, and redoes "move focus
+  // to the panel's first focusable element" on every keystroke - a real
+  // Stage 20E manual-test regression (focus jumping to the header's Close
+  // button after each character typed in Add Platform's Display name
+  // field). This keeps Escape/Tab-trap handling reading live values without
+  // that.
+  const onCloseRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    dismissibleRef.current = dismissible;
+  });
+
   useEffect(() => {
     if (!open) return;
 
@@ -62,9 +82,9 @@ export function Modal({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && dismissible) {
+      if (event.key === 'Escape' && dismissibleRef.current) {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -97,7 +117,7 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose, dismissible]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -45714,3 +45714,122 @@ current structure.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-26 — fix(web): preserve modal focus across form rerenders
+
+**A second, separate physical/manual Windows failure, found after the
+layering fix.** The prior modal-layering defect (portal/z-layer entry
+above) was found by physical testing, remediated, and the operator
+confirmed the visual layering itself now looks fixed. This is a new,
+distinct defect the operator then found while actually using the real
+Add Platform form on the installed application: typing a single
+character into the Display name field immediately kicked keyboard
+focus to the modal's header Close (X) button, requiring the operator
+to manually refocus the input after every character - normal text
+entry was effectively unusable. Automated tests never caught this
+because the existing `Modal.test.tsx` suite exercised focus-trap
+mechanics (Tab, Escape, backdrop, restoration) but never held an open
+modal through a *sequence of unrelated controlled-state rerenders* -
+exactly what real typing does.
+
+### Root-caused in the shared Modal, not Add Platform
+Read `Modal.tsx`'s focus-trap effect first, per the operator's own
+explicit audit list, before assuming anything. Its lifecycle
+`useEffect` had `[open, onClose, dismissible]` as its dependency
+array. `AddPlatformDialog` passes `onClose={handleClose}`, where
+`handleClose` is a plain function defined fresh in the component body
+on every render - not memoized. Typing into the controlled `TextInput`
+updates `displayName` state, re-renders `AddPlatformDialog`, gives
+`handleClose` a new identity, and React therefore re-runs the whole
+effect: it re-executes "capture `previouslyFocused`, then focus the
+panel's first focusable element" from scratch. In DOM order, the
+header (with its Close button) precedes the form content, so
+`focusable[0]` is always the Close button - exactly the reported jump,
+on every single keystroke.
+
+Confirmed this is a **shared Modal defect, not an Add Platform one**:
+grepped every `onClose={...}` call site across `apps/web/src` (over 30
+Modal-family consumers) - essentially none pass a memoized `onClose`;
+inline arrows and unmemoized local handlers are the app-wide norm
+(`GoalManager`'s `CreateGoalModal`, `CommandManager`, `ScheduleManager`,
+`YouTubeOAuthModal`, `TwitchDeviceFlowModal`, and more all follow the
+same pattern). Fixing `AddPlatformDialog` alone would have left every
+other form-containing modal in the app with the identical latent bug.
+
+### The fix
+Kept the focus-trap/Escape/Tab-wrap logic completely intact - no
+removal of the trap, no disabling of controlled inputs, no
+`setTimeout`-based refocus hack. Instead, `onClose` and `dismissible`
+are now read inside the effect through `onCloseRef`/`dismissibleRef`,
+kept current by a second, separate, dependency-free effect that runs
+every render but has no side effects of its own (just ref
+assignment). The lifecycle effect's own dependency array is now just
+`[open]`, so it runs exactly once per open/close transition -
+initial-focus logic runs exactly once on open, Escape and the Tab trap
+still always read the *current* `onClose`/`dismissible` via the refs,
+and an ordinary rerender caused by typing no longer touches focus at
+all. The backdrop's `onClick` and the header Close button's `onClick`
+were already reading `onClose`/`dismissible` directly from props each
+render (not from the effect) and needed no change.
+
+### Regression coverage added
+`Modal.test.tsx` gained the load-bearing test: a
+harness with a real controlled `<input>`, typing a full multi-character
+string via `user.type`, asserting the input keeps `document.activeElement`
+through every state-driven rerender and receives the complete string.
+Also added the two focus-trap scenarios the existing suite was
+missing entirely - `Escape closes a dismissible modal` (only the
+"Escape does nothing while not dismissible" negative case existed
+before) and `Shift+Tab wraps focus from the first control back to the
+last` (only forward-Tab wrap existed before) - closing real gaps in
+the "preserve tests for: initial focus, Tab trap, Shift+Tab trap,
+Escape, backdrop, portal rendering, focus restoration" list, not just
+adding the one new regression. `AddPlatformDialog` itself has no
+existing test file, so per the operator's own conditional instruction
+("if Add Platform has suitable component-level tests, also add a
+regression there") no new test-infrastructure file was created for it
+- the shared `Modal.test.tsx` regression is the load-bearing test, as
+directed.
+
+### Audit of other modals
+Per the operator's instruction, audited representative form-containing
+modals for the same class of defect without manually rewriting any of
+them (the fix is entirely inside `Modal.tsx`, so none needed a
+change): `GoalManager`'s `CreateGoalModal` (text input + select),
+`CommandManager` (toggle/checkbox), `ScheduleManager` (textarea),
+`AddPlatformDialog` itself (text input + select + toggle) - all follow
+the same unmemoized-`onClose` pattern the fix now handles structurally
+at the shared-component level.
+
+### What this preserves
+The prior layering fix is untouched: `Modal` still renders through the
+body-level portal, the centralized `APP_LAYER_Z` z-layer policy is
+unchanged, and `animate-fade-rise` on the panel is unchanged - this
+commit only touches the lifecycle `useEffect`'s dependency handling,
+nothing about how or where the modal renders.
+
+### Validation
+`npm run i18n:check`: 2 languages, 23 namespaces, no differences.
+`npm run typecheck`: clean. `npm run lint`: 0 errors, 1 pre-existing
+unrelated warning (`auth-context.tsx`, `react-refresh/only-export-
+components`) - none introduced by this change. `npm test`: **1432/1432
+passed** across 107 test files (jsdom's expected
+`HTMLMediaElement.prototype.play/load` "not implemented" console noise
+from an unrelated audio-renderer test is pre-existing, not a failure).
+`npm run build`: clean production build.
+
+### Manual evidence accounting (per the operator's explicit request)
+The original modal-layering defect was found by physical/manual
+Windows testing, not automated tests. The portal/z-layer remediation
+fixed that visual defect. This separate, distinct focus-reset defect
+was then found by the same physical/manual testing discipline, using
+the real installed application's Add Platform form - not found by any
+automated test, before or after the layering fix. Automated coverage
+previously missed controlled-input focus retention through rerenders
+entirely; that gap is what this entry's new regression test closes.
+This is an append-only correction/addition - no prior progress entry
+was rewritten.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

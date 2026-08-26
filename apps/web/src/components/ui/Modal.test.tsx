@@ -147,4 +147,90 @@ describe('Modal', () => {
     await user.tab();
     expect(first).toHaveFocus();
   });
+
+  it('Shift+Tab wraps focus from the first control back to the last', async () => {
+    renderModal({ dismissible: false });
+    const user = userEvent.setup();
+
+    const first = screen.getByRole('button', { name: 'First control' });
+    const last = screen.getByRole('button', { name: 'Last control' });
+
+    first.focus();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+  });
+
+  it('Escape closes a dismissible modal', async () => {
+    const onClose = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Modal
+          open={open}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          title="Test dialog"
+        >
+          <button type="button">Inside</button>
+        </Modal>
+      );
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Harness />
+      </I18nextProvider>,
+    );
+
+    await userEvent.setup().keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  // Stage 20E regression: a real physical/manual Windows test found that
+  // typing into the Add Platform form's Display name field kicked focus to
+  // the modal's Close button after every single character. The root cause
+  // was in the shared Modal, not Add Platform: the focus-trap/lifecycle
+  // effect depended on `onClose`, and every caller in the app passes a new
+  // `onClose` closure on each render (an inline arrow, or an unmemoized
+  // handler) - so a controlled input's own re-render (needed just to show
+  // the typed character) re-ran the whole effect, including the "move
+  // focus to the panel's first focusable element" step. The existing Tab/
+  // Escape/backdrop tests above never caught this because none of them
+  // hold an open modal through a series of *unrelated* controlled-state
+  // re-renders the way real typing does.
+  it('typing into a controlled input keeps focus there through every rerender it causes', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      const [value, setValue] = useState('');
+      return (
+        <Modal open={open} onClose={() => setOpen(false)} title="Test dialog">
+          <label htmlFor="name-field">Display name</label>
+          <input
+            id="name-field"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        </Modal>
+      );
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Harness />
+      </I18nextProvider>,
+    );
+
+    const user = userEvent.setup();
+    const input = screen.getByLabelText('Display name');
+
+    await user.click(input);
+    expect(input).toHaveFocus();
+
+    await user.type(input, 'Streaming Tree');
+
+    expect(input).toHaveValue('Streaming Tree');
+    expect(input).toHaveFocus();
+  });
 });
