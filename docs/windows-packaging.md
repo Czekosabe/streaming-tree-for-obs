@@ -512,3 +512,42 @@ installer during implementation.
   packaged. See [`platform-support.md`](platform-support.md) for the full
   cross-platform contract, current CI-verification status, and the
   Stage 20B-20E roadmap this leads into.
+
+## 25. Release-candidate distribution via CI artifact (Stage 20E)
+
+Physical/manual verification (`docs/manual-verification.md`) needs the
+real installer on hardware other than the developer's own machine. To
+avoid requiring every tester to have a local Go/Node/Inno Setup
+toolchain, `.github/workflows/windows-package.yml`'s existing second
+build+verify pass (already run to prove build reproducibility, §22/§23
+above) is built under a `0.1.0-manualtest+<shortsha>` version instead
+of an anonymous `-dev+ci2` one, and - only after that pass's own
+`verify-packaged-app.mjs` and `verify-installer.mjs` runs have both
+passed - the resulting installer, its `.sha256` sidecar, and a small
+generated `BUILD-INFO.txt` (product, version, full commit SHA, OS,
+architecture, unsigned status - no secrets, no logs, no application
+data) are uploaded as a GitHub Actions artifact named
+`StreamingTreeForOBS-0.1.0-manualtest-<shortsha>-windows-amd64`, with
+14-day retention.
+
+This is **not** a production distribution mechanism:
+
+- **Not a GitHub Release.** No tag is created, nothing is published
+  outside the workflow run's own Artifacts panel, and the artifact
+  expires with Actions' own retention policy rather than being hosted
+  indefinitely.
+- **Not a trusted updater source.** The Stage 20B updater (§21 above,
+  `docs/updater.md`) is unchanged - it only ever checks canonical
+  GitHub Releases on the Stable channel, and still never fetches an
+  Actions artifact URL of any kind. A manual/test-versioned build
+  downloaded this way still reports itself as ineligible for automatic
+  updates (`docs/updater.md` §43), exactly as a locally-built
+  `-manualtest`/`-dev` version already did before this change.
+- **A distribution convenience only**, for maintainers/testers who
+  need the exact CI-built, CI-verified candidate on a second machine
+  during `docs/manual-verification.md`'s physical sessions.
+
+`macos-package.yml` and `linux-package.yml` upload the equivalent
+verified DMG/`.deb` the same way, for the same reason - see those
+workflows' own header comments; this is a workflow-only mechanism, not
+a change to either platform's packaging implementation.

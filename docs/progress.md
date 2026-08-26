@@ -45679,3 +45679,38 @@ on either platform, identical to the Windows entry above.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-26 — docs: document how to download the CI-verified manual-test artifact on a second machine
+
+Closing entry for this distribution-gap fix: the two mechanism commits
+above changed CI behavior only, with no documentation a tester could
+actually follow yet. Added a new "Getting the candidate installer onto
+a second test machine" section to `docs/manual-verification.md`,
+placed right before Session A (the session whose own precondition line
+already says "the Inno Setup installer built from the commit under
+test" - this is what supplies it now without a local build). Walks
+through the exact GitHub UI path: repository → Actions → the relevant
+package-verification workflow → the run for the exact commit under
+test → Artifacts → the `StreamingTreeForOBS-...-manualtest-...`
+artifact → optional SHA-256 recheck against the included sidecar → run
+it. States plainly, twice (once in the intro paragraph, once implicit
+in step 5's own wording), that this is not a GitHub Release and can
+expire under Actions' retention policy, unlike one.
+
+`docs/windows-packaging.md` §25 (written in the first commit of this
+change, when only the Windows half existed) already described the
+macOS/Linux mirroring in anticipation of the second commit - re-read
+against the actual `macos-package.yml`/`linux-package.yml` changes
+after they landed and confirmed it already describes them accurately;
+no correction was needed.
+
+### Validation
+Documentation-only; no code or workflow files touched by this commit.
+Read both changed files back in full after editing to confirm section
+placement, heading levels, and cross-references (§21/§22/§23 reference
+numbers in the new §25) are all correct against the file's real,
+current structure.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

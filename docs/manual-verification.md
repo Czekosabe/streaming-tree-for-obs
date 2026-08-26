@@ -48,6 +48,42 @@ paste it — describe it instead and ask.
 
 ---
 
+## Getting the candidate installer onto a second test machine
+
+Physical sessions below need the real installer/package built and
+verified for the exact commit under test. It does not have to be
+built locally on the machine you're testing on — every native package
+workflow (`windows-package.yml`, `macos-package.yml`,
+`linux-package.yml`) uploads its own already-verified package as a
+short-retention GitHub Actions artifact once that run's build and
+verification steps have actually passed. **This is not a GitHub
+Release** — no tag, no publication, and the application's own updater
+never reads it; it exists solely so a tester on a different machine
+than the developer's can download the exact CI-built, CI-verified
+candidate without needing a local toolchain. It may also disappear —
+Actions artifacts expire after a bounded retention window (14 days as
+of this writing; check the run page for the exact remaining time),
+unlike a Release.
+
+To get it:
+
+1. Open the repository on GitHub → **Actions**.
+2. Select the relevant workflow (e.g. "Windows package verification"
+   for Session A).
+3. Find the run for the exact commit under test (the run list shows
+   the commit SHA and message) and confirm it finished green.
+4. Open that run, scroll to **Artifacts** at the bottom of the run
+   summary page.
+5. Download the artifact named
+   `StreamingTreeForOBS-<version>-manualtest-<shortsha>-<os>-<arch>`
+   (e.g. `StreamingTreeForOBS-0.1.0-manualtest-7f5550f95184-windows-amd64`)
+   — a `.zip` containing the real installer/package, its `.sha256`
+   sidecar, and a small `BUILD-INFO.txt` recording the product,
+   version, full commit SHA, OS, architecture, and unsigned status.
+6. If desired, recompute the SHA-256 of the extracted installer/package
+   and compare it against the `.sha256` sidecar before running it.
+7. Run the installer/package as normal for that platform.
+
 ## Session A — Windows desktop packaged app
 
 Precondition: a real, physical Windows 10/11 x64 machine (not a VM
