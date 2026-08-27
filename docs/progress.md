@@ -45833,3 +45833,86 @@ was rewritten.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-26 — fix(web): reference-count the modal background-scroll lock so nested dialogs cannot leave the page stuck
+
+**A third, separate physical/manual Windows failure in the same
+remediation cycle.** After the focus-reset fix above, the operator
+found: open Platform settings for an existing destination, delete it,
+and the Dashboard permanently loses its scrollbar - mouse-wheel
+scrolling stops working, and only a full browser refresh restores it.
+Screenshots showed the Platform settings modal (with its own internal
+scroll) and the resulting stuck Dashboard.
+
+### Root-caused per the operator's own audit list
+Read `Modal.tsx`'s scroll-lock code and grepped the whole frontend for
+every `document.body.style.overflow` write. Found two independent,
+naive lock implementations: `Modal.tsx` itself, and a second, separate
+one in `Sidebar.tsx`'s `MobileSidebar` (the off-canvas mobile nav
+drawer) - confirming the operator's suspicion that "any shared hook
+implementing scroll lock" needed auditing, not just the one component
+that happened to be reported.
+
+The real Windows failure traces to `PlatformSettingsDialog.tsx`: it
+renders its own settings `Modal` (open the whole time a platform is
+selected) *and* a `ConfirmDialog`-wrapped `Modal` for the delete step
+- two modals open simultaneously the moment "Delete" is clicked. Each
+`Modal` instance independently captured `document.body.style.overflow`
+as its own "previous value" on open; the confirm modal opened *after*
+the settings modal had already set `overflow: hidden`, so it captured
+`'hidden'` as its own "previous" state instead of the page's true
+original value. `PlatformSettingsDialog.handleDelete`'s `onSuccess`
+callback closes both dialogs in the same event handler
+(`setConfirmingDelete(false)` then `onClose()`), landing in one
+batched React update - both modals' cleanup effects run in the same
+commit, and whichever one ran second silently overwrote the other's
+correct restoration with its own contaminated, already-`'hidden'`
+value. Confirmed this exact mechanism by temporarily reverting the fix
+and running the new regression test below against the old code: it
+failed with `document.body.style.overflow` stuck at `'hidden'`,
+reproducing the reported symptom precisely, then passed again once the
+fix was restored.
+
+### The fix
+Added `apps/web/src/lib/body-scroll-lock.ts`: a small, reference-counted
+`acquireBodyScrollLock()` shared by every lock site. Only the very
+first acquisition (count 0→1) captures the true original
+`overflow` value; only the release that brings the count back to zero
+restores it - correct for any nesting depth and any close order, with
+no ownership confusion between independent modal instances. `Modal.tsx`
+and `Sidebar.tsx`'s `MobileSidebar` both now call this instead of
+managing `document.body.style.overflow` themselves. No `setTimeout`,
+no removal of the focus trap, no change to the portal/z-layer
+architecture - only how the background-scroll lock itself is owned.
+`document.documentElement` was never touched by either site, so no
+change was needed there.
+
+### Regression coverage added
+`apps/web/src/lib/body-scroll-lock.test.ts` (new): direct unit
+coverage of the primitive itself - single lock lifecycle
+(open→locked→close→restored), nested/concurrent lock ownership (first
+acquire→locked, second acquire→still locked, first release→still
+locked, second release→restored), restoration correctness regardless
+of *which* holder releases last, and idempotent release. `Modal.test.tsx`
+gained a `Modal background scroll lock` describe block: a basic
+single-modal lock/restore test, and the load-bearing one - a harness
+built from the real `Modal` and `ConfirmDialog` components in the same
+shape as `PlatformSettingsDialog` (a settings modal plus a nested
+confirm dialog, both closing in one handler), asserting the background
+stays locked while both are open and is fully restored once both close
+together. The existing focus-retention test (typing keeps focus in a
+controlled input through rerenders) and every prior Tab/Shift+Tab/
+Escape/backdrop/portal/restoration test were re-run unchanged and
+still pass.
+
+### Validation
+`npx vitest run src/components/ui/Modal.test.tsx
+src/lib/body-scroll-lock.test.ts`: **14/14 passed**. `npm run
+typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing, unrelated warning as before (`auth-context.tsx`). Full
+frontend suite/i18n/build re-run together with the rest of this
+remediation cycle's changes before handoff (see the closing entry).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

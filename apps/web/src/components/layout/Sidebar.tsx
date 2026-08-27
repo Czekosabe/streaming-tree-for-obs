@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { acquireBodyScrollLock } from '@/lib/body-scroll-lock';
 import { cn } from '@/lib/cn';
 import { APP_LAYER_Z } from '@/lib/z-layers';
 
@@ -61,11 +62,11 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
+    const releaseScrollLock = acquireBodyScrollLock();
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      releaseScrollLock();
       previouslyFocused.current?.focus();
     };
   }, [open, onClose]);

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
+import { acquireBodyScrollLock } from '@/lib/body-scroll-lock';
 import { cn } from '@/lib/cn';
 import { APP_LAYER_Z } from '@/lib/z-layers';
 
@@ -109,12 +110,11 @@ export function Modal({
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const releaseScrollLock = acquireBodyScrollLock();
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      releaseScrollLock();
       previouslyFocused.current?.focus();
     };
   }, [open]);

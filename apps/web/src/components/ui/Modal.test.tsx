@@ -2,10 +2,11 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
 
+import { ConfirmDialog } from './ConfirmDialog';
 import { Modal } from './Modal';
 
 /**
@@ -232,5 +233,102 @@ describe('Modal', () => {
 
     expect(input).toHaveValue('Streaming Tree');
     expect(input).toHaveFocus();
+  });
+});
+
+describe('Modal background scroll lock', () => {
+  beforeEach(() => {
+    document.body.style.overflow = '';
+  });
+
+  afterEach(() => {
+    document.body.style.overflow = '';
+  });
+
+  it('locks the background while open and restores it once closed', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Modal open={open} onClose={() => setOpen(false)} title="Test dialog">
+          <button type="button">Inside</button>
+        </Modal>
+      );
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Harness />
+      </I18nextProvider>,
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    await userEvent.setup().keyboard('{Escape}');
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  // Stage 20E regression: a real physical/manual Windows test found the
+  // Dashboard permanently unscrollable (until a manual refresh) after
+  // deleting a destination. `PlatformSettingsDialog` (the real component
+  // this reproduces the shape of) keeps its own settings Modal open
+  // alongside a `ConfirmDialog`-wrapped Modal for the delete step - two
+  // modals locking the background at once. A successful delete closes
+  // both in the same batched update; before the shared, reference-counted
+  // lock existed, whichever modal's cleanup ran second overwrote the
+  // other's correct restoration with its own contaminated "previous
+  // value" (captured while the other modal had already locked the page),
+  // leaving the body permanently locked.
+  it('stays locked while a nested confirm dialog is open, and restores once both close together', async () => {
+    function Harness() {
+      const [settingsOpen, setSettingsOpen] = useState(true);
+      const [confirmOpen, setConfirmOpen] = useState(false);
+
+      // Mirrors PlatformSettingsDialog.handleDelete: both the confirm
+      // dialog and the settings modal close in the same event handler,
+      // landing in the same batched React update - the exact sequence
+      // the real bug depended on.
+      const handleDeleteConfirmed = () => {
+        setConfirmOpen(false);
+        setSettingsOpen(false);
+      };
+
+      return (
+        <>
+          <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Platform settings">
+            <button type="button" onClick={() => setConfirmOpen(true)}>
+              Delete destination
+            </button>
+          </Modal>
+          <ConfirmDialog
+            open={confirmOpen}
+            title="Delete platform?"
+            message="This cannot be undone."
+            confirmLabel="Confirm delete"
+            destructive
+            onConfirm={handleDeleteConfirmed}
+            onCancel={() => setConfirmOpen(false)}
+          />
+        </>
+      );
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Harness />
+      </I18nextProvider>,
+    );
+
+    const user = userEvent.setup();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Opens the nested confirm dialog - both modals are now open at once.
+    await user.click(screen.getByRole('button', { name: 'Delete destination' }));
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm delete' });
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Confirming closes BOTH modals in one batched update, same as
+    // PlatformSettingsDialog.handleDelete's real onSuccess callback.
+    await user.click(confirmButton);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
   });
 });
