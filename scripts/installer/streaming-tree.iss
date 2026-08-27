@@ -143,9 +143,19 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 ; is a per-user, unelevated install (PrivilegesRequired=lowest above) -
 ; the purge must run as the same user who owns the data, never
 ; elevated.
+;
+; Deliberately no RunOnceId: real ground truth from a captured Inno
+; /LOG (docs/progress.md) showed ShouldPurgeUserData's own Log() call
+; never firing at all across several install/uninstall cycles of the
+; same fixed AppId within one test run - consistent with RunOnceId's
+; own documented purpose (deduplicating an [UninstallRun] entry across
+; multiple uninstalls of the same AppId, tracked in the registry) doing
+; exactly what it is designed to do, just not what a single test job
+; performing several such cycles in a row wants. This entry's own
+; Check: already prevents it from doing anything on an ordinary
+; uninstall - RunOnceId adds no correctness this project needs.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "-purge-user-data"; \
-  Flags: waituntilterminated runascurrentuser; Check: ShouldPurgeUserData; \
-  RunOnceId: "PurgeUserData"
+  Flags: waituntilterminated runascurrentuser; Check: ShouldPurgeUserData
 
 ; No [Registry] entries: no auto-startup registration, no service
 ; installation - both explicitly out of scope (docs/windows-packaging.md

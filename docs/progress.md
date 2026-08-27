@@ -46404,3 +46404,57 @@ not something asserted here in advance.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(installer): RunOnceId silently prevented the purge command from ever being evaluated across repeated test cycles
+
+**The `Log()` instrumentation gave real, conclusive ground truth
+immediately.** The next CI run's captured Inno `/LOG` showed exactly
+what the two prior "fix" attempts could not distinguish:
+`InitializeUninstall` genuinely ran, `UninstallSilent()` was `1`,
+`GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA')` correctly read `'1'`,
+`PurgeUserDataChecked` was correctly set to `1`, and `GetEnv` read the
+production env var back as `'1'` immediately after
+`SetPurgeUserDataFlag` - every piece of the two-phase-process fix from
+the prior entry was working exactly as designed. But `ShouldPurgeUserData`'s
+own `Log()` call **never fired at all** anywhere in the complete,
+single, uninterrupted log (one matching "Log opened."/"Log closed."
+pair) - `[UninstallRun]`'s own `Check:` function was never even being
+*evaluated*, not evaluating false.
+
+### Root cause
+`RunOnceId: "PurgeUserData"` - added two entries ago purely to silence
+a compiler warning, never load-bearing for the actual feature.
+Per Inno's own documented purpose, `RunOnceId` deduplicates an
+`[UninstallRun]` entry across multiple uninstalls of the *same AppId*,
+tracked in the registry, specifically so an upgrade chain's
+accumulated `[UninstallRun]` entries do not all redundantly re-run the
+same logical action on a later uninstall. `scripts/verify-installer.mjs`
+performs several install/uninstall cycles of this project's one fixed
+`AppId` within a single test run (the ordinary-uninstall scenario's
+install→uninstall→reinstall, then the purge scenario's own separate
+install→uninstall, all in the same job) - exactly the repeated-cycle
+shape `RunOnceId`'s own deduplication is designed to suppress, just
+not in the way a single test job performing several such cycles back-
+to-back wants. This explains the complete, otherwise-mysterious
+absence of any `[UninstallRun]` activity in the captured log with no
+contradiction: Inno was doing exactly what `RunOnceId` tells it to do.
+
+### The fix
+Removed `RunOnceId` from the `[UninstallRun]` entry entirely - it was
+never functionally required (the entry's own `Check:` already prevents
+it from doing anything on an ordinary uninstall), only added earlier
+to silence a compiler warning that is now knowingly accepted instead.
+The temporary `Log()` diagnostic calls from the previous entry remain
+in place for this next run, to directly confirm `ShouldPurgeUserData`
+is now actually reached and returns the correct value, before being
+removed in a follow-up commit once confirmed.
+
+### Validation
+The real `ISCC.exe` compiles cleanly (now showing only the expected,
+knowingly-accepted "no RunOnceId" warning). The real Windows CI run on
+this commit is the next, authoritative evidence - the retained `Log()`
+instrumentation will show directly whether this was the complete fix.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
