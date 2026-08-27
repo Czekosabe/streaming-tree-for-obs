@@ -46568,3 +46568,73 @@ authoritative evidence for Scenario C specifically.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(installer): AppMutex fires before PrepareToInstall, not after - remove it, since the app's own cooperative-shutdown check already covers the same ground better
+
+**Scenario C's own `/LOG` diagnostic gave conclusive, unambiguous
+ground truth immediately.** The captured log showed exactly what
+happened, in order: the three DLL imports (script-load binding, not
+proof of a call, per an earlier entry's own correction), then
+immediately:
+
+```
+Defaulting to Cancel for suppressed message box (OK/Cancel):
+  Setup has detected that Streaming Tree for OBS is currently running.
+  Please close all instances of it now, then click OK to continue, or Cancel to exit.
+Got EAbort exception.
+Deinitializing Setup.
+```
+
+This is Inno's own **native `AppMutex` prompt** - not anything from
+this project's own `[Code]`. Under `/SUPPRESSMSGBOXES`, Inno
+auto-answers Cancel to any message box it cannot suppress outright,
+which raises `EAbort` and aborts Setup immediately (`exit code 1`) -
+before `PrepareToInstall` (and therefore
+`RequestCooperativeShutdownIfRunning`) ever got a chance to run at
+all. Nothing from this project's own logging appears anywhere before
+the abort.
+
+### The research this corrects
+An earlier entry in this same remediation cycle researched and relied
+on Inno's own documentation stating `PrepareToInstall` "fires before
+CloseApplications/AppMutex detection." That research was wrong or
+incomplete for this project's real observed behavior: `AppMutex` is
+checked as part of Setup's own very early startup (its own
+documentation separately says it is checked "at startup"), genuinely
+earlier than `PrepareToInstall`, which is tied to a specific, later
+wizard page. `CloseApplications` may well still fire after
+`PrepareToInstall` as originally understood - only `AppMutex`'s own
+relative ordering was the error, and this project never actually
+relied on `CloseApplications`'s own behavior for anything (it was
+never disabled, and Restart Manager's real quirks with this
+application's hidden background window are exactly what the whole
+cooperative-shutdown mechanism was built to route around).
+
+### The fix
+Removed the `AppMutex=Local\StreamingTreeForOBS.SingleInstance`
+directive from `[Setup]` entirely. It was only ever added as a
+fallback for when `RequestCooperativeShutdownIfRunning` "cannot reach
+the application" - but that function already independently detects a
+running instance itself, via the identical named mutex, through
+`CheckForMutexes`, and *actually attempts to resolve the situation*
+rather than only showing a prompt requiring interactive confirmation.
+With `AppMutex` configured, its own earlier-firing native check
+pre-empted the better mechanism entirely, turning a "shows a prompt as
+a last resort" fallback into "always wins the race and blocks the
+better path from ever running." Removing it lets `PrepareToInstall`
+run as the very first thing that matters, exactly as intended.
+
+### Validation
+The real `ISCC.exe` compiles the modified `.iss` cleanly, zero
+warnings. Every stale in-source comment claiming `AppMutex`/
+`PrepareToInstall` ordering was corrected in the same commit, not left
+to rot. End-to-end install/uninstall/upgrade behavior still cannot be
+reliably re-verified on this development machine (the same documented
+McAfee-interference limitation as every prior entry in this cycle) -
+the real Windows CI run on this commit, for the first time exercising
+Scenario C with `PrepareToInstall` actually able to run, is the next,
+authoritative evidence.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

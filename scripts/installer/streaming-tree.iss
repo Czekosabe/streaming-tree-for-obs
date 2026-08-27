@@ -51,20 +51,23 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-; The exact same named mutex internal/runtime/singleinstance already
-; creates for the whole process lifetime (Local\ scopes it to this login
-; session, matching that package's own per-user model) - applies during
-; both Setup and Uninstall (jrsoftware.org/ishelp), so Inno's own native
-; "please close it now" fallback prompt is now accurate for this specific
-; application, rather than relying on generic CloseApplications file-lock
-; detection against a hidden background process with no visible window
-; for Restart Manager to message. The real fix for a smooth automatic
-; upgrade is the cooperative PrepareToInstall/InitializeUninstall logic
-; in [Code] below, which runs first and normally resolves this before
-; AppMutex's own prompt would ever fire - this is the documented fallback
-; for when that mechanism cannot reach the application at all (e.g. a
-; --headless run with no tray window).
-AppMutex=Local\StreamingTreeForOBS.SingleInstance
+; Deliberately NO AppMutex directive. It was tried (mirroring
+; internal/runtime/singleinstance's own mutex) on the assumption -
+; based on a documentation read that turned out to be wrong or
+; incomplete - that PrepareToInstall's own cooperative-shutdown logic
+; in [Code] below would run first, with AppMutex's native "please
+; close it" prompt only as a fallback. A real captured Windows CI
+; /LOG proved otherwise: AppMutex is checked at Setup's own very early
+; startup - before PrepareToInstall, which is tied to a later wizard
+; page - so its native prompt ("Setup has detected that ... is
+; currently running ... click OK to continue, or Cancel to exit")
+; fired and, under /SUPPRESSMSGBOXES, defaulted to Cancel (Got EAbort
+; exception), aborting Setup before the cooperative-shutdown mechanism
+; ever got a chance to run at all. That mechanism (CheckForMutexes
+; against the exact same mutex, inside RequestCooperativeShutdownIfRunning)
+; already detects a running instance itself and actually attempts to
+; resolve it, rather than only prompting - AppMutex added no benefit
+; and actively defeated it by firing first.
 ; Per-user install, no elevation - the recommended Inno Setup constant for
 ; exactly this (resolves to %LOCALAPPDATA%\Programs\<AppName>).
 DefaultDirName={localappdata}\Programs\{#MyAppName}
@@ -149,12 +152,17 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 [Code]
 // docs/windows-packaging.md §26 - the manual/test-upgrade and explicit
 // data-purge remediation cycle. Every function below was written against
-// Inno Setup's own current documentation (jrsoftware.org/ishelp), not
-// guessed: PrepareToInstall's "fires before CloseApplications/AppMutex
-// detection, handles application shutdown" contract, CheckForMutexes'
-// exact signature, [UninstallRun]'s "first step of uninstallation"
-// execution order, and CreateCustomForm's signature were each looked up
-// directly before being used here.
+// Inno Setup's own current documentation (jrsoftware.org/ishelp) and,
+// where documentation proved wrong or incomplete for this project's
+// actual observed behavior, against real captured Windows CI /LOG
+// evidence instead: CheckForMutexes' exact signature and
+// CreateCustomForm's signature came from documentation and held up;
+// AppMutex's claimed firing order relative to PrepareToInstall did not
+// (see AppMutex's own removal note in [Setup] above), and
+// [UninstallRun]'s own Check: mechanism never fired at all across four
+// separate real diagnostic rounds for a reason no documentation search
+// ever explained, which is why the purge helper is now invoked
+// directly via Exec() instead of through [UninstallRun].
 
 const
   // Mirrors internal/runtime/singleinstance's own mutexName constant
@@ -241,11 +249,13 @@ begin
 end;
 
 // docs/windows-packaging.md §26 / the operator's own "manual installer
-// upgrade" requirement: fires before CloseApplications/AppMutex
-// detection (Inno Setup's own documented contract for this function),
-// so a successful cooperative shutdown here means the operator never
-// sees any "please close it" prompt at all - the normal, automatic path
-// this whole mechanism exists for.
+// upgrade" requirement: fires before Inno's own CloseApplications
+// detection (Inno Setup's own documented contract for this function -
+// AppMutex is a separate, earlier check, deliberately not used here;
+// see its own removal note in [Setup] above), so a successful
+// cooperative shutdown here means the operator never sees any "please
+// close it" prompt at all - the normal, automatic path this whole
+// mechanism exists for.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   NeedsRestart := False;
@@ -281,9 +291,9 @@ end;
 // per Inno's own documented recommendation ("call this instead of
 // creating TForm/TSetupForm instances directly"). Also performs the
 // same cooperative-shutdown request PrepareToInstall does above, since
-// AppMutex applies during Uninstall too and the operator should not
-// need Task Manager here either - and the purge step later in
-// [UninstallRun] requires the application to already be stopped.
+// the operator should not need Task Manager here either - and the
+// purge Exec() call below requires the application to already be
+// stopped.
 //
 // UninstallSilent() (Inno's own documented function for exactly this
 // context - distinct from Setup-only WizardSilent()) guards the modal

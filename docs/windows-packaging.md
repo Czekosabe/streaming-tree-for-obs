@@ -652,22 +652,33 @@ now also registers a `RegisterWindowMessageW` name
 (`StreamingTreeForOBS.RequestGracefulShutdown`) and, on receiving it,
 invokes the exact same `OnQuit` callback the tray's own Quit menu item
 already uses - one canonical shutdown path, never a second one.
-`AppMutex=Local\StreamingTreeForOBS.SingleInstance` in `[Setup]`
-mirrors `internal/runtime/singleinstance`'s own mutex exactly, so
-Inno's native fallback prompt (for the rare case the cooperative
-mechanism can't reach the application, e.g. `--headless`) is backed by
-the real, authoritative "is it running" signal. `[Code]`'s
-`RequestCooperativeShutdownIfRunning` (researched against
-jrsoftware.org/ishelp, not guessed) checks the mutex via the documented
-`CheckForMutexes` function, resolves the tray window via `FindWindowW`,
-posts the registered message via `PostMessageW`, and polls
-`CheckForMutexes` up to a bounded 60 seconds. Called from
-`PrepareToInstall` (documented to fire *before* CloseApplications/
-AppMutex detection - a successful cooperative shutdown means the
-operator never sees any prompt at all) and from `InitializeUninstall`.
-A failure returns a bounded, specific message directing the operator
-to use the tray's own Quit item and retry - never a hang, never Task
-Manager.
+`[Code]`'s `RequestCooperativeShutdownIfRunning` (researched against
+jrsoftware.org/ishelp, though one specific claim from that research
+turned out wrong - see below) checks whether the application is
+running via the documented `CheckForMutexes` function against the
+exact same named mutex `internal/runtime/singleinstance` already
+creates, resolves the tray window via `FindWindowW`, posts the
+registered message via `PostMessageW`, and polls `CheckForMutexes` up
+to a bounded 60 seconds. Called from `PrepareToInstall` and from
+`InitializeUninstall`. A failure returns a bounded, specific message
+directing the operator to use the tray's own Quit item and retry -
+never a hang, never Task Manager.
+
+**Deliberately no `AppMutex` directive in `[Setup]`.** It was tried
+first, mirroring the same mutex, on the assumption that
+`PrepareToInstall` fires before Inno's own `AppMutex` detection - a
+documented claim that a real captured Windows CI `/LOG` proved wrong
+or incomplete for this project's actual behavior: `AppMutex` is
+checked at Setup's own very early startup, before `PrepareToInstall`
+(tied to a later wizard page) ever runs. With `AppMutex` configured,
+its own native prompt ("Setup has detected that ... is currently
+running ... click OK to continue, or Cancel to exit") fired first and,
+under `/SUPPRESSMSGBOXES`, defaulted to Cancel and aborted Setup
+before the cooperative-shutdown mechanism ever got a chance to run.
+Since `RequestCooperativeShutdownIfRunning` already detects a running
+instance itself (via the identical mutex) and actually attempts to
+resolve it rather than only prompting, `AppMutex` added no benefit and
+actively defeated it by firing first - so it stays out.
 
 ### Known local-testing limitation
 End-to-end install/uninstall/upgrade behavior for this mechanism could
