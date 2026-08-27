@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/storage/sqlite"
@@ -66,10 +67,40 @@ func Purge(ctx context.Context, dataDir, databasePath string, store secrets.Secr
 	deleteSecretBestEffort(ctx, store,
 		secrets.BuildKey(secrets.SecretTypeRemoteIngestPublisherPassword, secrets.RemoteIngestPublisherSubjectID))
 
-	if err := os.RemoveAll(dataDir); err != nil {
+	if err := removeDataDirWithRetry(dataDir); err != nil {
 		return fmt.Errorf("remove data directory: %w", err)
 	}
 	return nil
+}
+
+// removeDataDirWithRetry retries os.RemoveAll briefly on Windows,
+// where a file very recently closed by the just-exited application
+// process (the SQLite WAL/SHM sidecars in particular) can still be
+// transiently held by the OS or a real-time antivirus scan for a
+// short window after the process itself has already exited - the
+// same class of "freshly-written/closed file momentarily locked"
+// timing issue docs/windows-packaging.md's own CI workflow comments
+// already document for a freshly-built installer. A single immediate
+// attempt succeeds in the overwhelming majority of cases; this only
+// changes behavior for that narrow transient-lock window.
+func removeDataDirWithRetry(dataDir string) error {
+	const attempts = 5
+	const delay = 200 * time.Millisecond
+
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			time.Sleep(delay)
+		}
+		lastErr = os.RemoveAll(dataDir)
+		if lastErr == nil {
+			return nil
+		}
+		if _, statErr := os.Stat(dataDir); os.IsNotExist(statErr) {
+			return nil
+		}
+	}
+	return lastErr
 }
 
 // deleteKnownSecrets enumerates every real subject a stored credential

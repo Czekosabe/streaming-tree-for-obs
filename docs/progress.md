@@ -46236,3 +46236,60 @@ commit is the next, authoritative evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(ci): the explicit-purge test still failed with the same symptom after the GetEnv fix - added real Inno-log diagnostics and a Windows file-lock retry
+
+**A third real CI run of the same explicit-purge scenario, same exact
+symptom** (`silent purge uninstall exits 0`, yet the hermetic data
+directory still existed) even after the previous entry's `GetEnv`-
+based fix - proving that fix's own theory (a dropped command-line
+switch) was necessary but not sufficient, or possibly not the actual
+cause at all. Rather than guess a fourth theory blind, this entry adds
+the diagnostic needed to know for certain, plus a real, independently-
+justified hardening that addresses the other leading hypothesis.
+
+### Why another blind guess was rejected
+`silent purge uninstall exits 0` was being trusted as evidence the
+purge command ran and succeeded, but Inno Setup's own `[UninstallRun]`
+target exit codes are not necessarily propagated to the uninstaller's
+own overall exit code by default - meaning that assertion is
+consistent with at least three different real failure shapes: the
+`Check:` never evaluating true (no purge attempted at all), the purge
+command running and failing partway (e.g. `os.RemoveAll` hitting a
+transient Windows file lock on a just-closed WAL/SHM file - a real,
+already-documented class of issue for a freshly-closed file in this
+project's own CI comments), or something else entirely. Continuing to
+swap one untested theory for another without a way to distinguish them
+would not meet the operator's own "no blind retry" standard.
+
+### The fix
+1. `scripts/verify-installer.mjs`'s purge scenario now passes
+   `/LOG=<path>` to the uninstaller and, only if the data-directory
+   removal check still fails, reads and prints that real Inno-internal
+   log - the next CI failure (if any) will show directly whether
+   `[UninstallRun]`'s `Check:` evaluated true and whether the purge
+   command actually ran, closing the ambiguity `exits 0` alone left
+   open.
+2. `internal/userdatapurge.Purge`'s final `os.RemoveAll(dataDir)` is
+   now wrapped in a short, bounded retry (`removeDataDirWithRetry`: up
+   to 5 attempts, 200ms apart, stopping immediately once the directory
+   is confirmed gone) - a real, independently-defensible hardening
+   against the transient-lock hypothesis regardless of whether it
+   turns out to be this specific failure's actual cause, and a no-op
+   in the overwhelming majority of cases where the first attempt
+   already succeeds.
+
+### Validation
+`go test ./internal/userdatapurge/...`: still 3/3 passing (the retry
+wrapper is a no-op success path in every existing hermetic test - none
+of them exercise a real Windows file lock, which is expected: this is
+a Windows-specific timing hardening, not a hermetic-test-reproducible
+condition). `gofmt`/`go vet`/`GOOS=windows go build`: clean. `node
+--check scripts/verify-installer.mjs`: clean. The real Windows CI run
+on this commit is the next, authoritative evidence - if it still fails
+at the same step, the newly-captured Inno log will show precisely why,
+rather than requiring another blind theory.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

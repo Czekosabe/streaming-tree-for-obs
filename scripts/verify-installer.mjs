@@ -321,7 +321,12 @@ async function testExplicitPurgeScenario(installerPath) {
     // STREAMING_TREE_DATA_DIR: without it the purge helper's own
     // config.Load() falls back to the real default
     // %AppData%\StreamingTree instead of the hermetic test directory.
-    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES'], {
+    // /LOG=: Inno's own detailed uninstall log - read on failure below
+    // so a real "did [UninstallRun]'s Check: evaluate true, did the
+    // purge command actually run, what did it exit with" answer is
+    // available instead of guessing at another theory blind.
+    const uninstallLogPath = join(tmpdir(), `streaming-tree-purge-uninstall-${Date.now()}.log`);
+    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/LOG=${uninstallLogPath}`], {
       env: { ...process.env, STREAMING_TREE_DATA_DIR: dataDir, STREAMING_TREE_TEST_PURGE_USER_DATA: '1' },
     });
     expect(uninstall.code === 0, 'silent purge uninstall exits 0', uninstall);
@@ -335,6 +340,11 @@ async function testExplicitPurgeScenario(installerPath) {
         break;
       }
       await new Promise((r) => setTimeout(r, 300));
+    }
+    if (!removed && existsSync(uninstallLogPath)) {
+      console.log('--- Inno uninstall log (diagnostic, purge did not remove the data directory) ---');
+      console.log(readFileSync(uninstallLogPath, 'utf8'));
+      console.log('--- end Inno uninstall log ---');
     }
     expect(removed, 'the data directory (database, assets, managed runtime) no longer exists', dataDir);
 
