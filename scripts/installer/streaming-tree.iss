@@ -191,9 +191,33 @@ const
   GracefulShutdownTimeoutMs = 60000;
   GracefulShutdownPollMs = 500;
 
+  // A real Windows CI run found that Inno's uninstaller runs in two
+  // separate OS processes: the one actually launched shows the
+  // confirmation UI and calls InitializeUninstall, then relaunches a
+  // copy of itself from TEMP (with a /SECONDPHASE=... command line -
+  // visible in a real captured /LOG) to perform the actual file
+  // removal, since a running process cannot delete its own .exe. A
+  // Pascal Script global variable set in the first process (like
+  // PurgeUserDataChecked used to be) does not exist in the second,
+  // separate process - so [UninstallRun]'s own Check: function, which
+  // evaluates in the SECOND phase, always saw the type's zero value
+  // (False) regardless of what the operator chose or what
+  // ShouldPurgeUserDataForTest read, even though InitializeUninstall
+  // itself had set it correctly moments earlier in the first phase.
+  // An environment variable set via SetEnvironmentVariableW, unlike a
+  // Pascal global, is inherited across that relaunch via ordinary
+  // Windows child-process creation - the same reasoning
+  // STREAMING_TREE_DATA_DIR already relies on for the purge helper
+  // itself, applied one layer earlier so the *decision* to purge
+  // survives the phase boundary too, not only the destination path.
+  PurgeUserDataEnvVar = 'STREAMING_TREE_UNINSTALL_PURGE_USER_DATA';
+
 var
-  // Set only by the custom uninstall-confirmation dialog below - read by
-  // ShouldPurgeUserData, the [UninstallRun] Check: function above.
+  // Set only by the custom uninstall-confirmation dialog below (or the
+  // silent/test path) - immediately propagated into PurgeUserDataEnvVar
+  // via SetPurgeUserDataFlag so it survives into the second uninstall
+  // phase; kept as a normal Pascal variable too only because it is
+  // convenient to read back within the same (first-phase) process.
   PurgeUserDataChecked: Boolean;
 
 function FindWindowW(lpClassName, lpWindowName: string): LongWord;
@@ -202,6 +226,20 @@ function PostMessageW(hWnd: LongWord; Msg: LongWord; wParam, lParam: LongWord): 
   external 'PostMessageW@user32.dll stdcall';
 function RegisterWindowMessageW(lpString: string): LongWord;
   external 'RegisterWindowMessageW@user32.dll stdcall';
+function SetEnvironmentVariableW(lpName, lpValue: string): BOOL;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+// Propagates the purge decision into PurgeUserDataEnvVar - see that
+// constant's own doc comment for why this, not the Pascal variable
+// alone, is what actually needs to survive into the uninstaller's
+// second phase.
+procedure SetPurgeUserDataFlag(Value: Boolean);
+begin
+  if Value then
+    SetEnvironmentVariableW(PurgeUserDataEnvVar, '1')
+  else
+    SetEnvironmentVariableW(PurgeUserDataEnvVar, '0');
+end;
 
 // RequestCooperativeShutdownIfRunning is shared by both Setup's
 // PrepareToInstall and Uninstall's InitializeUninstall below - the one
@@ -264,24 +302,13 @@ end;
 // (see InitializeUninstall below); an ordinary silent uninstall with
 // this variable unset still defaults to PurgeUserDataChecked := False,
 // identical to an interactive uninstall where the operator left the
-// checkbox unchecked.
-//
-// A real Windows CI run found the obvious approach - a custom
-// /PURGEUSERDATA command-line switch, checked via ParamStr/ParamCount
-// - does not survive Inno's own uninstaller: because a running process
-// cannot delete its own .exe, Uninstall.exe copies itself to a TEMP
-// file and relaunches that copy to do the actual removal work (a real,
-// documented Inno Setup mechanism) - and that relaunch reconstructs
-// the child's command line using only the switches Inno itself
-// recognizes (/VERYSILENT etc. demonstrably survive it; the app's own
-// unstandardized custom switch was silently dropped, confirmed by the
-// purge step never running despite the uninstaller itself reporting
-// success). GetEnv (Inno's own documented Pascal Script function)
-// reads an environment variable instead - inherited through ordinary
-// Windows child-process creation regardless of which specific
-// switches Inno's own relaunch logic understands, since environment
-// inheritance is a plain OS-level default Inno has no reason to
-// override.
+// checkbox unchecked. A real Windows CI run found a custom command-
+// line switch does not survive Inno's own uninstaller-relaunch-from-
+// TEMP mechanism (a running process cannot delete its own .exe, so
+// Uninstall.exe copies itself to TEMP and relaunches that copy - see
+// PurgeUserDataEnvVar's own doc comment for the fuller two-phase
+// picture this was only half of); GetEnv reads this test-only
+// environment variable instead.
 function ShouldPurgeUserDataForTest(): Boolean;
 begin
   Result := GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA') = '1';
@@ -323,6 +350,7 @@ begin
   if UninstallSilent() then
   begin
     PurgeUserDataChecked := ShouldPurgeUserDataForTest();
+    SetPurgeUserDataFlag(PurgeUserDataChecked);
   end else begin
   Form := CreateCustomForm(ScaleX(420), ScaleY(220), False, False);
   try
@@ -390,6 +418,7 @@ begin
     finally
       Form.Free;
     end;
+    SetPurgeUserDataFlag(PurgeUserDataChecked);
   end;
 
   if not RequestCooperativeShutdownIfRunning() then
@@ -404,8 +433,13 @@ begin
   Result := True;
 end;
 
-// [UninstallRun]'s own Check: function above.
+// [UninstallRun]'s own Check: function above. Evaluates in the
+// uninstaller's second phase (see PurgeUserDataEnvVar's own doc
+// comment) - deliberately reads the environment variable
+// InitializeUninstall propagated with SetPurgeUserDataFlag, never the
+// PurgeUserDataChecked Pascal variable directly, since that variable
+// exists only in the first phase's own separate process.
 function ShouldPurgeUserData(): Boolean;
 begin
-  Result := PurgeUserDataChecked;
+  Result := GetEnv(PurgeUserDataEnvVar) = '1';
 end;

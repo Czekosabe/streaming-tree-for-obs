@@ -585,10 +585,30 @@ button always acts on the checkbox's own current state, so a stray
 Enter press can never trigger destructive deletion. Under
 `/VERYSILENT` (`UninstallSilent()`), the dialog is skipped entirely
 and the checkbox defaults to unchecked - identical to an interactive
-operator leaving it alone - unless the uninstaller's own command line
-explicitly passes `/PURGEUSERDATA` (checked via `HasCmdLineParam`),
+operator leaving it alone - unless `STREAMING_TREE_TEST_PURGE_USER_DATA=1`
+is set on the uninstaller's own environment (`ShouldPurgeUserDataForTest`),
 which exists solely so an automated test can exercise the destructive
 path without a GUI.
+
+**A real production bug found and fixed during this same cycle:**
+Windows will not let a running process delete its own `.exe`, so
+Inno's actual uninstaller mechanism is to copy itself to a TEMP file
+and relaunch that copy - a genuinely separate OS process - to perform
+the real removal work, including every `[UninstallRun]` entry. A
+Pascal Script global variable set in `InitializeUninstall` does not
+exist in that other process; a real captured Inno `/LOG` proved
+`[UninstallRun]` was silently never even attempting the purge command,
+regardless of what the operator chose. The fix:
+`InitializeUninstall` propagates the decision via
+`SetPurgeUserDataFlag` (a thin wrapper around
+`SetEnvironmentVariableW`, the same external-`user32.dll`-import
+pattern already used for the cooperative-shutdown mechanism) into
+`PurgeUserDataEnvVar`, and `ShouldPurgeUserData` (the `[UninstallRun]`
+`Check:` function) reads it back via `GetEnv` - an environment
+variable set on a process is inherited by anything that process itself
+spawns, unlike a Pascal global, which is why this now works whichever
+of Inno's two uninstaller processes actually executes
+`[UninstallRun]`.
 
 When checked, `[UninstallRun]` runs `{app}\streaming-tree-server.exe
 -purge-user-data` (`Flags: waituntilterminated runascurrentuser`, gated

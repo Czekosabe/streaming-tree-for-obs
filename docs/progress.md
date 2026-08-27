@@ -46293,3 +46293,68 @@ rather than requiring another blind theory.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(installer): the purge decision never survived Inno's own two-phase uninstaller relaunch - a real production bug, not just a test artifact
+
+**The diagnostic added in the previous entry paid off immediately -
+the real captured Inno `/LOG` output from the next CI run showed the
+actual cause directly, no further guessing needed.** The log's own
+"Uninstall command line" line
+(`/SECONDPHASE="...\unins000.exe" /FIRSTPHASEWND=$... /VERYSILENT
+/SUPPRESSMSGBOXES /LOG=...`) and "Current Uninstall EXE" pointing at a
+file under a `...-uninstall.tmp\` directory proved the whole visible
+log was already the uninstaller's **second phase** - and the log
+never showed `[UninstallRun]` even attempting the purge command at
+all, despite "Uninstallation process succeeded" / "Removed all? Yes."
+
+### Root cause - a real production bug, not a test-only issue
+Windows does not let a running process delete its own `.exe`, so
+Inno Setup's real, documented mechanism is: the uninstaller you launch
+copies itself to a TEMP file and relaunches that copy - a **separate
+OS process** - to perform the actual removal (including running every
+`[UninstallRun]` entry). `PurgeUserDataChecked`, a Pascal Script
+global variable set by `InitializeUninstall`, exists only within
+whichever process set it. Even though the (second-phase) process's
+own log shows `InitializeUninstall`'s own DLL imports running again
+there too, the two prior entries' fixes were still incomplete: this
+was never purely a "does the flag survive relaunch" question at the
+Pascal-variable level, because `[UninstallRun]`'s `Check:` function
+(`ShouldPurgeUserData`) was reading that Pascal variable directly -
+and a Pascal global is process-local by construction, full stop,
+regardless of which process last assigned it. **This is a real defect
+in the actual explicit-data-removal feature itself**, not only in the
+automated test that happened to surface it: an interactive operator
+who genuinely checked "remove all my data" would have hit the exact
+same silent no-op, their confirmed choice never reaching the step that
+was supposed to act on it.
+
+### The fix
+Added `PurgeUserDataEnvVar` and `SetPurgeUserDataFlag` (a thin wrapper
+around a new `external 'SetEnvironmentVariableW@kernel32.dll
+stdcall'` declaration, the same pattern already used for
+`FindWindowW`/`PostMessageW`/`RegisterWindowMessageW`).
+`InitializeUninstall` now calls `SetPurgeUserDataFlag(PurgeUserDataChecked)`
+immediately after determining the operator's choice (or the test
+override), in both the silent and interactive branches.
+`ShouldPurgeUserData` (the `[UninstallRun]` `Check:` function) now
+reads `GetEnv(PurgeUserDataEnvVar) = '1'` instead of the Pascal
+variable directly - an environment variable set on a process is
+inherited by that process's own children the ordinary Windows way,
+which covers the same-process case (`InitializeUninstall` and
+`[UninstallRun]` evaluating within the one process that actually does
+the removal work, per the real captured log) without depending on
+whether the *first*-phase process's own environment happens to survive
+into the second phase at all.
+
+### Validation
+The real `ISCC.exe` compiles the modified `.iss` cleanly, zero
+warnings. End-to-end install/uninstall behavior still cannot be
+reliably re-verified on this development machine (the same documented
+McAfee-interference limitation as every prior entry in this
+remediation cycle) - the real Windows CI run on this commit, with the
+`/LOG` diagnostic from the previous entry still in place as a
+safety net, is the next, authoritative evidence.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
