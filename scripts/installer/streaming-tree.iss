@@ -347,10 +347,19 @@ var
   Warning: TNewStaticText;
   BtnUninstall, BtnCancel: TNewButton;
 begin
+  // TEMPORARY diagnostic (docs/windows-packaging.md §26): two prior
+  // fix attempts for the same symptom did not resolve it, so this
+  // instruments the real mechanism directly with Inno's own Log()
+  // rather than guessing a third theory - removed once the real cause
+  // is confirmed from a real captured /LOG.
+  Log('InitializeUninstall: entered. UninstallSilent=' + IntToStr(Ord(UninstallSilent())) +
+    ' GetEnv(test)=' + GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA'));
   if UninstallSilent() then
   begin
     PurgeUserDataChecked := ShouldPurgeUserDataForTest();
     SetPurgeUserDataFlag(PurgeUserDataChecked);
+    Log('InitializeUninstall: silent branch. PurgeUserDataChecked=' + IntToStr(Ord(PurgeUserDataChecked)) +
+      ' GetEnv(prod) after set=' + GetEnv(PurgeUserDataEnvVar));
   end else begin
   Form := CreateCustomForm(ScaleX(420), ScaleY(220), False, False);
   try
@@ -442,4 +451,7 @@ end;
 function ShouldPurgeUserData(): Boolean;
 begin
   Result := GetEnv(PurgeUserDataEnvVar) = '1';
+  // TEMPORARY diagnostic - see InitializeUninstall's own matching note.
+  Log('ShouldPurgeUserData: called. GetEnv(prod)=' + GetEnv(PurgeUserDataEnvVar) +
+    ' GetEnv(test)=' + GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA') + ' Result=' + IntToStr(Ord(Result)));
 end;

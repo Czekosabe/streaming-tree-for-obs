@@ -46358,3 +46358,49 @@ safety net, is the next, authoritative evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — ci: instrument the uninstaller purge path with real Log() calls instead of guessing a third theory
+
+**The `SetEnvironmentVariableW` fix did not resolve the same failure
+either** - the real captured Inno `/LOG` from the next CI run still
+showed `[UninstallRun]` never attempting the purge command, with the
+`SetEnvironmentVariableW@kernel32.dll` DLL import now correctly
+present (confirming the new code compiled and shipped) but still no
+sign the purge itself ran.
+
+### Why a third blind fix was rejected
+The reasoning that led to the `SetEnvironmentVariableW` fix rested on
+an unverified assumption: that seeing `FindWindowW`/`PostMessageW`/
+`RegisterWindowMessageW`/`SetEnvironmentVariableW` DLL-import log lines
+in the second-phase process's own log proved `InitializeUninstall` (or
+any function using them) had actually been *called* there. It does
+not - Inno's Pascal Script engine plausibly binds every `external`
+declaration in the whole `[Code]` section eagerly at script load,
+regardless of whether the function containing the call is ever
+invoked. Continuing to reason from that same unverified assumption to
+a fourth theory would not meet the operator's own "no blind retry"
+standard - real ground truth is needed instead.
+
+### The instrumentation
+Added Inno's own documented `Log()` calls (writes into the same
+`/LOG=` file `scripts/verify-installer.mjs` already captures and
+prints on failure) at the real decision points: `InitializeUninstall`'s
+entry (`UninstallSilent()`, the raw `GetEnv` read), its silent branch
+after setting `PurgeUserDataChecked`/calling `SetPurgeUserDataFlag`,
+and `ShouldPurgeUserData`'s own entry (both env vars, and its own
+`Result`). This will show directly, from the next real CI run: whether
+`InitializeUninstall` runs at all in the process that later executes
+`[UninstallRun]`, what `GetEnv` actually returns there, and whether
+`ShouldPurgeUserData` is even reached. Marked TEMPORARY in the source
+- to be removed once the real cause is confirmed and the actual fix is
+in.
+
+### Validation
+The real `ISCC.exe` compiles cleanly. This commit is diagnostic-only -
+no behavior change - so its own correctness is exactly what the next
+real Windows CI run's captured log will confirm or refute directly,
+not something asserted here in advance.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
