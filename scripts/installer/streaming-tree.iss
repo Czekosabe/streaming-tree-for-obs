@@ -260,25 +260,31 @@ end;
 
 // Lets an automated test drive the silent-uninstall purge path (there
 // is no GUI checkbox to click under /VERYSILENT) without weakening the
-// real operator-facing default: only an uninstaller invocation that
-// explicitly passes /PURGEUSERDATA on its own command line purges, and
-// only while already running silently (see InitializeUninstall below) -
-// an ordinary silent uninstall with no such flag still defaults to
-// PurgeUserDataChecked := False, identical to an interactive uninstall
-// where the operator left the checkbox unchecked.
-function HasCmdLineParam(const Name: string): Boolean;
-var
-  I: Integer;
+// real operator-facing default - only while already running silently
+// (see InitializeUninstall below); an ordinary silent uninstall with
+// this variable unset still defaults to PurgeUserDataChecked := False,
+// identical to an interactive uninstall where the operator left the
+// checkbox unchecked.
+//
+// A real Windows CI run found the obvious approach - a custom
+// /PURGEUSERDATA command-line switch, checked via ParamStr/ParamCount
+// - does not survive Inno's own uninstaller: because a running process
+// cannot delete its own .exe, Uninstall.exe copies itself to a TEMP
+// file and relaunches that copy to do the actual removal work (a real,
+// documented Inno Setup mechanism) - and that relaunch reconstructs
+// the child's command line using only the switches Inno itself
+// recognizes (/VERYSILENT etc. demonstrably survive it; the app's own
+// unstandardized custom switch was silently dropped, confirmed by the
+// purge step never running despite the uninstaller itself reporting
+// success). GetEnv (Inno's own documented Pascal Script function)
+// reads an environment variable instead - inherited through ordinary
+// Windows child-process creation regardless of which specific
+// switches Inno's own relaunch logic understands, since environment
+// inheritance is a plain OS-level default Inno has no reason to
+// override.
+function ShouldPurgeUserDataForTest(): Boolean;
 begin
-  Result := False;
-  for I := 1 to ParamCount do
-  begin
-    if CompareText(ParamStr(I), Name) = 0 then
-    begin
-      Result := True;
-      exit;
-    end;
-  end;
+  Result := GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA') = '1';
 end;
 
 // Replaces Inno's default Yes/No uninstall confirmation with a custom
@@ -316,7 +322,7 @@ var
 begin
   if UninstallSilent() then
   begin
-    PurgeUserDataChecked := HasCmdLineParam('/PURGEUSERDATA');
+    PurgeUserDataChecked := ShouldPurgeUserDataForTest();
   end else begin
   Form := CreateCustomForm(ScaleX(420), ScaleY(220), False, False);
   try

@@ -46179,3 +46179,60 @@ evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(installer): a custom /PURGEUSERDATA command-line switch does not survive Inno's own uninstaller-relaunch-from-TEMP mechanism
+
+**Real CI evidence again, not a blind retry - the previous fix's own
+theory was wrong, and this entry replaces it with the actual cause,
+found by research rather than another guess.** The previous entry's
+env-var fix for `STREAMING_TREE_DATA_DIR` was correct but insufficient
+- the same real Windows CI job failed at the exact same step, with the
+exact same symptom (`silent purge uninstall exits 0`, yet the data
+directory still existed), proving the purge command itself was never
+actually invoked at all, not that it ran against the wrong directory.
+
+### Root cause
+Researched (not guessed) why: Windows does not allow a running process
+to delete its own `.exe`, so Inno Setup's real, documented uninstaller
+mechanism is to copy `unins000.exe` to a TEMP file and relaunch that
+copy to perform the actual removal work. That relaunch reconstructs
+the child process's command line using only the switches Inno itself
+recognizes and needs (`/VERYSILENT` demonstrably survives it - the
+whole test suite's silent behavior depends on that) - a custom,
+Inno-unaware switch like `/PURGEUSERDATA` is not part of that
+reconstructed line and is silently dropped. `ShouldPurgeUserData`'s
+own `Check:` in `[UninstallRun]` therefore evaluated against a freshly
+default-initialized `PurgeUserDataChecked = False` in the relaunched
+process - not the `True` the original process's `InitializeUninstall`
+had correctly set - so the purge step's `Check:` failed and Inno
+simply skipped it, which is exactly why the overall uninstall still
+reported success (there was nothing left to fail).
+
+### The fix
+Replaced the whole `/PURGEUSERDATA` command-line-switch mechanism with
+an environment variable, `STREAMING_TREE_TEST_PURGE_USER_DATA=1`,
+read via Inno's own documented `GetEnv` Pascal Script function.
+Environment variables are inherited through ordinary Windows child-
+process creation regardless of which specific switches Inno's own
+relaunch logic understands to reconstruct - the relaunch is still just
+an ordinary `CreateProcess`-family call, with no special reason to
+strip the parent's environment block. `scripts/verify-installer.mjs`'s
+purge scenario now sets this alongside the already-correct
+`STREAMING_TREE_DATA_DIR` on the same `run()` call that launches the
+uninstaller. The production `-purge-user-data` CLI mode and
+`internal/userdatapurge.Purge` itself are unchanged - this was purely
+an automated-test-triggering mechanism bug in the `.iss`'s own
+Pascal Script, never a defect in the real purge logic (which remains
+covered by its own hermetic Go unit tests, unaffected by any of this).
+
+### Validation
+`node --check scripts/verify-installer.mjs`: clean. The real `ISCC.exe`
+compiles the modified `.iss` cleanly, zero warnings. End-to-end
+install/uninstall behavior still cannot be reliably re-verified on
+this development machine (the same documented McAfee-interference
+limitation as the two prior entries) - the real Windows CI run on this
+commit is the next, authoritative evidence.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

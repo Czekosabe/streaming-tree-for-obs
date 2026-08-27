@@ -14,12 +14,16 @@
  *      then reinstall over the same location and verify the
  *      application starts up healthy again against that preserved
  *      data directory.
- *   B. Explicit purge uninstall (/PURGEUSERDATA on the uninstaller's
- *      own command line - the hook InitializeUninstall exposes for
- *      exactly this kind of automated test, since there is no GUI
- *      checkbox to click under /VERYSILENT) - verify the data
- *      directory is fully removed, and that a sentinel file outside
- *      it is never touched.
+ *   B. Explicit purge uninstall (STREAMING_TREE_TEST_PURGE_USER_DATA=1
+ *      on the uninstaller's own environment - the hook
+ *      InitializeUninstall exposes for exactly this kind of automated
+ *      test, since there is no GUI checkbox to click under
+ *      /VERYSILENT, and a real Windows CI run found a custom command-
+ *      line switch does not survive Inno's own uninstaller-relaunch-
+ *      from-TEMP mechanism the way an environment variable does - see
+ *      ShouldPurgeUserDataForTest's own doc comment in the .iss) -
+ *      verify the data directory is fully removed, and that a
+ *      sentinel file outside it is never touched.
  *
  * Both scenarios use only hermetic, throwaway install/data directories
  * - the real per-user install location and real AppData are never
@@ -257,11 +261,11 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
 }
 
 /** Scenario B (docs/windows-packaging.md §26): an explicit purge
- * uninstall - driven via /PURGEUSERDATA on the uninstaller's own
- * command line, InitializeUninstall's own documented automated-test
- * hook for the path a GUI checkbox click would otherwise gate under
- * /VERYSILENT - removes the whole data directory, and never touches
- * anything outside it. */
+ * uninstall - driven via STREAMING_TREE_TEST_PURGE_USER_DATA=1 on the
+ * uninstaller's own environment, InitializeUninstall's own documented
+ * automated-test hook for the path a GUI checkbox click would
+ * otherwise gate under /VERYSILENT - removes the whole data directory,
+ * and never touches anything outside it. */
 async function testExplicitPurgeScenario(installerPath) {
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-purge-verify-')), 'app');
   const dataDir = mkdtempSync(join(tmpdir(), 'streaming-tree-purge-data-'));
@@ -305,15 +309,20 @@ async function testExplicitPurgeScenario(installerPath) {
     step('Silent uninstall with the explicit purge flag');
     const uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
     expect(uninstallerFile !== undefined, 'uninstaller was created by the installer', readdirSync(installDir));
-    // STREAMING_TREE_DATA_DIR must reach the uninstaller's own child
-    // process tree: [UninstallRun] spawns `-purge-user-data` as a
-    // child of THIS uninstaller process, inheriting its environment -
-    // without this, the purge helper's own config.Load() falls back to
-    // the real default %AppData%\StreamingTree instead of the hermetic
-    // test directory, purging the wrong (real, harmlessly-empty-on-CI)
-    // location while leaving the hermetic one untouched.
-    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/PURGEUSERDATA'], {
-      env: { ...process.env, STREAMING_TREE_DATA_DIR: dataDir },
+    // Both env vars must reach the uninstaller's own relaunched-temp-
+    // copy child process (Inno Setup copies unins*.exe to TEMP and
+    // relaunches it to do the actual removal, since a running process
+    // cannot delete its own .exe - a real Windows CI run found that
+    // relaunch reconstructs the command line using only switches Inno
+    // itself recognizes, silently dropping a custom /PURGEUSERDATA
+    // flag; environment variables survive it, since that relaunch is
+    // still ordinary child-process creation - see
+    // ShouldPurgeUserDataForTest's own doc comment in the .iss).
+    // STREAMING_TREE_DATA_DIR: without it the purge helper's own
+    // config.Load() falls back to the real default
+    // %AppData%\StreamingTree instead of the hermetic test directory.
+    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES'], {
+      env: { ...process.env, STREAMING_TREE_DATA_DIR: dataDir, STREAMING_TREE_TEST_PURGE_USER_DATA: '1' },
     });
     expect(uninstall.code === 0, 'silent purge uninstall exits 0', uninstall);
 
