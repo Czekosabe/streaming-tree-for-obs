@@ -46124,3 +46124,58 @@ above.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(ci): the explicit-purge test purged the real default AppData path, not the hermetic test directory
+
+**Real CI evidence, not a blind retry.** The Windows package
+verification workflow ran on the previous commit and came back 4/5 -
+`windows-package.yml` failed specifically at `verify-installer.mjs`
+step [16] "Verify the whole data directory was removed by the purge":
+the hermetic test data directory
+(`C:\Users\RUNNER~1\...\streaming-tree-purge-data-wWdJPk`) still
+existed after the purge uninstall reported success. Every other step
+in every scenario - including the purge uninstall's own `exits 0` -
+passed, and the previous entry's cooperative-shutdown/manual-upgrade
+mechanism itself worked correctly on real CI hardware (Scenario A's
+reinstall-and-restart-healthy sequence and Scenario C are not in this
+failing job's own log excerpt because the job stops at the first
+failure, but nothing upstream of step 16 in Scenario B failed either).
+
+### Root cause
+`testExplicitPurgeScenario` starts the application with
+`STREAMING_TREE_DATA_DIR` set only on that spawned Node child process's
+own environment (via `startAppAndWaitHealthy`'s `spawn(..., { env })`).
+The later uninstaller invocation
+(`run(join(installDir, uninstallerFile), [...'/PURGEUSERDATA'])`) was
+spawned with no `env` option at all, so it inherited the CI runner's
+own plain environment - no `STREAMING_TREE_DATA_DIR`. Windows child
+processes inherit their parent's environment by default, and
+`[UninstallRun]`'s own `-purge-user-data` invocation is a child of the
+uninstaller process, so the purge helper's `config.Load()` fell all the
+way back to its real default (`%AppData%\StreamingTree`) instead of
+the hermetic test directory - it purged a real, harmlessly-empty
+location on the ephemeral CI runner while never touching the actual
+hermetic directory the test was asserting against. **This is a test-
+script environment-propagation bug, not a defect in the production
+purge logic** - `internal/userdatapurge.Purge` itself was already
+covered by real, passing hermetic unit tests before this commit, and
+the purge command genuinely ran and exited 0 exactly as it should have
+against whatever directory it was actually told to use.
+
+### The fix
+`verify-installer.mjs`'s purge-uninstall `run()` call now passes
+`{ env: { ...process.env, STREAMING_TREE_DATA_DIR: dataDir } }` -
+the identical hermetic directory the test's own app instance used -
+so the env var correctly propagates through the uninstaller's own
+child-process tree down to the real `-purge-user-data` invocation.
+
+### Validation
+`node --check scripts/verify-installer.mjs`: clean. The fix could not
+be re-verified end-to-end on the local development machine (see the
+previous entry's own documented McAfee-interference limitation) - the
+real Windows CI run on this commit is the next, authoritative
+evidence.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

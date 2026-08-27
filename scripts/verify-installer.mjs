@@ -305,7 +305,16 @@ async function testExplicitPurgeScenario(installerPath) {
     step('Silent uninstall with the explicit purge flag');
     const uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
     expect(uninstallerFile !== undefined, 'uninstaller was created by the installer', readdirSync(installDir));
-    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/PURGEUSERDATA']);
+    // STREAMING_TREE_DATA_DIR must reach the uninstaller's own child
+    // process tree: [UninstallRun] spawns `-purge-user-data` as a
+    // child of THIS uninstaller process, inheriting its environment -
+    // without this, the purge helper's own config.Load() falls back to
+    // the real default %AppData%\StreamingTree instead of the hermetic
+    // test directory, purging the wrong (real, harmlessly-empty-on-CI)
+    // location while leaving the hermetic one untouched.
+    const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/PURGEUSERDATA'], {
+      env: { ...process.env, STREAMING_TREE_DATA_DIR: dataDir },
+    });
     expect(uninstall.code === 0, 'silent purge uninstall exits 0', uninstall);
 
     step('Verify the whole data directory was removed by the purge');
