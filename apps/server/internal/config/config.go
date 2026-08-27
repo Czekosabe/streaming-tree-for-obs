@@ -83,6 +83,18 @@ type Config struct {
 	// environment at startup.
 	TestNoUI bool
 
+	// TestKeepTray, combined with TestNoUI, still creates the real tray
+	// icon/hidden window while continuing to suppress only the browser
+	// launch. docs/windows-packaging.md §26's own manual-running-app
+	// upgrade integration test needs the real tray window's cooperative-
+	// shutdown IPC mechanism to exist so it can prove the Windows
+	// installer's PrepareToInstall can actually reach and stop a real
+	// running instance - without ever popping open a real browser tab on
+	// an automated runner the way a plain TestNoUI=false run would. Has
+	// no effect unless TestNoUI is also true, and like TestNoUI only
+	// matters for a packaged build.
+	TestKeepTray bool
+
 	// RemoteManagement groups the Stage 20D2B remote-management
 	// deployment-security settings (docs/remote-management.md §4) -
 	// read once, here, from the process environment at startup, and
@@ -338,6 +350,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.TestNoUI = testNoUI
+
+	testKeepTray, err := lookupBool("STREAMING_TREE_TEST_KEEP_TRAY", false)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TestKeepTray = testKeepTray
 
 	remoteManagement, err := loadRemoteManagement()
 	if err != nil {

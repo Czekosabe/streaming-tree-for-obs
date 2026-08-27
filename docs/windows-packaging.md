@@ -551,3 +551,110 @@ This is **not** a production distribution mechanism:
 verified DMG/`.deb` the same way, for the same reason - see those
 workflows' own header comments; this is a workflow-only mechanism, not
 a change to either platform's packaging implementation.
+
+## 26. Explicit data-purge uninstall option and cooperative shutdown for manual upgrades (Stage 20E)
+
+### Data ownership
+Everything this application ever writes lives under one per-user data
+directory (`internal/config.resolveDataDir`, `%AppData%\StreamingTree`
+by default): `streaming-tree.db` (+ WAL/SHM), `assets/visual`,
+`assets/audio`, the managed MediaMTX runtime under `runtime/`, updater
+staging under `updates/`, and (headless-only) `secrets.json`. On
+Windows, credentials (destination stream keys, connected-account OAuth
+token bundles, donation-source tokens, the administrator password, the
+remote-ingest publisher password) live in Windows Credential Manager
+instead, under `internal/secrets`'s own namespaced key scheme
+(`secrets.BuildKey(secretType, subjectID)`, service name
+`streaming-tree-for-obs`).
+
+### Ordinary uninstall (default)
+Unchanged since Stage 20A: `scripts/installer/streaming-tree.iss` has
+no `[UninstallDelete]` entries and never references the data directory
+or the credential store - only the program files `[Files]` installed
+are ever removed. This remains the default; no operator action is
+required to preserve their configuration on an ordinary uninstall.
+
+### Explicit "remove all my data" option
+`InitializeUninstall` (in `[Code]`) replaces Inno's default Yes/No
+uninstall confirmation with a custom dialog (built via
+`CreateCustomForm`, Inno's own documented recommendation) carrying an
+**unchecked-by-default** checkbox: "Also remove all Streaming Tree
+settings, local data, and saved credentials," with an explicit "this
+cannot be undone" warning. The dialog's default (Enter-responsive)
+button always acts on the checkbox's own current state, so a stray
+Enter press can never trigger destructive deletion. Under
+`/VERYSILENT` (`UninstallSilent()`), the dialog is skipped entirely
+and the checkbox defaults to unchecked - identical to an interactive
+operator leaving it alone - unless the uninstaller's own command line
+explicitly passes `/PURGEUSERDATA` (checked via `HasCmdLineParam`),
+which exists solely so an automated test can exercise the destructive
+path without a GUI.
+
+When checked, `[UninstallRun]` runs `{app}\streaming-tree-server.exe
+-purge-user-data` (`Flags: waituntilterminated runascurrentuser`, gated
+on `Check: ShouldPurgeUserData`). Per Inno's own documented behavior,
+`[UninstallRun]` entries execute "as the first step of uninstallation"
+- before the normal file-removal step that follows removes
+`{#MyAppExeName}` itself - so the executable this runs is guaranteed
+to still exist.
+
+`-purge-user-data` (`cmd/server/main.go`, thin wrapper around
+`internal/userdatapurge.Purge`) refuses to run at all while
+`internal/runtime/singleinstance.Acquire()` reports another instance
+still running - purging while the application might still have the
+database open is never attempted. It then opens the real database (if
+present), enumerates every real platform/account/donation-source ID
+through the same repositories production code already uses, deletes
+each one's credential-store entry via the exact same `secrets.BuildKey`
+namespacing (never a wildcard/prefix scan of Windows Credential
+Manager), deletes the two fixed-subject secrets (admin password,
+remote-ingest publisher password), then removes the whole data
+directory. Never touches OBS's own configuration, a user-supplied
+FFmpeg binary, or any credential outside this application's own
+namespace.
+
+### Cooperative shutdown for manual installer upgrades
+A real physical-test finding: launching a newer installer while
+Streaming Tree was still running previously required the operator to
+kill the process manually via Task Manager before the install could
+proceed. Root-caused as a missing IPC bridge, not a hang in any of the
+application's own (individually audited, correctly bounded) shutdown
+paths: Restart Manager's `CloseApplications` (Inno's default) can only
+gracefully close a window that has registered to handle the request,
+and nothing in this application's tray window did.
+
+The fix, shared by both Setup and Uninstall:
+`internal/runtime/tray/tray_windows.go`'s existing hidden tray window
+now also registers a `RegisterWindowMessageW` name
+(`StreamingTreeForOBS.RequestGracefulShutdown`) and, on receiving it,
+invokes the exact same `OnQuit` callback the tray's own Quit menu item
+already uses - one canonical shutdown path, never a second one.
+`AppMutex=Local\StreamingTreeForOBS.SingleInstance` in `[Setup]`
+mirrors `internal/runtime/singleinstance`'s own mutex exactly, so
+Inno's native fallback prompt (for the rare case the cooperative
+mechanism can't reach the application, e.g. `--headless`) is backed by
+the real, authoritative "is it running" signal. `[Code]`'s
+`RequestCooperativeShutdownIfRunning` (researched against
+jrsoftware.org/ishelp, not guessed) checks the mutex via the documented
+`CheckForMutexes` function, resolves the tray window via `FindWindowW`,
+posts the registered message via `PostMessageW`, and polls
+`CheckForMutexes` up to a bounded 60 seconds. Called from
+`PrepareToInstall` (documented to fire *before* CloseApplications/
+AppMutex detection - a successful cooperative shutdown means the
+operator never sees any prompt at all) and from `InitializeUninstall`.
+A failure returns a bounded, specific message directing the operator
+to use the tray's own Quit item and retry - never a hang, never Task
+Manager.
+
+### Known local-testing limitation
+End-to-end install/uninstall/upgrade behavior for this mechanism could
+not be reliably exercised on the primary development machine: a
+third-party endpoint security product (McAfee, alongside Windows
+Defender) appears to interfere with the newly-built, unsigned
+installer once it embeds raw `user32.dll` window-messaging imports
+(`FindWindowW`/`PostMessageW`) - a pattern security heuristics
+legitimately flag. The real Windows CI runner
+(`.github/workflows/windows-package.yml`, GitHub-hosted, no
+third-party endpoint security software) is the trustworthy validator
+for this mechanism, consistent with how every other native Windows
+behavior in this project has always been authoritatively verified.

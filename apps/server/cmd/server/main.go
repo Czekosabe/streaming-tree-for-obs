@@ -75,6 +75,7 @@ import (
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 	"github.com/streaming-tree/server/internal/updater"
 	"github.com/streaming-tree/server/internal/updater/manifest"
+	"github.com/streaming-tree/server/internal/userdatapurge"
 	"github.com/streaming-tree/server/internal/webassets"
 )
 
@@ -153,6 +154,8 @@ func handleEarlyFlags() bool {
 	provisionAdminPasswordFlag := flag.Bool("provision-admin-password", false,
 		"local-only: read a new administrator password from stdin and store its verifier, then exit (docs/remote-management.md §9.2)")
 	forceProvision := flag.Bool("force", false, "with -provision-admin-password: overwrite an existing verifier")
+	purgeUserDataFlag := flag.Bool("purge-user-data", false,
+		"internal: invoked only by the Windows uninstaller's explicit opt-in checkbox - permanently deletes the database, managed assets, and every stored credential, then exits; refuses to run while the application is still running (docs/windows-packaging.md §26)")
 	flag.Parse()
 	headlessMode = *headlessFlag
 	remoteManagementFlag = *remoteManagementCLIFlag
@@ -160,6 +163,11 @@ func handleEarlyFlags() bool {
 
 	if *provisionAdminPasswordFlag {
 		runProvisionAdminPassword(*forceProvision)
+		return true
+	}
+
+	if *purgeUserDataFlag {
+		runPurgeUserData()
 		return true
 	}
 
@@ -255,6 +263,55 @@ func runProvisionAdminPassword(force bool) {
 	}
 
 	fmt.Fprintln(os.Stderr, "Administrator password provisioned.")
+}
+
+// runPurgeUserData implements `-purge-user-data` (docs/windows-
+// packaging.md §26): a narrowly-scoped mode invoked only by the
+// Windows uninstaller's own [UninstallRun] entry, itself gated on the
+// operator's explicit, unchecked-by-default "also remove all Streaming
+// Tree settings, local data, and saved credentials" checkbox
+// (scripts/installer/streaming-tree.iss). The real deletion logic
+// lives in internal/userdatapurge, where it is unit-testable; this is
+// only the thin CLI wrapper, following the same pattern as
+// runUpdateHelper above.
+//
+// This refuses to run at all while another instance holds the single-
+// instance mutex (docs/windows-packaging.md §9's own mechanism,
+// reused unchanged): deleting a SQLite database or a credential-store
+// entry a live process might still have open is never attempted, per
+// the operator's own explicit "purge must require the application to
+// be stopped" requirement. The Inno Setup script's own cooperative-
+// shutdown request (see PrepareToInstall/InitializeUninstall in the
+// .iss) is what makes that precondition actually true in the normal
+// case before this ever runs.
+func runPurgeUserData() {
+	acquired, release, err := singleinstance.Acquire()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "purge-user-data: %v\n", err)
+		os.Exit(1)
+	}
+	if !acquired {
+		fmt.Fprintln(os.Stderr,
+			"purge-user-data: Streaming Tree for OBS is still running - stop it before removing its data")
+		os.Exit(1)
+	}
+	// Held only long enough to prove no other instance is running -
+	// released immediately so a normal launch right after this command
+	// finishes is never blocked by it.
+	release()
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "purge-user-data: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := userdatapurge.Purge(context.Background(), cfg.DataDir, cfg.DatabasePath, secrets.NewKeyringStore()); err != nil {
+		fmt.Fprintf(os.Stderr, "purge-user-data: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintln(os.Stderr, "Streaming Tree data removed.")
 }
 
 // newUpdaterClient builds the updater's GitHub API client. The default
@@ -1281,16 +1338,20 @@ func run() error {
 				slog.Any("error", openErr), slog.String("url", managementURL))
 		}
 
-		// Desktop mode only (never --headless, never test mode - the
-		// same conditions that gate the real browser launch above):
-		// the Stage 20E tray icon (docs/windows-tray.md). closing the
-		// browser tab does not stop the backend, and this is the one
-		// persistent piece of desktop UI that lets an operator reopen
-		// it, see its status, or quit it without Task Manager. A
-		// failure to create it (e.g. a non-Windows packaged build, or
-		// a real Windows API failure) is logged and never fatal - the
-		// rest of the application runs identically without a tray.
-		if !headlessMode && !cfg.TestNoUI {
+		// Desktop mode only (never --headless), and either normal
+		// operation or a test that explicitly asked to keep the tray
+		// alive despite suppressing the browser (cfg.TestKeepTray -
+		// docs/windows-packaging.md §26's own manual-running-app
+		// upgrade integration test needs the real tray window's
+		// cooperative-shutdown IPC mechanism to exist). the Stage 20E
+		// tray icon (docs/windows-tray.md): closing the browser tab
+		// does not stop the backend, and this is the one persistent
+		// piece of desktop UI that lets an operator reopen it, see its
+		// status, or quit it without Task Manager. A failure to create
+		// it (e.g. a non-Windows packaged build, or a real Windows API
+		// failure) is logged and never fatal - the rest of the
+		// application runs identically without a tray.
+		if !headlessMode && (!cfg.TestNoUI || cfg.TestKeepTray) {
 			logsURL := managementURL + "logs"
 			trayOpts := tray.Options{
 				Tooltip: buildinfo.ProductName,

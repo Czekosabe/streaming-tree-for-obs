@@ -45916,3 +45916,211 @@ remediation cycle's changes before handoff (see the closing entry).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — feat(windows): explicit opt-in "remove all my data" uninstall option, and cooperative shutdown for manual installer upgrades
+
+**Two more real, physical-testing-driven requirements from the same
+Stage 20E remediation cycle**, tackled together because their real
+implementations share one Pascal Script mechanism (see below):
+
+1. Audit whether ordinary Windows uninstall still preserves application
+   data (the Stage 20A contract), and add an explicit, unchecked-by-
+   default "also remove everything" uninstall option.
+2. A real earlier physical-test finding: launching a newer installer
+   while Streaming Tree was still running required the operator to
+   open Task Manager and kill the process manually before the install
+   could proceed - not acceptable final UX.
+
+### Part 1 — data-retention audit
+Read `scripts/installer/streaming-tree.iss` (no `[UninstallDelete]`
+section, nothing referencing `%AppData%` at all) and every
+`filepath.Join(cfg.DataDir, ...)` call site across the backend to map
+exactly what an install owns: `streaming-tree.db` (+ WAL/SHM),
+`assets/visual`, `assets/audio`, the managed MediaMTX runtime under
+`runtime/`, updater staging under `updates/`, and (headless-only)
+`secrets.json`. Confirmed the Stage 20A default - ordinary uninstall
+removes only installed program files - is still genuinely true today;
+nothing added since Stage 20A regressed it. Read `internal/secrets`'s
+real credential-store key scheme (`secrets.BuildKey(SecretType,
+subjectID)`, `ServiceName = "streaming-tree-for-obs"`, `WinCredBackend`
+via `github.com/99designs/keyring`) to know exactly how a real
+destination/account/donation-source/admin-password/remote-ingest
+credential is actually keyed.
+
+### Part 2 — shutdown-reliability audit (found the real root cause, not a hung goroutine)
+Read every one of the 15+ `Shutdown(ctx context.Context)`
+implementations `cmd/server/main.go`'s `shutdownRuntime` calls
+(branch, deviceflow, youtubeauth, twitch/youtube/streamelements
+engagement, operatorchat, chatoverlay, outboundchat, chatautomation,
+alerts, audio, goals, supporterwidgets, MediaMTX's supervisor). Every
+one follows the same audited, bounded pattern: cancel a context, wait
+on a `done` channel with a `select` against the same shared
+`shutdownCtx`, log a warning and return promptly if that ctx is
+already expired. MediaMTX/branch-FFmpeg process termination
+(`process.stop`) uses its own fixed ~5s+5s+5s escalation, independent
+of but still bounded regardless of the outer ctx. **None of them
+hang.** The real root cause was structural, not a bug in any manager:
+there was no wiring at all between Inno Setup's "please close this
+app" detection and the application's own `stop()` graceful-shutdown
+path (the same `context.CancelFunc` tray Quit, web Quit, and the
+built-in updater's install handoff already converge on). Restart
+Manager's `CloseApplications` (Inno's own default) can only message a
+window that has registered to handle a graceful-close request; nothing
+in this codebase's tray window did, so the "automatic close" step
+never actually triggered real application shutdown - explaining the
+reported symptom exactly, without needing to hunt for a hypothetical
+hung goroutine that a careful, complete audit found no evidence of.
+
+### The fix - one shared cooperative-shutdown mechanism
+`internal/runtime/tray/tray_windows.go`: the tray's already-existing
+hidden top-level window (used for the tray icon's own message loop)
+now also registers a second `RegisterWindowMessageW` name
+(`StreamingTreeForOBS.RequestGracefulShutdown`, mirroring the existing
+`TaskbarCreated` re-add mechanism's own pattern) and, on receiving it,
+calls the exact same `OnQuit` callback the tray's own Quit menu item
+already uses - never a second, parallel shutdown path (the operator's
+own explicit "one canonical implementation" requirement).
+
+`scripts/installer/streaming-tree.iss` gained:
+- `AppMutex=Local\StreamingTreeForOBS.SingleInstance` - the exact same
+  named mutex `internal/runtime/singleinstance` already creates for
+  the process's whole lifetime, so Inno's own native fallback "please
+  close it" prompt is now backed by the real, authoritative signal
+  instead of generic Restart-Manager file-lock detection against a
+  hidden background process.
+- A `[Code]` section (researched against jrsoftware.org/ishelp before
+  writing, not guessed): `RequestCooperativeShutdownIfRunning` -
+  checks the mutex via the documented `CheckForMutexes` function; if
+  held, resolves the tray's hidden window via `FindWindowW` (external
+  `user32.dll` import) and posts the registered shutdown-request
+  message via `PostMessageW`; polls `CheckForMutexes` up to a bounded
+  60s. Called from `PrepareToInstall` (documented to fire *before*
+  CloseApplications/AppMutex detection - a successful cooperative
+  shutdown here means the operator never sees any native prompt at
+  all) and from `InitializeUninstall` (AppMutex applies during
+  uninstall too). A failure returns a bounded, specific message
+  ("...use Quit Streaming Tree, then retry") rather than hanging or
+  pointing at Task Manager.
+- `InitializeUninstall` also replaces Inno's default Yes/No
+  confirmation with a `CreateCustomForm`-built dialog (Inno's own
+  documented recommendation over raw `TForm`/`TSetupForm`) carrying an
+  **unchecked-by-default** "Also remove all Streaming Tree settings,
+  local data, and saved credentials" checkbox and an explicit "this
+  cannot be undone" warning. The default (Enter-responsive) button
+  always acts on the checkbox's own current state, so a stray Enter
+  press can never trigger destructive deletion on its own.
+  `UninstallSilent()` (Inno's own documented function, distinct from
+  Setup-only `WizardSilent()`) skips the modal under `/VERYSILENT` -
+  defaulting to unchecked, identical to an interactive operator who
+  left the box alone - and a new `HasCmdLineParam('/PURGEUSERDATA')`
+  check lets an automated test explicitly opt into the destructive
+  path without a GUI, without weakening the real default.
+- `[UninstallRun]`: `-purge-user-data`, gated on the checkbox
+  (`Check: ShouldPurgeUserData`), `Flags: waituntilterminated
+  runascurrentuser`. Per Inno's own documented behavior, `[UninstallRun]`
+  entries execute "as the first step of uninstallation" - i.e. before
+  `{#MyAppExeName}` is removed by the normal file-removal step that
+  follows, so the executable this runs is guaranteed to still exist.
+
+`apps/server/internal/userdatapurge` (new package, thin
+`cmd/server`-side `-purge-user-data` CLI wrapper following the same
+pattern as `runUpdateHelper`): `Purge(ctx, dataDir, databasePath,
+store)` opens the real database (if present), enumerates every real
+platform/account/donation-source ID via the same repositories
+production code already uses, deletes each one's credential-store
+entry via the exact same `secrets.BuildKey` namespacing every other
+part of the application already reads/writes (never a wildcard/prefix
+scan of Windows Credential Manager - the operator's own explicit
+requirement), deletes the two fixed-subject secrets (admin password,
+remote-ingest publisher password), then removes the whole `dataDir`.
+`cmd/server/main.go`'s `-purge-user-data` flag refuses to run at all
+while `internal/runtime/singleinstance.Acquire()` reports another
+instance still running - the operator's own explicit "purge must
+require the application to be stopped" requirement; the Inno script's
+own cooperative-shutdown request above is what makes that precondition
+true in the normal case before this ever runs.
+
+`docs/windows-packaging.md` gained a new §26 documenting the whole
+mechanism (data-directory contents, the AppMutex/PrepareToInstall/
+InitializeUninstall cooperative-shutdown flow, the purge helper's
+scope and exclusions).
+
+### A real, honestly-reported local testing limitation
+Compiled the modified `.iss` repeatedly with the real `ISCC.exe` -
+always clean, zero warnings. Ran the real Go unit tests for
+`internal/userdatapurge` against a real (migrated) temporary SQLite
+database and a hermetic fake credential store (`secretstest`) -
+verified real enumeration-from-the-database purge logic, a sentinel
+credential outside the known key set surviving untouched, and a
+sentinel file outside `dataDir` surviving untouched. However, actually
+*running* the compiled installer end-to-end on this development
+machine repeatedly failed with Inno exit code 2 ("cancelled/failed
+before install started") after a consistent ~120s delay - isolated via
+direct empirical elimination (stubbing `PrepareToInstall` to a no-op,
+then also disabling `AppMutex` entirely) that neither is the cause,
+and found this machine has McAfee endpoint security installed
+alongside Windows Defender, with McAfee log activity timestamped
+exactly during these failures - a real, plausible explanation given
+the `.iss` now imports raw `user32.dll` window-messaging functions
+(`FindWindowW`/`PostMessageW`), a pattern security heuristics
+legitimately flag, especially unsigned. The *original*, unmodified
+`.iss` (a real control test, same machine, same conditions) completed
+successfully after a comparable AV-scan delay with no such failure,
+confirming this is specific to something about the new binary's
+content on *this* machine, not a hang in the new Pascal Script logic
+itself once every other cause was eliminated. This is reported
+honestly rather than papered over: local end-to-end install/uninstall
+testing on this specific development machine is not reliable evidence
+either way for this change, and the real Windows CI runner
+(`windows-package.yml`, GitHub-hosted, no third-party endpoint
+security software) is the trustworthy validator - exactly the standard
+this project has already relied on throughout Stage 20E for real
+Windows package verification. Local verification for this entry is
+therefore: Pascal Script compiles clean, Go tests pass hermetically,
+full backend and frontend automated suites pass; the actual
+install/uninstall/upgrade behavior is left to the CI run's own
+evidence, not asserted from local execution.
+
+### Regression coverage added
+`apps/server/internal/userdatapurge/purge_test.go` (new): a real
+seeded platform/account/donation-source (created through the same
+repositories production code uses) with matching real secrets in a
+hermetic fake store, an unrelated sentinel credential, and a sentinel
+file outside `dataDir` - asserts every real credential is gone, the
+unrelated one survives, `dataDir` itself is gone, and the outside
+sentinel survives; plus a no-database and an empty-database case.
+`scripts/verify-installer.mjs` gained two new scenarios alongside the
+existing ordinary-uninstall one (now also extended with a reinstall-
+and-restart-healthy step): an explicit-purge scenario (creates a real
+destination via `POST /api/platforms`, purges via
+`/PURGEUSERDATA`, asserts the whole data directory is gone and an
+outside sentinel file survives) and a manual-upgrade-while-running
+scenario (starts the app and deliberately leaves it running, launches
+a second installer over the same location, asserts the install
+completes automatically and the previously-running process actually
+exited). The third scenario needed the real tray window to exist
+without a real browser popping open on an automated runner - added
+`config.TestKeepTray` (`STREAMING_TREE_TEST_KEEP_TRAY`), independent
+of the existing `TestNoUI`, so a test can suppress only the browser
+launch while keeping the real cooperative-shutdown IPC mechanism
+exercised.
+
+### Validation
+`go build`/`go vet`/`gofmt -l` clean for both `GOOS=windows` and
+`GOOS=linux`. `go test ./...`: full suite green (the one transient
+`internal/webassets` failure during this session was the already-
+known `.gitkeep`-clobbered-by-a-local-build state, restored via `git
+checkout` before this final run, not a real regression). Frontend:
+`npm run i18n:check`, `npm run typecheck`, `npm run lint` (0 errors, 1
+pre-existing unrelated warning), `npm test` (1438/1438), `npm run
+build` all clean - unaffected by this entry's backend/installer-only
+changes, re-run here for completeness before handoff. `node
+scripts/installer/streaming-tree.iss` compiles clean via the real
+`ISCC.exe` with zero warnings. The three new/extended
+`verify-installer.mjs` scenarios and the real Windows CI run are the
+authoritative next evidence, per the local-testing-limitation note
+above.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

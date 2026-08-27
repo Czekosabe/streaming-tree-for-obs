@@ -110,6 +110,15 @@ const (
 	cmdQuit          = 1004
 
 	className = "StreamingTreeForOBSTrayWindow"
+
+	// shutdownRequestMessageName is the RegisterWindowMessageW name
+	// both this package and scripts/installer/streaming-tree.iss's
+	// Pascal Script register - see shutdownRequestMsg's own doc
+	// comment above. RegisterWindowMessageW guarantees the same string
+	// always resolves to the same OS-assigned message id system-wide,
+	// so no shared numeric constant needs to cross the Go/Pascal
+	// Script boundary - only this exact string does.
+	shutdownRequestMessageName = "StreamingTreeForOBS.RequestGracefulShutdown"
 )
 
 type wndClassExW struct {
@@ -187,6 +196,25 @@ type handle struct {
 	// better than no tray icon at all.
 	taskbarCreatedMsg uint32
 
+	// shutdownRequestMsg is a second RegisterWindowMessageW-registered
+	// message (docs/windows-packaging.md §26): the Windows installer's
+	// own Pascal Script uses the identical registered name to obtain
+	// the same OS-assigned message id, then FindWindow+PostMessage's
+	// it to this hidden window when it detects the application already
+	// running (via the same AppMutex the single-instance package
+	// already owns) - a real, physical Windows manual-test finding
+	// that a manual installer upgrade over a running instance could
+	// previously only proceed after the operator manually killed the
+	// process in Task Manager. Handled identically to the tray's own
+	// cmdQuit menu item below: it calls the exact same OnQuit callback
+	// (main.go wires this to the same context-cancellation function
+	// tray Quit, web Quit, and the built-in updater's install handoff
+	// already converge on), never a second, parallel shutdown path. 0
+	// only if registration itself failed, in which case an external
+	// installer simply cannot reach this mechanism and falls back to
+	// Inno Setup's own native AppMutex "please close it" prompt.
+	shutdownRequestMsg uint32
+
 	stopOnce sync.Once
 	doneCh   chan struct{}
 }
@@ -260,6 +288,11 @@ func (h *handle) setup() error {
 	if taskbarCreatedName, err := syscall.UTF16PtrFromString("TaskbarCreated"); err == nil {
 		id, _, _ := procRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(taskbarCreatedName)))
 		h.taskbarCreatedMsg = uint32(id)
+	}
+
+	if shutdownRequestName, err := syscall.UTF16PtrFromString(shutdownRequestMessageName); err == nil {
+		id, _, _ := procRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(shutdownRequestName)))
+		h.shutdownRequestMsg = uint32(id)
 	}
 
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
@@ -463,6 +496,18 @@ func (h *handle) wndProc(uMsg uint32, wParam, lParam uintptr) uintptr {
 		// tray icon - re-add ours immediately rather than leaving it
 		// silently gone until the process happens to restart.
 		h.addIcon()
+		return 0
+	}
+
+	if h.shutdownRequestMsg != 0 && uMsg == h.shutdownRequestMsg {
+		// An external process (the Windows installer, upgrading or
+		// uninstalling over a running instance) is asking this
+		// application to shut down cooperatively - route through the
+		// exact same OnQuit callback the tray's own Quit menu item
+		// uses, never a separate teardown path.
+		if h.opts.OnQuit != nil {
+			h.opts.OnQuit()
+		}
 		return 0
 	}
 
