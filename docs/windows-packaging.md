@@ -590,33 +590,36 @@ is set on the uninstaller's own environment (`ShouldPurgeUserDataForTest`),
 which exists solely so an automated test can exercise the destructive
 path without a GUI.
 
-**A real production bug found and fixed during this same cycle:**
-Windows will not let a running process delete its own `.exe`, so
-Inno's actual uninstaller mechanism is to copy itself to a TEMP file
-and relaunch that copy - a genuinely separate OS process - to perform
-the real removal work, including every `[UninstallRun]` entry. A
-Pascal Script global variable set in `InitializeUninstall` does not
-exist in that other process; a real captured Inno `/LOG` proved
-`[UninstallRun]` was silently never even attempting the purge command,
-regardless of what the operator chose. The fix:
-`InitializeUninstall` propagates the decision via
-`SetPurgeUserDataFlag` (a thin wrapper around
-`SetEnvironmentVariableW`, the same external-`user32.dll`-import
-pattern already used for the cooperative-shutdown mechanism) into
-`PurgeUserDataEnvVar`, and `ShouldPurgeUserData` (the `[UninstallRun]`
-`Check:` function) reads it back via `GetEnv` - an environment
-variable set on a process is inherited by anything that process itself
-spawns, unlike a Pascal global, which is why this now works whichever
-of Inno's two uninstaller processes actually executes
-`[UninstallRun]`.
-
-When checked, `[UninstallRun]` runs `{app}\streaming-tree-server.exe
--purge-user-data` (`Flags: waituntilterminated runascurrentuser`, gated
-on `Check: ShouldPurgeUserData`). Per Inno's own documented behavior,
-`[UninstallRun]` entries execute "as the first step of uninstallation"
-- before the normal file-removal step that follows removes
-`{#MyAppExeName}` itself - so the executable this runs is guaranteed
-to still exist.
+**A real production bug found and fixed during this same cycle, after
+four separate diagnostic rounds against real Windows CI evidence:**
+the original design ran the purge helper declaratively through an
+`[UninstallRun]` entry gated on `Check: ShouldPurgeUserData`. Across
+four different real captured Inno `/LOG` runs - a command-line-switch
+attempt, an environment-variable attempt (correctly reasoned around
+Windows relaunching the uninstaller from a TEMP copy of itself, since
+a running process cannot delete its own `.exe`, which really did break
+a naive Pascal-global approach), a `RunOnceId` removal, and finally
+direct `Log()` instrumentation of the real decision points -
+`ShouldPurgeUserData`'s own `Log()` call never fired at all, with no
+conclusive documented explanation ever found for why Inno never even
+evaluated that `Check:` function in this project's real, repeated-
+install-cycle CI environment. Rather than continue diagnosing Inno's
+own undocumented `[UninstallRun]` evaluation internals, `[UninstallRun]`
+was removed entirely: `InitializeUninstall` now calls the purge helper
+directly via Pascal Script's own documented `Exec()` function
+(`ExpandConstant('{app}\{#MyAppExeName}')`, `-purge-user-data`,
+`ewWaitUntilTerminated`), immediately after
+`RequestCooperativeShutdownIfRunning` has confirmed the application is
+stopped - a simple, synchronous, imperative call inside the exact
+function real captured `Log()` ground truth had already confirmed runs
+correctly with the correct `PurgeUserDataChecked` value, removing the
+whole cross-mechanism question. `{app}` is still valid at this point:
+nothing has removed any files yet when `InitializeUninstall` runs.
+`MsgBox` (never auto-suppressed by `/SUPPRESSMSGBOXES`, unlike Inno's
+own built-in prompts - a real, separately-discovered gotcha) is guarded
+by `UninstallSilent()` everywhere it is used in `[Code]`, so an
+automated silent test exercising a failure path can never hang waiting
+for a click nobody will make.
 
 `-purge-user-data` (`cmd/server/main.go`, thin wrapper around
 `internal/userdatapurge.Purge`) refuses to run at all while

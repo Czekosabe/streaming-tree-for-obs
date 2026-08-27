@@ -127,35 +127,20 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 ; separately try to launch it, avoiding a double-launch race with the
 ; single-instance check.
 
-[UninstallRun]
-; docs/windows-packaging.md §26: runs only when the operator explicitly
-; checked the "also remove all my data" option in InitializeUninstall
-; below (ShouldPurgeUserData) - never for an ordinary uninstall. Per
-; Inno Setup's own documented behavior, [UninstallRun] entries execute
-; "as the first step of uninstallation," i.e. before this same entry's
-; own {#MyAppExeName} is removed by the normal file-removal step that
-; follows - the executable this runs is still guaranteed to exist.
-; Flags: waituntilterminated (the default for a Run-eligible target
-; when no "postinstall"-style flag says otherwise, made explicit here
-; since this step's own success is load-bearing for what happens
-; next) ensures the purge has actually finished, one way or another,
-; before Inno proceeds to remove program files. runascurrentuser: this
-; is a per-user, unelevated install (PrivilegesRequired=lowest above) -
-; the purge must run as the same user who owns the data, never
-; elevated.
-;
-; Deliberately no RunOnceId: real ground truth from a captured Inno
-; /LOG (docs/progress.md) showed ShouldPurgeUserData's own Log() call
-; never firing at all across several install/uninstall cycles of the
-; same fixed AppId within one test run - consistent with RunOnceId's
-; own documented purpose (deduplicating an [UninstallRun] entry across
-; multiple uninstalls of the same AppId, tracked in the registry) doing
-; exactly what it is designed to do, just not what a single test job
-; performing several such cycles in a row wants. This entry's own
-; Check: already prevents it from doing anything on an ordinary
-; uninstall - RunOnceId adds no correctness this project needs.
-Filename: "{app}\{#MyAppExeName}"; Parameters: "-purge-user-data"; \
-  Flags: waituntilterminated runascurrentuser; Check: ShouldPurgeUserData
+; No [UninstallRun] section: four real Windows CI attempts (docs/
+; progress.md) to run the purge helper declaratively through
+; [UninstallRun]'s own Check: mechanism each failed the same way -
+; ShouldPurgeUserData's own explicit Log() call never fired at all,
+; across a command-line-switch attempt, an environment-variable
+; attempt, and a RunOnceId removal, with no conclusive documented
+; explanation found for why Inno never even evaluated the Check
+; function. Rather than continue guessing at that declarative
+; mechanism, InitializeUninstall below now calls the purge helper
+; directly via Pascal Script's own documented Exec() function - a
+; simple, synchronous, imperative call inside the exact function
+; already confirmed (via real captured Log() ground truth) to run
+; correctly with the correct PurgeUserDataChecked value, removing the
+; entire cross-mechanism question.
 
 ; No [Registry] entries: no auto-startup registration, no service
 ; installation - both explicitly out of scope (docs/windows-packaging.md
@@ -201,33 +186,13 @@ const
   GracefulShutdownTimeoutMs = 60000;
   GracefulShutdownPollMs = 500;
 
-  // A real Windows CI run found that Inno's uninstaller runs in two
-  // separate OS processes: the one actually launched shows the
-  // confirmation UI and calls InitializeUninstall, then relaunches a
-  // copy of itself from TEMP (with a /SECONDPHASE=... command line -
-  // visible in a real captured /LOG) to perform the actual file
-  // removal, since a running process cannot delete its own .exe. A
-  // Pascal Script global variable set in the first process (like
-  // PurgeUserDataChecked used to be) does not exist in the second,
-  // separate process - so [UninstallRun]'s own Check: function, which
-  // evaluates in the SECOND phase, always saw the type's zero value
-  // (False) regardless of what the operator chose or what
-  // ShouldPurgeUserDataForTest read, even though InitializeUninstall
-  // itself had set it correctly moments earlier in the first phase.
-  // An environment variable set via SetEnvironmentVariableW, unlike a
-  // Pascal global, is inherited across that relaunch via ordinary
-  // Windows child-process creation - the same reasoning
-  // STREAMING_TREE_DATA_DIR already relies on for the purge helper
-  // itself, applied one layer earlier so the *decision* to purge
-  // survives the phase boundary too, not only the destination path.
-  PurgeUserDataEnvVar = 'STREAMING_TREE_UNINSTALL_PURGE_USER_DATA';
-
 var
   // Set only by the custom uninstall-confirmation dialog below (or the
-  // silent/test path) - immediately propagated into PurgeUserDataEnvVar
-  // via SetPurgeUserDataFlag so it survives into the second uninstall
-  // phase; kept as a normal Pascal variable too only because it is
-  // convenient to read back within the same (first-phase) process.
+  // silent/test path) - read directly by InitializeUninstall itself
+  // once RequestCooperativeShutdownIfRunning has confirmed the
+  // application is stopped, via a direct Exec() call rather than
+  // Inno's own [UninstallRun]/Check: mechanism (see that section's own
+  // removal note in this script for why).
   PurgeUserDataChecked: Boolean;
 
 function FindWindowW(lpClassName, lpWindowName: string): LongWord;
@@ -236,20 +201,6 @@ function PostMessageW(hWnd: LongWord; Msg: LongWord; wParam, lParam: LongWord): 
   external 'PostMessageW@user32.dll stdcall';
 function RegisterWindowMessageW(lpString: string): LongWord;
   external 'RegisterWindowMessageW@user32.dll stdcall';
-function SetEnvironmentVariableW(lpName, lpValue: string): BOOL;
-  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
-
-// Propagates the purge decision into PurgeUserDataEnvVar - see that
-// constant's own doc comment for why this, not the Pascal variable
-// alone, is what actually needs to survive into the uninstaller's
-// second phase.
-procedure SetPurgeUserDataFlag(Value: Boolean);
-begin
-  if Value then
-    SetEnvironmentVariableW(PurgeUserDataEnvVar, '1')
-  else
-    SetEnvironmentVariableW(PurgeUserDataEnvVar, '0');
-end;
 
 // RequestCooperativeShutdownIfRunning is shared by both Setup's
 // PrepareToInstall and Uninstall's InitializeUninstall below - the one
@@ -356,20 +307,11 @@ var
   PurgeCheck: TNewCheckBox;
   Warning: TNewStaticText;
   BtnUninstall, BtnCancel: TNewButton;
+  PurgeExitCode: Integer;
 begin
-  // TEMPORARY diagnostic (docs/windows-packaging.md §26): two prior
-  // fix attempts for the same symptom did not resolve it, so this
-  // instruments the real mechanism directly with Inno's own Log()
-  // rather than guessing a third theory - removed once the real cause
-  // is confirmed from a real captured /LOG.
-  Log('InitializeUninstall: entered. UninstallSilent=' + IntToStr(Ord(UninstallSilent())) +
-    ' GetEnv(test)=' + GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA'));
   if UninstallSilent() then
   begin
     PurgeUserDataChecked := ShouldPurgeUserDataForTest();
-    SetPurgeUserDataFlag(PurgeUserDataChecked);
-    Log('InitializeUninstall: silent branch. PurgeUserDataChecked=' + IntToStr(Ord(PurgeUserDataChecked)) +
-      ' GetEnv(prod) after set=' + GetEnv(PurgeUserDataEnvVar));
   end else begin
   Form := CreateCustomForm(ScaleX(420), ScaleY(220), False, False);
   try
@@ -437,31 +379,44 @@ begin
     finally
       Form.Free;
     end;
-    SetPurgeUserDataFlag(PurgeUserDataChecked);
   end;
 
   if not RequestCooperativeShutdownIfRunning() then
   begin
-    MsgBox('Streaming Tree for OBS could not be closed automatically. ' +
-      'Please open the application and use "Quit Streaming Tree" from its ' +
-      'tray icon, then run this uninstaller again.', mbError, MB_OK);
+    // MsgBox is never auto-suppressed by /SUPPRESSMSGBOXES (unlike
+    // Inno's own built-in prompts) - a real, documented gotcha for
+    // custom [Code] dialogs. Guarded here so an automated silent test
+    // exercising this failure path can never hang waiting for a click
+    // nobody will make; the interactive operator still sees it.
+    if not UninstallSilent() then
+      MsgBox('Streaming Tree for OBS could not be closed automatically. ' +
+        'Please open the application and use "Quit Streaming Tree" from its ' +
+        'tray icon, then run this uninstaller again.', mbError, MB_OK);
     Result := False;
     exit;
   end;
 
-  Result := True;
-end;
+  // Runs the purge helper directly via Exec() rather than through
+  // Inno's own [UninstallRun]/Check: mechanism - see this script's own
+  // removal note where that section used to be for why. {app} is still
+  // valid here: nothing has removed any files yet at this point in
+  // InitializeUninstall. 0 = SW_HIDE (no window for the purge
+  // helper's own console-free process to show anyway).
+  if PurgeUserDataChecked then
+  begin
+    if not Exec(ExpandConstant('{app}\{#MyAppExeName}'), '-purge-user-data', '',
+      0, ewWaitUntilTerminated, PurgeExitCode) then
+    begin
+      if not UninstallSilent() then
+        MsgBox('Streaming Tree for OBS could not remove its saved data: the purge helper ' +
+          'could not be started. The application itself will still be uninstalled.', mbError, MB_OK);
+    end else if PurgeExitCode <> 0 then
+    begin
+      if not UninstallSilent() then
+        MsgBox('Streaming Tree for OBS could not fully remove its saved data (exit code ' +
+          IntToStr(PurgeExitCode) + '). The application itself will still be uninstalled.', mbError, MB_OK);
+    end;
+  end;
 
-// [UninstallRun]'s own Check: function above. Evaluates in the
-// uninstaller's second phase (see PurgeUserDataEnvVar's own doc
-// comment) - deliberately reads the environment variable
-// InitializeUninstall propagated with SetPurgeUserDataFlag, never the
-// PurgeUserDataChecked Pascal variable directly, since that variable
-// exists only in the first phase's own separate process.
-function ShouldPurgeUserData(): Boolean;
-begin
-  Result := GetEnv(PurgeUserDataEnvVar) = '1';
-  // TEMPORARY diagnostic - see InitializeUninstall's own matching note.
-  Log('ShouldPurgeUserData: called. GetEnv(prod)=' + GetEnv(PurgeUserDataEnvVar) +
-    ' GetEnv(test)=' + GetEnv('STREAMING_TREE_TEST_PURGE_USER_DATA') + ' Result=' + IntToStr(Ord(Result)));
+  Result := True;
 end;

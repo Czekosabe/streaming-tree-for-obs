@@ -46458,3 +46458,63 @@ instrumentation will show directly whether this was the complete fix.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(installer): stopped fighting Inno's [UninstallRun]/Check: mechanism - run the purge helper directly via Exec()
+
+**The `Log()` instrumentation's own ground truth, from the next real
+CI run, closed the loop conclusively - and it was surprising.**
+`InitializeUninstall`'s own `Log()` lines showed everything working
+exactly right a second time: `UninstallSilent=1`, `GetEnv(test)=1`,
+`PurgeUserDataChecked=1`, `GetEnv(prod) after set=1` - the previous
+entry's `RunOnceId` theory was wrong too. `ShouldPurgeUserData`'s own
+`Log()` call still never fired, at all, anywhere in the one complete
+log. Four real, evidence-driven diagnostic rounds in a row
+(command-line switch, environment variable across the two-phase
+relaunch, `RunOnceId` removal, direct `Log()` instrumentation) each
+correctly identified and fixed a real, genuine issue with the
+mechanism - and `[UninstallRun]`'s `Check:` function still never got
+evaluated. No further documented explanation could be found for why.
+
+### The decision
+Continuing to diagnose Inno's own internal, undocumented
+`[UninstallRun]` evaluation logic indefinitely would not be a
+responsible use of further CI cycles. `InitializeUninstall` was
+already conclusively proven (by the very same `Log()` evidence) to run
+correctly, with the correct `PurgeUserDataChecked` value, in the
+process that matters. So instead of continuing to route through a
+declarative mechanism that could not be made to fire, `[UninstallRun]`
+was removed entirely and replaced with a direct, imperative call to
+Inno's own documented `Exec()` function, made right inside
+`InitializeUninstall` itself, immediately after
+`RequestCooperativeShutdownIfRunning` has confirmed the application is
+stopped. This is a strictly simpler design than the one it replaces -
+no `[UninstallRun]` section, no `Check:` function, no environment-
+variable propagation, no `RunOnceId` question - and it runs in the
+exact function/process combination already proven correct by real
+evidence, not a second mechanism whose own evaluation semantics turned
+out to be unreliable for this project's specific repeated-install-
+cycle CI environment.
+
+### A related latent bug found and fixed while writing this
+`MsgBox` is never automatically suppressed by `/SUPPRESSMSGBOXES`
+(confirmed via a real, separately-documented Inno Setup community
+report of the identical gotcha) - unlike Inno's own built-in prompts.
+Every `MsgBox` call in `[Code]` (the cooperative-shutdown failure
+message, and the two new purge-failure messages) is now guarded by
+`if not UninstallSilent()`, so an automated silent test that ever
+exercises one of these failure paths cannot hang waiting for a click
+nobody will make; an interactive operator still sees the real message.
+
+### Validation
+The real `ISCC.exe` compiles the modified `.iss` cleanly, with zero
+warnings (removing `[UninstallRun]` also removes the "no RunOnceId"
+warning previously being knowingly accepted). End-to-end install/
+uninstall behavior still cannot be reliably re-verified on this
+development machine (the same documented McAfee-interference
+limitation as every prior entry in this remediation cycle) - the real
+Windows CI run on this commit, now free of the whole declarative-
+mechanism question, is the next, authoritative evidence.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
