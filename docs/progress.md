@@ -46518,3 +46518,53 @@ mechanism question, is the next, authoritative evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — ci: the Exec()-based purge fix worked - Scenarios A and B now fully pass; instrument Scenario C's own first-ever failure before guessing
+
+**The `Exec()` fix from the previous entry is confirmed correct by
+real CI evidence.** The same run's captured log shows both previously-
+stuck steps now passing cleanly: `[16] Verify the whole data directory
+was removed by the purge - ok` and `[17] Verify the sentinel file
+outside the data directory was never touched - ok`. Scenario A
+(ordinary uninstall + reinstall) and Scenario B (explicit purge) both
+now pass in full, end to end, on real Windows CI.
+
+### A new failure, in a scenario that has never yet had a clean run
+Scenario C (the manual-upgrade-while-running integration test added
+in an earlier entry, never previously reached a real pass/fail
+verdict because Scenarios A/B were still broken ahead of it) failed at
+its own step 20: launching a second installer over the still-running
+first instance returned Inno exit code 1 ("Setup failed to
+initialize" per Inno's own documented exit codes) instead of
+completing automatically. This is the first real evidence this
+specific scenario has ever produced - previously it either never ran
+(earlier failures happened first) or was masked by an `EPERM` cleanup
+error from the still-locked, still-running `streaming-tree-server.exe`
+(the `finally` block's own `rmSync` racing a process that had not
+actually been asked to stop).
+
+### This entry is diagnostic + hardening, not yet a claimed fix
+Added `/LOG=` capture to the upgrade-installer invocation (the same
+successful pattern used for the purge scenario's own diagnosis),
+printed on failure - the next CI run's real evidence will show whether
+`PrepareToInstall`'s cooperative-shutdown request actually reached the
+running instance's tray window (created via the new
+`STREAMING_TREE_TEST_KEEP_TRAY=1` this scenario already sets) or timed
+out, rather than guessing. Also hardened all three scenarios'
+`finally` cleanup: a still-running `appProcess` is now force-killed
+and given 500ms to actually release its file handles *before*
+`rmSync` runs, and every `rmSync` call now passes `maxRetries: 5,
+retryDelay: 300` (Node's own built-in Windows-EPERM-retry support) -
+so a genuine scenario failure's real `expect()` error is what gets
+reported, never masked by an unrelated cleanup-time file lock.
+
+### Validation
+`node --check scripts/verify-installer.mjs`: clean. This commit does
+not touch any Go or Pascal Script production code - Scenarios A and B
+already prove the previous entry's `Exec()` fix is correct. The real
+Windows CI run on this commit's own captured `/LOG` is the next,
+authoritative evidence for Scenario C specifically.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

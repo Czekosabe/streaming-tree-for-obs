@@ -254,9 +254,10 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
   } finally {
     if (appProcess !== null) {
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+      await new Promise((r) => setTimeout(r, 500));
     }
-    rmSync(dirname(installDir), { recursive: true, force: true });
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
 }
 
@@ -353,10 +354,11 @@ async function testExplicitPurgeScenario(installerPath) {
   } finally {
     if (appProcess !== null) {
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+      await new Promise((r) => setTimeout(r, 500));
     }
-    rmSync(dirname(installDir), { recursive: true, force: true });
-    rmSync(dataDir, { recursive: true, force: true });
-    rmSync(outsideDir, { recursive: true, force: true });
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(outsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
 }
 
@@ -395,7 +397,17 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
     appProcess = started.appProcess;
 
     step('Launch a newer installer over the same location WHILE the application is still running');
-    const upgrade = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    // /LOG=: this scenario has never yet had a clean run - captured and
+    // printed on failure below so a real cause is diagnosed from real
+    // evidence rather than guessed, the same discipline the purge
+    // scenario's own diagnostic already used successfully.
+    const upgradeLogPath = join(tmpdir(), `streaming-tree-upgrade-install-${Date.now()}.log`);
+    const upgrade = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`, `/LOG=${upgradeLogPath}`]);
+    if (upgrade.code !== 0 && existsSync(upgradeLogPath)) {
+      console.log('--- Inno install log (diagnostic, upgrade-while-running did not complete) ---');
+      console.log(readFileSync(upgradeLogPath, 'utf8'));
+      console.log('--- end Inno install log ---');
+    }
     expect(upgrade.code === 0, 'the installer completes automatically over a running instance - no manual close needed', upgrade);
 
     step('Verify the previously-running process actually exited cooperatively, not left orphaned');
@@ -416,10 +428,16 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
     appProcess = null;
   } finally {
     if (appProcess !== null) {
+      // A still-running process here means the scenario itself already
+      // failed (a healthy cooperative shutdown clears appProcess above
+      // before reaching here) - force it down first so cleanup below
+      // does not also fail with EPERM on its still-open .exe, masking
+      // the real failure that was already recorded by expect() above.
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+      await new Promise((r) => setTimeout(r, 500));
     }
-    rmSync(dirname(installDir), { recursive: true, force: true });
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
 }
 
