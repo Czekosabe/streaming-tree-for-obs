@@ -49,6 +49,7 @@
     "title": "Dodaj platformę",
     "description": "Skonfiguruj gałąź docelową. Możesz dodać kilka celów dla tej samej platformy.",
     "providerLabel": "Platforma",
+    "providerPlaceholder": "Wybierz platformę…",
     "displayNameLabel": "Nazwa wyświetlana",
     "displayNameHint": "Używana wyłącznie w tej aplikacji, aby odróżnić od siebie cele transmisji.",
     "displayNamePlaceholder": "np. Główny kanał Twitch",

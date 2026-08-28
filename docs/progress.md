@@ -46638,3 +46638,103 @@ authoritative evidence.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-27 — fix(web): require an explicit platform selection
+
+**A new, separate physical/manual Windows finding, on the packaged
+application built from the fully-green commit above.** Opening Add
+Platform for the first time in a session showed "Twitch" visibly
+selected in the Platform field; leaving it untouched and entering only
+a Display name still failed validation with "Select a platform." -
+the visible selection and the actual form state had gone out of sync.
+A later Add Platform open (after successfully creating a destination
+once) did not reproduce it.
+
+### Root cause
+`AddPlatformDialog.tsx`: `const firstProvider = definitions[0]?.id ??
+''; const [providerId, setProviderId] = useState(firstProvider);`.
+`definitions` comes from `usePlatformDefinitionsQuery()` in
+`DashboardPage`, an async query - and `AddPlatformDialog` itself stays
+mounted for the whole page session (only `Modal`'s own `open` prop
+controls visibility), so `useState`'s initializer ran at this
+component's own mount, well before the query had a result. It
+captured `''` (an empty array's `[0]?.id` is `undefined`), and
+`useState`'s initializer never re-runs when a later render passes
+different `definitions` - `providerId` stayed `''` permanently for
+that dialog instance, even once real provider data arrived. With
+`providerId` still `''` but the rendered `<option>` list now containing
+only real providers (no `<option value="">` at all), the `<select>`'s
+assigned value matched none of its own options - a real, observable
+divergence: the DOM auto-corrects an unmatched `<select>` value to its
+first real option (confirmed directly: reverting the fix and re-
+running the new regression test below shows the DOM's own `.value`
+becoming `'twitch'`), while `providerId` - the actual React state
+`handleSubmit`'s validation reads - never changed. A later open worked
+by accident only: `reset()` (called after a successful create, or on
+Cancel) re-evaluates `definitions[0]?.id` at that later call time, by
+which point the query had already resolved to real data.
+
+### The fix - structural, not a timing patch
+Per the operator's own explicit requirement, no real platform is ever
+silently pre-selected, first open or not. `providerId` now starts at
+`''` unconditionally and `reset()` also sets it back to `''` (never
+`definitions[0]?.id`) - a newly-created destination always requires a
+deliberate choice. `providerOptions` gained a real placeholder entry,
+`{ value: '', label: t('platforms:addDialog.providerPlaceholder') }`
+("Select a platform…" / "Wybierz platformę…"), prepended before the
+real provider options. Because `''` is now always a real, matching
+`<option>`, the browser never has an unmatched value to silently
+correct on its own - the controlled-select invariant (visible
+selection == `providerId` == validation input == submitted payload)
+now holds unconditionally, at every open, whether `definitions` has
+loaded yet or not. The existing `validateAddPlatform` already rejected
+an empty `providerId` correctly (`provider-required` violation,
+message "Select a platform.") - no validation-logic change was needed,
+only the state-management bug that let the UI and that validation
+input disagree. `localError` is still only ever set inside
+`handleSubmit`, so the placeholder does not trigger a red error merely
+by being open and untouched - only a real submit attempt does, which
+was already this form's existing validation-timing policy.
+
+### Regression coverage added
+`apps/web/src/components/platforms/AddPlatformDialog.test.tsx` (new):
+reproduces the exact real-world timing - renders with `definitions=[]`
+(matching a query that has not resolved yet), then `rerender`s with
+real definitions (matching the query resolving after mount) - and
+proves the placeholder, not a real platform, stays selected;
+submitting with only a Display name is rejected and never calls
+`createPlatform`; explicitly selecting a platform then submitting
+calls `createPlatform` with the correct `providerId` and succeeds;
+and, after one successful create, closing and reopening the same
+dialog instance (mirroring `DashboardPage`'s always-mounted
+`AddPlatformDialog`) starts empty again rather than inheriting the
+previous choice. Also covers Display name focus stability while
+typing and while changing the Platform selection, and that Cancel
+still resets the form - preserving the earlier focus-retention and
+scroll-lock fixes' own guarantees in this specific form. Verified the
+load-bearing tests actually catch the regression: reverted the fix
+and re-ran them, saw the exact predicted failures (DOM `.value`
+becoming `'twitch'`, the reopened dialog inheriting the previous
+selection), then restored the fix and confirmed all pass again.
+
+### Validation
+`npx vitest run` for `AddPlatformDialog.test.tsx` +
+`Modal.test.tsx` + `body-scroll-lock.test.ts` together: **21/21
+passed**. `npm run i18n:check`: 2 languages, 23 namespaces, no
+differences. `npm run typecheck`: clean. `npm run lint`: 0 errors, the
+same one pre-existing, unrelated warning as every prior entry
+(`auth-context.tsx`). `npm test`: **1445/1445 passed** across 109 test
+files (the jsdom `HTMLMediaElement` "not implemented" console noise
+from an unrelated audio-renderer test is pre-existing, not a
+failure). `npm run build`: clean production build.
+
+### Manual evidence accounting
+Found by real physical/manual testing on the packaged Windows
+application built from the previous, fully-green commit - not by any
+automated test, before this fix existed. This is an append-only
+addition to the same Stage 20E remediation cycle; no prior entry is
+rewritten.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

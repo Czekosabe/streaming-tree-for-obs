@@ -49,6 +49,7 @@
     "title": "Add platform",
     "description": "Configure a destination branch. You can add several destinations for the same platform.",
     "providerLabel": "Platform",
+    "providerPlaceholder": "Select a platform…",
     "displayNameLabel": "Display name",
     "displayNameHint": "Only used inside this application to tell your destinations apart.",
     "displayNamePlaceholder": "e.g. Main Twitch channel",

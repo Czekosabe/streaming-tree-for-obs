@@ -35,8 +35,28 @@ export function AddPlatformDialog({ open, onClose, definitions }: AddPlatformDia
   const fieldErrorsOf = useApiFieldErrors();
   const createPlatform = useCreatePlatformMutation();
 
-  const firstProvider = definitions[0]?.id ?? '';
-  const [providerId, setProviderId] = useState(firstProvider);
+  // Deliberately always '' - never definitions[0]?.id. A real physical
+  // Windows manual test found that seeding this from the first loaded
+  // provider broke on the very first Add Platform open of a session:
+  // useState's initializer runs exactly once, at this component's own
+  // mount, which happens well before usePlatformDefinitionsQuery's
+  // async result has arrived - so it captured '' anyway (definitions
+  // was still []), permanently, since useState never re-runs its
+  // initializer when the definitions prop changes later. Once
+  // definitions did load, the <select>'s value ('') no longer matched
+  // any of its real <option> elements, and a native <select> visually
+  // falls back to showing its first option in that situation - so the
+  // UI showed "Twitch" while providerId (and therefore validation and
+  // the submitted payload) was still ''. A later open worked by
+  // accident only because reset() re-evaluated definitions[0]?.id
+  // after the query had already resolved. The real fix is structural,
+  // not a timing patch: providerId now starts at '' unconditionally
+  // and is never auto-populated from loaded data at all - matching the
+  // explicit placeholder option below, which has value '' too, so the
+  // visible selection and providerId can never disagree, and every
+  // destination requires a deliberate platform choice, first open or
+  // not.
+  const [providerId, setProviderId] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -45,7 +65,7 @@ export function AddPlatformDialog({ open, onClose, definitions }: AddPlatformDia
   const busy = createPlatform.isPending;
 
   const reset = () => {
-    setProviderId(firstProvider);
+    setProviderId('');
     setDisplayName('');
     setEnabled(false);
     setLocalError(null);
@@ -100,11 +120,20 @@ export function AddPlatformDialog({ open, onClose, definitions }: AddPlatformDia
       ? resolveApiErrorMessage(tErrors, createPlatform.error)
       : null;
 
-  const providerOptions = definitions.map((definition) => ({
-    value: definition.id,
-    // Brand names are proper nouns and stay untranslated.
-    label: definition.brandName,
-  }));
+  // The placeholder is a real option with value '' - the same value
+  // providerId starts and resets to - so the native <select> always has
+  // a real <option> to match against. This is what makes the controlled-
+  // select contract hold: visible selection, providerId, validation, and
+  // the submitted payload can never disagree, because there is never an
+  // unmatched value for the browser to visually paper over on its own.
+  const providerOptions = [
+    { value: '', label: t('platforms:addDialog.providerPlaceholder') },
+    ...definitions.map((definition) => ({
+      value: definition.id,
+      // Brand names are proper nouns and stay untranslated.
+      label: definition.brandName,
+    })),
+  ];
 
   return (
     <Modal

@@ -137,6 +137,11 @@ Precondition: the app running (any platform), reachable in a browser.
 | B-9 | Open an existing destination's Platform settings; confirm its own content scrolls normally if it exceeds the modal's height. | The modal's own content area scrolls; the page behind it does not. |
 | B-10 | From the same Platform settings modal, click Delete, confirm the deletion. | The confirmation dialog and the settings modal both close; the destination disappears from the Dashboard. |
 | B-11 | Immediately after B-10, without refreshing the page, try to scroll the Dashboard (mouse wheel or trackpad). | The page scrolls normally — this was a real physical-test failure this cycle: the page previously stayed permanently unscrollable until a manual browser refresh (docs/progress.md's body-scroll-lock entry). |
+| B-12 | On a fresh app/page load (or after a hard refresh), open Add Platform for the first time in that session. Do not touch the Platform field. | The Platform field shows "Select a platform…" — not a real platform like Twitch already selected. This was a real physical-test failure this cycle: the field previously showed a real platform selected while the underlying form state was actually empty (docs/progress.md's explicit-platform-selection entry). |
+| B-13 | With B-12's dialog still open and the Platform field untouched, enter a Display name and submit. | Submission is rejected with "Select a platform." — matching the visibly empty Platform field, not contradicting it. |
+| B-14 | Explicitly select a real platform (e.g. Twitch), enter a Display name, and submit. | The Platform field's visible selection remains stable while typing the Display name; submission succeeds; the destination is created with the platform you selected. |
+| B-15 | Open Add Platform again after B-14's successful creation. | The Platform field again shows "Select a platform…" — it does not inherit the platform you just used. |
+| B-16 | While the Display name field has focus and text in it, change the Platform selection. | Display name keeps its typed value and does not lose focus to the Close button. |
 
 ## Session C — local OBS ingest
 
