@@ -46951,3 +46951,49 @@ build.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — fix(web): show the real build/version identity instead of a hardcoded "0.1.0"
+
+The sidebar footer showed "Version 0.1.0 - local build"
+(`navigation:version`, formatted with `APP_INFO.version` from
+`apps/web/src/data/app-info.ts`) on every build, including manual/test
+artifacts whose real identity - already correctly shown on the About
+page via `GET /api/about` - is something like
+`0.1.0-manualtest+<commit>`. Two different, disagreeing version
+strings on the same running application is exactly the kind of stale
+implementation-era detail this stage's brief asked to be found and
+fixed (§29/§30), and `apps/web/src/data/app-info.ts` was the only place
+in the entire frontend that hardcoded a version literal.
+
+`GET /api/about` (`internal/buildinfo` on the backend) was already the
+single source of truth for product/build identity - `AboutLegalPage`
+already used it correctly via `useAboutQuery`. The fix extracts that
+page's existing `VersionLine` logic into a shared, pure helper,
+`aboutVersionLine` (`apps/web/src/models/about-presentation.ts`), and
+points the sidebar footer at the same query and the same helper instead
+of the hardcoded constant. A non-release build (every manual/test/CI
+artifact this project produces) now honestly shows its real
+development-build identity, including the commit it was built from
+when the backend reports one, in both places; a real tagged release
+build shows its real version number in both places. `app-info.ts` and
+the now-unused `navigation:version` translation key (both languages)
+are deleted rather than left as dead code.
+
+### Regression coverage
+No new test file: `AboutLegalPage.test.tsx`'s existing development-
+build assertion (scoped to the main content landmark in the previous
+commit, since the same text now also renders in the sidebar footer)
+continues to cover `aboutVersionLine`'s development-build path;
+`useAboutQuery`'s existing behaviour is unchanged, only its second
+caller is new.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1454/1454
+passed** across 110 test files. `npm run build`: clean production
+build.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

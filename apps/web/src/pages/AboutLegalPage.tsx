@@ -11,6 +11,7 @@ import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { useAboutQuery } from '@/hooks/use-about-query';
 import { useShutdownMutation } from '@/hooks/use-shutdown';
 import type { AboutResponse } from '@/models/about';
+import { aboutVersionLine } from '@/models/about-presentation';
 
 /** Fixed, closed local routes - see internal/httpapi/legal.go's own
  * allowlist. The installed application must be able to show these fully
@@ -127,29 +128,7 @@ function QuitApplicationCard() {
 
 function VersionLine({ data }: { data: AboutResponse }) {
   const { t } = useTranslation('about');
-
-  if (!data.isReleaseBuild) {
-    const commitSuffix =
-      data.commit === undefined
-        ? ''
-        : ` · ${
-            data.commitDirty === true
-              ? t('product.commitDirty', { commit: data.commit })
-              : t('product.commit', { commit: data.commit })
-          }`;
-    return (
-      <p className="text-xs text-ink-faint">
-        {t('product.developmentBuild')}
-        {commitSuffix}
-      </p>
-    );
-  }
-
-  return (
-    <p className="text-xs text-ink-faint">
-      {t('product.versionLabel')} {data.version}
-    </p>
-  );
+  return <p className="text-xs text-ink-faint">{aboutVersionLine(t, data)}</p>;
 }
 
 /**

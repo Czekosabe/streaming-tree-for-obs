@@ -5,9 +5,10 @@ import { CopyableValue } from '@/components/runtime/CopyableValue';
 import { RuntimeControls } from '@/components/runtime/RuntimeControls';
 import { runtimeErrorMessage } from '@/components/runtime/runtime-error-message';
 import { StatusDot } from '@/components/ui/StatusBadge';
-import { APP_INFO } from '@/data/app-info';
+import { useAboutQuery } from '@/hooks/use-about-query';
 import { useRuntimeQuery } from '@/hooks/use-runtime';
 import { cn } from '@/lib/cn';
+import { aboutVersionLine } from '@/models/about-presentation';
 import { ingestStateKey, ingestTone, mediaMtxStateKey, mediaMtxTone } from '@/models/runtime-presentation';
 
 /**
@@ -19,8 +20,10 @@ import { ingestStateKey, ingestTone, mediaMtxStateKey, mediaMtxTone } from '@/mo
  * API does not report any - inventing them would make the panel untrustworthy.
  */
 export function SidebarFooter() {
-  const { t } = useTranslation(['runtime', 'navigation']);
+  const { t } = useTranslation(['runtime', 'navigation', 'about']);
+  const tAbout = useTranslation('about').t;
   const runtimeQuery = useRuntimeQuery();
+  const aboutQuery = useAboutQuery();
 
   const snapshot = runtimeQuery.data;
   const mediaMtx = snapshot?.mediaMtx;
@@ -114,9 +117,9 @@ export function SidebarFooter() {
         )}
       </section>
 
-      <p className="px-1 text-[10px] text-ink-faint">
-        {t('navigation:version', { version: APP_INFO.version })}
-      </p>
+      {aboutQuery.data !== undefined && (
+        <p className="px-1 text-[10px] text-ink-faint">{aboutVersionLine(tAbout, aboutQuery.data)}</p>
+      )}
     </div>
   );
 }

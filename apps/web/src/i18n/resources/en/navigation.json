@@ -18,6 +18,5 @@
     "goals": "Goals",
     "settings": "Settings",
     "logs": "Logs"
-  },
-  "version": "Version {{version}} - local build"
+  }
 }

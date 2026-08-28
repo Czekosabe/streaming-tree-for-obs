@@ -18,6 +18,5 @@
     "goals": "Cele",
     "settings": "Ustawienia",
     "logs": "Logi"
-  },
-  "version": "Wersja {{version}} - kompilacja lokalna"
+  }
 }
