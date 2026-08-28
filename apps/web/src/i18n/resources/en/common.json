@@ -8,17 +8,9 @@
     "close": "Close",
     "cancel": "Cancel"
   },
-  "demo": {
-    "badge": "Demo",
-    "defaultTooltip": "Demo data - not produced by the backend yet"
-  },
   "language": {
     "label": "Interface language",
     "switcherLabel": "Change interface language"
-  },
-  "units": {
-    "percentAccessible": "{{value}} percent",
-    "megabitsPerSecond": "{{value}} Mb/s"
   },
   "duration": {
     "hoursMinutesSeconds": "{{hours}}h {{minutes}}m {{seconds}}s",

@@ -32,12 +32,25 @@
     "enabled_other": "{{count}} włączonego celu"
   },
   "counters": {
-    "heading": "Skonfigurowane cele",
-    "description": "Odczytane z lokalnej bazy danych",
+    "heading": "Stan transmisji",
+    "description": "Konfiguracja i stan na żywo",
     "configured": "Łącznie",
     "enabled": "Włączone",
     "disabled": "Wyłączone",
-    "noRuntimeState": "Stan na żywo nie jest pokazywany: silnik transmisji nie jest jeszcze zaimplementowany, więc cele to wyłącznie konfiguracja.",
+    "runtimeHeading": "Teraz",
+    "runtimeIdle": "Żaden cel nie jest obecnie wysyłany",
+    "runtimeLive_one": "{{count}} na żywo",
+    "runtimeLive_few": "{{count}} na żywo",
+    "runtimeLive_many": "{{count}} na żywo",
+    "runtimeLive_other": "{{count}} na żywo",
+    "runtimeStarting_one": "{{count}} uruchamia się",
+    "runtimeStarting_few": "{{count}} uruchamiają się",
+    "runtimeStarting_many": "{{count}} uruchamia się",
+    "runtimeStarting_other": "{{count}} uruchamia się",
+    "runtimeError_one": "{{count}} błąd",
+    "runtimeError_few": "{{count}} błędy",
+    "runtimeError_many": "{{count}} błędów",
+    "runtimeError_other": "{{count}} błędu",
     "configuredAccessible_one": "{{count}} skonfigurowany cel",
     "configuredAccessible_few": "{{count}} skonfigurowane cele",
     "configuredAccessible_many": "{{count}} skonfigurowanych celów",
@@ -63,18 +76,5 @@
     "service": "Usługa",
     "version": "Wersja",
     "uptime": "Czas działania"
-  },
-  "resources": {
-    "heading": "Zasoby systemowe",
-    "description": "Wartości zastępcze",
-    "demoTooltip": "Backend nie zbiera jeszcze metryk hosta",
-    "cpu": "Procesor",
-    "cpuDetail": "8 rdzeni / wartość demonstracyjna",
-    "memory": "Pamięć",
-    "memoryDetail": "8,6 GB z 16 GB / wartość demonstracyjna",
-    "disk": "Dysk",
-    "diskDetail": "712 GB z 1 TB / wartość demonstracyjna",
-    "networkStable": "Sieć: stabilna",
-    "networkDetail": "Wartość demonstracyjna - pomiar nie jest jeszcze wykonywany"
   }
 }

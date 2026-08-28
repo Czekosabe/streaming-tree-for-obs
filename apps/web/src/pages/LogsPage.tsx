@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { LogEntry, LogSeverity } from '@/api/logs-schemas';
 import { LOG_SEVERITIES } from '@/api/logs-schemas';
 import { AppShell } from '@/components/layout/AppShell';
+import { BackendHealthCard } from '@/components/system/BackendHealthCard';
 import { Button } from '@/components/ui/Button';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
 import { SelectInput } from '@/components/ui/SelectInput';
@@ -356,6 +357,7 @@ export function LogsPage() {
           </PanelBody>
         </Panel>
 
+        <BackendHealthCard />
         <SupportBundlePanel />
       </div>
     </AppShell>

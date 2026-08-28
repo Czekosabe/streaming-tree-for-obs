@@ -30,12 +30,19 @@
     "enabled_other": "{{count}} destinations enabled"
   },
   "counters": {
-    "heading": "Configured destinations",
-    "description": "Read from the local database",
+    "heading": "Stream status",
+    "description": "Configuration and live status",
     "configured": "Total",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "noRuntimeState": "No live state is shown: the streaming engine is not implemented yet, so destinations are configuration only.",
+    "runtimeHeading": "Right now",
+    "runtimeIdle": "No destination is currently sending",
+    "runtimeLive_one": "{{count}} live",
+    "runtimeLive_other": "{{count}} live",
+    "runtimeStarting_one": "{{count}} starting",
+    "runtimeStarting_other": "{{count}} starting",
+    "runtimeError_one": "{{count}} error",
+    "runtimeError_other": "{{count}} errors",
     "configuredAccessible_one": "{{count}} configured destination",
     "configuredAccessible_other": "{{count}} configured destinations",
     "enabledAccessible_one": "{{count}} enabled destination",
@@ -55,18 +62,5 @@
     "service": "Service",
     "version": "Version",
     "uptime": "Uptime"
-  },
-  "resources": {
-    "heading": "System resources",
-    "description": "Placeholder values",
-    "demoTooltip": "Host metrics are not collected by the backend yet",
-    "cpu": "CPU",
-    "cpuDetail": "8 cores / demo value",
-    "memory": "Memory",
-    "memoryDetail": "8.6 GB of 16 GB / demo value",
-    "disk": "Disk",
-    "diskDetail": "712 GB of 1 TB / demo value",
-    "networkStable": "Network: stable",
-    "networkDetail": "Demo value - no measurement is performed yet"
   }
 }

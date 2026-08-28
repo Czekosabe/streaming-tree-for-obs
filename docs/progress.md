@@ -46882,3 +46882,72 @@ bundle - no dependency was added to package.json for this.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — fix(web): realign the Dashboard's right rail with real branch-state data and remove the fake resource-metrics card
+
+Three real problems in `SystemStatusRail` (the Dashboard's right-hand
+column), found during this stage's own audit
+(docs/dashboard-design.md §1-2), fixed together since they are the same
+right-rail component:
+
+### 1. Removed a 100%-fake "System resources" card
+`ResourcesCard.tsx` rendered `DEMO_RESOURCE_METRICS` (CPU/memory/disk)
+and `DEMO_NETWORK_STATUS` - static constants, honestly labelled with a
+"Demo" badge, but still fake numbers next to real destination data. The
+backend does not collect host CPU/memory/disk/network usage anywhere
+(confirmed by auditing every route in `internal/httpapi` during the
+design-contract pass) and this stage does not add a telemetry
+subsystem to backfill it, per the governing brief's own explicit
+non-goal. `ResourcesCard.tsx`, its only two consumers (`Meter.tsx`,
+`DemoBadge.tsx`), and `demo-system.ts` (the fake-data module itself)
+are deleted outright, along with their now-unused `common:demo.*`/
+`common:units.percentAccessible`/`common:units.megabitsPerSecond`
+translation keys and `dashboard:resources.*`.
+
+### 2. Corrected a false "streaming engine not implemented" disclaimer
+`StreamCountersCard` used to show only static configured/enabled/
+disabled counts next to the sentence "No live state is shown: the
+streaming engine is not implemented yet, so destinations are
+configuration only" (`dashboard:counters.noRuntimeState`). That
+sentence has been false since an earlier stage: the branch runtime
+engine (`GET /api/branches`, `useBranchRuntimeQuery`) already exists
+and is already used by `BranchControls` on the very same Dashboard
+page. `StreamCountersCard` now also queries branch runtime state and
+shows a real live/starting/error breakdown, reusing `branchTone` -
+the exact same semantic vocabulary (green=live, blue=starting,
+red=error) every other branch status badge in this codebase already
+uses, rather than inventing a second one. A destination with no
+tracked branch yet counts as idle, matching `branchFor`'s own
+documented convention; the section reads "No destination is currently
+sending" rather than a bare disclaimer when nothing is active.
+
+### 3. Relocated the developer-facing "Backend" card to Logs & Diagnostics
+`BackendHealthCard` ("Backend" / "Go REST API" / Service / Version /
+Uptime) is real, honest data - `GET /api/health` - but developer-facing
+framing that does not belong on a Dashboard meant to read as a
+streaming control center. It moved, unchanged, from `SystemStatusRail`
+to `LogsPage` (the existing Stage 20E diagnostics surface), where
+backend connectivity/version/uptime detail is exactly the kind of thing
+an operator reaches for when troubleshooting, not what they need to see
+on every normal visit to the Dashboard.
+
+### What did not change
+No backend code changed - every fix above uses data the backend
+already exposes. The Dashboard's own left/main/right region layout is
+unchanged (docs/dashboard-design.md §3: the sidebar already serves as
+the left rail; only the right rail's *content* was wrong). Platform
+grid columns were separately widened
+(`sm:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4`, up from a
+flat two-column cap) so the primary destination cards can use the
+freed-up width at wide desktop sizes.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1454/1454
+passed** across 110 test files. `npm run build`: clean production
+build.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

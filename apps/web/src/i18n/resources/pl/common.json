@@ -8,17 +8,9 @@
     "close": "Zamknij",
     "cancel": "Anuluj"
   },
-  "demo": {
-    "badge": "Demo",
-    "defaultTooltip": "Dane demonstracyjne - nie pochodzą jeszcze z backendu"
-  },
   "language": {
     "label": "Język interfejsu",
     "switcherLabel": "Zmień język interfejsu"
-  },
-  "units": {
-    "percentAccessible": "{{value}} procent",
-    "megabitsPerSecond": "{{value}} Mb/s"
   },
   "duration": {
     "hoursMinutesSeconds": "{{hours}} g {{minutes}} min {{seconds}} s",
