@@ -336,7 +336,7 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
       </div>
 
       {(capabilities.matureContent || capabilities.dvr) && (
-        <div className="grid grid-cols-1 gap-3 rounded-lg border border-line bg-surface-sunken p-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 rounded-lg bg-surface-sunken/70 p-3 sm:grid-cols-2">
           {capabilities.matureContent && (
             <ToggleSwitch
               label={t('metadata:fields.matureContent')}

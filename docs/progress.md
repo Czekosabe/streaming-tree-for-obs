@@ -46997,3 +46997,75 @@ build.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — style(web): reduce box-in-box border competition in the Metadata & Settings workspace
+
+Continuing the same governing message's follow-up instruction to finish
+the spacing/density pass and the Metadata & Settings workspace polish
+autonomously, before any further Windows candidate. a1040868 (the
+previous commit) is intermediate evidence only, not a manual-test
+candidate - the operator was explicitly told not to install it.
+
+### The concrete problem
+`PlatformSettingsDialog`'s modal stacks up to seven separate blocks
+vertically: a provider-identity row, two form fields, an enabled-
+toggle box, then four independently-rendered sections
+(`StreamKeySection`, `OutputSettingsSection`, `AccountLinkSection`,
+`BroadcastSelectSection`). Every one of those blocks used the exact
+same `rounded-lg border border-line bg-surface-sunken p-3` treatment -
+identical border weight to the Modal's own outer chrome and to
+`MetadataForm`'s toggle-row/`PublishPanel` on the Dashboard. The result
+was literally what the operator's mockup comparison described: a stack
+of equally-weighted bordered boxes reading as an engineering settings
+form, not a product surface with a clear primary/secondary hierarchy.
+
+### The fix
+Every one of those *nested grouping* blocks (inside an already-bordered
+Modal or Panel) dropped its own border and kept only the
+`bg-surface-sunken/70` tint - a soft recessed grouping rather than a
+competing bordered card. Genuinely distinct nested facts (a linked-
+account summary row, inline validation/error banners) keep their own
+border, since those really are a separate assertion inside the group,
+not just a layout grouping. Touched: `StreamKeySection.tsx`,
+`OutputSettingsSection.tsx`, `AccountLinkSection.tsx`,
+`BroadcastSelectSection.tsx`, `MetadataForm.tsx`'s
+matureContent/dvr toggle row, `PublishPanel.tsx` (all three states),
+and `PlatformSettingsDialog.tsx`'s provider-identity row and enabled
+toggle. Because removing the border also removes the visual separator
+between `PlatformSettingsDialog`'s four sibling sections (previously
+rendered back-to-back with no gap at all between them - a real, if
+minor, layout gap this pass also fixed, not merely a border change),
+they are now wrapped in one `space-y-3` container together with the
+form, giving the whole modal one consistent vertical rhythm instead of
+relying on borders to imply separation.
+
+`MetadataEditor`'s heading also changed from "Metadata editor" /
+"Fields come from each platform's capabilities, reported by the
+backend" (implementation-facing framing - the phrase directly named in
+this stage's own product-copy concerns) to "Stream details" / "Title,
+category and other details for the selected destination" - same
+component, same capability-driven behaviour, product-facing wording.
+
+### What did not change
+No validation logic, no persisted behaviour, no capability-driven field
+visibility, no test assertions relied on border classes (confirmed
+by running the full suite unchanged). Button sizing (`Button.tsx`'s
+`sm`/`md` height scale) and the `Panel`/`PanelHeader`/`PanelBody`
+spacing tokens were audited and found already consistent throughout
+the app - not touched, per this stage's own instruction not to
+uniformly inflate every margin/font.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1454/1454
+passed** across 110 test files - no test asserted on the removed
+border classes, confirming this was a pure visual change. `npm run
+build`: clean production build.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This commit is NOT the final Windows manual-test candidate -
+more autonomous work (accessibility re-verification, provider-
+provenance finalization, copy audit, responsive pass, pending-manual-
+case reconciliation) continues before one is produced.

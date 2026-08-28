@@ -50,7 +50,7 @@ export function PublishPanel({ platform, dirty }: PublishPanelProps) {
 
   if (!linked) {
     return (
-      <div className="rounded-lg border border-line bg-surface-sunken p-3">
+      <div className="rounded-lg bg-surface-sunken/70 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {t('accounts:publish.heading', { provider: providerName })}
         </p>
@@ -61,7 +61,7 @@ export function PublishPanel({ platform, dirty }: PublishPanelProps) {
 
   if (dirty) {
     return (
-      <div className="rounded-lg border border-line bg-surface-sunken p-3">
+      <div className="rounded-lg bg-surface-sunken/70 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {t('accounts:publish.heading', { provider: providerName })}
         </p>
@@ -87,7 +87,7 @@ export function PublishPanel({ platform, dirty }: PublishPanelProps) {
   const result = publishMutation.data;
 
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-surface-sunken p-3">
+    <div className="space-y-3 rounded-lg bg-surface-sunken/70 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
         {t('accounts:publish.heading', { provider: providerName })}
       </p>

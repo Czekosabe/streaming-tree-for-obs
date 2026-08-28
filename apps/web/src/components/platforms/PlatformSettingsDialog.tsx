@@ -151,109 +151,111 @@ export function PlatformSettingsDialog({
           </>
         }
       >
-        <form id="platform-settings-form" onSubmit={handleSubmit} noValidate className="space-y-4">
-          {(updateFailure ?? deleteFailure) !== null && (
-            <p
-              role="alert"
-              className="rounded-lg border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
-            >
-              {updateFailure ?? deleteFailure}
-            </p>
-          )}
+        <div className="space-y-3">
+          <form id="platform-settings-form" onSubmit={handleSubmit} noValidate className="space-y-4">
+            {(updateFailure ?? deleteFailure) !== null && (
+              <p
+                role="alert"
+                className="rounded-lg border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error"
+              >
+                {updateFailure ?? deleteFailure}
+              </p>
+            )}
 
-          <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-sunken px-3 py-2">
-            <ProviderBrand
-              providerId={platform.providerId}
-              fallbackLabel={platform.providerId.slice(0, 2).toUpperCase()}
-              size="sm"
-            />
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-                {t('platforms:settings.providerLabel')}
-              </p>
-              {/* Brand name, never translated, and not editable. */}
-              <p className="mt-0.5 text-sm text-ink">
-                {platform.provider?.brandName ?? platform.providerId}
-              </p>
-              <p className="mt-1 text-[11px] text-ink-faint">
-                {t('platforms:settings.providerImmutable')}
-              </p>
+            <div className="flex items-center gap-3 rounded-lg bg-surface-sunken/70 px-3 py-2">
+              <ProviderBrand
+                providerId={platform.providerId}
+                fallbackLabel={platform.providerId.slice(0, 2).toUpperCase()}
+                size="sm"
+              />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+                  {t('platforms:settings.providerLabel')}
+                </p>
+                {/* Brand name, never translated, and not editable. */}
+                <p className="mt-0.5 text-sm text-ink">
+                  {platform.provider?.brandName ?? platform.providerId}
+                </p>
+                <p className="mt-1 text-[11px] text-ink-faint">
+                  {t('platforms:settings.providerImmutable')}
+                </p>
+              </div>
             </div>
-          </div>
 
-          <FormField
-            label={t('platforms:settings.displayNameLabel')}
-            error={localError ?? serverFieldErrors.displayName}
-            counter={`${displayName.trim().length} / ${DISPLAY_NAME_MAX_LENGTH}`}
-          >
-            {({ inputId, describedBy }) => (
-              <TextInput
-                id={inputId}
-                aria-describedby={describedBy}
-                aria-invalid={localError !== null || serverFieldErrors.displayName !== undefined}
-                value={displayName}
-                maxLength={DISPLAY_NAME_MAX_LENGTH}
-                disabled={busy}
-                onChange={(event) => {
-                  setDisplayName(event.target.value);
-                  setLocalError(null);
+            <FormField
+              label={t('platforms:settings.displayNameLabel')}
+              error={localError ?? serverFieldErrors.displayName}
+              counter={`${displayName.trim().length} / ${DISPLAY_NAME_MAX_LENGTH}`}
+            >
+              {({ inputId, describedBy }) => (
+                <TextInput
+                  id={inputId}
+                  aria-describedby={describedBy}
+                  aria-invalid={localError !== null || serverFieldErrors.displayName !== undefined}
+                  value={displayName}
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setDisplayName(event.target.value);
+                    setLocalError(null);
+                    setSaved(false);
+                  }}
+                />
+              )}
+            </FormField>
+
+            <FormField
+              label={t('platforms:settings.sortOrderLabel')}
+              hint={t('platforms:settings.sortOrderHint')}
+              error={serverFieldErrors.sortOrder}
+            >
+              {({ inputId, describedBy }) => (
+                <TextInput
+                  id={inputId}
+                  type="number"
+                  min={0}
+                  max={SORT_ORDER_MAX}
+                  aria-describedby={describedBy}
+                  value={sortOrder}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setSortOrder(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+              )}
+            </FormField>
+
+            <div className="rounded-lg bg-surface-sunken/70 p-3">
+              <ToggleSwitch
+                label={t('platforms:settings.enabledLabel')}
+                description={t('platforms:settings.enabledDescription')}
+                checked={enabled}
+                onCheckedChange={(next) => {
+                  setEnabled(next);
                   setSaved(false);
                 }}
               />
-            )}
-          </FormField>
+            </div>
 
-          <FormField
-            label={t('platforms:settings.sortOrderLabel')}
-            hint={t('platforms:settings.sortOrderHint')}
-            error={serverFieldErrors.sortOrder}
-          >
-            {({ inputId, describedBy }) => (
-              <TextInput
-                id={inputId}
-                type="number"
-                min={0}
-                max={SORT_ORDER_MAX}
-                aria-describedby={describedBy}
-                value={sortOrder}
-                disabled={busy}
-                onChange={(event) => {
-                  setSortOrder(event.target.value);
-                  setSaved(false);
-                }}
-              />
-            )}
-          </FormField>
+            <p aria-live="polite" className="text-[11px] text-ink-faint">
+              {saved ? (
+                <span className="text-status-live">{t('platforms:settings.saved')}</span>
+              ) : (
+                t('platforms:settings.hint')
+              )}
+            </p>
+          </form>
 
-          <div className="rounded-lg border border-line bg-surface-sunken p-3">
-            <ToggleSwitch
-              label={t('platforms:settings.enabledLabel')}
-              description={t('platforms:settings.enabledDescription')}
-              checked={enabled}
-              onCheckedChange={(next) => {
-                setEnabled(next);
-                setSaved(false);
-              }}
-            />
-          </div>
-
-          <p aria-live="polite" className="text-[11px] text-ink-faint">
-            {saved ? (
-              <span className="text-status-live">{t('platforms:settings.saved')}</span>
-            ) : (
-              t('platforms:settings.hint')
-            )}
-          </p>
-        </form>
-
-        {/* Keyed by platform id so its input, status and confirmation state
-            never leak across platforms - closing the dialog (platform becomes
-            null) unmounts it entirely, and opening a different platform
-            remounts it fresh even if this dialog's own instance persists. */}
-        <StreamKeySection key={platform.id} platform={platform} />
-        <OutputSettingsSection key={`output-${platform.id}`} platform={platform} />
-        <AccountLinkSection key={`account-link-${platform.id}`} platform={platform} />
-        <BroadcastSelectSection key={`broadcast-${platform.id}`} platform={platform} />
+          {/* Keyed by platform id so its input, status and confirmation state
+              never leak across platforms - closing the dialog (platform becomes
+              null) unmounts it entirely, and opening a different platform
+              remounts it fresh even if this dialog's own instance persists. */}
+          <StreamKeySection key={platform.id} platform={platform} />
+          <OutputSettingsSection key={`output-${platform.id}`} platform={platform} />
+          <AccountLinkSection key={`account-link-${platform.id}`} platform={platform} />
+          <BroadcastSelectSection key={`broadcast-${platform.id}`} platform={platform} />
+        </div>
       </Modal>
 
       <ConfirmDialog

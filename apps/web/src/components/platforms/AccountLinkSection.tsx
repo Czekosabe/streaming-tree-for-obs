@@ -50,7 +50,7 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
   // fake selector.
   if (platform.providerId !== 'twitch' && platform.providerId !== 'youtube') {
     return (
-      <div className="space-y-2 rounded-lg border border-line bg-surface-sunken p-3">
+      <div className="space-y-2 rounded-lg bg-surface-sunken/70 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {t('accounts:link.heading')}
         </p>
@@ -80,7 +80,7 @@ export function AccountLinkSection({ platform }: AccountLinkSectionProps) {
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-surface-sunken p-3">
+    <div className="space-y-3 rounded-lg bg-surface-sunken/70 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {t(`${prefix}.heading`)}

@@ -1,7 +1,7 @@
 {
   "editor": {
-    "heading": "Edytor metadanych",
-    "description": "Pola wynikają z możliwości platformy zgłaszanych przez backend",
+    "heading": "Szczegóły transmisji",
+    "description": "Tytuł, kategoria i inne szczegóły dla wybranego celu",
     "tabsLabel": "Metadane platform",
     "empty": "Dodaj cel transmisji, aby edytować jego metadane."
   },

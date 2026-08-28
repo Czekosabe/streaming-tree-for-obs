@@ -76,7 +76,7 @@ export function OutputSettingsSection({ platform }: OutputSettingsSectionProps) 
     updateMutation.error !== null ? resolveApiErrorMessage(tErrors, updateMutation.error) : null;
 
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-surface-sunken p-3">
+    <div className="space-y-3 rounded-lg bg-surface-sunken/70 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
         {t('platforms:output.sectionTitle')}
       </p>

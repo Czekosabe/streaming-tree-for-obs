@@ -53,7 +53,7 @@ export function BroadcastSelectSection({ platform }: BroadcastSelectSectionProps
 
   if (accountId === null) {
     return (
-      <div className="space-y-2 rounded-lg border border-line bg-surface-sunken p-3">
+      <div className="space-y-2 rounded-lg bg-surface-sunken/70 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {t('accounts:youtube.broadcast.heading')}
         </p>
@@ -72,7 +72,7 @@ export function BroadcastSelectSection({ platform }: BroadcastSelectSectionProps
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-surface-sunken p-3">
+    <div className="space-y-3 rounded-lg bg-surface-sunken/70 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
         {t('accounts:youtube.broadcast.heading')}
       </p>
