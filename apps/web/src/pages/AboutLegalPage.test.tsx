@@ -48,7 +48,10 @@ describe('AboutLegalPage', () => {
 
     expect(await screen.findByText('Streaming Tree for OBS')).toBeInTheDocument();
     expect(screen.getByText('Czekosabe')).toBeInTheDocument();
-    expect(screen.getByText(/development build/i)).toBeInTheDocument();
+    // Scoped to the main content landmark: the sidebar footer now shows the
+    // same real build identity (Stage 20E - see about-presentation.ts), so
+    // an unscoped query would match more than one element on this page.
+    expect(within(screen.getByRole('main')).getByText(/development build/i)).toBeInTheDocument();
   });
 
   it('never renders a real name, email, or other personal/local identifier', async () => {

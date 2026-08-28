@@ -2,16 +2,16 @@ import { Settings2, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
+import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { useCredentialStatusQuery } from '@/hooks/use-credentials';
 import { useBranchRuntimeQuery } from '@/hooks/use-branches';
 import { cn } from '@/lib/cn';
 import { branchFor } from '@/models/branch-presentation';
 import { presentCredentialStatus } from '@/models/credential-presentation';
-import { categoryFieldLabelKey, providerGlyphClass } from '@/models/provider-labels';
+import { categoryFieldLabelKey } from '@/models/provider-labels';
 
 import { BranchControls } from './BranchControls';
 import { IconButton } from '../ui/Button';
-import { PlatformGlyph } from './PlatformGlyph';
 
 type PlatformCardProps = {
   platform: ConfiguredPlatform;
@@ -78,7 +78,7 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
 
       <div className="flex items-start justify-between gap-3 p-4 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <PlatformGlyph className={providerGlyphClass(platform.providerId)} label={shortLabel} />
+          <ProviderBrand providerId={platform.providerId} fallbackLabel={shortLabel} />
           <div className="min-w-0">
             {/* User-chosen destination name; brand name sits underneath it. */}
             <h3

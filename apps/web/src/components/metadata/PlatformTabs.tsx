@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
+import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { cn } from '@/lib/cn';
 
 type PlatformTabsProps = {
@@ -61,6 +62,12 @@ export function PlatformTabs({ platforms, activeId, onSelect }: PlatformTabsProp
                 : 'border-transparent text-ink-muted hover:border-line-strong hover:text-ink',
             )}
           >
+            <ProviderBrand
+              providerId={platform.providerId}
+              fallbackLabel={platform.providerId.slice(0, 2).toUpperCase()}
+              size="sm"
+              className="size-5 rounded"
+            />
             <span
               aria-hidden="true"
               className={cn(

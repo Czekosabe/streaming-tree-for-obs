@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
+import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
@@ -160,17 +161,24 @@ export function PlatformSettingsDialog({
             </p>
           )}
 
-          <div className="rounded-lg border border-line bg-surface-sunken px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-              {t('platforms:settings.providerLabel')}
-            </p>
-            {/* Brand name, never translated, and not editable. */}
-            <p className="mt-0.5 text-sm text-ink">
-              {platform.provider?.brandName ?? platform.providerId}
-            </p>
-            <p className="mt-1 text-[11px] text-ink-faint">
-              {t('platforms:settings.providerImmutable')}
-            </p>
+          <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-sunken px-3 py-2">
+            <ProviderBrand
+              providerId={platform.providerId}
+              fallbackLabel={platform.providerId.slice(0, 2).toUpperCase()}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+                {t('platforms:settings.providerLabel')}
+              </p>
+              {/* Brand name, never translated, and not editable. */}
+              <p className="mt-0.5 text-sm text-ink">
+                {platform.provider?.brandName ?? platform.providerId}
+              </p>
+              <p className="mt-1 text-[11px] text-ink-faint">
+                {t('platforms:settings.providerImmutable')}
+              </p>
+            </div>
           </div>
 
           <FormField

@@ -88,7 +88,10 @@ const PROVIDER_GLYPH_CLASSES: Record<string, string> = {
   twitch: 'border-violet-500/35 bg-violet-500/12 text-violet-300',
   youtube: 'border-red-500/35 bg-red-500/12 text-red-300',
   kick: 'border-emerald-500/35 bg-emerald-500/12 text-emerald-300',
-  tiktok: 'border-sky-500/35 bg-sky-500/12 text-sky-300',
+  // TikTok's two brand accent colours as a soft tile background - the
+  // official mark itself is never recoloured, only this backing tile.
+  // See docs/provider-branding.md §3.
+  tiktok: 'border-sky-400/35 bg-gradient-to-br from-[#25F4EE]/20 to-[#FE2C55]/20 text-sky-200',
   // A donation-service provider (Stage 16A), not a streaming destination -
   // a distinct, app-owned accent, never StreamElements' own logo (see
   // docs/provider-integrations/external-donations.md §22/§44).

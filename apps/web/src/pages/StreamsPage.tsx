@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { BranchSnapshot } from '@/api/branch-schemas';
 import type { RuntimeSnapshot } from '@/api/runtime-schemas';
 import { AppShell } from '@/components/layout/AppShell';
+import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { CopyableValue } from '@/components/runtime/CopyableValue';
 import { RuntimeControls } from '@/components/runtime/RuntimeControls';
 import { runtimeErrorMessage } from '@/components/runtime/runtime-error-message';
@@ -363,9 +364,16 @@ function BranchTablePanel() {
                   className="rounded-lg border border-line bg-surface-sunken p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{platform.displayName}</p>
-                      <StatusBadge status={branchTone(state)} label={t(branchStateKey(state))} className="mt-1" />
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <ProviderBrand
+                        providerId={platform.providerId}
+                        fallbackLabel={platform.providerId.slice(0, 2).toUpperCase()}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{platform.displayName}</p>
+                        <StatusBadge status={branchTone(state)} label={t(branchStateKey(state))} className="mt-1" />
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {controls.canStart && (

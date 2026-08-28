@@ -46792,3 +46792,93 @@ the code it justifies rather than as a disconnected preamble.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — feat(web): add a real provider brand icon system
+
+Replaces the plain "TW"/"YT"/"KI"/"TT"-style coloured-letter tiles
+(`PlatformGlyph` + `providerGlyphClass`, a deliberate prior policy of
+shipping no third-party brand logos at all) with real, recognizable
+Twitch/YouTube/Kick/TikTok marks, per this stage's governing brief.
+
+### Sourcing (see docs/provider-branding.md for the full record)
+No logo is fetched at runtime - the production build stays fully
+offline, matching every other asset in this project. Rather than
+scraping each brand's own portal (this session's fetch tooling is
+text-oriented and cannot reliably extract/verify a binary vector asset
+to the same provenance standard as a pinned package) or adding the
+full `simple-icons` npm package (~16 MB across 3,400+ files for four
+needed marks), the four exact `.svg` files were retrieved from
+`simple-icons@16.28.0` (CC0-1.0 markup licence; its own `source` field
+for each icon points at the brand's official brand/press page) and
+copied byte-for-byte, unmodified, into
+`apps/web/src/assets/providers/`. Third-party marks remain the
+trademarks of their respective owners; this is nominative use only
+(identifying, inside the operator's own local dashboard, which
+platform a destination *they* configured connects to), never
+marketing. TikTok's own policy is materially stricter than the other
+three and its official mark is a single colour (black); rather than
+inventing an unofficial multicolour redraw, the vendored glyph stays
+exactly as shipped and only the *tile background* behind it carries
+TikTok's cyan/pink brand accent - the trademarked geometry itself is
+never recoloured. Full detail, including the quoted Simple Icons
+DISCLAIMER, is in docs/provider-branding.md.
+
+### Implementation
+`ProviderBrand` (`apps/web/src/components/providers/ProviderBrand.tsx`)
+is the one new reusable component: it renders a known provider's
+vendored mark as a CSS mask (so the SVG file is only ever referenced as
+an image resource, never parsed as injected markup) coloured by the
+mark's official hex, on the same provider-accent tile
+`providerGlyphClass` already defined; any other/future provider id
+falls back to the pre-existing neutral text tile (`PlatformGlyph`) -
+never a crash, never a blank tile. The mark is always `aria-hidden`:
+every call site already renders the visible provider/brand name text
+next to it, so that text remains the one accessible identifier, exactly
+matching this codebase's existing status/identity badge pattern.
+Adopted on the Dashboard's `PlatformCard`, `PlatformSettingsDialog`'s
+provider-identity row, the Metadata workspace's `PlatformTabs`, and
+`StreamsPage`'s destination branch table (which previously showed no
+provider identity at all, not even a text tile) - the exact surfaces
+the governing brief named. Deliberately **not** adopted on
+`ChatSourceLabel`/`OverlaySourceMarker`: those are the public,
+viewer-facing chat/browser-source overlay glyphs, whose own doc
+comments record a pre-existing, deliberate decision to never show a
+third-party brand logo inside content rendered live inside a stream -
+a distinct product surface, left untouched.
+
+### Regression coverage added
+`apps/web/src/components/providers/ProviderBrand.test.tsx` (new):
+asserts the four real destination providers (`kick`/`tiktok`/`twitch`/
+`youtube`) all resolve to a known mark - the exact regression this
+stage fixes would be a Dashboard silently falling back to letter tiles
+again; asserts the mark tile is `aria-hidden` and never itself an
+accessible `img`; asserts an unrecognised/future provider id falls back
+to the neutral text tile without throwing, including an empty string;
+and, for each of the four vendored `.svg` files, reads the real file
+from disk and asserts it contains no `<script>`, no `on*` event-handler
+attribute, no `<foreignObject>`, no `xlink:href`, and no external
+`href`/`src` reference (the SVG namespace URI itself,
+`xmlns="http://www.w3.org/2000/svg"`, is expected and explicitly
+excluded from that check) - the vendored-SVG sanitization requirement
+from the governing brief, verified against the actual checked-in files
+rather than assumed. A final test asserts the assets directory
+contains exactly those four files, not an accidentally-vendored fifth.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing, unrelated warning as every prior entry
+(`auth-context.tsx`). `npm run i18n:check`: 2 languages, 23 namespaces,
+no differences. `npm test`: **1454/1454 passed** across 110 test files
+(same pre-existing jsdom `HTMLMediaElement` console noise as every
+prior entry, not a failure) - includes fixing
+`AboutLegalPage.test.tsx`'s `development build` text query, which
+became ambiguous once the version line described in the next commit
+also appears in the sidebar footer; scoped it to the main content
+landmark. `npm run build`: clean production build; the four vendored
+SVGs are small enough that Vite inlines them as data URIs rather than
+emitting separate asset files, adding well under 5 KB total to the
+bundle - no dependency was added to package.json for this.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
