@@ -47140,3 +47140,39 @@ unaffected by the colour change (it never asserted an exact hex).
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Not the final Windows manual-test candidate.
+
+## 2026-08-28 — docs: add Session M to the manual-verification checklist for this round's Dashboard visual realignment
+
+All autonomous Stage 20E work for this round (spacing/density,
+Metadata & Settings polish, provider-brand provenance and contrast
+fix, product-copy audit) landed in the four commits above, all on top
+of a1040868, and commit 4cc782c is now the final, all-green
+(cross-platform + Windows + macOS + Linux + headless, all `success`)
+source state for this round's Windows manual-test candidate.
+
+Adds a new "Session M — Stage 20E Dashboard visual realignment" section
+(M-1 through M-10) to `docs/manual-verification.md`, covering exactly
+what changed this round and nothing this document already covered:
+overall Dashboard visual direction, real provider brand marks on every
+identity surface (with an explicit TikTok-contrast check, since that
+was a real defect caught before any physical test even ran), the
+platform-grid's wider column scaling, the right rail's corrected real-
+data summary, Platform settings' reduced box-in-box density, the
+Metadata workspace's renamed heading, the relocated Backend/
+diagnostics card on the Logs page, the real version identity in the
+sidebar footer, and a representative-viewport responsive sweep.
+Existing sessions (A/B's tray/purge/cooperative-shutdown/scroll-lock/
+Add-Platform items, C through L's OBS/destination/overlay/account/
+updater/diagnostics/lifecycle items) are unchanged - this is a pure
+addition, not a rewrite, per this document's own append-only intent
+for checklist items whose underlying feature is still current.
+
+This commit does not touch `apps/server/**`, `apps/web/**`, or any
+other windows-package.yml-triggering path, so it does not invalidate
+or require re-verifying the already-CI-verified 4cc782c installer
+artifact - the checklist describes that exact build's real behavior.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This is the last autonomous commit before the consolidated
+Windows manual-test handoff for this round.
