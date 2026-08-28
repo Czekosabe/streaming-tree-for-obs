@@ -103,3 +103,23 @@ const NEUTRAL_GLYPH_CLASS = 'border-line bg-surface-raised text-ink-muted';
 export function providerGlyphClass(providerId: string): string {
   return PROVIDER_GLYPH_CLASSES[providerId] ?? NEUTRAL_GLYPH_CLASS;
 }
+
+/**
+ * Wider, atmospheric per-provider gradient for a destination card's
+ * decorative header band (`PlatformCard`'s hero area) - a deliberately
+ * bigger, softer wash than `providerGlyphClass`'s small-tile accent, never a
+ * fake stream preview. Purely decorative, no status meaning.
+ */
+const PROVIDER_HERO_CLASSES: Record<string, string> = {
+  twitch: 'bg-gradient-to-br from-violet-600/25 via-violet-900/10 to-transparent',
+  youtube: 'bg-gradient-to-br from-red-600/25 via-red-900/10 to-transparent',
+  kick: 'bg-gradient-to-br from-emerald-500/25 via-emerald-900/10 to-transparent',
+  tiktok: 'bg-gradient-to-br from-[#25F4EE]/20 via-[#FE2C55]/15 to-transparent',
+  streamelements: 'bg-gradient-to-br from-amber-500/25 via-amber-900/10 to-transparent',
+};
+
+const NEUTRAL_HERO_CLASS = 'bg-gradient-to-br from-surface-hover to-transparent';
+
+export function providerHeroClass(providerId: string): string {
+  return PROVIDER_HERO_CLASSES[providerId] ?? NEUTRAL_HERO_CLASS;
+}

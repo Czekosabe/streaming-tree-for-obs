@@ -6,7 +6,7 @@ import { PlatformGlyph } from '@/components/platforms/PlatformGlyph';
 import { cn } from '@/lib/cn';
 import { providerGlyphClass } from '@/models/provider-labels';
 
-type ProviderMarkSize = 'sm' | 'md' | 'lg';
+type ProviderMarkSize = 'sm' | 'md' | 'lg' | 'xl';
 
 type ProviderMark = {
   /** Vendored, unmodified upstream SVG - see docs/provider-branding.md. */
@@ -45,12 +45,14 @@ const TILE_SIZE: Record<ProviderMarkSize, string> = {
   sm: 'size-7 rounded-md',
   md: 'size-9 rounded-lg',
   lg: 'size-11 rounded-lg',
+  xl: 'size-14 rounded-xl',
 };
 
 const GLYPH_SIZE: Record<ProviderMarkSize, string> = {
   sm: 'size-3.5',
   md: 'size-4',
   lg: 'size-5',
+  xl: 'size-7',
 };
 
 type ProviderBrandProps = {
@@ -60,6 +62,12 @@ type ProviderBrandProps = {
   fallbackLabel: string;
   size?: ProviderMarkSize;
   className?: string;
+  /** Renders only the glyph mask - no tile background/border. Used for a
+   * large, low-opacity brand watermark inside a card's decorative header
+   * area, where a bordered tile would be the wrong visual weight. Has no
+   * effect on the neutral-fallback path, which always needs its tile to
+   * remain legible text. */
+  bare?: boolean;
 };
 
 /**
@@ -78,8 +86,49 @@ type ProviderBrandProps = {
  * identifier, consistent with the rest of this codebase's status/identity
  * badges.
  */
-export function ProviderBrand({ providerId, fallbackLabel, size = 'md', className }: ProviderBrandProps) {
+export function ProviderBrand({
+  providerId,
+  fallbackLabel,
+  size = 'md',
+  className,
+  bare = false,
+}: ProviderBrandProps) {
   const mark = PROVIDER_MARKS[providerId];
+
+  if (mark === undefined) {
+    const tileClass = cn(
+      'flex shrink-0 items-center justify-center border',
+      TILE_SIZE[size],
+      providerGlyphClass(providerId),
+      className,
+    );
+    return <PlatformGlyph label={fallbackLabel} className={tileClass} />;
+  }
+
+  const maskStyle = {
+    backgroundColor: mark.hex,
+    WebkitMaskImage: `url(${mark.icon})`,
+    maskImage: `url(${mark.icon})`,
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+  } as const;
+
+  if (bare) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn('block', GLYPH_SIZE[size], className)}
+        style={maskStyle}
+      />
+    );
+  }
+
+  const glyph = <span className={cn('block', GLYPH_SIZE[size])} style={maskStyle} />;
+
   const tileClass = cn(
     'flex shrink-0 items-center justify-center border',
     TILE_SIZE[size],
@@ -87,26 +136,9 @@ export function ProviderBrand({ providerId, fallbackLabel, size = 'md', classNam
     className,
   );
 
-  if (mark === undefined) {
-    return <PlatformGlyph label={fallbackLabel} className={tileClass} />;
-  }
-
   return (
     <span aria-hidden="true" className={tileClass}>
-      <span
-        className={cn('block', GLYPH_SIZE[size])}
-        style={{
-          backgroundColor: mark.hex,
-          WebkitMaskImage: `url(${mark.icon})`,
-          maskImage: `url(${mark.icon})`,
-          WebkitMaskRepeat: 'no-repeat',
-          maskRepeat: 'no-repeat',
-          WebkitMaskPosition: 'center',
-          maskPosition: 'center',
-          WebkitMaskSize: 'contain',
-          maskSize: 'contain',
-        }}
-      />
+      {glyph}
     </span>
   );
 }

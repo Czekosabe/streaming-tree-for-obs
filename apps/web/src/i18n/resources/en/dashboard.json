@@ -1,6 +1,6 @@
 {
   "title": "Dashboard",
-  "description": "One OBS output, several independent platform branches.",
+  "description": "Manage your streams and broadcast to multiple platforms from one OBS output.",
   "definitionsUnavailable": "Platform definitions could not be loaded from the backend.",
   "actions": {
     "addPlatform": "Add Platform",
@@ -9,8 +9,8 @@
     "globalSettingsShort": "Settings"
   },
   "branches": {
-    "heading": "Platform branches",
-    "note": "Each branch runs independently - one failure does not stop the others."
+    "heading": "Your destinations",
+    "note": "Each one runs independently - one failure does not stop the others."
   },
   "states": {
     "loading": "Loading configured platforms...",
@@ -35,7 +35,6 @@
     "configured": "Total",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "runtimeHeading": "Right now",
     "runtimeIdle": "No destination is currently sending",
     "runtimeLive_one": "{{count}} live",
     "runtimeLive_other": "{{count}} live",
@@ -43,6 +42,9 @@
     "runtimeStarting_other": "{{count}} starting",
     "runtimeError_one": "{{count}} error",
     "runtimeError_other": "{{count}} errors",
+    "configuredOffline_one": "{{count}} offline",
+    "configuredOffline_other": "{{count}} offline",
+    "ringLiveLabel": "Live",
     "configuredAccessible_one": "{{count}} configured destination",
     "configuredAccessible_other": "{{count}} configured destinations",
     "enabledAccessible_one": "{{count}} enabled destination",
@@ -62,5 +64,12 @@
     "service": "Service",
     "version": "Version",
     "uptime": "Uptime"
+  },
+  "quickActions": {
+    "heading": "Quick actions",
+    "startEnabled": "Start enabled destinations",
+    "stopAll": "Stop all outputs",
+    "refresh": "Refresh status",
+    "openLogs": "Open Logs & Diagnostics"
   }
 }

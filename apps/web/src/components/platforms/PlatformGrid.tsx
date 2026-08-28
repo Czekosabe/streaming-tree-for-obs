@@ -9,13 +9,17 @@ type PlatformGridProps = {
 };
 
 /**
- * Responsive card grid: one column on phones, growing up to three at wide
- * desktop width. Not hard-coded to any fixed destination count - the grid
- * simply wraps to as many columns as the viewport and card min-width allow.
+ * Responsive card grid using CSS auto-fill rather than fixed breakpoint
+ * column counts: it always packs as many ~260px-minimum cards per row as
+ * the available width allows (naturally reaching four across at a common
+ * wide-desktop width once the sidebar and right rail are accounted for),
+ * and gracefully reduces down to one column on narrow viewports - never a
+ * hard-coded destination count, and never a lone card stranded alone on
+ * its own row purely because of an arbitrary column-count breakpoint.
  */
 export function PlatformGrid({ platforms, onOpenSettings, onEditMetadata }: PlatformGridProps) {
   return (
-    <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4">
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
       {platforms.map((platform) => (
         <li key={platform.id} className="animate-fade-rise">
           <PlatformCard

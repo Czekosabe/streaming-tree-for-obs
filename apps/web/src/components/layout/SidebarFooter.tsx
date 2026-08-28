@@ -38,39 +38,35 @@ export function SidebarFooter() {
         aria-label={t('runtime:ingest.heading')}
         className="rounded-lg border border-line bg-surface-sunken p-3"
       >
-        <div className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-            <Radio aria-hidden="true" className="size-3" />
-            {t('runtime:mediamtx.componentName')}
-          </span>
-          {mediaMtx !== undefined && (
-            <span className="text-[10px] text-ink-faint">{mediaMtx.supportedVersion}</span>
-          )}
+        {/*
+         * "OBS Connection" is the primary, product-facing heading and the
+         * real ingest state is the primary status line - MediaMTX is the
+         * ingest engine that makes this work, not the concept the operator
+         * came here to check. Its name/version moves to a small secondary
+         * caption at the bottom of this section instead of leading it.
+         */}
+        <div className="flex items-center gap-1.5">
+          <Radio aria-hidden="true" className="size-3.5 text-accent-soft" />
+          <span className="text-xs font-semibold text-ink">{t('runtime:ingest.heading')}</span>
         </div>
 
         {runtimeQuery.isPending && (
-          <p className="mt-1.5 text-xs text-ink-muted">{t('runtime:system.checking')}</p>
+          <p className="mt-2 text-xs text-ink-muted">{t('runtime:system.checking')}</p>
         )}
 
         {runtimeQuery.isError && (
-          <p className="mt-1.5 text-xs text-status-error">
+          <p className="mt-2 text-xs text-status-error">
             {t('runtime:system.runtimeUnavailable')}
           </p>
         )}
 
         {mediaMtx !== undefined && ingest !== undefined && (
           <>
-            {/* Service state */}
-            <p className="mt-1.5 flex items-center gap-2 text-xs font-medium text-ink">
-              <StatusDot status={mediaMtxTone(mediaMtx.state)} />
-              {t(mediaMtxStateKey(mediaMtx.state))}
-            </p>
-
-            {/* Ingest state, only meaningful once the service runs */}
+            {/* Real OBS/ingest state - this is what "OBS Connection" answers. */}
             <p
               className={cn(
-                'mt-1 flex items-center gap-2 text-[11px]',
-                ingest.state === 'receiving' ? 'text-status-live' : 'text-ink-muted',
+                'mt-2 flex items-center gap-2 text-sm font-medium',
+                ingest.state === 'receiving' ? 'text-status-live' : 'text-ink',
               )}
             >
               <StatusDot status={ingestTone(ingest.state)} />
@@ -83,6 +79,13 @@ export function SidebarFooter() {
                 {ingest.tracks.length > 0 && <> &middot; {ingest.tracks.join(', ')}</>}
               </p>
             )}
+
+            {/* Ingest-engine service state - secondary, smaller than the
+                real connection state above. */}
+            <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
+              <StatusDot status={mediaMtxTone(mediaMtx.state)} />
+              {t(mediaMtxStateKey(mediaMtx.state))}
+            </p>
 
             {lastError !== null && (
               <p className="mt-1.5 rounded border border-status-error/30 bg-status-error/10 px-1.5 py-1 text-[10px] leading-relaxed text-status-error">
@@ -114,6 +117,12 @@ export function SidebarFooter() {
               {t('runtime:connection.notASecret')}
             </p>
           </div>
+        )}
+
+        {mediaMtx !== undefined && (
+          <p className="mt-2.5 border-t border-line pt-2 text-[10px] text-ink-faint">
+            {t('runtime:mediamtx.componentName')} {mediaMtx.supportedVersion}
+          </p>
         )}
       </section>
 

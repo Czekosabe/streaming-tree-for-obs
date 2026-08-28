@@ -7,18 +7,18 @@ import { cn } from '@/lib/cn';
 import { branchFor, branchTone } from '@/models/branch-presentation';
 
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
-import { StatusDot } from '../ui/StatusBadge';
+import { OverallStatusRing } from './OverallStatusRing';
 
 /**
- * Overall stream status: configured/enabled/disabled counts, plus a real
- * live/starting/error breakdown built from `GET /api/branches`.
+ * Overall stream status: a real live/starting/error/offline ring built from
+ * `GET /api/branches`, plus configured/enabled/disabled counts underneath.
  *
- * The runtime breakdown reuses `branchTone` - the exact same
- * live/starting/error/offline semantics already used by every branch status
- * badge in this codebase (`BranchControls`, `StreamsPage`) - rather than
- * inventing a second vocabulary here. A destination with no tracked branch
- * yet (before the first fetch resolves) counts as idle/offline, matching
- * `branchFor`'s own documented convention.
+ * The ring reuses `branchTone` - the exact same live/starting/error/offline
+ * semantics already used by every branch status badge in this codebase
+ * (`BranchControls`, `StreamsPage`) - rather than inventing a second
+ * vocabulary here. A destination with no tracked branch yet (before the
+ * first fetch resolves) counts as idle/offline, matching `branchFor`'s own
+ * documented convention.
  */
 export function StreamCountersCard({ platforms }: { platforms: readonly ConfiguredPlatform[] }) {
   const { t } = useTranslation('dashboard');
@@ -27,6 +27,14 @@ export function StreamCountersCard({ platforms }: { platforms: readonly Configur
   const total = platforms.length;
   const enabled = platforms.filter((platform) => platform.enabled).length;
   const disabled = total - enabled;
+
+  const tones = platforms.map((platform) =>
+    branchTone(branchFor(branchesQuery.data, platform.id)?.state ?? 'idle'),
+  );
+  const live = tones.filter((tone) => tone === 'live').length;
+  const starting = tones.filter((tone) => tone === 'starting').length;
+  const errorCount = tones.filter((tone) => tone === 'error').length;
+  const offline = tones.filter((tone) => tone === 'offline').length;
 
   const counters = [
     {
@@ -52,14 +60,6 @@ export function StreamCountersCard({ platforms }: { platforms: readonly Configur
     },
   ];
 
-  const tones = platforms.map((platform) =>
-    branchTone(branchFor(branchesQuery.data, platform.id)?.state ?? 'idle'),
-  );
-  const live = tones.filter((tone) => tone === 'live').length;
-  const starting = tones.filter((tone) => tone === 'starting').length;
-  const errorCount = tones.filter((tone) => tone === 'error').length;
-  const anyActive = live > 0 || starting > 0 || errorCount > 0;
-
   return (
     <Panel>
       <PanelHeader
@@ -68,14 +68,16 @@ export function StreamCountersCard({ platforms }: { platforms: readonly Configur
         icon={<Activity className="size-4" />}
         headingLevel={3}
       />
-      <PanelBody className="space-y-3">
-        <div className="grid grid-cols-3 gap-2">
+      <PanelBody className="space-y-4">
+        <OverallStatusRing live={live} starting={starting} error={errorCount} offline={offline} />
+
+        <div className="grid grid-cols-3 gap-2 border-t border-line pt-3">
           {counters.map((counter) => (
             <div
               key={counter.key}
               role="group"
               aria-label={counter.accessible}
-              className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5"
+              className="rounded-lg bg-surface-sunken/70 px-3 py-2.5"
             >
               <p
                 aria-hidden="true"
@@ -91,35 +93,6 @@ export function StreamCountersCard({ platforms }: { platforms: readonly Configur
               </p>
             </div>
           ))}
-        </div>
-
-        <div className="space-y-1.5 border-t border-line pt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
-            {t('counters.runtimeHeading')}
-          </p>
-          {!anyActive && <p className="text-[11px] text-ink-faint">{t('counters.runtimeIdle')}</p>}
-          {anyActive && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
-              {live > 0 && (
-                <span className="flex items-center gap-1.5 font-medium text-status-live">
-                  <StatusDot status="live" />
-                  {t('counters.runtimeLive', { count: live })}
-                </span>
-              )}
-              {starting > 0 && (
-                <span className="flex items-center gap-1.5 font-medium text-status-starting">
-                  <StatusDot status="starting" />
-                  {t('counters.runtimeStarting', { count: starting })}
-                </span>
-              )}
-              {errorCount > 0 && (
-                <span className="flex items-center gap-1.5 font-medium text-status-error">
-                  <StatusDot status="error" />
-                  {t('counters.runtimeError', { count: errorCount })}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </PanelBody>
     </Panel>

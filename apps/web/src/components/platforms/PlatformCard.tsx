@@ -1,4 +1,4 @@
-import { Settings2, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Loader2, Radio, Settings2, SlidersHorizontal, VideoOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
@@ -6,12 +6,24 @@ import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { useCredentialStatusQuery } from '@/hooks/use-credentials';
 import { useBranchRuntimeQuery } from '@/hooks/use-branches';
 import { cn } from '@/lib/cn';
-import { branchFor } from '@/models/branch-presentation';
+import { branchFor, branchStateKey, branchTone } from '@/models/branch-presentation';
 import { presentCredentialStatus } from '@/models/credential-presentation';
-import { categoryFieldLabelKey } from '@/models/provider-labels';
+import { categoryFieldLabelKey, providerHeroClass } from '@/models/provider-labels';
+import type { PlatformStatus } from '@/models/platform';
 
 import { BranchControls } from './BranchControls';
 import { IconButton } from '../ui/Button';
+import { StatusBadge } from '../ui/StatusBadge';
+
+/** Icon for the hero band's centred state indicator - reuses the same
+ * live/starting/error/offline tone every status badge in this codebase
+ * already uses, never a fake preview thumbnail. */
+const HERO_STATE_ICON: Record<PlatformStatus, typeof Radio> = {
+  live: Radio,
+  starting: Loader2,
+  error: AlertTriangle,
+  offline: VideoOff,
+};
 
 type PlatformCardProps = {
   platform: ConfiguredPlatform;
@@ -33,7 +45,7 @@ type PlatformCardProps = {
  * verbatim and never translated.
  */
 export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: PlatformCardProps) {
-  const { t } = useTranslation(['platforms', 'common']);
+  const { t } = useTranslation(['platforms', 'common', 'runtime']);
 
   const provider = platform.provider;
   const brandName = provider?.brandName ?? platform.providerId;
@@ -59,6 +71,9 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
   // since every card queries the same ['branches'] key.
   const branchesQuery = useBranchRuntimeQuery();
   const branch = branchFor(branchesQuery.data, platform.id);
+  const state = branch?.state ?? 'idle';
+  const tone = branchTone(state);
+  const HeroIcon = HERO_STATE_ICON[tone];
 
   return (
     <article
@@ -71,51 +86,82 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
       <span
         aria-hidden="true"
         className={cn(
-          'absolute inset-y-0 left-0 w-0.5',
+          'absolute inset-y-0 left-0 w-0.5 z-10',
           platform.enabled ? 'bg-accent/70' : 'bg-status-offline/50',
         )}
       />
 
+      {/*
+       * Decorative header band: a per-provider gradient wash plus a large,
+       * low-opacity brand watermark, with the destination's real branch
+       * state (never a fake preview/thumbnail) centred on top. This is the
+       * card's visual anchor - the reference direction's card art occupies
+       * real weight here, but everything shown is either pure decoration
+       * (the gradient/watermark) or real backend state (the icon/label).
+       */}
+      <div
+        className={cn(
+          'relative flex h-24 items-center justify-center overflow-hidden border-b border-line',
+          providerHeroClass(platform.providerId),
+        )}
+      >
+        <ProviderBrand
+          providerId={platform.providerId}
+          fallbackLabel={shortLabel}
+          size="xl"
+          bare
+          className="pointer-events-none absolute -right-3 -bottom-3 opacity-[0.14] blur-[0.5px]"
+        />
+        <div className="relative flex flex-col items-center gap-1.5">
+          <HeroIcon
+            aria-hidden="true"
+            className={cn(
+              'size-6',
+              tone === 'live' && 'text-status-live',
+              tone === 'starting' && 'animate-spin text-status-starting',
+              tone === 'error' && 'text-status-error',
+              tone === 'offline' && 'text-ink-faint',
+            )}
+          />
+          <span
+            className={cn(
+              'text-[11px] font-semibold uppercase tracking-wide',
+              tone === 'live' && 'text-status-live',
+              tone === 'starting' && 'text-status-starting',
+              tone === 'error' && 'text-status-error',
+              tone === 'offline' && 'text-ink-faint',
+            )}
+          >
+            {t(`runtime:${branchStateKey(state)}`)}
+          </span>
+        </div>
+      </div>
+
       <div className="flex items-start justify-between gap-3 p-4 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <ProviderBrand providerId={platform.providerId} fallbackLabel={shortLabel} />
+          <ProviderBrand providerId={platform.providerId} fallbackLabel={shortLabel} size="lg" />
           <div className="min-w-0">
             {/* User-chosen destination name; brand name sits underneath it. */}
             <h3
               id={`platform-${platform.id}-name`}
-              className="truncate text-sm font-semibold text-ink"
+              className="truncate text-base font-semibold text-ink"
               title={platform.displayName}
             >
               {platform.displayName}
             </h3>
-            <p className="truncate text-[11px] text-ink-faint">{brandName}</p>
+            <p className="flex items-center gap-1.5 truncate text-xs text-ink-faint">
+              {brandName}
+              <span aria-hidden="true">·</span>
+              {platform.enabled ? t('platforms:card.enabled') : t('platforms:card.disabled')}
+            </p>
           </div>
         </div>
 
-        <span
-          className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5',
-            'text-[11px] font-semibold uppercase tracking-wide',
-            platform.enabled
-              ? 'border-accent/40 bg-accent/12 text-accent-soft'
-              : 'border-status-offline/40 bg-status-offline/12 text-status-offline',
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              'size-2 rounded-full',
-              platform.enabled ? 'bg-accent-soft' : 'bg-status-offline',
-            )}
-          />
-          {platform.enabled
-            ? t('platforms:card.enabled')
-            : t('platforms:card.disabled')}
-        </span>
+        <StatusBadge status={tone} label={t(`runtime:${branchStateKey(state)}`)} className="shrink-0" />
       </div>
 
       <div className="space-y-3 px-4 pb-3">
-        <p className="line-clamp-2 min-h-9 text-sm text-ink" title={platform.metadata.title}>
+        <p className="line-clamp-2 min-h-10 text-sm text-ink" title={platform.metadata.title}>
           {hasTitle ? (
             platform.metadata.title
           ) : (
@@ -154,7 +200,7 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
 
       <footer className="flex items-center justify-between gap-2 border-t border-line px-4 py-3">
         <div className="min-w-0">
-          <BranchControls platformId={platform.id} branch={branch} />
+          <BranchControls platformId={platform.id} branch={branch} hideStatus />
         </div>
 
         <div className="flex shrink-0 items-start gap-1">

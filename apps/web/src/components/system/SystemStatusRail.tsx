@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
 
+import { QuickActionsCard } from './QuickActionsCard';
 import { StreamCountersCard } from './StreamCountersCard';
 
 /**
@@ -9,6 +10,11 @@ import { StreamCountersCard } from './StreamCountersCard';
  *
  * Below the `xl` breakpoint the dashboard grid drops it underneath the main
  * content instead of squeezing it - see `DashboardPage`.
+ *
+ * `StreamCountersCard` carries the real live/starting/error/offline ring and
+ * configuration counts; `QuickActionsCard` surfaces the same canonical
+ * start-enabled/stop-all/refresh actions `StreamsPage` already exposes,
+ * never a second implementation of them.
  *
  * Deliberately does not show backend connectivity/version/uptime detail:
  * that developer-facing framing ("Backend" / "Go REST API" / Service /
@@ -25,6 +31,7 @@ export function SystemStatusRail({ platforms }: { platforms: readonly Configured
   return (
     <aside aria-label={t('systemStatus.railLabel')} className="space-y-4">
       <StreamCountersCard platforms={platforms} />
+      <QuickActionsCard platforms={platforms} />
     </aside>
   );
 }

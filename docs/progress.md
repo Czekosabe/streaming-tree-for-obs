@@ -47176,3 +47176,140 @@ artifact - the checklist describes that exact build's real behavior.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. This is the last autonomous commit before the consolidated
 Windows manual-test handoff for this round.
+
+## 2026-08-28 — fix(web): structural Dashboard realignment - M-1 physical FAIL on 4cc782c
+
+Physical Windows verification of 4cc782c reported **M-1: FAIL** with a
+real screenshot of the running app plus the operator's original
+Dashboard concept reference, and nine concrete structural observations
+(dense administration-feeling cards, an awkward 3+1 card layout with
+dead space, undersized typography, "MediaMTX" still presented as the
+primary OBS-connection concept, a visually weak right rail, a
+too-form-like metadata area, and provider marks lacking visual
+weight). This is a real, correctly-reported acceptance failure, not
+minor polish - addressed with structural changes, not spacing tweaks,
+per the operator's own explicit instruction. 4cc782c is unchanged as
+the last recorded intermediate evidence; nothing in this commit
+touches Windows/installer/native code.
+
+### 1. Destination-card grid: fixed breakpoints → CSS auto-fill
+`PlatformGrid` moved from a small, fixed set of `grid-cols-N`
+breakpoints (which could reach only 3 columns below a 1800px viewport,
+producing exactly the "3 cards then 1 alone" layout the operator
+described) to `grid-cols-[repeat(auto-fill,minmax(260px,1fr))]` - the
+grid now always packs as many ~260px-minimum cards as the real
+available width allows, reaching four across at a common wide-desktop
+width without a hard-coded four-column breakpoint and without ever
+hard-coding a destination count.
+
+### 2. Destination card: real visual weight, not a config-summary row
+`PlatformCard` gained a decorative header band (`providerHeroClass`,
+a new per-provider gradient wash in `provider-labels.ts`) topped with
+a large, low-opacity brand watermark (`ProviderBrand`'s new `bare`
+render mode, plus a new `xl` size) and the destination's real branch
+state centred on top (a real icon + the same real state label every
+status badge already uses - Radio/Loader2/AlertTriangle/VideoOff for
+live/starting/error/offline) - never a fake stream-preview thumbnail,
+exactly the "honest alternative using real provider/status
+information" the operator asked for. The header row's provider tile
+grew from `md` to `lg`, the destination name from `text-sm` to
+`text-base`, and the top-right badge now shows the real branch state
+(previously the enabled/disabled pill) - the highest-signal real fact
+now leads, with enabled/disabled demoted to a small inline caption
+next to the brand name (still real, still visible, just not
+competing for the same visual slot). `BranchControls`'s Start/Stop
+buttons changed from small neutral `secondary` buttons to full-size
+`primary`/`danger` - the card's actual primary action, sized and
+coloured to read as one, with a new `hideStatus` prop so the card
+header's own state badge and this row never show the same fact twice
+at two different sizes.
+
+### 3. OBS Connection: was structurally still "MediaMTX"
+`SidebarFooter`'s ingest section literally rendered "MEDIAMTX" as its
+primary heading and led with the MediaMTX service-state line - this
+survived earlier this stage's own design-doc audit, which noted the
+section used real data but missed that the *heading itself* was still
+implementation-first. Now: "OBS connection" is the heading, the real
+ingest state (Waiting/Receiving/Error) is the primary status line, the
+MediaMTX service state is a smaller secondary line, and the engine
+name/version moved to a one-line caption at the bottom
+("MediaMTX v1.19.3"). No bitrate/resolution/FPS was added - the
+runtime API still does not report any, and this commit does not
+invent them.
+
+### 4. Right rail: a real ring, real quick actions, not three flat tiles
+New `OverallStatusRing` (`components/system/`): a lightweight
+`conic-gradient` donut (no chart dependency) built from the real
+live/starting/error/offline branch-state breakdown, with the real live
+count centred and a plain-text legend beside it carrying the same
+counts - the ring itself is `aria-hidden`, the legend is the
+accessible source of truth, exactly this codebase's established
+decorative-plus-real-text pattern. `StreamCountersCard` now leads with
+this ring and keeps the configured/enabled/disabled tiles as a smaller
+secondary row underneath. New `QuickActionsCard`: Start-enabled/
+Stop-all/Refresh-status/Open-Logs, reusing the exact same mutations
+and confirmation dialogs (`StartEnabledConfirmDialog`, `ConfirmDialog`)
+`StreamsPage` already uses - never a second implementation of branch
+bulk-control logic. No "Restart all" button was added: no bulk-restart
+endpoint exists, and this commit does not invent one client-side.
+
+### 5. Metadata & Settings: a dedicated provider-switching column
+`PlatformTabs` gained an `orientation` prop (`horizontal`/`vertical`);
+`MetadataEditor` now renders it as a `lg:w-56` left rail (WAI-ARIA
+vertical-tablist semantics, Up/Down arrow-key navigation) beside the
+form at desktop width, rather than a thin horizontal strip above a
+form stretched to the panel's full width - directly narrowing the
+form's actual rendered width, which is what made it read as "an
+enormous single horizontal form surface." Below `lg` the same vertical
+list simply stacks above the form instead (still fully keyboard-
+accessible, no duplicate DOM ids from a second tab-strip
+implementation). No field, capability, or validation behaviour
+changed.
+
+### 6. Typography
+`TopBar`'s page title grew from `text-base`/`text-lg` to
+`text-xl`/`text-2xl font-bold`; its description from `text-xs` to
+`text-sm`. Scoped to the one element that sets the page's primary
+heading hierarchy - not a global font-size change, per this stage's
+own explicit instruction not to uniformly zoom the application.
+
+### 7. Copy
+`dashboard:description` ("One OBS output, several independent platform
+branches.") and `dashboard:branches.heading` ("Platform branches")
+moved to more product-facing wording ("Manage your streams and
+broadcast to multiple platforms from one OBS output." / "Your
+destinations") - the internal "branch" architecture term stays exactly
+where it is genuine domain language elsewhere (`StreamsPage`,
+`runtime.json`), not renamed everywhere.
+
+### Regression coverage added
+`OverallStatusRing.test.tsx` (4 tests): the real live count renders at
+centre; only non-zero legend entries render; an honest idle message
+replaces the ring when nothing is configured (never a fake "0"
+ring); the ring graphic is `aria-hidden` with the legend as the real
+accessible source. `QuickActionsCard.test.tsx` (4 tests): all four
+real actions render; Start-enabled disables with no destinations
+configured; clicking Start-enabled opens the real confirmation dialog
+rather than acting immediately; Open Logs navigates to the real Logs
+route rather than a duplicate in-place logs view.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1462/1462
+passed** across 112 test files (8 new). `npm run build`: clean
+production build.
+
+### What this commit does not attempt
+No fake viewer counts, thumbnails, CPU/memory/disk/network, or OBS
+bitrate/resolution/FPS were added anywhere - every new visual element
+above is either pure decoration (gradients, the watermark, the ring's
+colour) or built from data `GET /api/branches`/`GET /api/platforms`/
+`GET /api/runtime` already provide. No Windows/native/installer source
+changed. No new Windows artifact is produced by this commit alone -
+per the governing instruction, autonomous visual-realignment work
+continues before the next consolidated candidate.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

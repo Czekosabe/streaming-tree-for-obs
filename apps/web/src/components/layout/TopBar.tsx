@@ -34,10 +34,10 @@ export function TopBar({ title, description, actions, onOpenMenu }: TopBarProps)
         </button>
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold tracking-tight text-ink sm:text-lg">
+          <h1 className="truncate text-xl font-bold tracking-tight text-ink sm:text-2xl">
             {title}
           </h1>
-          <p className="truncate text-xs text-ink-muted">{description}</p>
+          <p className="truncate text-sm text-ink-muted">{description}</p>
         </div>
 
         <div className="order-last flex w-full items-center gap-2 sm:order-none sm:w-auto">

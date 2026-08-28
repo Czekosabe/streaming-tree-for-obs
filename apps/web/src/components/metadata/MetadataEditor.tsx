@@ -49,6 +49,8 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
     }
   };
 
+  const hasTabs = platforms.length > 0 && activeId !== null;
+
   return (
     <>
       <Panel>
@@ -58,29 +60,46 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
           icon={<SlidersHorizontal className="size-4" />}
         />
 
-        {platforms.length > 0 && activeId !== null && (
-          <PlatformTabs platforms={platforms} activeId={activeId} onSelect={requestSelect} />
-        )}
-
-        <PanelBody>
-          {activePlatform === undefined ? (
-            <p className="text-sm text-ink-muted">{t('editor.empty')}</p>
-          ) : (
-            <div
-              role="tabpanel"
-              id={`metadata-panel-${activePlatform.id}`}
-              aria-labelledby={`metadata-tab-${activePlatform.id}`}
-              tabIndex={0}
-              className="animate-fade-rise"
-            >
-              <MetadataForm
-                key={activePlatform.id}
-                platform={activePlatform}
-                onDirtyChange={handleDirtyChange}
+        {/*
+         * A dedicated provider-switching column at desktop width (lg+),
+         * rather than a thin strip squeezed above a wide form - the same
+         * destination-switching behaviour, given real visual weight of its
+         * own. Below `lg` it simply stacks above the form as a full-width
+         * vertical list instead, which is exactly as usable on a narrow
+         * viewport as a horizontal strip would have been.
+         */}
+        <div className={hasTabs ? 'lg:flex' : undefined}>
+          {hasTabs && activeId !== null && (
+            <div className="border-b border-line lg:w-56 lg:shrink-0 lg:border-r lg:border-b-0">
+              <PlatformTabs
+                platforms={platforms}
+                activeId={activeId}
+                onSelect={requestSelect}
+                orientation="vertical"
               />
             </div>
           )}
-        </PanelBody>
+
+          <PanelBody className="min-w-0 flex-1">
+            {activePlatform === undefined ? (
+              <p className="text-sm text-ink-muted">{t('editor.empty')}</p>
+            ) : (
+              <div
+                role="tabpanel"
+                id={`metadata-panel-${activePlatform.id}`}
+                aria-labelledby={`metadata-tab-${activePlatform.id}`}
+                tabIndex={0}
+                className="animate-fade-rise"
+              >
+                <MetadataForm
+                  key={activePlatform.id}
+                  platform={activePlatform}
+                  onDirtyChange={handleDirtyChange}
+                />
+              </div>
+            )}
+          </PanelBody>
+        </div>
       </Panel>
 
       <ConfirmDialog
