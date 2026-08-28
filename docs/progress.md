@@ -46738,3 +46738,57 @@ rewritten.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — docs: define Stage 20E dashboard visual alignment contract
+
+Stage 20E's next governing message asked for the Dashboard to move back
+toward an earlier, textually-described product-direction reference (no
+image data reached this session) while treating it strictly as a
+visual/product-direction reference, never a data source: real backend
+state stays authoritative, and nothing the old mockup shows that the
+backend cannot actually produce (viewer counts, live thumbnails,
+bitrate/resolution/FPS, host CPU/memory/disk) gets built to imitate it.
+
+Before touching any implementation, this repository's own "document the
+contract before writing product-UI code" discipline (already used for
+provider-integration research contracts under
+`docs/provider-integrations/`) was applied here too:
+`docs/dashboard-design.md` audits the real current frontend
+(`DashboardPage`, `AppShell`/`Sidebar`/`SidebarFooter`, the platform
+card grid, `SystemStatusRail`'s three cards, the metadata workspace,
+the placeholder `/platforms` and `/metadata` routes) against the real
+backend contract (branch runtime state, platform configuration, local
+ingest/MediaMTX state, FFmpeg status, backend health, product/build
+identity via `GET /api/about`) and records, in a table, exactly what
+real data exists and what does not.
+
+### Key findings from the audit (drive every later commit in this cycle)
+The sidebar (`Sidebar.tsx`/`SidebarFooter.tsx`) already **is** the
+brand/nav/OBS-connection left rail the brief asked for - real ingest
+state from `GET /api/runtime`, no fake bitrate/resolution/FPS, already
+built in an earlier stage. No sidebar rework was needed. Three real,
+scoped problems were found instead: (1) provider identity on every card
+was a plain coloured-text tile by a stated prior policy of shipping no
+third-party brand logos - the brief explicitly asks for this to change,
+covered separately in `docs/provider-branding.md`; (2) the right rail's
+`StreamCountersCard` carried a **false** disclaimer
+("`counters.noRuntimeState`": "the streaming engine is not implemented
+yet") even though the branch runtime engine has existed since an
+earlier stage: `useBranchRuntimeQuery`/`BranchControls` are already real
+and already used elsewhere on the same page; (3) the right rail's
+`ResourcesCard` showed 100% static `DEMO_RESOURCE_METRICS`/
+`DEMO_NETWORK_STATUS` CPU/memory/disk/network numbers - honestly
+labelled "Demo" but still fake, and the backend does not collect host
+metrics at all.
+
+### What this commit does NOT do
+No implementation changed in this commit - only the two design-contract
+documents. `docs/provider-branding.md` (per-provider brand-asset
+sourcing/provenance) is committed together with the provider-brand
+implementation itself in the next commit, matching this repository's
+existing pattern of keeping a feasibility/provenance document next to
+the code it justifies rather than as a disconnected preamble.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
