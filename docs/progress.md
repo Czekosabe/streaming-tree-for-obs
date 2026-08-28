@@ -47313,3 +47313,33 @@ continues before the next consolidated candidate.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-28 — docs: revise Session M for the structural Dashboard rebuild in cc2712d
+
+Session M (added earlier this stage for 4cc782c) described the
+previous, structurally-failed candidate's expected behaviour - several
+of its items (thin horizontal metadata tab strip, no ring, no Quick
+actions, "at least 1800px" for a fourth column) no longer match what
+`cc2712d`'s structural rebuild actually does. Revised in place (not a
+second Session, since it is the same real feature area, just no
+longer accurately described by the old wording) to M-1 through M-15,
+covering exactly the concrete changes in the "structural Dashboard
+realignment" commit: the hero-band card treatment, the real ring and
+its centre count matching the cards, the Quick actions card and its
+two confirmation-dialog/navigation checks, the corrected "OBS
+connection" heading and state ordering, the new vertical provider-
+switching column, and a four-columns-at-common-wide-desktop grid check
+instead of the previous 1800px-minimum framing. Added M-15
+(the relocated Backend card on Logs & Diagnostics), which existed
+before but was never actually listed as its own checklist item. A note
+at the top tells a tester who already ran Session M against 4cc782c to
+re-run it fully rather than reuse those results, since the underlying
+surface changed structurally.
+
+This commit does not touch `apps/server/**` or `apps/web/**`, so it
+does not invalidate or require re-verifying the already-CI-verified
+cc2712d installer artifact.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -271,25 +271,36 @@ Precondition: whichever of Sessions A/H/J were actually run on this hardware.
 | L-3 | With a destination branch live, force-quit the app (as in L-1). | On next launch, the branch's `desiredRunning` does NOT silently resume broadcasting on its own — the app must never restart a live outgoing transmission without the operator explicitly starting it again. |
 | L-4 | Perform Session A/H/J's full install → use → uninstall cycle twice in a row (fresh install, use, uninstall, fresh install again). | The second install behaves identically to the first — no leftover state from the first cycle causes different behavior. |
 
-## Session M — Stage 20E Dashboard visual realignment (new this round)
+## Session M — Stage 20E Dashboard visual realignment
 
 Precondition: Session A's install (this round's candidate), the app
-running with at least two configured destinations across at least two
-different providers (ideally including one Twitch/YouTube/Kick/TikTok
-mix) so provider branding and the grid layout are both visible at once.
+running with at least three configured destinations across at least
+three different providers (ideally all four Twitch/YouTube/Kick/TikTok)
+with a mix of enabled/disabled and, if practical, one actually started
+so a real live/starting state is visible - so provider branding, card
+hierarchy, the grid, and the status ring are all visible at once.
+
+Revised for this round's structural rebuild (M-1 FAIL against the
+previous candidate, 4cc782c) - if you tested Session M against an
+earlier build, re-run it fully rather than reusing those results.
 
 | ID | Action | Expected result |
 | --- | --- | --- |
-| M-1 | Open the Dashboard and look at the overall page. | Reads as a streaming control center - destination cards are the clear primary content, spacing feels deliberate rather than cramped, no leftover developer-facing "Backend"/"Go REST API" card and no "System resources"/"Demo" card anywhere on this page. |
-| M-2 | Look at each configured destination's provider identity (card, and Platform settings' provider row, and the Metadata tab strip). | A real, recognizable Twitch/YouTube/Kick/TikTok mark is shown in a coloured accent tile - never a plain "TW"/"YT"/"KI"/"TT" letter tile for these four providers. |
-| M-3 | Specifically check a TikTok destination's mark (add one via Add Platform if none is configured). | The TikTok glyph itself is clearly visible against its tile (light mark on a dark cyan/pink-tinted tile) - not a near-invisible near-black mark. This was a real defect caught and fixed by this round's own contrast review before any physical test - confirm it actually looks right on a real display. |
-| M-4 | Widen the browser window to a large desktop size (1800px+ if your display allows). | The destination-card grid grows past two columns (up to four at very wide widths) rather than staying capped at two forever. |
-| M-5 | Look at the right-hand status column. | Shows real configured/enabled/disabled counts plus a real live/starting/error breakdown (or "No destination is currently sending" if none are active) - never a disclaimer claiming no live state exists, and never a "Demo"-badged resource panel. |
-| M-6 | Open a destination's Platform settings (the modal with Display name/Enabled/stream key/output settings/account link). | Reads as one coherent settings surface with a clear rhythm between sections - not a stack of equally-heavy bordered boxes. Provider identity (real brand mark) appears at the top of the modal. |
-| M-7 | Scroll to the Metadata & Settings area on the Dashboard (below the destination cards). | Heading reads "Stream details" (not "Metadata editor"); the form is compact and capability-driven per provider - no field appears for a capability a provider doesn't actually support. |
-| M-8 | Open Logs & Diagnostics from the sidebar. | Now also shows a "Backend" card (Service/Version/Uptime/connectivity) - this moved here from the Dashboard this round; confirm it shows real, correct data. |
-| M-9 | Look at the very bottom of the sidebar (below the OBS connection panel). | Shows the real build version/commit (matching About & Legal's own version line) - never a hardcoded "0.1.0". |
-| M-10 | Resize the browser window through large desktop → normal laptop → narrow/tablet → phone width, watching for any point where a horizontal scrollbar appears on the page itself. | No horizontal overflow at any width; the right-hand status column moves below the main content below the `xl` breakpoint; the destination grid collapses to fewer columns as width shrinks, down to one column on phone width. |
+| M-1 | Open the Dashboard and look at the overall page at a normal desktop width (not maximized ultra-wide, not a laptop). | Reads as a streaming control center, not an admin panel - destination cards are large and visually dominant with a clear provider-branded header band each, the page title is noticeably bigger than section/card text, and there is no leftover developer-facing "Backend"/"Go REST API" card or "System resources"/"Demo" card anywhere on this page. |
+| M-2 | Look at one destination card's header band (the coloured area above the provider name/title). | Shows a soft per-provider gradient wash with a large, faint watermark of that provider's own mark in the corner, and a centred icon + real state label (e.g. a spinning icon + "Starting", a radio icon + "Sending", a crossed-out camera + "Not configured") - never a fake video thumbnail, never blank empty space. |
+| M-3 | Look at each configured destination's provider identity (card header band, card title row, Platform settings' provider row, and the Metadata & Settings tab column). | A real, recognizable Twitch/YouTube/Kick/TikTok mark is shown in a coloured accent tile in all four places - never a plain "TW"/"YT"/"KI"/"TT" letter tile for these four providers. |
+| M-4 | Specifically check a TikTok destination's mark. | The TikTok glyph itself is clearly visible against its tile (light mark on a dark cyan/pink-tinted tile) - not a near-invisible near-black mark. A real defect caught and fixed before this round's physical test - confirm it actually looks right on a real display. |
+| M-5 | Look at a card's Start/Stop button (in the footer, next to the settings/metadata icon buttons). | A full-size, clearly coloured primary action (purple "Start" or red "Stop") - not a small neutral grey button that blends in with the icon buttons next to it. |
+| M-6 | With four or more destinations configured, widen the browser window to a large desktop size (1800px+ if your display allows), then narrow it back to a common laptop width (~1366-1440px). | At the wide size the grid reaches four cards per row; at the common laptop width it settles to two or three per row - never stuck at a maximum of two or three regardless of how wide the window gets, and never one lone card stranded alone with a large empty area beside it at a width that should fit more. |
+| M-7 | Look at the right-hand status column's top card. | Shows a ring/donut graphic with a real number centred in it (the live count) and a text legend beside it listing only the states that actually apply (e.g. "2 live", "1 starting") - never a fake CPU/memory/disk panel, and the ring's centre number must match what the destination cards themselves show as live. |
+| M-8 | Still in the right-hand column, look below the ring card. | A "Quick actions" card with four real buttons: Start enabled destinations, Stop all outputs, Refresh status, Open Logs & Diagnostics - not a placeholder list, not an "Upcoming features" list. |
+| M-9 | Click "Start enabled destinations" in Quick actions. | A confirmation dialog opens listing which destinations will actually start (and which are skipped and why) - it must not start anything immediately without that confirmation. Cancel it unless you intend to actually start streaming. |
+| M-10 | Click "Open Logs & Diagnostics" in Quick actions. | Navigates to the real Logs & Diagnostics page - not a dead link, not an in-place panel duplicating that page. |
+| M-11 | Look at the bottom of the left sidebar, above the version line. | The section's own heading reads "OBS connection" (not "MediaMTX"), and the first status line under it is the real OBS/ingest state (e.g. "Waiting for OBS or another RTMP publisher" / "Receiving an RTMP stream") - MediaMTX's own service state and version appear only as smaller, secondary lines beneath it. |
+| M-12 | Scroll to the Metadata & Settings area on the Dashboard (below the destination cards) at a desktop width. | Provider switching happens via a left-hand column of destination rows (not a thin horizontal strip above the form), and the form itself occupies the remaining width without feeling like a single oversized horizontal sheet. The heading reads "Stream details". Narrow the window - the same provider list should stack above the form instead of sitting beside it, and stay fully usable with mouse and keyboard. |
+| M-13 | Look at the very bottom of the sidebar (below the OBS connection panel). | Shows the real build version/commit (matching About & Legal's own version line) - never a hardcoded "0.1.0". |
+| M-14 | Resize the browser window through large desktop → normal laptop → narrow/tablet → phone width, watching for any point where a horizontal scrollbar appears on the page itself. | No horizontal overflow at any width; the right-hand status column moves below the main content below the `xl` breakpoint; the destination grid collapses to fewer columns as width shrinks, down to one column on phone width; the Quick actions buttons and ring stay fully visible and usable at every width. |
+| M-15 | Open Logs & Diagnostics from the sidebar. | Shows a "Backend" card (Service/Version/Uptime/connectivity) - this moved here from the Dashboard's right rail; confirm it shows real, correct data, not a placeholder. |
 
 ---
 
