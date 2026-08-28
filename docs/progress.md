@@ -47069,3 +47069,74 @@ was made. This commit is NOT the final Windows manual-test candidate -
 more autonomous work (accessibility re-verification, provider-
 provenance finalization, copy audit, responsive pass, pending-manual-
 case reconciliation) continues before one is produced.
+
+## 2026-08-28 — fix(web): TikTok's provider mark was unreadable against this application's dark theme, plus finalize provider-brand provenance records
+
+Two things done together since the second was found while doing the
+first: reconciling `docs/provider-branding.md`/`THIRD_PARTY_NOTICES.md`
+against the governing brief's explicit per-provider provenance
+checklist surfaced a real, previously-unrecorded rendering defect.
+
+### The real bug found during the provenance audit
+`ProviderBrand`'s TikTok entry rendered the vendored glyph in
+`#0a0a0a` - a value picked without checking it against this
+application's actual colour tokens. TikTok's only official single-
+colour mark is near-black (`#000000` in Simple Icons' own data); this
+application's surfaces are all dark navy
+(`--color-surface: #0c1122`, `--color-surface-sunken: #090d1c` -
+`apps/web/src/index.css`), and TikTok's tile background is only a
+20%-opacity cyan/pink tint over that same dark base
+(`providerGlyphClass`'s `tiktok` entry). A near-black glyph on that
+background has no usable contrast - it would have rendered as
+effectively invisible in the real packaged app, defeating the entire
+point of this stage's provider-branding work for exactly one of the
+four providers. The other three (Twitch `#9146FF`, YouTube `#FF0000`,
+Kick `#53FC19`) are all vivid, high-luminance official brand colours
+with good contrast on a dark tile and needed no change.
+
+### The fix
+`ProviderBrand.tsx`'s `tiktok` entry now renders the glyph in
+`#f4f6fb` (a light neutral tone) instead - the same unaltered glyph
+geometry, in the accepted light/dark polarity real-world TikTok
+integrations commonly use for dark surfaces (a light presentation of
+the identical single-colour mark, not a hue recolour into an
+unofficial colour). The tile's own cyan/pink accent background is
+unchanged. Documented honestly in `docs/provider-branding.md` as a
+disclosed accessibility exception, not silently corrected without a
+record.
+
+### Provenance finalization (docs/provider-branding.md, THIRD_PARTY_NOTICES.md)
+Restructured §2 of `docs/provider-branding.md` into one explicit
+record per provider (Twitch/YouTube/Kick/TikTok), each stating: exact
+local filename, exact upstream source, an explicit "Simple Icons
+fallback, not an official-portal asset" determination (stated plainly
+rather than left implicit), retrieval date, the official brand-
+guideline URL, explicit confirmation no modification beyond the
+byte-for-byte copy was made, and the exact colour/treatment rule
+applied. Also recorded honestly: Kick's Simple Icons `source` field is
+the bare `kick.com` domain, not the `about.kick.com/brand` toolkit
+subpage this project separately found via search - the two were never
+independently cross-verified against each other, and that limitation
+is stated rather than glossed over.
+
+`THIRD_PARTY_NOTICES.md` had a stale "Trademarks" section left over
+from before this stage's own branding work: "no logo, icon or other
+brand asset is included in this repository. Platform markers in the
+interface are plain text labels." That claim became false the moment
+the vendored provider SVGs were added and is corrected now, alongside
+a new "Provider brand marks" entry recording the Simple Icons
+package/version/licence and the same nominative-use/no-endorsement
+statement `docs/provider-branding.md` makes, cross-referencing it
+rather than duplicating the full per-icon detail.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1454/1454
+passed** across 110 test files, including `ProviderBrand.test.tsx`
+unaffected by the colour change (it never asserted an exact hex).
+`npm run build`: clean production build.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Not the final Windows manual-test candidate.

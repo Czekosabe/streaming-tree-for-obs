@@ -29,11 +29,16 @@ const PROVIDER_MARKS: Record<string, ProviderMark> = {
   twitch: { icon: twitchIcon, hex: '#9146FF' },
   youtube: { icon: youtubeIcon, hex: '#FF0000' },
   kick: { icon: kickIcon, hex: '#53FC19' },
-  // TikTok's own official single-colour mark is black; the tile it sits on
-  // (providerGlyphClass, not the glyph itself) carries TikTok's cyan/pink
-  // brand accent instead - the glyph geometry is never recoloured. See
-  // docs/provider-branding.md §3.
-  tiktok: { icon: tiktokIcon, hex: '#0a0a0a' },
+  // TikTok's only official single-colour mark is near-black (#000000),
+  // which has no usable contrast against this application's dark theme on
+  // ANY accent tile - a real accessibility problem, not a stylistic
+  // choice. Rendered in a light neutral tone instead: an accepted
+  // light/dark polarity of the same unaltered geometry (TikTok's own real-
+  // world usage commonly presents this exact mark in white for dark
+  // surfaces), never a hue recolour. The tile it sits on
+  // (providerGlyphClass, not the glyph itself) separately carries TikTok's
+  // cyan/pink brand accent. See docs/provider-branding.md §3.
+  tiktok: { icon: tiktokIcon, hex: '#f4f6fb' },
 };
 
 const TILE_SIZE: Record<ProviderMarkSize, string> = {

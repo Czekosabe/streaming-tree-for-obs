@@ -39,27 +39,89 @@ step) was not something this session could do to the same
 provenance/integrity standard as a pinned, versioned, checksummable
 package. Simple Icons' own per-icon `source` field points at each brand's
 official brand/press page, confirming the geometry and colour were
-themselves drawn from official material.
+themselves drawn from official material. **None of the four is an asset
+downloaded directly from the provider's own site by this project** - every
+one is the Simple Icons fallback, not an "official asset" in the sense of
+having been fetched from `brand.twitch.tv`/`about.kick.com`/etc. by this
+project itself. That distinction is recorded explicitly per provider below
+so it is never overstated later.
 
-| Provider | Local file | Simple Icons slug | Official hex | Simple Icons `source` | Brand guidelines |
-|---|---|---|---|---|---|
-| Twitch | `apps/web/src/assets/providers/twitch.svg` | `twitch` | `#9146FF` | <https://brand.twitch.tv> | <https://brand.twitch.tv> |
-| YouTube | `apps/web/src/assets/providers/youtube.svg` | `youtube` | `#FF0000` | <https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors> | same |
-| Kick | `apps/web/src/assets/providers/kick.svg` | `kick` | `#53FC19` | <https://kick.com> | <https://about.kick.com/brand> (official Kick brand toolkit, confirmed to exist via search on 2026-08-28; not independently re-verified against Simple Icons' geometry) |
-| TikTok | `apps/web/src/assets/providers/tiktok.svg` | `tiktok` | `#000000` (official single-colour mark) | <https://tiktok.com> | <https://developers.tiktok.com> |
+**Upstream package:** `simple-icons` npm package, version `16.28.0`,
+retrieved 2026-08-28 (`npm view`/`npm install simple-icons@16.28.0` into a
+scratch directory - not added to this repository's own `package.json`).
+**Licence of Simple Icons' own contribution:** CC0-1.0 - see the package's
+own `LICENSE.md`. CC0 covers Simple Icons' standardized SVG markup/geometry
+extraction only; it is **not** a grant of trademark rights to the
+underlying marks - see `DISCLAIMER.md`, quoted in full at the bottom of
+this document. **Retrieval method for all four:** the `.svg` file under
+Simple Icons' own `icons/` directory was copied byte-for-byte into this
+repository, with no redrawing, no recolouring, and no path editing; only
+its `<title>` element was left intact. No file was resized, repackaged, or
+otherwise altered beyond that direct copy.
 
-- **Upstream package:** `simple-icons` npm package, version `16.28.0`
-  (retrieved 2026-08-28).
-- **License:** CC0-1.0 (the icon *dataset/markup* - see the package's own
-  `LICENSE.md`). CC0 covers Simple Icons' own contribution (standardized
-  SVG markup/geometry extraction); it is **not** a grant of trademark
-  rights to the underlying marks - see `DISCLAIMER.md`, quoted in full at
-  the bottom of this document.
-- **Retrieval method:** `npm view`/`npm install simple-icons@16.28.0` into
-  a scratch directory, then the four `.svg` files under its `icons/`
-  directory were copied verbatim (no redrawing, no recolouring, no path
-  editing) into this repository. Their `<title>` elements were left
-  intact.
+### Twitch
+- **Local file:** `apps/web/src/assets/providers/twitch.svg`
+- **Upstream source:** Simple Icons `twitch` icon, `simple-icons@16.28.0`
+- **Official asset or fallback:** Simple Icons fallback (not fetched from
+  Twitch's own brand portal by this project)
+- **Retrieved:** 2026-08-28
+- **Official brand-guideline source:** <https://brand.twitch.tv> (also
+  Simple Icons' own recorded `source`/`guidelines` field for this icon)
+- **Modified beyond the copy described above:** No
+- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
+  Twitch's official hex `#9146FF`; no other recolouring or distortion
+
+### YouTube
+- **Local file:** `apps/web/src/assets/providers/youtube.svg`
+- **Upstream source:** Simple Icons `youtube` icon, `simple-icons@16.28.0`
+- **Official asset or fallback:** Simple Icons fallback
+- **Retrieved:** 2026-08-28
+- **Official brand-guideline source:**
+  <https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors>
+  (Simple Icons' own recorded `source`/`guidelines` field for this icon)
+- **Modified beyond the copy described above:** No
+- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
+  YouTube's official hex `#FF0000`; no other recolouring or distortion
+
+### Kick
+- **Local file:** `apps/web/src/assets/providers/kick.svg`
+- **Upstream source:** Simple Icons `kick` icon, `simple-icons@16.28.0`
+- **Official asset or fallback:** Simple Icons fallback
+- **Retrieved:** 2026-08-28
+- **Official brand-guideline source:** <https://about.kick.com/brand>
+  (Kick's own official brand toolkit, confirmed to exist via search on
+  2026-08-28; Simple Icons' own recorded `source` field for this icon is
+  the bare `https://kick.com` domain, not the brand-toolkit subpage - this
+  project did not independently re-verify Simple Icons' geometry against
+  Kick's own toolkit download, since doing so would require the binary
+  download/verification capability this session does not have; recorded
+  here as an honest limitation, not glossed over)
+- **Modified beyond the copy described above:** No
+- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
+  Kick's official brand green `#53FC19`; no other recolouring or distortion
+
+### TikTok
+- **Local file:** `apps/web/src/assets/providers/tiktok.svg`
+- **Upstream source:** Simple Icons `tiktok` icon, `simple-icons@16.28.0`
+- **Official asset or fallback:** Simple Icons fallback
+- **Retrieved:** 2026-08-28
+- **Official brand-guideline source:** <https://developers.tiktok.com>
+  (TikTok's own developer brand-and-use guidance); Simple Icons' own
+  recorded `source` field for this icon is the bare `https://tiktok.com`
+  domain
+- **Modified beyond the copy described above:** No - the glyph geometry
+  itself is untouched
+- **Colour/treatment rule applied:** TikTok's only official single-colour
+  mark is near-black (`#000000`). Rendered against this application's dark
+  theme, that colour has no usable contrast on any accent tile - a real
+  accessibility problem, not only an aesthetic one. The glyph is instead
+  rendered in a light neutral tone (`#f4f6fb`), the accepted light/dark
+  polarity of the same unaltered geometry (TikTok's own real-world usage
+  commonly presents this exact mark in white for dark surfaces); this is
+  not a hue recolour. The surrounding **tile background** (not the glyph)
+  separately carries TikTok's cyan/pink brand accent (`#25F4EE`/`#FE2C55`)
+  as a decorative gradient. See §3 below for why this split treatment
+  exists.
 
 ## 3. TikTok - the one real usage limitation
 
@@ -77,13 +139,19 @@ tool shows destination platform marks), not merchandising or marketing use.
 To stay honest about the limitation rather than silently redrawing the
 mark in unofficial colours:
 
-- The TikTok glyph itself is rendered exactly as Simple Icons ships it -
-  the official single-colour (black) mark, undistorted, unrecoloured.
-- The **tile background** behind it (not the glyph geometry) uses TikTok's
-  well-known brand accent colours (cyan `#25F4EE` / pink `#FE2C55`) as a
-  decorative gradient, so the destination is still visually recognizable
-  and colourful in the card grid, without altering the trademarked glyph
-  itself.
+- The TikTok glyph's geometry is rendered exactly as Simple Icons ships
+  it - undistorted, unstretched, no path edited. Its officially-documented
+  single colour is near-black (`#000000`); against this application's dark
+  theme that colour is not legible on any tile background this app uses,
+  so the glyph is instead rendered in a light neutral tone (`#f4f6fb`) - an
+  accepted light/dark polarity of the same unaltered mark, not a hue
+  recolour into an unofficial colour. This was caught and fixed during
+  this stage's own accessibility/contrast re-verification pass, not
+  assumed correct from the start.
+- The **tile background** behind it (not the glyph geometry) separately
+  uses TikTok's well-known brand accent colours (cyan `#25F4EE` / pink
+  `#FE2C55`) as a decorative gradient, so the destination is still
+  visually recognizable and colourful in the card grid.
 - If TikTok's terms are ever found to prohibit even this nominative,
   non-commercial identification use inside a local operator tool, the
   fallback is the same neutral text-tile treatment (`PlatformGlyph`) every

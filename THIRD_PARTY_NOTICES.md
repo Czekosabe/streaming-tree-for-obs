@@ -180,6 +180,34 @@ Full licence texts are installed in `apps/web/node_modules/<package>/` after
 
 ---
 
+## Provider brand marks (Twitch, YouTube, Kick, TikTok)
+
+| | |
+| --- | --- |
+| **Source project** | Simple Icons |
+| **Upstream** | <https://github.com/simple-icons/simple-icons> |
+| **Package/version used** | `simple-icons` npm package, version `16.28.0` |
+| **Licence (this project's own markup/geometry contribution)** | CC0-1.0 - <https://github.com/simple-icons/simple-icons/blob/master/LICENSE.md> |
+| **Role** | Four static `.svg` files (`twitch.svg`, `youtube.svg`, `kick.svg`, `tiktok.svg`) copied byte-for-byte, unmodified, into `apps/web/src/assets/providers/`, rendered locally by `ProviderBrand` (`apps/web/src/components/providers/ProviderBrand.tsx`). Not an npm dependency - the package itself is never installed or imported; only the four files were retrieved from it and vendored, so `package.json` carries no entry for it. |
+
+**CC0 covers Simple Icons' own contribution only - it is not a grant of
+trademark rights to the underlying marks.** Per Simple Icons' own
+DISCLAIMER (<https://github.com/simple-icons/simple-icons/blob/master/DISCLAIMER.md>,
+quoted in full in `docs/provider-branding.md`), the marks depicted by
+these four files remain the trademarks of Twitch Interactive, Inc.
+(Twitch), Google LLC (YouTube), Kick Streaming Pty Ltd (Kick), and
+TikTok Pty Ltd (TikTok) respectively. Streaming Tree uses them
+nominatively only - to identify, inside the operator's own local
+dashboard, which platform a destination the operator configured
+connects to - never to imply sponsorship, endorsement, or affiliation,
+and never on merchandise or marketing material. Full per-provider
+sourcing (exact upstream `source`/`guidelines` URL, retrieval date,
+official-vs-fallback determination, and the one real usage limitation
+for TikTok) is recorded in `docs/provider-branding.md`, not duplicated
+here.
+
+---
+
 ## Inno Setup (Windows installer build tool)
 
 | | |
@@ -207,6 +235,9 @@ is added by packaging.
 ## Trademarks
 
 Twitch, YouTube, Kick and TikTok are trademarks of their respective owners.
-Streaming Tree refers to them by name only; no logo, icon or other brand asset
-is included in this repository. Platform markers in the interface are plain
-text labels.
+Streaming Tree identifies them by name and, as of Stage 20E, by a small
+locally-vendored brand mark on destination cards and settings (see
+"Provider brand marks" above and `docs/provider-branding.md`) - never a
+redrawn, recoloured-beyond-documented-treatment, or hotlinked logo, and
+never in a way that implies sponsorship or endorsement. No other
+third-party brand asset is included in this repository.
