@@ -47666,3 +47666,41 @@ route already uses.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Not yet the final candidate - full CI for this commit and
 the Session M documentation update follow before one is produced.
+
+## 2026-08-29 — docs: revise Session M for the responsive-grid/provider-icon/System Resources remediation in 986c09f and aa56b51
+
+Session M (revised twice already, for 4cc782c and cc2712d) described
+builds that predate this round's fixes - several of its items no
+longer match what 986c09f/aa56b51 actually do (no count-aware grid
+check, no per-provider recognizability check beyond a generic mark
+check, "System resources" still described as the Backend/Ingest
+engine/FFmpeg content). Replaced with M-R1 through M-R24, adopting the
+governing feedback's own item numbering and wording verbatim where
+given, covering exactly this round's real changes: the 4-destination
+balanced-layout requirement at wide/intermediate/narrow widths (no 3+1
+orphan row), per-provider recognizability checks for all four brand
+marks individually (not one generic check), the split identity/state
+line, the Viewers "--"-means-unavailable tooltip, the real System
+Resources card's CPU/Memory/Disk values and their honest per-metric
+unavailable state, the separately-labelled Services card, the Upcoming
+features card and its no-rocket requirement, and a 125%/150% zoom
+smoke-test pass. Retained and renumbered (M-R20 through M-R23) the
+still-relevant OBS-connection-heading, sidebar-version, and Logs
+Backend-card checks from the previous revision that were not
+superseded by anything in the governing feedback's own list.
+
+The precondition now specifies **exactly four** configured
+destinations (previously "at least three") - four is the specific
+count this round's fix targets, so testing with a different count
+first would not exercise the actual regression.
+
+This commit touches only `docs/manual-verification.md` and this
+`docs/progress.md` entry - it does not modify `apps/server/**` or
+`apps/web/**`, so it does not invalidate or require re-verifying
+whichever installer artifact CI produces for aa56b51.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Final CI for aa56b51 (the actual source state this checklist
+describes) must be green before the next Windows candidate is
+produced - see the next entry.

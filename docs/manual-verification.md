@@ -274,41 +274,50 @@ Precondition: whichever of Sessions A/H/J were actually run on this hardware.
 ## Session M — Stage 20E Dashboard visual realignment
 
 Precondition: Session A's install (this round's candidate), the app
-running with at least three configured destinations across at least
-three different providers (ideally all four Twitch/YouTube/Kick/TikTok)
-with a mix of enabled/disabled and, if practical, one actually started
-so a real live/starting state is visible - so provider branding, card
-hierarchy, the grid, and the status ring are all visible at once.
+running with **exactly four** configured destinations, one per provider
+(Twitch/YouTube/Kick/TikTok), with a mix of enabled/disabled and, if
+practical, one actually started so a real live/starting state is
+visible - four is the specific count this round's fix targets (the
+real physical 3+1 orphan-row finding), so testing with a different
+count first does not exercise the actual regression.
 
-Revised twice now for this round's structural rebuild: first for the
-M-1 FAIL against 4cc782c, and again for a second physical round
-against cc2712d that found the card content and right rail still
-incomplete (missing Viewers/Status fields, no System resources
-section, no bottom-right panel) plus standing responsiveness/
-truncation concerns. If you tested Session M against an earlier build,
-re-run it fully rather than reusing those results.
+Revised a third time now: M-1 FAIL against 4cc782c, a second physical
+round against cc2712d (card content/right-rail completeness), and now
+a third round against 02e412b that found the responsive-grid fix
+insufficient (`auto-fit` alone does not prevent a 3+1 layout), the
+provider-icon finding still not demonstrably closed, text truncation
+not root-caused, and "System resources" semantically wrong (service
+health, not host resources). **If you tested Session M against any
+earlier build, re-run it fully** - do not reuse those results, and do
+not accept CI passing as a substitute for looking at the real running
+app.
 
 | ID | Action | Expected result |
 | --- | --- | --- |
-| M-1 | Open the Dashboard and look at the overall page at a normal desktop width (not maximized ultra-wide, not a laptop). | Reads as a streaming control center, not an admin panel - destination cards are large and visually dominant with a clear provider-branded header band each, and the page title is noticeably bigger than section/card text. There is no leftover developer-facing "Backend"/"Go REST API" card anywhere on this page (that detail lives on Logs & Diagnostics - M-19). |
-| M-2 | Look at one destination card's header band (the coloured area above the provider name/title). | Shows a soft per-provider gradient wash with a large, faint watermark of that provider's own mark in the corner, and a centred icon + real state label (e.g. a spinning icon + "Starting", a radio icon + "Sending", a crossed-out camera + "Not configured") - never a fake video thumbnail, never blank empty space. |
-| M-3 | Look at each configured destination's provider identity (card header band, card title row, Platform settings' provider row, and the Metadata & Settings tab column). | A real, recognizable Twitch/YouTube/Kick/TikTok mark is shown in a coloured accent tile in all four places - never a plain "TW"/"YT"/"KI"/"TT" letter tile, and never a flat, unrecognizable coloured square, for these four providers. |
-| M-4 | Specifically check a TikTok destination's mark. | The TikTok glyph itself is clearly visible against its tile (light mark on a dark cyan/pink-tinted tile) - not a near-invisible near-black mark. A real defect caught and fixed before physical test - confirm it actually looks right on a real display. |
-| M-5 | Look at a card's Start/Stop button (in the footer, next to the settings/metadata icon buttons). | A full-size, clearly coloured primary action (purple "Start" or red "Stop") - not a small neutral grey button that blends in with the icon buttons next to it. |
-| M-6 | Look at a destination card's body, below the title. | Four labelled fields in a 2x2 grid: Category, Stream key, Viewers, Status. "Viewers" honestly shows "--" (this application has no real per-destination viewer-count source anywhere, on any provider, and does not fabricate one - confirm it is never a real-looking number). "Status" shows the same real state text as the header badge (e.g. "Sending", "Waiting for input", "Not configured"), coloured to match. |
-| M-7 | At a normal desktop width, read every value in a card's Category/Stream key/Viewers/Status grid and the destination name above it. | Values are legible without excessive clipping - a long destination name may still truncate with a hover tooltip (that is expected for very long user-entered names), but the four labelled field values themselves should read clearly at a normal browser zoom level (100%). |
-| M-8 | With four or more destinations configured, widen the browser window to a large desktop size (1800px+ if your display allows), then narrow it back to a common laptop width (~1366-1440px), then to ~1024px. | The grid reflows smoothly at each width (roughly 4 → 3 → 2 columns) with no large empty region on the right of a row that should have fit another card, and no card stretched to an oddly extreme width. |
-| M-9 | Look at the right-hand status column's top card. | Shows a ring/donut graphic with a real number centred in it (the live count) and a text legend beside it listing only the states that actually apply (e.g. "2 live", "1 starting") - never a fake CPU/memory/disk panel, and the ring's centre number must match what the destination cards themselves show as live. |
-| M-10 | Look at the right-hand column below the ring card. | A "System resources" card listing three rows - Backend, Ingest engine, FFmpeg - each with a real status dot and real state text (e.g. "Connected", "Running", "Ready"). This is real service-dependency health, not host CPU/memory/disk/network usage - this application has never collected host telemetry, so no percentage/usage-bar values should appear here. |
-| M-11 | Still in the right-hand column, look below System resources. | A "Quick actions" card with four real buttons: Start enabled destinations, Stop all outputs, Refresh status, Open Logs & Diagnostics. |
-| M-12 | Click "Start enabled destinations" in Quick actions. | A confirmation dialog opens listing which destinations will actually start (and which are skipped and why) - it must not start anything immediately without that confirmation. Cancel it unless you intend to actually start streaming. |
-| M-13 | Click "Open Logs & Diagnostics" in Quick actions. | Navigates to the real Logs & Diagnostics page - not a dead link, not an in-place panel duplicating that page. |
-| M-14 | Look at the very bottom of the right-hand column. | An "Upcoming features" card lists a short set of genuinely planned items (per-branch encoding profiles, reusable metadata presets, metadata history) - not a long changelog, not invented marketing copy, and no rocket illustration or any other decorative graphic standing in for one (omitted deliberately - the reference's own rocket asset is not available to this codebase, and it is not approximated). |
-| M-15 | Look at the bottom of the left sidebar, above the version line. | The section's own heading reads "OBS connection" (not "MediaMTX"), and the first status line under it is the real OBS/ingest state (e.g. "Waiting for OBS or another RTMP publisher" / "Receiving an RTMP stream") - MediaMTX's own service state and version appear only as smaller, secondary lines beneath it. |
-| M-16 | Scroll to the Metadata & Settings area on the Dashboard (below the destination cards) at a desktop width. | Provider switching happens via a left-hand column of destination rows (not a thin horizontal strip above the form), and the form itself occupies the remaining width without feeling like a single oversized horizontal sheet. The heading reads "Stream details". Narrow the window - the same provider list should stack above the form instead of sitting beside it, and stay fully usable with mouse and keyboard. |
-| M-17 | Look at the very bottom of the sidebar (below the OBS connection panel). | Shows the real build version/commit (matching About & Legal's own version line) - never a hardcoded "0.1.0". |
-| M-18 | Resize the browser window through large desktop → normal laptop → narrow/tablet → phone width, watching for any point where a horizontal scrollbar appears on the page itself. | No horizontal overflow at any width; the right-hand status column moves below the main content below the `xl` breakpoint; the destination grid collapses to fewer columns as width shrinks, down to one column on phone width; the ring, System resources, Quick actions, and Upcoming features cards all stay fully visible and usable at every width. |
-| M-19 | Open Logs & Diagnostics from the sidebar. | Shows a "Backend" card (Service/Version/Uptime/connectivity) - this lives here, not on the Dashboard's right rail; confirm it shows real, correct data, not a placeholder. |
+| M-R1 | At 100% browser zoom and a wide desktop width (1920px+), look at the four destination cards. | They form a balanced 4-column row - not 3 cards plus a stranded fourth underneath, and not one giant card stretched across the whole row. |
+| M-R2 | Narrow the window to a width that would previously have produced 3+1 (roughly 1280-1600px - the exact width depends on your display, but this is the common "laptop" range). | The layout uses an intentional, balanced arrangement - 2 columns × 2 rows - never a 3-then-1 split. A real container-width-aware, destination-count-aware rule now chooses columns (`PlatformGrid.tsx`'s `columnClassesFor`), not a fixed-breakpoint or pure `auto-fit` rule - confirm the *actual rendered layout*, not just that the code changed. |
+| M-R3 | Narrow further to a phone-width viewport. | Cards stack cleanly to one column, full width, no clipping. |
+| M-R4 | At every width in M-R1 through M-R3. | No horizontal scrollbar appears on the page itself at any point. |
+| M-R5 | Look at the Twitch destination's mark (card header band, card title row, Platform settings, Metadata tab). | A visibly recognizable Twitch glyph (the stylised "glitch"/chat-bubble mark), not a flat purple square, not "TW". |
+| M-R6 | Look at the YouTube destination's mark. | A visibly recognizable YouTube play-button treatment, not a flat red square, not "YT". |
+| M-R7 | Look at the Kick destination's mark. | A visibly recognizable Kick "K"-based mark, not a flat green square, not "KI". |
+| M-R8 | Look at the TikTok destination's mark. | A visibly recognizable TikTok note/mark (light-coloured on its dark cyan/pink-tinted tile - a real earlier contrast defect, confirm it is not near-invisible), not a flat square, not "TT". |
+| M-R9 | Across all four cards. | No provider card shows only a generic coloured square where its logo should be - if this still happens, it is the exact unresolved regression this round targets; report it as a FAIL with a description of what actually renders. |
+| M-R10 | Read every card's secondary identity line (brand name + Enabled/Disabled) at 100% zoom. | Both pieces are fully readable - "Twitch", "YouTube", "Kick", "TikTok", "Enabled", "Disabled" never truncate or run together (e.g. never "YouTube Li..." or similar mid-word clipping). The brand name and the enabled/disabled state are two separate elements now, not one concatenated truncating string. |
+| M-R11 | Read a card's Category/Stream key/Viewers/Status grid at 100% zoom. | All four values readable; "Viewers"/"Status" are the field labels themselves and are never truncated. |
+| M-R12 | Look at the Viewers field's value, and hover it (or check with a screen reader). | Shows "--", with a tooltip/accessible description explaining it means "viewer count unavailable / not provided by the current integration" - never implying zero viewers. |
+| M-R13 | Look at the Status field's value. | Matches the real branch/runtime state shown elsewhere on the same card (the header badge and hero band) - real backend state, never a second, independent status concept. |
+| M-R14 | Look at the right-hand rail for a card titled "System resources". | Shows real CPU/Memory/Disk rows, each a percentage with a progress bar, sourced from this machine's own real usage - not Backend/Ingest engine/FFmpeg (that content now lives in a separately-labelled "Services" card - M-R20). Values should plausibly track real system activity (e.g. open Task Manager side-by-side and confirm the CPU/memory figures are in the same ballpark, not wildly different or static). |
+| M-R15 | Watch the System resources card for 15-20 seconds. | Values update periodically (every few seconds) rather than staying frozen or updating so fast it feels like a live meter/graph. |
+| M-R16 | Look for any CPU/memory/disk/network value anywhere on the Dashboard. | Every number shown is plausibly real (see M-R14) - none are suspiciously round/static "demo" values (e.g. exactly 38%/54%/71% every time, or unchanged for many minutes while the machine is doing real work). |
+| M-R17 | Click each Quick Actions button (Start enabled destinations, Stop all outputs, Refresh status, Open Logs & Diagnostics). | Each performs its real, described action (start/stop go through their existing confirmation dialogs; Refresh visibly re-fetches; Open Logs navigates to the real Logs page). |
+| M-R18 | Look at the bottom-right "Upcoming features" card. | A short (3-5 item) list of genuinely still-planned items (e.g. per-branch encoding profiles, reusable metadata presets, metadata history) - not a long changelog, not a feature that already works elsewhere in the app. |
+| M-R19 | Look for any rocket illustration anywhere on the Dashboard, including the Upcoming features card. | None appears - no rocket, no substituted emoji/clipart standing in for one. Also confirm the Metadata & Settings ("Stream details") workspace below the cards remains usable and responsive at each width from M-R1 through M-R3, with no horizontal overflow and no microscopically small fields. |
+| M-R20 | Look at the right-hand rail for a card titled "Services". | Lists Backend/Ingest engine/FFmpeg with real status dots and state text (e.g. "Connected", "Running", "Ready") - this is the renamed, accurately-labelled version of what an earlier round called "System resources" by mistake; it must not also be labelled "System resources" (M-R14 is the real resources card). |
+| M-R21 | Look at the bottom of the left sidebar, above the version line. | The section's own heading reads "OBS connection" (not "MediaMTX"), and the first status line under it is the real OBS/ingest state - MediaMTX's own service state and version appear only as smaller, secondary lines beneath it. |
+| M-R22 | Look at the very bottom of the sidebar. | Shows the real build version/commit (matching About & Legal's own version line) - never a hardcoded "0.1.0". |
+| M-R23 | Open Logs & Diagnostics from the sidebar. | Shows a "Backend" card (Service/Version/Uptime/connectivity) - this technical detail lives here, not on the Dashboard's right rail. |
+| M-R24 | Also smoke-test M-R1 through M-R11 at 125% and 150% browser zoom. | Same qualitative results - readable, no unexpected clipping, no horizontal overflow. Zooming *out* below 100% must never be necessary to see any Dashboard content correctly. |
 
 ---
 
