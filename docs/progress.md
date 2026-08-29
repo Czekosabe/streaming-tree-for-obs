@@ -47729,3 +47729,51 @@ This commit touches only `docs/dashboard-design.md` and this
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-29 — fix(server): tighten the resource collector's shutdown-blocking bound and defer its own shutdown last
+
+"Windows package verification" failed for aa56b51 - not with a test
+assertion or exit code, but with GitHub's own Checks-API annotation:
+*"The hosted runner lost communication with the server. Anything in
+your workflow that terminates the runner process, starves it for
+CPU/Memory, or blocks its network access can cause this error."* This
+is GitHub's own generic infrastructure-level diagnostic for that exact
+message, not a workflow-logic failure; steps 1-8 of that same run
+(including the new packaged-app provider-asset check from the
+previous commit, and a full real start/graceful-shutdown/exit cycle of
+the packaged app via `verify-packaged-app.mjs`) had already completed
+successfully before the run was interrupted mid-way through "Verify
+the installer (pass 1)" - a step this remediation round never touched.
+
+No conclusive evidence ties this specific failure to
+`internal/sysresources` - real diagnosis, not blind pattern-matching:
+its own most relevant behaviour (starting, running its background
+tick, and shutting down cleanly during a real app lifecycle) was
+already exercised successfully in this same run's step 8. Still,
+GitHub's own annotation names "starves it for CPU/Memory" as a real
+category of cause, and this stage's new background collector is the
+only meaningfully new always-on behaviour in this candidate - so
+before treating this as pure infrastructure flake, two cheap, real,
+defensible hardenings were made rather than a bare re-run:
+
+- `collect()`'s own internal timeout dropped from 5s to 2s. Every
+  syscall it makes (`GetSystemTimes`/`GlobalMemoryStatusEx`/
+  `GetDiskFreeSpaceExW`-class Win32 APIs, or their Linux equivalents)
+  normally completes in well under a second; a shorter bound tightens
+  the worst case without weakening real sampling.
+- `resourcesCollector.Shutdown` moved from the *first* call in
+  `shutdownRuntime` to the *last* - it holds no real user-visible
+  state to flush (no active stream, no in-flight OAuth handoff,
+  nothing durable), so every manager that does gets first claim on the
+  one shared `shutdownCtx` deadline instead of potentially losing a
+  couple of seconds of it to this one first.
+
+### Validation
+`gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean,
+`go test ./...` - all packages pass, including `internal/sysresources`
+(4/4) unchanged in behaviour, only tightened in timing.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This push triggers a fresh CI run for the actual final
+source state - not a bare re-run of the exact same failed commit.

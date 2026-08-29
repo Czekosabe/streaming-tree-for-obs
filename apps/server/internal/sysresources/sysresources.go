@@ -121,7 +121,17 @@ func (c *Collector) Snapshot() Snapshot {
 }
 
 func (c *Collector) collect() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Bounded tightly: every call this makes (GetSystemTimes/
+	// GlobalMemoryStatusEx/GetDiskFreeSpaceExW-class Win32 APIs on
+	// Windows, /proc reads on Linux) normally completes in well under a
+	// second. A short timeout here matters beyond just this one sample:
+	// Collector.Shutdown waits for whatever collect() call is currently
+	// in flight to finish before returning, and Shutdown is one of
+	// several sequential manager shutdowns sharing one overall
+	// graceful-shutdown deadline - this must never be the reason that
+	// budget runs out for a manager with real user-visible state to
+	// flush.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	snap := Snapshot{

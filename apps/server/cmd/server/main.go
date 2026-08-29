@@ -1298,7 +1298,6 @@ func run() error {
 		if trayHandle != nil {
 			trayHandle.Stop()
 		}
-		resourcesCollector.Shutdown(shutdownCtx)
 		updateManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
@@ -1317,6 +1316,11 @@ func run() error {
 		eventBus.Shutdown()
 		accountService.ShutdownValidationWorker(shutdownCtx)
 		supervisor.Shutdown(shutdownCtx)
+		// Last, deliberately: no real user-visible state to flush (no active
+		// stream, no in-flight OAuth handoff, nothing durable), so any
+		// manager above it with actual state to flush gets first claim on
+		// the shared shutdownCtx deadline.
+		resourcesCollector.Shutdown(shutdownCtx)
 	}
 
 	// The listener is created synchronously, before Serve, so packaged mode
