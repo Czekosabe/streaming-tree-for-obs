@@ -82,7 +82,7 @@ Read in full before any code changed:
 | FFmpeg dependency | `GET /api/ffmpeg-status` | capability flags, detected/minimum version |
 | Backend health | `GET /api/health` | status/service/version/uptime |
 | Product/build identity | `GET /api/about` | version, isReleaseBuild, commit, commitDirty |
-| Host CPU/memory/disk/network | **none** | not collected anywhere on the backend; `ResourcesCard`'s numbers were static constants |
+| Host CPU/memory/disk usage | `GET /api/system/resources` (added later this stage, `internal/sysresources`) | Real, local-only, bounded 5-second sampling of this machine's own CPU/memory/disk (application data volume) usage - not remote telemetry. At the time this table was first written, no such endpoint existed and the Dashboard's then-current `ResourcesCard` showed static fake numbers instead, which is why this row originally read "none." Network throughput remains unreported - omitted rather than faked, per this same table's own standing rule. |
 | Viewer counts / stream thumbnails | **none** | never fabricated anywhere in this codebase |
 
 Any Dashboard element not backed by a row in this table is either removed
@@ -124,14 +124,29 @@ existing neutral text-glyph treatment - that is a distinct, previously
 deliberate decision for content rendered live inside a stream/browser
 source, not a Dashboard/product-UI surface, and is out of scope here.
 
-## 5. Removed: fake host-resource metrics
+## 5. Removed: fake host-resource metrics (later replaced with a real one)
 
 `ResourcesCard.tsx`, its only two consumers `Meter.tsx` and `DemoBadge.tsx`,
-and `demo-system.ts`'s `DEMO_RESOURCE_METRICS`/`DEMO_NETWORK_STATUS` are
-deleted outright. The backend does not collect host CPU/memory/disk/network
-data (confirmed in §2), so there is no honest way to keep this card. No new
-telemetry subsystem is built to backfill it - per the brief's own explicit
-non-goal.
+and `demo-system.ts`'s `DEMO_RESOURCE_METRICS`/`DEMO_NETWORK_STATUS` were
+deleted outright when this contract was first written. At that time the
+backend did not collect host CPU/memory/disk/network data (confirmed in
+§2 as it stood then), so there was no honest way to keep the card, and no
+new telemetry subsystem was built to backfill it.
+
+**Later in this same stage, this was explicitly revisited and reversed for
+CPU/memory/disk (not network):** a real physical finding reported the
+right rail as missing a genuine "System resources" concept the reference
+direction called for, and the governing task at that point explicitly
+authorized small, local, read-only resource monitoring - distinct from
+remote telemetry - to close it honestly rather than merely renaming
+around the gap. `internal/sysresources` (backend) and the rebuilt
+`SystemResourcesCard` (frontend) are the result - see `docs/progress.md`'s
+"real local System Resources card" entry for the full record. This is not
+a contradiction of the rule above: fabricating numbers was never
+acceptable and still is not; what changed is that a real, bounded, local-
+only, non-persisted data source was built (with explicit authorization)
+instead of continuing to have no data source at all. Network throughput
+remains unreported, per that same later authorization's own scope limit.
 
 ## 6. Version display
 
@@ -156,10 +171,18 @@ hardcoded "0.1.0".
   (diagnostics is the right home for "Go REST API" / Service / Version /
   Uptime); the Dashboard no longer shows this framing at all.
 
-## 8. Non-goals (unchanged from the governing brief)
+## 8. Non-goals (unchanged from the governing brief, as it stood when this contract was first written)
 
-No fake viewer counts, thumbnails, or resource metrics. No telemetry. No
-runtime CDN logo fetching. No deleting real nav features
-(Chat/Overlays/Automation/Alerts/Audio/Goals) to match the old mockup. No
-Electron/Tauri/native-window rework. No backend changes - every item above
-is achievable from data the backend already exposes.
+No fake viewer counts, thumbnails, or resource metrics. No *remote/
+external* telemetry. No runtime CDN logo fetching. No deleting real nav
+features (Chat/Overlays/Automation/Alerts/Audio/Goals) to match the old
+mockup. No Electron/Tauri/native-window rework. No backend changes -
+every item above is achievable from data the backend already exposes.
+
+§5 records the one explicit, later exception to "no backend changes"
+and to a literal reading of "no telemetry": real, local-only, bounded,
+non-persisted host CPU/memory/disk sampling, added under a subsequent
+explicit authorization in this same stage that drew the distinction
+between *local resource monitoring* (allowed, once real) and *remote
+telemetry* (still an absolute non-goal - nothing sampled leaves this
+process). Every other non-goal in this list remains exactly as stated.

@@ -47704,3 +47704,28 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Final CI for aa56b51 (the actual source state this checklist
 describes) must be green before the next Windows candidate is
 produced - see the next entry.
+
+## 2026-08-29 — docs: correct dashboard-design.md's now-stale "no host resources, ever" framing
+
+While preparing the final report for this round's remediation, found
+`docs/dashboard-design.md` §2/§5/§8 still stated flatly that host CPU/
+memory/disk data does not exist and never would ("No new telemetry
+subsystem is built to backfill it - per the brief's own explicit non-
+goal") - true when that contract was first written, now contradicted
+by the real `GET /api/system/resources` endpoint added earlier in this
+same round under an explicit, later authorization. Left uncorrected,
+this document would actively mislead a future reader into believing
+the real System Resources card does not or should not exist. Updated
+§2's data-availability table, §5's "removed" framing, and §8's non-
+goals list to record both facts honestly: fabricating numbers was
+never acceptable and still is not, and *local, non-persisted, non-
+transmitted* resource sampling was a later, explicit exception to the
+original "no backend changes"/"no telemetry" framing, distinct from
+*remote* telemetry, which remains an absolute non-goal.
+
+This commit touches only `docs/dashboard-design.md` and this
+`docs/progress.md` entry - no application source changed.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
