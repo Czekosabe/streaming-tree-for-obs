@@ -37,7 +37,7 @@ describe('translation lookup', () => {
     await i18n.changeLanguage('pl');
 
     expect(i18n.t('dashboard:backend.unavailable')).toBe('Backend niedostępny');
-    expect(i18n.t('platforms:card.start')).toBe('Uruchom');
+    expect(i18n.t('platforms:card.enabled')).toBe('Włączona');
   });
 
   it('applies Polish plural categories', async () => {
@@ -75,7 +75,7 @@ describe('missing translation fallback', () => {
     expect(i18n.t('dashboard:backend.unavailable')).toBe('Backend unavailable');
     expect(i18n.t('dashboard:backend.unavailable')).not.toBe('backend.unavailable');
     // Untouched namespaces still resolve to Polish.
-    expect(i18n.t('platforms:card.start')).toBe('Uruchom');
+    expect(i18n.t('platforms:card.enabled')).toBe('Włączona');
   });
 });
 

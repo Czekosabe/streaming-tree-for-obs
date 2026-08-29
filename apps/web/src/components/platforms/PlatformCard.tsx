@@ -5,7 +5,9 @@ import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { useCredentialStatusQuery } from '@/hooks/use-credentials';
 import { useBranchRuntimeQuery } from '@/hooks/use-branches';
+import { useLanguage } from '@/i18n/use-language';
 import { cn } from '@/lib/cn';
+import { formatViewers } from '@/lib/format';
 import { branchFor, branchStateKey, branchTone } from '@/models/branch-presentation';
 import { presentCredentialStatus } from '@/models/credential-presentation';
 import { categoryFieldLabelKey, providerHeroClass } from '@/models/provider-labels';
@@ -23,6 +25,15 @@ const HERO_STATE_ICON: Record<PlatformStatus, typeof Radio> = {
   starting: Loader2,
   error: AlertTriangle,
   offline: VideoOff,
+};
+
+/** Text colour for the dl's own "Status" value - the same tone every other
+ * status indicator on this card already uses. */
+const STATUS_TEXT_TONE: Record<PlatformStatus, string> = {
+  live: 'text-status-live',
+  starting: 'text-status-starting',
+  error: 'text-status-error',
+  offline: 'text-ink-muted',
 };
 
 type PlatformCardProps = {
@@ -46,6 +57,7 @@ type PlatformCardProps = {
  */
 export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: PlatformCardProps) {
   const { t } = useTranslation(['platforms', 'common', 'runtime']);
+  const { locale } = useLanguage();
 
   const provider = platform.provider;
   const brandName = provider?.brandName ?? platform.providerId;
@@ -169,7 +181,7 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
           )}
         </p>
 
-        <dl className="grid grid-cols-2 gap-3">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5">
           <div className="min-w-0">
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               {categoryLabel}
@@ -187,6 +199,32 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
             </dt>
             <dd className="mt-0.5 truncate text-xs text-ink-muted">
               {t(credentialPresentation.labelKey)}
+            </dd>
+          </div>
+          {/*
+           * "Viewers" has no real backend source anywhere in this
+           * application (audited exhaustively: no Twitch/YouTube/Kick
+           * viewer-count API call exists, and the DB layer explicitly never
+           * persists one - docs/project-overview.md). `formatViewers` was
+           * built for exactly this honest case: it returns the locale's own
+           * "--" placeholder for `null` rather than a fabricated number.
+           * Real per-destination viewer counts would need genuine new
+           * backend polling work this task does not add.
+           */}
+          <div className="min-w-0">
+            <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              {t('platforms:card.viewersLabel')}
+            </dt>
+            <dd className="mt-0.5 truncate text-xs text-ink-muted">
+              {formatViewers(null, locale)}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              {t('platforms:card.statusLabel')}
+            </dt>
+            <dd className={cn('mt-0.5 truncate text-xs font-medium', STATUS_TEXT_TONE[tone])}>
+              {t(`runtime:${branchStateKey(state)}`)}
             </dd>
           </div>
         </dl>

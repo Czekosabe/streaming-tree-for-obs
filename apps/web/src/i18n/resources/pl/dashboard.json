@@ -87,5 +87,16 @@
     "stopAll": "Zatrzymaj wszystkie wyjścia",
     "refresh": "Odśwież stan",
     "openLogs": "Otwórz Logi i diagnostykę"
+  },
+  "resources": {
+    "heading": "Zasoby systemowe",
+    "description": "Usługi, od których zależy transmisja",
+    "backend": "Backend",
+    "ingestEngine": "Silnik odbioru",
+    "ffmpeg": "FFmpeg"
+  },
+  "upcoming": {
+    "heading": "Nadchodzące funkcje",
+    "description": "Już w planach na kolejny etap"
   }
 }

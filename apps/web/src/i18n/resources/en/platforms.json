@@ -16,14 +16,12 @@
     "noTitle": "No title set",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "stateLabel": "State",
-    "offlineConfigured": "Configured, offline",
-    "start": "Start",
-    "streamingNotImplemented": "Streaming engine not implemented",
     "editMetadata": "Edit metadata for {{platform}}",
     "openSettings": "Open settings for {{platform}}",
     "unknownProvider": "This destination uses the provider \"{{providerId}}\", which this version does not recognise. Update the application or delete the destination.",
-    "streamKeyLabel": "Stream key"
+    "streamKeyLabel": "Stream key",
+    "viewersLabel": "Viewers",
+    "statusLabel": "Status"
   },
   "fields": {
     "category": "Category",

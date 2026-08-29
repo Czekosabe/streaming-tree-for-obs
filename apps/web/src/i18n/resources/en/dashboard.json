@@ -71,5 +71,16 @@
     "stopAll": "Stop all outputs",
     "refresh": "Refresh status",
     "openLogs": "Open Logs & Diagnostics"
+  },
+  "resources": {
+    "heading": "System resources",
+    "description": "Services this app depends on to stream",
+    "backend": "Backend",
+    "ingestEngine": "Ingest engine",
+    "ffmpeg": "FFmpeg"
+  },
+  "upcoming": {
+    "heading": "Upcoming features",
+    "description": "Already on the roadmap for a later stage"
   }
 }

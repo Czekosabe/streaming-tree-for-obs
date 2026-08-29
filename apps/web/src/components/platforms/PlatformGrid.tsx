@@ -9,17 +9,24 @@ type PlatformGridProps = {
 };
 
 /**
- * Responsive card grid using CSS auto-fill rather than fixed breakpoint
- * column counts: it always packs as many ~260px-minimum cards per row as
+ * Responsive card grid using CSS auto-fit rather than fixed breakpoint
+ * column counts: it always packs as many ~280px-minimum cards per row as
  * the available width allows (naturally reaching four across at a common
  * wide-desktop width once the sidebar and right rail are accounted for),
  * and gracefully reduces down to one column on narrow viewports - never a
- * hard-coded destination count, and never a lone card stranded alone on
- * its own row purely because of an arbitrary column-count breakpoint.
+ * hard-coded destination count.
+ *
+ * `auto-fit` (not `auto-fill`) deliberately: with `auto-fill`, unfilled
+ * grid tracks stay reserved-but-empty, so real cards never grow to use
+ * that leftover width - visible as a large dead area whenever the
+ * destination count doesn't exactly fill a row, a real physical finding
+ * against an earlier build of this grid. `auto-fit` collapses those empty
+ * tracks instead, so the real cards' own `1fr` stretches to fill the row
+ * with no unexplained blank region.
  */
 export function PlatformGrid({ platforms, onOpenSettings, onEditMetadata }: PlatformGridProps) {
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+    <ul className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
       {platforms.map((platform) => (
         <li key={platform.id} className="animate-fade-rise">
           <PlatformCard

@@ -47343,3 +47343,119 @@ cc2712d installer artifact.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-29 — fix(web): destination-card content and right-rail completeness - second physical round against cc2712d
+
+Physical Windows verification of cc2712d found the destination cards
+still missing "Viewers" and "Status" fields the reference direction
+showed, and the right rail still missing a "System resources" section
+and a bottom-right panel, plus standing responsive/truncation/provider-
+icon concerns carried forward from earlier rounds. Addressed below,
+each resolved honestly rather than by fabricating data - see the
+per-item reasoning.
+
+### Root cause 1: "Viewers" was never wired to anything, honest or not
+`apps/web/src/lib/format.ts` already defined `formatViewers(viewers:
+number | null, locale)` - built to render `null` as an honest "--" -
+but nothing in the entire codebase ever called it (confirmed by a
+dedicated repo-wide audit before writing any code: no Twitch/YouTube/
+Kick/TikTok viewer-count API call exists anywhere in
+`apps/server/internal/provider/**`, no `kick` provider package exists
+at all, and `docs/project-overview.md` explicitly states viewer counts
+are never persisted or tracked). This is a real, permanent, project-
+wide architectural fact, not a temporary gap this task could close by
+adding a new backend endpoint (which would itself be exactly the kind
+of scope creep this stage's own governing instructions forbid).
+`PlatformCard`'s dl grid gained a "Viewers" field using this exact
+existing formatter, always passed `null` - the field exists, in the
+same visual position the reference direction showed it, and honestly
+reads "--" rather than a fabricated number.
+
+### Root cause 2: "Status" existed as a badge, not as a labelled field
+The real branch state was already shown as the header status badge and
+the hero band's label, but never as an explicit "Status" field
+alongside Category/Stream key the way the reference's own field layout
+implied. Added as a fourth dl entry, reusing the exact same
+`branchStateKey`/`branchTone` text and colour every other status
+indicator on this card already uses - no new state vocabulary.
+
+### Root cause 3: two more stale, unused i18n keys found while touching this file
+While editing `platforms.json`'s `card` block, found four more
+completely unreferenced keys left over from before the real branch-
+streaming engine existed: `stateLabel` ("State"), `offlineConfigured`
+("Configured, offline"), `start` ("Start"), and
+**`streamingNotImplemented` ("Streaming engine not implemented")** -
+the same class of stale bootstrap-era copy this stage has removed
+several times already, missed by the earlier exact-phrase audit
+because its wording ("Streaming engine not implemented") didn't
+literally match the phrase from that audit ("streaming engine is not
+implemented"). None were rendered anywhere in the app (confirmed via
+grep before removal); `i18n.test.ts` referenced the unrelated
+`card.start` key purely as an arbitrary example of Polish resolution,
+updated to `card.enabled` instead.
+
+### Root cause 4: the grid's own `auto-fill` choice could leave a dead area
+`PlatformGrid` moved from `auto-fill` to `auto-fit` (still
+`minmax(280px, 1fr)`, widened from 260px to give the now-four-field
+card body more breathing room). With `auto-fill`, unfilled grid tracks
+stay reserved-but-empty, so real cards never grow into that leftover
+width - a real, previously-unnoticed cause of the "large dead area"
+finding. `auto-fit` collapses those empty tracks so the real cards'
+own `1fr` fills the row instead.
+
+### Root cause 5: "System resources" and a bottom-right panel were genuinely absent
+Both were removed entirely in an earlier round (the previous card
+showed fabricated CPU/memory/disk/network numbers and was deleted for
+that reason - docs/dashboard-design.md §5) and nothing took their
+place. Audited whether real host-resource telemetry exists anywhere in
+`apps/server` before deciding how to respond: it does not, no
+metrics library is present in `go.mod`, and building one now would be
+new backend telemetry work this stage's own governing instructions
+explicitly forbid as scope creep ("no telemetry, no external
+monitoring"). New `SystemResourcesCard` therefore shows real
+*service-dependency* health instead - Backend/Ingest engine/FFmpeg,
+reusing the exact same `useHealthQuery`/`useRuntimeQuery`/
+`useFfmpegRuntimeQuery` data every other page already fetches - real,
+honest, zero new backend work, occupying the requested rail position
+without a single fabricated number. New `UpcomingFeaturesCard` sources
+its short list from the exact same `pages:platforms.planned.*`/
+`pages:metadata.planned.*` translation keys the real `/platforms` and
+`/metadata` placeholder routes already show, so it can never drift out
+of sync with what those pages promise or list something already
+shipped. No rocket illustration or substitute graphic was added: the
+reference's own rocket asset is not available to this codebase, and
+per this stage's own explicit instruction it is omitted rather than
+approximated.
+
+### Files changed
+`apps/web/src/components/platforms/PlatformCard.tsx` (Viewers/Status
+dl fields), `apps/web/src/components/platforms/PlatformGrid.tsx`
+(auto-fit, 280px min), `apps/web/src/components/system/
+SystemResourcesCard.tsx` (new), `apps/web/src/components/system/
+UpcomingFeaturesCard.tsx` (new), `apps/web/src/components/system/
+SystemStatusRail.tsx` (wires both in), `apps/web/src/i18n/i18n.test.ts`
+(updated example key), `apps/web/src/i18n/resources/{en,pl}/
+platforms.json` (new viewersLabel/statusLabel, four stale keys
+removed), `apps/web/src/i18n/resources/{en,pl}/dashboard.json` (new
+resources.*/upcoming.* keys), `docs/manual-verification.md` (Session M
+revised to M-1 through M-19).
+
+### Regression coverage added
+`SystemResourcesCard.test.tsx` (2 tests): the three real rows render
+and are correctly labelled; no CPU/memory/disk/network/"Demo" text
+appears anywhere; an unmocked (unreachable) backend produces an honest
+"Backend unavailable" row rather than a fake success value.
+`UpcomingFeaturesCard.test.tsx` (2 tests): the real planned-feature
+copy renders; no `<img>` and no `.lucide-rocket` icon renders anywhere
+in the card.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm test`: **1466/1466
+passed** across 114 test files (4 new). `npm run build`: clean
+production build.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

@@ -16,14 +16,12 @@
     "noTitle": "Brak tytułu",
     "enabled": "Włączona",
     "disabled": "Wyłączona",
-    "stateLabel": "Stan",
-    "offlineConfigured": "Skonfigurowana, offline",
-    "start": "Uruchom",
-    "streamingNotImplemented": "Silnik transmisji nie jest zaimplementowany",
     "editMetadata": "Edytuj metadane platformy {{platform}}",
     "openSettings": "Otwórz ustawienia platformy {{platform}}",
     "unknownProvider": "Ten cel korzysta z platformy „{{providerId}}”, której ta wersja nie rozpoznaje. Zaktualizuj aplikację albo usuń ten cel.",
-    "streamKeyLabel": "Klucz transmisji"
+    "streamKeyLabel": "Klucz transmisji",
+    "viewersLabel": "Widzowie",
+    "statusLabel": "Status"
   },
   "fields": {
     "category": "Kategoria",
