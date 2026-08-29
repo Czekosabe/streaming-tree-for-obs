@@ -239,6 +239,25 @@ async function main() {
     );
     expect(!jsAsset.text.trimStart().startsWith('<!doctype'), 'JS asset body is not index.html', jsAsset.text.slice(0, 60));
 
+    step('The real production JS bundle actually contains the provider brand marks (Stage 20E)');
+    // A real physical/manual Windows test reported provider destination
+    // cards rendering as flat coloured squares instead of recognizable
+    // Twitch/YouTube/Kick/TikTok marks. ProviderBrand.tsx's own unit test
+    // proves the component itself renders correct SVG geometry, but that
+    // cannot prove the geometry actually survives this project's real
+    // production bundling/packaging/embedding pipeline into what a
+    // packaged Windows install actually serves - only fetching the real
+    // built JS from the real running packaged server can prove that. Each
+    // provider's official (or, for TikTok, contrast-corrected) fill hex
+    // must appear in the shipped bundle; their absence would mean the
+    // component either failed to build in, or a build step stripped it.
+    for (const hex of ['#9146FF', '#FF0000', '#53FC19', '#f4f6fb']) {
+      expect(
+        jsAsset.text.includes(hex),
+        `the production JS bundle contains the provider brand colour ${hex}`,
+      );
+    }
+
     step('A CSS asset returns the correct content type');
     const cssMatch = root.text.match(/\/assets\/[\w.-]+\.css/);
     expect(cssMatch !== null, 'index.html references a hashed CSS asset', root.text.slice(0, 300));

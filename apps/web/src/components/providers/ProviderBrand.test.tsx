@@ -5,9 +5,19 @@ import { fileURLToPath } from 'node:url';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { KNOWN_PROVIDER_BRAND_IDS, ProviderBrand } from './ProviderBrand';
+import { KNOWN_PROVIDER_BRAND_IDS, PROVIDER_MARK_PATHS, ProviderBrand } from './ProviderBrand';
 
 const ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../assets/providers');
+
+/** Official (or, for TikTok, contrast-corrected) fill colour each provider
+ * mark must render with - see ProviderBrand.tsx's own doc comment for why
+ * TikTok's is a light neutral tone rather than its official near-black. */
+const EXPECTED_HEX: Record<string, string> = {
+  twitch: '#9146FF',
+  youtube: '#FF0000',
+  kick: '#53FC19',
+  tiktok: '#f4f6fb',
+};
 
 describe('ProviderBrand', () => {
   it('resolves every real destination provider to a known brand mark', () => {
@@ -35,6 +45,43 @@ describe('ProviderBrand', () => {
   it('never throws for an empty or malformed provider id', () => {
     expect(() => render(<ProviderBrand providerId="" fallbackLabel="?" />)).not.toThrow();
   });
+
+  /**
+   * Renders inline SVG rather than a CSS `mask-image` referencing an
+   * external/bundler-resolved asset URL, specifically so this proves real
+   * rendered vector geometry with the correct fill colour - not merely
+   * `backgroundColor === brandColor` on an otherwise-empty element, which
+   * would pass even if the actual visible result were a flat coloured
+   * square (the exact physical regression this test guards against).
+   */
+  for (const id of KNOWN_PROVIDER_BRAND_IDS) {
+    it(`${id} renders a real <svg><path> with the correct fill - not a flat coloured square`, () => {
+      const { container } = render(<ProviderBrand providerId={id} fallbackLabel="??" />);
+
+      const svg = container.querySelector('svg');
+      expect(svg).not.toBeNull();
+      expect(svg?.getAttribute('viewBox')).toBe('0 0 24 24');
+
+      const path = container.querySelector('svg path');
+      expect(path).not.toBeNull();
+      // Real geometry, not an empty/placeholder path.
+      expect(path?.getAttribute('d')?.length ?? 0).toBeGreaterThan(20);
+      expect(path?.getAttribute('fill')).toBe(EXPECTED_HEX[id]);
+    });
+  }
+
+  for (const id of KNOWN_PROVIDER_BRAND_IDS) {
+    it(`${id}'s rendered path data matches the vendored ${id}.svg file exactly`, () => {
+      // Keeps the component's own hardcoded geometry (used for reliable
+      // inline rendering, with no dependency on how the bundler resolves
+      // an external asset URL) from silently drifting away from the
+      // vendored file that documents its real provenance.
+      const raw = readFileSync(join(ASSETS_DIR, `${id}.svg`), 'utf8');
+      const match = /<path d="([^"]+)"/.exec(raw);
+      expect(match).not.toBeNull();
+      expect(PROVIDER_MARK_PATHS[id]).toBe(match?.[1]);
+    });
+  }
 
   for (const id of KNOWN_PROVIDER_BRAND_IDS) {
     it(`vendored ${id}.svg contains no scripts, event handlers, or external references`, () => {

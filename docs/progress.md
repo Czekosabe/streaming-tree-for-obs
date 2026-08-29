@@ -47459,3 +47459,111 @@ production build.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-08-29 — fix(web): count-aware responsive grid, card text truncation, and inline-SVG provider marks - third physical round against 02e412b
+
+Physical Windows verification of 02e412b found the previous `auto-fit`
+grid fix insufficient (still produces a 3+1 layout for exactly four
+destinations), card text still truncating mid-word, and the provider-
+icon regression not demonstrably closed. All three addressed with real
+root-cause fixes, not further spacing tweaks.
+
+### Root cause 1: `auto-fit` cannot see item count, only minimum width
+`grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))` always
+picks however many ~280px tracks the container width allows - it has
+no way to know that landing on 3 columns for exactly 4 real items
+strands the 4th alone on its own row. A three-column layout is the
+*correct* choice when there truly are three destinations; the defect
+is only that auto-fit cannot distinguish "three destinations" from
+"four destinations that happen to fit three per row." Fixed with a new
+pure function, `columnClassesFor(count)`
+(`apps/web/src/components/platforms/platform-grid-columns.ts`),
+returning explicit Tailwind container-query breakpoints per small
+count: 1 destination stays one column; 2 offers a 2-column breakpoint;
+3 offers a real 3-column breakpoint (not banned); 4 deliberately jumps
+straight from 2 columns to 4, with no 3-column breakpoint offered at
+any width - the exact arrangement that produces the orphan row is
+never reachable for exactly four destinations. Five or more falls back
+to the previous fluid `auto-fit` rule, since no single column count is
+obviously "the balanced one" for an arbitrary, unbounded count.
+`PlatformGrid` wraps its own `<ul>` in a `@container`, so these
+breakpoints measure the grid's real available width (which changes
+based on whether the right rail is present) rather than the full
+browser viewport - the actual container-width-not-viewport-width
+distinction the governing task required.
+
+### Root cause 2: identity + state concatenated into one truncating string
+The card's brand-name/enabled-disabled line was one `truncate`d flex
+row (`{brandName} · {enabled/disabled}`), so at a narrow card width the
+whole string could clip mid-word. Split into two separate elements:
+the brand name (Twitch/YouTube/Kick/TikTok - always short) keeps a
+defensive `truncate`, and the enabled/disabled state is now a
+`shrink-0` pill that always renders its full text and can never be the
+thing that clips.
+
+### Root cause 3 (root-caused, not merely reworked): provider marks via CSS mask depended on bundler asset-URL resolution
+`ProviderBrand` previously rendered each mark as a `mask-image:
+url(...)` CSS property referencing the vendored SVG through the
+bundler's own resolved asset URL. The exact cause of the reported
+"flat coloured square" in the specific packaged build under test was
+not conclusively isolated (Inno Setup's compressed payload could not
+be statically inspected without extraction tooling this session does
+not have - see the previous entry's own honest limitation), but a CSS
+mask is a real, unnecessary dependency on how the bundler/server
+resolves and serves that asset URL in a packaged build - a class of
+failure a component-level unit test cannot see, since it never
+exercises the real build pipeline. Rewritten to render real inline
+`<svg><path fill="...">` elements instead, with each mark's exact path
+data hardcoded directly in the component (copied byte-for-byte from
+the vendored `.svg` files, and verified equal to them by a new
+`ProviderBrand.test.tsx` sync check) - there is now no URL to resolve
+at all; "does this render" reduces to "does React render." Independently
+confirmed against the real local production build: `npm run build`'s
+own output JS bundle was grepped directly and found to contain both
+the real Twitch path geometry (`M11.571 4.714...`) and all four
+providers' fill-colour hex literals.
+
+### Packaged-app verification extended, not just a unit test
+`scripts/verify-packaged-app.mjs` gained a new step, right after its
+existing "hashed JS asset" check: fetches the real production JS
+bundle from the real running packaged server and asserts each
+provider's hex literal (`#9146FF`/`#FF0000`/`#53FC19`/`#f4f6fb`) is
+present in it - proof against the actual shipped artifact for the
+exact commit under test, not only that the component's own unit test
+passes in isolation.
+
+### Files changed
+`apps/web/src/components/platforms/PlatformCard.tsx` (identity/state
+split), `apps/web/src/components/platforms/PlatformGrid.tsx` +
+new `platform-grid-columns.ts`/`.test.ts` (count-aware container-query
+grid), `apps/web/src/components/providers/ProviderBrand.tsx` +
+`.test.tsx` (inline SVG rewrite, geometry/sync/no-flat-square tests),
+`apps/web/src/i18n/resources/{en,pl}/platforms.json` (Viewers-
+unavailable tooltip copy), `docs/provider-branding.md` (rendering-
+technique note), `scripts/verify-packaged-app.mjs` (new packaged
+provider-asset check).
+
+### Regression coverage added
+`platform-grid-columns.test.ts` (6 tests): no 3-column breakpoint is
+ever offered for exactly 4; 2→4 jump confirmed; a real 3-column
+breakpoint exists for exactly 3; 1/2 never over-offer columns; 5+
+falls back to the fluid rule; pure-function determinism.
+`ProviderBrand.test.tsx` gained, per provider: a real `<svg><path>`
+renders with the correct `fill` (not merely `backgroundColor ===
+brandColor` on an empty element - directly the class of assertion
+that would have passed even on the reported "flat square" regression);
+the component's hardcoded path data matches the vendored `.svg` file
+exactly, so the two can never silently drift apart.
+
+### Validation
+`npm run typecheck`: clean. `npm run lint`: 0 errors, the same one
+pre-existing warning as every prior entry. `npm run i18n:check`: 2
+languages, 23 namespaces, no differences. `npm run build`: clean, and
+independently grepped for the real path/colour evidence described
+above.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Not yet the final candidate - the System Resources semantic
+fix (a separate logical change) and full test/CI validation follow in
+subsequent commits before one is produced.

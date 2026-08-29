@@ -21,6 +21,7 @@
     "unknownProvider": "This destination uses the provider \"{{providerId}}\", which this version does not recognise. Update the application or delete the destination.",
     "streamKeyLabel": "Stream key",
     "viewersLabel": "Viewers",
+    "viewersUnavailable": "Viewer count unavailable - not provided by the current integration",
     "statusLabel": "Status"
   },
   "fields": {

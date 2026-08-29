@@ -21,6 +21,7 @@
     "unknownProvider": "Ten cel korzysta z platformy „{{providerId}}”, której ta wersja nie rozpoznaje. Zaktualizuj aplikację albo usuń ten cel.",
     "streamKeyLabel": "Klucz transmisji",
     "viewersLabel": "Widzowie",
+    "viewersUnavailable": "Liczba widzów niedostępna - nie jest udostępniana przez obecną integrację",
     "statusLabel": "Status"
   },
   "fields": {

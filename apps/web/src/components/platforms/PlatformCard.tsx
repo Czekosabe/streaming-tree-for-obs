@@ -161,11 +161,30 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
             >
               {platform.displayName}
             </h3>
-            <p className="flex items-center gap-1.5 truncate text-xs text-ink-faint">
-              {brandName}
-              <span aria-hidden="true">·</span>
-              {platform.enabled ? t('platforms:card.enabled') : t('platforms:card.disabled')}
-            </p>
+            {/*
+             * Deliberately two separate elements, not one concatenated,
+             * jointly-truncated string: a real physical Windows finding
+             * showed this line clipping mid-word ("YouTube Li...") when
+             * the brand name and the enabled/disabled state shared one
+             * `truncate`d flex row. The brand name (Twitch/YouTube/Kick/
+             * TikTok - always short) gets its own `truncate` as a defensive
+             * measure only; the enabled/disabled pill is `shrink-0`, so it
+             * always renders its full text and is never the thing that
+             * clips.
+             */}
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-xs text-ink-faint">{brandName}</span>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold',
+                  platform.enabled
+                    ? 'border-accent/40 bg-accent/12 text-accent-soft'
+                    : 'border-status-offline/40 bg-status-offline/12 text-status-offline',
+                )}
+              >
+                {platform.enabled ? t('platforms:card.enabled') : t('platforms:card.disabled')}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -215,8 +234,12 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
             <dt className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               {t('platforms:card.viewersLabel')}
             </dt>
-            <dd className="mt-0.5 truncate text-xs text-ink-muted">
+            <dd
+              className="mt-0.5 truncate text-xs text-ink-muted"
+              title={t('platforms:card.viewersUnavailable')}
+            >
               {formatViewers(null, locale)}
+              <span className="sr-only"> {t('platforms:card.viewersUnavailable')}</span>
             </dd>
           </div>
           <div className="min-w-0">

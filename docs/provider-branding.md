@@ -68,8 +68,9 @@ otherwise altered beyond that direct copy.
 - **Official brand-guideline source:** <https://brand.twitch.tv> (also
   Simple Icons' own recorded `source`/`guidelines` field for this icon)
 - **Modified beyond the copy described above:** No
-- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
-  Twitch's official hex `#9146FF`; no other recolouring or distortion
+- **Colour/treatment rule applied:** Rendered as an inline `<svg><path>`
+  (see §4) with its `fill` set to Twitch's official hex `#9146FF`; no other
+  recolouring or distortion
 
 ### YouTube
 - **Local file:** `apps/web/src/assets/providers/youtube.svg`
@@ -80,8 +81,9 @@ otherwise altered beyond that direct copy.
   <https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors>
   (Simple Icons' own recorded `source`/`guidelines` field for this icon)
 - **Modified beyond the copy described above:** No
-- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
-  YouTube's official hex `#FF0000`; no other recolouring or distortion
+- **Colour/treatment rule applied:** Rendered as an inline `<svg><path>`
+  (see §4) with its `fill` set to YouTube's official hex `#FF0000`; no
+  other recolouring or distortion
 
 ### Kick
 - **Local file:** `apps/web/src/assets/providers/kick.svg`
@@ -97,8 +99,9 @@ otherwise altered beyond that direct copy.
   download/verification capability this session does not have; recorded
   here as an honest limitation, not glossed over)
 - **Modified beyond the copy described above:** No
-- **Colour/treatment rule applied:** Rendered as a CSS mask coloured with
-  Kick's official brand green `#53FC19`; no other recolouring or distortion
+- **Colour/treatment rule applied:** Rendered as an inline `<svg><path>`
+  (see §4) with its `fill` set to Kick's official brand green `#53FC19`;
+  no other recolouring or distortion
 
 ### TikTok
 - **Local file:** `apps/web/src/assets/providers/tiktok.svg`
@@ -115,13 +118,13 @@ otherwise altered beyond that direct copy.
   mark is near-black (`#000000`). Rendered against this application's dark
   theme, that colour has no usable contrast on any accent tile - a real
   accessibility problem, not only an aesthetic one. The glyph is instead
-  rendered in a light neutral tone (`#f4f6fb`), the accepted light/dark
-  polarity of the same unaltered geometry (TikTok's own real-world usage
-  commonly presents this exact mark in white for dark surfaces); this is
-  not a hue recolour. The surrounding **tile background** (not the glyph)
-  separately carries TikTok's cyan/pink brand accent (`#25F4EE`/`#FE2C55`)
-  as a decorative gradient. See §3 below for why this split treatment
-  exists.
+  rendered, as an inline `<svg><path fill="#f4f6fb">` (see §4), in a light
+  neutral tone, the accepted light/dark polarity of the same unaltered
+  geometry (TikTok's own real-world usage commonly presents this exact
+  mark in white for dark surfaces); this is not a hue recolour. The
+  surrounding **tile background** (not the glyph) separately carries
+  TikTok's cyan/pink brand accent (`#25F4EE`/`#FE2C55`) as a decorative
+  gradient. See §3 below for why this split treatment exists.
 
 ## 3. TikTok - the one real usage limitation
 
@@ -167,7 +170,31 @@ provider-identity surface in this codebase) and a provider-specific accent
 background, or falls back to the pre-existing neutral text tile
 (`PlatformGlyph`) for any provider id it does not recognize. It never
 stretches, skews, or recolours the vendored glyph geometry itself. A small
-`size` scale (`sm`/`md`/`lg`) is the only per-call variation.
+`size` scale (`sm`/`md`/`lg`/`xl`) is the only per-call variation, plus a
+`bare` flag that renders just the glyph with no surrounding tile (used for
+a large, low-opacity brand watermark inside a destination card's header
+band).
+
+**Rendering technique - inline SVG, not a CSS mask.** An earlier version
+of this component rendered the mark as a `mask-image: url(...)` CSS
+property referencing the vendored asset via the bundler's own resolved
+URL. A physical Windows finding reported destination cards showing flat
+coloured squares instead of recognizable marks; while the exact cause in
+that specific packaged build was not conclusively isolated, a CSS mask
+adds a real dependency on how the bundler/server resolves and serves (or
+inlines) that asset URL in the packaged build - a class of failure a
+component-level unit test cannot see, since it never exercises the real
+build/packaging pipeline. The component now hardcodes each mark's exact
+`<path d="...">` data (copied byte-for-byte from the vendored `.svg`
+files, verified equal to them by `ProviderBrand.test.tsx`'s own sync
+check) and renders it as a real inline `<svg><path fill="...">` element.
+This removes the dependency entirely: there is no URL to resolve, no
+external resource to fetch, and "does this render" reduces to "does React
+render," the same guarantee every other element on the page already has.
+`scripts/verify-packaged-app.mjs` additionally fetches the real
+production JS bundle from the real running packaged server and confirms
+each provider's official/contrast-corrected hex literal is present in
+it - proof against the actual shipped artifact, not only a unit test.
 
 Adopted on: `PlatformCard` (Dashboard grid), `PlatformSettingsDialog`
 (provider identity row), `PlatformTabs` (Metadata workspace tab strip), and
