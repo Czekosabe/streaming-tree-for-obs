@@ -73,6 +73,7 @@ import (
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 	"github.com/streaming-tree/server/internal/support"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
+	"github.com/streaming-tree/server/internal/sysresources"
 	"github.com/streaming-tree/server/internal/updater"
 	"github.com/streaming-tree/server/internal/updater/manifest"
 	"github.com/streaming-tree/server/internal/userdatapurge"
@@ -1188,10 +1189,18 @@ func run() error {
 	}
 	diagnosticsBundleBuilder := support.NewBuilder(diagnosticsRecorder, supportBundleSnapshot)
 
+	// Local-only host-resource snapshot (CPU/memory/disk of cfg.DataDir's
+	// own volume) for the Dashboard's "System resources" card - sampled in
+	// the background on a bounded, low-frequency tick; never persisted,
+	// never transmitted anywhere beyond this process's own local HTTP API.
+	resourcesCollector := sysresources.NewCollector(cfg.DataDir, logger, 5*time.Second)
+	resourcesCollector.Start()
+
 	handler := httpapi.NewRouter(httpapi.Options{
 		Logger:          logger,
 		AllowedOrigins:  cfg.AllowedOrigins,
 		StartedAt:       startedAt,
+		Resources:       resourcesCollector,
 		Platforms:       platformService,
 		Runtime:         supervisor,
 		Credentials:     credentialService,
@@ -1289,6 +1298,7 @@ func run() error {
 		if trayHandle != nil {
 			trayHandle.Stop()
 		}
+		resourcesCollector.Shutdown(shutdownCtx)
 		updateManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)

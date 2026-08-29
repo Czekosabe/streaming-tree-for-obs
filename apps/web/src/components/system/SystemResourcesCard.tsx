@@ -1,75 +1,96 @@
 import { Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { useFfmpegRuntimeQuery } from '@/hooks/use-branches';
-import { useHealthQuery } from '@/hooks/use-health-query';
-import { useRuntimeQuery } from '@/hooks/use-runtime';
-import { ffmpegStateKey, ffmpegTone } from '@/models/branch-presentation';
-import type { PlatformStatus } from '@/models/platform';
-import { mediaMtxStateKey, mediaMtxTone } from '@/models/runtime-presentation';
+import { useLanguage } from '@/i18n/use-language';
+import { useSystemResourcesQuery } from '@/hooks/use-system-resources';
+import { cn } from '@/lib/cn';
+import { formatBytes } from '@/lib/format';
 
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
-import { StatusDot } from '../ui/StatusBadge';
+
+/** Threshold-based colouring keeps high utilisation readable at a glance -
+ * the same convention the deleted demo-era `Meter` component used, now
+ * backed by real values instead of static constants. */
+function barClass(value: number): string {
+  if (value >= 85) return 'bg-status-error';
+  if (value >= 65) return 'bg-status-warning';
+  return 'bg-accent';
+}
+
+function ResourceRow({
+  label,
+  unavailableLabel,
+  percent,
+  detail,
+}: {
+  label: string;
+  unavailableLabel: string;
+  percent: number | null | undefined;
+  detail?: string | undefined;
+}) {
+  if (percent === null || percent === undefined) {
+    return (
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-ink-muted">{label}</span>
+        <span className="text-[11px] text-ink-faint">{unavailableLabel}</span>
+      </div>
+    );
+  }
+
+  const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-ink-muted">{label}</span>
+        <span className="font-mono text-xs tabular-nums text-ink">{clamped}%</span>
+      </div>
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuenow={clamped}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken ring-1 ring-line ring-inset"
+      >
+        <div
+          className={cn('h-full rounded-full transition-[width] duration-500', barClass(clamped))}
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+      {detail !== undefined && detail !== '' && (
+        <p className="text-[11px] text-ink-faint">{detail}</p>
+      )}
+    </div>
+  );
+}
 
 /**
- * "System resources": the real services this application depends on to
- * actually stream, not host CPU/memory/disk/network - this application has
- * never collected host telemetry and this stage does not add it (a
- * standing, deliberate non-goal - see docs/dashboard-design.md §5 and
- * `THIRD_PARTY_NOTICES.md`'s neighbouring MediaMTX/FFmpeg entries). What
- * IS real and already fetched elsewhere in this app (`BackendHealthCard`,
- * `SidebarFooter`, `StreamsPage`'s FFmpeg panel) is service-dependency
- * health: is the backend reachable, is the local ingest engine running,
- * is a compatible FFmpeg available. Reusing those exact three real facts
- * here gives this rail position real, honest, deliberate content instead
- * of an empty slot or a fabricated resource-usage number.
+ * Real, local host resource usage - CPU, memory, and disk usage of this
+ * application's own data volume - sampled by the backend's
+ * `internal/sysresources` collector every 5 seconds and served over
+ * `GET /api/system/resources`. Nothing here is fabricated: a metric this
+ * platform/environment cannot report renders an honest "unavailable" row
+ * instead of a fake percentage, and each of the three metrics is
+ * independent - one being unavailable never hides the other two.
+ *
+ * This is local-only resource monitoring, not telemetry: nothing sampled
+ * here is persisted or sent anywhere beyond this same local HTTP response
+ * to this same local browser tab.
  */
 export function SystemResourcesCard() {
-  const { t } = useTranslation(['dashboard', 'runtime']);
-  const healthQuery = useHealthQuery();
-  const runtimeQuery = useRuntimeQuery();
-  const ffmpegQuery = useFfmpegRuntimeQuery();
+  const { t } = useTranslation(['dashboard', 'common']);
+  const { locale } = useLanguage();
+  const query = useSystemResourcesQuery();
+  const snap = query.data;
 
-  const backendTone: PlatformStatus = healthQuery.isPending
-    ? 'starting'
-    : healthQuery.isSuccess
-      ? 'live'
-      : 'error';
-  const backendLabel = healthQuery.isPending
-    ? t('dashboard:backend.pending')
-    : healthQuery.isSuccess
-      ? t('dashboard:backend.connected')
-      : t('dashboard:backend.unavailable');
-
-  const mediaMtxState = runtimeQuery.data?.mediaMtx.state;
-  const ingestTone: PlatformStatus = runtimeQuery.isPending
-    ? 'starting'
-    : mediaMtxState === undefined
-      ? 'error'
-      : mediaMtxTone(mediaMtxState);
-  const ingestLabel = runtimeQuery.isPending
-    ? t('runtime:system.checking')
-    : mediaMtxState === undefined
-      ? t('runtime:system.runtimeUnavailable')
-      : t(`runtime:${mediaMtxStateKey(mediaMtxState)}`);
-
-  const ffmpegState = ffmpegQuery.data?.ffmpeg.state;
-  const ffmpegToneValue: PlatformStatus = ffmpegQuery.isPending
-    ? 'starting'
-    : ffmpegState === undefined
-      ? 'offline'
-      : ffmpegTone(ffmpegState);
-  const ffmpegLabel = ffmpegQuery.isPending
-    ? t('runtime:system.checking')
-    : ffmpegState === undefined
-      ? t('runtime:ffmpeg.state.missing')
-      : t(`runtime:${ffmpegStateKey(ffmpegState)}`);
-
-  const rows: { label: string; tone: PlatformStatus; value: string }[] = [
-    { label: t('dashboard:resources.backend'), tone: backendTone, value: backendLabel },
-    { label: t('dashboard:resources.ingestEngine'), tone: ingestTone, value: ingestLabel },
-    { label: t('dashboard:resources.ffmpeg'), tone: ffmpegToneValue, value: ffmpegLabel },
-  ];
+  const usedOfTotal = (used: number | null | undefined, total: number | null | undefined) =>
+    used != null && total != null
+      ? t('dashboard:resources.usedOfTotal', {
+          used: formatBytes(used, locale),
+          total: formatBytes(total, locale),
+        })
+      : undefined;
 
   return (
     <Panel>
@@ -79,16 +100,34 @@ export function SystemResourcesCard() {
         icon={<Cpu className="size-4" />}
         headingLevel={3}
       />
-      <PanelBody className="space-y-2.5">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-ink-muted">{row.label}</span>
-            <span className="flex min-w-0 items-center gap-1.5 truncate font-medium text-ink">
-              <StatusDot status={row.tone} />
-              <span className="truncate">{row.value}</span>
-            </span>
-          </div>
-        ))}
+      <PanelBody className="space-y-4">
+        {query.isPending && (
+          <p className="text-xs text-ink-muted">{t('dashboard:resources.loading')}</p>
+        )}
+        {query.isError && (
+          <p className="text-xs text-status-error">{t('dashboard:resources.unavailable')}</p>
+        )}
+        {snap !== undefined && (
+          <>
+            <ResourceRow
+              label={t('dashboard:resources.cpu')}
+              unavailableLabel={t('dashboard:resources.metricUnavailable')}
+              percent={snap.cpuPercent}
+            />
+            <ResourceRow
+              label={t('dashboard:resources.memory')}
+              unavailableLabel={t('dashboard:resources.metricUnavailable')}
+              percent={snap.memoryPercent}
+              detail={usedOfTotal(snap.memoryUsedBytes, snap.memoryTotalBytes)}
+            />
+            <ResourceRow
+              label={t('dashboard:resources.disk')}
+              unavailableLabel={t('dashboard:resources.metricUnavailable')}
+              percent={snap.diskPercent}
+              detail={usedOfTotal(snap.diskUsedBytes, snap.diskTotalBytes)}
+            />
+          </>
+        )}
       </PanelBody>
     </Panel>
   );

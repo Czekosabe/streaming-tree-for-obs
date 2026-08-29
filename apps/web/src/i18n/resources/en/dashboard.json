@@ -72,12 +72,23 @@
     "refresh": "Refresh status",
     "openLogs": "Open Logs & Diagnostics"
   },
-  "resources": {
-    "heading": "System resources",
-    "description": "Services this app depends on to stream",
+  "services": {
+    "heading": "Services",
+    "description": "What this app depends on to stream",
     "backend": "Backend",
     "ingestEngine": "Ingest engine",
     "ffmpeg": "FFmpeg"
+  },
+  "resources": {
+    "heading": "System resources",
+    "description": "Local host usage, sampled every few seconds",
+    "loading": "Sampling...",
+    "unavailable": "Resource usage unavailable",
+    "metricUnavailable": "Unavailable",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "usedOfTotal": "{{used}} of {{total}}"
   },
   "upcoming": {
     "heading": "Upcoming features",

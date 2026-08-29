@@ -88,12 +88,23 @@
     "refresh": "Odśwież stan",
     "openLogs": "Otwórz Logi i diagnostykę"
   },
-  "resources": {
-    "heading": "Zasoby systemowe",
-    "description": "Usługi, od których zależy transmisja",
+  "services": {
+    "heading": "Usługi",
+    "description": "Od czego zależy transmisja",
     "backend": "Backend",
     "ingestEngine": "Silnik odbioru",
     "ffmpeg": "FFmpeg"
+  },
+  "resources": {
+    "heading": "Zasoby systemowe",
+    "description": "Użycie lokalnego hosta, próbkowane co kilka sekund",
+    "loading": "Próbkowanie...",
+    "unavailable": "Użycie zasobów niedostępne",
+    "metricUnavailable": "Niedostępne",
+    "cpu": "CPU",
+    "memory": "Pamięć",
+    "disk": "Dysk",
+    "usedOfTotal": "{{used}} z {{total}}"
   },
   "upcoming": {
     "heading": "Nadchodzące funkcje",

@@ -47567,3 +47567,102 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Not yet the final candidate - the System Resources semantic
 fix (a separate logical change) and full test/CI validation follow in
 subsequent commits before one is produced.
+
+## 2026-08-29 — feat: real local System Resources card (CPU/memory/disk), correctly separated from Services health
+
+The previous round's `SystemResourcesCard` showed Backend/Ingest
+engine/FFmpeg connectivity under a heading of "System resources" -
+service-dependency health, not host resource usage, a real semantic
+mislabelling this round's governing feedback correctly identified.
+This is now explicitly authorized as local (never remote) resource
+monitoring, so the actual concept is implemented rather than renamed
+away from.
+
+### Backend: `internal/sysresources`
+New package: a `Collector` samples real CPU/memory/disk usage in the
+background on a bounded 5-second tick (never inside the HTTP request
+path) and caches only the single most recent sample - no history, no
+persistence. Disk usage targets `cfg.DataDir`'s own volume (the
+application's real data directory), not necessarily the OS/system
+drive. Every metric is an independent, nullable field: a platform or
+environment that cannot report one metric still reports the others,
+and `unavailable` names which keys, if any, could not be sampled -
+never a fabricated zero standing in for a real value. Uses
+`github.com/shirou/gopsutil/v4` (BSD-3-Clause, narrowly-scoped -
+only its `cpu`/`mem`/`disk` subpackages are imported, not `process`/
+`net`/`host`/`sensors`) rather than hand-rolling raw per-platform
+syscalls under time pressure; recorded in `THIRD_PARTY_NOTICES.md`.
+Nothing in this package makes an outbound HTTP call or writes to
+disk - confirmed behaviourally, not just by code review, by a test
+that runs the collector against a real temp directory and asserts it
+stays empty afterwards.
+
+New `GET /api/system/resources` (`internal/httpapi/system_resources.go`)
+serves the collector's cached snapshot; registered only when the new
+`Options.Resources` field is non-nil, matching every other optional
+service in this router. Wired into `main.go` alongside every other
+background manager, including its own `Shutdown(ctx)` call from the
+same `shutdownRuntime` closure every tray/web/updater/Ctrl+C shutdown
+path already converges on.
+
+### Frontend: split into two accurately-named cards
+`SystemResourcesCard` (rewritten) now polls the new endpoint every 5
+seconds (matching the backend's own sampling cadence) and renders real
+CPU/Memory/Disk percentage bars with a real "X of Y" used/total detail
+line for memory and disk - a metric the backend could not sample this
+tick renders an honest "Unavailable" row instead of a fabricated
+percentage, independently of the other two metrics. The former
+service-health content moved, unchanged in substance, to a new
+`ServicesCard` titled "Services" - the same real Backend/Ingest
+engine/FFmpeg rows as before, just no longer sharing a heading with
+the real resources card.
+
+### Files changed
+Backend: `internal/sysresources/sysresources.go` + `_test.go` (new),
+`internal/httpapi/system_resources.go` + `_test.go` (new),
+`internal/httpapi/router.go` (new `Options.Resources` field/route),
+`cmd/server/main.go` (collector construction/start/shutdown wiring),
+`go.mod`/`go.sum` (gopsutil/v4 v4.26.7), `THIRD_PARTY_NOTICES.md`.
+Frontend: `models/system-resources.ts`, `api/system-resources.ts`,
+`hooks/use-system-resources.ts` (new), `components/system/
+SystemResourcesCard.tsx` + `.test.tsx` (rewritten), `components/system/
+ServicesCard.tsx` + `.test.tsx` (new, renamed from the old
+`SystemResourcesCard`), `components/system/SystemStatusRail.tsx`
+(wires both in), `i18n/resources/{en,pl}/dashboard.json`
+(`services.*`/`resources.*` key split).
+
+### Regression coverage added
+Backend `sysresources` (4 tests): every reported metric is bounded to
+[0, 100]/internally consistent (used ≤ total) or honestly absent;
+disk usage reflects the real `dataDir` volume; the collector never
+writes to `dataDir`; `Shutdown` actually stops background sampling.
+`httpapi` (3 tests): the route is not registered when `Resources` is
+nil (404, not a crash); a real snapshot round-trips through the JSON
+response; wrong method returns 405. Frontend `SystemResourcesCard`
+(4 tests): real sampled percentages render (never "DEMO"/"placeholder"
+text); an unavailable metric renders "Unavailable" instead of a
+fabricated "0%"; a real used-of-total detail line renders; three real
+ARIA `meter` elements exist. `ServicesCard` gained a test asserting it
+is never itself labelled "System resources" - the exact mislabelling
+this commit fixes.
+
+### Validation
+Backend: `gofmt -l .` clean, `go vet ./...` clean, `go build ./...`
+clean, `go test ./...` - **all packages pass**, including the two new
+ones. Frontend: `npm run typecheck` clean, `npm run lint` 0 errors
+(the same one pre-existing warning), `npm run i18n:check` 2 languages/
+23 namespaces/no differences, `npm test` - **1485/1485 passed** across
+116 test files, `npm run build` clean.
+
+### No external telemetry - confirmed, not merely asserted
+`internal/sysresources` imports no HTTP client, no analytics SDK, and
+no network package of any kind - `go vet`/`go build` would fail if it
+tried to reach outside this process. The only consumer of
+`GET /api/system/resources` is this same backend's own local frontend,
+served over the same loopback-only HTTP server every other `/api/`
+route already uses.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Not yet the final candidate - full CI for this commit and
+the Session M documentation update follow before one is produced.

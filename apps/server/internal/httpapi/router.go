@@ -27,6 +27,10 @@ type Options struct {
 	// Runtime serves the MediaMTX runtime API. When nil those routes are not
 	// registered.
 	Runtime RuntimeService
+	// Resources serves the local host-resource snapshot (CPU/memory/disk)
+	// for the Dashboard's "System resources" card. When nil,
+	// GET /api/system/resources is not registered.
+	Resources ResourcesService
 	// Credentials serves the destination-credential API. When nil those
 	// routes are not registered, and DELETE /api/platforms/{id} falls back
 	// to deleting the platform with no credential-cleanup step.
@@ -294,6 +298,14 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Runtime != nil {
 		registerRuntimeRoutes(mux, logger, opts.Runtime)
+	}
+
+	// Local host-resource snapshot for the Dashboard's "System resources"
+	// card (Stage 20E). When nil (health-only test servers), the route is
+	// simply not registered, matching every other optional service here.
+	if opts.Resources != nil {
+		mux.HandleFunc("GET /api/system/resources", handleGetSystemResources(logger, opts.Resources))
+		mux.HandleFunc("/api/system/resources", methodNotAllowed(logger, http.MethodGet))
 	}
 
 	if opts.RemoteIngest != nil {
