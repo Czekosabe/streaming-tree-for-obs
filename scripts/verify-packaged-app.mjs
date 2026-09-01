@@ -299,6 +299,7 @@ async function main() {
     for (const route of [
       '/settings',
       '/settings/about',
+      '/onboarding',
       '/overlay/chat/some-slug',
       '/overlay/alerts/some-slug',
       '/overlay/audio/some-slug',
@@ -351,6 +352,42 @@ async function main() {
     step('Cross-check the legal routes against the actual repository files on disk');
     const realLicense = readFileSync(join(REPO_ROOT, 'LICENSE'), 'utf8');
     expect(licenseRoute.text === realLicense, '/legal/license byte-matches the repository LICENSE file', 'mismatch');
+
+    step('Stage 21: GET /api/onboarding is available and starts pending on a genuinely fresh data directory');
+    // docs/onboarding.md §4.3's own existing-user migration rule: an
+    // untouched database (this hermetic data directory has never had a
+    // platform enabled, an output server configured, or an account
+    // connected) starts 'pending' - proven here against the real
+    // embedded production migration, not just the Go repository test.
+    const onboardingFresh = await request('GET', '/api/onboarding');
+    expect(onboardingFresh.status === 200, 'onboarding-state status is 200', onboardingFresh.status);
+    expect(onboardingFresh.body.status === 'pending', 'a fresh data directory starts pending', onboardingFresh.body);
+
+    step('Stage 21: setting the onboarding status persists it');
+    const onboardingSet = await request('PUT', '/api/onboarding', { status: 'dismissed' });
+    expect(onboardingSet.status === 200, 'PUT /api/onboarding accepted', onboardingSet.status);
+    expect(onboardingSet.body.status === 'dismissed', 'the response reflects the new status', onboardingSet.body);
+
+    step('Stage 21: the onboarding status survives a real graceful shutdown and restart against the same data directory');
+    const preRestartShutdown = await request('POST', '/api/system/shutdown', { confirm: true });
+    expect(preRestartShutdown.status === 200, 'graceful shutdown accepted before restart', preRestartShutdown.status);
+    const preRestartExitDeadline = Date.now() + SHUTDOWN_TIMEOUT_MS;
+    while (Date.now() < preRestartExitDeadline && !appHandle.hasExited()) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(appHandle.hasExited(), 'the packaged process exited after the pre-restart shutdown request', {
+      stdout: appHandle.getStdout().slice(-500),
+    });
+
+    appHandle = await startPackagedApp(dataDir);
+    pass('the packaged application restarted against the same hermetic data directory');
+    const onboardingAfterRestart = await request('GET', '/api/onboarding');
+    expect(onboardingAfterRestart.status === 200, 'onboarding-state is still available after restart', onboardingAfterRestart.status);
+    expect(
+      onboardingAfterRestart.body.status === 'dismissed',
+      'the onboarding status set before the restart survived it - never silently reset to pending',
+      onboardingAfterRestart.body,
+    );
 
     step('A second launch detects the running instance and does not start another backend');
     // The second process is expected to exit entirely on its own (that is

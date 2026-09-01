@@ -15,7 +15,8 @@ Stage 21 does not change Stage 20's own status; see §0 below.
 
 ## Stage 21 status
 
-**Stage 21: In progress.**
+**Stage 21: Completed** (automated contract only - see the explicit
+limitation below).
 
 - **21A** (persisted onboarding state): Completed - backend domain,
   migration, API, frontend data layer, all automated (`docs/progress.md`,
@@ -35,7 +36,27 @@ Stage 21 does not change Stage 20's own status; see §0 below.
   21D`).
 - **21E** (hardening: full test matrix, packaged-runtime proof,
   accessibility/responsive verification, documentation close-out):
-  Planned.
+  Completed - `scripts/verify-packaged-app.mjs` extended with a real
+  fresh-state/persist/restart-survival proof against the actual
+  embedded production frontend and backend (24/24 steps passed
+  locally); a real, confirmed accessibility defect found and fixed
+  (`OnboardingPage`'s own programmatic focus target had accidentally
+  overridden the app's global `:focus-visible` ring with `outline-
+  none`, silencing it exactly where it mattered most); documentation
+  closed out here and in `README.md`/`docs/project-overview.md`
+  (`docs/progress.md`, `feat(server,web): Stage 21E`).
+
+**Known limitation, stated honestly, not hidden:** no real browser/
+human accessibility or responsive-layout pass has been performed for
+Stage 21 - matching this project's own established distinction between
+automated verification and physical/manual verification (`docs/
+manual-verification.md`). Every accessibility claim above is a
+source-level review (focus target/ring, heading structure, status
+never conveyed by color alone, semantic `Button`/`Link` elements, no
+modal/focus-trap) plus jsdom-based component tests, not a real screen
+reader or real keyboard-only pass on real hardware. This is exactly
+the same honest limitation `docs/manual-verification.md` already
+records for the rest of the product, not a new, Stage-21-specific gap.
 
 No Stage 21 substage's automated contract requires the operator's
 deferred Stage 20E physical verification to be marked Completed -

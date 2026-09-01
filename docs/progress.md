@@ -48489,3 +48489,79 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 21E per the governing task's own
 explicit "do not stop merely to ask permission to begin the next
 already-defined substage."
+
+## 2026-09-01 — feat(server,web): Stage 21E - packaged-runtime proof, an accessibility fix, and documentation close-out
+
+Implements `docs/onboarding.md` §11's remaining hardening scope. The
+per-substage unit/component test suites already built up across
+21A-21D (real backend domain/repository/HTTP tests, real frontend
+hook/page/step-component tests) already cover most of §11's own list;
+this entry closes the two genuinely new gaps - a real fresh-state/
+persist/restart-survival proof against the actual packaged application,
+and a source-level accessibility pass - plus documentation close-out.
+
+### Packaged-runtime proof
+Extended `scripts/verify-packaged-app.mjs` (Stage 20A's own canonical
+integration script #23, never a second one): `/onboarding` added to
+the existing SPA-route-resolution check, and three new steps proving
+`docs/onboarding.md` §11's own integration scenario for real - a fresh
+hermetic data directory's `GET /api/onboarding` starts `pending`
+(the real embedded migration's existing-user rule, not just the Go
+repository test), `PUT /api/onboarding` persists a new status, and a
+real graceful shutdown + restart against the *same* data directory
+proves that status was never silently reset. Run locally against a
+real release build (`build-release.ps1 -SkipInstaller`): **24/24 steps
+passed**, including all three new Stage 21 steps, against the real
+embedded production frontend and the real backend - no Node/npm/Vite
+process involved at any point. No stray process left running
+afterward (confirmed via `tasklist`).
+
+### A real accessibility defect found and fixed
+Reviewing `OnboardingPage.tsx`'s own programmatic focus target (the
+`tabIndex={-1}` container each step's heading focus moves to) found it
+carried `className="outline-none"` - which silently overrides this
+project's own global `:focus-visible` rule (`index.css`, a 2px
+visible ring on every focused element app-wide) exactly on the one
+element every step transition moves focus to. Removed; the global
+rule now applies normally. Caught by re-reading the component against
+the app's own established focus-ring convention, not by a browser
+test - `docs/onboarding.md`'s own §11 entry states plainly that no
+real browser/screen-reader pass has been performed, so a defect only a
+real assistive-technology session would have caught cannot be ruled
+out, but this specific, concrete one was found and fixed.
+
+### Documentation close-out
+`docs/onboarding.md`'s status section now records Stage 21 as
+**Completed (automated scope)**, all five substages Completed, and an
+explicit, honest "no physical/manual browser/accessibility pass
+performed" limitation - the same automated-vs-physical distinction
+`docs/manual-verification.md` already applies to the rest of the
+product, not a new Stage-21-specific gap and not a claim of physical
+verification that was never done. `README.md` and `docs/project-
+overview.md` §13.1 updated from "in progress" to this same honest
+"Completed, automated scope" framing.
+
+### Validation
+Backend (unchanged this round, reconfirmed): `gofmt -l .` clean, `go
+vet ./...` clean, `go build ./...` clean. Frontend: `npm run i18n:check`
+(24 namespaces), `tsc --noEmit` clean, `npm run test -- --run` -
+1521/1521 tests pass across 125 files (unchanged count - this round's
+one production-code change, the `outline-none` removal, is covered by
+the existing focus-assertion test), `npm run build` clean.
+`node --check scripts/verify-packaged-app.mjs` clean; the script's own
+real local run (24/24 steps) is the authoritative proof for this
+substage, run against a real release build via `build-release.ps1
+-SkipInstaller` (frontend + backend + embed pipeline, exactly as a
+real release does it).
+
+### Stage 21 complete
+All five substages (21A-21E) are Completed for their automated
+contract. Every onboarding step reuses real, already-shipped
+application state end-to-end - no fake data, no fake OBS connection,
+no fake destination/account/overlay state anywhere in the flow. No
+physical/manual verification was performed or claimed; Stage 20E's own
+independent status is unaffected and unchanged.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

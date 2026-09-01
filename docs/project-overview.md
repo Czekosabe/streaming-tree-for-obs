@@ -1387,19 +1387,29 @@ including duplicate/out-of-order rejection and gap detection), not an
 exhaustive one. No real Twitch account, application, or network request
 to Twitch was ever contacted at any point in this stage.
 
-### 13.1 Stage 21 — first-run onboarding + OBS setup experience (in progress)
+### 13.1 Stage 21 — first-run onboarding + OBS setup experience (Completed, automated scope)
 
-Authorized as a real, additive product stage - see
-[`docs/onboarding.md`](onboarding.md) for the full contract. It turns
-the already-implemented architecture above into a coherent first-run
-experience (a persisted onboarding flow explaining OBS → Streaming
-Tree → destinations, real local-engine/OBS-connection readiness, and a
-real destinations/accounts/creator-tools summary) rather than inventing
-new streaming architecture. **Stage 21 development may proceed while
-Stage 20E physical verification remains deferred** - the two are
-independent; starting Stage 21 does not change Stage 20's own status
-(§20C2 remains Planned/externally gated, Stage 20 as a whole remains
-Incomplete until Stage 20E's physical gate actually runs).
+A real, additive product stage - see [`docs/onboarding.md`](onboarding.md)
+for the full contract. It turns the already-implemented architecture
+above into a coherent first-run experience (a persisted onboarding flow
+explaining OBS → Streaming Tree → destinations, real local-engine/OBS-
+connection readiness, real destinations/accounts/creator-tools discovery,
+and a real per-category readiness summary) rather than inventing new
+streaming architecture - every step reuses existing hooks/components
+(`ServicesCard`, `RuntimeControls`, `CopyableValue`, `AddPlatformDialog`,
+`OverlayUrlPanel`, `SystemStatusPill`) rather than a second
+implementation of any of them. Proven against the real embedded
+production frontend and backend by `scripts/verify-packaged-app.mjs`
+(fresh state → onboarding API available → status persisted → restart →
+status survives). **No physical/manual browser or accessibility pass has
+been performed** - Stage 21's "Completed" status covers its automated
+contract only, matching the same automated-vs-physical distinction
+`docs/manual-verification.md` already applies to the rest of the
+product. **Stage 21 development proceeded while Stage 20E physical
+verification remained deferred** - the two are independent; Stage 21
+completing does not change Stage 20's own status (§20C2 remains
+Planned/externally gated, Stage 20 as a whole remains Incomplete until
+Stage 20E's physical gate actually runs).
 
 ## 14. The manual testing rule
 

@@ -79,8 +79,11 @@ export function OnboardingPage() {
         <div className="w-full max-w-2xl space-y-5">
           <Panel raised className="p-5 sm:p-6">
             {/* tabIndex=-1: a programmatic focus target, never a tab stop -
-                matching AppShell's own #main-content skip-link convention. */}
-            <div ref={headingRef} tabIndex={-1} className="outline-none">
+                matching AppShell's own #main-content skip-link convention.
+                No outline override here: the app's own global
+                :focus-visible rule (index.css) must still show a real
+                visible focus ring when this receives focus. */}
+            <div ref={headingRef} tabIndex={-1}>
               <StepComponent />
             </div>
           </Panel>

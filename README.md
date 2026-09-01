@@ -102,12 +102,20 @@ was built incrementally: the credential-store foundation (stage 5), the
 Twitch and YouTube connected-account integrations (stages 7A/7B), then each
 engagement piece above in order (stages 8A through 18B).
 
-**In progress: Stage 21, first-run onboarding + OBS setup experience** —
-see [`docs/onboarding.md`](docs/onboarding.md) for the full contract. This
-is authorized, additive product development that proceeds independently of
-Stage 20E's own deferred physical/manual verification — starting it does
-not change Stage 20's status (still Incomplete; 20C2 still externally
-gated) and does not require any Stage 20E physical evidence.
+**Stage 21, first-run onboarding + OBS setup experience, is now
+implemented** — a real first-run assistant explaining OBS → Streaming
+Tree → destinations, real local-engine/OBS-connection readiness, real
+destination/connected-account/creator-tools discovery, and a real
+per-category readiness summary, all reusing existing application state
+rather than inventing new architecture — see
+[`docs/onboarding.md`](docs/onboarding.md) for the full contract and its
+honestly-recorded automated-only verification scope (no physical/manual
+browser pass has been performed for it, matching this project's own
+existing distinction between automated and physical verification). This
+was authorized, additive product development that proceeded
+independently of Stage 20E's own deferred physical/manual verification —
+it does not change Stage 20's own status (still Incomplete; 20C2 still
+externally gated) and did not require any Stage 20E physical evidence.
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
