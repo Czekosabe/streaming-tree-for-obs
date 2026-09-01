@@ -50533,3 +50533,83 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into Stage 25 (stream setup profiles)
 per the governing task's own explicit authorization and "do not
 AskUserQuestion between stages" instruction.
+
+## 2026-09-01 — docs: define the Stage 25 stream setup profiles contract
+
+### What changed
+`docs/stream-setup-profiles.md` (new): the Stage 25 contract, written
+after a contract-first audit (dispatched to a research agent, then
+independently verified against the exact source it cites) of every
+existing "profile-shaped" domain to determine which ones have a real,
+persisted "active/current" concept versus which are independent
+objects with no selection layer at all.
+
+**Audit result (§1)**: only destinations (`platform.Enabled`, the
+exact field `branch.Manager.StartEnabled` already reads) and an
+optional Stage 22 metadata-preset reference have a genuine selection
+concept to build on. Alert profiles, chat overlay profiles, and
+goals/widget profiles all load **every** `Enabled` row into their own
+live runtime simultaneously (confirmed directly in
+`internal/alerts/manager.go` and the equivalent chatoverlay/goals
+code) - none has a "current" one. Chat automation has no grouping
+object at all - schedules/commands are flat, independently `Enabled`
+rows. Connected accounts have no separate "active account" layer -
+`account.Link{PlatformID, AccountID}` already is the destination↔
+account association, implied by destination inclusion. Audio/TTS
+settings are a true singleton (`audio_settings`, `id = 'singleton'`) -
+there is no profile to select, only one configuration that ever
+exists. Every one of these is explicitly excluded from Stage 25 v1,
+not because it is unimportant, but because including it would mean
+inventing an activation concept this codebase does not actually have.
+
+**Data model (§2)**: `stream_setup_profiles` +
+`stream_setup_profile_destinations` (migration
+`0033_stream_setup_profiles.sql`). `metadata_preset_id` and
+`platform_id` are both `ON DELETE SET NULL` (never CASCADE) - deleting
+a metadata preset or a destination must never delete the setup profile
+that references it; the destination row additionally snapshots
+provider/display name, mirroring Stage 24's own destination-history
+pattern exactly, so a "destination missing" state can still name what
+it used to be.
+
+**Apply semantics (§3)**: preview-then-confirm, reusing Stage 22's own
+`ApplyPreview`/`Apply` verbatim for the metadata-preset half rather
+than a second implementation. Commit is two separately-atomic steps,
+not one cross-domain transaction - a deliberate, documented tradeoff
+mirroring Stage 23's own restore precedent: a new
+`platform.Service.SetEnabledBatch` (§5, mirroring `SaveMetadataBatch`'s
+exact one-transaction shape) handles destination membership
+atomically, then the existing, unchanged metadata-preset `Apply` runs
+if a preset is referenced and still exists - if step 1 succeeds and
+step 2 fails, the destination membership is left in a real, valid,
+non-corrupt state, reported honestly rather than faked as fully
+atomic.
+
+**Active-stream safety (§6)**: blocked only for destinations actually
+affected by the specific profile being applied (union of
+will-enable/will-disable/preset-targeted destinations), not a blanket
+"nothing may be live anywhere" rule - matching the governing task's
+own precise wording.
+
+**"Modified since apply" deliberately not implemented (§11)**:
+destination-membership drift could be tracked reliably; metadata drift
+cannot (no lineage from an applied preset back to live metadata exists
+anywhere in this codebase) - showing a partial indicator covering only
+one of the two would be actively misleading, so neither is shown in
+v1. A simple factual "Last applied: Gaming" record is shown instead.
+
+**Backup/restore integration (§8)**: stream setup profiles join the
+Stage 23 backup inventory, restored after platforms and metadata
+presets in `applyConfig`'s own fixed order so both ids already exist
+in `idMap` when a profile's own references are remapped. A small,
+backward-compatible fix rides along: metadata-preset restore never
+recorded its own old→new id mapping into `idMap` before now (nothing
+referenced a preset id across domains yet) - Stage 25 is the first
+thing that does, so this now happens.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 25A (the `streamsetup` domain
+package, migration, and `platform.Service.SetEnabledBatch`) per the
+governing task's own explicit authorization and "do not
+AskUserQuestion between substages."
