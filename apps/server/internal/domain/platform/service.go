@@ -287,3 +287,17 @@ func (s *Service) SaveMetadataBatch(ctx context.Context, updates map[string]Meta
 	}
 	return out, nil
 }
+
+// SetEnabledBatch replaces the Enabled flag of every named platform
+// atomically - either every change lands, or none does. Unlike
+// SaveMetadataBatch there is no per-item validation to run (Enabled is
+// a plain bool, never provider-projected), so this delegates straight
+// to the repository. Used by Stage 25's stream setup profiles to apply
+// a whole destination set in one step (docs/stream-setup-profiles.md
+// §5).
+func (s *Service) SetEnabledBatch(ctx context.Context, updates map[string]bool) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.repo.SetEnabledBatch(ctx, updates)
+}

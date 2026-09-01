@@ -50613,3 +50613,70 @@ was made. Continuing directly into 25A (the `streamsetup` domain
 package, migration, and `platform.Service.SetEnabledBatch`) per the
 governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## feat(server): Stage 25A - the stream-setup-profile domain, migration, and platform.SetEnabledBatch
+
+New migration `0033_stream_setup_profiles.sql` adds
+`stream_setup_profiles` and `stream_setup_profile_destinations`
+(docs/stream-setup-profiles.md §2). Destination rows reference
+`platforms(id) ON DELETE SET NULL` and snapshot `provider_id`/
+`display_name` at write time, the same pattern Stage 24's own
+`stream_session_destinations` already established for surviving a
+platform deletion. A new `metadata_preset_name` snapshot column
+applies that same idiom to a metadata preset reference for the first
+time: `ON DELETE SET NULL` alone would make "never referenced" and
+"referenced, now deleted" both read as nil, so the name is captured at
+write time and never cleared by the FK action -
+`Profile.MetadataPresetMissing()` tells the two states apart
+(`MetadataPresetID == nil && MetadataPresetName != ""`).
+
+`internal/domain/streamsetup` is the new domain package: `Profile`/
+`Destination` models, a `Repository` interface, and a `Service` with
+`List`/`Get`/`Create`/`Update`/`Delete`/`Duplicate`/`SaveCurrent`
+(captures only the currently-`Enabled` destinations). Destination
+references are validated and resolved to a provider/display-name
+snapshot at write time; an unknown destination or an unknown metadata
+preset is rejected with a wrapped `platform.ErrNotFound` /
+`metadatapreset.ErrNotFound` rather than silently accepted.
+
+`internal/domain/streamsetup/apply.go` implements the preview-then-
+confirm apply flow (docs/stream-setup-profiles.md §3): `Preview`
+classifies every destination as will-enable / will-disable / unchanged
+/ missing, reuses `metadatapreset.Service.ApplyPreview` verbatim when a
+still-valid preset is referenced, and computes a `Blocked` set scoped
+to only the destinations actually affected by this apply (union of
+will-enable, will-disable, and still-existing profile destinations)
+that currently have an active branch - a live destination outside that
+union never blocks. `Apply` re-derives the preview, refuses if
+blocked, then commits in two steps rather than faking cross-domain
+atomicity: `platform.Service.SetEnabledBatch` (new, transactional,
+mirrors `SaveMetadataBatch`'s own shape exactly) applies destination
+membership atomically first, then - only if a preset is referenced and
+still exists - `metadatapreset.Service.Apply` runs unchanged. A
+metadata-only failure is reported honestly via
+`ApplyResult.MetadataSkippedReason` rather than failing the whole call,
+since destination membership already committed successfully; this
+mirrors Stage 23 restore's own already-precedented "prefer one
+transaction where feasible, report a partial outcome honestly where it
+genuinely can't be one" tradeoff.
+
+`platform.Service.SetEnabledBatch` and
+`sqlite.PlatformRepository.SetEnabledBatch` are new, alongside the new
+`sqlite.StreamSetupProfileRepository`. A structural
+`security_test.go` (mirroring `metadatapreset`'s own
+`secretShapedSubstrings` reflection scan) proves `Profile`/
+`Destination`/`CreateInput`/`UpdateInput` carry no secret-shaped field
+name, with a field-count tripwire so a future field addition forces a
+conscious review rather than slipping in unreviewed.
+
+27 new tests across `internal/domain/streamsetup` (service, apply, and
+security) and `internal/storage/sqlite` (profile repository round-trip,
+duplicate-name rejection, destination/preset-deletion survival,
+cascade delete, and the new `SetEnabledBatch`), all passing against
+real SQLite where applicable. Whole-backend `gofmt`/`go vet`/`go
+build`/`go test ./...` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 25B (the HTTP API and `main.go`
+wiring) per the governing task's own explicit authorization and "do
+not AskUserQuestion between substages."

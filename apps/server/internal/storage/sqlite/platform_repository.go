@@ -429,6 +429,49 @@ func (r *PlatformRepository) SaveMetadataBatch(
 	return nil
 }
 
+// SetEnabledBatch replaces the Enabled flag of every named platform in
+// one transaction spanning all of them - either every update lands, or
+// none does (docs/stream-setup-profiles.md §5).
+func (r *PlatformRepository) SetEnabledBatch(ctx context.Context, updates map[string]bool) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Sorted so the sequence of statements inside the transaction is
+	// deterministic run to run, matching SaveMetadataBatch's own reasoning.
+	ids := make([]string, 0, len(updates))
+	for id := range updates {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storageErr("begin set enabled batch", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, id := range ids {
+		result, err := tx.ExecContext(ctx,
+			`UPDATE platforms SET enabled = ? WHERE id = ?`, boolToInt(updates[id]), id)
+		if err != nil {
+			return storageErr("set enabled", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return storageErr("set enabled rows", err)
+		}
+		if affected == 0 {
+			return fmt.Errorf("%w: platform %s", platform.ErrNotFound, id)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return storageErr("commit set enabled batch", err)
+	}
+	return nil
+}
+
 // NextSortOrder returns one past the current maximum, so a new platform is
 // appended to the end of the dashboard.
 func (r *PlatformRepository) NextSortOrder(ctx context.Context) (int, error) {

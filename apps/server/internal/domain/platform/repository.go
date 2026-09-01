@@ -36,6 +36,13 @@ type Repository interface {
 	// exist.
 	SaveMetadataBatch(ctx context.Context, updates map[string]Metadata) error
 
+	// SetEnabledBatch replaces the Enabled flag of every named platform in
+	// one transaction spanning all of them: either every update lands, or
+	// none does. Returns ErrNotFound if any platform ID does not exist.
+	// Used by Stage 25's stream setup profiles to apply a whole destination
+	// set atomically (docs/stream-setup-profiles.md §5).
+	SetEnabledBatch(ctx context.Context, updates map[string]bool) error
+
 	// NextSortOrder returns the sort order to use when appending a platform.
 	NextSortOrder(ctx context.Context) (int, error)
 }

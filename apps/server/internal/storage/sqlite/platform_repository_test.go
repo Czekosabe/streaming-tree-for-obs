@@ -369,6 +369,57 @@ func TestSaveMetadataPreservesUnicodeExactly(t *testing.T) {
 	}
 }
 
+func TestSetEnabledBatchUpdatesEveryPlatformAtomically(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	ctx := context.Background()
+
+	if err := repo.SetEnabledBatch(ctx, map[string]bool{
+		"pf_seed_twitch": true, "pf_seed_youtube": false,
+	}); err != nil {
+		t.Fatalf("SetEnabledBatch() returned an error: %v", err)
+	}
+
+	twitch, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) error = %v", err)
+	}
+	if !twitch.Enabled {
+		t.Error("twitch.Enabled = false, want true")
+	}
+	youtube, err := repo.Get(ctx, "pf_seed_youtube")
+	if err != nil {
+		t.Fatalf("Get(youtube) error = %v", err)
+	}
+	if youtube.Enabled {
+		t.Error("youtube.Enabled = true, want false")
+	}
+}
+
+func TestSetEnabledBatchReturnsNotFoundForUnknownPlatformAndWritesNothing(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	ctx := context.Background()
+
+	before, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) error = %v", err)
+	}
+
+	err = repo.SetEnabledBatch(ctx, map[string]bool{
+		"pf_seed_twitch": !before.Enabled, "pf_missing": true,
+	})
+	if !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("SetEnabledBatch() error = %v, want ErrNotFound", err)
+	}
+
+	after, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) error = %v", err)
+	}
+	if after.Enabled != before.Enabled {
+		t.Error("twitch's Enabled flag changed even though the batch also named an unknown platform")
+	}
+}
+
 func TestSaveMetadataBatchUpdatesEveryPlatformAtomically(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	ctx := context.Background()
