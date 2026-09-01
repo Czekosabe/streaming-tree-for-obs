@@ -49295,3 +49295,72 @@ was made. Continuing directly into 23B part 2 (the package writer -
 manifest + zip archive + managed-asset packaging + the HTTP download
 endpoint) per the governing task's own explicit "do not AskUserQuestion
 between substages."
+
+## 2026-09-01 — feat(server): Stage 23B part 2 - the backup manifest, archive writer, and validating reader
+
+### What changed
+`internal/domain/backup/manifest.go`: `Manifest`/`ManifestAsset` (the
+package's always-first-validated entry - format version, a fixed
+`Product` identity string checked before anything else is even parsed,
+creation time, source app version/platform, the config payload's own
+SHA-256, and one entry per distinct referenced asset blob) plus this
+package's own archive bounds - deliberately larger than
+`internal/domain/visualpackage`'s template-package bounds (512 MiB/768
+MiB/20,000 entries/64 MiB config, vs. that package's 96 MiB/128
+entries), since a backup aggregates every domain this application
+persists rather than one template's own small asset set. Only the
+NUMBERS differ; `internal/archivesafety` (previous commit) is what
+both packages actually validate against.
+
+`internal/domain/backup/writer.go`: `WriteArchive` builds one complete
+package from a `Config` - marshals `config.json`, computes its SHA-256,
+resolves every distinct blob `VisualAssets`/`AudioAssets` reference
+through a small `AssetBlobSource` port (satisfied directly by
+`*visualasset.FileStore` and audioasset's own identical `FileStore`
+instance - never a second copy of blob-reading logic), deduplicates by
+content hash exactly like the existing blob store already does, and
+writes manifest + config + every asset into one zip in deterministic
+order. Never partial: any error aborts before any bytes are returned,
+so a caller can never write a half-built package to disk.
+
+`internal/domain/backup/reader.go`: `ReadArchive` mirrors
+`visualpackage.ReadArchive`'s own "never blind extraction" pipeline -
+archive-level bounds, per-entry path grammar
+(`validateBackupEntryPath`, built on `internal/archivesafety` plus a
+grammar *narrower* than visualpackage's own bounded-ASCII-filename
+rule: an asset entry's filename here must literally BE its own
+64-character lowercase-hex SHA-256, since these paths are content-
+addressed by construction), exact manifest/archive cross-reference (no
+hidden payload entry, no manifest-declared-but-missing asset), and
+hash agreement for both `config.json` and every individual asset.
+Product/format-version mismatch is rejected before the config payload
+is even decoded. `json.Decoder.DisallowUnknownFields()` on both the
+manifest and the config decode - an unknown field is a hard parse
+failure, not a silently ignored one.
+
+### Tests
+`archive_test.go` (9 tests): a full write-then-read round trip
+(config and asset bytes both come back byte-identical), content-
+deduplication of a blob two logical assets share, and the governing
+task's own §23 malicious-package scenarios that apply at this layer:
+wrong product, tampered config content (hash mismatch), zip-slip
+(`../../evil.txt`), an archive entry the manifest never declared, a
+missing manifest/config, an oversized package, and an asset path whose
+own filename is not a valid sha256. Two of these tests initially wrote
+the wrong expectation and were fixed once the real error (the specific
+sentinel, or which validation step fires first) was observed rather
+than assumed - `validateBackupEntryPath` also gained one real fix as a
+result: it was returning `archivesafety.ErrEntryInvalid` unwrapped
+instead of this package's own `backup.ErrEntryInvalid`, which the
+zip-slip test caught immediately.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean, including all 18 tests now in `internal/domain/backup`
+(8 export + 1 security + 9 archive).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into the HTTP download endpoint and
+main.go wiring (finishing 23B) per the governing task's own explicit
+"do not AskUserQuestion between substages."
