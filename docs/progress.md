@@ -47930,3 +47930,121 @@ was made for permission to start or continue it - this is the first
 autonomous roadmap item after the governing message's Part A, begun
 directly per its own explicit "do not ask merely for permission to
 start a task already specified" instruction.
+
+## 2026-09-01 — fix(installer): the real cause of the HKLM registry-root finding was PrivilegesRequiredOverridesAllowed, not account type - corrected, with Start Menu also made a real task choice
+
+**Corrective entry.** The previous entry's own root-cause conclusion for
+the HKLM/HKCU registry finding was wrong, caught by the operator
+re-reading it against Inno Setup's own official documentation before
+accepting it: `PrivilegesRequired=lowest` is officially documented to
+"always run in non administrative install mode" regardless of account
+type, which the previous entry's own "admin-capable account" narrative
+never actually reconciled. Per this project's own append-only journal
+discipline, that entry is left unedited above; this entry records what
+was actually found on re-investigation and what changed as a result.
+
+### The real root cause, found via real /LOG evidence
+A real local install, captured with Inno's own `/LOG=`, showed Setup's
+own internal re-launch command line carrying `/ALLUSERS` - never passed
+by the test itself - and `Administrative install mode: Yes` /
+`Install mode root key: HKEY_LOCAL_MACHINE`. The cause:
+`PrivilegesRequiredOverridesAllowed=dialog`, present in `[Setup]` since
+this file's very first commit (`1587612`, 2026-08-18) with no comment
+ever explaining why, makes Inno Setup 6.7.3 default to administrative
+install mode whenever the current account is an Administrators-group
+member and no dialog can be shown to ask otherwise - true for every
+silent/automated invocation, and effectively true interactively too
+unless the operator specifically notices and picks "install for just
+me." `git log -S` found no evidence this was ever a deliberate product
+decision. This is a real installer-behavior bug against the project's
+own absolute, repeatedly documented "per-user, no elevation, ever"
+contract - not merely a registry-detection inconvenience.
+
+**Fix:** removed `PrivilegesRequiredOverridesAllowed` from `[Setup]`
+entirely. Re-tested with the identical `/LOG=` capture on the identical
+admin-capable account that previously showed `HKEY_LOCAL_MACHINE`:
+`User privileges: None`, `Administrative install mode: No`,
+`Install mode root key: HKEY_CURRENT_USER`, no `/ALLUSERS`. Confirmed
+twice, each time with a distinguishable never-before-used test version
+string, so no stale registry state could account for the result.
+
+### Redesigned existing-install detection
+`UninstallRegRoot()`/`IsAdminInstallMode()`-based root selection is
+removed. `InitializeSetup` now checks both `HKEY_CURRENT_USER` (the one
+canonical root a correctly-behaving build ever writes to) and
+`HKEY_LOCAL_MACHINE` (defensive-only - this project has never published
+a public release, so any real HKLM entry can only be this installer's
+own pre-fix test/dev residue, never a real external user's legitimate
+legacy install, per the operator's own explicit "do not invent legacy
+support" instruction). Only-HKCU proceeds normally through the existing
+fresh/update/repair/downgrade comparison; only-HKLM or both-populated
+refuse to proceed with an explicit logged/shown message, rather than
+silently picking a root or creating a second parallel registration.
+Verified locally against real registry state for both conflict cases.
+
+### Start Menu is now a real, independent task choice
+The prior entry kept the Start Menu shortcut mandatory, reasoning it
+was "not an optional integration" - a preference, not a concrete
+product/Windows requirement, per the operator's own explicit challenge.
+Changed: `startmenuicon` is now a `[Tasks]` entry (selected by default),
+alongside the existing `desktopicon` task (unselected by default).
+
+### Native task persistence replaces the prior entry's custom mechanism
+The prior entry's own `RegisterPreviousData`/`GetPreviousData`/
+`InitializeWizard` code reimplemented by hand exactly what Inno's own
+`UsePreviousTasks` (default `"yes"`, confirmed via
+`jrsoftware.org/ishelp/topic_setup_useprevioustasks.htm`, never
+overridden in `[Setup]`) already does natively. Removed as redundant.
+
+### AV attribution correction
+The prior entry attributed local install/uninstall hangs during that
+round's testing to the same McAfee/Defender interference recorded in an
+earlier, different round - by analogy, not by direct evidence from that
+round itself. This entry found a better-evidenced alternative: a
+pre-fix (administrative-mode) install's later uninstall likely attempted
+a silent UAC re-elevation that no Inno flag can suppress and no
+non-interactive script can satisfy, hanging rather than failing. Direct
+supporting evidence: after this fix, an uninstall of a genuinely
+per-user install completed instantly with no hang, on the same machine
+where pre-fix uninstalls had hung repeatedly. Stated as a plausible,
+evidenced explanation, not a certainty - not re-asserting the earlier
+analogy as fact. The original, separate McAfee/Defender finding (a
+different round, about raw `user32.dll` import-pattern heuristics) is
+not itself contradicted and stands as originally recorded.
+
+### Automated verification
+`scripts/verify-installer.mjs`'s `testVersionDetectionScenario` now
+asserts the canonical root explicitly at every step (`HKEY_CURRENT_USER`
+has the expected version, `HKEY_LOCAL_MACHINE` has none) rather than
+accepting either. A new `testShortcutTasksScenario` exercises real
+Start Menu/desktop `.lnk` creation, target resolution (via
+`WScript.Shell`), task-persistence-across-update, and uninstall removal
+- deliberately only on the GitHub-hosted CI runner's own disposable
+per-user Desktop/Start Menu, never a real/local machine, per the
+operator's own explicit instruction. `ISCC` compiled the corrected
+script cleanly at every step; `node --check scripts/verify-installer.mjs`
+clean.
+
+One incidental, low-consequence side effect of this round's own local
+`/LOG` evidence-gathering: a stale `HKEY_LOCAL_MACHINE` uninstall
+registry entry for this AppId (`DisplayVersion 0.9.7-evidence`, from
+this round's own deliberate admin-mode reproduction) could not be
+removed afterward - `reg delete` against it returned "Access is
+denied" from this same unelevated session, itself further confirming
+that entry was never writable/deletable by an unelevated process,
+consistent with the corrected root-cause finding above. It is harmless
+orphaned test debris (this account's own dev machine, not real user
+data), and the new conflict-detection logic now correctly refuses any
+further local install attempt on this exact machine until an elevated
+session removes it - the intended, correct behavior, not a defect.
+
+### Documentation
+`docs/windows-packaging.md`'s living §27 corrected in place (its
+`IsAdminInstallMode()`-based explanation marked superseded, pointing to
+a new §28 with the full corrective investigation, fix, and redesign).
+This journal entry is the required corrective append; the prior entry
+above is left unedited per the append-only journal rule.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.

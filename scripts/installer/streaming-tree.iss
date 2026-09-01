@@ -73,8 +73,22 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+; Deliberately no PrivilegesRequiredOverridesAllowed. A real local test
+; against Inno Setup 6.7.3 (docs/windows-packaging.md §28) proved that
+; PrivilegesRequiredOverridesAllowed=dialog - present since this file's
+; very first commit, with no comment ever explaining why - makes Setup
+; append /ALLUSERS to its own internal re-launch and install in
+; administrative mode (HKEY_LOCAL_MACHINE) whenever the current account
+; is a member of the Administrators group and no dialog can be shown to
+; ask (i.e. every silent/automated invocation, and even an interactive
+; run unless the operator notices and deliberately picks "install for
+; just me") - silently contradicting this project's own absolute,
+; repeatedly documented "per-user, no elevation, ever" contract for a
+; very common class of real Windows account. PrivilegesRequired=lowest
+; alone (no overrides allowed) is Inno's own documented guarantee of
+; always non administrative install mode, confirmed by the identical
+; real test with this line removed.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 ; Real MSI-equivalent uninstall registration, real Start Menu entry, real
 ; Apps & Features entry - all Inno Setup defaults, not disabled.
 Uninstallable=yes
@@ -120,25 +134,32 @@ Source: "{#StagingDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignorev
 Source: "{#StagingDir}\LEGAL.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StagingDir}\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 
-; Start Menu shortcut has no [Tasks] entry - it stays a mandatory,
-; unconditional [Icons] line below, matching Stage 20A's own established
-; behavior and common Windows installer convention: Streaming Tree is a
-; background service-like application launched via a shortcut, not an
-; optional integration a first-time installer audience would expect to
-; opt out of. Only the desktop shortcut - the one genuinely optional,
-; user-preference convention on Windows - gets a task.
+; A prior round kept the Start Menu shortcut as a mandatory, unconditional
+; [Icons] line, reasoning that a persistently-running local application
+; warranted it. On review, that is a preference, not a concrete product/
+; Windows requirement, so both shortcuts are now standard, independent
+; task choices, matching normal Windows installer convention: Start Menu
+; selected by default, desktop unselected by default. Neither choice
+; affects the application's own Apps & Features/uninstall registration
+; (docs/windows-packaging.md §14) - the app remains fully discoverable
+; and uninstallable either way. Both choices persist across an update via
+; Inno's own native UsePreviousTasks (default "yes", confirmed against
+; jrsoftware.org/ishelp/topic_setup_useprevioustasks.htm - "it will use
+; the task settings of the previous installation as the default settings
+; presented to the user in the wizard") - no custom [Code] needed for
+; this; a prior round's own RegisterPreviousData/GetPreviousData
+; reimplementation of exactly this native behavior has been removed.
 [Tasks]
-Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "startmenuicon"; Description: "Create a &Start Menu shortcut"; GroupDescription: "Shortcuts:"
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startmenuicon
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
 ; {userdesktop} always resolves to the real current user's Desktop, even
 ; under a custom {app} install path (docs/windows-packaging.md §1/§8) -
 ; Inno's own uninstaller removes an [Icons]-declared shortcut
-; automatically, so no [UninstallDelete] entry is needed for it. Gated
-; on the desktopicon task above; RegisterPreviousData/GetPreviousData in
-; [Code] below preserve the operator's own choice across an update.
+; automatically, so no [UninstallDelete] entry is needed for it.
 Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
@@ -201,30 +222,43 @@ const
   // requirement).
   UninstallRegSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{C067013C-D143-49F8-9510-D078482D6DA4}_is1';
 
-// UninstallRegRoot mirrors Inno's own documented root-key choice for the
-// uninstall entry exactly (jrsoftware.org/ishelp/topic_admininstallmode.htm:
-// "The HKA, uninstall info, and font install root keys will be
-// HKEY_CURRENT_USER" in non administrative install mode, HKEY_LOCAL_MACHINE
-// in administrative mode) - confirmed necessary, not merely theoretical,
-// against a real local install: on an admin-capable account, Inno records
-// the uninstall entry under HKEY_LOCAL_MACHINE (transparently WOW64-
-// redirected to its WOW6432Node mirror, since Setup.exe/Uninstall.exe are
-// both 32-bit - reading via plain HKEY_LOCAL_MACHINE here gets the same
-// transparent redirection) even though PrivilegesRequired=lowest keeps the
-// actual install itself fully non-elevated and per-user
-// (jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm's own "will
-// always run in non administrative install mode" for "lowest" governs
-// elevation, not which registry root non-elevated-but-admin-capable
-// accounts get). A hardcoded HKEY_CURRENT_USER here would silently never
-// find a real previously-installed version on exactly this common kind of
-// account, defeating every fresh/update/repair/downgrade check below.
-function UninstallRegRoot(): Integer;
-begin
-  if IsAdminInstallMode() then
-    Result := HKEY_LOCAL_MACHINE
-  else
-    Result := HKEY_CURRENT_USER;
-end;
+// A real local test against Inno Setup 6.7.3 originally found the
+// uninstall entry registered under HKEY_LOCAL_MACHINE and, at the time,
+// this was attributed to "admin-capable accounts get HKLM even under
+// PrivilegesRequired=lowest" and worked around with an
+// IsAdminInstallMode()-based root choice here. That explanation did not
+// hold up: PrivilegesRequired=lowest's own official documentation
+// (jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm) states
+// Setup "will always run in non administrative install mode" regardless
+// of account type, and a corrective, evidence-based re-test (real
+// Inno /LOG capture) found the true, different cause -
+// PrivilegesRequiredOverridesAllowed=dialog (present since this file's
+// very first commit, never actually justified in it) made Setup append
+// /ALLUSERS to its own internal re-launch and genuinely install in
+// administrative mode whenever the current account is an Administrators
+// group member and no dialog can be shown to ask otherwise - contradicting
+// this project's own absolute "per-user, no elevation, ever" contract, not
+// merely a registry-detection inconvenience. That directive is now
+// removed ([Setup] above) - Administrative install mode: No / Install
+// mode root key: HKEY_CURRENT_USER, confirmed again by the identical real
+// /LOG capture with the fix applied, on the identical admin-capable
+// account that previously showed HKEY_LOCAL_MACHINE.
+//
+// Detection below therefore treats HKEY_CURRENT_USER as the one
+// canonical root a correctly-behaving build of this installer ever
+// writes to - never IsAdminInstallMode()-based selection. It still
+// checks HKEY_LOCAL_MACHINE defensively, because real pre-fix local
+// test/dev history on this exact project could have left a stale
+// administrative-mode entry behind (this project has never published a
+// public release, so there is no real external user with a legitimate
+// "legacy" install to migrate - any HKLM entry found here can only be
+// residue from testing this installer itself before this fix). Finding
+// one is never silently resolved by picking a root: it is surfaced as an
+// explicit, actionable message, and Setup refuses to proceed and create
+// a second, parallel per-user registration alongside it.
+var
+  HkcuInstalledVersion, HklmInstalledVersion: String;
+  HkcuInstalledFound, HklmInstalledFound: Boolean;
 
 var
   // Set once in InitializeSetup, read again by UpdateReadyMemo below so
@@ -339,7 +373,41 @@ end;
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  DetectedPrevVersionFound := RegQueryStringValue(UninstallRegRoot(), UninstallRegSubkey, 'DisplayVersion', DetectedPrevVersion);
+  HkcuInstalledFound := RegQueryStringValue(HKEY_CURRENT_USER, UninstallRegSubkey, 'DisplayVersion', HkcuInstalledVersion);
+  HklmInstalledFound := RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallRegSubkey, 'DisplayVersion', HklmInstalledVersion);
+
+  if HkcuInstalledFound and HklmInstalledFound then
+  begin
+    if not WizardSilent() then
+      MsgBox('{#MyAppName} appears to be registered both as a per-user install (version ' + HkcuInstalledVersion +
+        ') and as an administrative/all-users install (version ' + HklmInstalledVersion + ').' + #13#10#13#10 +
+        'This installer only supports a per-user install and cannot safely resolve this automatically. ' +
+        'Please uninstall the administrative/all-users copy first (from an elevated "Apps & Features"), then run this installer again.',
+        mbError, MB_OK);
+    Log('Refusing to proceed: both HKCU (' + HkcuInstalledVersion + ') and HKLM (' + HklmInstalledVersion + ') uninstall entries exist for this AppId.');
+    Result := False;
+    exit;
+  end;
+
+  if HklmInstalledFound then
+  begin
+    // Never a real external user's legacy install - this project has
+    // never published a public release. Only this installer's own
+    // pre-fix test/dev history could have produced this. Refuse rather
+    // than silently creating a second, parallel per-user registration
+    // alongside it.
+    if not WizardSilent() then
+      MsgBox('An existing administrative/all-users installation of {#MyAppName} (version ' + HklmInstalledVersion + ') was found.' + #13#10#13#10 +
+        'This installer only supports a per-user install and cannot upgrade an administrative install. ' +
+        'Please uninstall it first (from an elevated "Apps & Features"), then run this installer again.',
+        mbError, MB_OK);
+    Log('Refusing to proceed: an administrative/all-users install (' + HklmInstalledVersion + ') was found under HKLM.');
+    Result := False;
+    exit;
+  end;
+
+  DetectedPrevVersionFound := HkcuInstalledFound;
+  DetectedPrevVersion := HkcuInstalledVersion;
   if not DetectedPrevVersionFound then
     exit; // Fresh install - nothing to compare against.
 
@@ -395,28 +463,13 @@ begin
   Result := Result + MemoDirInfo + NewLine + NewLine + MemoGroupInfo + NewLine + NewLine + MemoTasksInfo;
 end;
 
-// InitializeWizard/RegisterPreviousData implement docs/windows-
-// packaging.md §6's "preserve previous task choices where Inno Setup can
-// correctly do so": GetPreviousData/SetPreviousData is Inno's own
-// documented, non-automatic mechanism for exactly this (confirmed
-// against jrsoftware.org/ishelp/topic_isxfunc_getpreviousdata.htm and
-// topic_scriptevents.htm). WizardForm.TasksList.Checked[0] is safe as a
-// fixed index because this script declares exactly one [Tasks] entry
-// (desktopicon) - if a second task is ever added, this index assumption
-// must be revisited alongside it.
-procedure InitializeWizard;
-begin
-  if GetPreviousData('DesktopIcon', '0') = '1' then
-    WizardForm.TasksList.Checked[0] := True;
-end;
-
-procedure RegisterPreviousData(PreviousDataKey: Integer);
-begin
-  if WizardIsTaskSelected('desktopicon') then
-    SetPreviousData(PreviousDataKey, 'DesktopIcon', '1')
-  else
-    SetPreviousData(PreviousDataKey, 'DesktopIcon', '0');
-end;
+// Task-choice persistence across an update is handled entirely by
+// Inno's own native UsePreviousTasks (default "yes", never overridden
+// in [Setup] above) - confirmed against jrsoftware.org/ishelp/
+// topic_setup_useprevioustasks.htm to already do exactly what a prior
+// round's own RegisterPreviousData/GetPreviousData/InitializeWizard
+// reimplementation did by hand. That custom code has been removed as
+// redundant; no [Code] is needed here for this requirement.
 
 const
   // Mirrors internal/runtime/singleinstance's own mutexName constant

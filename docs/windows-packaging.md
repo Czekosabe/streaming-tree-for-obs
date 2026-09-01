@@ -692,10 +692,15 @@ legitimately flag. The real Windows CI runner
 third-party endpoint security software) is the trustworthy validator
 for this mechanism, consistent with how every other native Windows
 behavior in this project has always been authoritatively verified.
-Reconfirmed during §27's own local verification below: the same
-interference recurred for essentially every install/uninstall
-invocation of a freshly-compiled test installer in that round, not only
-uninstall - reinforcing rather than changing this section's conclusion.
+**Revised (§28):** a later round's own repeated local hangs during
+install/uninstall cycling were initially also attributed to this same
+McAfee/Defender interference, by analogy rather than direct evidence.
+A corrective re-investigation found a real, different, evidenced cause
+for those specific hangs instead - see §28's own "AV attribution
+correction" note. This section's original McAfee/Defender finding
+(about `FindWindowW`/`PostMessageW` import-pattern heuristics
+specifically) is not itself contradicted by that correction and is left
+as originally recorded.
 
 ## 27. Installer UX hardening: fresh/update/repair/downgrade detection, optional desktop shortcut, launch-on-finish
 
@@ -742,39 +747,23 @@ of each other (they compare equal - a repair, not an update).
   path - the Ready page itself is skipped entirely under `/SILENT`/
   `/VERYSILENT`, so this never affects a silent run.
 
-**A real, confirmed-necessary correctness fix found during local
-testing, not merely theoretical:** the registry root Inno Setup itself
-uses for the uninstall entry is not always `HKEY_CURRENT_USER`, even
-though this installer's own `PrivilegesRequired=lowest` keeps the
-*install itself* fully non-elevated and per-user. Per Inno's own
-documentation (`jrsoftware.org/ishelp/topic_admininstallmode.htm`): the
-uninstall-info registry root is `HKEY_CURRENT_USER` in non
-administrative install mode and `HKEY_LOCAL_MACHINE` in administrative
-install mode, and `IsAdminInstallMode()` is the documented way to tell
-which one Inno actually chose. A real local install on an admin-capable
-(but not elevated) account registered under `HKEY_LOCAL_MACHINE`
-(transparently WOW64-redirected to its `WOW6432Node` mirror, since
-`Setup.exe`/`Uninstall.exe` are both 32-bit) - a hardcoded `HKEY_CURRENT_
-USER` lookup would have silently found nothing on exactly this common
-kind of account, defeating every fresh/update/repair/downgrade check
-above without ever failing loudly. `UninstallRegRoot()` now picks the
-root via `IsAdminInstallMode()`, matching Inno's own real choice rather
-than assuming one.
+**Superseded by §28.** This round's own first attempt at a fix
+concluded the registry root varies with `IsAdminInstallMode()` on an
+"admin-capable account" and picked the root accordingly. A corrective
+re-investigation (§28) found that explanation did not hold up against
+official documentation and, with real `/LOG` evidence, identified a
+different, concrete, fixable root cause instead
+(`PrivilegesRequiredOverridesAllowed=dialog`, now removed). See §28 for
+the corrected design; `UninstallRegRoot()`/`IsAdminInstallMode()` no
+longer exist in `[Code]`.
 
 ### Start Menu, desktop shortcut, and Launch-on-finish
-The Start Menu shortcut remains a mandatory, unconditional `[Icons]`
-entry (unchanged since Stage 20A) - not made optional, since this is a
-persistently-running local application launched via a shortcut, not an
-optional integration a typical installer audience expects to opt out
-of. A new `[Tasks]` entry (`desktopicon`, unchecked by default, matching
-common Windows installer convention) gates a new `[Icons]` line using
-`{userdesktop}` - correct under a custom install path, since
-`{userdesktop}` always resolves to the real current user's Desktop
-independent of `{app}`. The operator's own choice is preserved across an
-update via `RegisterPreviousData`/`GetPreviousData` (Inno's own
-documented, non-automatic mechanism for exactly this -
-`jrsoftware.org/ishelp/topic_isxfunc_getpreviousdata.htm`,
-`topic_scriptevents.htm`), read back in `InitializeWizard`.
+**Superseded by §28.** This round originally kept the Start Menu
+shortcut as a mandatory, unconditional `[Icons]` entry and used a
+custom `RegisterPreviousData`/`GetPreviousData` reimplementation of
+task-choice persistence. §28 changed both: Start Menu is now also a
+standard task (selected by default), and the custom persistence code
+was removed as redundant with Inno's own native `UsePreviousTasks`.
 
 A new `[Run]` entry offers "Launch {#MyAppName}" on the final wizard
 page using Inno's own `postinstall skipifsilent nowait` flags -
@@ -804,17 +793,162 @@ pass. It drives a real fresh install, a real update, a real silent
 downgrade attempt (asserted to fail and leave the registered version
 unchanged), and a real same-version repair/reinstall (asserted to
 succeed), verifying the real Inno-registered `DisplayVersion` after each
-step via `reg query` against both possible roots (mirroring
-`UninstallRegRoot()`'s own `IsAdminInstallMode()` fallback, rather than
-assuming one) - all confined to one hermetic install directory, never
-the operator's real per-user install path.
+step. **Revised in §28** to assert the canonical root
+(`HKEY_CURRENT_USER`) explicitly and assert `HKEY_LOCAL_MACHINE` stays
+empty throughout, rather than accepting either - proving the fix, not
+merely tolerating the pre-fix behavior.
 
-**Deliberately not automated:** actually creating the desktop shortcut.
-`/DIR=<hermetic path>` only redirects `{app}`; `{userdesktop}` still
-always resolves to the *real* current user's Desktop regardless of
-install path, on any machine the script runs on (a CI runner or a
-developer's own machine). Automatically toggling a real file on a real
-Desktop as a side effect of a verification script is not a safe
-default, so this is left to interactive/manual verification instead
-(`docs/manual-verification.md`'s existing shortcut-choices case) rather
-than forced into an automated script that would need to write there.
+Shortcut-task behavior is now automated too (§28's own
+`testShortcutTasksScenario`), on the GitHub-hosted CI runner's own
+disposable per-user Desktop/Start Menu - never the operator's real
+machine, which local development/manual testing must still avoid (see
+§28).
+
+## 28. Corrective audit: the real cause of the HKLM finding, and the resulting redesign
+
+§27's own `IsAdminInstallMode()`-based registry-root fix was flagged
+(by the operator, re-reading §27 against Inno's own official
+documentation) as inconsistent with `PrivilegesRequired=lowest`'s own
+documented guarantee ("will always run in non administrative install
+mode" - `jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm`,
+quoted correctly in §27 itself, yet not reconciled with the observed
+`HKEY_LOCAL_MACHINE` finding at the time). This section documents the
+real, evidence-based re-investigation and its outcome.
+
+### The real root cause
+A real local install, captured with Inno's own `/LOG=`, showed:
+
+```
+Setup command line: ... /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR=... /LOG=... /ALLUSERS
+User privileges: Administrative
+Administrative install mode: Yes
+Install mode root key: HKEY_LOCAL_MACHINE
+```
+
+`/ALLUSERS` was never passed by the test - Inno appended it to its own
+internal re-launch. The cause: `PrivilegesRequiredOverridesAllowed=
+dialog`, present in `[Setup]` since this file's very first commit
+(`1587612`) with no comment ever explaining why, makes Setup default to
+administrative install mode whenever the current account is an
+Administrators-group member and no dialog can be shown to ask
+otherwise (every silent/automated invocation, and even an interactive
+one unless the operator notices and deliberately picks "install for
+just me"). This directly contradicts the project's own absolute,
+repeatedly documented "per-user, no elevation, ever" contract - not
+merely a registry-detection inconvenience, a real installer-behavior
+bug. `git log` found no justification for the directive ever having
+been added deliberately for a specific product reason.
+
+**Fix:** `PrivilegesRequiredOverridesAllowed` removed from `[Setup]`
+entirely. Re-tested with the identical `/LOG=` capture, on the
+identical admin-capable account that previously showed
+`HKEY_LOCAL_MACHINE`:
+
+```
+Setup command line: ... /VERYSILENT /SUPPRESSMSGBOXES /NOICONS /DIR=... /LOG=...
+User privileges: None
+Administrative install mode: No
+Install mode root key: HKEY_CURRENT_USER
+```
+
+No `/ALLUSERS`. Confirmed twice (a distinguishable never-before-used
+test version each time, so no stale registry state could account for
+the result).
+
+### Redesigned existing-install detection
+`UninstallRegRoot()`/`IsAdminInstallMode()`-based root selection is
+removed. `InitializeSetup` now reads **both** `HKEY_CURRENT_USER`
+(the one canonical root a correctly-behaving build of this installer
+ever writes to) and `HKEY_LOCAL_MACHINE` (checked defensively only -
+this project has never published a public release, so any real HKLM
+entry found can only be residue from testing this installer itself
+before this fix, never a real external user's legitimate legacy
+install):
+
+- **Only HKCU has an entry:** the real, canonical fresh/update/
+  repair/downgrade path (unchanged from §27's own comparison logic).
+- **Only HKLM has an entry:** refuses to proceed with an explicit
+  message directing the operator to uninstall the administrative copy
+  first (from an elevated "Apps & Features") - never silently creates
+  a second, parallel per-user registration alongside it.
+- **Both have an entry:** refuses to proceed with an explicit message
+  naming both versions - never silently picks one.
+- Every refusal is logged (`Log(...)`) for silent-run diagnosis and
+  shown via `MsgBox` interactively; a silent run refusing is a clean
+  non-zero exit, not a hang.
+
+Verified locally against real registry state for both conflict cases
+(HKLM-only, and both-populated simultaneously) - both produced the
+correct refusal and the correct logged message.
+
+### Start Menu is now a real, independent task choice
+Reviewed per the operator's own explicit challenge: keeping the Start
+Menu shortcut mandatory was a preference stated in §27, not a concrete
+product/Windows requirement. Changed: `startmenuicon` is now a
+`[Tasks]` entry, selected by default; `desktopicon` remains a
+`[Tasks]` entry, unselected by default. Neither choice affects the
+application's own Apps & Features/uninstall registration.
+
+### Native task persistence replaces the custom §27 mechanism
+Re-audited whether §27's own `RegisterPreviousData`/`GetPreviousData`/
+`InitializeWizard` reimplementation was actually necessary. Official
+documentation (`jrsoftware.org/ishelp/topic_setup_useprevioustasks.htm`):
+`UsePreviousTasks` defaults to `"yes"` and already "use[s] the task
+settings of the previous installation as the default settings
+presented to the user in the wizard" - exactly what the custom code
+reimplemented by hand. Removed as redundant; `[Setup]` never overrides
+`UsePreviousTasks`, so the native default applies with no `[Code]`
+needed.
+
+### AV attribution correction
+A later local-testing round in §27 attributed several install/uninstall
+hangs to the McAfee/Defender interference already recorded earlier in
+this document, by analogy rather than direct evidence from that round
+itself. This corrective investigation found a better-evidenced
+explanation for those specific hangs: a pre-fix build (with
+`PrivilegesRequiredOverridesAllowed=dialog` still present) installed in
+administrative mode, and a later uninstall of that same install likely
+attempted to silently re-elevate via UAC - an OS-level secure-desktop
+consent prompt that no Inno flag (`/SUPPRESSMSGBOXES` included) can
+suppress, and that a non-interactive script can never satisfy, which
+would hang indefinitely rather than fail. Direct supporting evidence:
+after the fix, an uninstall of a genuinely per-user (non-admin-mode)
+install completed instantly, with no hang, on the same machine where
+prior uninstalls of pre-fix installs had hung repeatedly. This is a
+plausible, evidenced explanation, not a certainty - stated as such
+rather than re-asserting the earlier McAfee/Defender analogy as fact.
+The original §26 McAfee/Defender finding (a different, earlier round,
+about `FindWindowW`/`PostMessageW` import-pattern security heuristics
+specifically) is not itself contradicted by this and stands as
+originally recorded.
+
+### Automated verification
+`scripts/verify-installer.mjs`'s `testVersionDetectionScenario` now
+asserts the canonical root explicitly: `HKEY_CURRENT_USER` has the
+expected `DisplayVersion` and `HKEY_LOCAL_MACHINE` has none, at every
+step (fresh install, update, blocked downgrade, repair) - proving the
+fix holds, not merely tolerating either root as §27's original version
+did.
+
+A new `testShortcutTasksScenario` exercises real Start Menu/desktop
+`.lnk` creation and removal - deliberately only ever on the GitHub-
+hosted CI runner's own disposable per-user Desktop/Start Menu, per the
+operator's own explicit instruction never to do this on a real/local
+machine. Covers: default fresh install (Start Menu present, desktop
+absent); update with no explicit task flags (previous choices remain
+stable, proving `UsePreviousTasks` itself, not just that the code
+compiles); explicit desktop-task selection (`/MERGETASKS=desktopicon`,
+shortcut created, target resolved via `WScript.Shell` and confirmed to
+point at the real installed executable); explicit Start Menu
+deselection (`/MERGETASKS=!startmenuicon`, no Start Menu shortcut
+created, install itself still correct); and uninstall removing every
+installer-owned shortcut. Every shortcut path is built from the exact
+literal app/group name, never a wildcard, and is removed again in a
+`finally` block on every path including failure.
+
+### What remains manual
+Full interactive wizard walkthroughs (seeing the actual Ready-to-Install
+memo text, clicking through the shortcut tasks page) remain part of
+`docs/manual-verification.md`'s physical Windows sessions - this
+section closes the automatable, evidence-based gaps the operator's
+corrective audit identified, not the physical gate itself.

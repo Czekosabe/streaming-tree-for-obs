@@ -207,22 +207,26 @@ async function compileTestInstaller(isccPath, version, outputDir) {
   return join(outputDir, exe);
 }
 
-/** Reads the real Inno-registered DisplayVersion for this AppId, or null
- * if not currently installed. Checks both real registry roots Inno
- * itself can use (jrsoftware.org/ishelp/topic_admininstallmode.htm):
- * HKEY_CURRENT_USER for a non administrative install, or
- * HKEY_LOCAL_MACHINE (queried via the explicit 32-bit view, since
- * Setup.exe/Uninstall.exe are 32-bit and therefore WOW64-redirected to
- * its WOW6432Node mirror there) for an administrative one - which root a
- * given machine/account actually uses is not assumed, mirroring
- * UninstallRegRoot's own IsAdminInstallMode()-based choice in the .iss
- * itself, confirmed necessary against a real local install where an
- * admin-capable-but-unelevated account used HKEY_LOCAL_MACHINE. */
-async function queryInstalledDisplayVersion() {
+/** Reads the real Inno-registered DisplayVersion under HKEY_CURRENT_USER
+ * for this AppId, or null if not present there. This is the ONE
+ * canonical root a correctly-behaving per-user build of this installer
+ * ever writes to (docs/windows-packaging.md §28) - PrivilegesRequired=
+ * lowest with no PrivilegesRequiredOverridesAllowed override, confirmed
+ * by a real Inno /LOG capture ("Administrative install mode: No /
+ * Install mode root key: HKEY_CURRENT_USER"). */
+async function queryHkcuDisplayVersion() {
   const hkcu = await run('reg', ['query', `HKCU\\${UNINSTALL_REG_SUBKEY}`, '/v', 'DisplayVersion']);
-  const fromHkcu = parseRegDisplayVersion(hkcu.out);
-  if (fromHkcu) return fromHkcu;
+  return parseRegDisplayVersion(hkcu.out);
+}
 
+/** Reads the real Inno-registered DisplayVersion under HKEY_LOCAL_MACHINE
+ * (via the explicit 32-bit/WOW6432Node view, since Setup.exe/Uninstall.exe
+ * are 32-bit) for this AppId, or null if not present there. A correctly-
+ * behaving per-user build of this installer must NEVER write here - see
+ * queryHkcuDisplayVersion's own doc comment. Used only to assert absence,
+ * i.e. that the installer under test has not regressed into
+ * administrative/all-users install mode. */
+async function queryHklmDisplayVersion() {
   const hklm = await run('reg', ['query', `HKLM\\${UNINSTALL_REG_SUBKEY}`, '/reg:32', '/v', 'DisplayVersion']);
   return parseRegDisplayVersion(hklm.out);
 }
@@ -230,6 +234,108 @@ async function queryInstalledDisplayVersion() {
 function parseRegDisplayVersion(regQueryOutput) {
   const match = regQueryOutput.match(/DisplayVersion\s+REG_SZ\s+(\S+)/);
   return match ? match[1] : null;
+}
+
+/** Reads a .lnk shortcut's real target path via the standard WScript.Shell
+ * COM object (the normal Windows mechanism for this - Node has no native
+ * .lnk parser), or null if the file does not exist / cannot be read. */
+async function resolveShortcutTarget(lnkPath) {
+  if (!existsSync(lnkPath)) return null;
+  const escaped = lnkPath.replace(/'/g, "''");
+  const result = await run('powershell', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    `(New-Object -ComObject WScript.Shell).CreateShortcut('${escaped}').TargetPath`,
+  ]);
+  const target = result.out.trim();
+  return target.length > 0 ? target : null;
+}
+
+const DESKTOP_LNK_NAME = 'Streaming Tree for OBS.lnk';
+const START_MENU_GROUP = 'Streaming Tree for OBS';
+
+function desktopShortcutPath() {
+  return join(process.env.USERPROFILE ?? '', 'Desktop', DESKTOP_LNK_NAME);
+}
+function startMenuAppShortcutPath() {
+  return join(process.env.APPDATA ?? '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', START_MENU_GROUP, DESKTOP_LNK_NAME);
+}
+function startMenuUninstallShortcutPath() {
+  return join(process.env.APPDATA ?? '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', START_MENU_GROUP, `Uninstall ${START_MENU_GROUP}.lnk`);
+}
+
+/** Scenario E (docs/windows-packaging.md §28): real Start Menu/desktop
+ * shortcut task behavior, on the GitHub-hosted runner's own disposable
+ * per-user Desktop/Start Menu - never the operator's real machine (this
+ * script never runs there for this scenario; see its own doc comment
+ * and docs/manual-verification.md for why this was previously left to
+ * manual verification only). Only ever touches paths built from the
+ * exact literal app/group name above - never a wildcard or prefix
+ * match - and every created shortcut is removed again before this
+ * function returns, on every path including failure. */
+async function testShortcutTasksScenario(installerPath) {
+  const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-shortcuts-verify-')), 'app');
+  console.log(`Hermetic install directory: ${installDir}`);
+  console.log(`Desktop shortcut path under test: ${desktopShortcutPath()}`);
+  console.log(`Start Menu group under test: ${START_MENU_GROUP}`);
+
+  try {
+    step('Fresh install with default task selection (no /MERGETASKS)');
+    const fresh = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`]);
+    expect(fresh.code === 0, 'default-task fresh install exits 0', fresh);
+    expect(existsSync(startMenuAppShortcutPath()), 'Start Menu app shortcut exists (startmenuicon is checked by default)');
+    expect(existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut exists');
+    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut does NOT exist (desktopicon is unchecked by default)');
+    const startMenuTarget = await resolveShortcutTarget(startMenuAppShortcutPath());
+    expect(startMenuTarget !== null && startMenuTarget.toLowerCase() === join(installDir, 'streaming-tree-server.exe').toLowerCase(),
+      'the Start Menu shortcut target resolves to the actual installed executable', startMenuTarget);
+
+    step('Update over the same install with no /MERGETASKS - previous (default) choices must remain stable');
+    const update = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`]);
+    expect(update.code === 0, 'update exits 0', update);
+    expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists after update (native UsePreviousTasks kept it selected)');
+    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut still does NOT exist after update - the previous "off" choice was not silently turned on');
+
+    step('Uninstall - both installer-owned Start Menu shortcuts must be removed');
+    let uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
+    expect(uninstallerFile !== undefined, 'uninstaller exists', readdirSync(installDir));
+    let uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    expect(uninstall.code === 0, 'uninstall exits 0', uninstall);
+    expect(!existsSync(startMenuAppShortcutPath()), 'Start Menu app shortcut was removed by uninstall');
+    expect(!existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut was removed by uninstall');
+
+    step('Fresh install with the desktop task explicitly selected (/MERGETASKS="desktopicon")');
+    const withDesktop = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`, '/MERGETASKS=desktopicon']);
+    expect(withDesktop.code === 0, 'install with desktopicon merged exits 0', withDesktop);
+    expect(existsSync(desktopShortcutPath()), 'desktop shortcut exists when the task is explicitly selected');
+    const desktopTarget = await resolveShortcutTarget(desktopShortcutPath());
+    expect(desktopTarget !== null && desktopTarget.toLowerCase() === join(installDir, 'streaming-tree-server.exe').toLowerCase(),
+      'the desktop shortcut target resolves to the actual installed executable', desktopTarget);
+    expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists too (startmenuicon default was merged, not replaced)');
+
+    step('Uninstall - the desktop shortcut must be removed too');
+    uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
+    expect(uninstallerFile !== undefined, 'uninstaller exists', readdirSync(installDir));
+    uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    expect(uninstall.code === 0, 'uninstall exits 0', uninstall);
+    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut was removed by uninstall');
+
+    step('Fresh install with Start Menu explicitly deselected (/MERGETASKS="!startmenuicon")');
+    const noStartMenu = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`, '/MERGETASKS=!startmenuicon']);
+    expect(noStartMenu.code === 0, 'install with startmenuicon deselected exits 0', noStartMenu);
+    expect(!existsSync(startMenuAppShortcutPath()), 'no Start Menu shortcut was created when the task is deselected');
+    expect(existsSync(join(installDir, 'streaming-tree-server.exe')), 'the application itself still installed correctly with no Start Menu shortcut');
+  } finally {
+    if (existsSync(desktopShortcutPath())) rmSync(desktopShortcutPath(), { force: true });
+    const groupDir = join(process.env.APPDATA ?? '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', START_MENU_GROUP);
+    if (existsSync(groupDir)) rmSync(groupDir, { recursive: true, force: true });
+    const uninstallerFile = existsSync(installDir)
+      ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
+      : undefined;
+    if (uninstallerFile !== undefined) {
+      await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    }
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  }
 }
 
 /** Scenario D (docs/windows-packaging.md §26/§2/§3/§13): the real
@@ -255,22 +361,25 @@ async function testVersionDetectionScenario(isccPath) {
     step('Fresh install of 0.1.0');
     const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(fresh.code === 0, 'fresh install of 0.1.0 exits 0', fresh);
-    expect(await queryInstalledDisplayVersion() === '0.1.0', 'the registered version is 0.1.0 after fresh install');
+    expect(await queryHkcuDisplayVersion() === '0.1.0', 'the registered version is 0.1.0 under HKEY_CURRENT_USER after fresh install');
+    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE gained NO registration - the install stayed per-user, not administrative');
 
     step('Update to 0.2.0 over the same install directory');
     const update = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(update.code === 0, 'update to 0.2.0 exits 0', update);
-    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is 0.2.0 after update');
+    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is 0.2.0 under HKEY_CURRENT_USER after update');
+    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after update');
 
     step('Attempt a silent downgrade back to 0.1.0 - must be refused, not silently applied');
     const downgrade = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(downgrade.code !== 0, 'the silent downgrade attempt does NOT exit 0', downgrade);
-    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
+    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
 
     step('Same-version reinstall of 0.2.0 (repair) - must succeed, not be treated as a downgrade');
     const repair = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(repair.code === 0, 'same-version reinstall exits 0', repair);
-    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 after repair');
+    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 after repair');
+    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after repair');
   } finally {
     const uninstallerFile = existsSync(installDir)
       ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
@@ -581,6 +690,7 @@ async function main() {
   const isccPath = findIscc();
   expect(isccPath !== undefined, 'ISCC.exe found', 'Install it: winget install --id JRSoftware.InnoSetup --scope user');
   await testVersionDetectionScenario(isccPath);
+  await testShortcutTasksScenario(installerPath);
 
   console.log(`\n${stepCount} steps passed. PASS`);
 }
