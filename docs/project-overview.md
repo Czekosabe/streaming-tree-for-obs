@@ -1387,6 +1387,20 @@ including duplicate/out-of-order rejection and gap detection), not an
 exhaustive one. No real Twitch account, application, or network request
 to Twitch was ever contacted at any point in this stage.
 
+### 13.1 Stage 21 — first-run onboarding + OBS setup experience (in progress)
+
+Authorized as a real, additive product stage - see
+[`docs/onboarding.md`](onboarding.md) for the full contract. It turns
+the already-implemented architecture above into a coherent first-run
+experience (a persisted onboarding flow explaining OBS → Streaming
+Tree → destinations, real local-engine/OBS-connection readiness, and a
+real destinations/accounts/creator-tools summary) rather than inventing
+new streaming architecture. **Stage 21 development may proceed while
+Stage 20E physical verification remains deferred** - the two are
+independent; starting Stage 21 does not change Stage 20's own status
+(§20C2 remains Planned/externally gated, Stage 20 as a whole remains
+Incomplete until Stage 20E's physical gate actually runs).
+
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application

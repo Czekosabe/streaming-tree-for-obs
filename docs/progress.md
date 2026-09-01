@@ -48128,3 +48128,65 @@ CI run.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-09-01 — docs: define the Stage 21 first-run onboarding + OBS setup experience contract
+
+A new governing instruction explicitly authorized real, additive
+product development beyond Stage 20 - Stage 21, first-run onboarding +
+an OBS setup experience - proceeding independently of Stage 20E's own
+deferred physical verification. Wrote `docs/onboarding.md` as the
+Stage 21 contract, per this project's own standing "contract before
+implementation" discipline, only after auditing the actual current
+source (never assuming endpoint/field names from the governing
+instruction itself):
+
+- `App.tsx`'s real routing (confirmed `/platforms`/`/metadata` are
+  still real placeholders - onboarding must never link to either; the
+  real destination-CRUD surface is `AddPlatformDialog`, opened from
+  the Dashboard);
+- `GET /api/runtime` (`internal/runtime/mediamtx.Snapshot`) already
+  carries everything the OBS Connection Assistant needs -
+  `Connection.{ServerURL,StreamKey}` (explicitly documented as a route
+  identifier, not a secret) and `Ingest.State` for real connection
+  detection - both already presented via the existing `CopyableValue`
+  component and `ingestStateKey`/`ingestTone` helpers in
+  `SidebarFooter.tsx`, reused as-is;
+- the `updatersettings`/`operatorchatprefs` domains as the exact
+  singleton-preference-row pattern (model/service/repository,
+  `CHECK (id = 1)` migration, `Default()` when absent, full-replacement
+  write) onboarding-state persistence follows;
+- the seed migration (`0002_seed_default_platforms.sql`) always
+  creates four *disabled* platforms and never touches
+  `platform_output_settings`/`connected_accounts` - a real, non-
+  fragile signal for distinguishing a genuinely fresh database from an
+  existing user's at migration time, replacing the fragile "platform
+  count > 0" heuristic the governing task's own §25 warned against;
+  `OverlayUrlPanel`'s existing Browser Source URL construction, reused
+  for the creator-tools step rather than reimplemented.
+
+### Stage 21 decomposition
+21A (persisted onboarding state - backend domain/migration/API/
+frontend hook, existing-user migration rule, no UI yet), 21B (flow
+shell/routing/entry points/skip-complete semantics/Dashboard
+integration/installer coherence), 21C (readiness + OBS Connection
+Assistant + destinations + accounts steps), 21D (creator-tools
+discovery + final summary), 21E (hardening: full test suite,
+localization, accessibility, responsive verification, packaged-runtime
+proof).
+
+### Roadmap documentation
+`README.md` and `docs/project-overview.md` §13.1 both gained a brief,
+honest "Stage 21 (in progress)" mention, explicit that starting it
+does not change Stage 20's own status (20C2 still Planned/externally
+gated, Stage 20 still Incomplete, Stage 20E physical sessions still
+Pending/Not verified as already recorded - none of that rewritten).
+
+### What comes next
+21A implementation, directly, per the governing task's own explicit
+"do not stop merely to ask permission to begin the next already-
+defined substage."
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made - Stage 21 itself, and this exact substage decomposition, was
+already authorized and specified by the governing instruction.
