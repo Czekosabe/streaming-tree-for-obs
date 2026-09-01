@@ -49428,3 +49428,82 @@ was made. Continuing directly into 23C (the restore side: package
 reader validation is already done in 23B, so 23C is `RestorePreview` -
 staging, the bounded summary, no mutation yet) per the governing
 task's own explicit "do not AskUserQuestion between substages."
+
+## 2026-09-01 — feat(server): Stage 23C - restore preview, staging, and the bounded summary (no mutation yet)
+
+### What changed
+`internal/domain/backup/staging.go`: `Staging`, a narrow port for
+holding one uploaded package's raw bytes between preview and commit,
+and `FileStaging`, its filesystem-backed implementation rooted at a
+dedicated `backup-staging` directory under the application's own data
+directory - never the directory a real backup file the operator saved
+lives in, and never reachable from any public/overlay route. Each
+staged upload is addressed by a fresh, random `rst_`-prefixed token;
+expiry is tracked in memory (mutex-guarded - this is the one place in
+the new package genuine HTTP concurrency was a real, not theoretical,
+consideration) rather than trusted from the staged file's own mtime,
+so a process restart naturally invalidates every prior session with no
+extra code. TTL mirrors `visualpackage.PreviewTTL` exactly (10
+minutes).
+
+`internal/domain/backup/restore_preview.go`: `ObjectCounts` (a
+bounded, named summary - platforms, connected accounts, chat overlays/
+schedules/commands, alert profiles/rules, and so on - never raw
+database records, per the governing task's own explicit preview
+requirement) and `PreviewSession`, which also names, up front, exactly
+which categories will need attention after a real restore
+(`ConnectedAccountsRequireReconnect`, `DestinationsNeedStreamKey`,
+`DonationSourcesNeedCredential` - each always equal to its own object
+count, since no backup ever carries the credential that would make
+these unnecessary) so the frontend never has to re-derive that rule
+itself.
+
+`Service.RestorePreview` runs the FULL `ReadArchive` validation
+pipeline from 23B against an upload, stages the untouched original
+bytes (never the parsed struct) under a fresh token, and returns the
+summary - nothing about the real configuration is touched. This
+directly sets up 23D's own "commit re-validates independently, never
+trusts the preview" requirement: the commit step will re-read and
+re-validate these exact staged bytes from scratch, exactly like
+`visualpackage.Service.Import` already does today for template
+packages. `Service.CancelPreview` discards a staged session
+immediately.
+
+`internal/httpapi/backup.go` gains `POST /api/backup/restore/preview`
+(bounded upload via `http.MaxBytesReader`, matching
+`readBoundedPackageBody`'s own established shape) and
+`DELETE /api/backup/restore/preview/{token}`, plus `writeBackupError`
+cases for every new `backup` package sentinel error `ReadArchive` can
+now surface (product mismatch, version unsupported, manifest/config
+invalid, asset missing/unreferenced/hash-mismatch, decompression
+limit, invalid entry) - mirrored from `writeVisualPackageError`'s own
+mapping table.
+
+### Tests
+`staging_test.go` (4 tests): put-then-get round trip, an unknown token
+is `ErrNotFound`, a session past its TTL is `ErrNotFound` even though
+its file is still on disk, and `Remove` is idempotent.
+`restore_preview_test.go` (4 tests): a real preview correctly counts
+platforms/accounts/alert-profiles-and-rules and computes the three
+"needs attention" counts, the staged bytes are byte-identical to the
+original upload, a garbage upload is rejected and stages nothing, and
+`CancelPreview` actually removes the staged session.
+`internal/httpapi/backup_test.go` gains 5 more tests: a successful
+preview returns the uploaded bytes verbatim to the service and the
+summary back to the caller, an invalid package is rejected (422),
+the wrong method is rejected on both new routes, and cancel both
+forwards the right token and rejects a body.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean, including all 26 tests now in
+`internal/domain/backup` and all 15 backup-related tests in
+`internal/httpapi`.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23D (the actual restore commit: id
+remapping across every domain, the pre-restore safety snapshot, the
+streaming-active guard, and the atomic transactional apply) per the
+governing task's own explicit "do not AskUserQuestion between
+substages."

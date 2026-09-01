@@ -1149,6 +1149,16 @@ func run() error {
 	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
 
 	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
+	// backupStaging holds an uploaded package's raw bytes between
+	// RestorePreview and Restore - its own directory, never the
+	// directory a real backup file the operator saved lives in, and
+	// never reachable from any public/overlay route (docs/backup-
+	// restore.md §28).
+	backupStaging, err := backupdomain.NewFileStaging(filepath.Join(cfg.DataDir, "backup-staging"), backupdomain.PreviewTTL)
+	if err != nil {
+		return err
+	}
+
 	// Every Sources field below is a FRESH repository instance
 	// constructed directly against db.DB, exactly like
 	// internal/userdatapurge's own cross-domain sweep already does
@@ -1173,7 +1183,7 @@ func run() error {
 		MetadataPresets:    sqlite.NewMetadataPresetRepository(db.DB),
 		DonationSources:    sqlite.NewDonationSourceRepository(db.DB),
 		UpdatePreferences:  sqlite.NewUpdateSettingsRepository(db.DB),
-	}, visualAssetStore, audioAssetStore, buildinfo.EffectiveVersion(), runtime.GOOS)
+	}, visualAssetStore, audioAssetStore, backupStaging, buildinfo.EffectiveVersion(), runtime.GOOS)
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,

@@ -14,10 +14,28 @@ import (
 type stubBackupService struct {
 	data []byte
 	err  error
+
+	previewResult   backup.PreviewSession
+	previewErr      error
+	lastPreviewData []byte
+
+	lastCancelledToken string
 }
 
 func (s *stubBackupService) Export(context.Context) ([]byte, error) {
 	return s.data, s.err
+}
+
+func (s *stubBackupService) RestorePreview(_ context.Context, data []byte) (backup.PreviewSession, error) {
+	s.lastPreviewData = data
+	if s.previewErr != nil {
+		return backup.PreviewSession{}, s.previewErr
+	}
+	return s.previewResult, nil
+}
+
+func (s *stubBackupService) CancelPreview(token string) {
+	s.lastCancelledToken = token
 }
 
 func newBackupServer(t *testing.T, service BackupService) http.Handler {
@@ -85,5 +103,70 @@ func TestExportBackupInternalErrorIsRejected(t *testing.T) {
 	recorder := do(t, handler, http.MethodPost, "/api/backup/export", nil)
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", recorder.Code)
+	}
+}
+
+func TestRestorePreviewReturnsTheUploadedBytesAndTheSummary(t *testing.T) {
+	stub := &stubBackupService{previewResult: backup.PreviewSession{
+		Token: "rst_1", Counts: backup.ObjectCounts{Platforms: 3}, AssetCount: 2, AssetTotalBytes: 4096,
+		ConnectedAccountsRequireReconnect: 1, DestinationsNeedStreamKey: 3,
+	}}
+	handler := newBackupServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/backup/restore/preview", "raw-zip-bytes")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if string(stub.lastPreviewData) != "raw-zip-bytes" {
+		t.Errorf("RestorePreview received %q, want the raw uploaded bytes verbatim", stub.lastPreviewData)
+	}
+
+	var body restorePreviewResponse
+	decodeBody(t, recorder, &body)
+	if body.Token != "rst_1" || body.Counts.Platforms != 3 || body.AssetCount != 2 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestRestorePreviewRejectsAnInvalidPackage(t *testing.T) {
+	stub := &stubBackupService{previewErr: backup.ErrInvalidArchive}
+	handler := newBackupServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/backup/restore/preview", "not a zip")
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRestorePreviewWrongMethodIsRejected(t *testing.T) {
+	stub := &stubBackupService{}
+	handler := newBackupServer(t, stub)
+
+	recorder := do(t, handler, http.MethodGet, "/api/backup/restore/preview", nil)
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", recorder.Code)
+	}
+}
+
+func TestCancelRestorePreviewCancelsTheNamedToken(t *testing.T) {
+	stub := &stubBackupService{}
+	handler := newBackupServer(t, stub)
+
+	recorder := do(t, handler, http.MethodDelete, "/api/backup/restore/preview/rst_abc", nil)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if stub.lastCancelledToken != "rst_abc" {
+		t.Errorf("cancelled token = %q, want rst_abc", stub.lastCancelledToken)
+	}
+}
+
+func TestCancelRestorePreviewRejectsBody(t *testing.T) {
+	stub := &stubBackupService{}
+	handler := newBackupServer(t, stub)
+
+	recorder := do(t, handler, http.MethodDelete, "/api/backup/restore/preview/rst_abc", map[string]string{"unexpected": "body"})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
 }
