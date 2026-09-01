@@ -252,19 +252,26 @@ async function resolveShortcutTarget(lnkPath) {
 
 /** Compares two filesystem paths for real identity, not string equality:
  * a real CI finding (docs/windows-packaging.md §28) showed a shortcut's
- * WScript.Shell-resolved TargetPath can come back in the long-path form
- * (e.g. "runneradmin") while the path this script itself built came
- * from a %TEMP% that resolves to its short 8.3 form (e.g. "RUNNER~1") -
- * the same real file, different strings. realpathSync resolves both to
- * their canonical long-path form on Windows, eliminating that
- * mismatch; falls back to a case-insensitive string compare if either
- * path does not (yet) exist on disk. */
-function samePath(a, b) {
+ * WScript.Shell-resolved TargetPath can come back in a different string
+ * form than the path this script itself built (the runner's own %TEMP%
+ * resolves to a short 8.3 form, e.g. "RUNNER~1", visible in this same
+ * script's own "Hermetic install directory" log line) for what is the
+ * same real file. Returns full diagnostics, not just a boolean, so a
+ * mismatch is fully explained in the CI log the first time rather than
+ * requiring another push-and-wait round-trip to see what each side
+ * actually resolved to. */
+function comparePaths(a, b) {
+  let resolvedA = a;
+  let resolvedB = b;
+  let resolveError = null;
   try {
-    return realpathSync(a).toLowerCase() === realpathSync(b).toLowerCase();
-  } catch {
-    return a.toLowerCase() === b.toLowerCase();
+    resolvedA = realpathSync.native(a);
+    resolvedB = realpathSync.native(b);
+  } catch (err) {
+    resolveError = err.message;
   }
+  const same = resolvedA.toLowerCase() === resolvedB.toLowerCase();
+  return { same, raw: { a, b }, resolved: { a: resolvedA, b: resolvedB }, resolveError };
 }
 
 const DESKTOP_LNK_NAME = 'Streaming Tree for OBS.lnk';
@@ -303,8 +310,11 @@ async function testShortcutTasksScenario(installerPath) {
     expect(existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut exists');
     expect(!existsSync(desktopShortcutPath()), 'desktop shortcut does NOT exist (desktopicon is unchecked by default)');
     const startMenuTarget = await resolveShortcutTarget(startMenuAppShortcutPath());
-    expect(startMenuTarget !== null && samePath(startMenuTarget, join(installDir, 'streaming-tree-server.exe')),
-      'the Start Menu shortcut target resolves to the actual installed executable', startMenuTarget);
+    const startMenuComparison = startMenuTarget !== null
+      ? comparePaths(startMenuTarget, join(installDir, 'streaming-tree-server.exe'))
+      : { same: false };
+    expect(startMenuTarget !== null && startMenuComparison.same,
+      'the Start Menu shortcut target resolves to the actual installed executable', startMenuComparison);
 
     step('Update over the same install with no /MERGETASKS - previous (default) choices must remain stable');
     const update = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`]);
@@ -325,8 +335,11 @@ async function testShortcutTasksScenario(installerPath) {
     expect(withDesktop.code === 0, 'install with desktopicon merged exits 0', withDesktop);
     expect(existsSync(desktopShortcutPath()), 'desktop shortcut exists when the task is explicitly selected');
     const desktopTarget = await resolveShortcutTarget(desktopShortcutPath());
-    expect(desktopTarget !== null && samePath(desktopTarget, join(installDir, 'streaming-tree-server.exe')),
-      'the desktop shortcut target resolves to the actual installed executable', desktopTarget);
+    const desktopComparison = desktopTarget !== null
+      ? comparePaths(desktopTarget, join(installDir, 'streaming-tree-server.exe'))
+      : { same: false };
+    expect(desktopTarget !== null && desktopComparison.same,
+      'the desktop shortcut target resolves to the actual installed executable', desktopComparison);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists too (startmenuicon default was merged, not replaced)');
 
     step('Uninstall - the desktop shortcut must be removed too');

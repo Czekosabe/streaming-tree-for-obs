@@ -48091,3 +48091,40 @@ was made. Diagnosed from the real authenticated job log
 (`actions/jobs/{id}/logs`, per `docs/ci-reliability.md`'s own
 established token-via-`git credential fill` pattern) - not a blind
 retry.
+
+## 2026-09-01 — fix(ci): use realpathSync.native (not plain realpathSync) for shortcut-target path comparison, plus full diagnostics on any future mismatch
+
+The previous entry's `samePath()` fix did not actually resolve the
+failure: the identical "FAIL the Start Menu shortcut target resolves to
+the actual installed executable" recurred on the next CI run, with the
+identical printed target path. Diagnosed from that second real job log,
+not assumed.
+
+### Refined hypothesis
+Plain `fs.realpathSync` on Windows performs its own JS-level, segment-
+by-segment path walk and, per known Node behavior, does not reliably
+expand an 8.3 short-name path segment (`RUNNER~1`) to its canonical
+long-path form the way the native Win32 `GetFinalPathNameByHandleW`
+call does. `fs.realpathSync.native` calls that underlying OS API
+directly. Switched to it.
+
+**This fix is not yet confirmed** - a local repro was attempted (a
+long-named test directory created specifically to force an 8.3 alias)
+but this development machine's own drive has 8.3 short-name generation
+disabled, so no local reproduction of the exact runner condition was
+possible. Rather than push a third unverified guess with no better
+evidence path if it fails again, `comparePaths()` now returns full
+diagnostics (raw and `realpathSync.native`-resolved values for both
+sides, plus any resolve error) instead of a bare boolean, and both
+shortcut-target assertions surface the whole object as their failure
+detail - so a further mismatch is fully explained in the CI log itself,
+without another guess-push-wait cycle to even see what each side
+actually resolved to.
+
+### Validation
+`node --check scripts/verify-installer.mjs` clean. Pushed for a fresh
+CI run.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made.
