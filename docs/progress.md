@@ -49670,3 +49670,108 @@ UI: preview screen, destructive-restore confirmation, the
 `RestartRequired` restart prompt, restore-complete summary) per the
 governing task's own explicit "do not AskUserQuestion between
 substages."
+
+## 2026-09-01 — feat(web): Stage 23E - the Settings-area Backup & Restore panel
+
+### What changed
+Before writing any UI, a background research pass surveyed this
+codebase's own existing conventions rather than inventing new ones:
+Settings is a flat vertical stack of independent `Panel` components
+(`pages/SettingsPage.tsx`), the visual-template *package* import/
+export flow (`TemplateGallery.tsx`) is the closest precedent for a
+preview-then-confirm upload, `ConfirmDialog` is the app-wide
+destructive-action pattern, and `UpdatesPanel.tsx`'s "Install and
+restart" flow already establishes exactly the confirm-then-restart
+shape this stage needed. `hooks/use-shutdown.ts`'s `useShutdownMutation`
+(the same "Quit Streaming Tree" action `AboutLegalPage.tsx` already
+exposes) turned out to be reusable as-is: this application has no
+self-relaunch mechanism, so "restart" concretely means quit, then the
+operator starts it again normally - the same thing Quit already means
+today.
+
+`api/backup-schemas.ts` + `api/backup.ts`: Zod contracts and transport
+for the Stage 23 backend API. `exportBackup` reuses `apiPostBlob`
+directly (`lib/api-client.ts`) - the same POST-with-no-body-binary-
+response helper the Stage 20E support-bundle export already
+established, so no new blob-download plumbing was needed at all.
+`previewRestoreBackup` uploads raw archive bytes and talks to `fetch`
+directly, mirroring `api/visualpackage.ts`'s `sendPackageBody` exactly
+(same 30s `AbortController` timeout, same `ApiError`/`readErrorEnvelope`/
+`kindForStatus` reuse) since `apiPost` only ever JSON-encodes a body.
+`cancelRestoreBackupPreview` and `commitRestoreBackup` are thin wraps
+over `apiDelete`/`apiPost` respectively - `apiPost(path, undefined,
+schema)` sends a truly empty body, matching the backend's
+`requireEmptyBody` check on the commit route exactly.
+
+`hooks/use-backup.ts`: one `useMutation` per action, none cached by
+React Query (each is a one-shot action, not read state) - except the
+commit mutation, which invalidates the ENTIRE query cache on success
+rather than specific keys, since a REPLACE restore can touch any
+domain at once and `RestoreResult.restartRequired` is always `true`
+regardless (docs/backup-restore.md §7 step 8, from 23D).
+
+`components/settings/BackupRestorePanel.tsx`: the panel itself, added
+to `SettingsPage.tsx` alongside the other settings panels. Shows a
+fixed, translated "Included"/"Never included" list up front (never
+data-driven from the backend - the exclusion list is a product
+guarantee, not a runtime fact to query); Export downloads immediately;
+Restore is a hidden file input feeding `RestorePreview`, which renders
+a bounded summary (source, created-at, non-zero object counts, and a
+"will need attention" section only when reconnection/stream-key/
+donation-credential counts are actually non-zero) with Cancel
+(server-side `CancelPreview`, best-effort) and a destructive Restore
+button gated behind `ConfirmDialog`. A successful commit replaces the
+whole panel with a blocking restart notice (never returns to normal
+settings use) explaining that Streaming Tree needs to restart, with a
+"Quit Streaming Tree now" button reusing `useShutdownMutation` and
+`ConfirmDialog` exactly like `AboutLegalPage.tsx`'s own Quit action. A
+`restore_blocked_streaming_active` commit failure is shown with its
+own specific message ("stop streaming first") rather than a generic
+error, and leaves the preview on screen - the existing configuration
+was not touched.
+
+`i18n/resources/{en,pl}/backup.json` (new namespace, registered in
+`i18n/config.ts`/`i18n/resources.ts`): every string individually
+keyed (no `returnObjects` array pattern - matches this codebase's
+existing one-key-per-string convention throughout). Object counts and
+"needs attention" lines use i18next's real CLDR plural forms - `_one`/
+`_other` for English, `_one`/`_few`/`_many`/`_other` for Polish
+(matching `accounts.json`'s own `expiresIn` precedent exactly; the
+resource-parity test enforces this and initially caught two real
+gaps - missing `_other` for Polish is required by CLDR even though the
+`_many` form already covers every realistic restore-preview count, and
+`COUNT_ROWS` needing a `satisfies readonly CountKey[]` narrowing rather
+than a `: CountKey[]` annotation, since i18next's typed `t()` otherwise
+widened the key literal to backend count fields this panel never
+renders and has no translation for).
+
+### Tests
+`BackupRestorePanel.test.tsx` (7 tests, mocking `@/api/backup` and
+`@/api/system` at the module level like `AboutLegalPage.test.tsx`
+does): the included/excluded lists render; Export calls the API and
+triggers `downloadBlob` with the returned blob/filename; choosing a
+file previews it and shows non-zero counts plus every "needs
+attention" line; Cancel calls the server-side cancel with the right
+token and returns to the choose-file state; confirming Restore commits
+the previewed token and shows the restart notice; quitting from the
+restart notice calls the shutdown API and shows the stopped message;
+a `restore_blocked_streaming_active` commit failure shows its specific
+message and leaves the preview in place.
+
+### Validation
+`npm run typecheck` (`tsc -b`) clean, `npm run lint` clean (one
+pre-existing, unrelated `react-refresh` warning in `auth-context.tsx`),
+`npm run i18n:check` clean (26 namespaces, en/pl parity), `npm run
+test` clean across all 129 test files / 1543 tests, `npm run build`
+clean. Stage 23D's own CI run (commit 71e24d5) was also confirmed
+green (Linux/Windows/macOS package verification, Linux headless
+service verification, cross-platform portability gate) before starting
+this frontend work.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23F (hermetic integration script,
+security/malicious-package tests from the governing task's §23/§29-34,
+packaged-runtime extension, PRIVACY.md/README.md/project-overview.md
+updates) per the governing task's own explicit "do not AskUserQuestion
+between substages."

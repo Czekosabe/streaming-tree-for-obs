@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { OnboardingReopenCard } from '@/components/onboarding/OnboardingReopenCard';
+import { BackupRestorePanel } from '@/components/settings/BackupRestorePanel';
 import { ConnectedAccountsPanel } from '@/components/settings/ConnectedAccountsPanel';
 import { RemoteIngestPanel } from '@/components/settings/RemoteIngestPanel';
 import { YouTubeAccountsPanel } from '@/components/settings/YouTubeAccountsPanel';
@@ -44,6 +45,7 @@ export function SettingsPage() {
         <ConnectedAccountsPanel />
         <YouTubeAccountsPanel />
         <RemoteIngestPanel />
+        <BackupRestorePanel />
 
         <Panel>
           <PanelBody>

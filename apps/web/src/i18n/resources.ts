@@ -5,6 +5,7 @@ import enAlerts from './resources/en/alerts.json';
 import enAudio from './resources/en/audio.json';
 import enAuth from './resources/en/auth.json';
 import enAutomation from './resources/en/automation.json';
+import enBackup from './resources/en/backup.json';
 import enChat from './resources/en/chat.json';
 import enChatOverlayDesigner from './resources/en/chatOverlayDesigner.json';
 import enCommon from './resources/en/common.json';
@@ -30,6 +31,7 @@ import plAlerts from './resources/pl/alerts.json';
 import plAudio from './resources/pl/audio.json';
 import plAuth from './resources/pl/auth.json';
 import plAutomation from './resources/pl/automation.json';
+import plBackup from './resources/pl/backup.json';
 import plChat from './resources/pl/chat.json';
 import plChatOverlayDesigner from './resources/pl/chatOverlayDesigner.json';
 import plCommon from './resources/pl/common.json';
@@ -85,6 +87,7 @@ export const enResources = {
   auth: enAuth,
   logs: enLogs,
   onboarding: enOnboarding,
+  backup: enBackup,
 } as const;
 
 const plResources = {
@@ -113,6 +116,7 @@ const plResources = {
   auth: plAuth,
   logs: plLogs,
   onboarding: plOnboarding,
+  backup: plBackup,
 } as const;
 
 export const resources = {

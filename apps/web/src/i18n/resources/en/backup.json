@@ -1,0 +1,93 @@
+{
+  "panel": {
+    "heading": "Backup & Restore",
+    "description": "Save your destinations, overlays, alerts, templates, and other configuration to a file, or restore a previous one."
+  },
+  "export": {
+    "heading": "Create a backup",
+    "body": "Downloads a single file with your configuration. Safe to keep or move to another computer.",
+    "button": "Download backup",
+    "error": "The backup could not be created."
+  },
+  "includes": {
+    "title": "Included",
+    "destinations": "Destinations and output settings",
+    "accounts": "Connected account list (reconnecting is required after a restore)",
+    "chat": "Chat overlays, schedules, and commands",
+    "alerts": "Alert profiles and rules",
+    "visual": "Visual templates, designs, and their images/sounds",
+    "audio": "Audio settings",
+    "goals": "Goals and dashboard widgets",
+    "metadataPresets": "Metadata presets",
+    "donationSources": "Donation source list (re-entering the credential is required after a restore)"
+  },
+  "excludes": {
+    "title": "Never included",
+    "streamKeys": "Stream keys",
+    "oauth": "OAuth/refresh tokens and client secrets",
+    "donationCredentials": "Donation source credentials",
+    "remoteManagement": "Remote-management, remote-ingest, and remote-overlay security material",
+    "engagementContent": "Chat messages, chatter names, donation messages, or any other viewer content"
+  },
+  "restore": {
+    "heading": "Restore from a backup",
+    "body": "Replaces your entire current configuration with the one from a backup file. This cannot be undone from within the app - a safety copy of your current configuration is kept, but only the single most recent one.",
+    "button": "Choose a backup file…",
+    "chooseFileLabel": "Choose a backup file to restore"
+  },
+  "preview": {
+    "title": "Review before restoring",
+    "sourceLabel": "From",
+    "sourceValue": "{{platform}}, Streaming Tree {{version}}",
+    "createdAtLabel": "Created",
+    "countsTitle": "This backup contains",
+    "counts": {
+      "platforms_one": "{{count}} destination",
+      "platforms_other": "{{count}} destinations",
+      "connectedAccounts_one": "{{count}} connected account",
+      "connectedAccounts_other": "{{count}} connected accounts",
+      "chatOverlays_one": "{{count}} chat overlay",
+      "chatOverlays_other": "{{count}} chat overlays",
+      "alertProfiles_one": "{{count}} alert profile",
+      "alertProfiles_other": "{{count}} alert profiles",
+      "visualTemplates_one": "{{count}} visual template",
+      "visualTemplates_other": "{{count}} visual templates",
+      "goals_one": "{{count}} goal",
+      "goals_other": "{{count}} goals",
+      "metadataPresets_one": "{{count}} metadata preset",
+      "metadataPresets_other": "{{count}} metadata presets",
+      "donationSources_one": "{{count}} donation source",
+      "donationSources_other": "{{count}} donation sources"
+    },
+    "assetsLabel": "Images and sounds",
+    "assetsValue_one": "{{count}} file, {{size}}",
+    "assetsValue_other": "{{count}} files, {{size}}",
+    "attentionTitle": "Will need attention after restoring",
+    "attentionAccounts_one": "{{count}} connected account will need to be reconnected",
+    "attentionAccounts_other": "{{count}} connected accounts will need to be reconnected",
+    "attentionKeys_one": "{{count}} destination will need its stream key re-entered",
+    "attentionKeys_other": "{{count}} destinations will need their stream keys re-entered",
+    "attentionDonations_one": "{{count}} donation source will need its credential re-entered",
+    "attentionDonations_other": "{{count}} donation sources will need their credentials re-entered",
+    "cancelButton": "Cancel",
+    "confirmButton": "Restore this backup…",
+    "error": "This file could not be read as a backup."
+  },
+  "confirm": {
+    "title": "Restore this backup?",
+    "message": "Your entire current configuration will be replaced with the one from this backup. Streaming keys, OAuth connections, and donation-source credentials are never included, so those will need to be reconnected afterward. Streaming Tree will need to restart to finish applying it.",
+    "confirmButton": "Restore and prepare to restart",
+    "error": "The restore could not be completed. Your existing configuration was not changed."
+  },
+  "streamingActive": {
+    "message": "Streaming is active. Stop streaming before restoring a backup."
+  },
+  "restartNotice": {
+    "title": "Restart required",
+    "body": "The backup was restored. Streaming Tree needs to restart before the restored configuration fully takes effect.",
+    "quitButton": "Quit Streaming Tree now",
+    "quitConfirmTitle": "Quit Streaming Tree?",
+    "quitConfirmMessage": "This stops the application completely. Start it again afterward to finish applying the restored configuration.",
+    "stopped": "Streaming Tree has stopped. Start it again to finish applying the restored configuration."
+  }
+}

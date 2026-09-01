@@ -1,0 +1,117 @@
+{
+  "panel": {
+    "heading": "Kopia zapasowa i przywracanie",
+    "description": "Zapisz swoje miejsca docelowe, nakładki, alerty, szablony i pozostałą konfigurację do pliku albo przywróć wcześniejszą."
+  },
+  "export": {
+    "heading": "Utwórz kopię zapasową",
+    "body": "Pobiera jeden plik z Twoją konfiguracją. Można go bezpiecznie zachować lub przenieść na inny komputer.",
+    "button": "Pobierz kopię zapasową",
+    "error": "Nie udało się utworzyć kopii zapasowej."
+  },
+  "includes": {
+    "title": "Zawiera",
+    "destinations": "Miejsca docelowe i ustawienia wyjścia",
+    "accounts": "Listę połączonych kont (po przywróceniu wymagane jest ponowne połączenie)",
+    "chat": "Nakładki czatu, harmonogramy i polecenia",
+    "alerts": "Profile i reguły alertów",
+    "visual": "Szablony wizualne, projekty oraz ich obrazy/dźwięki",
+    "audio": "Ustawienia dźwięku",
+    "goals": "Cele i widżety pulpitu",
+    "metadataPresets": "Presety metadanych",
+    "donationSources": "Listę źródeł dotacji (po przywróceniu wymagane jest ponowne wprowadzenie danych uwierzytelniających)"
+  },
+  "excludes": {
+    "title": "Nigdy nie zawiera",
+    "streamKeys": "Kluczy strumienia",
+    "oauth": "Tokenów OAuth/odświeżania oraz sekretów klienta",
+    "donationCredentials": "Danych uwierzytelniających źródeł dotacji",
+    "remoteManagement": "Materiałów bezpieczeństwa zdalnego zarządzania, zdalnego odbioru i zdalnych nakładek",
+    "engagementContent": "Wiadomości czatu, nazw osób piszących na czacie, wiadomości z dotacji ani żadnej innej treści widzów"
+  },
+  "restore": {
+    "heading": "Przywróć z kopii zapasowej",
+    "body": "Zastępuje całą bieżącą konfigurację tą z pliku kopii zapasowej. Tej operacji nie można cofnąć w aplikacji - kopia bezpieczeństwa bieżącej konfiguracji jest zachowywana, ale tylko ta najnowsza.",
+    "button": "Wybierz plik kopii zapasowej…",
+    "chooseFileLabel": "Wybierz plik kopii zapasowej do przywrócenia"
+  },
+  "preview": {
+    "title": "Sprawdź przed przywróceniem",
+    "sourceLabel": "Źródło",
+    "sourceValue": "{{platform}}, Streaming Tree {{version}}",
+    "createdAtLabel": "Utworzono",
+    "countsTitle": "Ta kopia zapasowa zawiera",
+    "counts": {
+      "platforms_one": "{{count}} miejsce docelowe",
+      "platforms_few": "{{count}} miejsca docelowe",
+      "platforms_many": "{{count}} miejsc docelowych",
+      "platforms_other": "{{count}} miejsca docelowe",
+      "connectedAccounts_one": "{{count}} połączone konto",
+      "connectedAccounts_few": "{{count}} połączone konta",
+      "connectedAccounts_many": "{{count}} połączonych kont",
+      "connectedAccounts_other": "{{count}} połączone konta",
+      "chatOverlays_one": "{{count}} nakładka czatu",
+      "chatOverlays_few": "{{count}} nakładki czatu",
+      "chatOverlays_many": "{{count}} nakładek czatu",
+      "chatOverlays_other": "{{count}} nakładki czatu",
+      "alertProfiles_one": "{{count}} profil alertów",
+      "alertProfiles_few": "{{count}} profile alertów",
+      "alertProfiles_many": "{{count}} profili alertów",
+      "alertProfiles_other": "{{count}} profile alertów",
+      "visualTemplates_one": "{{count}} szablon wizualny",
+      "visualTemplates_few": "{{count}} szablony wizualne",
+      "visualTemplates_many": "{{count}} szablonów wizualnych",
+      "visualTemplates_other": "{{count}} szablonu wizualnego",
+      "goals_one": "{{count}} cel",
+      "goals_few": "{{count}} cele",
+      "goals_many": "{{count}} celów",
+      "goals_other": "{{count}} celu",
+      "metadataPresets_one": "{{count}} preset metadanych",
+      "metadataPresets_few": "{{count}} presety metadanych",
+      "metadataPresets_many": "{{count}} presetów metadanych",
+      "metadataPresets_other": "{{count}} presetu metadanych",
+      "donationSources_one": "{{count}} źródło dotacji",
+      "donationSources_few": "{{count}} źródła dotacji",
+      "donationSources_many": "{{count}} źródeł dotacji",
+      "donationSources_other": "{{count}} źródła dotacji"
+    },
+    "assetsLabel": "Obrazy i dźwięki",
+    "assetsValue_one": "{{count}} plik, {{size}}",
+    "assetsValue_few": "{{count}} pliki, {{size}}",
+    "assetsValue_many": "{{count}} plików, {{size}}",
+    "assetsValue_other": "{{count}} pliku, {{size}}",
+    "attentionTitle": "Będzie wymagać uwagi po przywróceniu",
+    "attentionAccounts_one": "{{count}} połączone konto będzie wymagać ponownego połączenia",
+    "attentionAccounts_few": "{{count}} połączone konta będą wymagać ponownego połączenia",
+    "attentionAccounts_many": "{{count}} połączonych kont będzie wymagać ponownego połączenia",
+    "attentionAccounts_other": "{{count}} połączonego konta będzie wymagać ponownego połączenia",
+    "attentionKeys_one": "{{count}} miejsce docelowe będzie wymagać ponownego wprowadzenia klucza strumienia",
+    "attentionKeys_few": "{{count}} miejsca docelowe będą wymagać ponownego wprowadzenia klucza strumienia",
+    "attentionKeys_many": "{{count}} miejsc docelowych będzie wymagać ponownego wprowadzenia klucza strumienia",
+    "attentionKeys_other": "{{count}} miejsca docelowego będzie wymagać ponownego wprowadzenia klucza strumienia",
+    "attentionDonations_one": "{{count}} źródło dotacji będzie wymagać ponownego wprowadzenia danych uwierzytelniających",
+    "attentionDonations_few": "{{count}} źródła dotacji będą wymagać ponownego wprowadzenia danych uwierzytelniających",
+    "attentionDonations_many": "{{count}} źródeł dotacji będzie wymagać ponownego wprowadzenia danych uwierzytelniających",
+    "attentionDonations_other": "{{count}} źródła dotacji będzie wymagać ponownego wprowadzenia danych uwierzytelniających",
+    "cancelButton": "Anuluj",
+    "confirmButton": "Przywróć tę kopię zapasową…",
+    "error": "Nie udało się odczytać tego pliku jako kopii zapasowej."
+  },
+  "confirm": {
+    "title": "Przywrócić tę kopię zapasową?",
+    "message": "Cała bieżąca konfiguracja zostanie zastąpiona tą z tej kopii zapasowej. Klucze strumienia, połączenia OAuth i dane uwierzytelniające źródeł dotacji nigdy nie są w niej zawarte, więc trzeba je będzie połączyć ponownie. Streaming Tree będzie musiał zostać uruchomiony ponownie, aby w pełni zastosować zmiany.",
+    "confirmButton": "Przywróć i przygotuj do ponownego uruchomienia",
+    "error": "Nie udało się ukończyć przywracania. Twoja dotychczasowa konfiguracja nie została zmieniona."
+  },
+  "streamingActive": {
+    "message": "Transmisja jest aktywna. Zatrzymaj transmisję przed przywróceniem kopii zapasowej."
+  },
+  "restartNotice": {
+    "title": "Wymagane ponowne uruchomienie",
+    "body": "Kopia zapasowa została przywrócona. Streaming Tree musi zostać uruchomiony ponownie, aby przywrócona konfiguracja w pełni zaczęła obowiązywać.",
+    "quitButton": "Zamknij Streaming Tree teraz",
+    "quitConfirmTitle": "Zamknąć Streaming Tree?",
+    "quitConfirmMessage": "To całkowicie zatrzymuje aplikację. Uruchom ją ponownie, aby dokończyć stosowanie przywróconej konfiguracji.",
+    "stopped": "Streaming Tree został zatrzymany. Uruchom go ponownie, aby dokończyć stosowanie przywróconej konfiguracji."
+  }
+}
