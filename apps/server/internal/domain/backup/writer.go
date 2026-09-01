@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 )
@@ -17,9 +18,11 @@ import (
 // identical FileStore instance (docs/backup-restore.md §5). Backup
 // never constructs its own copy of a blob's bytes independently of
 // this - the same store every manual upload and package import
-// already reads and writes through.
+// already reads and writes through. Returns *os.File (rather than the
+// narrower io.ReadCloser) purely so *visualasset.FileStore's own real
+// method signature satisfies this interface with no adapter.
 type AssetBlobSource interface {
-	Open(sha256Hex string) (io.ReadCloser, error)
+	Open(sha256Hex string) (*os.File, error)
 }
 
 // blobRef is one distinct blob a Config references, resolved once

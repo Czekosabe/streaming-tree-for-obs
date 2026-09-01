@@ -34,6 +34,10 @@ type Options struct {
 	// API. When nil, none of the /api/metadata-presets routes are
 	// registered.
 	MetadataPresets MetadataPresetService
+	// Backup serves the Stage 23 configuration backup API
+	// (docs/backup-restore.md). When nil, none of the /api/backup
+	// routes are registered.
+	Backup BackupService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -313,6 +317,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.MetadataPresets != nil {
 		registerMetadataPresetRoutes(mux, logger, opts.MetadataPresets)
+	}
+
+	if opts.Backup != nil {
+		registerBackupRoutes(mux, logger, opts.Backup)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"

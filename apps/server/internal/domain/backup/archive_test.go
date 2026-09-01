@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,15 +18,32 @@ import (
 
 // memBlobSource is an in-memory AssetBlobSource fixture, keyed by
 // sha256 hex - a fake for internal/domain/visualasset.FileStore/
-// internal/domain/audioasset's own identical FileStore instance.
+// internal/domain/audioasset's own identical FileStore instance. Open
+// returns a real *os.File (backed by a temp file that deletes itself
+// on close) to satisfy AssetBlobSource's real signature exactly,
+// rather than a narrower io.ReadCloser adapter.
 type memBlobSource map[string][]byte
 
-func (m memBlobSource) Open(sha256Hex string) (io.ReadCloser, error) {
+func (m memBlobSource) Open(sha256Hex string) (*os.File, error) {
 	data, ok := m[sha256Hex]
 	if !ok {
 		return nil, errors.New("blob not found")
 	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	f, err := os.CreateTemp("", "backup-test-blob-*")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	return f, nil
 }
 
 func sha256Hex(data []byte) string {

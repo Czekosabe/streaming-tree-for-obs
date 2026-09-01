@@ -49364,3 +49364,67 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into the HTTP download endpoint and
 main.go wiring (finishing 23B) per the governing task's own explicit
 "do not AskUserQuestion between substages."
+
+## 2026-09-01 — feat(server): Stage 23B part 3 - the backup export HTTP endpoint, main.go wiring, and a real end-to-end proof
+
+### What changed
+Finishes 23B: `backup.Service` (`internal/domain/backup/service.go`)
+wraps `Sources` + the two managed-asset blob stores + app version/
+platform into one `Export(ctx) ([]byte, error)` use case.
+`internal/httpapi/backup.go` adds `POST /api/backup/export`, streaming
+the result exactly like `handleExportVisualTemplatePackage` already
+does (`Content-Type: application/zip`, `Content-Disposition:
+attachment`, `nosniff`) plus `Cache-Control: no-store`. Registered
+under plain `/api/backup/...` - never `/api/public/...` - so it
+automatically inherits `withRemoteManagementSecurity` whenever remote
+management is enabled, with no new auth code (docs/backup-restore.md
+§9/§10).
+
+`cmd/server/main.go` wires `backupService` from FRESH repository
+instances constructed directly against `db.DB`
+(`sqlite.NewPlatformRepository(db.DB)` and so on for every included
+domain), deliberately never through another domain's own already-
+constructed `Service` - mirrors `internal/userdatapurge`'s own
+cross-domain sweep exactly, so a read-only export can never trigger a
+Service-layer business-rule side effect. The two existing managed-
+asset `*visualasset.FileStore` instances (`visualAssetStore`/
+`audioAssetStore`, already constructed for Stage 14B/17B) are reused
+directly as `backup.AssetBlobSource` - one real compile-time fix was
+needed here: `AssetBlobSource.Open` was originally declared to return
+`io.ReadCloser`, but `*visualasset.FileStore.Open` returns the
+concrete `*os.File`, and Go does not allow a narrower interface method
+to satisfy a wider declared return type - changed the interface to
+return `*os.File` directly (still exactly what `io.Copy`/`Close` need)
+rather than writing an adapter for no real benefit.
+
+### A real end-to-end proof, not just unit tests
+Started the real backend (`go run ./cmd/server`) against a genuinely
+fresh temporary SQLite database, hit `POST /api/backup/export` with
+curl, and inspected the actual returned zip: a real, valid archive
+containing `manifest.json` (`formatVersion: 1`, the real `Product`
+string, a real `configSha256`) and a `config.json` holding the four
+seeded platforms and their output settings. This is the first proof
+that the real `sqlite.*Repository` types actually satisfy every
+`backup.Sources` interface at both compile time AND runtime (Go's
+compiler already proved the former; this proved the latter - a real
+`SELECT` against real tables, not a fake).
+
+### Tests
+`internal/httpapi/backup_test.go` (5 tests): a successful export
+returns the right headers and the exported bytes verbatim, a non-empty
+DELETE-style body is rejected, the wrong HTTP method is rejected, and
+`backup.ErrTooLarge`/an unmapped error both resolve to their correct
+status codes.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean, including the 5 new httpapi tests. Plus the
+real end-to-end smoke test above against the actual packaged backend
+code path (not `go test`).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23C (the restore side: package
+reader validation is already done in 23B, so 23C is `RestorePreview` -
+staging, the bounded summary, no mutation yet) per the governing
+task's own explicit "do not AskUserQuestion between substages."

@@ -33,6 +33,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/account"
 	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	"github.com/streaming-tree/server/internal/domain/audioasset"
+	backupdomain "github.com/streaming-tree/server/internal/domain/backup"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
@@ -1146,6 +1147,33 @@ func run() error {
 
 	// Stage 22: reusable stream metadata presets (docs/metadata-presets.md).
 	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
+
+	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
+	// Every Sources field below is a FRESH repository instance
+	// constructed directly against db.DB, exactly like
+	// internal/userdatapurge's own cross-domain sweep already does
+	// (never through another domain's own Service, which may apply
+	// business-rule side effects a read-only export must not trigger).
+	backupService := backupdomain.NewService(backupdomain.Sources{
+		Platforms:          sqlite.NewPlatformRepository(db.DB),
+		Output:             sqlite.NewOutputRepository(db.DB),
+		Accounts:           sqlite.NewAccountRepository(db.DB),
+		YouTubeRegion:      sqlite.NewYouTubeRegionRepository(db.DB),
+		EngagementSettings: sqlite.NewEngagementSettingsRepository(db.DB),
+		OperatorChatPrefs:  sqlite.NewOperatorChatPrefsRepository(db.DB),
+		ChatOverlays:       sqlite.NewChatOverlayRepository(db.DB),
+		ChatAutomation:     sqlite.NewChatAutomationRepository(db.DB),
+		Alerts:             sqlite.NewAlertsRepository(db.DB),
+		VisualDesigns:      sqlite.NewVisualDesignRepository(db.DB),
+		VisualTemplates:    sqlite.NewVisualTemplateRepository(db.DB),
+		VisualAssets:       sqlite.NewVisualAssetRepository(db.DB),
+		AudioAssets:        sqlite.NewAudioAssetRepository(db.DB),
+		AudioSettings:      sqlite.NewAudioSettingsRepository(db.DB),
+		Goals:              sqlite.NewGoalsRepository(db.DB),
+		MetadataPresets:    sqlite.NewMetadataPresetRepository(db.DB),
+		DonationSources:    sqlite.NewDonationSourceRepository(db.DB),
+		UpdatePreferences:  sqlite.NewUpdateSettingsRepository(db.DB),
+	}, visualAssetStore, audioAssetStore, buildinfo.EffectiveVersion(), runtime.GOOS)
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,
@@ -1216,6 +1244,7 @@ func run() error {
 		Runtime:         supervisor,
 		Onboarding:      onboardingService,
 		MetadataPresets: metadataPresetService,
+		Backup:          backupService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,
