@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -78,6 +79,12 @@ export function useDeleteMetadataPresetMutation(): UseMutationResult<void, Error
  * destinations (docs/metadata-presets.md §6) - never writes anything.
  * Disabled while no destination is selected, so switching from zero to
  * one selected destination is what first fires the request.
+ *
+ * Every selection change is a distinct query key (the platform id set
+ * is part of it), so `placeholderData: keepPreviousData` keeps the
+ * last selection's chips on screen while the new one loads instead of
+ * flashing every already-checked destination back to "Checking..."
+ * each time one more box is ticked.
  */
 export function useApplyPreviewQuery(
   presetId: string,
@@ -87,6 +94,7 @@ export function useApplyPreviewQuery(
     queryKey: metadataPresetKeys.applyPreview(presetId, platformIds),
     queryFn: ({ signal }) => fetchApplyPreview(presetId, [...platformIds], signal),
     enabled: platformIds.length > 0,
+    placeholderData: keepPreviousData,
   });
 }
 

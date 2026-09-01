@@ -177,7 +177,7 @@ export function ApplyPresetDialog({
                     </label>
 
                     {selected.includes(platform.id) && (
-                      <div className="mt-2 pl-6">
+                      <div className="mt-2 pl-6" aria-live="polite">
                         {platformPreview === undefined ? (
                           <p className="text-[11px] text-ink-faint">{t('metadataPresets:apply.checking')}</p>
                         ) : platformPreview.valid ? (

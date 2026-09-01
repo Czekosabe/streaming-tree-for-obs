@@ -48978,3 +48978,50 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 22D (Stream details/Dashboard
 integration and UX hardening) per the governing task's own explicit
 "do not ask the operator for permission between 22A/22B/etc."
+
+## 2026-09-01 — fix(web): Stage 22D - apply-preview UX hardening
+
+### What changed
+22B/22C already finished the real Stream details/Dashboard wiring
+(Save as preset and Presets entry points, per-row Apply), so 22D's own
+scope was a focused accessibility/responsive/UX review of that surface
+rather than new wiring - two real, concrete fixes came out of it:
+
+1. `ApplyPresetDialog`'s per-destination preview block gained
+   `aria-live="polite"`, so a screen reader user is told when a
+   destination's compatibility chips finish loading after it is
+   checked, instead of having to discover the change by re-exploring
+   the dialog.
+2. `useApplyPreviewQuery` gained `placeholderData: keepPreviousData`.
+   Without it, every checkbox toggle changes the query key (the
+   selected platform-id set), so TanStack Query dropped ALL chips back
+   to "Checking compatibility..." on every single toggle - including
+   for destinations that had already finished loading and were not
+   the one just clicked. Confirmed and locked in with a new test that
+   checks one destination, waits for its chips, checks a second, and
+   asserts the first destination's chips stay visible while only the
+   second shows "Checking...".
+
+Reviewed and found already correct, no change needed: focus order
+(Modal auto-focuses the first checkbox on open), keyboard operability
+(native checkboxes, no custom key handling needed), color contrast
+(status chips reuse the same `status-warning`/`surface-sunken` tokens
+already used elsewhere in the app), and responsive wrapping (the field
+chip row already uses `flex-wrap`, destination names already
+`truncate` inside a `min-w-0 flex-1` cell).
+
+### Tests
+`ApplyPresetDialog.test.tsx` gained one test for the `keepPreviousData`
+fix (6 tests total in that file now).
+
+### Validation
+`npm run i18n:check` clean. `npm run build` clean. `npm run lint`
+clean (the one pre-existing, unrelated warning). `npm run test
+-- --run`: 128 test files / 1536 tests passing.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 22E (integration test, packaged-
+runtime verification, documentation close-out) per the governing
+task's own explicit "do not ask the operator for permission between
+22A/22B/etc."

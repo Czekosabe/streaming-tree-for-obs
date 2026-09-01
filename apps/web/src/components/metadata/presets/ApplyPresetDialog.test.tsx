@@ -132,6 +132,39 @@ describe('ApplyPresetDialog', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(['pf_1']));
   });
 
+  it('keeps an already-checked destination\'s chips visible while a newly-checked one is still loading', async () => {
+    let resolveSecond: (value: ApplyDestinationPreview[]) => void = () => {};
+    vi.mocked(metadataPresetsApi).fetchApplyPreview.mockImplementation((_id, platformIds) => {
+      if (platformIds.length === 1) return Promise.resolve([validPreview('pf_1')]);
+      return new Promise((resolve) => {
+        resolveSecond = resolve;
+      });
+    });
+
+    renderWithProviders(
+      <ApplyPresetDialog
+        open onClose={vi.fn()} preset={preset}
+        platforms={[platform(), platform({ id: 'pf_2', displayName: 'Backup YouTube', providerId: 'youtube' })]}
+        activeId={null} activeDirty={false} onApplied={vi.fn()}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]!);
+    await screen.findByText(/Title: will change/);
+
+    await user.click(checkboxes[1]!);
+    // The second destination's own preview has not resolved yet, but the
+    // first destination's chip must still be on screen (kept via
+    // placeholderData: keepPreviousData), not blanked out to "Checking...".
+    expect(screen.getByText(/Title: will change/)).toBeInTheDocument();
+    expect(screen.getAllByText('Checking compatibility...')).toHaveLength(1);
+
+    resolveSecond([validPreview('pf_1'), validPreview('pf_2')]);
+    await waitFor(() => expect(screen.queryByText('Checking compatibility...')).not.toBeInTheDocument());
+  });
+
   it('confirms before discarding unsaved edits on the active destination', async () => {
     vi.mocked(metadataPresetsApi).fetchApplyPreview.mockResolvedValue([validPreview('pf_1')]);
     vi.mocked(metadataPresetsApi).applyMetadataPreset.mockResolvedValue({ platforms: {} });
