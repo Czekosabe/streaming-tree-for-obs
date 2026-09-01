@@ -20,6 +20,7 @@
     "emptyTitle": "Brak szablonów",
     "emptyDescription": "Uzupełnij szczegóły transmisji dla celu transmisji, a następnie użyj opcji \"Zapisz jako szablon\", aby użyć ich ponownie następnym razem.",
     "updatedAt": "Zaktualizowano {{date}}",
+    "apply": "Zastosuj",
     "rename": "Zmień nazwę",
     "delete": "Usuń szablon",
     "save": "Zapisz nazwę",
@@ -27,6 +28,26 @@
       "title": "Usunąć ten szablon?",
       "message": "Szablon \"{{preset}}\" zostanie usunięty. Cele transmisji, do których został wcześniej zastosowany, zachowują swoje bieżące metadane - usunięcie szablonu nigdy ich nie zmienia.",
       "confirm": "Usuń szablon"
+    }
+  },
+  "apply": {
+    "title": "Zastosuj \"{{preset}}\"",
+    "description": "Wybierz co najmniej jeden cel transmisji. Zastosowanie zmienia tylko ich lokalne szczegóły transmisji - nic nie jest publikowane.",
+    "submit": "Zastosuj",
+    "applying": "Stosowanie...",
+    "applied": "Zastosowano",
+    "noDestinations": "Dodaj najpierw cel transmisji, aby zastosować do niego szablon.",
+    "checking": "Sprawdzanie zgodności...",
+    "incompatible": "Tego szablonu nie można zastosować do tego celu transmisji w obecnej postaci.",
+    "status": {
+      "will_change": "zmieni się",
+      "unchanged": "bez zmian",
+      "not_supported": "niedostępne tutaj"
+    },
+    "discardDialog": {
+      "title": "Odrzucić niezapisane zmiany?",
+      "message": "Otwarty cel transmisji ma niezapisane zmiany metadanych. Zastosowanie tego szablonu je zastąpi.",
+      "confirm": "Odrzuć i zastosuj"
     }
   }
 }

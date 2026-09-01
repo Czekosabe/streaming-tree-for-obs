@@ -29,8 +29,23 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
   const [dirty, setDirty] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
+  // Bumped only when an apply-preset write touches the currently open tab,
+  // to remount MetadataForm and pick up the freshly applied metadata - its
+  // own draft state otherwise only resets when the platform id itself
+  // changes, never on a metadata change arriving from elsewhere.
+  const [applyRemountToken, setApplyRemountToken] = useState(0);
 
   const activePlatform = platforms.find((platform) => platform.id === activeId);
+
+  const handleApplied = useCallback(
+    (appliedIds: string[]) => {
+      if (activeId !== null && appliedIds.includes(activeId)) {
+        setApplyRemountToken((n) => n + 1);
+        setDirty(false);
+      }
+    },
+    [activeId],
+  );
 
   // Stable identity so the form's effect does not re-run on every render.
   const handleDirtyChange = useCallback((next: boolean) => setDirty(next), []);
@@ -104,7 +119,7 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
                 className="animate-fade-rise"
               >
                 <MetadataForm
-                  key={activePlatform.id}
+                  key={`${activePlatform.id}-${applyRemountToken}`}
                   platform={activePlatform}
                   onDirtyChange={handleDirtyChange}
                 />
@@ -124,7 +139,14 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
         onCancel={() => setPendingId(null)}
       />
 
-      <ManagePresetsDialog open={managePresetsOpen} onClose={() => setManagePresetsOpen(false)} />
+      <ManagePresetsDialog
+        open={managePresetsOpen}
+        onClose={() => setManagePresetsOpen(false)}
+        platforms={platforms}
+        activeId={activeId}
+        activeDirty={dirty}
+        onApplied={handleApplied}
+      />
     </>
   );
 }

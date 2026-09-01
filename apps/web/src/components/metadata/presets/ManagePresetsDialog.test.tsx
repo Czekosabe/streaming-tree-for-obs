@@ -10,6 +10,20 @@ import { ManagePresetsDialog } from './ManagePresetsDialog';
 
 vi.mock('@/api/metadata-presets');
 
+/** Renders with no configured destinations - Apply-flow coverage lives in ApplyPresetDialog.test.tsx. */
+function renderDialog(onClose = vi.fn()) {
+  return renderWithProviders(
+    <ManagePresetsDialog
+      open
+      onClose={onClose}
+      platforms={[]}
+      activeId={null}
+      activeDirty={false}
+      onApplied={vi.fn()}
+    />,
+  );
+}
+
 function preset(overrides: Partial<MetadataPreset> = {}): MetadataPreset {
   return {
     id: 'mp_1',
@@ -37,14 +51,14 @@ beforeEach(() => {
 describe('ManagePresetsDialog', () => {
   it('shows a creator-oriented empty state when there are no presets', async () => {
     vi.mocked(metadataPresetsApi).fetchMetadataPresets.mockResolvedValue([]);
-    renderWithProviders(<ManagePresetsDialog open onClose={vi.fn()} />);
+    renderDialog();
 
     expect(await screen.findByText('No presets yet')).toBeInTheDocument();
   });
 
   it('lists an existing preset with its name, note and provider scope', async () => {
     vi.mocked(metadataPresetsApi).fetchMetadataPresets.mockResolvedValue([preset()]);
-    renderWithProviders(<ManagePresetsDialog open onClose={vi.fn()} />);
+    renderDialog();
 
     expect(await screen.findByText('Ranked night')).toBeInTheDocument();
     expect(screen.getByText('Used every Tuesday')).toBeInTheDocument();
@@ -57,7 +71,7 @@ describe('ManagePresetsDialog', () => {
       ...existing,
       name: 'Renamed night',
     });
-    renderWithProviders(<ManagePresetsDialog open onClose={vi.fn()} />);
+    renderDialog();
 
     await screen.findByText('Ranked night');
     const user = userEvent.setup();
@@ -88,7 +102,7 @@ describe('ManagePresetsDialog', () => {
   it('deletes a preset only after the confirmation dialog is accepted', async () => {
     vi.mocked(metadataPresetsApi).fetchMetadataPresets.mockResolvedValue([preset()]);
     vi.mocked(metadataPresetsApi).deleteMetadataPreset.mockResolvedValue(undefined);
-    renderWithProviders(<ManagePresetsDialog open onClose={vi.fn()} />);
+    renderDialog();
 
     await screen.findByText('Ranked night');
     const user = userEvent.setup();

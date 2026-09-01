@@ -1,7 +1,8 @@
-import { BookmarkX, Check, Loader2, Pencil, Trash2, X } from 'lucide-react';
+import { BookmarkX, Check, Loader2, Pencil, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import type { MetadataPreset } from '@/api/metadata-preset-schemas';
 import { IconButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -18,10 +19,18 @@ import { formatTimestamp } from '@/lib/format';
 import { NAME_MAX_LENGTH } from '@/models/metadata-preset-constraints';
 
 import { ProviderBrand } from '../../providers/ProviderBrand';
+import { ApplyPresetDialog } from './ApplyPresetDialog';
 
 type ManagePresetsDialogProps = {
   open: boolean;
   onClose: () => void;
+  platforms: readonly ConfiguredPlatform[];
+  /** The destination tab currently open in Stream details, if any. */
+  activeId: string | null;
+  /** Whether that open tab has unsaved edits right now. */
+  activeDirty: boolean;
+  /** Called after a successful apply, with the destination ids written. */
+  onApplied: (appliedIds: string[]) => void;
 };
 
 /**
@@ -32,7 +41,14 @@ type ManagePresetsDialogProps = {
  * list, not a shared library. Applying a preset to a destination is a
  * separate workflow (22C), not part of this dialog.
  */
-export function ManagePresetsDialog({ open, onClose }: ManagePresetsDialogProps) {
+export function ManagePresetsDialog({
+  open,
+  onClose,
+  platforms,
+  activeId,
+  activeDirty,
+  onApplied,
+}: ManagePresetsDialogProps) {
   const { t } = useTranslation(['metadataPresets', 'common', 'errors']);
   const tErrors = useTranslation('errors').t;
   const { locale } = useLanguage();
@@ -44,6 +60,7 @@ export function ManagePresetsDialog({ open, onClose }: ManagePresetsDialogProps)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [deletingPreset, setDeletingPreset] = useState<MetadataPreset | null>(null);
+  const [applyingPreset, setApplyingPreset] = useState<MetadataPreset | null>(null);
 
   const presets = presetsQuery.data ?? [];
   const busy = updatePreset.isPending || deletePreset.isPending;
@@ -208,6 +225,12 @@ export function ManagePresetsDialog({ open, onClose }: ManagePresetsDialogProps)
 
                         <div className="flex shrink-0 items-center gap-1">
                           <IconButton
+                            label={t('metadataPresets:manage.apply')}
+                            icon={<Send className="size-3.5" />}
+                            disabled={busy}
+                            onClick={() => setApplyingPreset(preset)}
+                          />
+                          <IconButton
                             label={t('metadataPresets:manage.rename')}
                             icon={<Pencil className="size-3.5" />}
                             disabled={busy}
@@ -243,6 +266,18 @@ export function ManagePresetsDialog({ open, onClose }: ManagePresetsDialogProps)
         onConfirm={handleDelete}
         onCancel={() => setDeletingPreset(null)}
       />
+
+      {applyingPreset !== null && (
+        <ApplyPresetDialog
+          open
+          onClose={() => setApplyingPreset(null)}
+          preset={applyingPreset}
+          platforms={platforms}
+          activeId={activeId}
+          activeDirty={activeDirty}
+          onApplied={onApplied}
+        />
+      )}
     </>
   );
 }

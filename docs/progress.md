@@ -48897,3 +48897,84 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into the 22C frontend (compatibility
 preview + apply UI) per the governing task's own explicit "do not ask
 the operator for permission between 22A/22B/etc."
+
+## 2026-09-01 — feat(web): Stage 22C frontend - compatibility preview and apply UI
+
+### What changed
+The frontend half of "Apply preset" (docs/metadata-presets.md §6/§8),
+wired into the same `ManagePresetsDialog` 22B already built.
+
+`api/metadata-preset-apply-schemas.ts` (new): Zod contract for the two
+apply endpoints - `fieldStatusSchema` (`will_change`/`unchanged`/
+`not_supported`), `applyDestinationSchema`, and
+`applyPresetResponseSchema` (reusing the existing `platformMetadataSchema`
+from `platform-schemas.ts` for the `platforms` map, rather than a
+second competing metadata shape). `api/metadata-presets.ts` gained
+`fetchApplyPreview`/`applyMetadataPreset`; `hooks/use-metadata-presets.ts`
+gained `useApplyPreviewQuery` (disabled while no destination is
+selected, keyed by preset id + sorted platform ids) and
+`useApplyMetadataPresetMutation` (invalidates `platformKeys.platforms`
+on success, since several destinations can land in one atomic write).
+
+`components/metadata/presets/ApplyPresetDialog.tsx` (new): pick one or
+more configured destinations by checkbox; each selected one fetches
+its own live compatibility preview and renders a chip per field
+(will change / unchanged / not supported, using the same
+`metadata:fields.*` labels the editor itself already has - no new
+field-name strings to keep in sync). Apply is disabled while any
+selected destination is invalid or the preview is still in flight.
+Before writing, if the destination currently open in Stream details
+has unsaved edits and is among the selected targets, a `ConfirmDialog`
+warns that applying will replace them (§8) - this is the one apply
+path with a real conflict to guard, so it is the only one guarded.
+
+`MetadataEditor.tsx`: threads `platforms`/`activeId`/`activeDirty`
+down to `ManagePresetsDialog` and adds an `onApplied` callback. A real
+integration bug had to be solved here: `MetadataForm`'s own `draft`
+state is local `useState`, seeded once and only re-derived when its
+`key` (the platform id) changes - a metadata write arriving from
+Apply, rather than from the form's own Save button, would otherwise
+leave the currently open tab showing stale values after a successful
+apply. Fixed with a dedicated `applyRemountToken` that is bumped, and
+only bumped, when `onApplied`'s reported ids include the tab that is
+actually open - `key={`${platform.id}-${applyRemountToken}`}` then
+remounts that one `MetadataForm` fresh, while an apply to any other,
+non-active destination causes no remount and no lost work on unrelated
+tabs; the token is never bumped by a normal per-destination "Save
+metadata" click, so no regression there.
+
+`ManagePresetsDialog.tsx` gained a per-row "Apply" action (`Send`
+icon, alongside the existing Rename/Delete) that opens
+`ApplyPresetDialog` for that one preset.
+
+### Localization
+`metadataPresets:manage.apply` and the whole `metadataPresets:apply.*`
+block added to both `en`/`pl` - dialog chrome, per-field status labels,
+the incompatible-destination message, and the discard-unsaved-edits
+confirmation. Field names themselves reuse the existing `metadata`
+namespace rather than duplicating labels. `npm run i18n:check` passes:
+25 namespaces, en/pl parity, no differences.
+
+### Tests
+`ApplyPresetDialog.test.tsx` (5 tests): the no-destinations message;
+Apply stays disabled until a destination is checked, then the preview
+fetch fires and its field chip renders; Apply stays disabled when the
+selected destination's preview reports invalid; a successful apply
+calls the API with the right preset/platform ids and reports them
+back via `onApplied`; the unsaved-edit conflict path shows the confirm
+dialog first and only calls the API after it is accepted.
+`ManagePresetsDialog.test.tsx` updated for the dialog's new required
+props (a `renderDialog` helper supplying an empty destinations list,
+since Apply-flow coverage now lives in `ApplyPresetDialog.test.tsx`).
+
+### Validation
+`npm run i18n:check` clean. `npm run build` clean. `npm run lint`
+clean (the same one pre-existing, unrelated warning). `npm run test
+-- --run`: 128 test files / 1535 tests passing, including the 5 new
+ones above and all 1530 pre-existing ones unchanged.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 22D (Stream details/Dashboard
+integration and UX hardening) per the governing task's own explicit
+"do not ask the operator for permission between 22A/22B/etc."

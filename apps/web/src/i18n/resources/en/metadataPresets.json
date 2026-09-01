@@ -20,6 +20,7 @@
     "emptyTitle": "No presets yet",
     "emptyDescription": "Fill in a destination's stream details, then use \"Save as preset\" to reuse them next time.",
     "updatedAt": "Updated {{date}}",
+    "apply": "Apply",
     "rename": "Rename",
     "delete": "Delete preset",
     "save": "Save name",
@@ -27,6 +28,26 @@
       "title": "Delete this preset?",
       "message": "\"{{preset}}\" will be removed. Destinations it was previously applied to keep their current metadata - deleting a preset never changes them.",
       "confirm": "Delete preset"
+    }
+  },
+  "apply": {
+    "title": "Apply \"{{preset}}\"",
+    "description": "Choose one or more destinations. Applying only changes their local stream details - nothing is published.",
+    "submit": "Apply",
+    "applying": "Applying...",
+    "applied": "Applied",
+    "noDestinations": "Add a destination first to apply a preset to it.",
+    "checking": "Checking compatibility...",
+    "incompatible": "This preset can't be applied to this destination as-is.",
+    "status": {
+      "will_change": "will change",
+      "unchanged": "unchanged",
+      "not_supported": "not supported here"
+    },
+    "discardDialog": {
+      "title": "Discard unsaved changes?",
+      "message": "The open destination has unsaved metadata changes. Applying this preset will replace them.",
+      "confirm": "Discard and apply"
     }
   }
 }
