@@ -48711,3 +48711,99 @@ tests) suites for `metadatapreset`.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 22B per the governing task's own
 explicit "do not ask the operator for permission between 22A/22B/etc."
+
+## 2026-09-01 — feat(web): Stage 22B - preset CRUD/management UI, wired into Stream details
+
+### What changed
+Frontend CRUD and management surface for the `metadatapreset` domain
+built in 22A, integrated directly into the existing Stream details
+experience (docs/metadata-presets.md §3) - no new top-level nav item.
+
+`api/metadata-preset-schemas.ts` (Zod contract for the `/api/metadata-
+presets` endpoints, mirroring `presetRequest`/`presetResponse` on the
+Go side), `api/metadata-presets.ts` (fetch functions), and
+`hooks/use-metadata-presets.ts` (TanStack Query hooks - `useMetadataPresetsQuery`,
+`useCreate/Update/DeleteMetadataPresetMutation`, each mutation
+invalidating the shared `metadataPresetKeys.presets` key on success)
+follow the same three-layer pattern every other domain in this
+frontend already uses.
+
+`components/metadata/presets/SavePresetDialog.tsx` - "Save as preset",
+the primary create workflow (docs/metadata-presets.md §7). Takes the
+caller's current on-screen draft (`SaveMetadataInput`) and provider id
+directly - there is no dedicated backend "capture" endpoint; the
+dialog only asks for a name and an optional note, then builds the same
+generic create request every other preset creation uses. The current
+provider's category/categoryId are placed under that provider's own
+key in `providers`, and omitted entirely when both are blank, so an
+empty category never becomes a spurious provider entry. Modeled on
+`AddPlatformDialog.tsx`'s structure and built on the existing reusable
+`Modal` component - no new dialog primitive.
+
+`components/metadata/presets/ManagePresetsDialog.tsx` - list/rename/
+delete. Deliberately compact per the governing scope: no folders,
+tags, search, or sort - a flat list, most-recently-updated first (the
+repository's own `ORDER BY updated_at DESC` from 22A), each row
+showing name, optional note, last-updated timestamp
+(`formatTimestamp`), and a provider-brand badge per key present in
+that preset's `providers` map. Rename is an inline name-only edit
+(Enter to save, Escape to cancel) that resubmits the preset's full
+existing content unchanged apart from the new name - it does not
+recapture metadata from the currently open destination, which stays a
+separate, deliberate "Save as preset" action. Delete goes through the
+existing `ConfirmDialog` component, matching `PlatformSettingsDialog`'s
+own delete-confirmation pattern; the confirmation text states plainly
+that destinations previously applied are left untouched, since preset
+deletion has no cascading effect on `platform_metadata` (proved at the
+repository layer in 22A's `TestMetadataPresetDeleteNeverTouchesPlatformMetadata`).
+A real empty state (icon + creator-oriented explanation of how to
+create a first preset) replaces a bare empty list.
+
+Both dialogs render only after an explicit trigger: `MetadataForm.tsx`
+gained a "Save as preset" button next to Reset (opens `SavePresetDialog`
+scoped to the active platform's provider and current draft), and
+`MetadataEditor.tsx`'s panel header gained a "Presets" button (opens
+`ManagePresetsDialog`, which is provider-independent - a preset can
+carry entries for several providers at once). Neither button performs
+any network call by itself; both only open a dialog.
+
+`models/metadata-preset-constraints.ts` mirrors the backend's
+`NameMaxLength`/`NoteMaxLength`/`MaxPresets` constants, following the
+same pattern as the existing `models/platform-constraints.ts`.
+
+### Localization
+New `metadataPresets` namespace (`i18n/resources/{en,pl}/metadataPresets.json`),
+registered in both `i18n/resources.ts` and `i18n/config.ts`'s
+`NAMESPACES` array - the exact registration gap Stage 21 found and
+fixed is not repeated here. Two new keys (`actions.saveAsPreset`,
+`editor.presets`) added to the existing `metadata` namespace for the
+two entry-point buttons. `npm run i18n:check` passes: 25 namespaces,
+en/pl parity, no differences.
+
+### Tests
+`SavePresetDialog.test.tsx` (5 tests): submit stays disabled until a
+name is entered; a create request scopes the category under the
+correct provider only; an empty category omits the provider entry
+entirely (`providers: {}`), never a spurious empty-string entry; a
+failed create shows the resolved server error; the dialog's local
+state resets on every reopen rather than inheriting a previous draft.
+
+`ManagePresetsDialog.test.tsx` (4 tests): the empty state renders when
+there are no presets; an existing preset's name/note are shown;
+renaming sends the full existing content unchanged apart from the new
+name (proving edit does not silently drop the preset's captured
+metadata); delete only calls the API after the confirmation dialog is
+explicitly accepted, never on the row button alone.
+
+### Validation
+`npm run i18n:check` clean. `npm run build` (`tsc -b && vite build`,
+the authoritative frontend typecheck for this project - see Stage 21's
+`tsc -b`/`tsc --noEmit` lesson) clean. `npm run lint` clean (one
+pre-existing, unrelated warning in `auth-context.tsx`). `npm run test
+-- --run`: 127 test files / 1530 tests passing, including the 9 new
+ones above and all 1521 pre-existing ones unchanged.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 22C per the governing task's own
+explicit "do not ask the operator for permission between 22A/22B/etc."

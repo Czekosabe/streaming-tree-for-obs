@@ -48,6 +48,7 @@ export const NAMESPACES = [
   'dashboard',
   'platforms',
   'metadata',
+  'metadataPresets',
   'pages',
   'errors',
   'runtime',

@@ -14,6 +14,7 @@ import enErrors from './resources/en/errors.json';
 import enGoals from './resources/en/goals.json';
 import enLogs from './resources/en/logs.json';
 import enMetadata from './resources/en/metadata.json';
+import enMetadataPresets from './resources/en/metadataPresets.json';
 import enNavigation from './resources/en/navigation.json';
 import enOnboarding from './resources/en/onboarding.json';
 import enOverlays from './resources/en/overlays.json';
@@ -38,6 +39,7 @@ import plErrors from './resources/pl/errors.json';
 import plGoals from './resources/pl/goals.json';
 import plLogs from './resources/pl/logs.json';
 import plMetadata from './resources/pl/metadata.json';
+import plMetadataPresets from './resources/pl/metadataPresets.json';
 import plNavigation from './resources/pl/navigation.json';
 import plOnboarding from './resources/pl/onboarding.json';
 import plOverlays from './resources/pl/overlays.json';
@@ -63,6 +65,7 @@ export const enResources = {
   dashboard: enDashboard,
   platforms: enPlatforms,
   metadata: enMetadata,
+  metadataPresets: enMetadataPresets,
   pages: enPages,
   errors: enErrors,
   runtime: enRuntime,
@@ -90,6 +93,7 @@ const plResources = {
   dashboard: plDashboard,
   platforms: plPlatforms,
   metadata: plMetadata,
+  metadataPresets: plMetadataPresets,
   pages: plPages,
   errors: plErrors,
   runtime: plRuntime,

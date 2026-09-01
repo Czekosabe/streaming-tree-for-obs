@@ -3,7 +3,8 @@
     "heading": "Stream details",
     "description": "Title, category and other details for the selected destination",
     "tabsLabel": "Platform metadata",
-    "empty": "Add a destination to edit its metadata."
+    "empty": "Add a destination to edit its metadata.",
+    "presets": "Presets"
   },
   "fields": {
     "title": "Title",
@@ -39,7 +40,8 @@
   "actions": {
     "save": "Save metadata",
     "saving": "Saving...",
-    "reset": "Reset"
+    "reset": "Reset",
+    "saveAsPreset": "Save as preset"
   },
   "status": {
     "saved": "Saved to the local database",

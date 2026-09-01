@@ -1,0 +1,32 @@
+{
+  "save": {
+    "title": "Save as preset",
+    "description": "Save this stream's title, description, tags and other details as a reusable preset.",
+    "submit": "Save preset",
+    "saving": "Saving...",
+    "saved": "Saved"
+  },
+  "fields": {
+    "nameLabel": "Preset name",
+    "namePlaceholder": "e.g. Weekly co-op night",
+    "noteLabel": "Note",
+    "noteHint": "Optional. A short reminder of what this preset is for.",
+    "notePlaceholder": "Any details worth remembering"
+  },
+  "manage": {
+    "title": "Metadata presets",
+    "description": "Reusable stream details you can apply to a destination later. Applying a preset only changes local metadata - it never publishes anything.",
+    "loading": "Loading presets...",
+    "emptyTitle": "No presets yet",
+    "emptyDescription": "Fill in a destination's stream details, then use \"Save as preset\" to reuse them next time.",
+    "updatedAt": "Updated {{date}}",
+    "rename": "Rename",
+    "delete": "Delete preset",
+    "save": "Save name",
+    "deleteDialog": {
+      "title": "Delete this preset?",
+      "message": "\"{{preset}}\" will be removed. Destinations it was previously applied to keep their current metadata - deleting a preset never changes them.",
+      "confirm": "Delete preset"
+    }
+  }
+}

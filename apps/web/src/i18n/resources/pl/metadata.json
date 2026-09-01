@@ -3,7 +3,8 @@
     "heading": "Szczegóły transmisji",
     "description": "Tytuł, kategoria i inne szczegóły dla wybranego celu",
     "tabsLabel": "Metadane platform",
-    "empty": "Dodaj cel transmisji, aby edytować jego metadane."
+    "empty": "Dodaj cel transmisji, aby edytować jego metadane.",
+    "presets": "Szablony"
   },
   "fields": {
     "title": "Tytuł",
@@ -41,7 +42,8 @@
   "actions": {
     "save": "Zapisz metadane",
     "saving": "Zapisywanie...",
-    "reset": "Przywróć"
+    "reset": "Przywróć",
+    "saveAsPreset": "Zapisz jako szablon"
   },
   "status": {
     "saved": "Zapisano w lokalnej bazie danych",

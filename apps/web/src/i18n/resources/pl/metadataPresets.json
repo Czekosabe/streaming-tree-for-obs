@@ -1,0 +1,32 @@
+{
+  "save": {
+    "title": "Zapisz jako szablon",
+    "description": "Zapisz tytuł, opis, tagi i inne szczegóły tej transmisji jako szablon do ponownego użycia.",
+    "submit": "Zapisz szablon",
+    "saving": "Zapisywanie...",
+    "saved": "Zapisano"
+  },
+  "fields": {
+    "nameLabel": "Nazwa szablonu",
+    "namePlaceholder": "np. Cotygodniowy wieczór co-op",
+    "noteLabel": "Notatka",
+    "noteHint": "Opcjonalnie. Krótkie przypomnienie, do czego służy ten szablon.",
+    "notePlaceholder": "Wszelkie szczegóły warte zapamiętania"
+  },
+  "manage": {
+    "title": "Szablony metadanych",
+    "description": "Szczegóły transmisji do ponownego użycia, które możesz później zastosować do celu transmisji. Zastosowanie szablonu zmienia tylko lokalne metadane - nigdy nic nie publikuje.",
+    "loading": "Wczytywanie szablonów...",
+    "emptyTitle": "Brak szablonów",
+    "emptyDescription": "Uzupełnij szczegóły transmisji dla celu transmisji, a następnie użyj opcji \"Zapisz jako szablon\", aby użyć ich ponownie następnym razem.",
+    "updatedAt": "Zaktualizowano {{date}}",
+    "rename": "Zmień nazwę",
+    "delete": "Usuń szablon",
+    "save": "Zapisz nazwę",
+    "deleteDialog": {
+      "title": "Usunąć ten szablon?",
+      "message": "Szablon \"{{preset}}\" zostanie usunięty. Cele transmisji, do których został wcześniej zastosowany, zachowują swoje bieżące metadane - usunięcie szablonu nigdy ich nie zmienia.",
+      "confirm": "Usuń szablon"
+    }
+  }
+}

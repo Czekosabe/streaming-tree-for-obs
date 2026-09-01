@@ -1,4 +1,4 @@
-import { Check, Loader2, RotateCcw, Save } from 'lucide-react';
+import { BookmarkPlus, Check, Loader2, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -29,6 +29,7 @@ import { TextArea, TextInput } from '../ui/TextInput';
 import { ToggleSwitch } from '../ui/ToggleSwitch';
 import { CategoryPicker } from './CategoryPicker';
 import { isDirty, toDraft } from './metadata-draft';
+import { SavePresetDialog } from './presets/SavePresetDialog';
 import { PublishPanel } from './PublishPanel';
 import { useValidationMessages } from './use-validation-messages';
 
@@ -75,6 +76,7 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
   const [draft, setDraft] = useState<SaveMetadataInput>(() => toDraft(platform));
   const [errors, setErrors] = useState<MetadataErrors>({});
   const [saved, setSaved] = useState(false);
+  const [savePresetOpen, setSavePresetOpen] = useState(false);
 
   const dirty = isDirty(draft, toDraft(platform));
 
@@ -384,6 +386,14 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
         >
           {t('metadata:actions.reset')}
         </Button>
+        <Button
+          type="button"
+          onClick={() => setSavePresetOpen(true)}
+          disabled={busy}
+          icon={<BookmarkPlus className="size-3.5" />}
+        >
+          {t('metadata:actions.saveAsPreset')}
+        </Button>
 
         <p aria-live="polite" className="ml-auto text-[11px] text-ink-faint">
           {saved && !dirty ? (
@@ -400,6 +410,13 @@ export function MetadataForm({ platform, onDirtyChange }: MetadataFormProps) {
       </div>
 
       <PublishPanel platform={platform} dirty={dirty} />
+
+      <SavePresetDialog
+        open={savePresetOpen}
+        onClose={() => setSavePresetOpen(false)}
+        providerId={platform.providerId}
+        draft={draft}
+      />
     </form>
   );
 }

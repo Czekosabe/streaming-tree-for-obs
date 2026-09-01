@@ -1,13 +1,15 @@
-import { SlidersHorizontal } from 'lucide-react';
+import { Bookmark, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
 
+import { Button } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 import { MetadataForm } from './MetadataForm';
 import { PlatformTabs } from './PlatformTabs';
+import { ManagePresetsDialog } from './presets/ManagePresetsDialog';
 
 type MetadataEditorProps = {
   platforms: readonly ConfiguredPlatform[];
@@ -26,6 +28,7 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
   const { t } = useTranslation('metadata');
   const [dirty, setDirty] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [managePresetsOpen, setManagePresetsOpen] = useState(false);
 
   const activePlatform = platforms.find((platform) => platform.id === activeId);
 
@@ -58,6 +61,15 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
           title={t('editor.heading')}
           description={t('editor.description')}
           icon={<SlidersHorizontal className="size-4" />}
+          actions={
+            <Button
+              type="button"
+              onClick={() => setManagePresetsOpen(true)}
+              icon={<Bookmark className="size-3.5" />}
+            >
+              {t('editor.presets')}
+            </Button>
+          }
         />
 
         {/*
@@ -111,6 +123,8 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
         onConfirm={confirmDiscard}
         onCancel={() => setPendingId(null)}
       />
+
+      <ManagePresetsDialog open={managePresetsOpen} onClose={() => setManagePresetsOpen(false)} />
     </>
   );
 }
