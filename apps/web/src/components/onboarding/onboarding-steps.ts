@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 
 import { AccountsStep } from './steps/AccountsStep';
+import { CreatorToolsStep } from './steps/CreatorToolsStep';
 import { DestinationsStep } from './steps/DestinationsStep';
 import { ObsConnectionStep } from './steps/ObsConnectionStep';
 import { ReadinessStep } from './steps/ReadinessStep';
@@ -13,6 +14,7 @@ export type OnboardingStepId =
   | 'obsConnection'
   | 'destinations'
   | 'accounts'
+  | 'creatorTools'
   | 'summary';
 
 export type OnboardingStepDefinition = {
@@ -25,8 +27,9 @@ export type OnboardingStepDefinition = {
  *
  * A plain ordered array, not a more elaborate framework. 21C inserted
  * readiness/OBS-connection/destinations/accounts between 'welcome' and
- * 'summary'; 21D enriches 'summary' itself without needing to
- * restructure this list's own shape.
+ * 'summary'; 21D inserted creator-tools discovery and enriched
+ * 'summary' itself with a real per-category readiness view - all
+ * without needing to restructure this list's own shape.
  */
 export const ONBOARDING_STEPS: readonly OnboardingStepDefinition[] = [
   { id: 'welcome', Component: WelcomeStep },
@@ -34,5 +37,6 @@ export const ONBOARDING_STEPS: readonly OnboardingStepDefinition[] = [
   { id: 'obsConnection', Component: ObsConnectionStep },
   { id: 'destinations', Component: DestinationsStep },
   { id: 'accounts', Component: AccountsStep },
+  { id: 'creatorTools', Component: CreatorToolsStep },
   { id: 'summary', Component: SummaryStep },
 ];

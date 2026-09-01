@@ -48432,3 +48432,60 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 21D per the governing task's own
 explicit "do not stop merely to ask permission to begin the next
 already-defined substage."
+
+## 2026-09-01 — feat(web): Stage 21D - creator tools discovery and a real per-category readiness summary
+
+Implements `docs/onboarding.md` §7 - the last of the onboarding step
+content substages. `onboarding-steps.ts` now has all seven real steps
+(welcome, readiness, OBS connection, destinations, accounts, creator
+tools, summary).
+
+- **`CreatorToolsStep`**: concise links to real, shipped features only
+  (chat overlay, alerts, goals/widgets, audio/TTS - confirmed real,
+  never `planned: true` in `nav-items.ts`, matching the README's own
+  "Project state" summary). Reuses `OverlayUrlPanel` (the exact
+  "Copy Browser Source URL" component the Overlays page itself uses)
+  for the first real chat-overlay profile via `useChatOverlaysQuery`;
+  when none exists yet, points at the Overlays page to create one
+  rather than inventing a URL.
+- **`SummaryStep`** (enriched): four real categories, no fabricated
+  data. Application reuses `SystemStatusPill` (the exact aggregated
+  indicator the top bar already shows - never a second "is everything
+  okay" implementation). OBS ingest reuses `useRuntimeQuery`'s real
+  `ingest.state` via the same `ingestStateKey`/`ingestTone` helpers
+  used throughout this stage. Destinations counts configured/enabled
+  (`usePlatformsQuery`) and active (`useBranchRuntimeQuery`, `state ===
+  'live'`) together. Connected accounts counts `useAccountsQuery`.
+  Destinations and accounts are both marked "Optional" - zero of
+  either is a valid, complete-able state, never rendered as a failure.
+
+### A real gap found and fixed before committing
+`CreatorToolsStep`'s `TOOL_LINKS` array originally typed `labelKey` as
+plain `string`; `npm run build`'s `tsc -b` (not `tsc --noEmit` alone -
+see the previous entry's own finding) caught that `t(labelKey)` needs
+the strict `ParseKeys<'onboarding'>` type every other typed nav-item
+list in this codebase (`nav-items.ts`) already uses. Fixed before ever
+being pushed.
+
+### Validation
+`npm run i18n:check` (24 namespaces), `npm run build` (`tsc -b` +
+`vite build`) clean, `eslint` clean (0 errors, the same one
+pre-existing unrelated warning), `npm run test -- --run` - 1521/1521
+tests pass across 125 files (7 new: `CreatorToolsStep.test.tsx` (3,
+real-links-only / no-overlay-yet / real-URL-once-one-exists) and
+`SummaryStep.test.tsx` (4, zero-state-is-valid / real-counts / real-
+ingest-state / no-fabricated-viewer-count)).
+
+### Stage 21 content substages complete
+21A-21D are all Completed - every planned onboarding step now exists
+and reuses real application state end-to-end. 21E (hardening: full
+test matrix already largely in place from each substage's own testing,
+plus packaged-runtime proof, accessibility/responsive verification,
+localization parity already maintained throughout, documentation
+close-out) is next.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 21E per the governing task's own
+explicit "do not stop merely to ask permission to begin the next
+already-defined substage."

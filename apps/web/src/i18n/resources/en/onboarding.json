@@ -46,9 +46,30 @@
     "reconnectRequired": "Reconnect needed",
     "manageAction": "Manage connected accounts"
   },
+  "creatorTools": {
+    "heading": "Creator tools",
+    "body": "Streaming Tree also powers chat, alerts, goals and audio alongside your stream. A quick look at what's already available.",
+    "links": {
+      "chatOverlay": "Chat overlay",
+      "alerts": "Alerts",
+      "goals": "Goals & widgets",
+      "audio": "Audio & TTS"
+    },
+    "noOverlayYet": "You don't have a chat overlay yet.",
+    "createOverlayAction": "Create one"
+  },
   "summary": {
     "heading": "You're ready to go",
-    "body": "Setup is complete. You can always come back to this assistant from Settings if you want a refresher."
+    "body": "Setup is complete. You can always come back to this assistant from Settings if you want a refresher.",
+    "categories": {
+      "application": "Application",
+      "obsIngest": "OBS ingest",
+      "destinations": "Destinations",
+      "accounts": "Connected accounts"
+    },
+    "destinationsCount": "{{configured}} configured, {{enabled}} enabled, {{active}} active",
+    "accountsCount": "{{count}} connected",
+    "optional": "Optional"
   },
   "settingsCard": {
     "heading": "Setup assistant",

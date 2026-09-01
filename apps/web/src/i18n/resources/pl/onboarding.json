@@ -46,9 +46,30 @@
     "reconnectRequired": "Wymagane ponowne połączenie",
     "manageAction": "Zarządzaj połączonymi kontami"
   },
+  "creatorTools": {
+    "heading": "Narzędzia twórcy",
+    "body": "Streaming Tree zasila też czat, alerty, cele i dźwięk obok Twojej transmisji. Szybki przegląd tego, co już jest dostępne.",
+    "links": {
+      "chatOverlay": "Nakładka czatu",
+      "alerts": "Alerty",
+      "goals": "Cele i widżety",
+      "audio": "Dźwięk i TTS"
+    },
+    "noOverlayYet": "Nie masz jeszcze nakładki czatu.",
+    "createOverlayAction": "Utwórz jedną"
+  },
   "summary": {
     "heading": "Wszystko gotowe",
-    "body": "Konfiguracja została zakończona. W każdej chwili możesz wrócić do tego asystenta z Ustawień, jeśli będziesz potrzebować przypomnienia."
+    "body": "Konfiguracja została zakończona. W każdej chwili możesz wrócić do tego asystenta z Ustawień, jeśli będziesz potrzebować przypomnienia.",
+    "categories": {
+      "application": "Aplikacja",
+      "obsIngest": "Odbiór z OBS",
+      "destinations": "Cele",
+      "accounts": "Połączone konta"
+    },
+    "destinationsCount": "{{configured}} skonfigurowanych, {{enabled}} włączonych, {{active}} aktywnych",
+    "accountsCount": "{{count}} połączonych",
+    "optional": "Opcjonalne"
   },
   "settingsCard": {
     "heading": "Asystent konfiguracji",

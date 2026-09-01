@@ -29,7 +29,10 @@ Stage 21 does not change Stage 20's own status; see §0 below.
   `DestinationsStep`/`AccountsStep` inserted into the step order,
   reusing existing real state end-to-end (`docs/progress.md`,
   `feat(web): Stage 21C`).
-- **21D** (creator tools + final readiness summary): Planned.
+- **21D** (creator tools + final readiness summary): Completed -
+  `CreatorToolsStep` inserted, `SummaryStep` enriched with a real
+  per-category readiness view (`docs/progress.md`, `feat(web): Stage
+  21D`).
 - **21E** (hardening: full test matrix, packaged-runtime proof,
   accessibility/responsive verification, documentation close-out):
   Planned.
