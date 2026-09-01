@@ -49209,3 +49209,89 @@ was made. Continuing directly into 23B (logical export + package
 writer) per the governing task's own explicit "once the contract is
 pushed, continue autonomously... do not AskUserQuestion between
 substages."
+
+## 2026-09-01 — feat(server): Stage 23B part 1 - the backup domain's Config model and logical export
+
+### What changed
+The first real code for Stage 23 (docs/backup-restore.md): the
+`internal/domain/backup` package's data model and read-side export,
+covering every "Yes" row in that document's durable-state inventory.
+
+`internal/archivesafety` (new): the generic, domain-agnostic archive-
+entry safety primitives extracted from `internal/domain/visualpackage`'s
+own proven implementation - `ValidateNoTraversal` (zip-slip/absolute-
+path/drive-letter/backslash/`.`/`..`/control-character rejection),
+`ValidateBoundedASCIISegment` (the bounded-filename grammar, including
+reserved-Windows-device-name rejection), `CheckDecompressionRatio`,
+`ReadEntryBounded` (streamed, hard-bounded reads that never trust a
+zip entry's own declared size alone). Bound VALUES stay local to each
+caller - a template package and a backup package operate at different
+scales - only the safety LOGIC is shared, per the governing task's own
+"reuse established principles, do not duplicate a weaker parser"
+instruction. `visualpackage` itself is untouched; this is net-new
+shared infrastructure, not a refactor of already-shipped code.
+
+`internal/domain/backup/model.go`: `Config`, the complete versioned
+`config.json` payload, built directly from each domain's own already-
+audited, secret-free struct types (`platform.Platform`,
+`account.Account`, `chatoverlay.Profile`, and so on) rather than a
+second, hand-written set of shadow DTOs - avoiding both the risk of a
+field-mapping transcription error and, per the metadata-preset wording
+lesson from this same day's earlier commit, the temptation to
+over-claim what a reused struct's own free-text fields can or cannot
+contain. Small composed wrapper types (`PlatformExport`,
+`ConnectedAccountExport`, `ChatOverlayExport`, `AlertProfileExport`,
+`OperatorChatPreferencesExport`) exist only where a real backed-up
+"object" genuinely spans more than one repository call - e.g. a
+platform's output settings, an overlay's hidden-user/blocked-term/
+activity-type child rows.
+
+`internal/domain/backup/export.go`: `Sources`, a narrow read-only port
+per domain (the same per-consumer-interface convention Stage 22
+established with `PlatformMetadataStore`), and `Export`, which walks
+every included domain in a fixed order and assembles one `Config`.
+Deliberately depends on nothing from `internal/secrets`/`internal/auth`
+- there is no import in this package's dependency graph capable of
+reading a credential at all, which is itself half of docs/backup-
+restore.md §2's structural secret-exclusion proof (the other half is
+security_test.go, below). One real scoping decision made here: the
+`goal_applied_events` dedupe ledger has no existing list-all repository
+method, and adding one purely for this purpose was judged not worth
+the risk this session - v1 does not restore it (docs/backup-restore.md
+§1 updated with the honest rationale: the practical exposure is narrow,
+since only the exact same already-applied provider event replaying
+after a restore would be double-counted, and `Goal.Current`/`Baseline`
+themselves are still restored in full).
+
+`internal/domain/backup/security_test.go`: the structural secret-
+exclusion proof, reusing `internal/domain/metadatapreset/security_test.go`'s
+own denylist-reflection pattern exactly, walked recursively across the
+*entire* `Config` type this time (every domain it aggregates, not one
+domain's own small struct set). Found and correctly classified exactly
+four legitimate false positives during its first real run against real
+code - `Author` (attribution text, matched only because it contains
+"auth"), and `PublicToken` on both asset-blob types (Category A per
+§3's own capability audit, matched only because it contains "token") -
+each recorded individually with its own justification rather than
+weakening the denylist itself.
+
+`internal/domain/backup/export_test.go`: 9 tests against real fakes for
+every `Sources` port, covering the empty-database baseline and every
+multi-piece composition (platform+output, account+links+region+
+engagement, chat-overlay+child-rows+visual-design, alert-profile+
+rules+visual-design, goal-spanning widget-profile listing including a
+goal-less dashboard widget) plus the flat-list domains.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean, including 7 new `archivesafety` tests and 9 new
+`backup` tests (all passing on their first real run against the actual
+domain types, confirming the field names/shapes read directly from
+source during the contract audit were correct).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23B part 2 (the package writer -
+manifest + zip archive + managed-asset packaging + the HTTP download
+endpoint) per the governing task's own explicit "do not AskUserQuestion
+between substages."
