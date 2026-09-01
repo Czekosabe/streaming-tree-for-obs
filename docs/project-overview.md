@@ -1476,6 +1476,43 @@ SQLite database and a real (in-memory) SecretStore - a hermetic real-
 secret export scan, the secret-collision restore attack, and a managed-
 asset content-hash round trip among them.
 
+### 13.4 Stage 24 — stream session / operational history
+
+A real, additive product stage - see
+[`docs/stream-session-history.md`](stream-session-history.md) for the
+full contract. A session's boundary is derived from real local
+MediaMTX ingest state (`IngestReceiving`), deliberately never from
+destination-branch state: a branch can sit `WaitingForIngest`
+indefinitely with nothing flowing, and can only ever reach `StateLive`
+once ingest is already receiving in the first place, so ingest state
+alone is both necessary and sufficient - branch state is still read,
+but only to build per-destination participation records inside a
+session's already-determined bounds. Neither `branch.Manager` nor
+`mediamtx.Supervisor` exposes a push/event mechanism (confirmed by
+direct source review, not assumed), so the feature's own `Manager`
+polls both on a 5-second timer. A 60-second grace window absorbs a
+normal OBS reconnect blip without fragmenting one real session into
+several; a closed session's own end time is always the last real
+moment ingest was actually receiving, never the later moment the
+grace window happened to expire. A session or destination-
+participation row left open across a crash or an operator quitting
+Streaming Tree without stopping OBS first is recovered honestly at the
+next startup using its own last real heartbeat, never a fabricated
+time. Destination-participation rows snapshot the destination's own
+provider/display name at the moment they are created and use
+`ON DELETE SET NULL` (never `CASCADE`) against the platform row, so
+deleting or renaming a destination later never deletes or rewrites its
+own recorded history. Retention defaults to 90 days (configurable),
+enabled by default since - unlike a possible future engagement-content
+history - nothing third-party or personally identifying is ever stored
+here. Verified by 12 Go tests in `internal/domain/streamsession`
+(including a real-SQLite integration test driving the poll loop
+through a full session lifecycle end to end, and a reflection-based
+structural proof that no field anywhere in the feature's data model
+could ever hold chat/donation/engagement content), a dedicated HTTP
+test suite, a frontend test suite for the new History page, and the
+Stage 24 addition to `node scripts/verify-packaged-app.mjs`.
+
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application

@@ -482,6 +482,30 @@ async function main() {
       { originalId: presetId, presets: presetsAfterRestore.body },
     );
 
+    step('Stage 24: the stream session / operational history routes are reachable and real on the packaged binary');
+    // A real MediaMTX/OBS publish is not available in this hermetic
+    // environment, so a genuine session cannot be produced here - the
+    // full session-boundary/poll-loop behavior (including startup
+    // recovery of an orphaned session across a real restart) already
+    // has dedicated Go-level coverage against a real SQLite database
+    // (internal/domain/streamsession/integration_test.go). This step
+    // instead proves the routes are genuinely registered and reachable
+    // on the real packaged binary - a real restart cycle for the
+    // retention preference specifically is not repeated here, since
+    // this script's own single restart cycle already ran earlier
+    // (Stage 21/22) and Stage 23's own restore step deliberately never
+    // touches this domain's separate table.
+    const historyEmpty = await request('GET', '/api/stream-sessions');
+    expect(historyEmpty.status === 200, 'GET /api/stream-sessions succeeds on the packaged binary', historyEmpty.status);
+    expect(Array.isArray(historyEmpty.body.sessions), 'the response has a sessions array', historyEmpty.body);
+
+    const settingsBefore = await request('GET', '/api/stream-sessions/settings');
+    expect(settingsBefore.status === 200, 'GET /api/stream-sessions/settings succeeds', settingsBefore.body);
+    expect(settingsBefore.body.retentionDays === 90, 'the default retention is 90 days', settingsBefore.body);
+
+    const settingsSet = await request('PUT', '/api/stream-sessions/settings', { retentionDays: 45 });
+    expect(settingsSet.status === 200 && settingsSet.body.retentionDays === 45, 'PUT .../settings accepts a new retention value', settingsSet.body);
+
     step('A second launch detects the running instance and does not start another backend');
     // The second process is expected to exit entirely on its own (that is
     // exactly what this scenario proves) - there is nothing left to force-

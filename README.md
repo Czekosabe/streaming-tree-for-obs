@@ -351,6 +351,7 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 21 | First-run onboarding + OBS setup experience, see [onboarding.md](docs/onboarding.md) | **Completed** (automated scope — no physical/manual pass performed yet) |
 | 22 | Reusable stream metadata presets, see [metadata-presets.md](docs/metadata-presets.md) | **Completed** |
 | 23 | Safe configuration backup and restore, see [backup-restore.md](docs/backup-restore.md) | **Completed** |
+| 24 | Stream session / operational history (never chat, donation, or other engagement content), see [stream-session-history.md](docs/stream-session-history.md) | **Completed** |
 
 The full table with dependencies is in
 [`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The

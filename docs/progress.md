@@ -50382,3 +50382,113 @@ was made. Continuing directly into 24D (integration test, packaged-
 runtime extension, PRIVACY.md update, and a real content-exclusion
 proof test) per the governing task's own explicit "do not
 AskUserQuestion between substages."
+
+## 2026-09-01 — test,docs: Stage 24D - real-database integration test, content-exclusion proof, packaged-runtime extension, PRIVACY.md
+
+### What changed
+`internal/domain/streamsession/integration_test.go` (new): the real
+end-to-end integration test docs/stream-session-history.md §11 24D
+calls for - a genuinely migrated SQLite database and the real
+production `sqlite.StreamSessionRepository`, driving the real
+`Manager` through its actual public `Start`/`Shutdown` lifecycle (a
+5ms poll interval so the test observes the loop's own real timer-
+driven ticks, not an unexported method call) rather than only the
+in-memory fakes `manager_test.go` already exercises the state machine
+against. `manager_test.go` and `streamsession_repository_test.go`
+already cover the state machine and each repository method in
+isolation; this proves the two work correctly TOGETHER - the exact
+sequence of Create/Update/Open calls a real tick sequence produces
+actually lands correctly, the same gap Stage 23's own
+`security_integration_test.go` closed for the backup domain this same
+session. Covers: session open → a real platform resolved into a
+destination-participation row the moment it goes live → that
+destination erroring out → the process "crashing" (a plain `Shutdown`,
+which deliberately leaves the session open) → a fresh `Manager`
+recovering it at `Start` using its own real last heartbeat, with the
+already-closed destination's `OutcomeError` participation left
+untouched by recovery. A real MediaMTX/OBS transport is not available
+hermetically, so ingest/branch state is still supplied through fake
+Snapshotters - the contract's own explicitly sanctioned fallback. Ran
+5 times in a row locally to confirm the real-timer-based waits are not
+flaky (each completed in well under 200ms).
+
+`internal/domain/streamsession/content_exclusion_test.go` (new): the
+"prove it, do not just state it" content-exclusion proof, mirroring
+Stage 23's own `TestConfigStructurallyExcludesSecretShapedFields`
+reflection-based structural scan exactly, applied to an engagement-
+content-shaped denylist (chat/message/donat(e/ion)/donor/subscri(be/
+ber)/viewer/superchat/membership/tts/alertpayload) instead of a
+secret-shaped one - `Session`/`Destination` have no field matching it
+anywhere, including through their own nested/slice/pointer fields.
+`DisplayName` needed no explicit exception carved out: it simply does
+not match the denylist pattern at all. A second, narrower test locks
+the exact field set `Destination` is allowed to have, so a future
+field addition forces a deliberate content-exclusion review rather
+than silently expanding what this domain can carry.
+
+`scripts/verify-packaged-app.mjs` gains a Stage 24 step (same position
+as Stage 23's own addition, before the "second launch is blocked"
+check): proves `GET /api/stream-sessions`, `GET`/`PUT
+/api/stream-sessions/settings` are genuinely registered and reachable
+on the real release-built packaged binary. A real session cannot be
+produced in this hermetic environment (no real OBS/MediaMTX publish
+available) and a second restart cycle wasn't added to prove the
+retention preference's own persistence here specifically, since the
+full startup-recovery-across-a-restart behavior already has dedicated,
+stronger coverage in the new real-SQLite Go integration test above.
+Verified by rebuilding the release staging binary and running the full
+28-step script end to end.
+
+`PRIVACY.md` gains a "Stream session / operational history" section
+(placed after Stage 23's own "Configuration backup and restore"
+section, before "Updater"): what is recorded (session start/end,
+per-destination provider/snapshotted-name/outcome), what is never
+recorded and why it's structurally guaranteed (naming the exact test),
+how session boundaries are determined, and the 90-day default
+retention with the explicit Clear-history action - the same concrete,
+test-referenced style every other section in this document already
+uses. `docs/project-overview.md` gains §13.4 (matching the §13.1-13.3
+Stage 21/22/23 subsection convention), and `README.md`'s Roadmap table
+gains the Stage 24 row.
+
+### Testing
+`internal/domain/streamsession` now has 12 tests total (10 from 24A/
+24B plus the 2 added in this entry) - `go test ./...` clean across the
+whole backend. `node scripts/verify-packaged-app.mjs` - 28 steps, all
+passing, real release-built packaged binary.
+
+### Stage 24 completion summary
+Every substage (24A domain/migration/poll-loop Manager → 24B HTTP API/
+retention pruning/main.go wiring → 24C the History page → 24D real-
+database integration test/content-exclusion proof/packaged-runtime
+extension/PRIVACY.md) is now complete. `gofmt -l .`, `go build ./...`,
+`go vet ./...`, `go test ./...` clean across the whole backend;
+`npm run typecheck`, `npm run lint`, `npm run i18n:check`, `npm run
+test`, `npm run build` clean across the whole frontend. No physical/
+manual OBS or accessibility pass has been performed for Stage 24's own
+UI, consistent with every other stage since 20E - Stage 20E's own
+physical/manual verification gate remains deferred by the operator and
+is not, and must not be, requested here.
+
+A note on CI, not a Stage 24 defect: commit 3cc9c03 (Stage 24A) showed
+one real, non-cancellation CI failure - `go test` on macOS amd64,
+specifically `TestCancelAlertAudioClearsCurrentAndQueued` in
+`internal/audio`, a package this session never touched. The very next
+commit's full CI run (1bf65d2, Stage 24B) passed that exact same
+job/check cleanly, confirming this was pre-existing flakiness
+unrelated to Stage 24, not a regression - diagnosed from the actual
+job logs (via the Actions API and the job's own web page), never
+assumed away as push-supersession noise, per this task's own standing
+CI-diagnosis rule.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This commit is being pushed and its own CI watched to a
+terminal result next, per the governing task's own git/journal
+discipline. Stage 24 is genuinely complete; per the governing task's
+§61, a further bounded evidence-based product-gap audit follows next,
+continuing autonomously if one clear next stage emerges with no
+unresolved policy question, or reporting a genuine decision point if
+multiple directions are equally valid - the same explicit "do not
+AskUserQuestion between stages" instruction that has governed this
+entire work period.

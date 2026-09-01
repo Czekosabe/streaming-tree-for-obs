@@ -230,6 +230,52 @@ explicitly the highest-priority test in this feature's own test
 suite). Restoring is blocked entirely while a stream is active, the
 same guard the updater's own install step already uses.
 
+## Stream session / operational history
+
+Streaming Tree keeps a local record of when it observed a stream
+session run - when it started and ended, and which destinations
+participated with a coarse, closed-category outcome (Stage 24, see
+[docs/stream-session-history.md](docs/stream-session-history.md)).
+This is a record of the application's own operational behavior, the
+same category of thing the diagnostics log above already keeps, given
+its own durable history instead of a bounded in-memory buffer that
+disappears on restart.
+
+**What is recorded.** A session's start/end time, and, for each
+destination that actually went live during it, its provider and the
+display name you gave that destination at the time, when it went live/
+stopped, and a coarse outcome (completed, error, or still live when
+the session ended). A destination's name is snapshotted at the moment
+it goes live - renaming or deleting the destination later never
+rewrites or deletes what history already recorded.
+
+**What is never recorded, by construction.** Chat messages, chatter
+names, donation messages, donor names or amounts, membership/Super
+Chat content, alert payload content, TTS text, or any other viewer-
+supplied content - there is no field anywhere in this feature's data
+model that could hold any of it, verified by an automated structural
+scan of the feature's own types
+(`internal/domain/streamsession`'s own
+`TestSessionAndDestinationStructurallyExcludeEngagementContent`), not
+merely stated here. This is a distinct, independent decision from a
+separate, still-open question about whether a future stage might ever
+record engagement events themselves - this feature does not resolve,
+enable, or foreclose that question.
+
+**How a session's boundaries are determined.** By whether Streaming
+Tree's local ingest is actually receiving a publish from OBS - not by
+whether any destination is enabled or configured, and never derived
+from how long the application itself has been running. A brief
+network reconnect (under about a minute) is treated as the same
+session, not a new one.
+
+**Retention.** Kept for 90 days by default (configurable in the
+History page), since - unlike an engagement-content history - nothing
+third-party or personally identifying is ever stored here, only the
+application's own operational timeline. An explicit "Clear history"
+action in the History page deletes everything immediately, regardless
+of age.
+
 ## Updater
 
 Streaming Tree includes an application updater (Stage 20B), active only in
