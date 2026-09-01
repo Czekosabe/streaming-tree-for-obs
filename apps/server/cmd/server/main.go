@@ -38,6 +38,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	domaingoals "github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/domain/metadatapreset"
 	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
@@ -1142,6 +1143,9 @@ func run() error {
 	// other singleton-preference domain in this codebase - it is UI-flow
 	// state, not a release-build-gated capability.
 	onboardingService := onboarding.NewService(sqlite.NewOnboardingRepository(db.DB), nil)
+
+	// Stage 22: reusable stream metadata presets (docs/metadata-presets.md).
+	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB))
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,
@@ -1211,6 +1215,7 @@ func run() error {
 		Platforms:       platformService,
 		Runtime:         supervisor,
 		Onboarding:      onboardingService,
+		MetadataPresets: metadataPresetService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,

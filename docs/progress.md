@@ -48638,3 +48638,76 @@ Incomplete) and Stage 21's Completed status are unchanged.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made - Stage 22 itself, and this exact substage decomposition, was
 already authorized and specified by the governing instruction.
+
+## 2026-09-01 — feat(server): Stage 22A - the metadata-preset domain, schema, and CRUD API
+
+Implements `docs/metadata-presets.md` §2-§4 - the persisted preset
+domain, migration, repository, service, and HTTP CRUD API. Apply
+(§5-§6, multi-destination, provider-aware) is Stage 22C's own scope,
+not this one.
+
+### Domain (`internal/domain/metadatapreset`)
+`Preset{ID, Name, Note, Common CommonMetadata, Providers
+map[platform.ProviderID]ProviderMetadata, CreatedAt, UpdatedAt}`.
+`CommonMetadata` mirrors `platform.Metadata`'s own shared fields
+exactly; `ProviderMetadata{Category, CategoryID}` is stored per
+provider and never blended across providers - validated directly:
+`TestValidateCreateKeepsProviderScopingSeparate` constructs a preset
+with both a real Twitch category ID (`509658`) and a real YouTube one
+(`28`) and asserts they round-trip independently. Reuses
+`platform.ValidationError`/`FieldViolation` directly (already a
+shared, cross-domain mechanism in this codebase) rather than a second
+validation-error shape. Bounds match `docs/metadata-presets.md` §2's
+own table (name 100, note 280, title 140, description 5000 bytes,
+tags ≤500/100/500-combined, category/categoryId reusing
+`platform.CategoryMaxLength`/`CategoryIDMaxLength` verbatim, 200
+presets per installation) - the most generous real per-provider bound,
+never truncating meaningful content at save time; the unchanged
+`platform.ValidateMetadata` still enforces a specific target
+provider's tighter limits at apply time (Stage 22C).
+
+### Persistence
+Migration `0030_metadata_presets.sql`: `metadata_presets` (a
+`COLLATE NOCASE` unique index on `name` - exact-duplicate rejection,
+case-insensitive), `metadata_preset_tags`, `metadata_preset_provider_
+overrides` (both `ON DELETE CASCADE`), mirroring `platforms`/
+`platform_metadata`/`platform_metadata_tags`'s own three-table shape.
+No seed data - a fresh database starts with zero presets, proven by
+`TestMetadataPresetListIsEmptyOnFreshDatabase`.
+`TestMetadataPresetDeleteNeverTouchesPlatformMetadata` reads
+`pf_seed_twitch`'s real metadata before and after creating and
+deleting an unrelated preset and asserts it is byte-for-byte
+unchanged - deleting a preset must never touch a destination's own
+metadata (docs/metadata-presets.md §6).
+
+### API
+`GET/POST /api/metadata-presets`, `GET/PUT/DELETE /api/metadata-presets/{id}`
+- full-replacement writes, unknown-field rejection, the same
+`writeValidationError`/stable-error-code conventions every other
+endpoint in this codebase already uses. Wired into `main.go`/
+`router.go` exactly like every other optional service
+(`Options.MetadataPresets`, nil-gated registration).
+
+### Security (docs/metadata-presets.md §10/§40)
+Structural, not merely UI-omission: `security_test.go` walks every
+exported field of `Preset`/`CommonMetadata`/`ProviderMetadata`/
+`CreateInput`/`UpdateInput` (recursively) and fails if any field name
+contains a secret-shaped substring (key/token/secret/password/
+credential/auth/cookie/session/capability/refresh). A companion field-
+count tripwire test fails if a field is ever added to `CommonMetadata`/
+`ProviderMetadata` without a conscious docs update. At the HTTP layer,
+`TestCreatePresetRejectsSecretShapedFields` proves a create request
+carrying `streamKey`/`accessToken`/`refreshToken`/`clientSecret`/
+`password` is rejected outright as an unknown field (`400`), never
+silently accepted.
+
+### Validation
+`gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean,
+`go test ./...` - every package passes, including the new domain (13
+tests), repository (10 tests, real SQLite), and HTTP handler (12
+tests) suites for `metadatapreset`.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 22B per the governing task's own
+explicit "do not ask the operator for permission between 22A/22B/etc."

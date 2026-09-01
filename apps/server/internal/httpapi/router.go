@@ -30,6 +30,10 @@ type Options struct {
 	// Onboarding serves the Stage 21 first-run onboarding-state API. When
 	// nil, GET/PUT /api/onboarding is not registered.
 	Onboarding OnboardingService
+	// MetadataPresets serves the Stage 22 reusable metadata-preset CRUD
+	// API. When nil, none of the /api/metadata-presets routes are
+	// registered.
+	MetadataPresets MetadataPresetService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -305,6 +309,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Onboarding != nil {
 		registerOnboardingRoutes(mux, logger, opts.Onboarding)
+	}
+
+	if opts.MetadataPresets != nil {
+		registerMetadataPresetRoutes(mux, logger, opts.MetadataPresets)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"
