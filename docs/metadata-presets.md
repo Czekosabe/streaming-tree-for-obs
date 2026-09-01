@@ -276,12 +276,29 @@ No seed data - a fresh database starts with zero presets, matching the
 governing task's own explicit "no fake data" requirement. Deterministic,
 restart-safe, tracked in `schema_migrations` like every other migration.
 
-**Structural secret exclusion (§8/§40):** every column above is a plain
-string/boolean/timestamp describing content or a category label/ID.
-There is no column, no field, no JSON blob capable of holding a stream
-key, an OAuth token, a client secret, or a credential-store key -
-proven by the schema itself, not merely by UI omission. §12 below
-records the specific test proving this.
+**Structural secret exclusion (§8/§40):** every column above is a
+plain string/boolean/timestamp describing content or a category
+label/ID. None of them is secret-*specific* - there is no
+`stream_key`, `access_token`, `client_secret`, or credential-store-key
+column, and the API accepts no `streamKey`/`accessToken`/
+`refreshToken`/`clientSecret` property. No code path reads a value
+from `internal/secrets` into a preset, and no credential-bearing
+domain object (a `platform.Platform`'s linked account, a
+`credential.Credential`) is ever serialized wholesale into one.
+
+This is a narrower claim than "no column can physically hold secret-
+*shaped text*" - `name`/`note`/`title`/`description`/`tags` are
+ordinary free-text fields, and a user who manually pastes a real
+credential into one of them is not stopped by the schema, exactly as
+manually pasting one into a stream title is not stopped today. The
+guarantee is structural in a different, meaningful sense: there is no
+field *designed* to carry a credential, no API contract that accepts
+one under a recognized name, and no code path that ever *reaches into*
+`internal/secrets` (or any other credential-bearing domain object) to
+populate one. §12 below records the specific test proving this
+(a denylist over exported field *names*, and an HTTP-layer test
+proving a request naming a secret-shaped field is rejected as
+unknown - not a claim about what arbitrary pasted text can contain).
 
 ## 5. Multi-destination atomic apply
 

@@ -49117,3 +49117,95 @@ freshly rebuilt staged release binary.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Stage 22's automated scope is now complete; see the final
 status report that follows this entry.
+
+## 2026-09-01 — docs: correct Stage 22's secret-exclusion wording and define the Stage 23 safe configuration backup/restore contract
+
+### What changed
+Two independent docs changes, both authorized by the new governing
+task (Stage 23/24) and folded into one commit per that task's own
+§1 instruction not to reopen Stage 22 merely for a wording fix.
+
+**Stage 22 wording correction** (`docs/metadata-presets.md` §4):
+the prior "no column, no field, no JSON blob capable of holding a
+stream key... proven by the schema itself" claim was too strong - any
+free-text field (`name`/`note`/`title`/`description`/`tags`) can
+physically contain arbitrary pasted text, exactly like a stream title
+already can today. Corrected to the actual, narrower, still-meaningful
+guarantee: no field is *designed* to carry a credential, the API
+accepts no `streamKey`/`accessToken`/`refreshToken`/`clientSecret`
+property, no code path reads a value from `internal/secrets` into a
+preset, and no credential-bearing domain object is ever serialized
+wholesale into one - a denylist over exported field *names*, not a
+claim about arbitrary pasted text. `docs/progress.md` stays
+append-only; this is a new entry, not an edit to Stage 22's historical
+ones.
+
+**`docs/backup-restore.md`** (new): the canonical Stage 23 contract,
+written after reading every one of the 30 real SQLite migrations
+(`0001` through `0030`), `internal/secrets`, and the existing
+`visualpackage` archive-security implementation directly - not
+assumed. Key findings and decisions:
+
+- A full durable-state inventory (domain / storage / portable? /
+  secret? / included in v1? / restore behavior) covering all ~30
+  persisted domains, distinguishing genuinely portable non-secret
+  configuration from the credentials that stay in `internal/secrets`
+  and are never exported.
+- A real security finding: `internal/secrets.BuildKey` keys every
+  object-scoped secret (stream key, OAuth bundle, donation-source
+  token) by the owning domain object's own persisted `id`. A backup
+  file is untrusted input; if restore ever reused a backup-supplied
+  `id` as a literal local primary key, a crafted backup naming an id
+  that happens to already exist locally could cause the restored
+  object to silently resolve to an unrelated local secret. Resolved by
+  a single uniform rule: restore always mints a fresh local id (via
+  each domain's own existing `NewID()` generator) for every restored
+  object, secret-backed or not, with an in-memory `oldID → newID` map
+  remapping every internal reference. This closes the collision class
+  by construction, for every current and future secret-scoped domain,
+  and eliminates the need for any same-machine/foreign-restore
+  heuristic or installation-identity mechanism (confirmed by grep: none
+  exists anywhere in this codebase to build on) - both restore paths
+  are now identical and equally safe, matching the governing task's own
+  explicit permission to skip that complexity in v1.
+- A real capability-token audit, not a guess from the word "token"
+  alone: `chat_overlays`/`alert_profiles`/`widget_profiles`/
+  `audio_settings`' own `public_slug` and `visual_asset_blobs`/
+  `audioasset_blobs`' own `public_token` are, per their own migrations'
+  documented reasoning, "unguessable locators, not credentials" -
+  preserved verbatim in a backup so existing OBS Browser Sources keep
+  working after restore. `remote_overlay_capabilities.token` is the one
+  opposite case: its own migration states outright "token is the
+  capability itself" - excluded from every backup, full stop.
+  Every table's classification is recorded with its actual evidence.
+- The backup package format reuses `internal/domain/visualpackage`'s
+  own proven archive-security implementation (bounds, path grammar,
+  hash/type agreement, "never blind extraction") rather than writing a
+  second, weaker parser, and the restore flow mirrors that package's
+  own `ImportPreview`/`Import` preview-then-independently-revalidated-
+  commit shape exactly.
+- Restore reuses `updater.StreamingActive` (the exact function the
+  application updater's own "installing is blocked while a stream is
+  active" rule already uses) as its own streaming-active guard, rather
+  than writing a second one.
+- Restore mode is REPLACE only in v1, with a bounded single-slot
+  pre-restore safety snapshot for rollback, matching the governing
+  task's own explicit "no ambiguous merge" instruction.
+
+Six substages defined (23A contract - this entry - through 23F
+integration/security/packaged-runtime/docs), matching the governing
+task's own suggested decomposition after auditing the real source.
+
+### Validation
+Documentation only in this commit; no code changed. `docs/backup-
+restore.md`'s own architectural claims (SecretStore key namespacing,
+migration comments, `visualpackage`/`updater` precedent) were each
+verified by reading the cited source directly, not summarized from
+memory.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23B (logical export + package
+writer) per the governing task's own explicit "once the contract is
+pushed, continue autonomously... do not AskUserQuestion between
+substages."
