@@ -48807,3 +48807,93 @@ ones above and all 1521 pre-existing ones unchanged.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 22C per the governing task's own
 explicit "do not ask the operator for permission between 22A/22B/etc."
+
+## 2026-09-01 — feat(server): Stage 22C backend - atomic multi-destination apply
+
+### What changed
+Implements docs/metadata-presets.md §5/§6 exactly as designed during
+22A: the backend half of "Apply preset" - compatibility preview plus
+an atomic, all-or-nothing, provider-aware apply across one or more
+destinations. Never publishes anything remotely; only ever writes
+local metadata through the same validation every manual save uses.
+
+`internal/domain/platform`: `Repository` gains
+`SaveMetadataBatch(ctx, updates map[string]Metadata) error`, and
+`PlatformRepository` (sqlite) implements it by reusing the exact same
+`insertMetadataRow` helper `SaveMetadata`'s own transaction already
+calls, extended to loop every named platform (in sorted-key order, for
+a deterministic statement sequence) inside ONE `BeginTx`/`Commit` -
+either every destination's metadata and tags land, or none do.
+`Service` gains `GetMany` (bulk read, `ErrNotFound` naming the missing
+ID if any platform doesn't exist) and `SaveMetadataBatch` (validates
+every entry against its own destination's real provider definition via
+the existing `ValidateMetadata`, then delegates to the repository's
+atomic batch write and re-reads each updated platform to return
+exactly what is stored - the same re-fetch-after-write discipline
+`SaveMetadata` already follows).
+
+`internal/domain/metadatapreset/apply.go` (new): the narrow
+`PlatformMetadataStore` port (`GetMany` + `SaveMetadataBatch`,
+satisfied by `*platform.Service` - wired in `main.go` by passing the
+already-constructed `platformService`), `buildCandidate` (the
+projection step - copies a Common field onto a destination's candidate
+metadata only when that destination's provider capability table
+supports it, and copies `Providers[thatDestination'sProviderID]`'s
+category/categoryId only - a Twitch category ID is structurally
+impossible to leak into a YouTube candidate, since `buildCandidate`
+never reads any other provider's entry), `classify` (compares a
+validated candidate against a destination's current stored metadata,
+per field, three-way: will_change / unchanged / not_supported),
+`ApplyPreview` (read-only, mirrors the existing publish-preview
+pattern) and `Apply` (re-validates independently - never trusts a
+prior preview as authority - and, only if EVERY selected destination's
+candidate validates, writes all of them through the one atomic
+`SaveMetadataBatch` call; if even one destination fails, nothing is
+written for any of them, returning a new `*ApplyValidationError`
+naming every failing destination's own field violations).
+
+`internal/httpapi/metadatapreset.go`: `GET /api/metadata-presets/{id}/apply-preview?platformIds=a,b,c`
+(comma-separated, blank entries dropped) and
+`POST /api/metadata-presets/{id}/apply` (`{"platformIds": [...]}`,
+returns `{"platforms": {<id>: <metadata>}}` reusing the existing
+`metadataResponse`/`toMetadataResponse` DTO so the frontend never needs
+a second metadata shape). An `ApplyValidationError` is flattened into
+the one shared `ErrorBody.Fields`/`Details` contract every other
+endpoint already uses, with each violation's field prefixed
+`<platformId>.<field>` (e.g. `pf_1.title`) so two failing destinations
+can never collide on the same field name in one response.
+
+### Tests
+`platform`: three new `sqlite` repository tests prove
+`SaveMetadataBatch` is genuinely atomic - a mixed valid+invalid batch
+rolls back the otherwise-valid platform's write too, and naming one
+unknown platform ID writes nothing at all, not even for the known one.
+
+`metadatapreset/apply_test.go` (9 tests, in-memory fakes): the
+category-scoping test builds a preset holding BOTH a real Twitch
+category ID and a real YouTube category ID and proves applying it to a
+YouTube destination writes only the YouTube one; a Twitch-scoped
+preview with a description marks that field `not_supported`; a preview
+against an unchanged destination correctly reports `unchanged` for
+matching fields and `will_change` for a differing title; an
+all-or-nothing rejection test (a tag too long for Twitch's real
+25-character limit but fine for YouTube) proves the YouTube
+destination is untouched even though it would have validated on its
+own; a success test proves both destinations land in the same
+`SaveMetadataBatch` call; plus not-found/validation-required/
+independence-after-delete coverage.
+
+`httpapi`: 8 new tests cover comma-separated query parsing, a
+successful apply's response shape, the platform-prefixed
+all-or-nothing 422 shape, unknown-field rejection on the apply body,
+and 405s for the wrong method on both new routes.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` - every package passes, including all of the above.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into the 22C frontend (compatibility
+preview + apply UI) per the governing task's own explicit "do not ask
+the operator for permission between 22A/22B/etc."

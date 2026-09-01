@@ -1145,7 +1145,7 @@ func run() error {
 	onboardingService := onboarding.NewService(sqlite.NewOnboardingRepository(db.DB), nil)
 
 	// Stage 22: reusable stream metadata presets (docs/metadata-presets.md).
-	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB))
+	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,

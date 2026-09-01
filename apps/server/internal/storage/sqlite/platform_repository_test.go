@@ -369,6 +369,96 @@ func TestSaveMetadataPreservesUnicodeExactly(t *testing.T) {
 	}
 }
 
+func TestSaveMetadataBatchUpdatesEveryPlatformAtomically(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	err := repo.SaveMetadataBatch(ctx, map[string]platform.Metadata{
+		"pf_seed_twitch": {
+			Title: "Batch-applied Twitch title", Tags: []string{"batch", "applied"}, UpdatedAt: now,
+		},
+		"pf_seed_youtube": {
+			Title: "Batch-applied YouTube title", Tags: []string{"batch"}, UpdatedAt: now,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveMetadataBatch() returned an error: %v", err)
+	}
+
+	twitch, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) returned an error: %v", err)
+	}
+	if twitch.Metadata.Title != "Batch-applied Twitch title" {
+		t.Errorf("twitch title = %q, want the batch value", twitch.Metadata.Title)
+	}
+
+	youtube, err := repo.Get(ctx, "pf_seed_youtube")
+	if err != nil {
+		t.Fatalf("Get(youtube) returned an error: %v", err)
+	}
+	if youtube.Metadata.Title != "Batch-applied YouTube title" {
+		t.Errorf("youtube title = %q, want the batch value", youtube.Metadata.Title)
+	}
+}
+
+func TestSaveMetadataBatchRollsBackEveryPlatformWhenOneFails(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	err := repo.SaveMetadataBatch(ctx, map[string]platform.Metadata{
+		"pf_seed_twitch": {
+			Title: "Should not persist either", Tags: []string{"fine"}, UpdatedAt: now,
+		},
+		// A case-insensitively duplicated tag violates the unique index,
+		// exactly like the single-item TestSaveMetadataRollsBack... test.
+		"pf_seed_youtube": {
+			Title: "Should not persist", Tags: []string{"duplicate", "DUPLICATE"}, UpdatedAt: now,
+		},
+	})
+	if err == nil {
+		t.Fatal("SaveMetadataBatch() accepted case-insensitively duplicated tags")
+	}
+	if !errors.Is(err, platform.ErrConflict) {
+		t.Errorf("SaveMetadataBatch() error = %v, want ErrConflict", err)
+	}
+
+	// The whole transaction must roll back - including the otherwise-valid
+	// twitch update, proving this is genuinely all-or-nothing rather than
+	// "skip the bad one".
+	twitch, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) returned an error: %v", err)
+	}
+	if twitch.Metadata.Title == "Should not persist either" {
+		t.Error("twitch's update was committed even though youtube's failed in the same batch")
+	}
+}
+
+func TestSaveMetadataBatchReturnsNotFoundForUnknownPlatformAndWritesNothing(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	err := repo.SaveMetadataBatch(ctx, map[string]platform.Metadata{
+		"pf_seed_twitch": {Title: "Should not persist", Tags: []string{}, UpdatedAt: now},
+		"pf_missing":     {Title: "Unreachable", Tags: []string{}, UpdatedAt: now},
+	})
+	if !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("SaveMetadataBatch() error = %v, want ErrNotFound", err)
+	}
+
+	twitch, err := repo.Get(ctx, "pf_seed_twitch")
+	if err != nil {
+		t.Fatalf("Get(twitch) returned an error: %v", err)
+	}
+	if twitch.Metadata.Title == "Should not persist" {
+		t.Error("twitch's update was committed even though the batch also named an unknown platform")
+	}
+}
+
 func TestNextSortOrderAppends(t *testing.T) {
 	repo, _ := newTestRepo(t)
 

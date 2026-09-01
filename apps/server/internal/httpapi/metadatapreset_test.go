@@ -22,6 +22,14 @@ type stubMetadataPresets struct {
 	createErr error
 	updateErr error
 	deleteErr error
+
+	previewResult  []metadatapreset.DestinationPreview
+	previewErr     error
+	lastPreviewIDs []string
+
+	applyResult  map[string]platform.Metadata
+	applyErr     error
+	lastApplyIDs []string
 }
 
 func newStubMetadataPresets() *stubMetadataPresets {
@@ -84,6 +92,22 @@ func (s *stubMetadataPresets) Delete(ctx context.Context, id string) error {
 	}
 	delete(s.presets, id)
 	return nil
+}
+
+func (s *stubMetadataPresets) ApplyPreview(ctx context.Context, id string, platformIDs []string) ([]metadatapreset.DestinationPreview, error) {
+	s.lastPreviewIDs = platformIDs
+	if s.previewErr != nil {
+		return nil, s.previewErr
+	}
+	return s.previewResult, nil
+}
+
+func (s *stubMetadataPresets) Apply(ctx context.Context, id string, platformIDs []string) (map[string]platform.Metadata, error) {
+	s.lastApplyIDs = platformIDs
+	if s.applyErr != nil {
+		return nil, s.applyErr
+	}
+	return s.applyResult, nil
 }
 
 func newMetadataPresetServer(t *testing.T, service MetadataPresetService) http.Handler {
@@ -242,6 +266,110 @@ func TestMetadataPresetWrongMethodIsRejected(t *testing.T) {
 	handler := newMetadataPresetServer(t, stub)
 
 	recorder := do(t, handler, http.MethodPatch, "/api/metadata-presets", nil)
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", recorder.Code)
+	}
+}
+
+func TestApplyPreviewParsesCommaSeparatedPlatformIDs(t *testing.T) {
+	stub := newStubMetadataPresets()
+	stub.previewResult = []metadatapreset.DestinationPreview{
+		{
+			PlatformID: "pf_1", ProviderID: platform.ProviderTwitch, Valid: true,
+			Fields: []metadatapreset.FieldPreview{{Field: "title", Status: metadatapreset.FieldWillChange}},
+		},
+	}
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodGet, "/api/metadata-presets/mp_1/apply-preview?platformIds=pf_1,pf_2", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := stub.lastPreviewIDs; len(got) != 2 || got[0] != "pf_1" || got[1] != "pf_2" {
+		t.Fatalf("lastPreviewIDs = %v, want [pf_1 pf_2]", got)
+	}
+
+	var body []applyDestinationResponse
+	decodeBody(t, recorder, &body)
+	if len(body) != 1 || body[0].PlatformID != "pf_1" || !body[0].Valid {
+		t.Fatalf("body = %+v", body)
+	}
+	if body[0].Fields[0].Status != "will_change" {
+		t.Errorf("field status = %q, want will_change", body[0].Fields[0].Status)
+	}
+}
+
+func TestApplyPresetWritesAndReturnsUpdatedDestinations(t *testing.T) {
+	stub := newStubMetadataPresets()
+	stub.applyResult = map[string]platform.Metadata{
+		"pf_1": {Title: "Applied title", Tags: []string{}},
+	}
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/metadata-presets/mp_1/apply",
+		map[string]any{"platformIds": []string{"pf_1"}})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := stub.lastApplyIDs; len(got) != 1 || got[0] != "pf_1" {
+		t.Fatalf("lastApplyIDs = %v, want [pf_1]", got)
+	}
+
+	var body applyPresetResponse
+	decodeBody(t, recorder, &body)
+	if body.Platforms["pf_1"].Title != "Applied title" {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestApplyPresetRejectsAllOrNothingValidationFailure(t *testing.T) {
+	stub := newStubMetadataPresets()
+	stub.applyErr = &metadatapreset.ApplyValidationError{
+		Destinations: map[string][]platform.FieldViolation{
+			"pf_1": {{Field: "title", Rule: platform.RuleTooLong, Message: "Title cannot exceed 25 characters."}},
+		},
+	}
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/metadata-presets/mp_1/apply",
+		map[string]any{"platformIds": []string{"pf_1", "pf_2"}})
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var body ErrorBody
+	decodeBody(t, recorder, &body)
+	if _, ok := body.Fields["pf_1.title"]; !ok {
+		t.Fatalf("Fields = %+v, want a \"pf_1.title\" entry (platform-prefixed)", body.Fields)
+	}
+}
+
+func TestApplyPresetRejectsBodyWithUnknownField(t *testing.T) {
+	stub := newStubMetadataPresets()
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/metadata-presets/mp_1/apply",
+		map[string]any{"platformIds": []string{"pf_1"}, "streamKey": "nope"})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestApplyPreviewWrongMethodIsRejected(t *testing.T) {
+	stub := newStubMetadataPresets()
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/metadata-presets/mp_1/apply-preview", nil)
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", recorder.Code)
+	}
+}
+
+func TestApplyWrongMethodIsRejected(t *testing.T) {
+	stub := newStubMetadataPresets()
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodGet, "/api/metadata-presets/mp_1/apply", nil)
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", recorder.Code)
 	}

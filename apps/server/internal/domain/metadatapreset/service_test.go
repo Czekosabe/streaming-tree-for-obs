@@ -3,6 +3,7 @@ package metadatapreset
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -91,10 +92,53 @@ func (f *fakeRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// fakePlatformStore is the in-memory PlatformMetadataStore used by
+// every test in this package - CRUD tests never call Apply/
+// ApplyPreview, so an empty one is enough for newTestService; apply_test.go
+// seeds it with real platforms per test.
+type fakePlatformStore struct {
+	platforms map[string]platform.Platform
+	saveErr   error
+	lastSaved map[string]platform.Metadata
+}
+
+func newFakePlatformStore() *fakePlatformStore {
+	return &fakePlatformStore{platforms: map[string]platform.Platform{}}
+}
+
+func (f *fakePlatformStore) GetMany(ctx context.Context, ids []string) (map[string]platform.Platform, error) {
+	out := make(map[string]platform.Platform, len(ids))
+	for _, id := range ids {
+		p, ok := f.platforms[id]
+		if !ok {
+			return nil, fmt.Errorf("%w: platform %s", platform.ErrNotFound, id)
+		}
+		out[id] = p
+	}
+	return out, nil
+}
+
+func (f *fakePlatformStore) SaveMetadataBatch(
+	ctx context.Context, updates map[string]platform.Metadata,
+) (map[string]platform.Metadata, error) {
+	if f.saveErr != nil {
+		return nil, f.saveErr
+	}
+	f.lastSaved = updates
+	out := make(map[string]platform.Metadata, len(updates))
+	for id, m := range updates {
+		p := f.platforms[id]
+		p.Metadata = m
+		f.platforms[id] = p
+		out[id] = m
+	}
+	return out, nil
+}
+
 func newTestService() (*Service, *fakeRepository) {
 	repo := newFakeRepository()
 	counter := 0
-	svc := NewService(repo,
+	svc := NewService(repo, newFakePlatformStore(),
 		WithIDGenerator(func() (string, error) {
 			counter++
 			return "mp_test_" + string(rune('a'+counter)), nil

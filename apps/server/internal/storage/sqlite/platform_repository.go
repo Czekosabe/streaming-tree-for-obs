@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/streaming-tree/server/internal/domain/platform"
 )
@@ -349,6 +350,81 @@ func (r *PlatformRepository) SaveMetadata(
 
 	if err := tx.Commit(); err != nil {
 		return storageErr("commit save metadata", err)
+	}
+	return nil
+}
+
+// SaveMetadataBatch replaces the metadata row and tag list of every named
+// platform in one transaction: either every update lands, or none does.
+// Reuses the exact same insertMetadataRow helper SaveMetadata's own
+// transaction already calls - the smallest correct extension of that
+// method's transaction boundary, not a rewrite of it.
+func (r *PlatformRepository) SaveMetadataBatch(
+	ctx context.Context, updates map[string]platform.Metadata,
+) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Sorted so the sequence of statements inside the transaction is
+	// deterministic run to run, which keeps test assertions and lock
+	// behaviour reproducible.
+	ids := make([]string, 0, len(updates))
+	for id := range updates {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storageErr("begin save metadata batch", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, platformID := range ids {
+		m := updates[platformID]
+
+		var providerID string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT provider_id FROM platforms WHERE id = ?`, platformID,
+		).Scan(&providerID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: platform %s", platform.ErrNotFound, platformID)
+			}
+			return storageErr("read provider for metadata batch", err)
+		}
+
+		def, ok := platform.Definition(platform.ProviderID(providerID))
+		if !ok {
+			return fmt.Errorf("%w: unknown provider %q", platform.ErrUnknownProvider, providerID)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM platform_metadata WHERE platform_id = ?`, platformID); err != nil {
+			return storageErr("clear metadata", err)
+		}
+		if err := insertMetadataRow(ctx, tx, platformID, def, m); err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM platform_metadata_tags WHERE platform_id = ?`, platformID); err != nil {
+			return storageErr("clear tags", err)
+		}
+		for position, value := range m.Tags {
+			if _, err := tx.ExecContext(ctx, `
+                INSERT INTO platform_metadata_tags (platform_id, position, value)
+                VALUES (?, ?, ?)`, platformID, position, value); err != nil {
+				if isUniqueViolation(err) {
+					return fmt.Errorf("%w: duplicate tag %q", platform.ErrConflict, value)
+				}
+				return storageErr("insert tag", err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return storageErr("commit save metadata batch", err)
 	}
 	return nil
 }

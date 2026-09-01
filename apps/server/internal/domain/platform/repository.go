@@ -30,6 +30,12 @@ type Repository interface {
 	// a single transaction.
 	SaveMetadata(ctx context.Context, platformID string, m Metadata) error
 
+	// SaveMetadataBatch replaces the metadata (and tag lists) of every named
+	// platform in one transaction spanning all of them: either every update
+	// lands, or none does. Returns ErrNotFound if any platform ID does not
+	// exist.
+	SaveMetadataBatch(ctx context.Context, updates map[string]Metadata) error
+
 	// NextSortOrder returns the sort order to use when appending a platform.
 	NextSortOrder(ctx context.Context) (int, error)
 }

@@ -27,12 +27,12 @@ func NewID() (string, error) {
 	return "mp_" + hex.EncodeToString(buf), nil
 }
 
-// Service holds the metadata-preset CRUD use cases. Apply (docs/
-// metadata-presets.md §6) is added in Stage 22C, depending on a
-// separate narrow PlatformMetadataStore port - not part of this
-// substage's scope.
+// Service holds the metadata-preset CRUD and apply use cases. Apply
+// (see apply.go, docs/metadata-presets.md §6) depends on the narrow
+// PlatformMetadataStore port, satisfied by *platform.Service.
 type Service struct {
 	repo  Repository
+	store PlatformMetadataStore
 	newID IDGenerator
 	now   Clock
 }
@@ -50,9 +50,10 @@ func WithClock(clock Clock) ServiceOption {
 	return func(s *Service) { s.now = clock }
 }
 
-// NewService builds a Service around a repository.
-func NewService(repo Repository, opts ...ServiceOption) *Service {
-	s := &Service{repo: repo, newID: NewID, now: time.Now}
+// NewService builds a Service around a repository and the platform
+// store Apply needs.
+func NewService(repo Repository, store PlatformMetadataStore, opts ...ServiceOption) *Service {
+	s := &Service{repo: repo, store: store, newID: NewID, now: time.Now}
 	for _, opt := range opts {
 		opt(s)
 	}

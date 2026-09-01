@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -95,6 +96,25 @@ func (s *Service) Get(ctx context.Context, id string) (Platform, error) {
 		return Platform{}, ErrNotFound
 	}
 	return s.repo.Get(ctx, id)
+}
+
+// GetMany returns every named platform, keyed by ID. Returns
+// ErrNotFound, naming the missing ID, if any of them does not exist -
+// a caller applying a preset to a stale destination list should see a
+// clear error rather than a silently partial result.
+func (s *Service) GetMany(ctx context.Context, ids []string) (map[string]Platform, error) {
+	out := make(map[string]Platform, len(ids))
+	for _, id := range ids {
+		p, err := s.repo.Get(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: platform %s", ErrNotFound, id)
+			}
+			return nil, err
+		}
+		out[id] = p
+	}
+	return out, nil
 }
 
 // Create configures a new destination platform.
@@ -215,4 +235,55 @@ func (s *Service) SaveMetadata(ctx context.Context, id string, in Metadata) (Met
 		return Metadata{}, err
 	}
 	return updated.Metadata, nil
+}
+
+// SaveMetadataBatch validates and replaces the metadata of every named
+// platform atomically - either all succeed or none are persisted.
+// Provider publishing is never part of this: it only ever writes
+// local metadata, same as the single-item SaveMetadata above.
+//
+// Every value in updates is expected to already be projected onto its
+// destination's own provider capabilities (see metadatapreset's
+// buildCandidate) - a caller handing this a value the destination's
+// provider does not support still gets the same hard validation error
+// SaveMetadata itself would give, never a silent drop.
+func (s *Service) SaveMetadataBatch(ctx context.Context, updates map[string]Metadata) (map[string]Metadata, error) {
+	if len(updates) == 0 {
+		return map[string]Metadata{}, nil
+	}
+
+	normalized := make(map[string]Metadata, len(updates))
+	for id, in := range updates {
+		existing, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+
+		def, ok := Definition(existing.ProviderID)
+		if !ok {
+			return nil, fmt.Errorf("%w: platform %s references unknown provider %q",
+				ErrStorage, id, existing.ProviderID)
+		}
+
+		validated, err := ValidateMetadata(def, in)
+		if err != nil {
+			return nil, err
+		}
+		validated.UpdatedAt = s.now().UTC()
+		normalized[id] = validated
+	}
+
+	if err := s.repo.SaveMetadataBatch(ctx, normalized); err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]Metadata, len(normalized))
+	for id := range normalized {
+		updated, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = updated.Metadata
+	}
+	return out, nil
 }
