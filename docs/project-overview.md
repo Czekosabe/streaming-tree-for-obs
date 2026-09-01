@@ -1431,6 +1431,51 @@ API and a real restart by `node scripts/verify-metadata-presets.mjs`,
 and against the real packaged production binary by the Stage 22
 addition to `node scripts/verify-packaged-app.mjs`.
 
+### 13.3 Stage 23 — safe configuration backup and restore
+
+A real, additive product stage - see
+[`docs/backup-restore.md`](backup-restore.md) for the full contract.
+Resolves two product-policy questions explicitly: backups are **safe
+configuration backups, never full-machine clones including
+credentials** (stream keys, OAuth tokens, donation-source credentials,
+remote-management/ingest/overlay security material are structurally
+excluded, not merely redacted) - and there is no password-encrypted
+secret-backup mode in v1. Restore is REPLACE-only (never merged with
+the current configuration) and every restored object is always given a
+freshly minted local identity, never reusing an identifier from the
+backup file itself - the mechanism that makes a crafted or coincidental
+id collision with a pre-existing local secret structurally impossible,
+not merely unlikely, proven by
+`TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExistingSecret`
+(explicitly the release-blocking test in this stage's own suite).
+Restore is not one database transaction spanning every included domain
+(a deliberate, documented tradeoff - see §7 of the contract document);
+recoverability instead comes from a single-slot pre-restore safety
+snapshot taken immediately before every restore's clear phase, itself
+restorable through the exact same restore flow. A real, independently-
+found bug surfaced during this stage's own integration-testing pass:
+`Export` read visual/audio assets straight from the repository, which
+never resolves an asset's own blob reference (that join only happened
+at the Service layer other read paths already use) - every real backup
+would have silently included an asset's metadata row while quietly
+losing its actual image/sound content. Fixed in
+`internal/domain/backup/export.go`, and now guarded by a real content-
+hash round-trip test. Because several runtime managers (chat
+automation, alerts, the Twitch/YouTube/StreamElements engagement
+connectors) only reload their working state at process start, a
+restore always reports `restartRequired: true` and the Settings UI
+tells the operator to restart immediately after a restore completes -
+an honest signal rather than a claim of a live, seamless refresh that
+does not actually happen for every domain today. Verified end to end
+against the real HTTP API and a real restart by
+`node scripts/verify-backup-restore.mjs`, against the real packaged
+production binary by the Stage 23 addition to
+`node scripts/verify-packaged-app.mjs`, and at the Go level by 43
+tests in `internal/domain/backup` including several against a real
+SQLite database and a real (in-memory) SecretStore - a hermetic real-
+secret export scan, the secret-collision restore attack, and a managed-
+asset content-hash round trip among them.
+
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application

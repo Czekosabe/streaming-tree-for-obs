@@ -347,7 +347,10 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage, see [linux-headless-server.md](docs/linux-headless-server.md) | **Completed** |
 | 20D2B | Secure remote management/control plane: single-administrator authentication, sessions, CSRF, TLS/reverse-proxy contract, remote-safe shutdown, no remote overlay/ingest exposure yet, see [remote-management.md](docs/remote-management.md) | **Completed** |
 | 20D2C | Remote OBS ingest/data plane: MediaMTX-native authenticated/encrypted RTMPS ingest, the remote-overlay capability-token system, final combined self-hosted validation, see [remote-ingest.md](docs/remote-ingest.md) | **Completed** — stage 20D2 (and stage 20D) as a whole is now complete |
-| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Planned |
+| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D | Automated scope **Completed**; the single consolidated manual/physical verification gate is still pending |
+| 21 | First-run onboarding + OBS setup experience, see [onboarding.md](docs/onboarding.md) | **Completed** (automated scope — no physical/manual pass performed yet) |
+| 22 | Reusable stream metadata presets, see [metadata-presets.md](docs/metadata-presets.md) | **Completed** |
+| 23 | Safe configuration backup and restore, see [backup-restore.md](docs/backup-restore.md) | **Completed** |
 
 The full table with dependencies is in
 [`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The

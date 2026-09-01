@@ -49965,3 +49965,94 @@ was made. Continuing directly into the remaining 23F items
 (PRIVACY.md/README.md/docs/project-overview.md updates and Stage 23's
 own completion determination) per the governing task's own explicit
 "do not AskUserQuestion between substages."
+
+## 2026-09-01 — docs,test: Stage 23 complete - safety-snapshot rollback proof, PRIVACY.md/README.md/project-overview.md sync
+
+### What changed
+The final 23F item: `internal/domain/backup/service_restore_test.go`
+gains `TestRestoringTheSafetySnapshotRecoversThePreRestoreConfiguration`,
+closing the one remaining gap in docs/backup-restore.md §12's own
+testing plan - "safety-snapshot rollback" as its own explicit bullet,
+distinct from `TestRestoreSavesASafetySnapshotOfThePreRestoreConfiguration`
+(which only proves a snapshot gets saved and is itself readable). This
+test restores a backup (replacing a seeded "pf_before" platform with
+"pf_after"), then restores the SAFETY SNAPSHOT taken immediately before
+that first restore through the exact same preview-then-commit flow
+docs/backup-restore.md §7/§19 describes as the only recovery
+mechanism - no separate rollback code path exists to test - and
+confirms the pre-restore configuration ("pf_before") genuinely comes
+back.
+
+`PRIVACY.md` gains a "Configuration backup and restore" section
+(between Diagnostics/support-bundle and Updater, matching those
+sections' own concrete, test-referenced style): created only on
+explicit action, never uploaded anywhere; the precise secret-exclusion
+list with both of its enforcing tests named; REPLACE-only restore
+behavior and the id-remapping guarantee against secret collision,
+naming `TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExistingSecret`
+as explicitly the highest-priority test in the feature's own suite;
+the streaming-active restore guard.
+
+`docs/project-overview.md` gains §13.3 "Stage 23 — safe configuration
+backup and restore", matching §13.1/§13.2's own established Stage-21/
+22 subsection convention (a prose closing summary, not a roadmap table
+row) - the product-policy resolution, the REPLACE/fresh-id restore
+identity strategy, the real blob-resolution bug found and fixed during
+this stage's own integration-testing pass, the non-transactional
+restore/safety-snapshot tradeoff, the `restartRequired` contract, and
+every verification surface (43 Go tests, the hermetic HTTP script, the
+packaged-binary extension).
+
+`README.md`'s Roadmap table gains rows for stages 21, 22, and 23 (all
+three were previously missing entirely - 21/22 already shipped and
+complete before this session began but had never been added as table
+rows, only as project-overview.md prose subsections), plus corrects
+20E's own status from a bare "Planned" to the accurate "automated scope
+Completed; the single consolidated manual/physical verification gate
+is still pending" - the same distinction `docs/project-overview.md`
+§13's own 20E row and `docs/manual-verification.md` already draw,
+which README's table had fallen out of sync with.
+
+### Stage 23 completion summary
+
+Every substage (23A contract → 23B export/writer → 23C reader/
+validator/preview → 23D restore commit/id-remapping/safety-snapshot →
+23E Settings UI → 23F integration/security hardening) is now complete
+and covered by:
+- 44 tests in `internal/domain/backup` (up from 0 at the start of this
+  session), including 3 real end-to-end tests against a genuine SQLite
+  database and a real (in-memory) SecretStore - the hermetic secret-
+  exclusion scan, the release-blocking secret-collision restore
+  attack, and a managed-asset content-hash round trip - plus the
+  now-complete malformed/malicious-package matrix and the safety-
+  snapshot rollback proof added in this entry.
+- 20 backup-related tests in `internal/httpapi`.
+- 7 frontend component tests for the Settings-area panel
+  (`BackupRestorePanel.test.tsx`), EN/PL localization verified by
+  `npm run i18n:check`.
+- Two hermetic integration scripts: `scripts/verify-backup-restore.mjs`
+  (14 steps, a real `go run` backend) and the Stage 23 extension to
+  `scripts/verify-packaged-app.mjs` (a real release-built packaged
+  binary) - both run and confirmed passing in this session, not merely
+  written.
+- One real, independently-discovered bug found and fixed during this
+  stage's own integration testing (visual/audio asset blobs were never
+  actually included in a real backup - see the earlier 23F journal
+  entry for the full root-cause account).
+
+`gofmt -l .`, `go build ./...`, `go vet ./...`, `go test ./...` clean
+across the whole backend. `npm run typecheck`, `npm run lint`, `npm run
+i18n:check`, `npm run test`, `npm run build` clean across the whole
+frontend. No physical/manual OBS or accessibility pass has been
+performed for Stage 23's own UI, consistent with every other stage
+since 20E - Stage 20E's own physical/manual verification gate remains
+deferred by the operator and is not, and must not be, requested here.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. This commit is being pushed and its own CI watched to a
+terminal result before Stage 24 substantive work begins, per the
+governing task's own git/journal discipline; assuming that also comes
+back green, Stage 24 (stream session / operational history - never
+engagement content) begins next, per the governing task's own explicit
+"do not AskUserQuestion between substages/stages."

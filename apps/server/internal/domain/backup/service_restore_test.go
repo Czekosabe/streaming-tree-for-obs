@@ -151,6 +151,61 @@ func TestRestoreSavesASafetySnapshotOfThePreRestoreConfiguration(t *testing.T) {
 	}
 }
 
+// docs/backup-restore.md §7 step 5/§19: recovering from a bad restore
+// is running the whole restore flow again using the safety snapshot as
+// the source package - no separate rollback code path. This proves
+// that recovery actually works, not merely that a snapshot gets saved
+// (TestRestoreSavesASafetySnapshotOfThePreRestoreConfiguration already
+// covers that half).
+func TestRestoringTheSafetySnapshotRecoversThePreRestoreConfiguration(t *testing.T) {
+	sinks := newFakeSinks()
+	sinks.platforms["pf_before"] = platform.Platform{ID: "pf_before", DisplayName: "Before restore"}
+	safety := &memSafetyStore{}
+	svc := newRestoreTestService(t, sinks, fakeStreamingGuard{active: false}, safety)
+
+	cfg := Config{FormatVersion: FormatVersion, Platforms: []PlatformExport{{Platform: platform.Platform{ID: "pf_after"}}}}
+	data, err := WriteArchive(cfg, "0.1.0-test", "windows", time.Now(), memBlobSource{}, memBlobSource{})
+	if err != nil {
+		t.Fatalf("WriteArchive() error = %v", err)
+	}
+	preview, err := svc.RestorePreview(context.Background(), data)
+	if err != nil {
+		t.Fatalf("RestorePreview() error = %v", err)
+	}
+	if _, err := svc.Restore(context.Background(), preview.Token); err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+	if len(sinks.platforms) != 1 {
+		t.Fatalf("got %d platforms after the first restore, want 1", len(sinks.platforms))
+	}
+	for id := range sinks.platforms {
+		if id == "pf_before" || id == "pf_after" {
+			t.Fatalf("the first restore did not mint a fresh id: got %q", id)
+		}
+	}
+
+	// Recover: restore the safety snapshot taken before the first
+	// restore, through the exact same preview-then-commit flow.
+	rollbackPreview, err := svc.RestorePreview(context.Background(), safety.saved)
+	if err != nil {
+		t.Fatalf("RestorePreview(safety snapshot) error = %v", err)
+	}
+	if _, err := svc.Restore(context.Background(), rollbackPreview.Token); err != nil {
+		t.Fatalf("Restore(safety snapshot) error = %v", err)
+	}
+
+	if len(sinks.platforms) != 1 {
+		t.Fatalf("got %d platforms after recovery, want 1", len(sinks.platforms))
+	}
+	var recoveredName string
+	for _, p := range sinks.platforms {
+		recoveredName = p.DisplayName
+	}
+	if recoveredName != "Before restore" {
+		t.Errorf("recovered platform DisplayName = %q, want %q (the pre-restore configuration)", recoveredName, "Before restore")
+	}
+}
+
 func TestRestoreUnknownTokenReturnsNotFound(t *testing.T) {
 	sinks := newFakeSinks()
 	svc := newRestoreTestService(t, sinks, fakeStreamingGuard{active: false}, &memSafetyStore{})

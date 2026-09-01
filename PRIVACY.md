@@ -180,6 +180,56 @@ result (`internal/support`'s own
 `TestSupportBundleNeverLeaksSecretShapedValues`), not merely stated
 here.
 
+## Configuration backup and restore
+
+Streaming Tree includes an operator-facing configuration backup and
+restore feature (Stage 23, see
+[docs/backup-restore.md](docs/backup-restore.md)) - a single local
+file capturing your destinations, output settings, connected-account
+list, chat overlays/schedules/commands, alert profiles/rules, visual
+templates/designs and their managed images/sounds, audio settings,
+goals/dashboard widgets, metadata presets, the donation-source list,
+and update preferences.
+
+**Created only when you explicitly ask for it.** A backup is generated
+only when you click "Download backup" in Settings - never automatically,
+never uploaded anywhere by this application, and never scheduled. The
+file downloads directly to your own machine through your browser, the
+same as any other file download; Streaming Tree keeps no copy of it
+after you download it, except a single most-recent internal safety
+snapshot taken automatically immediately before you commit a restore
+(never before an export), so a restore can be recovered from if you
+change your mind - also never uploaded anywhere.
+
+**What a backup never contains, by construction.** Stream keys, OAuth
+access/refresh tokens and client secrets, donation-source credentials,
+the administrator password or its verifier, the remote-ingest
+publisher password, and every remote-overlay capability token. This is
+enforced two ways, not merely stated here: a closed, reflection-based
+structural scan of the backup's own data type
+(`internal/domain/backup`'s own `TestConfigStructurallyExcludesSecretShapedFields`)
+proving no field could ever carry one, and a separate integration test
+that seeds real secrets into a real credential store and scans a real
+exported backup's actual bytes for them
+(`TestExportedBackupNeverContainsAnyRealSecretValue`). A restored
+connected account, destination, or donation source always comes back
+needing to be reconnected or re-entered - never silently marked
+healthy because its row exists in the file.
+
+**Restoring is always an explicit, destructive action.** Restoring a
+backup replaces your entire current configuration with the one from
+the file (never merged with what you already have) and requires you to
+review a preview and separately confirm before anything is written.
+Every restored object is always given a fresh local identity, never
+reusing an identifier from the file itself - closing off, by
+construction, any possibility that a backup (including a deliberately
+crafted one) could cause a restored object to resolve to a credential
+already stored on your machine under a coincidentally matching
+identifier (`TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExistingSecret`,
+explicitly the highest-priority test in this feature's own test
+suite). Restoring is blocked entirely while a stream is active, the
+same guard the updater's own install step already uses.
+
 ## Updater
 
 Streaming Tree includes an application updater (Stage 20B), active only in
