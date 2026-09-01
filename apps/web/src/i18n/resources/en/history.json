@@ -1,0 +1,29 @@
+{
+  "page": {
+    "title": "History",
+    "description": "A record of when Streaming Tree observed a stream session run and which destinations participated. Never chat messages, chatter names, or donation content."
+  },
+  "list": {
+    "loading": "Loading history…",
+    "backendUnavailable": "The backend could not be reached.",
+    "empty": "No stream sessions yet. This list fills in the next time Streaming Tree observes OBS actively publishing."
+  },
+  "inProgress": "In progress",
+  "noDestinations": "No destination went live during this session.",
+  "outcome": {
+    "completed": "completed",
+    "session_ended": "completed",
+    "error": "error",
+    "live": "live"
+  },
+  "settings": {
+    "heading": "History settings",
+    "retentionLabel": "Keep history for",
+    "retentionDays_one": "{{count}} day",
+    "retentionDays_other": "{{count}} days",
+    "clearButton": "Clear history",
+    "clearConfirmTitle": "Clear all stream session history?",
+    "clearConfirmMessage": "This permanently deletes every recorded session and destination-participation record. This cannot be undone.",
+    "clearSuccess": "History cleared."
+  }
+}

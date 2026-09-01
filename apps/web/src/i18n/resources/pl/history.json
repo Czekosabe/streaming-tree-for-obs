@@ -1,0 +1,31 @@
+{
+  "page": {
+    "title": "Historia",
+    "description": "Zapis tego, kiedy Streaming Tree zaobserwował przebieg sesji transmisji i które miejsca docelowe w niej uczestniczyły. Nigdy wiadomości czatu, nazw osób piszących na czacie ani treści dotacji."
+  },
+  "list": {
+    "loading": "Wczytywanie historii…",
+    "backendUnavailable": "Nie udało się połączyć z backendem.",
+    "empty": "Brak sesji transmisji. Ta lista wypełni się, gdy Streaming Tree po raz pierwszy zaobserwuje aktywne nadawanie z OBS."
+  },
+  "inProgress": "W trakcie",
+  "noDestinations": "Żadne miejsce docelowe nie było aktywne podczas tej sesji.",
+  "outcome": {
+    "completed": "zakończono",
+    "session_ended": "zakończono",
+    "error": "błąd",
+    "live": "na żywo"
+  },
+  "settings": {
+    "heading": "Ustawienia historii",
+    "retentionLabel": "Przechowuj historię przez",
+    "retentionDays_one": "{{count}} dzień",
+    "retentionDays_few": "{{count}} dni",
+    "retentionDays_many": "{{count}} dni",
+    "retentionDays_other": "{{count}} dnia",
+    "clearButton": "Wyczyść historię",
+    "clearConfirmTitle": "Wyczyścić całą historię sesji transmisji?",
+    "clearConfirmMessage": "To trwale usuwa każdą zapisaną sesję i zapis uczestnictwa miejsc docelowych. Tej operacji nie można cofnąć.",
+    "clearSuccess": "Historia została wyczyszczona."
+  }
+}

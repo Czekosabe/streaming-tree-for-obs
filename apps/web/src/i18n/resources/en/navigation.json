@@ -17,6 +17,7 @@
     "audio": "Audio",
     "goals": "Goals",
     "settings": "Settings",
-    "logs": "Logs"
+    "logs": "Logs",
+    "history": "History"
   }
 }

@@ -50306,3 +50306,79 @@ was made. Continuing directly into 24C (the frontend History page,
 live in-progress display, retention settings + Clear history, EN/PL)
 per the governing task's own explicit "do not AskUserQuestion between
 substages."
+
+## 2026-09-01 — feat(web): Stage 24C - the History page
+
+### What changed
+`lib/api-client.ts` gains `apiDeleteWithBody(path, body)` - the DELETE-
+with-a-JSON-body shape `apiDelete` doesn't support (every existing
+call site expects an empty body), needed for Clear History's
+`{"confirm":true}` convention. Reuses the same private `send()`
+helper everything else in this file goes through, so CSRF/timeout/
+error-envelope handling all come along automatically rather than
+needing to be re-implemented in a one-off raw `fetch` call.
+
+`api/stream-sessions-schemas.ts` + `api/stream-sessions.ts`: Zod
+contracts and transport for the Stage 24 backend API - all plain JSON,
+no binary transport needed this time (unlike Stage 23's backup
+export/restore).
+
+`hooks/use-stream-sessions.ts`: `useStreamSessionsQuery` refetches
+every 15s so a currently-open session's live duration and newly-
+finished sessions stay current without a manual refresh, the same
+"operator reads a live-ish snapshot" expectation the Logs page already
+sets, just on a cadence appropriate to how often a session actually
+starts/ends rather than a log line arriving.
+
+`pages/HistoryPage.tsx` (new, registered as a new top-level `/history`
+nav item in `nav-items.ts`/`App.tsx`, mirroring the Stage 20E Logs
+page's own recent precedent for adding a top-level operational
+surface): a `Panel` listing sessions newest-first (the backend already
+orders this way, and at most one open session ever exists by
+construction, so it is naturally already pinned first) with a live-
+ticking duration for the in-progress session and destination chips
+(provider display name + a coarse outcome badge - "live" while open,
+otherwise the backend's own closed-enum outcome, never engagement
+content) below it, plus a `RetentionSettings` panel (a day-count
+`SelectInput` and a "Clear history" button behind `ConfirmDialog`,
+mirroring the exact destructive-confirmation pattern
+`BackupRestorePanel` established for Stage 23 this same session).
+Honest empty state on a fresh install/after Clear history, matching
+docs/stream-session-history.md §7.
+
+`i18n/resources/{en,pl}/history.json` (new namespace, registered in
+`i18n/config.ts`/`i18n/resources.ts`) plus `navigation.json`'s new
+`items.history` key. The retention-day-count string needed the same
+full CLDR plural set this session's Stage 23E work already
+established the convention for (`_one`/`_other` for English, `_one`/
+`_few`/`_many`/`_other` for Polish - the resource-parity check caught
+the missing Polish `_other` immediately, exactly as it did for Stage
+23E's own backup.json).
+
+### Tests
+`pages/HistoryPage.test.tsx` (6 tests, mocking `@/api/stream-sessions`
+at the module level): an honest empty state; a closed session shows
+its destination's display name, coarse outcome, and computed duration;
+an open session shows the "in progress" badge and a live outcome
+badge with no fixed end time; a dedicated proof that no session ROW
+ever contains chat/donation-shaped text (scoped specifically to the
+row elements, since the page's own policy-disclaimer sentence
+legitimately contains the words "chat"/"donation" while explaining
+what this feature does not record - a blanket page-wide text scan
+would have falsely flagged the disclaimer itself); changing the
+retention setting calls the mutation with the selected value; Clear
+History only calls the API after the `ConfirmDialog` is explicitly
+confirmed, never on the first click.
+
+### Validation
+`npm run typecheck`, `npm run lint` (one pre-existing, unrelated
+`react-refresh` warning), `npm run i18n:check` (27 namespaces, en/pl
+parity), `npm run test` (130 files / 1549 tests), and `npm run build`
+all clean.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 24D (integration test, packaged-
+runtime extension, PRIVACY.md update, and a real content-exclusion
+proof test) per the governing task's own explicit "do not
+AskUserQuestion between substages."

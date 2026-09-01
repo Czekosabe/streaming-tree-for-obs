@@ -16,6 +16,7 @@ import { ChatPage } from '@/pages/ChatPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
 import { GoalsPage } from '@/pages/GoalsPage';
+import { HistoryPage } from '@/pages/HistoryPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { OnboardingAutoRedirect } from '@/components/onboarding/OnboardingAutoRedirect';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -60,6 +61,7 @@ export function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/about" element={<AboutLegalPage />} />
                 <Route path="/logs" element={<LogsPage />} />
+                <Route path="/history" element={<HistoryPage />} />
                 {/* No AppShell: a standalone Browser Source page, never the
                     operator dashboard's chrome - see OverlayChatPage's own
                     doc comment. */}

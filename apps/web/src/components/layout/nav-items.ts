@@ -4,6 +4,7 @@ import {
   Bell,
   Bot,
   FileText,
+  History,
   LayoutDashboard,
   MessageSquare,
   MonitorPlay,
@@ -39,4 +40,5 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/goals', labelKey: 'items.goals', icon: Target, planned: false },
   { to: '/settings', labelKey: 'items.settings', icon: Settings, planned: false },
   { to: '/logs', labelKey: 'items.logs', icon: FileText, planned: false },
+  { to: '/history', labelKey: 'items.history', icon: History, planned: false },
 ];

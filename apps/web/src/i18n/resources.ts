@@ -13,6 +13,7 @@ import enDashboard from './resources/en/dashboard.json';
 import enEngagement from './resources/en/engagement.json';
 import enErrors from './resources/en/errors.json';
 import enGoals from './resources/en/goals.json';
+import enHistory from './resources/en/history.json';
 import enLogs from './resources/en/logs.json';
 import enMetadata from './resources/en/metadata.json';
 import enMetadataPresets from './resources/en/metadataPresets.json';
@@ -39,6 +40,7 @@ import plDashboard from './resources/pl/dashboard.json';
 import plEngagement from './resources/pl/engagement.json';
 import plErrors from './resources/pl/errors.json';
 import plGoals from './resources/pl/goals.json';
+import plHistory from './resources/pl/history.json';
 import plLogs from './resources/pl/logs.json';
 import plMetadata from './resources/pl/metadata.json';
 import plMetadataPresets from './resources/pl/metadataPresets.json';
@@ -82,6 +84,7 @@ export const enResources = {
   visualTemplates: enVisualTemplates,
   audio: enAudio,
   goals: enGoals,
+  history: enHistory,
   about: enAbout,
   updates: enUpdates,
   auth: enAuth,
@@ -111,6 +114,7 @@ const plResources = {
   visualTemplates: plVisualTemplates,
   audio: plAudio,
   goals: plGoals,
+  history: plHistory,
   about: plAbout,
   updates: plUpdates,
   auth: plAuth,

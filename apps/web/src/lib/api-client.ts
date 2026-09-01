@@ -295,6 +295,14 @@ export async function apiDelete(path: string): Promise<void> {
   await send(path, { method: 'DELETE' });
 }
 
+/** DELETE with a JSON request body whose response is 204 with no body
+ * (Stage 24's "Clear history" {"confirm":true} convention, mirroring
+ * POST /api/system/shutdown's own shape for a destructive action with
+ * no other parameters). */
+export async function apiDeleteWithBody(path: string, body: unknown): Promise<void> {
+  await send(path, { method: 'DELETE', body });
+}
+
 /** POST with a request body whose response is 204 with no body (the
  * public audio ack endpoint) - apiPost always parses a JSON response,
  * which a 204 never has. */
