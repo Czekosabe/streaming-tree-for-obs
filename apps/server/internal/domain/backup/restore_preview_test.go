@@ -17,7 +17,7 @@ func newTestServiceForRestorePreview(t *testing.T) *Service {
 	if err != nil {
 		t.Fatalf("NewFileStaging() error = %v", err)
 	}
-	return NewService(Sources{}, memBlobSource{}, memBlobSource{}, staging, "0.1.0-test", "windows")
+	return NewService(Sources{}, Sinks{}, memBlobSource{}, memBlobSource{}, nil, nil, staging, nil, nil, "0.1.0-test", "windows")
 }
 
 func TestRestorePreviewSummarizesWithoutMutating(t *testing.T) {
@@ -76,7 +76,7 @@ func TestRestorePreviewStagesRawBytesForLaterCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileStaging() error = %v", err)
 	}
-	svc := NewService(Sources{}, memBlobSource{}, memBlobSource{}, staging, "0.1.0-test", "windows")
+	svc := NewService(Sources{}, Sinks{}, memBlobSource{}, memBlobSource{}, nil, nil, staging, nil, nil, "0.1.0-test", "windows")
 
 	preview, err := svc.RestorePreview(context.Background(), data)
 	if err != nil {

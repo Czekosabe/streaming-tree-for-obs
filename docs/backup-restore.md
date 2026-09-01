@@ -272,19 +272,52 @@ already-proven preview-then-commit shape exactly):
    bytes (never trusts step 3's own preview as authority, matching
    `visualpackage`'s own "actual import does not trust preview" rule) -
    existing configuration tables are cleared and every restored row
-   inserted with a freshly generated id (§4), inside one transaction.
-8. Final integrity check, then the affected runtime subsystems
-   (branch manager, MediaMTX config, alert/chat-automation in-memory
-   state) are refreshed from the newly restored configuration exactly
-   as they already refresh after any ordinary configuration write
-   today - no special restart mechanism invented if the existing
-   config-write reload path already covers it; audited per-domain
-   during 23D.
+   inserted with a freshly generated id (§4). This is **not** one
+   single database transaction spanning all ~15 domains - restore
+   operates at the repository layer against each domain's own existing
+   `Create`/`Delete` methods in a fixed, dependency-respecting order
+   (children before parents on clear; parents before children on
+   insert, with a two-pass patch for dashboard-widget cross-references
+   that cannot be known until every sibling has its new id), the same
+   honest tradeoff `internal/userdatapurge`'s own cross-domain sweep
+   already makes. Recoverability does not depend on transactional
+   atomicity: if step 7 fails partway, the safety snapshot from step 5
+   is still there, and restoring it runs this exact same clear-then-
+   insert flow again, which self-heals a partial state regardless of
+   where the previous attempt stopped.
+8. **Restart required.** The 23D per-domain audit (branch manager,
+   `chatautomation.Manager`, `alerts.Manager`, `account.Service`'s
+   engagement-connector-teardown hooks, `donationsource.Service`'s
+   equivalent hook) found that `branch.Manager` and every plain CRUD
+   domain (`platform`, `output`, `goals`, `visualdesign`, ...) are
+   read-through-safe - no config-write reload path exists to bypass in
+   the first place. But `chatautomation.Manager` and `alerts.Manager`
+   each load their working scheduler/rule state exactly once in
+   `Start()` and are otherwise only ever refreshed through their own
+   Service-layer mutating methods (which restore's direct-repository
+   writes deliberately do not call, per this section's own step 7
+   rationale) - so a restored chat-automation schedule/command or
+   alert profile/rule sits correctly in the database but will not
+   actually run until the process restarts. Likewise, clearing
+   existing connected accounts/donation sources at the repository
+   layer skips `account.Service`'s/`donationsource.Service`'s
+   `OnAccountRemoved`/`OnSourceRemoved` hooks that stop and tear down
+   the Twitch/YouTube/StreamElements engagement connectors for a
+   deleted row, which would otherwise keep running against a now-
+   nonexistent id until restart. Rather than reimplement each
+   manager's own internal reload logic a second time outside its
+   Service (a real risk of subtly-wrong partial state), `Restore`
+   reports `RestartRequired: true` unconditionally, and 23E's UI must
+   tell the operator to restart Streaming Tree immediately after a
+   restore completes. This is an honest, bounded scope decision, not
+   an oversight: it is documented here specifically because it is a
+   real behavior a user could otherwise be surprised by.
 
 If restore fails before step 7 commits, current configuration is
 provably untouched (nothing was written). If it fails during step 7,
 the safety snapshot from step 5 restores the pre-restore state through
-the same restore code path, recursively.
+the same restore code path, recursively - itself also followed by a
+restart, per step 8.
 
 ## 8. Connected accounts / stream keys / donation sources
 
@@ -314,6 +347,20 @@ mechanism needed, only correct route placement.
 
 ## 10. HTTP architecture
 
+Routes (`apps/server/internal/httpapi/backup.go`):
+
+- `POST /api/backup/export` - streams a fresh backup package.
+- `POST /api/backup/restore/preview` - validates an uploaded package
+  and stages it, returning a bounded summary + token.
+- `DELETE /api/backup/restore/preview/{token}` - discards a staged
+  preview without committing it.
+- `POST /api/backup/restore/commit/{token}` - the destructive commit
+  step (§7 steps 5-8), re-validating the same staged bytes from
+  scratch. A distinct `commit` literal segment (rather than
+  `/api/backup/restore/{token}`) is required so this pattern cannot
+  ambiguously overlap the `restore/preview` routes under Go's
+  `net/http.ServeMux` pattern-conflict rules.
+
 Reuses the exact download/upload shape `visualtemplate`/`visualpackage`
 already established:
 
@@ -337,8 +384,10 @@ already established:
   and package writer, reusing `visualpackage`'s archive primitives.
 - **23C** - package reader/validator + `RestorePreview` (staging,
   bounded summary, no mutation).
-- **23D** - atomic restore commit: id remapping (§4), safety snapshot,
-  streaming-active guard, transactional replace, runtime refresh.
+- **23D** - restore commit: id remapping (§4), safety snapshot,
+  streaming-active guard, repository-layer clear-and-replace (not one
+  database transaction - see §7 step 7), runtime-cache audit and the
+  resulting `RestartRequired` contract (§7 step 8).
 - **23E** - Settings UI: Backup/Restore panel, preview screen,
   destructive-restore confirmation, restore-complete summary
   (needs-attention list).

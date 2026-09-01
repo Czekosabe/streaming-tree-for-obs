@@ -1149,41 +1149,80 @@ func run() error {
 	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
 
 	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
+	// branchStreamingGuard adapts the SAME "is a broadcast active" rule
+	// the application updater already uses (updater.StreamingActive) -
+	// never a second definition of "active" - into backup.StreamingGuard.
+	backupStreamingGuard := branchStreamingGuardAdapter{branches: branchManager}
+
 	// backupStaging holds an uploaded package's raw bytes between
-	// RestorePreview and Restore - its own directory, never the
-	// directory a real backup file the operator saved lives in, and
-	// never reachable from any public/overlay route (docs/backup-
-	// restore.md §28).
+	// RestorePreview and Restore; backupSafetySnapshots holds the
+	// single most recent pre-restore rollback snapshot (§7/§19) - both
+	// their own directories, never the directory a real backup file the
+	// operator saved lives in, and never reachable from any public/
+	// overlay route (§28).
 	backupStaging, err := backupdomain.NewFileStaging(filepath.Join(cfg.DataDir, "backup-staging"), backupdomain.PreviewTTL)
 	if err != nil {
 		return err
 	}
+	backupSafetySnapshots, err := backupdomain.NewFileSafetySnapshotStore(filepath.Join(cfg.DataDir, "backup-safety"))
+	if err != nil {
+		return err
+	}
 
-	// Every Sources field below is a FRESH repository instance
-	// constructed directly against db.DB, exactly like
-	// internal/userdatapurge's own cross-domain sweep already does
+	// Every repository below is constructed once and reused for BOTH
+	// Sources (read) and Sinks (write) - the same fresh instance
 	// (never through another domain's own Service, which may apply
-	// business-rule side effects a read-only export must not trigger).
-	backupService := backupdomain.NewService(backupdomain.Sources{
-		Platforms:          sqlite.NewPlatformRepository(db.DB),
-		Output:             sqlite.NewOutputRepository(db.DB),
-		Accounts:           sqlite.NewAccountRepository(db.DB),
-		YouTubeRegion:      sqlite.NewYouTubeRegionRepository(db.DB),
-		EngagementSettings: sqlite.NewEngagementSettingsRepository(db.DB),
-		OperatorChatPrefs:  sqlite.NewOperatorChatPrefsRepository(db.DB),
-		ChatOverlays:       sqlite.NewChatOverlayRepository(db.DB),
-		ChatAutomation:     sqlite.NewChatAutomationRepository(db.DB),
-		Alerts:             sqlite.NewAlertsRepository(db.DB),
-		VisualDesigns:      sqlite.NewVisualDesignRepository(db.DB),
-		VisualTemplates:    sqlite.NewVisualTemplateRepository(db.DB),
-		VisualAssets:       sqlite.NewVisualAssetRepository(db.DB),
-		AudioAssets:        sqlite.NewAudioAssetRepository(db.DB),
-		AudioSettings:      sqlite.NewAudioSettingsRepository(db.DB),
-		Goals:              sqlite.NewGoalsRepository(db.DB),
-		MetadataPresets:    sqlite.NewMetadataPresetRepository(db.DB),
-		DonationSources:    sqlite.NewDonationSourceRepository(db.DB),
-		UpdatePreferences:  sqlite.NewUpdateSettingsRepository(db.DB),
-	}, visualAssetStore, audioAssetStore, backupStaging, buildinfo.EffectiveVersion(), runtime.GOOS)
+	// business-rule side effects an already-validated restore must
+	// not trigger), mirroring internal/userdatapurge's own cross-
+	// domain sweep.
+	backupPlatforms := sqlite.NewPlatformRepository(db.DB)
+	backupAccounts := sqlite.NewAccountRepository(db.DB)
+	backupYouTubeRegion := sqlite.NewYouTubeRegionRepository(db.DB)
+	backupEngagementSettings := sqlite.NewEngagementSettingsRepository(db.DB)
+	backupOperatorChatPrefs := sqlite.NewOperatorChatPrefsRepository(db.DB)
+	backupChatOverlays := sqlite.NewChatOverlayRepository(db.DB)
+	backupChatAutomation := sqlite.NewChatAutomationRepository(db.DB)
+	backupAlerts := sqlite.NewAlertsRepository(db.DB)
+	backupVisualDesigns := sqlite.NewVisualDesignRepository(db.DB)
+	backupVisualTemplates := sqlite.NewVisualTemplateRepository(db.DB)
+	backupVisualAssets := sqlite.NewVisualAssetRepository(db.DB)
+	backupAudioAssets := sqlite.NewAudioAssetRepository(db.DB)
+	backupAudioSettings := sqlite.NewAudioSettingsRepository(db.DB)
+	backupGoals := sqlite.NewGoalsRepository(db.DB)
+	backupMetadataPresets := sqlite.NewMetadataPresetRepository(db.DB)
+	backupDonationSources := sqlite.NewDonationSourceRepository(db.DB)
+	backupUpdatePreferences := sqlite.NewUpdateSettingsRepository(db.DB)
+
+	backupSources := backupdomain.Sources{
+		Platforms: backupPlatforms, Output: outputService, Accounts: backupAccounts,
+		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
+		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
+		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
+		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
+		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
+		AudioSettings: backupAudioSettings, Goals: backupGoals,
+		MetadataPresets: backupMetadataPresets, DonationSources: backupDonationSources,
+		UpdatePreferences: backupUpdatePreferences,
+	}
+	backupSinks := backupdomain.Sinks{
+		Platforms: backupPlatforms, Output: outputService, Accounts: backupAccounts,
+		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
+		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
+		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
+		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
+		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
+		AudioSettings: backupAudioSettings, Goals: backupGoals,
+		MetadataPresets: backupMetadataPresets, DonationSources: backupDonationSources,
+		UpdatePreferences: backupUpdatePreferences,
+	}
+
+	backupService := backupdomain.NewService(
+		backupSources, backupSinks,
+		visualAssetStore, audioAssetStore, // AssetBlobSource (Open)
+		visualAssetStore, audioAssetStore, // BlobWriter (WriteBlob) - the same *visualasset.FileStore satisfies both
+		backupStaging, backupSafetySnapshots, backupStreamingGuard,
+		buildinfo.EffectiveVersion(), runtime.GOOS,
+	)
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,
@@ -1507,4 +1546,21 @@ func run() error {
 		logger.Info("server stopped cleanly")
 		return nil
 	}
+}
+
+// branchStreamingGuardAdapter implements backup.StreamingGuard by
+// reusing the exact same "is a broadcast active" rule the application
+// updater already uses (updater.StreamingActive) - never a second,
+// possibly-diverging definition of "active" (docs/backup-restore.md
+// §7 step 6).
+type branchStreamingGuardAdapter struct {
+	branches *branch.Manager
+}
+
+func (a branchStreamingGuardAdapter) Active(ctx context.Context) (bool, error) {
+	snapshots, err := a.branches.Snapshot(ctx)
+	if err != nil {
+		return false, err
+	}
+	return updater.StreamingActive(snapshots), nil
 }

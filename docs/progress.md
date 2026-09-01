@@ -49507,3 +49507,166 @@ remapping across every domain, the pre-restore safety snapshot, the
 streaming-active guard, and the atomic transactional apply) per the
 governing task's own explicit "do not AskUserQuestion between
 substages."
+
+## 2026-09-01 — feat(server): Stage 23D - restore commit, id remapping, safety snapshot, and the RestartRequired contract
+
+### What changed
+`internal/domain/backup/restore.go`: `Sinks`, the write-only mirror of
+23A/23B's own `Sources` - one narrow per-domain interface bundle
+(`Platforms`, `Output`, `Accounts`, `YouTubeRegion`,
+`EngagementSettings`, `OperatorChatPrefs`, `ChatOverlays`,
+`ChatAutomation`, `Alerts`, `VisualDesigns`, `VisualTemplates`,
+`VisualAssets`, `AudioAssets`, `AudioSettings`, `Goals`,
+`MetadataPresets`, `DonationSources`, `UpdatePreferences`), each
+satisfied directly by the same repository types `Sources` already
+uses - restore never goes through another domain's own Service, for
+the same reason `internal/userdatapurge`'s cross-domain sweep already
+doesn't (a restored row was already validated once at original
+creation and is re-validated structurally by `ReadArchive`; a bulk
+replace has no business asking a Service to re-run rules meant for one
+interactive write at a time). `idMap`, a flat `map[string]string`
+recording every backup-supplied id's freshly-minted local replacement
+across every domain, with `remap`/`remapAll` helpers that leave an
+unresolvable reference as-is rather than silently dropping it. This is
+the actual mechanism behind §4's ID-remapping restore-identity
+strategy: `internal/secrets.BuildKey` keys every object-scoped secret
+by its owning object's own persisted id, so reusing a backup-supplied
+id as a literal local primary key would let a crafted or coincidental
+collision resolve a restored object to an unrelated pre-existing local
+secret. Minting a fresh id for *every* restored object, uniformly,
+closes that off by construction instead of as a per-domain special
+case. `BlobWriter`, the write-side mirror of 23B's `AssetBlobSource`.
+
+`internal/domain/backup/restore_commit.go`: `clearExisting` removes
+every existing row across all ~15 included domains in a fixed,
+dependency-respecting order (visual designs and dashboard widget
+profiles before the goals/templates they reference, since
+`DeleteGoal`/template deletion refuse while referenced; everything
+else child-before-parent) via a small generic `deleteAll[T any]`
+helper. `applyConfig` is the real insertion pass: it walks the
+restored `Config` domain by domain, mints a fresh id for every object
+via each domain's own existing `NewID`-equivalent generator, remaps
+every cross-domain reference through `idMap` (platform ids on output
+settings/accounts/alert rules, account ids on chat-overlay/operator-
+chat-prefs links, and so on), and forces every restored connected
+account's status to `StatusReconnectRequired` and every donation
+source's `enabled` to `false` regardless of what the backup itself
+recorded - never represented as healthy merely because the row exists.
+Dashboard widget profiles get a genuine two-pass treatment: pass one
+creates every profile with `Children` cleared (since a child references
+a *sibling* widget profile that may not have its new id yet at
+insertion time, because export order is created-at order, not
+dependency order); pass two remaps each recorded profile's `Children`
+and commits them via a new `Sinks.Goals.UpdateWidgetProfile` full-
+replacement method, once every sibling has a real local id.
+
+`internal/domain/backup/safety_snapshot.go`: `SafetySnapshotStore` and
+`FileSafetySnapshotStore` - a single fixed-path file
+(`pre-restore-safety-snapshot.streaming-tree-backup`, write-then-
+rename), holding exactly one slot, silently replaced on every restore.
+It stores a real backup package (built through the same `Export`/
+`WriteArchive` this package's own `Export` use case already uses) of
+the CURRENT configuration, taken immediately before every restore's
+clear phase - recovering from a bad restore is running the whole
+restore flow again with the snapshot as the source package, not a
+second rollback code path.
+
+`internal/domain/backup/service.go`: `StreamingGuard` (reuses
+`updater.StreamingActive` verbatim via a small caller-supplied
+adapter - never a second definition of "is a broadcast active") and
+`Service.Restore(ctx, token)`, the full commit orchestration: reload
+and re-validate the staged bytes from scratch (never trusting
+`RestorePreview`'s own earlier parse) → refuse with
+`ErrStreamingActive` if streaming is active (nothing touched) → take
+the pre-restore safety snapshot → `clearExisting` → `applyConfig` →
+discard the staged upload.
+
+A mid-implementation audit (dispatched to an Explore subagent, since
+this needed a systematic sweep across every affected package rather
+than spot-checks) of every domain's Service layer for in-memory state
+that a direct-repository restore could leave stale found: `platform`,
+`output`, `donationsource` (repo-wise), `updatersettings`,
+`visualdesign`, `goals`, and `branch.Manager` are read-through-safe
+(no cache; every read goes straight to the database, and `Restore`
+already refuses while a broadcast session could exist). But
+`chatautomation.Manager` and `alerts.Manager` each load their working
+scheduler/rule state exactly once in `Start()` and are otherwise only
+refreshed through their own Service-layer mutating methods - which
+restore's direct-repository writes deliberately never call. Likewise,
+`account.Service`'s `OnAccountRemoved` and `donationsource.Service`'s
+`OnSourceRemoved` hooks (which stop and tear down the Twitch/YouTube/
+StreamElements engagement connectors for a deleted row) are skipped
+when `clearExisting` deletes accounts/donation sources at the
+repository layer. Reimplementing each manager's own reload logic a
+second time outside its Service would risk subtly-wrong partial state
+for marginal benefit, so `RestoreResult` gained a `RestartRequired`
+field, always `true` on a successful restore - an honest signal
+(documented in `docs/backup-restore.md` §7 step 8) rather than a claim
+of a live, seamless refresh that does not actually happen for every
+domain today. 23E's UI must tell the operator to restart immediately
+after a restore completes.
+
+`internal/httpapi/backup.go` gains `Restore` on the `BackupService`
+interface and `POST /api/backup/restore/commit/{token}` - a distinct
+`commit` literal path segment rather than
+`/api/backup/restore/{token}`, since the latter panics at mux-
+registration time with an ambiguous-overlap conflict against the
+existing catch-all `/api/backup/restore/preview` 405 handler (which,
+registered with no method prefix, matches every method for that exact
+path; Go's `net/http.ServeMux` refuses to register two patterns where
+neither is strictly more specific than the other in both the method
+and path dimensions at once). `restoreResultResponse` mirrors
+`RestoreResult` including `restartRequired`; `writeBackupError` already
+covered `ErrStreamingActive`/`ErrNotFound` from 23C, so no new mapping
+was needed.
+
+`cmd/server/main.go`: every backup-domain repository is now
+constructed once and reused for both `Sources` (read) and `Sinks`
+(write) - the same instances, mirroring `internal/userdatapurge`'s own
+pattern. `Sinks.Output` is wired to the already-existing `outputService`
+(not a bare repository) since `output.Repository.Update` takes an
+extra `updatedAt` parameter the `Sinks.Output` interface's contract
+doesn't carry - `output.Service.Update` computes it and is a thin,
+harmless wrapper. `branchStreamingGuardAdapter` wraps
+`branch.Manager.Snapshot` + `updater.StreamingActive` into
+`backup.StreamingGuard`. `visualAssetStore`/`audioAssetStore` (both
+already-existing `*visualasset.FileStore`/`*audioasset.FileStore`-
+equivalent instances) satisfy both `AssetBlobSource` (`Open`) and the
+new `BlobWriter` (`WriteBlob`) simultaneously, so no new blob-handling
+type was needed.
+
+### Tests
+`restore_commit_test.go`: a `fakeSinks` covering every included domain
+(paired with `sinks()`/`sources()` builders so the same underlying
+state backs both interfaces) proves `applyConfig` correctly remaps
+platform ids, account ids, and cross-domain references (chat-overlay/
+operator-chat-prefs account links, alert rule `Accounts`/`ProfileID`),
+and that a restored account's status is forced to
+`StatusReconnectRequired`; `TestClearExistingRemovesEveryIncludedDomain`
+proves every domain is actually emptied. `service_restore_test.go`
+(4 tests): a full preview-then-restore round trip ends with a fresh
+local id (never the backup-supplied one) and an empty staging store;
+restore refuses with `ErrStreamingActive` while streaming is active
+and leaves the existing configuration provably untouched; a successful
+restore saves a safety snapshot that, read back through `ReadArchive`,
+contains the PRE-restore configuration; an unknown token is
+`ErrNotFound`. `restore_preview_test.go`'s existing tests were updated
+for `NewService`'s grown 11-parameter signature.
+`internal/httpapi/backup_test.go` gains 5 more tests: a successful
+commit restores the named token and returns the summary including
+`restartRequired: true`, an unknown token is 404, streaming-active is
+409, and the wrong method/an unexpected body are both rejected.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean across the whole backend, including all 32 tests
+now in `internal/domain/backup` and all 15 backup-related tests in
+`internal/httpapi`.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 23E (Settings-area Backup/Restore
+UI: preview screen, destructive-restore confirmation, the
+`RestartRequired` restart prompt, restore-complete summary) per the
+governing task's own explicit "do not AskUserQuestion between
+substages."

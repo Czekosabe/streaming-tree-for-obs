@@ -17,6 +17,7 @@ type BackupService interface {
 	Export(ctx context.Context) ([]byte, error)
 	RestorePreview(ctx context.Context, data []byte) (backup.PreviewSession, error)
 	CancelPreview(token string)
+	Restore(ctx context.Context, token string) (backup.RestoreResult, error)
 }
 
 // registerBackupRoutes wires the Stage 23 configuration backup API
@@ -35,6 +36,21 @@ func registerBackupRoutes(mux *http.ServeMux, logger *slog.Logger, service Backu
 
 	mux.HandleFunc("DELETE /api/backup/restore/preview/{token}", handleCancelRestorePreview(logger, service))
 	mux.HandleFunc("/api/backup/restore/preview/{token}", methodNotAllowed(logger, http.MethodDelete))
+
+	// The destructive commit step (docs/backup-restore.md §7): re-
+	// validates the SAME staged bytes RestorePreview already validated,
+	// takes a pre-restore safety snapshot, clears, and re-inserts with
+	// fresh local identities. Never reachable without first calling
+	// RestorePreview to obtain token - there is no way to POST raw
+	// archive bytes directly to this route.
+	//
+	// A distinct "commit" literal segment (rather than
+	// /api/backup/restore/{token}) avoids an ambiguous-overlap panic
+	// against the catch-all /api/backup/restore/preview registration
+	// above, which (having no method prefix) matches every method for
+	// that exact path.
+	mux.HandleFunc("POST /api/backup/restore/commit/{token}", handleRestoreCommit(logger, service))
+	mux.HandleFunc("/api/backup/restore/commit/{token}", methodNotAllowed(logger, http.MethodPost))
 }
 
 func handleExportBackup(logger *slog.Logger, service BackupService) http.HandlerFunc {
@@ -134,6 +150,38 @@ func handleCancelRestorePreview(logger *slog.Logger, service BackupService) http
 		}
 		service.CancelPreview(r.PathValue("token"))
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+type restoreResultResponse struct {
+	Counts                            backup.ObjectCounts `json:"counts"`
+	ConnectedAccountsRequireReconnect int                 `json:"connectedAccountsRequireReconnect"`
+	DestinationsNeedStreamKey         int                 `json:"destinationsNeedStreamKey"`
+	DonationSourcesNeedCredential     int                 `json:"donationSourcesNeedCredential"`
+	RestartRequired                   bool                `json:"restartRequired"`
+}
+
+func toRestoreResultResponse(res backup.RestoreResult) restoreResultResponse {
+	return restoreResultResponse{
+		Counts:                            res.Counts,
+		ConnectedAccountsRequireReconnect: res.ConnectedAccountsRequireReconnect,
+		DestinationsNeedStreamKey:         res.DestinationsNeedStreamKey,
+		DonationSourcesNeedCredential:     res.DonationSourcesNeedCredential,
+		RestartRequired:                   res.RestartRequired,
+	}
+}
+
+func handleRestoreCommit(logger *slog.Logger, service BackupService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireEmptyBody(w, r, logger) {
+			return
+		}
+		result, err := service.Restore(r.Context(), r.PathValue("token"))
+		if err != nil {
+			writeBackupError(w, logger, r, err)
+			return
+		}
+		writeJSON(w, logger, http.StatusOK, toRestoreResultResponse(result))
 	}
 }
 
