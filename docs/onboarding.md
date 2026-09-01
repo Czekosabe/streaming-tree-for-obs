@@ -25,7 +25,10 @@ Stage 21 does not change Stage 20's own status; see §0 below.
     Dashboard banner, auto-redirect, installer coherence, localization
     (`docs/progress.md`, `feat(web): Stage 21B`).
 - **21C** (readiness + OBS Connection Assistant + destinations +
-  accounts steps): Planned.
+  accounts steps): Completed - `ReadinessStep`/`ObsConnectionStep`/
+  `DestinationsStep`/`AccountsStep` inserted into the step order,
+  reusing existing real state end-to-end (`docs/progress.md`,
+  `feat(web): Stage 21C`).
 - **21D** (creator tools + final readiness summary): Planned.
 - **21E** (hardening: full test matrix, packaged-runtime proof,
   accessibility/responsive verification, documentation close-out):

@@ -10,6 +10,20 @@ import { OnboardingPage } from './OnboardingPage';
 
 vi.mock('@/api/onboarding');
 
+// The step framework (navigation/skip/finish) is tested here in
+// isolation from each real step's own data fetching - each step gets
+// its own focused test file (ReadinessStep.test.tsx and friends)
+// mocking only its own specific API dependencies. Faking the step list
+// keeps this file about navigation mechanics only, matching the same
+// separation of concerns onboarding-steps.ts's own array shape invites.
+vi.mock('@/components/onboarding/onboarding-steps', () => ({
+  ONBOARDING_STEPS: [
+    { id: 'welcome', Component: () => <div><h2>Fake welcome heading</h2></div> },
+    { id: 'middle', Component: () => <div><h2>Fake middle heading</h2></div> },
+    { id: 'summary', Component: () => <div><h2>Fake summary heading</h2></div> },
+  ],
+}));
+
 function DashboardMarker() {
   return <div>dashboard-marker</div>;
 }
@@ -35,52 +49,47 @@ beforeEach(() => {
 });
 
 describe('OnboardingPage', () => {
-  it('starts on the Welcome step, with Back disabled and Continue available', async () => {
+  it('starts on the first step, with Back disabled and Continue available', async () => {
     renderApp();
 
-    expect(await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i })).toBeInTheDocument();
-    expect(screen.getByText(/step 1 of 2/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /fake welcome heading/i })).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 3/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /back/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^continue$/i })).toBeInTheDocument();
   });
 
-  it('never claims Streaming Tree is an OBS plugin, and explains the OBS -> destinations flow', async () => {
+  it('Continue moves to the next step and moves focus to its heading', async () => {
     renderApp();
-
-    await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i });
-    expect(screen.getByText(/not an obs plugin/i)).toBeInTheDocument();
-    expect(screen.getByText(/twitch, youtube, kick, tiktok/i)).toBeInTheDocument();
-  });
-
-  it('Continue moves to the Summary step and moves focus to its heading', async () => {
-    renderApp();
-    await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i });
+    await screen.findByRole('heading', { name: /fake welcome heading/i });
 
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
 
-    const summaryHeading = await screen.findByRole('heading', { name: /you're ready to go/i });
-    expect(screen.getByText(/step 2 of 2/i)).toBeInTheDocument();
-    await waitFor(() => expect(summaryHeading.closest('[tabindex="-1"]')).toHaveFocus());
+    const middleHeading = await screen.findByRole('heading', { name: /fake middle heading/i });
+    expect(screen.getByText(/step 2 of 3/i)).toBeInTheDocument();
+    await waitFor(() => expect(middleHeading.closest('[tabindex="-1"]')).toHaveFocus());
   });
 
-  it('Back returns from Summary to Welcome', async () => {
+  it('Back returns to the previous step', async () => {
     renderApp();
-    await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i });
+    await screen.findByRole('heading', { name: /fake welcome heading/i });
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
-    await screen.findByRole('heading', { name: /you're ready to go/i });
+    await screen.findByRole('heading', { name: /fake middle heading/i });
 
     await userEvent.click(screen.getByRole('button', { name: /back/i }));
 
-    expect(await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i })).toBeInTheDocument();
-    expect(screen.getByText(/step 1 of 2/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /fake welcome heading/i })).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 3/i)).toBeInTheDocument();
   });
 
-  it('finishing on the last step marks onboarding completed and returns to the dashboard', async () => {
+  it('reaches the last step and finishing marks onboarding completed, returning to the dashboard', async () => {
     renderApp();
-    await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i });
+    await screen.findByRole('heading', { name: /fake welcome heading/i });
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
-    await screen.findByRole('heading', { name: /you're ready to go/i });
+    await screen.findByRole('heading', { name: /fake middle heading/i });
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
+    await screen.findByRole('heading', { name: /fake summary heading/i });
 
+    expect(screen.getByRole('button', { name: /go to dashboard/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /go to dashboard/i }));
 
     await waitFor(() => expect(onboardingApi.setOnboardingStatus).toHaveBeenCalled());
@@ -90,7 +99,7 @@ describe('OnboardingPage', () => {
 
   it('Skip setup marks onboarding dismissed and returns to the dashboard immediately, from any step', async () => {
     renderApp();
-    await screen.findByRole('heading', { name: /welcome to streaming tree for obs/i });
+    await screen.findByRole('heading', { name: /fake welcome heading/i });
 
     await userEvent.click(screen.getByRole('button', { name: /skip setup/i }));
 

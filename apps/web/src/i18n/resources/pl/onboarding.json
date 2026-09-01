@@ -15,6 +15,37 @@
     "standalone": "Streaming Tree to samodzielna aplikacja towarzysząca, a nie wtyczka do OBS. Nigdy nie modyfikuje instalacji OBS ani jego plików konfiguracyjnych - OBS po prostu kieruje jedno wyjście do niej, tak jak do dowolnego innego celu transmisji.",
     "expectation": "Ten krótki asystent pokazuje, co warto sprawdzić i gdzie to znaleźć. Możesz go w każdej chwili pominąć i wrócić do niego później z Ustawień."
   },
+  "readiness": {
+    "heading": "Lokalny silnik transmisji",
+    "body": "Streaming Tree potrzebuje lokalnego silnika odbioru i zgodnego FFmpeg, aby faktycznie nadawać. Oto co jest gotowe w tej chwili."
+  },
+  "obsConnection": {
+    "heading": "Połącz OBS",
+    "body": "Skieruj OBS na Streaming Tree za pomocą poniższych wartości.",
+    "steps": {
+      "openSettings": "W OBS otwórz Ustawienia.",
+      "selectStream": "Przejdź do zakładki Stream (Transmisja).",
+      "setCustom": "Ustaw Usługę na Niestandardowe...",
+      "pasteValues": "Wklej poniższe wartości Serwera i Klucza transmisji.",
+      "apply": "Kliknij Zastosuj."
+    }
+  },
+  "destinations": {
+    "heading": "Cele",
+    "body": "Cele to miejsca, do których wysyłana jest Twoja transmisja - Twitch, YouTube, Kick, TikTok. Nie musisz mieć żadnego skonfigurowanego, aby ukończyć tego asystenta.",
+    "empty": "Nie skonfigurowano jeszcze żadnego celu.",
+    "enabled": "Włączony",
+    "disabled": "Wyłączony",
+    "addAction": "Dodaj cel"
+  },
+  "accounts": {
+    "heading": "Połączone konta",
+    "distinction": "Połączone konto różni się od celu: cel to miejsce, do którego wysyłane jest wideo, a połączone konto umożliwia czat, zdarzenia i inne funkcje związane z kontem. Nie potrzebujesz go, aby nadawać.",
+    "empty": "Nie połączono jeszcze żadnego konta.",
+    "connected": "Połączono",
+    "reconnectRequired": "Wymagane ponowne połączenie",
+    "manageAction": "Zarządzaj połączonymi kontami"
+  },
   "summary": {
     "heading": "Wszystko gotowe",
     "body": "Konfiguracja została zakończona. W każdej chwili możesz wrócić do tego asystenta z Ustawień, jeśli będziesz potrzebować przypomnienia."

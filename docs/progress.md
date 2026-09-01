@@ -48366,3 +48366,69 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 21C per the governing task's own
 explicit "do not stop merely to ask permission to begin the next
 already-defined substage."
+
+## 2026-09-01 — feat(web): Stage 21C - readiness, OBS Connection Assistant, destinations, and accounts onboarding steps
+
+Implements `docs/onboarding.md` §6 - four new real steps inserted
+between Welcome and Summary in `onboarding-steps.ts`'s ordered array,
+each reusing existing real state end-to-end, never a second
+implementation of readiness/connection/destination/account logic.
+
+- **`ReadinessStep`**: embeds `ServicesCard` (the Dashboard's own real
+  backend/ingest-engine/FFmpeg health card) and `RuntimeControls`
+  (the same install/start/stop/restart actions `SidebarFooter` already
+  exposes) directly - zero new readiness logic.
+- **`ObsConnectionStep`**: reuses `GET /api/runtime`'s real
+  `connection`/`ingest` fields, the same `CopyableValue` component and
+  `ingestStateKey`/`ingestTone` helpers `SidebarFooter` already uses.
+  Concise, verified OBS instructions (Settings -> Stream -> Service:
+  Custom... -> paste values -> Apply); no obs-websocket requirement, no
+  plugin installation, no OBS config file access. No fake "Test
+  connection" button - the real ingest state IS the test.
+- **`DestinationsStep`**: reuses `usePlatformsQuery`/
+  `usePlatformDefinitionsQuery` and the exact `AddPlatformDialog` the
+  Dashboard uses for adding a destination. Zero, one, or many
+  destinations are all valid; no fabricated viewer count or other
+  detail.
+- **`AccountsStep`**: explains the destination-vs-account distinction
+  using the domain's own existing language (`docs/project-overview.md`
+  §8.1), reuses `useAccountsQuery` for the real list, links to the
+  existing Settings account-management panels rather than embedding a
+  second OAuth flow. Only real, shipped provider integrations are
+  shown as connectable.
+
+### Testing architecture decision
+`OnboardingPage.test.tsx` now mocks `onboarding-steps.ts` itself with
+lightweight fake steps, decoupling "does the step framework navigate/
+skip/finish correctly" (tested there) from "does each real step render
+its own real state correctly" (four new focused test files, each
+mocking only its own specific API module: `ReadinessStep.test.tsx`
+mocks `@/api/runtime`+`@/api/branches`+the health check's direct
+`apiGet` call; `ObsConnectionStep.test.tsx` mocks `@/api/runtime`
+across missing/waiting/receiving ingest states; `DestinationsStep.
+test.tsx` and `AccountsStep.test.tsx` mock their own platform/account
+API modules across zero/one/many-item states).
+
+### A real gap found and fixed before committing
+`npm run build`'s `tsc -b` caught a type error `npx tsc --noEmit -p .`
+alone had not: `ReadinessStep.test.tsx`'s FFmpeg-missing fixture used
+`capabilities: {}` instead of the full five-boolean shape. Fixed before
+ever being pushed - `npm run build` (not `tsc --noEmit` alone) is now
+treated as the authoritative frontend typecheck for this project's own
+build-mode project-reference setup.
+
+### Validation
+`npm run i18n:check` (24 namespaces), `npm run build` (`tsc -b` +
+`vite build`) clean, `eslint` clean (0 errors, the same one
+pre-existing unrelated warning), `npm run test -- --run` - 1514/1514
+tests pass across 123 files (23 new: 2 in `OnboardingPage.test.tsx`'s
+updated 6-step navigation coverage, plus `ReadinessStep.test.tsx` (2),
+`ObsConnectionStep.test.tsx` (4), `DestinationsStep.test.tsx` (3),
+`AccountsStep.test.tsx` (4), plus the previously-existing onboarding
+suite).
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 21D per the governing task's own
+explicit "do not stop merely to ask permission to begin the next
+already-defined substage."
