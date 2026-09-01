@@ -38,6 +38,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	domaingoals "github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
@@ -1135,6 +1136,12 @@ func run() error {
 	// (not this conditional) are what actually prevent any real GitHub
 	// traffic or install action outside a packaged release build.
 	updateSettingsService := updatersettings.NewService(sqlite.NewUpdateSettingsRepository(db.DB), nil)
+
+	// Stage 21: the first-run onboarding-state preference
+	// (docs/onboarding.md §4). Wired unconditionally, exactly like every
+	// other singleton-preference domain in this codebase - it is UI-flow
+	// state, not a release-build-gated capability.
+	onboardingService := onboarding.NewService(sqlite.NewOnboardingRepository(db.DB), nil)
 	updateManager := updater.NewManager(updater.Options{
 		Client:            newUpdaterClient(buildinfo.EffectiveVersion()),
 		Settings:          updateSettingsService,
@@ -1203,6 +1210,7 @@ func run() error {
 		Resources:       resourcesCollector,
 		Platforms:       platformService,
 		Runtime:         supervisor,
+		Onboarding:      onboardingService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,

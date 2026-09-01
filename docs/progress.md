@@ -48190,3 +48190,69 @@ defined substage."
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made - Stage 21 itself, and this exact substage decomposition, was
 already authorized and specified by the governing instruction.
+
+## 2026-09-01 — feat(server,web): Stage 21A - persisted first-run onboarding state
+
+Implements `docs/onboarding.md` §4 - the backend domain, migration, API,
+and frontend data layer for the Stage 21 onboarding-state preference.
+No UI yet (21B).
+
+### Backend
+`internal/domain/onboarding` (`model.go`/`errors.go`/`repository.go`/
+`service.go`/`service_test.go`): a `Status` enum (`pending`/
+`completed`/`dismissed` - one value, not independent booleans, matching
+`mediamtx.ProcessState`/`branch.State`'s own established pattern) plus
+a `SchemaVersion` for a future deliberate re-offer without nagging
+already-onboarded operators. `internal/storage/sqlite/
+onboarding_repository.go` mirrors `updatersettings_repository.go`'s
+exact singleton-row shape. Migration `0029_onboarding_state.sql` seeds
+the initial row from a real existing-user signal computed once, in SQL:
+any connected account, a real (non-empty) configured output server, an
+enabled seed platform, or a user-created platform marks the database
+`dismissed` (available, never auto-shown); an untouched database starts
+`pending`. Wired into `main.go`/`router.go` exactly like every other
+optional service (`Options.Onboarding`, nil-gated registration).
+`GET`/`PUT /api/onboarding` mirrors `GET`/`PUT /api/updates`'s own
+versioned-response, full-replacement-write, unknown-field-rejecting
+shape.
+
+**A real correction made during implementation, not shipped wrong and
+fixed later:** the first version of the existing-user rule checked
+`platform_output_settings` for mere row existence. A real test against
+an actually-migrated database (not assumed) found this always true -
+`0003_platform_output_settings.sql` gives every platform, seeded or
+not, a default row with `server_url = ''` the moment it exists,
+specifically so "a row's mere existence never implies configuration"
+(that migration's own comment, which this implementation had not
+re-read closely enough the first time). Fixed to check `server_url <>
+''` before ever committing, with a dedicated repository test
+(`TestOnboardingMigrationRuleConfiguredOutputServerIsDismissed`)
+proving the corrected behavior and a sibling test proving the
+untouched-seed case still resolves to `pending`.
+
+### Frontend
+`api/onboarding-schemas.ts` (Zod, versioned), `api/onboarding.ts`
+(fetch functions, schema-version assertion mirroring `api/runtime.ts`),
+`hooks/use-onboarding.ts` (`useOnboardingStateQuery`/
+`useSetOnboardingStatusMutation`, the same `useQuery`/`useMutation`
+shape every other hook already uses). Not polled - this is an
+operator-driven preference, not runtime state that changes on its own.
+
+### Validation
+Backend: `gofmt -l .` clean, `go vet ./...` clean, `go build ./...`
+clean, `go test ./...` - every package passes, including the new
+`internal/domain/onboarding` and the onboarding-specific
+`internal/storage/sqlite`/`internal/httpapi` cases (fresh-database
+default, set/get round-trip, singleton-row replacement, all four
+existing-user signals individually, invalid-status rejection, unknown-
+field rejection, wrong-method rejection). Frontend: `npm run
+i18n:check` (23 namespaces, no new one needed yet - no UI in this
+substage), `tsc --noEmit` clean, `eslint` clean (0 errors, one
+pre-existing unrelated warning), `npm run test -- --run` - 1485/1485
+tests pass across 116 files, `npm run build` clean.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 21B per the governing task's own
+explicit "do not stop merely to ask permission to begin the next
+already-defined substage."

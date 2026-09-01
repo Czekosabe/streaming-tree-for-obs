@@ -228,7 +228,7 @@ SELECT 1,
     CASE WHEN EXISTS (
         SELECT 1 FROM connected_accounts
         UNION ALL
-        SELECT 1 FROM platform_output_settings
+        SELECT 1 FROM platform_output_settings WHERE server_url <> ''
         UNION ALL
         SELECT 1 FROM platforms WHERE enabled = 1
         UNION ALL
@@ -238,8 +238,21 @@ SELECT 1,
     1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
 ```
 
-Rule, stated plainly: any real prior use - a connected account, a
-configured output server, an enabled seed platform, or any
+**A real correction made during implementation, not merely
+theoretical:** the first version of this rule checked
+`platform_output_settings` for mere row existence. A real test against
+an actual freshly migrated database found every seed platform already
+has one - `0003_platform_output_settings.sql` gives every platform,
+seeded or not, a default settings row with `server_url = ''` the
+moment it exists, specifically so "a row's mere existence never
+implies configuration" (that migration's own comment). The rule now
+checks `server_url <> ''`, matching that migration's own documented
+intent exactly, confirmed by a dedicated repository test that
+configures a real, non-empty server URL and asserts the rule reacts.
+
+Rule, stated plainly: any real prior use - a connected account, an
+output server actually configured (a real, non-empty `server_url`,
+never mere row existence), an enabled seed platform, or any
 user-created platform beyond the four disabled seed rows - marks the
 database as belonging to an existing user (`dismissed`: onboarding
 stays available, never auto-shown). A database where literally nothing

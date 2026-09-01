@@ -27,6 +27,9 @@ type Options struct {
 	// Runtime serves the MediaMTX runtime API. When nil those routes are not
 	// registered.
 	Runtime RuntimeService
+	// Onboarding serves the Stage 21 first-run onboarding-state API. When
+	// nil, GET/PUT /api/onboarding is not registered.
+	Onboarding OnboardingService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -298,6 +301,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Runtime != nil {
 		registerRuntimeRoutes(mux, logger, opts.Runtime)
+	}
+
+	if opts.Onboarding != nil {
+		registerOnboardingRoutes(mux, logger, opts.Onboarding)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"
