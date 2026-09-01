@@ -1,0 +1,32 @@
+{
+  "header": {
+    "tagline": "First-run setup",
+    "skip": "Skip setup",
+    "stepIndicator": "Step {{current}} of {{total}}"
+  },
+  "nav": {
+    "back": "Back",
+    "continue": "Continue",
+    "finish": "Go to Dashboard"
+  },
+  "welcome": {
+    "heading": "Welcome to Streaming Tree for OBS",
+    "flow": "OBS sends one stream to Streaming Tree for OBS, which distributes it to your destinations - Twitch, YouTube, Kick, TikTok - and powers chat, alerts, overlays and other engagement tools alongside it.",
+    "standalone": "Streaming Tree is a standalone companion application, not an OBS plugin. It never modifies your OBS installation or its configuration files - OBS simply points one output at it, like any other streaming destination.",
+    "expectation": "This short assistant explains what to check and where to find it. You can skip it at any time and reopen it later from Settings."
+  },
+  "summary": {
+    "heading": "You're ready to go",
+    "body": "Setup is complete. You can always come back to this assistant from Settings if you want a refresher."
+  },
+  "settingsCard": {
+    "heading": "Setup assistant",
+    "description": "Revisit the first-run setup guide - OBS connection, destinations, and creator tools."
+  },
+  "dashboardBanner": {
+    "heading": "Setup incomplete",
+    "body": "Finish the setup assistant to make sure OBS and your destinations are ready.",
+    "action": "Continue setup",
+    "dismiss": "Dismiss"
+  }
+}

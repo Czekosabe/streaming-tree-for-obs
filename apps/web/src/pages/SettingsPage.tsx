@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { OnboardingReopenCard } from '@/components/onboarding/OnboardingReopenCard';
 import { ConnectedAccountsPanel } from '@/components/settings/ConnectedAccountsPanel';
 import { RemoteIngestPanel } from '@/components/settings/RemoteIngestPanel';
 import { YouTubeAccountsPanel } from '@/components/settings/YouTubeAccountsPanel';
@@ -37,6 +38,8 @@ export function SettingsPage() {
             <p className="text-[11px] text-ink-faint">{t('pages:settings.language.note')}</p>
           </PanelBody>
         </Panel>
+
+        <OnboardingReopenCard />
 
         <ConnectedAccountsPanel />
         <YouTubeAccountsPanel />

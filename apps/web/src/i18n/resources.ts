@@ -15,6 +15,7 @@ import enGoals from './resources/en/goals.json';
 import enLogs from './resources/en/logs.json';
 import enMetadata from './resources/en/metadata.json';
 import enNavigation from './resources/en/navigation.json';
+import enOnboarding from './resources/en/onboarding.json';
 import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
@@ -38,6 +39,7 @@ import plGoals from './resources/pl/goals.json';
 import plLogs from './resources/pl/logs.json';
 import plMetadata from './resources/pl/metadata.json';
 import plNavigation from './resources/pl/navigation.json';
+import plOnboarding from './resources/pl/onboarding.json';
 import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
@@ -79,6 +81,7 @@ export const enResources = {
   updates: enUpdates,
   auth: enAuth,
   logs: enLogs,
+  onboarding: enOnboarding,
 } as const;
 
 const plResources = {
@@ -105,6 +108,7 @@ const plResources = {
   updates: plUpdates,
   auth: plAuth,
   logs: plLogs,
+  onboarding: plOnboarding,
 } as const;
 
 export const resources = {

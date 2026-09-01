@@ -75,4 +75,11 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Streaming Tree for OBS')).toBeInTheDocument();
     expect(await screen.findByText('Czekosabe')).toBeInTheDocument();
   });
+
+  it('shows a setup assistant entry that links to the onboarding assistant', async () => {
+    renderApp('/settings');
+
+    const entry = await screen.findByRole('link', { name: /setup assistant/i });
+    expect(entry).toHaveAttribute('href', '/onboarding');
+  });
 });

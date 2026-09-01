@@ -1,0 +1,32 @@
+{
+  "header": {
+    "tagline": "Pierwsze uruchomienie",
+    "skip": "Pomiń konfigurację",
+    "stepIndicator": "Krok {{current}} z {{total}}"
+  },
+  "nav": {
+    "back": "Wstecz",
+    "continue": "Dalej",
+    "finish": "Przejdź do pulpitu"
+  },
+  "welcome": {
+    "heading": "Witaj w Streaming Tree for OBS",
+    "flow": "OBS wysyła jeden strumień do Streaming Tree for OBS, która rozprowadza go do Twoich celów - Twitch, YouTube, Kick, TikTok - i jednocześnie zasila czat, alerty, nakładki i inne narzędzia do budowania społeczności.",
+    "standalone": "Streaming Tree to samodzielna aplikacja towarzysząca, a nie wtyczka do OBS. Nigdy nie modyfikuje instalacji OBS ani jego plików konfiguracyjnych - OBS po prostu kieruje jedno wyjście do niej, tak jak do dowolnego innego celu transmisji.",
+    "expectation": "Ten krótki asystent pokazuje, co warto sprawdzić i gdzie to znaleźć. Możesz go w każdej chwili pominąć i wrócić do niego później z Ustawień."
+  },
+  "summary": {
+    "heading": "Wszystko gotowe",
+    "body": "Konfiguracja została zakończona. W każdej chwili możesz wrócić do tego asystenta z Ustawień, jeśli będziesz potrzebować przypomnienia."
+  },
+  "settingsCard": {
+    "heading": "Asystent konfiguracji",
+    "description": "Wróć do przewodnika pierwszego uruchomienia - połączenie z OBS, cele i narzędzia twórcy."
+  },
+  "dashboardBanner": {
+    "heading": "Konfiguracja niedokończona",
+    "body": "Dokończ asystenta konfiguracji, aby upewnić się, że OBS i Twoje cele są gotowe.",
+    "action": "Kontynuuj konfigurację",
+    "dismiss": "Odrzuć"
+  }
+}

@@ -17,7 +17,9 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { EngagementPage } from '@/pages/EngagementPage';
 import { GoalsPage } from '@/pages/GoalsPage';
 import { LogsPage } from '@/pages/LogsPage';
+import { OnboardingAutoRedirect } from '@/components/onboarding/OnboardingAutoRedirect';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { OnboardingPage } from '@/pages/OnboardingPage';
 import { OverlayChatPage } from '@/pages/OverlayChatPage';
 import { OverlaysPage } from '@/pages/OverlaysPage';
 import { MetadataPage, PlatformsPage } from '@/pages/PlannedPages';
@@ -34,8 +36,10 @@ export function App() {
         <BrowserRouter>
           <AuthProvider>
             <AuthGate>
+              <OnboardingAutoRedirect />
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route path="/platforms" element={<PlatformsPage />} />
                 <Route path="/streams" element={<StreamsPage />} />
                 <Route path="/metadata" element={<MetadataPage />} />

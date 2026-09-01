@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ConfiguredPlatform } from '@/api/platform-schemas';
 import { AppShell } from '@/components/layout/AppShell';
 import { MetadataEditor } from '@/components/metadata/MetadataEditor';
+import { OnboardingDashboardBanner } from '@/components/onboarding/OnboardingDashboardBanner';
 import { AddPlatformDialog } from '@/components/platforms/AddPlatformDialog';
 import { PlatformGrid } from '@/components/platforms/PlatformGrid';
 import { PlatformSettingsDialog } from '@/components/platforms/PlatformSettingsDialog';
@@ -89,6 +90,8 @@ export function DashboardPage() {
         </>
       }
     >
+      <OnboardingDashboardBanner />
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 space-y-4 xl:space-y-5">
           <section aria-labelledby="branches-heading">

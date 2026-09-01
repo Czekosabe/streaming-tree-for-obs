@@ -13,6 +13,28 @@ independent. Stage 21 does not touch Stage 20C2 (externally gated) or
 require any Stage 20E physical evidence to make progress. Starting
 Stage 21 does not change Stage 20's own status; see §0 below.
 
+## Stage 21 status
+
+**Stage 21: In progress.**
+
+- **21A** (persisted onboarding state): Completed - backend domain,
+  migration, API, frontend data layer, all automated (`docs/progress.md`,
+  `feat(server,web): Stage 21A`).
+- **21B** (flow shell, entry points, skip/complete semantics): Completed
+  - `/onboarding` route, Welcome + Summary steps, Settings reopen card,
+    Dashboard banner, auto-redirect, installer coherence, localization
+    (`docs/progress.md`, `feat(web): Stage 21B`).
+- **21C** (readiness + OBS Connection Assistant + destinations +
+  accounts steps): Planned.
+- **21D** (creator tools + final readiness summary): Planned.
+- **21E** (hardening: full test matrix, packaged-runtime proof,
+  accessibility/responsive verification, documentation close-out):
+  Planned.
+
+No Stage 21 substage's automated contract requires the operator's
+deferred Stage 20E physical verification to be marked Completed -
+Stage 20E's own status remains fully independent (§0).
+
 ## 0. Status of Stage 20 while Stage 21 begins
 
 Restated, unchanged by this document:

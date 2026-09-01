@@ -48294,3 +48294,75 @@ clean.
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Diagnosed and fixed from real CI evidence, not a blind
 retry - pushed to restore `main` to green before continuing into 21B.
+
+## 2026-09-01 — feat(web): Stage 21B - the onboarding flow shell, entry points, and skip/complete semantics
+
+Implements `docs/onboarding.md` §5 - a dedicated `/onboarding` route (not
+a modal, per §5.1's accessibility audit: a real page per step gives
+correct heading structure and natural focus order without a giant
+modal's focus-trap/z-layer complexity), the Welcome step, entry/reopen
+affordances, and real skip/complete semantics wired to 21A's backend.
+
+### Step framework
+`components/onboarding/onboarding-steps.ts` is a plain ordered array
+(`{ id, Component }`), not a heavier framework - `OnboardingPage.tsx`
+drives step index state, moves programmatic focus to each new step's
+own container on every change (a `tabIndex={-1}` target, mirroring
+`AppShell`'s own `#main-content` skip-link convention), and calls
+`PUT /api/onboarding` (21A) with `'completed'` on the last step's
+"Continue" or `'dismissed'` on "Skip setup" at any point, always
+navigating back to `/` afterward. This substage ships exactly two real
+steps - Welcome and a generic completion Summary - deliberately: the
+richer per-category readiness summary (§7.2) lands in 21D, reusing real
+runtime/platform/account state rather than claiming a readiness fact
+this substage has not actually checked. The array shape lets 21C/21D
+insert further steps between the two without restructuring it.
+
+### Entry points
+`OnboardingReopenCard` (Settings) mirrors `SettingsPage`'s own existing
+About & Legal card pattern exactly. `OnboardingDashboardBanner`
+(Dashboard) is small and dismissible - dismissing it only hides it for
+the current session (plain component state); only the assistant's own
+"Skip setup" action changes the persisted status. `OnboardingAutoRedirect`
+(mounted once alongside the route table) auto-navigates to `/onboarding`
+exactly once per page load when the real persisted status is `'pending'`
+- never inferred from localStorage or configuration absence - and never
+touches the public `/overlay/*` routes, mirroring `AuthGate`'s own
+"public overlay routes are never gated" convention.
+
+### Installer -> first-launch coherence
+No new installer-side code was needed: a fresh per-user install has no
+database until first backend start, which runs every migration
+including 21A's 0029 and lands on `pending` - the existing first-launch
+browser-open (`docs/windows-packaging.md` §6) naturally reaches
+`/onboarding` with zero installer-specific state. An update/repair
+preserves the existing database (unchanged), so an existing user's
+already-migrated `dismissed`/`completed` status is never reset.
+
+### Localization
+New `onboarding` namespace, English canonical + complete Polish
+translation (24 namespaces now, was 23).
+
+### A real gap found and fixed before committing
+`i18n/config.ts`'s `NAMESPACES` constant is a second, independent list
+`resource-parity.test.ts` checks against `i18n/resources.ts`'s actual
+registered namespaces - adding the namespace to `resources.ts` alone
+left this list stale and failed that real test locally, caught before
+ever being pushed.
+
+### Validation
+`npm run i18n:check` (24 namespaces, no differences), `tsc --noEmit`
+clean, `eslint` clean (0 errors, the same one pre-existing unrelated
+warning), `npm run test -- --run` - 1502/1502 tests pass across 119
+files (16 new: `OnboardingPage.test.tsx`'s step navigation/focus/skip/
+finish behavior, `OnboardingDashboardBanner.test.tsx`'s loading/
+completed/pending/dismissed/dismiss-action states, `OnboardingAutoRedirect.
+test.tsx`'s pending/completed/dismissed/public-overlay-exclusion cases,
+plus a `SettingsPage.test.tsx` addition for the new reopen link),
+`npm run build` clean.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 21C per the governing task's own
+explicit "do not stop merely to ask permission to begin the next
+already-defined substage."
