@@ -48048,3 +48048,46 @@ above is left unedited per the append-only journal rule.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-09-01 — fix(ci): compare resolved real paths, not raw strings, in the new shortcut-target CI assertions
+
+Real CI evidence, not a guess: "Windows package verification" for the
+previous entry's commit failed at `testShortcutTasksScenario`'s very
+first shortcut check - "FAIL the Start Menu shortcut target resolves to
+the actual installed executable" - with 115 prior assertions (every
+registry-root/downgrade/repair check from the previous entry's own fix,
+plus the three pre-existing scenarios) passing cleanly first, isolating
+the bug to this one new check.
+
+### Root cause
+`WScript.Shell`'s `.TargetPath` resolved the Start Menu shortcut to
+`C:\Users\runneradmin\...` (the long-path form), while the runner's own
+`%TEMP%` resolves to its short 8.3 form
+(`C:\Users\RUNNER~1\...`, visible in the same log's own "Hermetic
+install directory" line) - the identical real file, two different
+string representations, defeating a naive lowercase string-equality
+comparison. Not a product defect: the shortcut itself was already
+correct.
+
+### Fix
+Added `samePath(a, b)`, comparing `realpathSync`-resolved forms of both
+paths (falling back to a case-insensitive string compare only if either
+path does not yet exist) - `realpathSync` resolves Windows short-path
+components to their canonical long-path form, eliminating the mismatch.
+Both shortcut-target assertions in `testShortcutTasksScenario` now use
+it instead of raw string comparison.
+
+### Validation
+`node --check scripts/verify-installer.mjs` clean. Pushed for a fresh
+CI run to confirm the full new scenario (update-preserves-choice,
+explicit desktop-task selection, explicit Start Menu deselection,
+uninstall-removes-shortcuts) actually completes - it never got past its
+first check on the previous attempt, so this is that scenario's first
+real end-to-end validation.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Diagnosed from the real authenticated job log
+(`actions/jobs/{id}/logs`, per `docs/ci-reliability.md`'s own
+established token-via-`git credential fill` pattern) - not a blind
+retry.

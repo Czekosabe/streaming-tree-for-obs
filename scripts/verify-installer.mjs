@@ -43,7 +43,7 @@
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -250,6 +250,23 @@ async function resolveShortcutTarget(lnkPath) {
   return target.length > 0 ? target : null;
 }
 
+/** Compares two filesystem paths for real identity, not string equality:
+ * a real CI finding (docs/windows-packaging.md §28) showed a shortcut's
+ * WScript.Shell-resolved TargetPath can come back in the long-path form
+ * (e.g. "runneradmin") while the path this script itself built came
+ * from a %TEMP% that resolves to its short 8.3 form (e.g. "RUNNER~1") -
+ * the same real file, different strings. realpathSync resolves both to
+ * their canonical long-path form on Windows, eliminating that
+ * mismatch; falls back to a case-insensitive string compare if either
+ * path does not (yet) exist on disk. */
+function samePath(a, b) {
+  try {
+    return realpathSync(a).toLowerCase() === realpathSync(b).toLowerCase();
+  } catch {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+}
+
 const DESKTOP_LNK_NAME = 'Streaming Tree for OBS.lnk';
 const START_MENU_GROUP = 'Streaming Tree for OBS';
 
@@ -286,7 +303,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut exists');
     expect(!existsSync(desktopShortcutPath()), 'desktop shortcut does NOT exist (desktopicon is unchecked by default)');
     const startMenuTarget = await resolveShortcutTarget(startMenuAppShortcutPath());
-    expect(startMenuTarget !== null && startMenuTarget.toLowerCase() === join(installDir, 'streaming-tree-server.exe').toLowerCase(),
+    expect(startMenuTarget !== null && samePath(startMenuTarget, join(installDir, 'streaming-tree-server.exe')),
       'the Start Menu shortcut target resolves to the actual installed executable', startMenuTarget);
 
     step('Update over the same install with no /MERGETASKS - previous (default) choices must remain stable');
@@ -308,7 +325,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(withDesktop.code === 0, 'install with desktopicon merged exits 0', withDesktop);
     expect(existsSync(desktopShortcutPath()), 'desktop shortcut exists when the task is explicitly selected');
     const desktopTarget = await resolveShortcutTarget(desktopShortcutPath());
-    expect(desktopTarget !== null && desktopTarget.toLowerCase() === join(installDir, 'streaming-tree-server.exe').toLowerCase(),
+    expect(desktopTarget !== null && samePath(desktopTarget, join(installDir, 'streaming-tree-server.exe')),
       'the desktop shortcut target resolves to the actual installed executable', desktopTarget);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists too (startmenuicon default was merged, not replaced)');
 
