@@ -120,15 +120,41 @@ Source: "{#StagingDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignorev
 Source: "{#StagingDir}\LEGAL.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StagingDir}\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 
+; Start Menu shortcut has no [Tasks] entry - it stays a mandatory,
+; unconditional [Icons] line below, matching Stage 20A's own established
+; behavior and common Windows installer convention: Streaming Tree is a
+; background service-like application launched via a shortcut, not an
+; optional integration a first-time installer audience would expect to
+; opt out of. Only the desktop shortcut - the one genuinely optional,
+; user-preference convention on Windows - gets a task.
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+; {userdesktop} always resolves to the real current user's Desktop, even
+; under a custom {app} install path (docs/windows-packaging.md §1/§8) -
+; Inno's own uninstaller removes an [Icons]-declared shortcut
+; automatically, so no [UninstallDelete] entry is needed for it. Gated
+; on the desktopicon task above; RegisterPreviousData/GetPreviousData in
+; [Code] below preserve the operator's own choice across an update.
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; None: the application launches its own default-browser tab once its HTTP
-; server is ready (docs/windows-packaging.md §6) - the installer does not
-; separately try to launch it, avoiding a double-launch race with the
-; single-instance check.
+; postinstall: only ever shown/offered on the final wizard page, never
+; during a silent run's own non-existent UI. skipifsilent (Inno's own
+; documented flag for exactly this) makes Setup skip actually executing
+; this entry under /SILENT or /VERYSILENT - which is also what the
+; built-in updater's own silent invocation (internal/updater/
+; helper_windows.go) always uses - so the silent updater path never
+; launches a duplicate process here, natively, with no custom [Code]
+; needed (docs/windows-packaging.md §9/§15). nowait: Setup's own wizard
+; does not block waiting for the launched application to exit. This does
+; not race the application's own default-browser self-launch
+; (docs/windows-packaging.md §6): that happens once its own HTTP
+; listener is ready, same as any other launch of the installed exe.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall skipifsilent nowait
 
 ; No [UninstallRun] section: four real Windows CI attempts (docs/
 ; progress.md) to run the purge helper declaratively through
@@ -163,6 +189,234 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 // separate real diagnostic rounds for a reason no documentation search
 // ever explained, which is why the purge helper is now invoked
 // directly via Exec() instead of through [UninstallRun].
+
+const
+  // The registry location Inno Setup itself writes real per-user
+  // ("HKCU", matching PrivilegesRequired=lowest) uninstall/Apps & Features
+  // metadata to - built from the exact same AppId GUID in [Setup] above,
+  // never a second identity. This is what lets Setup discover a real
+  // previously-installed version without any assumption about process
+  // names, folder existence, or any executable other than this one's own
+  // Inno-registered identity (docs/windows-packaging.md §2's own explicit
+  // requirement).
+  UninstallRegSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{C067013C-D143-49F8-9510-D078482D6DA4}_is1';
+
+// UninstallRegRoot mirrors Inno's own documented root-key choice for the
+// uninstall entry exactly (jrsoftware.org/ishelp/topic_admininstallmode.htm:
+// "The HKA, uninstall info, and font install root keys will be
+// HKEY_CURRENT_USER" in non administrative install mode, HKEY_LOCAL_MACHINE
+// in administrative mode) - confirmed necessary, not merely theoretical,
+// against a real local install: on an admin-capable account, Inno records
+// the uninstall entry under HKEY_LOCAL_MACHINE (transparently WOW64-
+// redirected to its WOW6432Node mirror, since Setup.exe/Uninstall.exe are
+// both 32-bit - reading via plain HKEY_LOCAL_MACHINE here gets the same
+// transparent redirection) even though PrivilegesRequired=lowest keeps the
+// actual install itself fully non-elevated and per-user
+// (jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm's own "will
+// always run in non administrative install mode" for "lowest" governs
+// elevation, not which registry root non-elevated-but-admin-capable
+// accounts get). A hardcoded HKEY_CURRENT_USER here would silently never
+// find a real previously-installed version on exactly this common kind of
+// account, defeating every fresh/update/repair/downgrade check below.
+function UninstallRegRoot(): Integer;
+begin
+  if IsAdminInstallMode() then
+    Result := HKEY_LOCAL_MACHINE
+  else
+    Result := HKEY_CURRENT_USER;
+end;
+
+var
+  // Set once in InitializeSetup, read again by UpdateReadyMemo below so
+  // the Ready-to-Install summary and the fresh/update/repair/downgrade
+  // decision always agree - never re-queried a second time from the
+  // registry.
+  DetectedPrevVersionFound: Boolean;
+  DetectedPrevVersion: String;
+
+// SplitVersion splits a version string such as "0.1.0-manualtest+a0e2fb8"
+// into Core ("0.1.0") and Prerelease ("manualtest") - build metadata
+// after "+" is discarded, never meaningful for ordering. Mirrors the
+// version shape internal/buildinfo.go actually produces (a strict
+// "MAJOR.MINOR.PATCH" release version, or "MAJOR.MINOR.PATCH-<label>+
+// <commit>" for a manual/test packaged build) - Pascal Script cannot
+// call that Go logic directly, so this is a narrow, purpose-built
+// mirror of it, not a general-purpose semver parser.
+procedure SplitVersion(const V: String; var Core, Prerelease: String);
+var
+  PlusPos, DashPos: Integer;
+  NoBuild: String;
+begin
+  PlusPos := Pos('+', V);
+  if PlusPos > 0 then
+    NoBuild := Copy(V, 1, PlusPos - 1)
+  else
+    NoBuild := V;
+
+  DashPos := Pos('-', NoBuild);
+  if DashPos > 0 then
+  begin
+    Core := Copy(NoBuild, 1, DashPos - 1);
+    Prerelease := Copy(NoBuild, DashPos + 1, Length(NoBuild) - DashPos);
+  end else begin
+    Core := NoBuild;
+    Prerelease := '';
+  end;
+end;
+
+// CompareVersionCores does exact integer comparison of two dotted-numeric
+// cores ("0.1.0" vs "0.2.0"), component by component - never a
+// lexicographic string comparison (docs/windows-packaging.md §13's
+// explicit requirement: "10.0.0" must compare greater than "9.0.0").
+function CompareVersionCores(A, B: String): Integer;
+var
+  APart, BPart: String;
+  ADot, BDot: Integer;
+  ANum, BNum: Integer;
+begin
+  Result := 0;
+  while (Result = 0) and ((A <> '') or (B <> '')) do
+  begin
+    ADot := Pos('.', A);
+    if ADot = 0 then begin APart := A; A := ''; end
+    else begin APart := Copy(A, 1, ADot - 1); A := Copy(A, ADot + 1, Length(A) - ADot); end;
+
+    BDot := Pos('.', B);
+    if BDot = 0 then begin BPart := B; B := ''; end
+    else begin BPart := Copy(B, 1, BDot - 1); B := Copy(B, BDot + 1, Length(B) - BDot); end;
+
+    ANum := StrToIntDef(APart, 0);
+    BNum := StrToIntDef(BPart, 0);
+
+    if ANum < BNum then Result := -1
+    else if ANum > BNum then Result := 1;
+  end;
+end;
+
+// CompareAppVersions is the one narrow, correct installer-side version
+// comparison this project needs (docs/windows-packaging.md §13): -1/0/1
+// as A is older/equal/newer than B. A release version outranks a
+// prerelease of the identical core (e.g. "0.1.0" > "0.1.0-manualtest+
+// abc"), matching the operator's own explicit "manual-test versions must
+// not accidentally be treated as Stable production updates" requirement
+// stated the other direction - a manual-test build must never look newer
+// than the real release it was cut from. Two versions sharing the same
+// core AND the same prerelease tag (regardless of build metadata) compare
+// EQUAL - two different manual-test builds of the nominal same version
+// are a same-version reinstall/repair, never an "update" or "downgrade"
+// against each other.
+function CompareAppVersions(const A, B: String): Integer;
+var
+  ACore, APre, BCore, BPre: String;
+begin
+  SplitVersion(A, ACore, APre);
+  SplitVersion(B, BCore, BPre);
+
+  Result := CompareVersionCores(ACore, BCore);
+  if Result <> 0 then
+    exit;
+
+  if (APre = '') and (BPre <> '') then
+    Result := 1
+  else if (APre <> '') and (BPre = '') then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+// InitializeSetup implements docs/windows-packaging.md §2/§3/§13: reads
+// the real previously-installed version (if any) from this application's
+// own stable AppId's registry entry, and blocks a silent downgrade
+// outright while requiring an explicit interactive confirmation for one.
+// Fresh installs and any update/repair (installed version <= this
+// installer's version) proceed with no extra gate here - Inno's own
+// DisableDirPage=auto/UsePreviousAppDir=yes defaults (both left
+// unoverridden in [Setup] above, confirmed against jrsoftware.org/ishelp)
+// already show the directory page on fresh install and reuse the
+// existing install location silently on update, which is exactly the
+// behavior docs/windows-packaging.md §1/§4 require without needing any
+// custom code for that part.
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  DetectedPrevVersionFound := RegQueryStringValue(UninstallRegRoot(), UninstallRegSubkey, 'DisplayVersion', DetectedPrevVersion);
+  if not DetectedPrevVersionFound then
+    exit; // Fresh install - nothing to compare against.
+
+  if CompareAppVersions(DetectedPrevVersion, '{#MyAppVersion}') <= 0 then
+    exit; // Installed version is older than or equal to this installer - update or repair, always allowed.
+
+  // Installed version is newer than this installer - a real downgrade.
+  if WizardSilent() then
+  begin
+    Log('Refusing silent downgrade: installed version ' + DetectedPrevVersion +
+      ' is newer than installer version {#MyAppVersion}.');
+    Result := False;
+    exit;
+  end;
+
+  if MsgBox(
+    'A newer version of {#MyAppName} (' + DetectedPrevVersion + ') is already installed.' + #13#10 +
+    'This installer is for version {#MyAppVersion}, which is older than what is currently installed.' + #13#10#13#10 +
+    'Installing it anyway will downgrade your installation. Continue anyway?',
+    mbConfirmation, MB_YESNO) = IDNO then
+    Result := False;
+end;
+
+// UpdateReadyMemo adds the version-context summary docs/windows-
+// packaging.md §13 asks for ("Installed version: X / Installer version:
+// Y / Operation: Z") to the Ready-to-Install page, ahead of Inno's own
+// standard directory/group/tasks summary lines - shown only
+// interactively (the Ready page itself is skipped entirely under
+// /SILENT and /VERYSILENT, so this never affects a silent run).
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+var
+  OperationLine: String;
+  Cmp: Integer;
+begin
+  if DetectedPrevVersionFound then
+  begin
+    Cmp := CompareAppVersions(DetectedPrevVersion, '{#MyAppVersion}');
+    if Cmp = 0 then
+      OperationLine := 'Repair / reinstall (same version already installed)'
+    else if Cmp < 0 then
+      OperationLine := 'Update'
+    else
+      OperationLine := 'Downgrade';
+    Result := 'Installed version: ' + DetectedPrevVersion + NewLine +
+      'Installer version: {#MyAppVersion}' + NewLine +
+      'Operation: ' + OperationLine + NewLine + NewLine;
+  end else begin
+    Result := 'Installer version: {#MyAppVersion}' + NewLine +
+      'Operation: Fresh install' + NewLine + NewLine;
+  end;
+
+  Result := Result + MemoDirInfo + NewLine + NewLine + MemoGroupInfo + NewLine + NewLine + MemoTasksInfo;
+end;
+
+// InitializeWizard/RegisterPreviousData implement docs/windows-
+// packaging.md §6's "preserve previous task choices where Inno Setup can
+// correctly do so": GetPreviousData/SetPreviousData is Inno's own
+// documented, non-automatic mechanism for exactly this (confirmed
+// against jrsoftware.org/ishelp/topic_isxfunc_getpreviousdata.htm and
+// topic_scriptevents.htm). WizardForm.TasksList.Checked[0] is safe as a
+// fixed index because this script declares exactly one [Tasks] entry
+// (desktopicon) - if a second task is ever added, this index assumption
+// must be revisited alongside it.
+procedure InitializeWizard;
+begin
+  if GetPreviousData('DesktopIcon', '0') = '1' then
+    WizardForm.TasksList.Checked[0] := True;
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  if WizardIsTaskSelected('desktopicon') then
+    SetPreviousData(PreviousDataKey, 'DesktopIcon', '1')
+  else
+    SetPreviousData(PreviousDataKey, 'DesktopIcon', '0');
+end;
 
 const
   // Mirrors internal/runtime/singleinstance's own mutexName constant

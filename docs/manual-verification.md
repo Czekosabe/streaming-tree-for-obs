@@ -46,6 +46,33 @@ a 40-character value starting with `sk_`", "OBS accepted the
 credential and connected"), never the value itself. If in doubt, don't
 paste it — describe it instead and ask.
 
+## Current status of this round's physical verification
+
+Physical/manual verification no longer gates autonomous product
+development (see `docs/progress.md`'s corresponding entry) - the
+operator does not currently have the time/environment to run the
+sessions below, but they are genuinely still required before Stage 20E
+can close. None of the following have been converted to PASS, marked
+Not Applicable, or removed - they remain exactly what they were, only
+honestly labeled:
+
+- **Sessions A, B, C, D, E, F, G, K, L, M** (the real-hardware-dependent
+  blocking set): **Pending — operator deferred physical verification.**
+  No physical result exists yet for the current candidate. Any PASS
+  recorded against an earlier build is not valid against later commits
+  that touch the tested surface (see this file's own per-session
+  revision notes, e.g. Session M's) - do not treat an old PASS as
+  current.
+- **Sessions H, I, J** (Linux desktop, Linux headless + real OBS RTMPS,
+  macOS unsigned package): **Not verified — environment unavailable**,
+  unchanged from every earlier round - no Linux/macOS hardware has been
+  available to this project.
+
+This status will be updated only when the operator actually runs a
+session and reports a real result - never inferred from CI passing,
+never inferred from time elapsed, and never asked for again after every
+autonomous commit in the meantime.
+
 ---
 
 ## Getting the candidate installer onto a second test machine

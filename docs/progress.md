@@ -47777,3 +47777,156 @@ defensible hardenings were made rather than a bare re-run:
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made. This push triggers a fresh CI run for the actual final
 source state - not a bare re-run of the exact same failed commit.
+
+## 2026-09-01 — feat(installer): real fresh/update/repair/downgrade detection, optional desktop shortcut, and launch-on-finish for the Windows installer
+
+A new governing instruction changed one process rule going forward:
+physical/manual Stage 20E verification (the operator's real hardware
+sessions in `docs/manual-verification.md`) no longer pauses autonomous
+product development. It is not waived, not marked PASS, and not marked
+Not Applicable - it is honestly recorded as pending operator time, and
+development continues into real, CI/local-verifiable work instead of
+sitting idle. This entry is the first such piece of work: hardening
+the actual Windows installer UX, audited against the real current
+`.iss` and Inno Setup's own official documentation before any change,
+per this project's own established "audit before implementation"
+discipline.
+
+### What was audited first
+Read the full current `scripts/installer/streaming-tree.iss` (432
+lines), `docs/windows-packaging.md`, `scripts/verify-installer.mjs`,
+and the Go `internal/updater` package in full before writing anything.
+Two things were already correct and needed no change:
+
+- `DisableDirPage`/`UsePreviousAppDir` were never overridden in
+  `[Setup]` - their real documented defaults
+  (`jrsoftware.org/ishelp/topic_setup_disabledirpage.htm`,
+  `topic_setup_usepreviousappdir.htm`) already show the directory page
+  on a fresh install and silently reuse the previous install location
+  on an update.
+- `internal/updater/helper_windows.go`'s own silent installer
+  invocation (`proceedWithInstall`, "Step 7") already never passes
+  `/DIR=` - its own doc comment already states why (`UsePreviousAppDir`
+  already preserves the location on a same-AppId upgrade).
+
+### What genuinely needed new code
+- **Version detection** (`InitializeSetup`, `CompareAppVersions`,
+  `CompareVersionCores`, `SplitVersion`): reads the real previously-
+  installed version from this app's own stable AppId's registry entry
+  and compares it against the installer's own version with a narrow,
+  purpose-built Pascal comparison mirroring the exact version shape
+  `internal/buildinfo.go` actually produces - never a lexicographic
+  string comparison, and two different manual-test builds of the same
+  nominal version compare equal (a repair, never an update/downgrade of
+  each other). A real downgrade (installed version newer than the
+  installer) is blocked outright under a silent run and requires an
+  explicit interactive confirmation otherwise - the built-in updater
+  itself never reaches that branch, since it only ever installs a
+  newer version.
+- **A real, confirmed-necessary correctness fix found by actually
+  testing locally, not assumed:** the registry root Inno Setup uses for
+  the uninstall entry is not always `HKEY_CURRENT_USER`, even though
+  `PrivilegesRequired=lowest` keeps the install itself fully non-
+  elevated. Per Inno's own documentation
+  (`jrsoftware.org/ishelp/topic_admininstallmode.htm`): the uninstall-
+  info root is `HKEY_CURRENT_USER` in non administrative install mode
+  and `HKEY_LOCAL_MACHINE` in administrative install mode, and
+  `IsAdminInstallMode()` is the documented way to tell which one Inno
+  actually chose. A real local install compiled and run against this
+  round's changes registered under `HKEY_LOCAL_MACHINE` (WOW64-
+  redirected to its `WOW6432Node` mirror, since Setup.exe/Uninstall.exe
+  are 32-bit) on an admin-capable-but-unelevated account - a hardcoded
+  `HKEY_CURRENT_USER` lookup (the first version written this round)
+  would have silently found nothing on exactly this common kind of
+  account, defeating the entire fresh/update/repair/downgrade check
+  without ever failing loudly. `UninstallRegRoot()` now picks the root
+  via `IsAdminInstallMode()` instead of assuming one - caught and fixed
+  before commit, not shipped broken.
+- **Ready-to-Install version context** (`UpdateReadyMemo`): shows
+  "Installed version / Installer version / Operation" (fresh install /
+  update / repair / downgrade) on the interactive Ready page - skipped
+  entirely under a silent run, so it cannot affect one.
+  `RegisterPreviousData`/`InitializeWizard` preserve the operator's own
+  desktop-shortcut task selection across an update, using Inno's own
+  documented, non-automatic mechanism for exactly that
+  (`GetPreviousData`/`SetPreviousData`).
+- **New `[Tasks]`/`[Icons]`/`[Run]` entries**: an optional, unchecked-
+  by-default desktop shortcut task (Start Menu stays mandatory,
+  unchanged - a persistently-running local application, not an optional
+  integration); a "Launch Streaming Tree for OBS" `[Run]` entry using
+  Inno's own `postinstall skipifsilent nowait` flags, which natively
+  keeps the built-in updater's always-silent invocation from ever
+  launching a duplicate process here - no custom `[Code]` needed for
+  that part.
+
+### Automated verification
+- `ISCC.exe` test-compiles cleanly with every new `[Code]` addition
+  (confirmed locally, twice - once before and once after the
+  HKCU/HKLM fix).
+- A real local install/registry inspection (before the fix) is what
+  surfaced the HKLM/WOW6432Node finding above - not theoretical.
+- `scripts/verify-installer.mjs` gained a new
+  `testVersionDetectionScenario`: compiles two additional throwaway
+  test installers (0.1.0, 0.2.0) via `ISCC.exe` directly, reusing the
+  same staged executable `build-release.ps1` already built - no second
+  `go build`/`npm run build` pass - and drives a real fresh install, a
+  real update, a real silent downgrade attempt (asserted to fail and
+  leave the registered version unchanged), and a real same-version
+  repair (asserted to succeed), verifying the real Inno-registered
+  `DisplayVersion` after each step via `reg query` against both
+  possible roots. `node --check scripts/verify-installer.mjs` clean.
+- Deliberately NOT automated: actually creating the desktop shortcut.
+  `/DIR=<hermetic path>` only redirects `{app}`; `{userdesktop}` always
+  resolves to the real current user's Desktop on whatever machine runs
+  the script, CI or a developer's own - toggling a real file there as
+  an automated-test side effect is not a safe default. Left to
+  interactive/manual verification instead.
+- Full end-to-end local install/uninstall/update cycling beyond the
+  single successful run that surfaced the registry-root finding above
+  could not be reliably completed on this development machine - the
+  same already-documented local McAfee/Defender interference with this
+  installer's unsigned, `user32.dll`-importing binaries
+  (`docs/windows-packaging.md` §26's "Known local-testing limitation")
+  recurred consistently across this round's repeated local runs, for
+  ordinary installs as well as uninstalls this time. No stuck process
+  was left running - each hang was diagnosed (no orphaned real
+  application process was ever found holding the single-instance
+  mutex; `Responding: True` throughout) and cleared. This is the same
+  conclusion the project already reached before: the real Windows CI
+  runner (no third-party endpoint security software) remains the
+  trustworthy validator for this class of behavior, and the new
+  `testVersionDetectionScenario` above is written to run there for
+  real, unattended, on every push.
+- One incidental finding during this session's local testing: a stray
+  `streaming-tree-server.exe` process was found running from an old,
+  already-abandoned temp test directory
+  (`...\Temp\st-install-test-original2\...`) - a leftover from earlier
+  testing in a prior session, not the operator's real production
+  install (which lives at `%LOCALAPPDATA%\Programs\Streaming Tree for
+  OBS`, confirmed unaffected) and not real user data. Terminated; it
+  was holding the shared single-instance mutex and interfering with
+  this round's own test runs.
+
+### Documentation
+`docs/windows-packaging.md` gained a new §27 documenting all of the
+above as implemented and tested, not before. `docs/manual-
+verification.md` gained a "Current status of this round's physical
+verification" section recording Sessions A/B/C/D/E/F/G/K/L/M as
+**Pending - operator deferred physical verification** (not PASS, not
+Not Applicable, not deleted) and reaffirming H/I/J as **Not verified -
+environment unavailable**, unchanged.
+
+### What was deliberately not done this round
+Desktop-shortcut real-file verification (see above, safety-motivated).
+Physical Windows hardware verification of any of this UX - Session
+A/L's own physical checklist items still cover install-location
+UX/shortcut behavior/version-detection messaging visually, and remain
+pending per the status section above; nothing here claims that
+physical pass.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made for permission to start or continue it - this is the first
+autonomous roadmap item after the governing message's Part A, begun
+directly per its own explicit "do not ask merely for permission to
+start a task already specified" instruction.

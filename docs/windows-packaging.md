@@ -692,3 +692,129 @@ legitimately flag. The real Windows CI runner
 third-party endpoint security software) is the trustworthy validator
 for this mechanism, consistent with how every other native Windows
 behavior in this project has always been authoritatively verified.
+Reconfirmed during §27's own local verification below: the same
+interference recurred for essentially every install/uninstall
+invocation of a freshly-compiled test installer in that round, not only
+uninstall - reinforcing rather than changing this section's conclusion.
+
+## 27. Installer UX hardening: fresh/update/repair/downgrade detection, optional desktop shortcut, launch-on-finish
+
+A later hardening pass audited the actual `.iss` and Inno Setup's own
+current official documentation (`jrsoftware.org/ishelp`) before adding
+anything, per this project's own "contract/audit before implementation"
+discipline.
+
+### Directory page and previous-location reuse: already correct by Inno's own defaults
+`DisableDirPage` and `UsePreviousAppDir` were never set in `[Setup]` -
+confirmed (`jrsoftware.org/ishelp/topic_setup_disabledirpage.htm`,
+`topic_setup_usepreviousappdir.htm`) that their unset defaults already
+do exactly what was required: `DisableDirPage=auto` shows the directory
+page on a fresh install and skips it on an update; `UsePreviousAppDir=
+yes` reuses the previously-installed location as the default rather
+than resetting to `{localappdata}\Programs\{#MyAppName}`. No `.iss`
+change was needed for this part - it was already correct.
+
+### Real fresh/update/repair/downgrade detection
+`InitializeSetup` now reads the real previously-installed version (if
+any) from this application's own stable `AppId`'s registry entry and
+compares it against the installer's own version using a narrow, purpose-
+built Pascal comparison (`CompareAppVersions`/`CompareVersionCores`/
+`SplitVersion`) that mirrors the exact version shape
+`internal/buildinfo.go` actually produces (`MAJOR.MINOR.PATCH`, or
+`MAJOR.MINOR.PATCH-<label>+<commit>` for a manual/test build) - never a
+lexicographic string comparison, and never confusing two different
+manual-test builds of the same nominal version for an update/downgrade
+of each other (they compare equal - a repair, not an update).
+
+- **Fresh install** (no previous version found): proceeds normally.
+- **Update or repair** (installed version <= installer version):
+  proceeds normally - no extra gate.
+- **Downgrade** (installed version > installer version): interactively,
+  shows an explicit confirmation dialog naming both versions and
+  requiring the operator to choose to continue; under a silent run
+  (`WizardSilent()`), refuses outright (`Result := False`) rather than
+  silently downgrading - the built-in updater itself never reaches this
+  branch in real use, since it only ever installs a version newer than
+  the one it is replacing.
+- The Ready-to-Install page (`UpdateReadyMemo`) shows the real
+  "Installed version / Installer version / Operation" context (fresh
+  install / update / repair / downgrade) requested for the interactive
+  path - the Ready page itself is skipped entirely under `/SILENT`/
+  `/VERYSILENT`, so this never affects a silent run.
+
+**A real, confirmed-necessary correctness fix found during local
+testing, not merely theoretical:** the registry root Inno Setup itself
+uses for the uninstall entry is not always `HKEY_CURRENT_USER`, even
+though this installer's own `PrivilegesRequired=lowest` keeps the
+*install itself* fully non-elevated and per-user. Per Inno's own
+documentation (`jrsoftware.org/ishelp/topic_admininstallmode.htm`): the
+uninstall-info registry root is `HKEY_CURRENT_USER` in non
+administrative install mode and `HKEY_LOCAL_MACHINE` in administrative
+install mode, and `IsAdminInstallMode()` is the documented way to tell
+which one Inno actually chose. A real local install on an admin-capable
+(but not elevated) account registered under `HKEY_LOCAL_MACHINE`
+(transparently WOW64-redirected to its `WOW6432Node` mirror, since
+`Setup.exe`/`Uninstall.exe` are both 32-bit) - a hardcoded `HKEY_CURRENT_
+USER` lookup would have silently found nothing on exactly this common
+kind of account, defeating every fresh/update/repair/downgrade check
+above without ever failing loudly. `UninstallRegRoot()` now picks the
+root via `IsAdminInstallMode()`, matching Inno's own real choice rather
+than assuming one.
+
+### Start Menu, desktop shortcut, and Launch-on-finish
+The Start Menu shortcut remains a mandatory, unconditional `[Icons]`
+entry (unchanged since Stage 20A) - not made optional, since this is a
+persistently-running local application launched via a shortcut, not an
+optional integration a typical installer audience expects to opt out
+of. A new `[Tasks]` entry (`desktopicon`, unchecked by default, matching
+common Windows installer convention) gates a new `[Icons]` line using
+`{userdesktop}` - correct under a custom install path, since
+`{userdesktop}` always resolves to the real current user's Desktop
+independent of `{app}`. The operator's own choice is preserved across an
+update via `RegisterPreviousData`/`GetPreviousData` (Inno's own
+documented, non-automatic mechanism for exactly this -
+`jrsoftware.org/ishelp/topic_isxfunc_getpreviousdata.htm`,
+`topic_scriptevents.htm`), read back in `InitializeWizard`.
+
+A new `[Run]` entry offers "Launch {#MyAppName}" on the final wizard
+page using Inno's own `postinstall skipifsilent nowait` flags -
+`skipifsilent` is Inno's own documented, native way to skip a `[Run]`
+entry entirely under a silent run, which by construction means the
+built-in updater's own always-silent invocation
+(`internal/updater/helper_windows.go`) never launches a duplicate
+process here; no custom `[Code]` was needed to keep the silent updater
+path silent.
+
+### The built-in updater already never overrides the install path
+Re-audited `internal/updater/helper_windows.go`'s real invocation of the
+installer (`proceedWithInstall`, around its own "Step 7" comment): it
+already runs `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...` with no
+`/DIR=` of any kind, and its own doc comment already states why -
+`UsePreviousAppDir`'s default (confirmed above) already preserves the
+existing install location on a same-AppId upgrade without one. No
+change was needed here.
+
+### Automated verification
+`scripts/verify-installer.mjs` gained a new scenario
+(`testVersionDetectionScenario`) that compiles two additional throwaway
+test installers (versions `0.1.0` and `0.2.0`) via `ISCC.exe` directly,
+reusing the same staged executable `scripts/build-release.ps1` already
+built for the main scenarios - no second `go build`/`npm run build`
+pass. It drives a real fresh install, a real update, a real silent
+downgrade attempt (asserted to fail and leave the registered version
+unchanged), and a real same-version repair/reinstall (asserted to
+succeed), verifying the real Inno-registered `DisplayVersion` after each
+step via `reg query` against both possible roots (mirroring
+`UninstallRegRoot()`'s own `IsAdminInstallMode()` fallback, rather than
+assuming one) - all confined to one hermetic install directory, never
+the operator's real per-user install path.
+
+**Deliberately not automated:** actually creating the desktop shortcut.
+`/DIR=<hermetic path>` only redirects `{app}`; `{userdesktop}` still
+always resolves to the *real* current user's Desktop regardless of
+install path, on any machine the script runs on (a CI runner or a
+developer's own machine). Automatically toggling a real file on a real
+Desktop as a side effect of a verification script is not a safe
+default, so this is left to interactive/manual verification instead
+(`docs/manual-verification.md`'s existing shortcut-choices case) rather
+than forced into an automated script that would need to write there.

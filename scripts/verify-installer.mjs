@@ -50,6 +50,11 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTPUT_DIR = join(REPO_ROOT, 'build', 'release', 'output');
+const STAGING_DIR = join(REPO_ROOT, 'build', 'release', 'staging');
+const INNO_SCRIPT = join(REPO_ROOT, 'scripts', 'installer', 'streaming-tree.iss');
+// Mirrors the exact AppId GUID in scripts/installer/streaming-tree.iss's
+// own [Setup] section - never a second, independently-typed copy of it.
+const UNINSTALL_REG_SUBKEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C067013C-D143-49F8-9510-D078482D6DA4}_is1';
 const PORT = 8298;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
@@ -169,6 +174,113 @@ async function gracefulShutdownAndWait(baseUrl, exitedRef) {
     await new Promise((r) => setTimeout(r, 200));
   }
   expect(exitedRef.exited, 'the executable exits after shutdown');
+}
+
+/** Locates ISCC.exe using the same candidate paths as
+ * scripts/build-release.ps1's own Find-RequiredCommand search, so this
+ * script can compile its own throwaway test installers at fixed
+ * versions without needing a second PowerShell build pass. */
+function findIscc() {
+  const candidates = [
+    join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Inno Setup 6', 'ISCC.exe'),
+    'C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe',
+    'C:\\Program Files\\Inno Setup 6\\ISCC.exe',
+  ];
+  return candidates.find((p) => existsSync(p));
+}
+
+/** Compiles scripts/installer/streaming-tree.iss at a fixed test
+ * `version`, reusing the real staged executable/legal documents
+ * scripts/build-release.ps1 already produced at STAGING_DIR (built once
+ * per CI run, before this script) - never a second `go build`/`npm run
+ * build` pass. Returns the path to the compiled installer .exe. */
+async function compileTestInstaller(isccPath, version, outputDir) {
+  const result = await run(isccPath, [
+    `/DMyAppVersion=${version}`,
+    `/DStagingDir=${STAGING_DIR}`,
+    `/DOutputDir=${outputDir}`,
+    INNO_SCRIPT,
+  ]);
+  expect(result.code === 0, `ISCC compiles a test installer for version ${version}`, result);
+  const exe = readdirSync(outputDir).find((f) => f.endsWith('.exe'));
+  expect(exe !== undefined, `ISCC produced an installer for version ${version}`, readdirSync(outputDir));
+  return join(outputDir, exe);
+}
+
+/** Reads the real Inno-registered DisplayVersion for this AppId, or null
+ * if not currently installed. Checks both real registry roots Inno
+ * itself can use (jrsoftware.org/ishelp/topic_admininstallmode.htm):
+ * HKEY_CURRENT_USER for a non administrative install, or
+ * HKEY_LOCAL_MACHINE (queried via the explicit 32-bit view, since
+ * Setup.exe/Uninstall.exe are 32-bit and therefore WOW64-redirected to
+ * its WOW6432Node mirror there) for an administrative one - which root a
+ * given machine/account actually uses is not assumed, mirroring
+ * UninstallRegRoot's own IsAdminInstallMode()-based choice in the .iss
+ * itself, confirmed necessary against a real local install where an
+ * admin-capable-but-unelevated account used HKEY_LOCAL_MACHINE. */
+async function queryInstalledDisplayVersion() {
+  const hkcu = await run('reg', ['query', `HKCU\\${UNINSTALL_REG_SUBKEY}`, '/v', 'DisplayVersion']);
+  const fromHkcu = parseRegDisplayVersion(hkcu.out);
+  if (fromHkcu) return fromHkcu;
+
+  const hklm = await run('reg', ['query', `HKLM\\${UNINSTALL_REG_SUBKEY}`, '/reg:32', '/v', 'DisplayVersion']);
+  return parseRegDisplayVersion(hklm.out);
+}
+
+function parseRegDisplayVersion(regQueryOutput) {
+  const match = regQueryOutput.match(/DisplayVersion\s+REG_SZ\s+(\S+)/);
+  return match ? match[1] : null;
+}
+
+/** Scenario D (docs/windows-packaging.md §26/§2/§3/§13): the real
+ * fresh/update/downgrade-block/repair version-detection logic added to
+ * InitializeSetup/UninstallRegRoot in scripts/installer/streaming-
+ * tree.iss - compiles three throwaway test installers (0.1.0, 0.2.0, and
+ * 0.1.0 again) from the SAME already-built staged executable and drives
+ * them through a real fresh install, a real update, a real BLOCKED
+ * silent downgrade attempt, and a real same-version repair/reinstall -
+ * all against one hermetic install directory, verified against the real
+ * Inno-registered DisplayVersion each step, never assumed. */
+async function testVersionDetectionScenario(isccPath) {
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-version-compile-'));
+  const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-version-verify-')), 'app');
+  console.log(`Hermetic compile directory: ${compileDir}`);
+  console.log(`Hermetic install directory: ${installDir}`);
+
+  try {
+    step('Compile throwaway test installers at 0.1.0 and 0.2.0');
+    const v1exe = await compileTestInstaller(isccPath, '0.1.0', join(compileDir, 'v1'));
+    const v2exe = await compileTestInstaller(isccPath, '0.2.0', join(compileDir, 'v2'));
+
+    step('Fresh install of 0.1.0');
+    const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(fresh.code === 0, 'fresh install of 0.1.0 exits 0', fresh);
+    expect(await queryInstalledDisplayVersion() === '0.1.0', 'the registered version is 0.1.0 after fresh install');
+
+    step('Update to 0.2.0 over the same install directory');
+    const update = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(update.code === 0, 'update to 0.2.0 exits 0', update);
+    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is 0.2.0 after update');
+
+    step('Attempt a silent downgrade back to 0.1.0 - must be refused, not silently applied');
+    const downgrade = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(downgrade.code !== 0, 'the silent downgrade attempt does NOT exit 0', downgrade);
+    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
+
+    step('Same-version reinstall of 0.2.0 (repair) - must succeed, not be treated as a downgrade');
+    const repair = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(repair.code === 0, 'same-version reinstall exits 0', repair);
+    expect(await queryInstalledDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 after repair');
+  } finally {
+    const uninstallerFile = existsSync(installDir)
+      ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
+      : undefined;
+    if (uninstallerFile !== undefined) {
+      await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    }
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  }
 }
 
 /** Scenario A (docs/windows-packaging.md §26): an ordinary uninstall,
@@ -464,6 +576,11 @@ async function main() {
   await testOrdinaryUninstallAndReinstallScenario(installerPath);
   await testExplicitPurgeScenario(installerPath);
   await testManualUpgradeWhileRunningScenario(installerPath);
+
+  step('Locate ISCC.exe for the version-detection scenario');
+  const isccPath = findIscc();
+  expect(isccPath !== undefined, 'ISCC.exe found', 'Install it: winget install --id JRSoftware.InnoSetup --scope user');
+  await testVersionDetectionScenario(isccPath);
 
   console.log(`\n${stepCount} steps passed. PASS`);
 }
