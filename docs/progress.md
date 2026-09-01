@@ -49025,3 +49025,95 @@ was made. Continuing directly into 22E (integration test, packaged-
 runtime verification, documentation close-out) per the governing
 task's own explicit "do not ask the operator for permission between
 22A/22B/etc."
+
+## 2026-09-01 — fix(server),test: Stage 22E - integration/packaged-runtime verification and a real bug it found
+
+### What changed
+`scripts/verify-metadata-presets.mjs` (new): the canonical hermetic
+verification script for Stage 22, built on the exact same
+start-backend/temp-database/request helpers `verify-persistence.mjs`
+already established. Against the real HTTP API and a real, temporary
+SQLite database: creates a preset, restarts the backend and confirms
+it survived, previews and then applies it to the seeded Twitch
+destination and confirms the write actually landed (re-read from the
+destination itself, not just the apply response), creates a second
+preset scoped to BOTH Twitch and YouTube categories and applies it to
+the YouTube destination to prove the Twitch category id is never
+applied there, exercises the all-or-nothing apply path (one
+destination valid, one platform ID entirely unknown) and confirms
+NEITHER destination's metadata changed, and deletes the first preset
+to confirm its already-applied destination metadata survives
+untouched. No Twitch/YouTube account is linked to any destination
+anywhere in the script - a real provider publish attempt would have
+nothing to publish through and would fail loudly, so Apply completing
+at all is itself the proof nothing was published.
+
+**This script found a real bug the unit-test suite's stubs had
+missed:** `POST .../apply` with an unknown platform ID returned `500
+internal_error` instead of `404`. Root cause:
+`PlatformMetadataStore.GetMany` (satisfied by `*platform.Service`)
+returns `platform.ErrNotFound` directly for a missing platform id -
+never wrapped into a `metadatapreset` sentinel first - but
+`writeMetadataPresetError` only checked `metadatapreset.ErrNotFound`,
+so the real `platform.ErrNotFound` fell through to the generic 500
+branch. The existing httpapi unit tests for Apply used a stub service
+that never returned a raw `platform.ErrNotFound` in this shape, so
+they could not have caught it - a concrete case of a hermetic
+integration script catching what a too-narrowly-mocked unit test
+cannot. Fixed in `internal/httpapi/metadatapreset.go` by adding an
+explicit `errors.Is(err, platform.ErrNotFound)` case; a regression
+test (`TestApplyPresetUnknownPlatformIsNotFound`) reproduces the exact
+stub shape that let it slip through before, so a future refactor
+cannot silently reintroduce it. Re-ran the full backend suite and the
+verification script after the fix - both clean.
+
+`scripts/verify-packaged-app.mjs` extended (docs/metadata-presets.md
+§12): a new "Stage 22" block creates a preset and applies it to
+`pf_seed_twitch` on the REAL packaged production binary (this script
+never runs `go run`), and the existing Stage 21 restart-persistence
+block (which already restarts the packaged app once to prove
+onboarding-state survives) was extended to also confirm the preset and
+its already-applied destination metadata both survive that same
+restart - reusing the existing restart cycle rather than adding a
+second one. Required rebuilding the staged release binary
+(`scripts/build-release.ps1 -Version "0.1.0-dev+test" -SkipInstaller`)
+since the one on disk predated this stage's backend changes; the
+staging directory is gitignored, so nothing from this rebuild is
+tracked or handed to the operator - it exists solely for this
+script's own internal use. All 26 steps pass, including the 5 new
+Stage 22 ones.
+
+**A real side effect of that rebuild, caught and fixed before
+committing:** `npm run build`'s frontend output and the release
+build's legal-document staging step wrote real files into
+`apps/server/internal/webassets/embedded/` and `.../legal/`, deleting
+both directories' `.gitkeep` placeholders in the process and briefly
+failing `TestFrontendAndLegalAreRootedCorrectly`. Restored both
+`.gitkeep` files with `git checkout --` and removed the staged
+(gitignored, untracked) build output with `git clean -fdx` on just
+those two directories; confirmed `go test ./...` passes clean again
+afterward. Nothing was ever staged or committed in this state.
+
+`docs/metadata-presets.md` gained a new §12 (Verification surface)
+listing exactly where each layer's coverage lives - unit, frontend,
+integration, packaged runtime - so a future reader does not have to
+rediscover it. `README.md`'s Stage 22 paragraph changed from
+"in progress" to "is now implemented for its automated scope",
+matching Stage 21's own precedent wording and its own explicit
+automated-vs-physical distinction; the integration-script list and
+repository-tree listing both gained the new script.
+`docs/project-overview.md` §13.2 similarly dropped "(in progress)"
+and gained a sentence on atomicity and the verification surface.
+
+### Validation
+`gofmt -l .` clean, `go build ./...` clean, `go vet ./...` clean,
+`go test ./...` clean (including the new
+`TestApplyPresetUnknownPlatformIsNotFound` regression test).
+`node scripts/verify-metadata-presets.mjs` - 14 steps, PASS.
+`node scripts/verify-packaged-app.mjs` - 26 steps, PASS, against a
+freshly rebuilt staged release binary.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Stage 22's automated scope is now complete; see the final
+status report that follows this entry.

@@ -1411,7 +1411,7 @@ completing does not change Stage 20's own status (§20C2 remains
 Planned/externally gated, Stage 20 as a whole remains Incomplete until
 Stage 20E's physical gate actually runs).
 
-### 13.2 Stage 22 — reusable stream metadata presets (in progress)
+### 13.2 Stage 22 — reusable stream metadata presets
 
 A real, additive product stage - see [`docs/metadata-presets.md`](metadata-presets.md)
 for the full contract. Reuses the existing capability-driven metadata
@@ -1422,7 +1422,14 @@ provider-scoped category data, keyed by the exact provider it was
 captured from - a Twitch category ID is never applied to a YouTube
 destination. Applying a preset only ever writes local metadata through
 the existing validated save path; publishing to a provider remains the
-same separate, explicit, unchanged action it already was.
+same separate, explicit, unchanged action it already was. Applying to
+several destinations at once is atomic (`platform.Service.SaveMetadataBatch`,
+one transaction) and all-or-nothing: if any selected destination's
+projected values fail that destination's own validation, nothing is
+written for any of them. Verified end to end against the real HTTP
+API and a real restart by `node scripts/verify-metadata-presets.mjs`,
+and against the real packaged production binary by the Stage 22
+addition to `node scripts/verify-packaged-app.mjs`.
 
 ## 14. The manual testing rule
 

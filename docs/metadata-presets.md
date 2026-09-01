@@ -416,3 +416,22 @@ automated scope, matching Stage 21's own precedent. `docs/manual-
 verification.md`'s existing pending Windows sessions are unaffected -
 Stage 22 does not touch installer, tray, diagnostics, or ingest
 surfaces.
+
+## 12. Verification surface
+
+- Unit tests: `internal/domain/metadatapreset` (model/validation/
+  security/service/apply), `internal/domain/platform` (the
+  `SaveMetadataBatch`/`GetMany` additions), `internal/storage/sqlite`
+  (`metadatapreset_repository_test.go`, plus three `SaveMetadataBatch`
+  atomicity tests in `platform_repository_test.go`), `internal/httpapi`
+  (`metadatapreset_test.go`).
+- Frontend tests: `SavePresetDialog.test.tsx`,
+  `ManagePresetsDialog.test.tsx`, `ApplyPresetDialog.test.tsx`.
+- Integration: `node scripts/verify-metadata-presets.mjs` - the real
+  HTTP API against a real, temporary SQLite database, including a
+  genuine backend restart, cross-provider isolation, and an
+  all-or-nothing apply failure that writes nothing.
+- Packaged runtime: the Stage 22 addition to
+  `node scripts/verify-packaged-app.mjs` - create-then-apply against
+  the real production binary, both surviving the same restart cycle
+  the existing Stage 21 onboarding check already exercises.

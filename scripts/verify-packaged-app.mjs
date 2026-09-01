@@ -368,6 +368,30 @@ async function main() {
     expect(onboardingSet.status === 200, 'PUT /api/onboarding accepted', onboardingSet.status);
     expect(onboardingSet.body.status === 'dismissed', 'the response reflects the new status', onboardingSet.body);
 
+    step('Stage 22: create a metadata preset and apply it to a real destination on the packaged application');
+    // Proves the Stage 22 routes are actually registered and reachable in
+    // the real production binary (this script never runs `go run`), and
+    // that Apply's local write really lands - not just that a unit test
+    // fake accepted the call.
+    const presetCreate = await request('POST', '/api/metadata-presets', {
+      name: 'Packaged verification preset', note: '', title: 'Packaged apply check',
+      description: '', tags: ['packaged'], language: 'en', visibility: '',
+      matureContent: false, dvr: false, latencyMode: '',
+      providers: { twitch: { category: 'Just Chatting', categoryId: '509658' } },
+    });
+    expect(presetCreate.status === 201, 'POST /api/metadata-presets returns 201', presetCreate.body);
+    const presetId = presetCreate.body.id;
+
+    const presetApply = await request('POST', `/api/metadata-presets/${presetId}/apply`, {
+      platformIds: ['pf_seed_twitch'],
+    });
+    expect(presetApply.status === 200, 'POST .../apply returns 200', presetApply.body);
+    expect(
+      presetApply.body.platforms.pf_seed_twitch?.title === 'Packaged apply check',
+      'the applied title actually landed on the real destination',
+      presetApply.body,
+    );
+
     step('Stage 21: the onboarding status survives a real graceful shutdown and restart against the same data directory');
     const preRestartShutdown = await request('POST', '/api/system/shutdown', { confirm: true });
     expect(preRestartShutdown.status === 200, 'graceful shutdown accepted before restart', preRestartShutdown.status);
@@ -387,6 +411,21 @@ async function main() {
       onboardingAfterRestart.body.status === 'dismissed',
       'the onboarding status set before the restart survived it - never silently reset to pending',
       onboardingAfterRestart.body,
+    );
+
+    step('Stage 22: the preset and its already-applied destination metadata both survive the same restart');
+    const presetAfterRestart = await request('GET', `/api/metadata-presets/${presetId}`);
+    expect(presetAfterRestart.status === 200, 'the preset is still available after restart', presetAfterRestart.status);
+    expect(
+      presetAfterRestart.body.name === 'Packaged verification preset',
+      'the preset survived the restart',
+      presetAfterRestart.body,
+    );
+    const destinationAfterRestart = await request('GET', '/api/platforms/pf_seed_twitch/metadata');
+    expect(
+      destinationAfterRestart.body.title === 'Packaged apply check',
+      'the destination metadata Apply wrote before the restart is still there after it',
+      destinationAfterRestart.body,
     );
 
     step('A second launch detects the running instance and does not start another backend');

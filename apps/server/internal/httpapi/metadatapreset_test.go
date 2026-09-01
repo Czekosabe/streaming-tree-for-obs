@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -341,6 +342,23 @@ func TestApplyPresetRejectsAllOrNothingValidationFailure(t *testing.T) {
 	decodeBody(t, recorder, &body)
 	if _, ok := body.Fields["pf_1.title"]; !ok {
 		t.Fatalf("Fields = %+v, want a \"pf_1.title\" entry (platform-prefixed)", body.Fields)
+	}
+}
+
+// Regression: PlatformMetadataStore.GetMany's own platform.ErrNotFound was
+// falling through to the generic 500 branch, because it is never wrapped
+// into a metadatapreset sentinel first - found by
+// scripts/verify-metadata-presets.mjs against the real server, not by an
+// earlier, too-narrowly-mocked unit test.
+func TestApplyPresetUnknownPlatformIsNotFound(t *testing.T) {
+	stub := newStubMetadataPresets()
+	stub.applyErr = fmt.Errorf("%w: platform pf_missing", platform.ErrNotFound)
+	handler := newMetadataPresetServer(t, stub)
+
+	recorder := do(t, handler, http.MethodPost, "/api/metadata-presets/mp_1/apply",
+		map[string]any{"platformIds": []string{"pf_missing"}})
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

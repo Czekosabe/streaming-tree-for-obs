@@ -301,9 +301,12 @@ func handleApplyPreset(logger *slog.Logger, service MetadataPresetService) http.
 }
 
 // writeMetadataPresetError maps a metadatapreset domain failure onto
-// the HTTP contract - metadatapreset defines its own sentinel errors
-// (ErrNotFound/ErrDuplicateName/ErrTooMany), so writeDomainError's own
-// platform-package-specific errors.Is checks do not apply here.
+// the HTTP contract. Mostly metadatapreset's own sentinel errors
+// (ErrNotFound/ErrDuplicateName/ErrTooMany), but Apply/ApplyPreview
+// can also legitimately surface platform.ErrNotFound directly - it is
+// PlatformMetadataStore.GetMany's own error for a platform ID that
+// does not exist, never wrapped into a metadatapreset sentinel first
+// (docs/metadata-presets.md §6), so it is handled here explicitly too.
 func writeMetadataPresetError(w http.ResponseWriter, logger *slog.Logger, r *http.Request, err error) {
 	if verr, ok := platform.AsValidationError(err); ok {
 		writeValidationError(w, logger, verr)
@@ -330,6 +333,9 @@ func writeMetadataPresetError(w http.ResponseWriter, logger *slog.Logger, r *htt
 	switch {
 	case errors.Is(err, metadatapreset.ErrNotFound):
 		writeError(w, logger, http.StatusNotFound, "not_found", "The requested preset does not exist.")
+
+	case errors.Is(err, platform.ErrNotFound):
+		writeError(w, logger, http.StatusNotFound, "not_found", "The requested destination does not exist.")
 
 	case errors.Is(err, metadatapreset.ErrDuplicateName):
 		writeError(w, logger, http.StatusConflict, "duplicate_name", "A preset with this name already exists.")

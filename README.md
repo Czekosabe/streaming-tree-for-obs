@@ -117,15 +117,21 @@ independently of Stage 20E's own deferred physical/manual verification —
 it does not change Stage 20's own status (still Incomplete; 20C2 still
 externally gated) and did not require any Stage 20E physical evidence.
 
-**In progress: Stage 22, reusable stream metadata presets** — see
-[`docs/metadata-presets.md`](docs/metadata-presets.md) for the full
-contract. Lets a creator save a reusable stream title/category/tags/
-language setup once and apply it to compatible configured destinations
-later, without retyping it or confusing one provider's fields for
-another's. Presets hold content metadata only — never a stream key, a
-destination's transport configuration, or a credential of any kind —
-and applying one never publishes anything to a provider; the existing,
-separate, explicit Publish action is unchanged.
+**Stage 22, reusable stream metadata presets, is now implemented for
+its automated scope** — see [`docs/metadata-presets.md`](docs/metadata-presets.md)
+for the full contract. Lets a creator save a reusable stream
+title/category/tags/language setup once and apply it to compatible
+configured destinations later, without retyping it or confusing one
+provider's fields for another's. Presets hold content metadata only —
+never a stream key, a destination's transport configuration, or a
+credential of any kind, proven structurally rather than only by UI
+omission — and applying one (individually or across several
+destinations at once, atomically) never publishes anything to a
+provider; the existing, separate, explicit Publish action is
+unchanged. As with Stage 21, this is automated-scope verification only
+— no physical/manual browser pass has been performed for it, and this
+did not require, block on, or change Stage 20E's own deferred
+physical/manual verification.
 
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
@@ -3383,6 +3389,7 @@ node scripts/verify-goals-widgets.mjs             # Stage 18A persistent goals/c
 node scripts/verify-supporter-widgets.mjs         # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
 node scripts/verify-packaged-app.mjs              # Stage 20A packaged production runtime: routing, legal routes, single-instance, graceful shutdown - real release build, no fake servers
 node scripts/verify-updater.mjs                   # Stage 20B application updater: real Inno Setup install/upgrade/restart cycle, manifest and hash-mismatch rejection - fake GitHub API only, real installers
+node scripts/verify-metadata-presets.mjs          # Stage 22 reusable stream metadata presets: CRUD, restart persistence, provider-scoped apply, cross-provider isolation, all-or-nothing atomicity - no fake servers needed, no account ever linked
 ```
 
 A separate helper, `scripts/verify-installer.mjs`, smoke-tests the real
@@ -3769,7 +3776,8 @@ rest of the repository.
 │   ├── verify-tts-audio.mjs        # Stage 17A shared audio runtime and TTS: queue, filtering, playback lifecycle, public audio route - fake TTS provider + fake Astro WebSocket only
 │   ├── verify-alert-audio.mjs      # Stage 17B persistent alert sound/TTS: managed audio assets, rule-owned playback/arbitration/bounded hold, package v2 audio - fake TTS provider only
 │   ├── verify-goals-widgets.mjs    # Stage 18A persistent goals/counters: accumulation, dedupe, baseline management, public goal widgets - fake Twitch/YouTube/StreamElements
-│   └── verify-supporter-widgets.mjs # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
+│   ├── verify-supporter-widgets.mjs # Stage 18B supporter/activity widgets: latest/largest/recent/ticker/counters, dashboards, runtime-only privacy - fake Twitch/YouTube/StreamElements
+│   └── verify-metadata-presets.mjs # Stage 22 reusable stream metadata presets: CRUD, restart persistence, provider-scoped apply, cross-provider isolation, all-or-nothing atomicity - no fake servers needed
 ├── .gitignore
 ├── THIRD_PARTY_NOTICES.md      # MediaMTX, FFmpeg and other third-party dependencies
 └── README.md
