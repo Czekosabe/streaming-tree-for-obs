@@ -50056,3 +50056,78 @@ governing task's own git/journal discipline; assuming that also comes
 back green, Stage 24 (stream session / operational history - never
 engagement content) begins next, per the governing task's own explicit
 "do not AskUserQuestion between substages/stages."
+
+## 2026-09-01 — docs: define the Stage 24 stream session / operational history contract
+
+### What changed
+`docs/stream-session-history.md` (new): the Stage 24 contract, written
+after a research pass into `internal/runtime/branch`,
+`internal/runtime/mediamtx`, `internal/updater/guard.go`, and
+`cmd/server/main.go`'s shutdown sequence (no push/event mechanism
+exists for branch or ingest state anywhere in this codebase - both are
+polling-only; confirmed directly rather than assumed).
+
+**Session-boundary definition (§1)**: a session is a contiguous period
+during which `mediamtx.Supervisor.Snapshot().Ingest.State ==
+IngestReceiving` - the one signal that is true exactly when OBS is
+actually publishing, independent of destination configuration.
+Destination-branch state (`branch.Manager`,
+`updater.StreamingActive`'s own notion of "streaming active") is
+deliberately NOT the boundary signal: a branch can sit
+`WaitingForIngest` forever with nothing flowing, and can only ever
+reach `StateLive` when ingest is already receiving in the first place,
+so ingest state is both necessary and sufficient on its own - branch
+state is still read, but only to build per-destination participation
+records inside a session's already-determined bounds, never to decide
+where those bounds are. A 60-second grace window absorbs a normal
+reconnect blip without fragmenting one real session into several; a
+session's own `endedAt` is always the last real moment ingest was
+actually receiving, never the later moment the grace window happened
+to expire, and never derived from process uptime or polling cadence.
+
+**Unclean-shutdown recovery (§2)**: no generic shutdown-hook registry
+exists (`main.go`'s `shutdownRuntime` is one hand-written closure) -
+Stage 24 adds its own call into that same sequence. A session left
+open across a real crash or an operator-initiated quit-while-still-
+streaming is recovered honestly at startup: closed using its own last
+heartbeat timestamp (`lastSeenAt`, updated every poll tick while
+open), never `time.Now()`, never a fabricated time - and never treated
+as continuing into whatever session starts next, since continuity was
+already broken by the restart itself.
+
+**Data model (§3)**: `stream_sessions` +
+`stream_session_destinations` (migration `0031_stream_sessions.sql`).
+Destination rows snapshot `provider_id`/`display_name` at creation
+time and use `platform_id ... ON DELETE SET NULL` (never CASCADE) -
+deleting a destination must never delete its own history, and a later
+rename must never rewrite what history already says happened.
+
+**Explicitly out of scope, restated precisely (§0)**: chat messages,
+chatter names, donation messages/donor names/amounts, membership/Super
+Chat content, alert payload content, TTS text, and viewer/growth
+counts (those stay in Stage 18's goals/widgets domain) - a distinct,
+independent decision from the separately still-open engagement-event-
+history question, which this stage does not resolve, enable, or
+foreclose.
+
+Also specifies: bounded outcome/end-reason closed enums (never raw
+FFmpeg stderr or provider HTTP bodies, mirroring
+`updateBlockerKey`/`updateErrorKey`'s own closed-lookup-table
+convention), a 90-day default retention (enabled by default - the
+governing task's own explicit authorization, since nothing third-party
+or personally sensitive is ever stored here) plus an explicit "Clear
+history" action, honest live/in-progress and empty-state display, a
+narrow management-only HTTP surface, a frontend History page reusing
+existing UI conventions (the `ConfirmDialog` destructive-action pattern
+built this session for Stage 23), an explicit "never touches streaming
+functionality" guarantee, a six-substage decomposition (24A-24D), and
+a testing plan matching Stage 23's own established rigor - a real
+poll-loop-against-real-SQLite integration test, not only unit-level
+fakes.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 24A (migration + the
+`streamsession` domain package's data model/repository/poll-loop
+Manager) per the governing task's own explicit "do not AskUserQuestion
+between substages," now that Stage 23 is complete.
