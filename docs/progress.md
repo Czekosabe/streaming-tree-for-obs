@@ -48256,3 +48256,41 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 21B per the governing task's own
 explicit "do not stop merely to ask permission to begin the next
 already-defined substage."
+
+## 2026-09-01 — fix(server): avoid an adjacent-apostrophe comment gofmt reformats into a typographic quote
+
+Real CI evidence: "Cross-platform portability gate" failed the
+previous entry's commit across every `backend (*)` matrix leg (Linux
+amd64/arm64, macOS amd64/arm64, Windows amd64) at the `gofmt` step -
+`gofmt would reformat: internal/storage/sqlite/
+onboarding_repository_test.go`.
+
+### Diagnosis
+The committed source already had a plain, correct comment
+(`server_url = ''` - two ASCII apostrophes, confirmed byte-for-byte via
+`git show <commit>:<path>` and a hex dump). Running `gofmt` on it
+locally (Go 1.26.6) reproduced the exact same complaint, and its
+proposed output changed those two apostrophes into a single Unicode
+right double quotation mark (U+201D) - this toolchain's `gofmt`
+normalizes an adjacent `''` sequence inside a line comment into a
+typographic quote, which is not idempotent against plain ASCII input.
+Confirmed real and reproducible (not a local-machine-only artifact):
+the identical failure occurred on every real CI backend matrix leg,
+across three different host OSes.
+
+### Fix
+Reworded the one affected comment to avoid two adjacent apostrophes
+entirely ("a default row with an empty server_url" instead of
+"server_url = ''") rather than fighting the formatter - `gofmt -l .`
+is now clean and idempotent. Checked every other new file from the
+previous entry for the same pattern; none found.
+
+### Validation
+`gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean,
+`go test ./internal/domain/onboarding/... ./internal/storage/sqlite/...`
+clean.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Diagnosed and fixed from real CI evidence, not a blind
+retry - pushed to restore `main` to green before continuing into 21B.

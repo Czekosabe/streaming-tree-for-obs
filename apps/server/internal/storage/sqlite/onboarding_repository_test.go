@@ -128,9 +128,9 @@ func TestOnboardingMigrationRuleConnectedAccountIsDismissed(t *testing.T) {
 }
 
 // A real finding during implementation: 0003_platform_output_settings.sql
-// gives every platform - seeded or not - a default settings row with
-// server_url = '' the moment the platform exists, specifically so a row's
-// mere existence never implies configuration (that migration's own
+// gives every platform - seeded or not - a default settings row with an
+// empty server_url the moment the platform exists, specifically so a
+// row's mere existence never implies configuration (that migration's own
 // comment). This confirms the rule correctly ignores that always-present
 // empty row and only reacts to a real, non-empty server_url.
 func TestOnboardingMigrationRuleConfiguredOutputServerIsDismissed(t *testing.T) {
