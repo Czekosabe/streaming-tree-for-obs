@@ -520,6 +520,11 @@ func (s fakeVisualAssetsListOnly) ListAssets(context.Context) ([]visualasset.Ass
 	return out, nil
 }
 
+func (s fakeVisualAssetsListOnly) GetBlob(_ context.Context, sha256Hex string) (visualasset.Blob, bool, error) {
+	b, ok := s.f.visualBlobs[sha256Hex]
+	return b, ok, nil
+}
+
 type fakeAudioAssetsListOnly struct{ f *fakeSinks }
 
 func (s fakeAudioAssetsListOnly) ListAssets(context.Context) ([]audioasset.Asset, error) {
@@ -528,6 +533,11 @@ func (s fakeAudioAssetsListOnly) ListAssets(context.Context) ([]audioasset.Asset
 		out = append(out, a)
 	}
 	return out, nil
+}
+
+func (s fakeAudioAssetsListOnly) GetBlob(_ context.Context, sha256Hex string) (audioasset.Blob, bool, error) {
+	b, ok := s.f.audioAssetBlobs[sha256Hex]
+	return b, ok, nil
 }
 
 type fakeAudioSettingsGetOnly struct{ f *fakeSinks }

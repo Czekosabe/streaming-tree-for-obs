@@ -49775,3 +49775,120 @@ security/malicious-package tests from the governing task's §23/§29-34,
 packaged-runtime extension, PRIVACY.md/README.md/project-overview.md
 updates) per the governing task's own explicit "do not AskUserQuestion
 between substages."
+
+## 2026-09-01 — fix(server): Stage 23F - real backup blob-resolution bug found by integration testing, plus release-blocking security tests
+
+### What changed
+This is the first 23F increment (integration/security test hardening -
+docs/backup-restore.md §12, the governing task's §29-31/§33): archive-
+level malicious-package coverage against the governing task's full
+list, and real end-to-end security proofs against a genuinely migrated
+SQLite database with a real SecretStore and real FileStores - not the
+package-internal fakes export_test.go/archive_test.go/
+restore_commit_test.go already exercise the logic with.
+
+**A real bug found and fixed.** While writing
+`TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContentHash`
+against real repositories, `PreviewSession.AssetCount` came back `0`
+for a backup built from a real visual asset that genuinely existed in
+the database. Root cause: `sqlite.VisualAssetRepository.ListAssets`/
+`AudioAssetRepository.ListAssets` never populate `Asset.Blob` - it is
+a read-time join every other real read path resolves separately
+(`visualasset.Service.resolveBlob`, called from `Service.Get`/`List`).
+`backup.Export` was reading straight from the REPOSITORY (by design -
+docs/backup-restore.md's own repository-layer rationale), which skips
+that Service-layer join entirely. `WriteArchive`'s `collectBlobRefs`
+only ever looks at `Asset.Blob` to decide what to include, so with
+`Blob` always nil, every real backup would have silently included a
+visual/audio asset's METADATA row while never actually including its
+image/sound file - a backup that looked complete and passed every
+existing test (all of which built their fixtures by hand-setting
+`Blob` directly, bypassing the real repository path) while quietly
+losing the actual content on every real restore. Caught only because
+this test exercised the real `sqlite.VisualAssetRepository` end to
+end, which is exactly why this integration-testing pass exists.
+Fixed in `internal/domain/backup/export.go`: `Sources.VisualAssets`/
+`AudioAssets` each gained a `GetBlob(ctx, sha256Hex)` method (the
+underlying repositories already had it - `main.go`'s wiring needed no
+change), and `Export` now resolves and attaches each listed asset's
+own `Blob` itself, mirroring `visualasset.Service.resolveBlob`'s exact
+logic. `export_test.go`'s fakes gained a `blobs` map and a matching
+`GetBlob`, plus a new regression test
+(`TestExportResolvesVisualAndAudioAssetBlobs`) proving this at the
+unit level too, not only through the heavier integration test.
+`restore_commit_test.go`'s `fakeVisualAssetsListOnly`/
+`fakeAudioAssetsListOnly` were updated the same way to keep compiling
+against the widened interface.
+
+`archive_gap_test.go` (7 new tests, filling gaps against the governing
+task's malicious-package list not already covered by `archive_test.go`'s
+existing 9): unknown format version, a truncated/corrupt archive, an
+asset whose actual content does not match its declared hash (distinct
+from the existing config-hash-mismatch test - a different code path in
+reader.go), genuinely unparseable JSON (not just a schema mismatch),
+a real decompression bomb (10 MiB of zeros under real DEFLATE
+compression - the shared `addEntry` helper deliberately stores its
+entry uncompressed, so this needed its own `addDeflatedEntry` helper),
+duplicate archive entries, and a config.json carrying a secret-shaped
+unknown property name (`"streamKey"`) - `DisallowUnknownFields`
+already rejects any unrecognized property regardless of its name; this
+test names the exact scenario the governing task calls out so the
+intent is not just implicit.
+
+`security_integration_test.go` (3 new tests, real SQLite + real
+`secretstest.Store` + real `visualasset.FileStore`, mirroring
+`internal/userdatapurge`'s own `seedRealRecords` precedent):
+- `TestExportedBackupNeverContainsAnyRealSecretValue` (§29): a real
+  installation with a real platform/account/donation source, each
+  paired with a real secret under the exact production
+  `secrets.BuildKey` format (plus the two singleton secrets a backup
+  never even reads - admin password, remote-ingest publisher
+  password), each set to a unique sentinel string. A real `Export` is
+  scanned byte-for-byte for every sentinel - none found. Distinct from
+  `security_test.go`'s existing reflection-based structural scan (no
+  field could ever hold a secret): this is a proof about actual bytes
+  a real installation would produce.
+- `TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExisting
+  Secret` (§31, explicitly release-blocking, doubling as §30's
+  portable-restore proof): two genuinely independent installations,
+  each its own database and its own SecretStore. Installation B has a
+  real platform with a real stream-key secret. A crafted backup claims
+  that exact same platform id. After restoring it into B: the restored
+  platform has a freshly minted id (never the crafted one), B's
+  original secret is completely untouched, and - checked through the
+  real `credential.Service.Status`, not by re-deriving the key in the
+  test - the new platform's own credential status genuinely reads as
+  not configured. It can never silently inherit the victim's key.
+- `TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContent
+  Hash` (§33): a real visual asset (real blob file written through
+  `FileStore.WriteBlob`, real database rows) backed up from
+  installation A and restored into installation B's own fresh
+  `FileStore`. The restored asset gets a fresh id, and B's own
+  `FileStore.Open(sha256)` returns byte-identical content to the
+  original - the actual bug above surfaced while building this test,
+  before the export.go fix.
+
+Two fixture-only findings along the way, noted here rather than fixed,
+since neither is a defect: `sqlite.Migrate` seeds a handful of demo
+destinations on a fresh database (onboarding content) - the shared
+`newInstallation` test helper now deletes them immediately so this
+package's own platform counts mean exactly what they say, not
+"N plus whatever the migration happened to seed". And
+`visualasset.FileStore.EnsureDirs()` must be called once after
+construction (production code already does this in `main.go`) - the
+test helper does the same.
+
+### Testing
+`go build ./...`, `go vet ./...`, `gofmt -l .` clean across the whole
+backend. `go test ./internal/domain/backup/...` - 43 tests, all
+passing (was 32 before this commit). `go test ./...` clean across
+every backend package.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into the remaining 23F items (the
+hermetic `scripts/verify-backup-restore.mjs` integration script, the
+packaged-runtime `verify-packaged-app.mjs` extension,
+PRIVACY.md/README.md/docs/project-overview.md updates, and Stage 23's
+own completion determination) per the governing task's own explicit
+"do not AskUserQuestion between substages."

@@ -79,9 +79,22 @@ type Sources struct {
 	}
 	VisualAssets interface {
 		ListAssets(ctx context.Context) ([]visualasset.Asset, error)
+		// GetBlob resolves one asset's own Blob (ListAssets never
+		// populates it - it is a read-time join, exactly like
+		// visualasset.Service.resolveBlob already does for every other
+		// visual-asset read path). Export calls this once per distinct
+		// asset so WriteArchive's own blob-collection pass
+		// (collectBlobRefs, which only ever looks at Asset.Blob) has
+		// something to find - without this, a backup would silently
+		// include an asset's METADATA row but never its actual image/
+		// sound file.
+		GetBlob(ctx context.Context, sha256Hex string) (visualasset.Blob, bool, error)
 	}
 	AudioAssets interface {
 		ListAssets(ctx context.Context) ([]audioasset.Asset, error)
+		// GetBlob: see VisualAssets.GetBlob's own doc comment - the same
+		// reasoning, mirrored for audio assets.
+		GetBlob(ctx context.Context, sha256Hex string) (audioasset.Blob, bool, error)
 	}
 	AudioSettings interface {
 		GetSettings(ctx context.Context) (audio.Settings, bool, error)
@@ -265,8 +278,26 @@ func Export(ctx context.Context, src Sources) (Config, error) {
 	if cfg.VisualAssets, err = src.VisualAssets.ListAssets(ctx); err != nil {
 		return Config{}, fmt.Errorf("list visual assets: %w", err)
 	}
+	for i, a := range cfg.VisualAssets {
+		blob, found, err := src.VisualAssets.GetBlob(ctx, a.BlobSHA256)
+		if err != nil {
+			return Config{}, fmt.Errorf("resolve visual asset blob %q: %w", a.BlobSHA256, err)
+		}
+		if found {
+			cfg.VisualAssets[i].Blob = &blob
+		}
+	}
 	if cfg.AudioAssets, err = src.AudioAssets.ListAssets(ctx); err != nil {
 		return Config{}, fmt.Errorf("list audio assets: %w", err)
+	}
+	for i, a := range cfg.AudioAssets {
+		blob, found, err := src.AudioAssets.GetBlob(ctx, a.BlobSHA256)
+		if err != nil {
+			return Config{}, fmt.Errorf("resolve audio asset blob %q: %w", a.BlobSHA256, err)
+		}
+		if found {
+			cfg.AudioAssets[i].Blob = &blob
+		}
 	}
 
 	if settings, ok, err := src.AudioSettings.GetSettings(ctx); err != nil {

@@ -146,15 +146,31 @@ func (f fakeVisualTemplates) List(context.Context) ([]visualtemplate.Template, e
 	return f.rows, nil
 }
 
-type fakeVisualAssets struct{ rows []visualasset.Asset }
+type fakeVisualAssets struct {
+	rows  []visualasset.Asset
+	blobs map[string]visualasset.Blob
+}
 
 func (f fakeVisualAssets) ListAssets(context.Context) ([]visualasset.Asset, error) {
 	return f.rows, nil
 }
 
-type fakeAudioAssets struct{ rows []audioasset.Asset }
+func (f fakeVisualAssets) GetBlob(_ context.Context, sha256Hex string) (visualasset.Blob, bool, error) {
+	b, ok := f.blobs[sha256Hex]
+	return b, ok, nil
+}
+
+type fakeAudioAssets struct {
+	rows  []audioasset.Asset
+	blobs map[string]audioasset.Blob
+}
 
 func (f fakeAudioAssets) ListAssets(context.Context) ([]audioasset.Asset, error) { return f.rows, nil }
+
+func (f fakeAudioAssets) GetBlob(_ context.Context, sha256Hex string) (audioasset.Blob, bool, error) {
+	b, ok := f.blobs[sha256Hex]
+	return b, ok, nil
+}
 
 type fakeAudioSettings struct {
 	settings audio.Settings
@@ -411,5 +427,36 @@ func TestExportListsMetadataPresetsAndDonationSourcesAndChatAutomation(t *testin
 	if len(cfg.MetadataPresets) != 1 || len(cfg.DonationSources) != 1 || len(cfg.ChatSchedules) != 1 ||
 		len(cfg.ChatCommands) != 1 || len(cfg.VisualTemplates) != 1 || len(cfg.VisualAssets) != 1 || len(cfg.AudioAssets) != 1 {
 		t.Errorf("one or more flat-list domains missing from export: %+v", cfg)
+	}
+}
+
+// A real repository's ListAssets never populates Asset.Blob - it is a
+// read-time join a caller must resolve separately (exactly like
+// visualasset.Service.resolveBlob already does for every other read
+// path). Without Export doing this itself, WriteArchive's own
+// collectBlobRefs (which only ever looks at Asset.Blob) would silently
+// skip every real asset's actual file content while still including
+// its metadata row - a backup that looks complete but has quietly
+// lost every image and sound.
+func TestExportResolvesVisualAndAudioAssetBlobs(t *testing.T) {
+	src := emptySources()
+	src.VisualAssets = fakeVisualAssets{
+		rows:  []visualasset.Asset{{ID: "asset_1", DisplayName: "logo.png", BlobSHA256: "sha_visual_1"}},
+		blobs: map[string]visualasset.Blob{"sha_visual_1": {SHA256: "sha_visual_1", ByteSize: 4096}},
+	}
+	src.AudioAssets = fakeAudioAssets{
+		rows:  []audioasset.Asset{{ID: "aud_1", DisplayName: "ding.wav", BlobSHA256: "sha_audio_1"}},
+		blobs: map[string]audioasset.Blob{"sha_audio_1": {SHA256: "sha_audio_1", ByteSize: 2048}},
+	}
+
+	cfg, err := Export(context.Background(), src)
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if len(cfg.VisualAssets) != 1 || cfg.VisualAssets[0].Blob == nil || cfg.VisualAssets[0].Blob.SHA256 != "sha_visual_1" {
+		t.Fatalf("VisualAssets[0].Blob was not resolved: %+v", cfg.VisualAssets)
+	}
+	if len(cfg.AudioAssets) != 1 || cfg.AudioAssets[0].Blob == nil || cfg.AudioAssets[0].Blob.SHA256 != "sha_audio_1" {
+		t.Fatalf("AudioAssets[0].Blob was not resolved: %+v", cfg.AudioAssets)
 	}
 }
