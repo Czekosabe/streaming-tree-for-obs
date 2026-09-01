@@ -306,3 +306,30 @@ func (r *StreamSessionRepository) DeleteAllSessions(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (r *StreamSessionRepository) GetRetentionDays(ctx context.Context) (int, bool, error) {
+	var days int
+	err := r.db.QueryRowContext(ctx, `SELECT retention_days FROM stream_session_settings WHERE id = 1`).Scan(&days)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, streamSessionStorageErr("get retention days", err)
+	}
+	return days, true, nil
+}
+
+func (r *StreamSessionRepository) SetRetentionDays(ctx context.Context, days int, now time.Time) error {
+	nowText := platform.FormatTimestamp(now)
+	if _, err := r.db.ExecContext(ctx, `
+		INSERT INTO stream_session_settings (id, retention_days, created_at, updated_at)
+		VALUES (1, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			retention_days = excluded.retention_days,
+			updated_at = excluded.updated_at`,
+		days, nowText, nowText,
+	); err != nil {
+		return streamSessionStorageErr("set retention days", err)
+	}
+	return nil
+}

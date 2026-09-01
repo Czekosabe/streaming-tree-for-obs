@@ -38,6 +38,10 @@ type Options struct {
 	// (docs/backup-restore.md). When nil, none of the /api/backup
 	// routes are registered.
 	Backup BackupService
+	// StreamSessions serves the Stage 24 stream session / operational
+	// history API (docs/stream-session-history.md). When nil, none of
+	// the /api/stream-sessions routes are registered.
+	StreamSessions StreamSessionService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -321,6 +325,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.Backup != nil {
 		registerBackupRoutes(mux, logger, opts.Backup)
+	}
+
+	if opts.StreamSessions != nil {
+		registerStreamSessionRoutes(mux, logger, opts.StreamSessions)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"

@@ -217,6 +217,42 @@ func TestStreamSessionPruneNeverRemovesAnOpenSession(t *testing.T) {
 	}
 }
 
+func TestStreamSessionRetentionDaysDefaultsToNotFound(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewStreamSessionRepository(db.DB)
+
+	_, found, err := repo.GetRetentionDays(context.Background())
+	if err != nil {
+		t.Fatalf("GetRetentionDays() error = %v", err)
+	}
+	if found {
+		t.Error("GetRetentionDays() found a value on a fresh database, want not-found so the caller applies its own default")
+	}
+}
+
+func TestStreamSessionSetThenGetRetentionDaysRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewStreamSessionRepository(db.DB)
+	ctx := context.Background()
+
+	if err := repo.SetRetentionDays(ctx, 30, time.Now()); err != nil {
+		t.Fatalf("SetRetentionDays() error = %v", err)
+	}
+	days, found, err := repo.GetRetentionDays(ctx)
+	if err != nil || !found || days != 30 {
+		t.Fatalf("GetRetentionDays() = %d, %v, %v, want 30, true, nil", days, found, err)
+	}
+
+	// A second Set replaces the singleton row rather than erroring.
+	if err := repo.SetRetentionDays(ctx, 7, time.Now()); err != nil {
+		t.Fatalf("SetRetentionDays() (second call) error = %v", err)
+	}
+	days, found, err = repo.GetRetentionDays(ctx)
+	if err != nil || !found || days != 7 {
+		t.Fatalf("GetRetentionDays() after update = %d, %v, %v, want 7, true, nil", days, found, err)
+	}
+}
+
 func TestStreamSessionDeleteAllSessionsClearsHistory(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewStreamSessionRepository(db.DB)

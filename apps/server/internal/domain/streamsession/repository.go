@@ -9,6 +9,12 @@ import (
 // ErrNotFound means no session exists with the given id.
 var ErrNotFound = errors.New("stream session not found")
 
+// DefaultRetentionDays is used whenever no retention preference has
+// been persisted yet (docs/stream-session-history.md §6) - enabled by
+// default, since (unlike an engagement-content history) nothing
+// third-party or personally sensitive is ever stored here.
+const DefaultRetentionDays = 90
+
 // Repository is the persistence port this domain depends on. Every
 // method operates on the real SQLite-backed store in production
 // (internal/storage/sqlite) and an in-memory fake in tests.
@@ -45,4 +51,11 @@ type Repository interface {
 	// DeleteAllSessions deletes every session (and, via cascade, every
 	// destination row) - the explicit "Clear history" action.
 	DeleteAllSessions(ctx context.Context) error
+
+	// GetRetentionDays returns the persisted retention preference, or
+	// found=false if it has never been set (the caller applies
+	// DefaultRetentionDays in that case).
+	GetRetentionDays(ctx context.Context) (days int, found bool, err error)
+	// SetRetentionDays replaces the persisted retention preference.
+	SetRetentionDays(ctx context.Context, days int, now time.Time) error
 }

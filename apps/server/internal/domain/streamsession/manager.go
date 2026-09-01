@@ -25,6 +25,13 @@ const DefaultPollInterval = 5 * time.Second
 // closes within about a minute (docs/stream-session-history.md §1).
 const DefaultGraceWindow = 60 * time.Second
 
+// DefaultPruneInterval is how often the retention sweep runs - reuses
+// the same poll-loop timer rather than a separate scheduled job with
+// its own failure mode to reason about (docs/stream-session-history.md
+// §6), gated to this coarser cadence so a fresh prune DELETE does not
+// run on every single poll tick.
+const DefaultPruneInterval = time.Hour
+
 // NewSessionID returns a random, non-sequential session identifier -
 // matching platform.NewID's own reasoning (sequential integers would
 // leak how many sessions exist and invite enumeration).
@@ -85,12 +92,14 @@ type Manager struct {
 	newSessionID     func() (string, error)
 	newDestinationID func() (string, error)
 
-	pollInterval time.Duration
-	graceWindow  time.Duration
+	pollInterval  time.Duration
+	graceWindow   time.Duration
+	pruneInterval time.Duration
 
 	mu                         sync.Mutex
 	openSession                *Session
 	openDestinationsByPlatform map[string]*Destination
+	lastPruneAt                time.Time
 
 	stop chan struct{}
 	done chan struct{}
@@ -114,6 +123,11 @@ func WithGraceWindow(d time.Duration) Option {
 	return func(m *Manager) { m.graceWindow = d }
 }
 
+// WithPruneInterval overrides the retention-sweep cadence.
+func WithPruneInterval(d time.Duration) Option {
+	return func(m *Manager) { m.pruneInterval = d }
+}
+
 // NewManager builds a Manager. Start must be called once to begin
 // polling; Shutdown stops it.
 func NewManager(repo Repository, branches BranchSnapshotter, ingest IngestSnapshotter, platforms PlatformLookup, logger *slog.Logger, opts ...Option) *Manager {
@@ -124,6 +138,7 @@ func NewManager(repo Repository, branches BranchSnapshotter, ingest IngestSnapsh
 		newDestinationID: NewDestinationID,
 		pollInterval:     DefaultPollInterval,
 		graceWindow:      DefaultGraceWindow,
+		pruneInterval:    DefaultPruneInterval,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -246,11 +261,41 @@ func (m *Manager) tick(ctx context.Context) error {
 				return err
 			}
 		}
-		return m.reconcileDestinationsLocked(ctx, branches, now)
+		if err := m.reconcileDestinationsLocked(ctx, branches, now); err != nil {
+			return err
+		}
+	} else if m.openSession != nil && now.Sub(m.openSession.LastSeenAt) >= m.graceWindow {
+		if err := m.closeSessionLocked(ctx, now, EndReasonIngestStopped); err != nil {
+			return err
+		}
 	}
 
-	if m.openSession != nil && now.Sub(m.openSession.LastSeenAt) >= m.graceWindow {
-		return m.closeSessionLocked(ctx, now, EndReasonIngestStopped)
+	return m.pruneIfDueLocked(ctx, now)
+}
+
+// pruneIfDueLocked runs the retention sweep (docs/stream-session-
+// history.md §6) at most once per pruneInterval, reusing this same
+// poll-loop timer rather than a separate scheduled job.
+func (m *Manager) pruneIfDueLocked(ctx context.Context, now time.Time) error {
+	if !m.lastPruneAt.IsZero() && now.Sub(m.lastPruneAt) < m.pruneInterval {
+		return nil
+	}
+	m.lastPruneAt = now
+
+	days, found, err := m.repo.GetRetentionDays(ctx)
+	if err != nil {
+		return fmt.Errorf("get retention days: %w", err)
+	}
+	if !found {
+		days = DefaultRetentionDays
+	}
+	cutoff := now.AddDate(0, 0, -days)
+	n, err := m.repo.PruneSessionsBefore(ctx, cutoff)
+	if err != nil {
+		return fmt.Errorf("prune sessions before %v: %w", cutoff, err)
+	}
+	if n > 0 && m.logger != nil {
+		m.logger.Info("pruned expired stream session history", slog.Int("count", n), slog.Time("cutoff", cutoff))
 	}
 	return nil
 }

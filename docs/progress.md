@@ -50232,3 +50232,77 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 24B (HTTP API, retention/prune
 sweep, `main.go` wiring) per the governing task's own explicit "do not
 AskUserQuestion between substages."
+
+## 2026-09-01 — feat(server): Stage 24B - the stream-session HTTP API, retention pruning, and main.go wiring
+
+### What changed
+`internal/storage/sqlite/migrations/0032_stream_session_settings.sql`:
+the one persisted retention preference, the exact same singleton-row
+pattern `update_preferences` (Stage 20B) already uses - a separate
+migration from 0031 rather than editing it, since a shipped migration
+is never modified retroactively.
+
+`streamsession.Repository` gains `GetRetentionDays`/`SetRetentionDays`
+(found=false means "never set" - the caller applies
+`DefaultRetentionDays` = 90); `Manager.tick` now also runs a bounded
+retention sweep, gated to `DefaultPruneInterval` (1 hour) so a prune
+`DELETE` does not run on every 5-second poll tick, reusing the exact
+same timer rather than a separate scheduled job with its own failure
+mode (docs/stream-session-history.md §6).
+
+`internal/httpapi/streamsession.go` (new): `GET /api/stream-sessions`
+(bounded/clamped `limit` query param, default 50, max 200),
+`GET /api/stream-sessions/{id}`, `DELETE /api/stream-sessions`
+(Clear history - requires `{"confirm":true}`, mirroring
+`POST /api/system/shutdown`'s own established convention exactly),
+`GET`/`PUT /api/stream-sessions/settings`. Hit the same ambiguous-
+route-pattern panic Stage 23's backup restore-commit endpoint hit
+(`GET /api/stream-sessions/{id}` vs a bare any-method catch-all for
+`.../settings` - neither pattern is more specific than the other in
+both the method and path dimensions at once): resolved by simply not
+registering a custom 405 catch-all for `.../settings` at all, relying
+on Go's own built-in automatic 405 handling for a path that matches
+some pattern but not for the requested method - proven by a dedicated
+test, not assumed.
+
+`cmd/server/main.go`: `streamSessionManager` is constructed right
+after `branchManager.Start(ctx)` (reusing the same already-built
+`branchManager`/`supervisor`/`platformService` instances - never a
+second definition of "is a broadcast active" or "is OBS connected")
+and registered into `shutdownRuntime` BEFORE `branchManager`/
+`supervisor` shut down, since it only ever reads their snapshots and
+must stop polling before either of them tears down. The same
+`*sqlite.StreamSessionRepository` instance is wired directly into
+`httpapi.Options.StreamSessions`, mirroring Stage 23's own Sources/
+Sinks-reuse pattern.
+
+### Tests
+`internal/domain/streamsession/manager_test.go` gains
+`TestTickPrunesSessionsOlderThanRetentionOnceDue` (an old closed
+session is pruned once the sweep is due, a recent one within the
+default 90-day window survives). `internal/storage/sqlite/
+streamsession_repository_test.go` gains the retention-days get/set
+round trip plus its not-found-by-default behavior on a fresh database.
+`internal/httpapi/streamsession_test.go` (new, 12 tests): list/get/
+limit-clamping/invalid-limit/not-found, Clear-history confirm-required
+and success, settings get-with-default and set-with-validation, wrong-
+method rejection on the collection route, and the settings-route 405-
+not-a-panic proof.
+
+Also smoke-tested against a real `go run` dev backend (not just unit
+tests): server starts cleanly with the new manager wired in,
+`GET /api/stream-sessions` returns `{"sessions":[]}` on a fresh
+database, `GET /api/stream-sessions/settings` returns the real default
+`{"retentionDays":90}`.
+
+### Validation
+`gofmt -l .`, `go build ./...`, `go vet ./...` clean across the whole
+backend. `go test ./...` clean, including every new test from this
+entry and the prior 24A entry.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 24C (the frontend History page,
+live in-progress display, retention settings + Clear history, EN/PL)
+per the governing task's own explicit "do not AskUserQuestion between
+substages."

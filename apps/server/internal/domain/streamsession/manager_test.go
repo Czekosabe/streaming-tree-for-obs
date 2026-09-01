@@ -14,9 +14,10 @@ import (
 // --- fakes -----------------------------------------------------------
 
 type fakeRepo struct {
-	mu           sync.Mutex
-	sessions     map[string]Session
-	destinations map[string]Destination
+	mu            sync.Mutex
+	sessions      map[string]Session
+	destinations  map[string]Destination
+	retentionDays int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -138,6 +139,22 @@ func (f *fakeRepo) DeleteAllSessions(_ context.Context) error {
 	defer f.mu.Unlock()
 	f.sessions = map[string]Session{}
 	f.destinations = map[string]Destination{}
+	return nil
+}
+
+func (f *fakeRepo) GetRetentionDays(_ context.Context) (int, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.retentionDays == 0 {
+		return 0, false, nil
+	}
+	return f.retentionDays, true, nil
+}
+
+func (f *fakeRepo) SetRetentionDays(_ context.Context, days int, _ time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.retentionDays = days
 	return nil
 }
 
@@ -445,6 +462,51 @@ func TestStartWithNoOrphanedSessionLeavesHistoryEmpty(t *testing.T) {
 	sessions, err := repo.ListSessions(context.Background(), 10)
 	if err != nil || len(sessions) != 0 {
 		t.Fatalf("ListSessions() = %+v, %v, want an empty history", sessions, err)
+	}
+}
+
+func TestTickPrunesSessionsOlderThanRetentionOnceDue(t *testing.T) {
+	repo := newFakeRepo()
+	ctx := context.Background()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	oldEndedAt := now.AddDate(0, 0, -100) // older than the 90-day default
+	if err := repo.CreateSession(ctx, Session{ID: "sess_old", StartedAt: oldEndedAt, LastSeenAt: oldEndedAt, CreatedAt: oldEndedAt, UpdatedAt: oldEndedAt}); err != nil {
+		t.Fatalf("seed old session: %v", err)
+	}
+	if err := repo.UpdateSession(ctx, Session{
+		ID: "sess_old", StartedAt: oldEndedAt, LastSeenAt: oldEndedAt, EndedAt: &oldEndedAt,
+		EndReason: EndReasonIngestStopped, CreatedAt: oldEndedAt, UpdatedAt: oldEndedAt,
+	}); err != nil {
+		t.Fatalf("close old session: %v", err)
+	}
+
+	recentEndedAt := now.AddDate(0, 0, -1)
+	if err := repo.CreateSession(ctx, Session{ID: "sess_recent", StartedAt: recentEndedAt, LastSeenAt: recentEndedAt, CreatedAt: recentEndedAt, UpdatedAt: recentEndedAt}); err != nil {
+		t.Fatalf("seed recent session: %v", err)
+	}
+	if err := repo.UpdateSession(ctx, Session{
+		ID: "sess_recent", StartedAt: recentEndedAt, LastSeenAt: recentEndedAt, EndedAt: &recentEndedAt,
+		EndReason: EndReasonIngestStopped, CreatedAt: recentEndedAt, UpdatedAt: recentEndedAt,
+	}); err != nil {
+		t.Fatalf("close recent session: %v", err)
+	}
+
+	clock := &fakeClock{t: now}
+	ingest := &fakeIngest{state: mediamtx.IngestUnavailable}
+	branches := &fakeBranches{}
+	m := NewManager(repo, branches, ingest, testPlatforms(), nil,
+		WithClock(clock.Now), WithGraceWindow(60*time.Second), WithPollInterval(time.Hour), WithPruneInterval(time.Nanosecond))
+
+	if err := m.tick(ctx); err != nil {
+		t.Fatalf("tick() error = %v", err)
+	}
+
+	if _, err := repo.GetSession(ctx, "sess_old"); err != ErrNotFound {
+		t.Errorf("GetSession(sess_old) error = %v, want ErrNotFound (should have been pruned)", err)
+	}
+	if _, err := repo.GetSession(ctx, "sess_recent"); err != nil {
+		t.Errorf("GetSession(sess_recent) error = %v, want nil (within the default 90-day retention)", err)
 	}
 }
 

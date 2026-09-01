@@ -45,6 +45,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/streamsession"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
@@ -1107,6 +1108,16 @@ func run() error {
 	})
 	branchManager.Start(ctx)
 
+	// Stage 24: stream session / operational history (docs/stream-
+	// session-history.md). Reuses the same branchManager/supervisor
+	// this process already constructed - never a second definition of
+	// "is a broadcast active" or "is OBS connected".
+	streamSessionRepo := sqlite.NewStreamSessionRepository(db.DB)
+	streamSessionManager := streamsession.NewManager(streamSessionRepo, branchManager, supervisor, platformService, logger)
+	if err := streamSessionManager.Start(ctx); err != nil {
+		return fmt.Errorf("start stream session manager: %w", err)
+	}
+
 	ffmpegStatus := branchManager.FFmpegStatus()
 	logger.Info("ffmpeg dependency",
 		// Never the path: see ffmpeg.Resolution.Path's own doc comment.
@@ -1294,6 +1305,7 @@ func run() error {
 		Onboarding:      onboardingService,
 		MetadataPresets: metadataPresetService,
 		Backup:          backupService,
+		StreamSessions:  streamSessionRepo,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,
@@ -1390,6 +1402,10 @@ func run() error {
 			trayHandle.Stop()
 		}
 		updateManager.Shutdown(shutdownCtx)
+		// Stopped before branchManager/supervisor: it only ever reads
+		// their snapshots, so it must stop polling before either of
+		// them tears down, never the other way around.
+		streamSessionManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
