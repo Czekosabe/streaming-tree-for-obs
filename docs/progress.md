@@ -50131,3 +50131,104 @@ was made. Continuing directly into 24A (migration + the
 `streamsession` domain package's data model/repository/poll-loop
 Manager) per the governing task's own explicit "do not AskUserQuestion
 between substages," now that Stage 23 is complete.
+
+## 2026-09-01 — feat(server): Stage 24A - the stream-session domain, migration, and poll-loop Manager
+
+### What changed
+`internal/storage/sqlite/migrations/0031_stream_sessions.sql`:
+`stream_sessions` + `stream_session_destinations`, matching this
+project's own established migration style exactly (up-only raw SQL,
+`NOT NULL DEFAULT`/`CHECK` conventions, a top comment naming what is
+structurally excluded). `stream_session_destinations.platform_id` is
+`REFERENCES platforms(id) ON DELETE SET NULL` - deliberately never
+CASCADE, since deleting a destination must never delete its own
+history (docs/stream-session-history.md §3); `provider_id`/
+`display_name` are plain columns holding a point-in-time snapshot,
+never re-derived from a join, so a later rename doesn't rewrite what
+history already says happened.
+
+`internal/domain/streamsession` (new package): `model.go` (`Session`/
+`Destination`, closed `EndReason`/`Outcome` enums - `EndReasonIngest
+Stopped`/`EndReasonUncleanShutdown`, `OutcomeCompleted`/`OutcomeError`/
+`OutcomeSessionEnded`), `repository.go` (the `Repository` port),
+`manager.go` (the poll-loop `Manager` implementing the contract's own
+§1-§3 exactly): `BranchSnapshotter`/`IngestSnapshotter`/
+`PlatformLookup` are narrow read-only ports onto `branch.Manager`,
+`mediamtx.Supervisor`, and `platform.Service`/`Repository`
+respectively - confirmed by direct source review that neither
+`branch.Manager` nor `mediamtx.Supervisor` exposes any push/event
+mechanism, both are polling-only, so `Manager.tick` polls both on its
+own timer (`DefaultPollInterval` = 5s) rather than waiting on
+anything.
+
+`tick`'s actual state machine: a session opens the first time ingest
+is observed `Receiving`; while receiving, `LastSeenAt` is updated on
+that same tick (and ONLY on a receiving tick - not a generic
+"process alive" heartbeat, a real correction to the contract doc's own
+initial wording, fixed in this commit); while NOT receiving, the
+session stays open until `now - LastSeenAt >= GraceWindow`
+(`DefaultGraceWindow` = 60s), at which point it closes using
+`LastSeenAt` itself as `EndedAt` - the true last-receiving moment,
+never the tick that merely noticed the grace window had elapsed.
+Destination participation is reconciled only while a session is open:
+a branch reaching `StateLive` opens a row (resolving and snapshotting
+the platform's provider/display name via `PlatformLookup` at that
+exact moment); a branch leaving `StateLive` closes its row with
+`OutcomeError` if the branch's own state is `StateError`, else
+`OutcomeCompleted`; any destination still open when the session itself
+closes is closed at the session's own `EndedAt` with
+`OutcomeSessionEnded`.
+
+`Manager.Start` performs the contract's §2 unclean-shutdown recovery
+before the poll loop begins: any session row left with `EndedAt IS
+NULL` by a previous process is closed using its own `LastSeenAt`
+heartbeat (never `time.Now()`), `EndReason = unclean_shutdown`, and
+every one of its still-open destination rows the same way, at the same
+timestamp. `Manager.Shutdown` stops the loop but deliberately leaves a
+currently-open session exactly as it is - recovered the same way on
+the next `Start`, since a graceful shutdown mid-session is not
+meaningfully different from a crash from this feature's own point of
+view.
+
+`internal/storage/sqlite/streamsession_repository.go`: the real
+implementation, following the exact scan/format conventions every
+other repository in this package already uses
+(`platform.FormatTimestamp`/`ParseTimestamp`, `sql.NullString` for
+optional columns, a `var _ streamsession.Repository = (*...)(nil)`
+compile-time assertion).
+
+### Tests
+`internal/domain/streamsession/manager_test.go` (9 tests, in-memory
+fakes, deterministic fake clock, calling `tick`/`Start`/`Shutdown`
+directly): a session opens on the first receiving tick; destination
+participation opens/closes correctly including the error-vs-completed
+outcome split; a blip shorter than the grace window never fragments a
+session; one longer than it closes the session at its true last-
+receiving moment and a genuinely new session gets a fresh id; a
+destination still open when the session closes gets
+`OutcomeSessionEnded`; `Start` recovers an orphaned open session using
+its own stale heartbeat (proven against a clock set 24 hours later,
+confirming the recovered `EndedAt` is the heartbeat, never "now");
+`Start` with no orphan leaves history empty; a real-timer lifecycle
+smoke test proves `Shutdown` actually stops the loop promptly.
+
+`internal/storage/sqlite/streamsession_repository_test.go` (7 tests,
+a real migrated SQLite database): create/get/update round trips;
+update of an unknown id is `ErrNotFound`; the platform-snapshot/SET-
+NULL behavior specifically (a destination's `DisplayName` survives a
+later platform rename unchanged, and survives platform deletion with
+`PlatformID` becoming nil while every other field stays intact -
+proving the FK is genuinely `SET NULL` and cascades nothing it
+shouldn't, against the real SQLite foreign-key enforcement this
+project's connection turns on); `PruneSessionsBefore` never removes an
+open session regardless of age; `DeleteAllSessions` clears everything.
+
+### Validation
+`gofmt -l .`, `go build ./...`, `go vet ./...` clean across the whole
+backend. `go test ./...` clean, including all 16 new tests.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 24B (HTTP API, retention/prune
+sweep, `main.go` wiring) per the governing task's own explicit "do not
+AskUserQuestion between substages."

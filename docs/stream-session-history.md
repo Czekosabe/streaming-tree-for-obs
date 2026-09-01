@@ -93,9 +93,13 @@ different from a crash from this feature's own point of view - in
 neither case does the process observe a real ingest-stopped
 transition before it goes away.
 
-**Heartbeat.** While a session is open, every poll tick updates the
-session row's own `lastSeenAt` column - not only on a state
-transition. This is what makes recovery honest rather than guessed.
+**Heartbeat.** `lastSeenAt` is updated on every poll tick where ingest
+is confirmed `Receiving` - the same instant §1's grace-window clock
+uses, deliberately never updated during a grace-window-waiting tick
+(ingest not currently receiving, session not yet closed), so it always
+means exactly "the last real moment this session was observed
+receiving," never "the last time the process happened to be alive."
+This is what makes recovery honest rather than guessed.
 
 **Startup recovery.** On `Manager.Start`, before the poll loop begins,
 the repository is checked for any session row with `endedAt IS NULL`
