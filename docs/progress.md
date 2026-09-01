@@ -49892,3 +49892,76 @@ packaged-runtime `verify-packaged-app.mjs` extension,
 PRIVACY.md/README.md/docs/project-overview.md updates, and Stage 23's
 own completion determination) per the governing task's own explicit
 "do not AskUserQuestion between substages."
+
+## 2026-09-01 — test(scripts): Stage 23F - hermetic backup/restore integration script and a packaged-runtime extension
+
+### What changed
+`scripts/verify-backup-restore.mjs` (new): the hermetic HTTP-level
+integration script docs/backup-restore.md's own testing plan calls
+for, mirroring `verify-metadata-presets.mjs`'s `go run ./cmd/server`
+startup convention and `verify-visual-template-packages.mjs`'s
+"exhaustive matrix already covered at the Go level, this script
+exercises the real wired-together HTTP surface end to end, plus a
+representative subset of the malformed-package cases" framing - the
+deep archive/security matrix already has 43 dedicated Go tests
+(several against a real database and a real SecretStore), so this
+script's job is proving the real HTTP contract, not re-deriving that
+coverage a second time. Flow: seed a real stream key, real
+destination metadata, a real chat overlay, and a real metadata preset
+→ export a real package via `POST /api/backup/export` → confirm the
+seeded stream key is byte-absent from the exported archive → a well-
+formed but wrong-product package is rejected → restore-preview the
+real export (counts/needs-attention reflect the seeded data) → cancel
+the preview, then a fresh preview of the SAME bytes still succeeds
+(never trusts a prior preview) → commit → `restartRequired: true` →
+the restored chat overlay/preset exist under fresh local ids, never
+the originals → the restored destination's stream key genuinely reads
+as not configured through the real credential-status route → restart
+the backend against the same database → the restored configuration
+survived → a final byte-level scan of every captured HTTP response
+body and the backend's own stdout/stderr for the seeded secret.
+All 14 steps pass against a real `go run` backend.
+
+`scripts/verify-packaged-app.mjs`: gained a new Stage 23 step
+(inserted after the existing Stage 22 restart-persistence checks,
+before the "second launch is blocked" check) proving the backup
+export/restore-preview/commit routes are genuinely registered and
+reachable on the REAL RELEASE-BUILT PACKAGED BINARY - never `go run`,
+which is exactly this script's own reason to exist (its Stage 22 step
+states the same rationale verbatim). Deliberately scoped to wiring
+proof only (export succeeds and is a real ZIP, preview counts the
+preset this run already created, commit reports `restartRequired:
+true`, the restored preset exists under a fresh id) rather than
+repeating the full matrix a third time - the restart-persistence
+proof specifically already exists in `verify-backup-restore.mjs`
+against a real dev backend, and duplicating a full second restart
+cycle here would have required restructuring this script's existing
+single-restart-cycle flow (Stage 23's own restore replaces the entire
+configuration, which would break the Stage 21/22 restart-survival
+assertions that already run earlier if reordered incorrectly) for
+proportionately little additional coverage.
+
+Verified by actually rebuilding the release staging binary
+(`powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+test"
+-SkipInstaller`, since the one already on disk predated all of Stage
+23's backend work) and running the full script against it - all 27
+steps pass, including the new one. The release build's own staging
+step deleted `apps/server/internal/webassets/embedded/.gitkeep` and
+`.../legal/.gitkeep` as an untracked side effect (the same known,
+already-documented behavior from Stage 22E) - restored via `git
+checkout --` before committing; nothing else from the build output is
+tracked.
+
+### Testing
+`node scripts/verify-backup-restore.mjs` - 14 steps, all passing, real
+`go run` backend. `node scripts/verify-packaged-app.mjs` - 27 steps,
+all passing, real release-built packaged binary. `go build ./...`/
+`go test ./internal/webassets/...` re-confirmed clean after restoring
+the two `.gitkeep` placeholders.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into the remaining 23F items
+(PRIVACY.md/README.md/docs/project-overview.md updates and Stage 23's
+own completion determination) per the governing task's own explicit
+"do not AskUserQuestion between substages."

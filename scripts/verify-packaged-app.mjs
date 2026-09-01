@@ -79,6 +79,24 @@ async function request(method, path, body) {
   return { status: response.status, headers: response.headers, body: payload, text };
 }
 
+/** Sends/receives a raw binary body - a backup archive, never JSON/text
+ * (request() above decodes every response as UTF-8 text, which would
+ * corrupt a real zip archive). */
+async function requestRaw(method, path, { body, headers = {} } = {}) {
+  const response = await fetch(`${BASE_URL}${path}`, { method, headers, body });
+  const buf = Buffer.from(await response.arrayBuffer());
+  let payload = null;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      payload = JSON.parse(buf.toString('utf8'));
+    } catch {
+      payload = null;
+    }
+  }
+  return { status: response.status, body: payload, raw: buf, headers: response.headers };
+}
+
 /** Starts the real packaged executable against a hermetic data directory. */
 async function startPackagedApp(dataDir) {
   const child = spawn(STAGED_EXE, [], {
@@ -426,6 +444,42 @@ async function main() {
       destinationAfterRestart.body.title === 'Packaged apply check',
       'the destination metadata Apply wrote before the restart is still there after it',
       destinationAfterRestart.body,
+    );
+
+    step('Stage 23: backup export and restore preview/commit are reachable and real on the packaged binary');
+    // Proves the Stage 23 backup/restore routes are actually registered
+    // and reachable in the real production binary (never `go run`) - the
+    // deep archive/security/restart-persistence matrix already has
+    // dedicated coverage (43 Go tests, several against a real database
+    // and a real SecretStore, in apps/server/internal/domain/backup) and
+    // its own full HTTP-level restart-persistence proof against a real
+    // dev backend (scripts/verify-backup-restore.mjs); this step only
+    // needs to prove the packaged binary's own wiring, not repeat that
+    // whole matrix a third time.
+    const packagedExport = await requestRaw('POST', '/api/backup/export');
+    expect(packagedExport.status === 200, 'POST /api/backup/export succeeds on the packaged binary', packagedExport.status);
+    expect(packagedExport.raw.subarray(0, 2).toString('latin1') === 'PK', 'the exported package is a real ZIP archive', packagedExport.raw.subarray(0, 4));
+
+    const packagedPreview = await requestRaw('POST', '/api/backup/restore/preview', {
+      body: packagedExport.raw,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    expect(packagedPreview.status === 200, 'POST /api/backup/restore/preview succeeds on the packaged binary', packagedPreview.body);
+    expect(
+      packagedPreview.body.counts.metadataPresets >= 1,
+      'the preview counts the real preset created earlier in this run',
+      packagedPreview.body,
+    );
+
+    const packagedCommit = await request('POST', `/api/backup/restore/commit/${packagedPreview.body.token}`);
+    expect(packagedCommit.status === 200, 'POST /api/backup/restore/commit/{token} succeeds on the packaged binary', packagedCommit.body);
+    expect(packagedCommit.body.restartRequired === true, 'the packaged binary also reports restartRequired: true', packagedCommit.body);
+
+    const presetsAfterRestore = await request('GET', '/api/metadata-presets');
+    expect(
+      presetsAfterRestore.body.some((p) => p.name === 'Packaged verification preset' && p.id !== presetId),
+      'the restored preset exists under a fresh id, not the original one',
+      { originalId: presetId, presets: presetsAfterRestore.body },
     );
 
     step('A second launch detects the running instance and does not start another backend');
