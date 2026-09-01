@@ -50492,3 +50492,44 @@ unresolved policy question, or reporting a genuine decision point if
 multiple directions are equally valid - the same explicit "do not
 AskUserQuestion between stages" instruction that has governed this
 entire work period.
+
+## 2026-09-01 — docs: resolve the Stage 24 CI status - final commit 7b1d010 is fully green
+
+### What changed
+The previous work-period report stated Stage 24 was "genuinely
+complete" while its final commit's CI was still in progress - a real
+status contradiction, not a wording slip. Resolved by checking the
+actual current HEAD and its correctly-routed workflow runs to a
+terminal state, per docs/ci-reliability.md §9's own "final-evidence
+model" (evidence belongs to the final commit that actually changed
+product/source/build/test/workflow inputs).
+
+Current HEAD at the time of this check: `7b1d01073ad5af75db681f9bed
+081cc4dcfa87e1` (`test,docs: Stage 24D - real-database integration
+test, content-exclusion proof, packaged-runtime extension,
+PRIVACY.md`) - the last commit in the Stage 24 series to touch
+`apps/server/**` Go source (the two subsequent read at the time were
+none; this is HEAD itself). A single budgeted request to the runs-list
+endpoint filtered by this exact `head_sha` (per §11's request-budget
+discipline - one lookup, not one per workflow) returned all five
+correctly-routed workflows in a **terminal, green** state:
+
+| Workflow | Conclusion |
+| --- | --- |
+| Windows package verification | success |
+| Linux headless service verification | success |
+| Linux package verification | success |
+| Cross-platform portability gate | success |
+| macOS package verification | success |
+
+No failure, no `cancelled`-as-failure misread, no blind retry, no
+assumption that a pending job would pass - the previous report's
+"still running" state has now reached a real terminal result and it is
+green. Stage 24 is confirmed **Completed - automated scope**, matching
+Stage 23's own already-confirmed status.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into Stage 25 (stream setup profiles)
+per the governing task's own explicit authorization and "do not
+AskUserQuestion between stages" instruction.
