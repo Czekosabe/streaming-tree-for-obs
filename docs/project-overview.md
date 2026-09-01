@@ -1411,6 +1411,19 @@ completing does not change Stage 20's own status (§20C2 remains
 Planned/externally gated, Stage 20 as a whole remains Incomplete until
 Stage 20E's physical gate actually runs).
 
+### 13.2 Stage 22 — reusable stream metadata presets (in progress)
+
+A real, additive product stage - see [`docs/metadata-presets.md`](metadata-presets.md)
+for the full contract. Reuses the existing capability-driven metadata
+architecture (§9 above) rather than inventing a second one: a preset
+stores the same shared, capability-gated fields (`title`/`description`/
+`tags`/`language`/`visibility`/`matureContent`/`dvr`/`latencyMode`) plus
+provider-scoped category data, keyed by the exact provider it was
+captured from - a Twitch category ID is never applied to a YouTube
+destination. Applying a preset only ever writes local metadata through
+the existing validated save path; publishing to a provider remains the
+same separate, explicit, unchanged action it already was.
+
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application

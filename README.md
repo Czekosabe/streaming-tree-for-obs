@@ -117,6 +117,16 @@ independently of Stage 20E's own deferred physical/manual verification —
 it does not change Stage 20's own status (still Incomplete; 20C2 still
 externally gated) and did not require any Stage 20E physical evidence.
 
+**In progress: Stage 22, reusable stream metadata presets** — see
+[`docs/metadata-presets.md`](docs/metadata-presets.md) for the full
+contract. Lets a creator save a reusable stream title/category/tags/
+language setup once and apply it to compatible configured destinations
+later, without retyping it or confusing one provider's fields for
+another's. Presets hold content metadata only — never a stream key, a
+destination's transport configuration, or a credential of any kind —
+and applying one never publishes anything to a provider; the existing,
+separate, explicit Publish action is unchanged.
+
 > ## Project state: local ingest, outgoing FFmpeg streaming, Twitch + YouTube accounts, real Twitch and YouTube inbound Event Bus connectors, a real unified operator chat, a real OBS Browser Source chat overlay, real manual Twitch and YouTube chat sending, real scheduled messages/chat commands, a real alert engine with Super Chat/Super Sticker money support, real Alert/Chat Overlay Designers, and real portable visual-template packages with managed assets all work
 >
 > Streaming Tree can **receive** a stream from OBS (a supervised, managed

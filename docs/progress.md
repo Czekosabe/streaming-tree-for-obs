@@ -48565,3 +48565,76 @@ independent status is unaffected and unchanged.
 ### Continuous-execution rule compliance
 No operator-only blocker exists for this work. No AskUserQuestion call
 was made.
+
+## 2026-09-01 — docs: define the Stage 22 reusable stream metadata presets contract
+
+A new governing instruction authorized Stage 22 - reusable stream
+metadata presets - proceeding independently of Stage 20E's own
+deferred physical verification, exactly like Stage 21 before it. Wrote
+`docs/metadata-presets.md` after auditing the real current metadata
+architecture (never assuming field names or provider schemas from the
+governing instruction itself):
+
+- `internal/domain/platform/model.go`/`definitions.go`: confirmed the
+  existing architecture already uses **one unified, capability-gated
+  `Metadata` struct**, not per-provider schemas - the central finding
+  that shapes Stage 22's own common/provider-specific split. Real,
+  provider-by-provider capability data read directly: `Language` uses
+  one shared vocabulary across every provider that supports it;
+  `Visibility`/`LatencyMode`/`MatureContent`/`DVR` are real but mostly
+  provider-specific-in-relevance-only booleans/enums (LatencyMode and
+  DVR are currently inert for every real provider - documented as such
+  in the existing source, not invented here); `Category`/`CategoryID`
+  are the one genuinely provider-scoped concept (`CategoryRequiresRemoteID`
+  true for Twitch/YouTube, `CategoryFieldType` even differs
+  semantically for TikTok) - confirmed, not assumed, that a Twitch
+  category ID and a YouTube category ID are different ID spaces.
+- `internal/domain/platform/validation.go`'s `ValidateMetadata` is the
+  one authoritative validation function every save already uses - a
+  field a target provider does not support is a hard error when
+  non-empty, which is why Stage 22's own apply algorithm must project a
+  preset's common fields down to a target's real capability table
+  *before* calling it, never rely on it to silently ignore anything.
+- `platform.ValidationError`/`FieldViolation` confirmed (by grep) as
+  already a shared, cross-domain mechanism (account/chatoverlay/
+  credential/output domains and `httpapi/errors.go` all reuse it) -
+  Stage 22 reuses it too.
+- The existing `publish-preview`/`publish` split
+  (`usePublishPreviewQuery`/`usePublishMetadataMutation`) is the
+  established precedent Stage 22's own apply-preview/apply flow
+  mirrors directly.
+- `MetadataEditor`/`MetadataForm` confirmed one-destination-at-a-time
+  (tabbed), with an already-built unsaved-changes confirm-discard flow
+  (`isDirty`/`toDraft`, a `ConfirmDialog`) - reused directly for the
+  Apply-while-unsaved-edits conflict UX, not reimplemented.
+
+### Preset model
+`Preset { ID, Name, Note, Common CommonMetadata, Providers
+map[ProviderID]ProviderMetadata, CreatedAt, UpdatedAt }`.
+`CommonMetadata` mirrors `platform.Metadata`'s own shared fields
+exactly (Title/Description/Tags/Language/Visibility/MatureContent/DVR/
+LatencyMode); `ProviderMetadata{Category, CategoryID}` is stored per
+provider and is never applied outside the exact provider it was
+captured from. Deliberately not a full per-provider-override-of-
+everything model - only Category/CategoryID are genuinely provider-
+scoped per the real schema audit above; giving every field a per-
+provider slot would duplicate data for no reason and fight the
+already-capability-driven domain model.
+
+### Substage decomposition
+22A (domain/schema/persistence/CRUD API/secret-exclusion proof), 22B
+(CRUD + management UI, Save-current-as-preset), 22C (provider-aware
+apply: compatibility preview, atomic multi-destination apply, unsaved-
+edit conflict), 22D (Stream details/Dashboard integration, UX
+hardening), 22E (integration + packaged-runtime verification + docs).
+
+### Roadmap documentation
+`README.md` and `docs/project-overview.md` §13.2 both gained a brief,
+honest "Stage 22 (in progress)" mention. Stage 20's own status
+(20C2 Planned/externally gated, 20E deferred/pending, Stage 20
+Incomplete) and Stage 21's Completed status are unchanged.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made - Stage 22 itself, and this exact substage decomposition, was
+already authorized and specified by the governing instruction.
