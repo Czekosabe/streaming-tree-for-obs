@@ -51237,3 +51237,51 @@ was made. Continuing directly into 27A (the `streaminsights` domain
 package, already implemented and tested in the working tree, committed
 next) per the governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## feat(server): Stage 27A - the stream insights domain and HTTP API
+
+`internal/domain/streaminsights.Service.Compute(ctx) (Insights, error)`
+is the new Stage 27 read-only aggregation: it lists every currently-
+retained session via `streamsession.Repository.ListSessions(ctx, -1)`
+(the existing repository, unchanged - never a second read path over
+session history) and folds the result into total/average/longest
+session duration, a per-end-reason count (`""` is a real bucket,
+meaning still open), and per-destination reliability. A destination
+groups by its real platform id when it still exists, or by its own
+`ProviderID`/`DisplayName` snapshot when it has since been deleted -
+never dropped, never merged into an unrelated currently-existing
+destination of the same provider. An open session's own duration
+counts against `now`, matching how the History page's own
+`SessionDuration` component already treats an in-progress session as
+real elapsed time, not zero or excluded.
+
+`internal/httpapi/streaminsights.go` exposes this over
+`GET /api/stream-insights` (docs/stream-insights.md §4) - durations
+serialize as `durationSeconds` float fields (seconds, matching this
+codebase's own established convention for a computed duration rather
+than a stored timestamp pair the frontend would otherwise have to
+re-subtract). `main.go` wires `streaminsights.NewService` from the
+exact same `streamSessionRepo` Stage 24 already constructs.
+
+A `content_exclusion_test.go` mirrors `streamsession`'s own
+reflection-based engagement-content-shaped-field denylist scan
+exactly, applied to `Insights`/`DestinationInsights`/`SessionSummary` -
+proving structurally, not just by convention, that this new
+aggregation surface inherits Stage 24's own content exclusion rather
+than accidentally reopening it.
+
+7 new domain tests (zero-session zero-valued result with no divide-
+by-zero, a single completed session's own duration/average/end-reason
+bucket, an open session counted against `now`, a deleted destination
+grouped by snapshot rather than dropped, two sessions on the same
+destination aggregating together with a correct per-outcome
+breakdown, longest-session selection) plus the content-exclusion
+proof, and 3 new HTTP-layer tests (the report round-trips including a
+populated destination/longest-session, an empty-history zero-valued
+response, a wrong method maps to 405). Whole-backend `gofmt`/`go vet`/
+`go build`/`go test ./...` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 27B (the History page's new
+Insights section) per the governing task's own explicit authorization
+and "do not AskUserQuestion between substages."

@@ -46,6 +46,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/preflight"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/streaminsights"
 	"github.com/streaming-tree/server/internal/domain/streamsession"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
@@ -1174,6 +1175,11 @@ func run() error {
 	// implementation of destination/account/setup-profile readiness.
 	preflightService := preflight.NewService(branchManager, platformService, accountService, streamSetupService)
 
+	// Stage 27: stream insights (docs/stream-insights.md). Reuses the
+	// same streamSessionRepo Stage 24 already constructed - never a
+	// second read path over stream session history.
+	streamInsightsService := streaminsights.NewService(streamSessionRepo)
+
 	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
 	// branchStreamingGuard adapts the SAME "is a broadcast active" rule
 	// the application updater already uses (updater.StreamingActive) -
@@ -1326,6 +1332,7 @@ func run() error {
 		StreamSessions:  streamSessionRepo,
 		StreamSetups:    streamSetupService,
 		Preflight:       preflightService,
+		StreamInsights:  streamInsightsService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,
