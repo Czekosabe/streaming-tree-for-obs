@@ -37,9 +37,14 @@ export function OnboardingPage() {
     headingRef.current?.focus();
   }, [stepIndex]);
 
+  // Navigates only once the status is actually persisted (`onSuccess`), never
+  // unconditionally (`onSettled`): navigating away on a failed save is what
+  // previously let the assistant say "Setup is complete" while the Dashboard,
+  // reading the real still-unpersisted status, showed "Setup incomplete"
+  // right after - see docs/progress.md, Stage 20E findings batch 1, defect E.
   const finish = (status: 'completed' | 'dismissed') => {
     setStatus.mutate(status, {
-      onSettled: () => void navigate('/'),
+      onSuccess: () => void navigate('/'),
     });
   };
 
@@ -87,6 +92,12 @@ export function OnboardingPage() {
               <StepComponent />
             </div>
           </Panel>
+
+          {setStatus.isError && (
+            <p role="alert" className="text-sm text-status-error">
+              {t('nav.finishError')}
+            </p>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <Button variant="secondary" onClick={handleBack} disabled={isFirstStep}>

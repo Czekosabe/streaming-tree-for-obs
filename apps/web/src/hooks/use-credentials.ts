@@ -1,5 +1,6 @@
 import {
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
   type UseMutationResult,
@@ -32,6 +33,32 @@ export function useCredentialStatusQuery(platformId: string): UseQueryResult<Cre
     queryFn: ({ signal }) => fetchCredentialStatus(platformId, signal),
     staleTime: 30_000,
   });
+}
+
+/**
+ * How many of the given destinations actually have a stream key stored -
+ * the same "configured" fact `presentCredentialStatus` shows as "Stored" on
+ * each platform card, never merely how many destination cards exist. A
+ * seeded, never-touched destination is real (it exists) but not configured;
+ * conflating the two previously made onboarding's summary step claim
+ * destinations were "configured" when none of them had a stored key.
+ */
+export function usePlatformsConfiguredCount(platformIds: readonly string[]): {
+  configuredCount: number;
+  isLoading: boolean;
+} {
+  const results = useQueries({
+    queries: platformIds.map((platformId) => ({
+      queryKey: credentialKeys.status(platformId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCredentialStatus(platformId, signal),
+      staleTime: 30_000,
+    })),
+  });
+
+  return {
+    configuredCount: results.filter((result) => result.data?.streamKey.configured === true).length,
+    isLoading: results.some((result) => result.isLoading),
+  };
 }
 
 export function useSetStreamKeyMutation(): UseMutationResult<

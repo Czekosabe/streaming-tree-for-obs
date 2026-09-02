@@ -39,7 +39,9 @@
     "trackCount_many": "{{count}} ścieżek",
     "trackCount_other": "{{count}} ścieżki",
     "tracks": "Ścieżki",
-    "publisherNote": "Protokół RTMP nie identyfikuje aplikacji, więc akceptowany jest każdy nadajnik RTMP, nie tylko OBS."
+    "publisherNote": "Protokół RTMP nie identyfikuje aplikacji, więc akceptowany jest każdy nadajnik RTMP, nie tylko OBS.",
+    "expandDetails": "Pokaż szczegóły połączenia",
+    "collapseDetails": "Ukryj szczegóły połączenia"
   },
   "connection": {
     "heading": "Ustawienia OBS",

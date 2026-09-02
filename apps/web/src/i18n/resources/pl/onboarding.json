@@ -7,7 +7,8 @@
   "nav": {
     "back": "Wstecz",
     "continue": "Dalej",
-    "finish": "Przejdź do pulpitu"
+    "finish": "Przejdź do pulpitu",
+    "finishError": "Coś poszło nie tak podczas zapisywania postępu. Spróbuj ponownie."
   },
   "welcome": {
     "heading": "Witaj w Streaming Tree for OBS",
@@ -67,7 +68,7 @@
       "destinations": "Cele",
       "accounts": "Połączone konta"
     },
-    "destinationsCount": "{{configured}} skonfigurowanych, {{enabled}} włączonych, {{active}} aktywnych",
+    "destinationsCount": "{{total}} celów, {{configured}} skonfigurowanych, {{enabled}} włączonych, {{active}} aktywnych",
     "accountsCount": "{{count}} połączonych",
     "optional": "Opcjonalne"
   },

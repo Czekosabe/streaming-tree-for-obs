@@ -7,7 +7,8 @@
   "nav": {
     "back": "Back",
     "continue": "Continue",
-    "finish": "Go to Dashboard"
+    "finish": "Go to Dashboard",
+    "finishError": "Something went wrong saving your progress. Try again."
   },
   "welcome": {
     "heading": "Welcome to Streaming Tree for OBS",
@@ -67,7 +68,7 @@
       "destinations": "Destinations",
       "accounts": "Connected accounts"
     },
-    "destinationsCount": "{{configured}} configured, {{enabled}} enabled, {{active}} active",
+    "destinationsCount": "{{total}} destinations, {{configured}} configured, {{enabled}} enabled, {{active}} active",
     "accountsCount": "{{count}} connected",
     "optional": "Optional"
   },

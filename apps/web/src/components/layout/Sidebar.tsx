@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import { acquireBodyScrollLock } from '@/lib/body-scroll-lock';
 import { cn } from '@/lib/cn';
@@ -11,11 +12,22 @@ import { SidebarFooter } from './SidebarFooter';
 import { SidebarNav } from './SidebarNav';
 
 function SidebarContent({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
+  const { t } = useTranslation('navigation');
+
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-line p-4">
+      {/* The whole brand block is one link back to the Dashboard, matching
+          the common web-app convention - a real, keyboard-focusable `Link`,
+          not a clickable `div`, so it is reachable and activatable the same
+          way as any other navigation item. */}
+      <Link
+        to="/"
+        onClick={onNavigate}
+        aria-label={t('brandHomeLink')}
+        className="block border-b border-line p-4 transition-colors hover:bg-surface-hover"
+      >
         <BrandMark />
-      </div>
+      </Link>
       <div className="flex-1 overflow-y-auto py-4">
         <SidebarNav onNavigate={onNavigate} />
       </div>

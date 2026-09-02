@@ -52117,3 +52117,183 @@ AskUserQuestion call was made. No elevation, no `-Verb RunAs`, no
 installer/uninstaller execution against the real production AppId, no
 registry write against the preserved evidence, and no deletion of
 pre-existing residue occurred anywhere in this pass.
+
+## fix(web): Stage 20E real-world Windows UX findings, batch 1
+
+The operator's first real physical/manual Windows test of the packaged
+app (`StreamingTreeForOBS-0.9.9-stage20e-manualtest-windows-amd64-setup.exe`)
+proved the core flow works end to end (install, launch, MediaMTX,
+onboarding, Dashboard), but surfaced six concrete UX/product defects.
+This pass fixes them, frontend-only, without touching the operator's
+already-installed copy or any Windows state.
+
+### Defect A - sidebar scroll position resetting on navigation
+**Root cause**: every page rendered its own `<AppShell>` as the route's
+`element` in `App.tsx`'s flat `<Routes>` list. `<AppShell>` rendered the
+sidebar (`DesktopSidebar`/`MobileSidebar`) itself, so on every navigation
+React tore down and rebuilt the entire routed subtree, including the
+sidebar's scroll container - a brand-new DOM node always starts at
+`scrollTop = 0`. Confirmed by inspecting `App.tsx`'s route table: no
+`Outlet`/nested layout route existed at all.
+
+**Fix (structural, not a scroll-position hack)**: split `AppShell.tsx`
+into `ShellLayout` (new) and a trimmed `AppShell`. `ShellLayout` is
+mounted once as a React Router *layout route*
+(`<Route element={<ShellLayout />}>` wrapping every page that wants the
+app's chrome, in `App.tsx`) and owns the sidebar, the mobile drawer and
+the skip link; it renders an `<Outlet context={{ onOpenMenu }}>` for the
+routed page. `AppShell` now only renders the top bar/update banner/main
+content frame, reading `onOpenMenu` back via `useOutletContext` (falling
+back to a harmless no-op when there is no enclosing `ShellLayout`, e.g.
+in a page's own isolated unit test). Every one of the 14 pages that call
+`<AppShell title description actions>children</AppShell>` needed zero
+changes - the public prop signature never moved. Routes that
+deliberately have no chrome (`/onboarding`, both Designer routes, the
+four public overlay routes) stay outside the layout route, unchanged.
+Because `ShellLayout` never remounts across a route change, the sidebar's
+DOM node - and therefore its scroll position - is now preserved for
+free, with no scroll-save/restore logic of any kind.
+
+### Defect B - sidebar navigation had too little vertical space
+**Fix**: `SidebarFooter`'s "OBS Connection" card is now collapsible,
+collapsed by default. Always visible regardless of collapse state: the
+heading, the live ingest status dot/line, and a real MediaMTX error if
+one exists - collapsing never hides something the operator needs to see.
+Collapsed detail (track count, MediaMTX secondary state line, Stop/
+Restart controls, server/stream-key `CopyableValue` rows, the "not a
+secret" note, the MediaMTX version caption) sits in a `hidden={!expanded}`
+region with `aria-controls`/`aria-expanded` wired to a real `<button>`
+toggle (`ChevronDown`, rotated when expanded, `sr-only` label). Because
+`ShellLayout` (defect A's fix) never remounts, this collapse/expand state
+survives route navigation automatically, with no persisted-preference
+subsystem needed.
+
+### Defect C - brand/logo area was not a Dashboard link
+**Fix**: `Sidebar.tsx`'s `SidebarContent` now wraps the existing
+`BrandMark` in a real `react-router-dom` `<Link to="/">` (not a clickable
+`div`), with `aria-label={t('navigation:brandHomeLink')}` ("Streaming
+Tree for OBS — Dashboard" / "— Pulpit"). Keyboard-focusable via the
+global `:focus-visible` rule already in `index.css` (no ring override
+needed). `onClick={onNavigate}` closes the mobile drawer on click, same
+as every `SidebarNav` item. `BrandMark.tsx` itself is untouched (still a
+pure visual component; its own existing test needed no change) - only
+its container in `Sidebar.tsx` changed.
+
+### Defect D - onboarding summary claimed seeded, unconfigured destinations were "configured"
+**Root cause**: `SummaryStep.tsx` interpolated `platforms.length` (how
+many destination cards exist) into a variable literally named
+`configured`. The product's real, existing definition of "configured" is
+"has a stream key stored" - `credential-presentation.ts`'s
+`presentCredentialStatus` already renders exactly that as "Stored" on
+each `PlatformCard`, backed by `CredentialStatus.streamKey.configured`
+from `GET /api/platforms/{id}/credentials`. A seeded destination that
+exists but was never given a stream key was therefore always counted as
+"configured", even at zero enabled/zero active.
+
+**Fix**: added `usePlatformsConfiguredCount` (`hooks/use-credentials.ts`,
+`useQueries` over each platform's real credential status) and used it in
+`SummaryStep.tsx` for a genuine configured-count, alongside the existing
+enabled/active counts and a new, separate total. `destinationsCount`
+changed from `"{{configured}} configured, {{enabled}} enabled, {{active}}
+active"` to `"{{total}} destinations, {{configured}} configured,
+{{enabled}} enabled, {{active}} active"` (EN and PL). `SummaryStep.test.tsx`
+updated: the previous test literally asserted the old, wrong semantics
+("2 configured" for 2 platforms with no credential mocked at all) - now
+mocks real credential status per platform and adds a dedicated
+regression test for the exact reported scenario (four seeded, uncredentialed
+destinations -> "4 destinations, 0 configured, 0 enabled, 0 active").
+
+### Defect E - onboarding said "Setup is complete", Dashboard said "Setup incomplete"
+**Investigation**: `OnboardingDashboardBanner` only shows once
+`useOnboardingStateQuery().data.status !== 'completed'`. The Go backend
+(`onboarding.Service.SetStatus`/`handlePutOnboardingStatus`) and the
+frontend mutation's `onSuccess` (`queryClient.setQueryData`) both looked
+correct in isolation - no reproducible backend defect was found, so per
+this pass's own instructions the backend was left untouched. The real,
+provable frontend defect: `OnboardingPage.tsx`'s `finish()` navigated to
+`/` from the mutation's `onSettled` callback, which fires on **both**
+success and failure. Any failed `PUT /api/onboarding` (network hiccup,
+timing, anything) still navigated to the Dashboard as if the status had
+been saved, while the query cache - only ever updated in `onSuccess` -
+kept whatever status it had before, reproducing exactly the operator's
+contradiction on any real-world failure of that single request.
+
+**Fix**: `finish()` now navigates from `onSuccess` only. A failed save
+keeps the operator on the assistant's own last step and shows a new,
+visible `role="alert"` error (`nav.finishError`, EN/PL) instead of
+silently proceeding to a Dashboard that would contradict what the
+assistant just told them. Existing outcome kept as-is (option A from the
+governing task): completing the wizard *does* mark onboarding complete
+and the Dashboard banner correctly stops showing - zero destinations and
+zero connected accounts remain valid, complete-able states, unchanged.
+Added a regression test asserting the failure path never navigates away
+and shows the alert.
+
+### Defect F/G - "SOON" badges on Platforms/Metadata navigation items
+**Audit result: both badges are truthful, not stale - retained
+unchanged.** `PlatformsPage`/`MetadataPage` (`pages/PlannedPages.tsx`)
+still render `PlaceholderPage`, whose body explicitly states
+`t('placeholder.notImplemented')` - these two *routes* are genuinely not
+built yet, confirmed by `pages.json`'s own current copy ("This dedicated
+view is not built yet"), last touched by the prior stale-copy fix
+(`242a2fab`) which removed a stale claim about *already-shipped* preset
+functionality without claiming the dedicated `/platforms`/`/metadata`
+views themselves were done. The platform/metadata functionality that
+*does* exist today (editing via `PlatformGrid`/`MetadataEditor`) lives on
+the Dashboard, a different route than the one the nav item points at -
+so "Soon" on these two nav entries describes the destination route
+accurately. No code change made for this defect.
+
+### Audit-only items (no defect found, no change made)
+- **Onboarding Step 1 focus outline**: `OnboardingPage.tsx`'s
+  `headingRef`/`tabIndex={-1}` on each step's content is an intentional,
+  documented programmatic focus target (matching the `#main-content`
+  skip-link convention), and the purple ring is the app's own global
+  `:focus-visible` rule in `index.css` doing exactly what its own comment
+  says it must keep doing. Confirmed correct; not touched.
+- **Pre-existing install-directory dialog** (§11 of the governing task):
+  not treated as a confirmed bug, not investigated further, installer
+  lifecycle not touched - deferred to a future physical uninstall/purge
+  test as instructed.
+
+### Responsive/height verification
+Verified by structural CSS review, not a live browser at exact pixel
+heights (no browser-automation tool was available in this pass):
+`DesktopSidebar` is `h-dvh` (adapts to any real viewport height) with an
+internal `flex h-full flex-col`; `SidebarNav`'s container is `flex-1
+overflow-y-auto` (scrolls independently) and `SidebarFooter` is
+`mt-auto` (a normal flex item, never fixed/absolute, so it cannot
+overlap or clip regardless of window height). This pattern is unchanged
+by defect A's fix and was already sound before it. Stated explicitly,
+per this pass's own instructions, rather than claiming a live-browser
+verification that did not happen.
+
+### Frontend verification (complete, real, final run)
+- `npm run i18n:check` (apps/web): **passed** - 2 languages (en, pl), 29
+  namespaces, no differences against "en".
+- `npm run typecheck` (apps/web, `tsc -b`): **passed**, no errors.
+- `npm run lint` (apps/web, ESLint): **0 errors**, 1 pre-existing warning
+  in `src/app/auth-context.tsx` (react-refresh/only-export-components),
+  unrelated to this pass and not touched by it.
+- `npx vitest run` (apps/web): **1575 tests passed, 136 test files
+  passed**, 0 failed. Includes three new test files/additions:
+  `AppShell.test.tsx` (scroll-container DOM identity across navigation,
+  brand link, mobile-menu-via-outlet-context), `SidebarFooter.test.tsx`
+  (collapsed-by-default, expand reveals detail, error always visible),
+  and new cases in `SummaryStep.test.tsx`/`OnboardingPage.test.tsx`.
+  Pre-existing jsdom `HTMLMediaElement.prototype.load/play` "not
+  implemented" console noise from unrelated `AudioRenderer` tests, not a
+  failure.
+- `npm run build` (apps/web, `tsc -b && vite build`): **succeeded**.
+  Pre-existing "chunks larger than 500 kB" advisory warning, unrelated to
+  this pass.
+
+Backend untouched (`git status` confirms no `apps/server` file changed) -
+no backend checks were applicable, per the governing task's own scope
+rule (§19).
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No installer/uninstaller was compiled
+or executed in this pass. No registry, shortcut, or other operator
+Windows state was read or written. The operator's already-installed
+Stage 20E copy was never touched.

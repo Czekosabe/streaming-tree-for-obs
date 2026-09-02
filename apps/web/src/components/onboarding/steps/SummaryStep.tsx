@@ -4,6 +4,7 @@ import { SystemStatusPill } from '@/components/system/SystemStatusPill';
 import { StatusDot } from '@/components/ui/StatusBadge';
 import { useAccountsQuery } from '@/hooks/use-accounts';
 import { useBranchRuntimeQuery } from '@/hooks/use-branches';
+import { usePlatformsConfiguredCount } from '@/hooks/use-credentials';
 import { usePlatformsQuery } from '@/hooks/use-platforms';
 import { useRuntimeQuery } from '@/hooks/use-runtime';
 import { ingestStateKey, ingestTone } from '@/models/runtime-presentation';
@@ -15,11 +16,18 @@ import { ingestStateKey, ingestTone } from '@/models/runtime-presentation';
  * Every category reuses real state already fetched elsewhere in the
  * app - `SystemStatusPill` (the same aggregated indicator the top bar
  * uses) for Application, `useRuntimeQuery` for OBS ingest,
- * `usePlatformsQuery`/`useBranchRuntimeQuery` for destinations,
- * `useAccountsQuery` for connected accounts. No category is ever
- * rendered as a failure merely for being optional or not yet
+ * `usePlatformsQuery`/`useBranchRuntimeQuery`/`usePlatformsConfiguredCount`
+ * for destinations, `useAccountsQuery` for connected accounts. No category
+ * is ever rendered as a failure merely for being optional or not yet
  * configured - zero destinations and zero connected accounts are both
  * valid, complete-able states.
+ *
+ * "Configured" here means the same thing `PlatformCard`'s own "Stored"
+ * credential badge means - a destination with a stream key actually saved,
+ * not merely a destination card that exists. A destination created but
+ * never given a stream key (including a seeded placeholder one) counts
+ * toward the total, never toward "configured" - see docs/progress.md,
+ * Stage 20E findings batch 1, defect D.
  */
 export function SummaryStep() {
   const { t } = useTranslation(['onboarding', 'runtime']);
@@ -31,6 +39,8 @@ export function SummaryStep() {
   const ingest = runtimeQuery.data?.ingest;
   const platforms = platformsQuery.data ?? [];
   const branches = branchesQuery.data ?? [];
+  const platformIds = platforms.map((platform) => platform.id);
+  const { configuredCount } = usePlatformsConfiguredCount(platformIds);
   const enabledCount = platforms.filter((p) => p.enabled).length;
   const activeCount = branches.filter((b) => b.state === 'live').length;
   const accounts = accountsQuery.data ?? [];
@@ -60,7 +70,12 @@ export function SummaryStep() {
           <span className="text-ink-muted">{t('summary.categories.destinations')}</span>
           <span className="flex items-center gap-2">
             <span className="font-medium text-ink">
-              {t('summary.destinationsCount', { configured: platforms.length, enabled: enabledCount, active: activeCount })}
+              {t('summary.destinationsCount', {
+                total: platforms.length,
+                configured: configuredCount,
+                enabled: enabledCount,
+                active: activeCount,
+              })}
             </span>
             <span className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
               {t('summary.optional')}

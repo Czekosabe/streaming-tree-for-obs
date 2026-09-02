@@ -5,6 +5,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '@/app/auth-context';
 import { queryClient } from '@/app/query-client';
 import { AuthGate } from '@/components/auth/AuthGate';
+import { ShellLayout } from '@/components/layout/AppShell';
 import { i18n } from '@/i18n';
 import { AboutLegalPage } from '@/pages/AboutLegalPage';
 import { AlertDesignerPage } from '@/pages/AlertDesignerPage';
@@ -39,43 +40,49 @@ export function App() {
             <AuthGate>
               <OnboardingAutoRedirect />
               <Routes>
-                <Route path="/" element={<DashboardPage />} />
+                {/* Layout route: sidebar and mobile drawer render once here
+                    and never remount as the routed page below changes - see
+                    ShellLayout's own doc comment (Stage 20E defect A). Every
+                    page nested under it still renders its own `<AppShell>`
+                    for its title/description/actions, unchanged. */}
+                <Route element={<ShellLayout />}>
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/platforms" element={<PlatformsPage />} />
+                  <Route path="/streams" element={<StreamsPage />} />
+                  <Route path="/metadata" element={<MetadataPage />} />
+                  <Route path="/engagement" element={<EngagementPage />} />
+                  <Route path="/chat" element={<ChatPage />} />
+                  <Route path="/overlays" element={<OverlaysPage />} />
+                  <Route path="/automation" element={<AutomationPage />} />
+                  <Route path="/alerts" element={<AlertsPage />} />
+                  <Route path="/audio" element={<AudioPage />} />
+                  <Route path="/goals" element={<GoalsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/settings/about" element={<AboutLegalPage />} />
+                  <Route path="/logs" element={<LogsPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Route>
+
+                {/* Outside ShellLayout: deliberately no sidebar/nav chrome. */}
                 <Route path="/onboarding" element={<OnboardingPage />} />
-                <Route path="/platforms" element={<PlatformsPage />} />
-                <Route path="/streams" element={<StreamsPage />} />
-                <Route path="/metadata" element={<MetadataPage />} />
-                <Route path="/engagement" element={<EngagementPage />} />
-                <Route path="/chat" element={<ChatPage />} />
-                <Route path="/overlays" element={<OverlaysPage />} />
-                <Route path="/automation" element={<AutomationPage />} />
-                <Route path="/alerts" element={<AlertsPage />} />
-                <Route path="/audio" element={<AudioPage />} />
-                <Route path="/goals" element={<GoalsPage />} />
-                {/* No AppShell: the Designer wants full control of the
-                    viewport for its own canvas/panel layout and top bar -
-                    see AlertDesignerPage's own doc comment. */}
+                {/* The Designer wants full control of the viewport for its
+                    own canvas/panel layout and top bar - see
+                    AlertDesignerPage's own doc comment. */}
                 <Route path="/alerts/rules/:ruleId/designer" element={<AlertDesignerPage />} />
-                {/* No AppShell here either - see ChatOverlayDesignerPage's own
-                    doc comment. */}
+                {/* Same reasoning - see ChatOverlayDesignerPage's own doc
+                    comment. */}
                 <Route path="/overlays/:overlayId/designer" element={<ChatOverlayDesignerPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/about" element={<AboutLegalPage />} />
-                <Route path="/logs" element={<LogsPage />} />
-                <Route path="/history" element={<HistoryPage />} />
-                {/* No AppShell: a standalone Browser Source page, never the
-                    operator dashboard's chrome - see OverlayChatPage's own
-                    doc comment. */}
+                {/* A standalone Browser Source page, never the operator
+                    dashboard's chrome - see OverlayChatPage's own doc
+                    comment. */}
                 <Route path="/overlay/chat/:publicSlug" element={<OverlayChatPage />} />
-                {/* No AppShell here either - see PublicAlertPage's own doc
-                    comment. */}
+                {/* Same reasoning - see PublicAlertPage's own doc comment. */}
                 <Route path="/overlay/alerts/:publicSlug" element={<PublicAlertPage />} />
-                {/* No AppShell here either - see PublicAudioPage's own doc
-                    comment. */}
+                {/* Same reasoning - see PublicAudioPage's own doc comment. */}
                 <Route path="/overlay/audio/:publicSlug" element={<PublicAudioPage />} />
-                {/* No AppShell here either - see PublicWidgetPage's own doc
-                    comment. */}
+                {/* Same reasoning - see PublicWidgetPage's own doc comment. */}
                 <Route path="/overlay/widgets/:publicSlug" element={<PublicWidgetPage />} />
-                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </AuthGate>
           </AuthProvider>

@@ -37,7 +37,9 @@
     "trackCount_one": "{{count}} track",
     "trackCount_other": "{{count}} tracks",
     "tracks": "Tracks",
-    "publisherNote": "RTMP does not identify the application, so any RTMP publisher is accepted, not only OBS."
+    "publisherNote": "RTMP does not identify the application, so any RTMP publisher is accepted, not only OBS.",
+    "expandDetails": "Show connection details",
+    "collapseDetails": "Hide connection details"
   },
   "connection": {
     "heading": "OBS settings",

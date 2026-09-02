@@ -97,6 +97,24 @@ describe('OnboardingPage', () => {
     expect(await screen.findByText('dashboard-marker')).toBeInTheDocument();
   });
 
+  it('does not navigate away and shows a retryable error when persisting completion fails', async () => {
+    vi.mocked(onboardingApi).setOnboardingStatus.mockRejectedValueOnce(new Error('network error'));
+    renderApp();
+    await screen.findByRole('heading', { name: /fake welcome heading/i });
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
+    await screen.findByRole('heading', { name: /fake middle heading/i });
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }));
+    await screen.findByRole('heading', { name: /fake summary heading/i });
+
+    await userEvent.click(screen.getByRole('button', { name: /go to dashboard/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/something went wrong/i);
+    // Still on the assistant - the Dashboard must never contradict a claim
+    // of completion that was never actually persisted.
+    expect(screen.queryByText('dashboard-marker')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fake summary heading/i })).toBeInTheDocument();
+  });
+
   it('Skip setup marks onboarding dismissed and returns to the dashboard immediately, from any step', async () => {
     renderApp();
     await screen.findByRole('heading', { name: /fake welcome heading/i });

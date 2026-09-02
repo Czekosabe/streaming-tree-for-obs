@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as accountsApi from '@/api/accounts';
 import * as branchesApi from '@/api/branches';
+import * as credentialsApi from '@/api/credentials';
 import * as platformsApi from '@/api/platforms';
 import * as runtimeApi from '@/api/runtime';
 import type * as ApiClientModule from '@/lib/api-client';
@@ -14,6 +15,7 @@ vi.mock('@/api/runtime');
 vi.mock('@/api/platforms');
 vi.mock('@/api/branches');
 vi.mock('@/api/accounts');
+vi.mock('@/api/credentials');
 vi.mock('@/lib/api-client', async (importOriginal) => {
   const actual = await importOriginal<typeof ApiClientModule>();
   return {
@@ -45,12 +47,14 @@ describe('SummaryStep', () => {
 
     renderWithProviders(<SummaryStep />);
 
-    expect(await screen.findByText(/0 configured, 0 enabled, 0 active/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/0 destinations, 0 configured, 0 enabled, 0 active/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/0 connected/i)).toBeInTheDocument();
     expect(screen.getAllByText(/optional/i).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('counts real configured/enabled/active destinations and connected accounts', async () => {
+  it('counts real configured/enabled/active destinations and connected accounts, never treating an existing but never-credentialed destination as configured', async () => {
     vi.mocked(platformsApi).fetchPlatforms.mockResolvedValue([
       { id: 'pf_1', providerId: 'twitch', displayName: 'Main Twitch', enabled: true },
       { id: 'pf_2', providerId: 'youtube', displayName: 'Backup YouTube', enabled: false },
@@ -67,11 +71,42 @@ describe('SummaryStep', () => {
         status: 'connected', scopes: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
       },
     ]);
+    // pf_1 has a stored stream key; pf_2 is a real destination that exists
+    // but was never given one - it must count toward the total, never
+    // toward "configured".
+    vi.mocked(credentialsApi).fetchCredentialStatus.mockImplementation((platformId) =>
+      Promise.resolve({
+        streamKey: { configured: platformId === 'pf_1' },
+        store: { available: true },
+      }),
+    );
 
     renderWithProviders(<SummaryStep />);
 
-    expect(await screen.findByText(/2 configured, 1 enabled, 1 active/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/2 destinations, 1 configured, 1 enabled, 1 active/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/1 connected/i)).toBeInTheDocument();
+  });
+
+  it('never counts a destination that exists but has no stored stream key as "configured"', async () => {
+    vi.mocked(platformsApi).fetchPlatforms.mockResolvedValue([
+      { id: 'pf_1', providerId: 'twitch', displayName: 'Seeded Twitch', enabled: false },
+      { id: 'pf_2', providerId: 'youtube', displayName: 'Seeded YouTube', enabled: false },
+      { id: 'pf_3', providerId: 'kick', displayName: 'Seeded Kick', enabled: false },
+      { id: 'pf_4', providerId: 'tiktok', displayName: 'Seeded TikTok', enabled: false },
+    ] as never);
+    vi.mocked(accountsApi).fetchAccounts.mockResolvedValue([]);
+    vi.mocked(credentialsApi).fetchCredentialStatus.mockResolvedValue({
+      streamKey: { configured: false },
+      store: { available: true },
+    });
+
+    renderWithProviders(<SummaryStep />);
+
+    expect(
+      await screen.findByText(/4 destinations, 0 configured, 0 enabled, 0 active/i),
+    ).toBeInTheDocument();
   });
 
   it('shows the real OBS ingest state', async () => {
