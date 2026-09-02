@@ -352,6 +352,9 @@ Work journal: [`docs/progress.md`](docs/progress.md)
 | 22 | Reusable stream metadata presets, see [metadata-presets.md](docs/metadata-presets.md) | **Completed** |
 | 23 | Safe configuration backup and restore, see [backup-restore.md](docs/backup-restore.md) | **Completed** |
 | 24 | Stream session / operational history (never chat, donation, or other engagement content), see [stream-session-history.md](docs/stream-session-history.md) | **Completed** |
+| 25 | Stream setup profiles: reusable local preparation of destinations and an optional metadata-preset reference for a particular kind of show, see [stream-setup-profiles.md](docs/stream-setup-profiles.md) | **Completed** |
+| 26 | Stream preflight and launch readiness, surfaced on the Dashboard before going live, see [stream-preflight.md](docs/stream-preflight.md) | **Completed** |
+| 27 | Stream insights: aggregate session stats computed on demand from Stage 24's existing history store, no new persisted data, see [stream-insights.md](docs/stream-insights.md) | **Completed** |
 
 The full table with dependencies is in
 [`docs/project-overview.md`](docs/project-overview.md#13-roadmap). The

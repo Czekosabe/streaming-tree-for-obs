@@ -51553,3 +51553,34 @@ Frontend regression after the fix: `npm run typecheck`/`i18n:check`/
 `gofmt -l .` and `go vet ./...` clean (no backend files were touched).
 No Stage 28 invented; no Stage 20C2/20E work attempted; those statuses
 are unchanged by this task.
+
+## docs: record Stages 25-27 in the README and project-overview roadmap tables
+
+Continuing the same bounded product-polish audit's documentation-
+drift pass (§9): both canonical roadmap tables -
+`README.md`'s "Roadmap" section and `docs/project-overview.md`'s §13
+- stopped at Stage 24. Stages 25 (Stream setup profiles), 26 (Stream
+preflight and launch readiness) and 27 (Stream insights) were
+completed earlier this session, with their own contract docs
+(`stream-setup-profiles.md`, `stream-preflight.md`, `stream-
+insights.md`) and `docs/progress.md` entries already in place, but
+neither roadmap table had been updated to list them - a real user or
+contributor reading either table would see Stage 24 as the latest
+completed work and have no idea three more stages already shipped.
+`project-overview.md`'s own table was more stale still: it was
+missing stages 21-24 too (present in README's table but never
+back-filled into project-overview's own copy).
+
+Fixed by adding rows 21-27 to `project-overview.md`'s table (21-24
+transcribed from README's existing, already-accurate rows; 25-27
+newly written from each stage's own contract doc) and rows 25-27 to
+README's table, in the same style and level of detail as the existing
+rows around them. No stage's actual status was changed - both tables
+already agreed, and still agree, that Stage 20 as a whole remains
+Incomplete (20C2 externally gated) and that Stages 25-27 are
+Completed, consistent with docs/progress.md's own entries for them.
+
+This is documentation-only; no code changed, no tests affected.
+`docs/progress.md` itself was explicitly out of scope for this
+drift pass (it is an append-only historical journal, not a living
+reference doc) and was not touched beyond this new entry.
