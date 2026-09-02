@@ -513,14 +513,26 @@ async function main() {
     // preview/apply/active-stream-safety/backup-integration matrix already
     // has dedicated Go coverage (internal/domain/streamsetup,
     // internal/storage/sqlite, internal/httpapi, internal/domain/backup).
+    //
+    // The Stage 23 restore step above REPLACED every platform/preset
+    // with a fresh id (restore is REPLACE, never merge) - 'pf_seed_twitch'
+    // and the original presetId are both gone. The real current
+    // destination/preset ids are resolved here instead of reusing either
+    // stale identifier.
+    const platformsAfterRestore = await request('GET', '/api/platforms');
+    const twitchAfterRestore = platformsAfterRestore.body.platforms.find((p) => p.providerId === 'twitch');
+    expect(twitchAfterRestore !== undefined, 'a twitch destination exists after the restore', platformsAfterRestore.body);
+    const restoredPlatformId = twitchAfterRestore.id;
+    const restoredPresetId = presetsAfterRestore.body.find((p) => p.name === 'Packaged verification preset').id;
+
     const setupCreate = await request('POST', '/api/stream-setups', {
       name: 'Packaged verification setup', note: '',
-      destinationIds: ['pf_seed_twitch'], metadataPresetId: presetId,
+      destinationIds: [restoredPlatformId], metadataPresetId: restoredPresetId,
     });
     expect(setupCreate.status === 201, 'POST /api/stream-setups returns 201', setupCreate.body);
     const setupId = setupCreate.body.id;
     expect(
-      setupCreate.body.destinations.length === 1 && setupCreate.body.destinations[0].platformId === 'pf_seed_twitch',
+      setupCreate.body.destinations.length === 1 && setupCreate.body.destinations[0].platformId === restoredPlatformId,
       'the created setup resolved a real destination snapshot',
       setupCreate.body,
     );
@@ -533,7 +545,7 @@ async function main() {
     expect(setupApply.status === 200, 'POST .../apply returns 200', setupApply.body);
     expect(setupApply.body.metadataApplied === true, 'the referenced metadata preset was actually applied', setupApply.body);
 
-    const destinationAfterSetupApply = await request('GET', '/api/platforms/pf_seed_twitch');
+    const destinationAfterSetupApply = await request('GET', `/api/platforms/${restoredPlatformId}`);
     expect(
       destinationAfterSetupApply.body.enabled === true,
       'applying the setup actually enabled its real destination',

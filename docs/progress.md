@@ -51040,3 +51040,44 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 26B (the HTTP API and `main.go`
 wiring) per the governing task's own explicit authorization and "do
 not AskUserQuestion between substages."
+
+## fix(ci): resolve real Windows packaged-verification failure - stale platform/preset ids after restore
+
+Windows package verification failed on commit `901b81b` (Stage 25D).
+Root-caused via the check run's own annotations (`GET /repos/.../
+check-runs/{job_id}/annotations`, publicly readable without
+authentication, per docs/ci-reliability.md's own established
+methodology) rather than a blind rerun: `POST /api/stream-setups
+returns 201` failed with `"One or more selected destinations do not
+exist."` at the Stage 25 step this session added to
+`scripts/verify-packaged-app.mjs` in the same commit.
+
+**Real cause**: that new step referenced the script's fixed seed
+platform id (`pf_seed_twitch`) and the metadata preset id captured
+earlier in the run, but both were minted fresh moments earlier by the
+script's own Stage 23 restore step - restore is REPLACE, never merge
+(docs/backup-restore.md), so every platform and preset in the database
+gets a brand-new id, and neither original identifier exists any more
+by the time the Stage 25 step ran. The script's own Stage 23 assertion
+even says so explicitly ("the restored preset exists under a fresh id,
+not the original one") - the Stage 25 step just did not yet act on
+that fact for its own destination/preset references.
+
+**Fix**: the Stage 25 step now resolves the real, current platform id
+(`GET /api/platforms`, find by `providerId === 'twitch'`) and the real
+current preset id (from `presetsAfterRestore`, already fetched by the
+preceding Stage 23 step, found by name) instead of reusing either
+stale identifier - both the profile-creation call and the post-apply
+destination-state check now use these resolved ids.
+
+`node --check` confirms the script parses correctly. The other four
+workflows (Linux package, Linux headless, macOS package, cross-
+platform portability gate) were all already green on `901b81b` -
+only Windows package verification needed this fix, and only because
+of the new Stage 25 step this session's own prior commit added to it.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 26B (the HTTP API and `main.go`
+wiring, already implemented and tested in the working tree, committed
+next) per the governing task's own explicit authorization and "do not
+AskUserQuestion between substages."
