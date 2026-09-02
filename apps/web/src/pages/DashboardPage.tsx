@@ -1,4 +1,4 @@
-import { Loader2, Plus, RefreshCw, Settings, Tv } from 'lucide-react';
+import { Layers, Loader2, Plus, RefreshCw, Settings, Tv } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { OnboardingDashboardBanner } from '@/components/onboarding/OnboardingDas
 import { AddPlatformDialog } from '@/components/platforms/AddPlatformDialog';
 import { PlatformGrid } from '@/components/platforms/PlatformGrid';
 import { PlatformSettingsDialog } from '@/components/platforms/PlatformSettingsDialog';
+import { StreamSetupsDialog } from '@/components/stream-setup/StreamSetupsDialog';
 import { SystemStatusRail } from '@/components/system/SystemStatusRail';
 import { Button } from '@/components/ui/Button';
 import { Panel, PanelBody } from '@/components/ui/Panel';
@@ -35,6 +36,8 @@ export function DashboardPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [activeMetadataId, setActiveMetadataId] = useState<string | null>(null);
+  const [metadataDirty, setMetadataDirty] = useState(false);
+  const [streamSetupsOpen, setStreamSetupsOpen] = useState(false);
   const metadataRef = useRef<HTMLDivElement>(null);
 
   // Memoised so the `??` fallback does not produce a new array identity on
@@ -82,6 +85,10 @@ export function DashboardPage() {
           >
             <span className="hidden sm:inline">{t('dashboard:actions.addPlatform')}</span>
             <span className="sm:hidden">{t('dashboard:actions.addPlatformShort')}</span>
+          </Button>
+          <Button icon={<Layers className="size-4" />} onClick={() => setStreamSetupsOpen(true)}>
+            <span className="hidden md:inline">{t('dashboard:actions.streamSetups')}</span>
+            <span className="md:hidden">{t('dashboard:actions.streamSetupsShort')}</span>
           </Button>
           <Button icon={<Settings className="size-4" />} onClick={() => void navigate('/settings')}>
             <span className="hidden md:inline">{t('dashboard:actions.globalSettings')}</span>
@@ -190,6 +197,8 @@ export function DashboardPage() {
                 platforms={platforms}
                 activeId={activeMetadataId}
                 onSelect={setActiveMetadataId}
+                dirty={metadataDirty}
+                onDirtyChange={setMetadataDirty}
               />
             )}
           </div>
@@ -211,6 +220,14 @@ export function DashboardPage() {
           if (activeMetadataId === id) setActiveMetadataId(null);
           setSettingsId(null);
         }}
+      />
+
+      <StreamSetupsDialog
+        open={streamSetupsOpen}
+        onClose={() => setStreamSetupsOpen(false)}
+        platforms={platforms}
+        activeMetadataId={activeMetadataId}
+        activeMetadataDirty={metadataDirty}
       />
     </AppShell>
   );

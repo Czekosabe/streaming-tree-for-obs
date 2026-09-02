@@ -50769,3 +50769,66 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 25C (the Dashboard frontend) per
 the governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## feat(web): Stage 25C - the Dashboard stream setup profiles UI
+
+Adds the Stage 25 frontend end-to-end: `apps/web/src/api/stream-
+setup-schemas.ts`/`stream-setups.ts` (Zod contract and transport for
+`/api/stream-setups`, reusing `applyDestinationSchema` from the
+Stage 22 metadata-preset apply contract for the embedded metadata
+compatibility preview rather than a second copy of that shape),
+`hooks/use-stream-setups.ts` (TanStack Query hooks, invalidating
+`platformKeys.platforms` after a successful apply since destination
+enabled-state and possibly metadata both changed atomically-ish, the
+same reasoning `useApplyMetadataPresetMutation` already uses), and
+`models/stream-setup-constraints.ts` (client-side mirror of the
+backend's `NameMaxLength`/`NoteMaxLength`/`MaxProfiles`).
+
+Four new components under `components/stream-setup/`, deliberately
+mirroring the Stage 22 metadata-preset dialog family's own shapes
+rather than inventing new ones: `StreamSetupsDialog` (list, inline
+duplicate-with-confirm, delete-with-confirm, entry points to create/
+edit/save-current - the single Dashboard-level surface, since this is
+a compact personal list at the same scale as the metadata-preset
+manager it sits beside), `StreamSetupFormDialog` (create/edit: name,
+note, a destination checklist, and an optional metadata-preset
+select), `SaveCurrentSetupDialog` (captures the currently-enabled
+destination set with no picker, mirroring `SavePresetDialog`), and
+`ApplyStreamSetupDialog` (preview-then-confirm: per-destination will-
+enable/will-disable/unchanged/missing badges, the referenced preset's
+own per-field compatibility badges reused unchanged from
+`ApplyPresetDialog`'s own rendering, a hard block with no override
+when an affected destination is live, and a "missing preset" notice
+that never fails the whole apply).
+
+`Dashboard` gains a "Stream Setups" button in the `AppShell` actions
+slot next to "Add Platform"/"Global Settings" (docs/stream-setup-
+profiles.md §11's placement decision), opening `StreamSetupsDialog`.
+Implementing the apply flow's own unsaved-edit safety (§19: warn
+before an apply would overwrite unsaved Stream details edits) required
+lifting `MetadataEditor`'s previously-local `dirty` state up to
+`DashboardPage` as a controlled `dirty`/`onDirtyChange` prop pair,
+since the apply action now lives outside `MetadataEditor` entirely -
+`ApplyStreamSetupDialog` warns only when the currently-open destination
+tab is both dirty and actually touched by this apply's own metadata
+step (present in `metadataDestinationPreviews`), never a blanket "you
+have any unsaved edits anywhere" warning.
+
+EN/PL i18n: new `streamSetups` namespace registered in
+`i18n/config.ts`/`resources.ts`, plus two new keys in the existing
+`dashboard` namespace's `actions`. `npm run i18n:check` passes with
+0 differences against English across all 28 namespaces.
+
+12 new component tests (empty state, listing, missing-preset
+indicator, duplicate-with-confirmed-name, delete-with-confirmation,
+create submission, edit pre-fill, preview rendering, blocked-apply,
+missing-preset warning, direct apply, and the discard-unsaved-edits
+confirmation flow) - all passing on real rendered components via
+`renderWithProviders`, no snapshot tests. Whole-frontend `npm run
+typecheck`/`lint`/`test -- --run` (133 files, 1561 tests)/`build` all
+clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 25D (the Stage 23 backup/restore
+integration) per the governing task's own explicit authorization and
+"do not AskUserQuestion between substages."

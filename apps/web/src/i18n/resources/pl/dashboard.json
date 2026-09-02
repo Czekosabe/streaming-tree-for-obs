@@ -5,6 +5,8 @@
   "actions": {
     "addPlatform": "Dodaj platformę",
     "addPlatformShort": "Dodaj",
+    "streamSetups": "Konfiguracje transmisji",
+    "streamSetupsShort": "Konfiguracje",
     "globalSettings": "Ustawienia globalne",
     "globalSettingsShort": "Ustawienia"
   },

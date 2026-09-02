@@ -23,6 +23,7 @@ import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
+import enStreamSetups from './resources/en/streamSetups.json';
 import enUpdates from './resources/en/updates.json';
 import enVisualTemplates from './resources/en/visualTemplates.json';
 import plAbout from './resources/pl/about.json';
@@ -50,6 +51,7 @@ import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
 import plRuntime from './resources/pl/runtime.json';
+import plStreamSetups from './resources/pl/streamSetups.json';
 import plUpdates from './resources/pl/updates.json';
 import plVisualTemplates from './resources/pl/visualTemplates.json';
 
@@ -91,6 +93,7 @@ export const enResources = {
   logs: enLogs,
   onboarding: enOnboarding,
   backup: enBackup,
+  streamSetups: enStreamSetups,
 } as const;
 
 const plResources = {
@@ -121,6 +124,7 @@ const plResources = {
   logs: plLogs,
   onboarding: plOnboarding,
   backup: plBackup,
+  streamSetups: plStreamSetups,
 } as const;
 
 export const resources = {

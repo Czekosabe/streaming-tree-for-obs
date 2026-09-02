@@ -1,0 +1,67 @@
+{
+  "manage": {
+    "title": "Stream setups",
+    "description": "Reusable local preparations for a kind of show - which destinations to enable and which metadata preset to apply. Applying a setup never starts a stream or publishes anything.",
+    "loading": "Loading stream setups...",
+    "emptyTitle": "No stream setups yet",
+    "emptyDescription": "Save your current destinations as a setup, or create one from scratch, to reuse it next time.",
+    "new": "New setup",
+    "saveCurrent": "Save current setup",
+    "apply": "Apply",
+    "edit": "Edit",
+    "duplicate": "Duplicate",
+    "delete": "Delete setup",
+    "save": "Save name",
+    "copyName": "{{name}} (copy)",
+    "duplicateNameLabel": "New setup name",
+    "presetMissing": "Metadata preset missing",
+    "deleteDialog": {
+      "title": "Delete this setup?",
+      "message": "\"{{setup}}\" will be removed. Your destinations and their current metadata are not changed - deleting a setup only removes this saved configuration.",
+      "confirm": "Delete setup"
+    }
+  },
+  "form": {
+    "createTitle": "New stream setup",
+    "editTitle": "Edit stream setup",
+    "description": "Choose which destinations this setup enables and, optionally, a metadata preset to apply with it.",
+    "submit": "Save setup",
+    "saving": "Saving...",
+    "noDestinations": "Add a destination first to include it in a setup."
+  },
+  "saveCurrent": {
+    "title": "Save current setup",
+    "description": "Captures your currently enabled destinations into a new named setup.",
+    "submit": "Save setup",
+    "saving": "Saving...",
+    "saved": "Saved"
+  },
+  "fields": {
+    "nameLabel": "Setup name",
+    "namePlaceholder": "e.g. Gaming night",
+    "noteLabel": "Note",
+    "noteHint": "Optional. A short reminder of what this setup is for.",
+    "notePlaceholder": "Any details worth remembering",
+    "presetLabel": "Metadata preset",
+    "presetHint": "Optional. Applying this setup will also apply the preset's stream details to these destinations.",
+    "noPreset": "None",
+    "destinationsLabel": "Destinations"
+  },
+  "apply": {
+    "title": "Apply \"{{setup}}\"",
+    "description": "Review what will change, then confirm. This only changes local configuration - it never starts a stream or publishes anything.",
+    "submit": "Apply setup",
+    "applying": "Applying...",
+    "applied": "Applied",
+    "checking": "Checking what will change...",
+    "blocked": "Stop streaming on the affected destination(s) before changing this setup.",
+    "presetMissing": "The metadata preset this setup referenced has been deleted. Destination membership can still be applied; no metadata will be changed.",
+    "active": "streaming",
+    "change": {
+      "will_enable": "will enable",
+      "will_disable": "will disable",
+      "unchanged": "unchanged",
+      "missing": "destination missing"
+    }
+  }
+}

@@ -5,6 +5,8 @@
   "actions": {
     "addPlatform": "Add Platform",
     "addPlatformShort": "Add",
+    "streamSetups": "Stream Setups",
+    "streamSetupsShort": "Setups",
     "globalSettings": "Global Settings",
     "globalSettingsShort": "Settings"
   },

@@ -1,0 +1,67 @@
+{
+  "manage": {
+    "title": "Konfiguracje transmisji",
+    "description": "Wielokrotnego użytku, lokalne przygotowania dla danego typu transmisji - które cele włączyć i jaki zestaw metadanych zastosować. Zastosowanie konfiguracji nigdy nie rozpoczyna transmisji ani niczego nie publikuje.",
+    "loading": "Wczytywanie konfiguracji transmisji...",
+    "emptyTitle": "Brak zapisanych konfiguracji",
+    "emptyDescription": "Zapisz obecne cele jako konfigurację albo utwórz nową od podstaw, aby użyć jej ponownie następnym razem.",
+    "new": "Nowa konfiguracja",
+    "saveCurrent": "Zapisz obecną konfigurację",
+    "apply": "Zastosuj",
+    "edit": "Edytuj",
+    "duplicate": "Duplikuj",
+    "delete": "Usuń konfigurację",
+    "save": "Zapisz nazwę",
+    "copyName": "{{name}} (kopia)",
+    "duplicateNameLabel": "Nazwa nowej konfiguracji",
+    "presetMissing": "Brak zestawu metadanych",
+    "deleteDialog": {
+      "title": "Usunąć tę konfigurację?",
+      "message": "„{{setup}}” zostanie usunięta. Twoje cele i ich obecne metadane pozostają bez zmian - usunięcie konfiguracji usuwa tylko ten zapisany zestaw ustawień.",
+      "confirm": "Usuń konfigurację"
+    }
+  },
+  "form": {
+    "createTitle": "Nowa konfiguracja transmisji",
+    "editTitle": "Edytuj konfigurację transmisji",
+    "description": "Wybierz, które cele ta konfiguracja włącza, oraz opcjonalnie zestaw metadanych do zastosowania razem z nią.",
+    "submit": "Zapisz konfigurację",
+    "saving": "Zapisywanie...",
+    "noDestinations": "Dodaj najpierw cel, aby móc go uwzględnić w konfiguracji."
+  },
+  "saveCurrent": {
+    "title": "Zapisz obecną konfigurację",
+    "description": "Zapisuje obecnie włączone cele jako nową, nazwaną konfigurację.",
+    "submit": "Zapisz konfigurację",
+    "saving": "Zapisywanie...",
+    "saved": "Zapisano"
+  },
+  "fields": {
+    "nameLabel": "Nazwa konfiguracji",
+    "namePlaceholder": "np. Wieczór z grami",
+    "noteLabel": "Notatka",
+    "noteHint": "Opcjonalnie. Krótkie przypomnienie, do czego służy ta konfiguracja.",
+    "notePlaceholder": "Wszelkie szczegóły warte zapamiętania",
+    "presetLabel": "Zestaw metadanych",
+    "presetHint": "Opcjonalnie. Zastosowanie tej konfiguracji zastosuje też dane transmisji z zestawu do tych celów.",
+    "noPreset": "Brak",
+    "destinationsLabel": "Cele"
+  },
+  "apply": {
+    "title": "Zastosuj „{{setup}}”",
+    "description": "Sprawdź, co się zmieni, a następnie potwierdź. To zmienia wyłącznie lokalną konfigurację - nigdy nie rozpoczyna transmisji ani niczego nie publikuje.",
+    "submit": "Zastosuj konfigurację",
+    "applying": "Stosowanie...",
+    "applied": "Zastosowano",
+    "checking": "Sprawdzanie zmian...",
+    "blocked": "Zatrzymaj transmisję na dotkniętych celach, zanim zmienisz tę konfigurację.",
+    "presetMissing": "Zestaw metadanych, do którego odwoływała się ta konfiguracja, został usunięty. Przynależność celów nadal można zastosować - żadne metadane nie zostaną zmienione.",
+    "active": "transmisja na żywo",
+    "change": {
+      "will_enable": "zostanie włączony",
+      "will_disable": "zostanie wyłączony",
+      "unchanged": "bez zmian",
+      "missing": "brak celu"
+    }
+  }
+}

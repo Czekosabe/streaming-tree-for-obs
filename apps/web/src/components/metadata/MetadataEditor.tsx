@@ -15,6 +15,12 @@ type MetadataEditorProps = {
   platforms: readonly ConfiguredPlatform[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** Whether the currently open tab has unsaved edits right now - lifted
+   * to the caller so a Stage 25 stream setup apply (triggered from
+   * outside this component entirely) can also warn before it would
+   * overwrite them (docs/stream-setup-profiles.md §19). */
+  dirty: boolean;
+  onDirtyChange: (dirty: boolean) => void;
 };
 
 /**
@@ -24,9 +30,8 @@ type MetadataEditorProps = {
  * that platform's stored metadata. Switching away with unsaved edits is
  * confirmed first, so work is never discarded silently.
  */
-export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditorProps) {
+export function MetadataEditor({ platforms, activeId, onSelect, dirty, onDirtyChange }: MetadataEditorProps) {
   const { t } = useTranslation('metadata');
-  const [dirty, setDirty] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   // Bumped only when an apply-preset write touches the currently open tab,
@@ -41,14 +46,11 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
     (appliedIds: string[]) => {
       if (activeId !== null && appliedIds.includes(activeId)) {
         setApplyRemountToken((n) => n + 1);
-        setDirty(false);
+        onDirtyChange(false);
       }
     },
-    [activeId],
+    [activeId, onDirtyChange],
   );
-
-  // Stable identity so the form's effect does not re-run on every render.
-  const handleDirtyChange = useCallback((next: boolean) => setDirty(next), []);
 
   const requestSelect = (id: string) => {
     if (id === activeId) return;
@@ -61,7 +63,7 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
 
   const confirmDiscard = () => {
     if (pendingId !== null) {
-      setDirty(false);
+      onDirtyChange(false);
       onSelect(pendingId);
       setPendingId(null);
     }
@@ -121,7 +123,7 @@ export function MetadataEditor({ platforms, activeId, onSelect }: MetadataEditor
                 <MetadataForm
                   key={`${activePlatform.id}-${applyRemountToken}`}
                   platform={activePlatform}
-                  onDirtyChange={handleDirtyChange}
+                  onDirtyChange={onDirtyChange}
                 />
               </div>
             )}
