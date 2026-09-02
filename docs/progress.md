@@ -51116,3 +51116,71 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 26C (the Dashboard Preflight
 frontend) per the governing task's own explicit authorization and "do
 not AskUserQuestion between substages."
+
+## feat(web): Stage 26C - the Dashboard stream preflight UI
+
+Adds the Stage 26 frontend: `apps/web/src/api/preflight-schemas.ts`/
+`preflight.ts` (Zod contract and transport for `GET /api/preflight`)
+and `hooks/use-preflight.ts` (`usePreflightQuery`, polled every 5s only
+while the Preflight view is actually open - `enabled` gates the query
+entirely rather than running in the background, the same
+`refetchIntervalInBackground:false` convention every other runtime
+query in this codebase already follows).
+
+`components/preflight/PreflightDialog.tsx` is the new Dashboard entry
+point: a "Preflight" button (`ClipboardCheck` icon) alongside "Add
+Platform"/"Stream Setups"/"Global Settings" in the existing `AppShell`
+actions slot. A transient (never persisted) profile selector chooses
+between "Current configuration" and any Stage 25 setup profile -
+Stage 25 itself deliberately never tracks an "active profile", so this
+selection lives only in the dialog's own local state, matching
+docs/stream-preflight.md §3. Renders the deterministic Ready/Ready
+with warnings/Not ready status (icon + text, never color-only), every
+destination's own findings as severity-colored chips, and a
+non-destination-scoped "Setup" section for a selected profile's own
+broken references. Reuses `blockerKey` from `models/branch-
+presentation.ts` verbatim for every blocker's display text - no
+second copy of that mapping.
+
+Every finding's action button is wired to an existing surface, never a
+new form: `add_stream_key`/`open_destination_settings` opens
+`PlatformSettingsDialog` (via a new `onOpenDestinationSettings` prop
+threaded from `DashboardPage`, mirroring how `settingsId` already
+works), `fix_metadata` selects the destination's own Stream details
+tab (`onEditMetadata`, reusing `DashboardPage`'s existing
+`handleEditMetadata`), `repair_setup_profile` opens the Stage 25
+`StreamSetupsDialog` (`onOpenStreamSetups`), `reconnect_account`
+navigates to `/settings`, and `install_ffmpeg`/`start_mediamtx`
+navigate to `/streams` (`RuntimeControls`' own real page) - no action
+this dialog cannot actually resolve is ever offered without a target.
+When `report.streamingActive` is true the whole findings view is
+replaced by a "Pre-stream check unavailable while streaming" notice
+(docs/stream-preflight.md §7) rather than presenting a confusing
+status for a destination that is, in fact, already live.
+
+The explicit launch action is the Dashboard's own existing
+`StartEnabledConfirmDialog`/`useStartEnabledBranchesMutation` -
+imported and reused unchanged, never a second start endpoint or a new
+confirmation flow; Preflight never calls Start on the operator's
+behalf.
+
+EN/PL i18n: new `streamPreflight` namespace registered in
+`i18n/config.ts`/`resources.ts`, plus two new keys in the existing
+`dashboard` namespace's `actions`. `npm run i18n:check` passes with 0
+differences against English across all 29 namespaces.
+
+4 new component tests (`PreflightDialog.test.tsx`, mirroring
+`QuickActionsCard.test.tsx`'s own `MemoryRouter` wrapping for a
+component that navigates): ready status with no findings, a blocker's
+action button invoking its callback, the streaming-active notice
+replacing the findings view, and the profile selector re-querying with
+the selected profile id. Whole-frontend `npm run typecheck`/`lint`/
+`test -- --run` (134 files, 1565 tests)/`build` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Stage 26 (contract, 26A readiness domain, 26B HTTP API, 26C
+Dashboard UI) is now genuinely complete per the governing task's own
+§26/§43 criteria, pending final CI confirmation on this exact commit.
+Continuing directly into the Stage 27 selection audit per the
+governing task's own explicit authorization and "do not
+AskUserQuestion between substages."

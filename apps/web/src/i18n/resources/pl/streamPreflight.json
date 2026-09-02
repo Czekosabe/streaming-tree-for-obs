@@ -1,0 +1,36 @@
+{
+  "title": "Kontrola przed transmisją",
+  "description": "Sprawdza Twoją obecną konfigurację względem rzeczywistego, bieżącego stanu aplikacji przed rozpoczęciem transmisji. To nigdy nie rozpoczyna transmisji, nie publikuje metadanych ani niczego samodzielnie nie zmienia.",
+  "checking": "Sprawdzanie gotowości...",
+  "streamingActiveNotice": "Kontrola przed transmisją jest niedostępna podczas trwającej transmisji. Sprawdź zamiast tego status transmisji na Pulpicie lub w Historii.",
+  "noDestinations": "Brak celów do sprawdzenia - włącz cel lub wybierz konfigurację.",
+  "fields": {
+    "profileLabel": "Sprawdź",
+    "currentConfig": "Obecna konfiguracja"
+  },
+  "status": {
+    "ready": "Gotowy do transmisji",
+    "ready_with_warnings": "Gotowy z ostrzeżeniami",
+    "not_ready": "Niegotowy"
+  },
+  "sections": {
+    "setup": "Konfiguracja",
+    "destinations": "Cele"
+  },
+  "findings": {
+    "metadataInvalid": "Lokalne dane transmisji wymagają uwagi przed publikacją",
+    "accountReconnectRequired": "Połączone konto wymaga ponownego połączenia",
+    "setupDestinationMissing": "Ta konfiguracja odwołuje się do usuniętego celu",
+    "setupMetadataPresetMissing": "Ta konfiguracja odwołuje się do usuniętego zestawu metadanych"
+  },
+  "actions": {
+    "addStreamKey": "Dodaj klucz strumienia",
+    "openDestinationSettings": "Otwórz ustawienia celu",
+    "fixMetadata": "Edytuj dane transmisji",
+    "repairSetupProfile": "Zarządzaj konfiguracjami transmisji",
+    "reconnectAccount": "Połącz konto ponownie",
+    "installFfmpeg": "Otwórz status działania",
+    "startMediamtx": "Otwórz status działania",
+    "generic": "Napraw"
+  }
+}

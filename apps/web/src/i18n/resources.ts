@@ -23,6 +23,7 @@ import enOverlays from './resources/en/overlays.json';
 import enPages from './resources/en/pages.json';
 import enPlatforms from './resources/en/platforms.json';
 import enRuntime from './resources/en/runtime.json';
+import enStreamPreflight from './resources/en/streamPreflight.json';
 import enStreamSetups from './resources/en/streamSetups.json';
 import enUpdates from './resources/en/updates.json';
 import enVisualTemplates from './resources/en/visualTemplates.json';
@@ -51,6 +52,7 @@ import plOverlays from './resources/pl/overlays.json';
 import plPages from './resources/pl/pages.json';
 import plPlatforms from './resources/pl/platforms.json';
 import plRuntime from './resources/pl/runtime.json';
+import plStreamPreflight from './resources/pl/streamPreflight.json';
 import plStreamSetups from './resources/pl/streamSetups.json';
 import plUpdates from './resources/pl/updates.json';
 import plVisualTemplates from './resources/pl/visualTemplates.json';
@@ -94,6 +96,7 @@ export const enResources = {
   onboarding: enOnboarding,
   backup: enBackup,
   streamSetups: enStreamSetups,
+  streamPreflight: enStreamPreflight,
 } as const;
 
 const plResources = {
@@ -125,6 +128,7 @@ const plResources = {
   onboarding: plOnboarding,
   backup: plBackup,
   streamSetups: plStreamSetups,
+  streamPreflight: plStreamPreflight,
 } as const;
 
 export const resources = {

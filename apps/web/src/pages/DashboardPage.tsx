@@ -1,4 +1,4 @@
-import { Layers, Loader2, Plus, RefreshCw, Settings, Tv } from 'lucide-react';
+import { ClipboardCheck, Layers, Loader2, Plus, RefreshCw, Settings, Tv } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { OnboardingDashboardBanner } from '@/components/onboarding/OnboardingDas
 import { AddPlatformDialog } from '@/components/platforms/AddPlatformDialog';
 import { PlatformGrid } from '@/components/platforms/PlatformGrid';
 import { PlatformSettingsDialog } from '@/components/platforms/PlatformSettingsDialog';
+import { PreflightDialog } from '@/components/preflight/PreflightDialog';
 import { StreamSetupsDialog } from '@/components/stream-setup/StreamSetupsDialog';
 import { SystemStatusRail } from '@/components/system/SystemStatusRail';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +39,7 @@ export function DashboardPage() {
   const [activeMetadataId, setActiveMetadataId] = useState<string | null>(null);
   const [metadataDirty, setMetadataDirty] = useState(false);
   const [streamSetupsOpen, setStreamSetupsOpen] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const metadataRef = useRef<HTMLDivElement>(null);
 
   // Memoised so the `??` fallback does not produce a new array identity on
@@ -89,6 +91,10 @@ export function DashboardPage() {
           <Button icon={<Layers className="size-4" />} onClick={() => setStreamSetupsOpen(true)}>
             <span className="hidden md:inline">{t('dashboard:actions.streamSetups')}</span>
             <span className="md:hidden">{t('dashboard:actions.streamSetupsShort')}</span>
+          </Button>
+          <Button icon={<ClipboardCheck className="size-4" />} onClick={() => setPreflightOpen(true)}>
+            <span className="hidden md:inline">{t('dashboard:actions.preflight')}</span>
+            <span className="md:hidden">{t('dashboard:actions.preflightShort')}</span>
           </Button>
           <Button icon={<Settings className="size-4" />} onClick={() => void navigate('/settings')}>
             <span className="hidden md:inline">{t('dashboard:actions.globalSettings')}</span>
@@ -228,6 +234,15 @@ export function DashboardPage() {
         platforms={platforms}
         activeMetadataId={activeMetadataId}
         activeMetadataDirty={metadataDirty}
+      />
+
+      <PreflightDialog
+        open={preflightOpen}
+        onClose={() => setPreflightOpen(false)}
+        platforms={platforms}
+        onOpenDestinationSettings={setSettingsId}
+        onEditMetadata={handleEditMetadata}
+        onOpenStreamSetups={() => setStreamSetupsOpen(true)}
       />
     </AppShell>
   );

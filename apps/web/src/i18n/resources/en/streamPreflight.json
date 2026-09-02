@@ -1,0 +1,36 @@
+{
+  "title": "Preflight",
+  "description": "Checks your current setup against real, live application state before you go live. This never starts a stream, publishes metadata, or changes anything by itself.",
+  "checking": "Checking readiness...",
+  "streamingActiveNotice": "Pre-stream check unavailable while streaming. Check the Dashboard or History for current stream status instead.",
+  "noDestinations": "No destinations to check yet - enable a destination or select a setup.",
+  "fields": {
+    "profileLabel": "Check",
+    "currentConfig": "Current configuration"
+  },
+  "status": {
+    "ready": "Ready to stream",
+    "ready_with_warnings": "Ready with warnings",
+    "not_ready": "Not ready"
+  },
+  "sections": {
+    "setup": "Setup",
+    "destinations": "Destinations"
+  },
+  "findings": {
+    "metadataInvalid": "Local stream details need attention before publishing",
+    "accountReconnectRequired": "Connected account needs to be reconnected",
+    "setupDestinationMissing": "This setup references a deleted destination",
+    "setupMetadataPresetMissing": "This setup references a deleted metadata preset"
+  },
+  "actions": {
+    "addStreamKey": "Add stream key",
+    "openDestinationSettings": "Open destination settings",
+    "fixMetadata": "Edit stream details",
+    "repairSetupProfile": "Manage stream setups",
+    "reconnectAccount": "Reconnect account",
+    "installFfmpeg": "Open runtime status",
+    "startMediamtx": "Open runtime status",
+    "generic": "Fix"
+  }
+}

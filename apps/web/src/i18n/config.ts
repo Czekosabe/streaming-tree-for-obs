@@ -71,6 +71,7 @@ export const NAMESPACES = [
   'backup',
   'history',
   'streamSetups',
+  'streamPreflight',
 ] as const;
 
 /** Namespace assumed when a component calls `t()` without naming one. */

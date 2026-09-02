@@ -7,6 +7,8 @@
     "addPlatformShort": "Add",
     "streamSetups": "Stream Setups",
     "streamSetupsShort": "Setups",
+    "preflight": "Preflight",
+    "preflightShort": "Preflight",
     "globalSettings": "Global Settings",
     "globalSettingsShort": "Settings"
   },

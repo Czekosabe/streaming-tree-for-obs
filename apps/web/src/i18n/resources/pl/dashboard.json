@@ -7,6 +7,8 @@
     "addPlatformShort": "Dodaj",
     "streamSetups": "Konfiguracje transmisji",
     "streamSetupsShort": "Konfiguracje",
+    "preflight": "Kontrola przed transmisją",
+    "preflightShort": "Kontrola",
     "globalSettings": "Ustawienia globalne",
     "globalSettingsShort": "Ustawienia"
   },
