@@ -55,6 +55,26 @@ const INNO_SCRIPT = join(REPO_ROOT, 'scripts', 'installer', 'streaming-tree.iss'
 // Mirrors the exact AppId GUID in scripts/installer/streaming-tree.iss's
 // own [Setup] section - never a second, independently-typed copy of it.
 const UNINSTALL_REG_SUBKEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C067013C-D143-49F8-9510-D078482D6DA4}_is1';
+// A dedicated, obviously-fake, stable throwaway AppId used ONLY by
+// testVersionDetectionScenario's own compiled 0.1.0/0.2.0 test
+// installers below - never the real product's AppId above. Fixed
+// rather than randomly generated per run because that scenario's own
+// fresh/update/downgrade/repair sequence genuinely needs the *same*
+// AppId across all three of its own compiled installers to exercise
+// Inno's real same-AppId update semantics; "stable within this one
+// isolated scenario" is what that requires, not "stable across the
+// whole test suite" and never "the operator's own real installed
+// identity." A real, physical incident on the operator's own machine
+// (docs/progress.md, "fix(installer): give the throwaway
+// version-detection test scenario its own dedicated AppId") found
+// the production AppId itself had been used for exactly this kind of
+// throwaway reproduction in the past, leaving orphaned HKLM/HKCU
+// residue that later blocked a real installer test - this constant,
+// and streaming-tree.iss's own TestAppId override it drives, is the
+// structural fix: this scenario can never again touch the real AppId's
+// own registry key, not even transiently while a test is running.
+const SCENARIO_TEST_APP_ID = '{DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF}';
+const SCENARIO_TEST_UNINSTALL_REG_SUBKEY = `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${SCENARIO_TEST_APP_ID}_is1`;
 const PORT = 8298;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
@@ -193,12 +213,16 @@ function findIscc() {
  * `version`, reusing the real staged executable/legal documents
  * scripts/build-release.ps1 already produced at STAGING_DIR (built once
  * per CI run, before this script) - never a second `go build`/`npm run
- * build` pass. Returns the path to the compiled installer .exe. */
+ * build` pass. Always overrides TestAppId to SCENARIO_TEST_APP_ID (its
+ * own doc comment above) - this function's only caller,
+ * testVersionDetectionScenario, must never compile against the real
+ * product AppId. Returns the path to the compiled installer .exe. */
 async function compileTestInstaller(isccPath, version, outputDir) {
   const result = await run(isccPath, [
     `/DMyAppVersion=${version}`,
     `/DStagingDir=${STAGING_DIR}`,
     `/DOutputDir=${outputDir}`,
+    `/DTestAppId=${SCENARIO_TEST_APP_ID.replace(/^\{/, '{{')}`,
     INNO_SCRIPT,
   ]);
   expect(result.code === 0, `ISCC compiles a test installer for version ${version}`, result);
@@ -213,9 +237,12 @@ async function compileTestInstaller(isccPath, version, outputDir) {
  * ever writes to (docs/windows-packaging.md §28) - PrivilegesRequired=
  * lowest with no PrivilegesRequiredOverridesAllowed override, confirmed
  * by a real Inno /LOG capture ("Administrative install mode: No /
- * Install mode root key: HKEY_CURRENT_USER"). */
-async function queryHkcuDisplayVersion() {
-  const hkcu = await run('reg', ['query', `HKCU\\${UNINSTALL_REG_SUBKEY}`, '/v', 'DisplayVersion']);
+ * Install mode root key: HKEY_CURRENT_USER"). `subkey` defaults to the
+ * real product's own registry subkey; testVersionDetectionScenario
+ * always passes SCENARIO_TEST_UNINSTALL_REG_SUBKEY instead, since its
+ * own compiled installers never use the real product AppId. */
+async function queryHkcuDisplayVersion(subkey = UNINSTALL_REG_SUBKEY) {
+  const hkcu = await run('reg', ['query', `HKCU\\${subkey}`, '/v', 'DisplayVersion']);
   return parseRegDisplayVersion(hkcu.out);
 }
 
@@ -225,9 +252,10 @@ async function queryHkcuDisplayVersion() {
  * behaving per-user build of this installer must NEVER write here - see
  * queryHkcuDisplayVersion's own doc comment. Used only to assert absence,
  * i.e. that the installer under test has not regressed into
- * administrative/all-users install mode. */
-async function queryHklmDisplayVersion() {
-  const hklm = await run('reg', ['query', `HKLM\\${UNINSTALL_REG_SUBKEY}`, '/reg:32', '/v', 'DisplayVersion']);
+ * administrative/all-users install mode. `subkey` defaults the same way
+ * queryHkcuDisplayVersion's own does. */
+async function queryHklmDisplayVersion(subkey = UNINSTALL_REG_SUBKEY) {
+  const hklm = await run('reg', ['query', `HKLM\\${subkey}`, '/reg:32', '/v', 'DisplayVersion']);
   return parseRegDisplayVersion(hklm.out);
 }
 
@@ -405,25 +433,25 @@ async function testVersionDetectionScenario(isccPath) {
     step('Fresh install of 0.1.0');
     const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(fresh.code === 0, 'fresh install of 0.1.0 exits 0', fresh);
-    expect(await queryHkcuDisplayVersion() === '0.1.0', 'the registered version is 0.1.0 under HKEY_CURRENT_USER after fresh install');
-    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE gained NO registration - the install stayed per-user, not administrative');
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.1.0', 'the registered version is 0.1.0 under HKEY_CURRENT_USER after fresh install');
+    expect(await queryHklmDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === null, 'HKEY_LOCAL_MACHINE gained NO registration - the install stayed per-user, not administrative');
 
     step('Update to 0.2.0 over the same install directory');
     const update = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(update.code === 0, 'update to 0.2.0 exits 0', update);
-    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is 0.2.0 under HKEY_CURRENT_USER after update');
-    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after update');
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0', 'the registered version is 0.2.0 under HKEY_CURRENT_USER after update');
+    expect(await queryHklmDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === null, 'HKEY_LOCAL_MACHINE still has no registration after update');
 
     step('Attempt a silent downgrade back to 0.1.0 - must be refused, not silently applied');
     const downgrade = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(downgrade.code !== 0, 'the silent downgrade attempt does NOT exit 0', downgrade);
-    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
 
     step('Same-version reinstall of 0.2.0 (repair) - must succeed, not be treated as a downgrade');
     const repair = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(repair.code === 0, 'same-version reinstall exits 0', repair);
-    expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 after repair');
-    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after repair');
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0', 'the registered version is still 0.2.0 after repair');
+    expect(await queryHklmDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === null, 'HKEY_LOCAL_MACHINE still has no registration after repair');
   } finally {
     const uninstallerFile = existsSync(installDir)
       ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
@@ -431,6 +459,16 @@ async function testVersionDetectionScenario(isccPath) {
     if (uninstallerFile !== undefined) {
       await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
     }
+    // Failure-path backstop: if a scenario failure happened before the
+    // uninstaller above could run (or the uninstaller itself failed),
+    // this scenario's own dedicated SCENARIO_TEST_UNINSTALL_REG_SUBKEY
+    // must never survive into the next run - explicitly targeted at
+    // this one known throwaway AppId, never a pattern-based sweep of
+    // the real registry. `reg delete` exiting non-zero here just means
+    // the key was already gone (the normal, expected case) - never
+    // treated as a scenario failure.
+    await run('reg', ['delete', `HKCU\\${SCENARIO_TEST_UNINSTALL_REG_SUBKEY}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${SCENARIO_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/f']);
     rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }

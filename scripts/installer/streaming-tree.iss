@@ -34,6 +34,26 @@
 #ifndef OutputDir
   #define OutputDir "..\..\build\release\output"
 #endif
+; TestAppId exists ONLY so scripts/verify-installer.mjs's own throwaway-
+; version-detection scenario (fresh/update/downgrade-block/repair against
+; deliberately fake 0.1.0/0.2.0 builds) never registers under the real
+; production AppId below - see that script's own SCENARIO_TEST_APP_ID
+; doc comment for the incident this closes (docs/progress.md, "fix
+; (installer): give the throwaway version-detection test scenario its
+; own dedicated AppId"). scripts/build-release.ps1, the only thing that
+; produces a real distributable installer, never passes this define, so
+; every real build keeps the one true AppId below, completely unchanged.
+#ifndef TestAppId
+  #define TestAppId "{{C067013C-D143-49F8-9510-D078482D6DA4}"
+#endif
+; TestAppIdBare strips TestAppId's own leading directive-escaping brace
+; (see AppId= below) down to the plain single-brace GUID form
+; UninstallRegSubkey's own Pascal string literal needs - both always
+; derive from the one TestAppId definition above, so an override can
+; never leave the two inconsistent with each other. Verified via a real
+; compile+install+registry-read against a throwaway GUID before this
+; was applied to the real AppId (docs/progress.md).
+#define TestAppIdBare Copy(TestAppId, 2, Len(TestAppId) - 1)
 
 #define MyAppName "Streaming Tree for OBS"
 #define MyAppPublisher "Czekosabe"
@@ -44,7 +64,10 @@
 ; Fixed for the lifetime of this project - generated once, never changed.
 ; This is what gives Inno Setup stable "this is an upgrade of the same
 ; application" identity across releases (docs/windows-packaging.md §14).
-AppId={{C067013C-D143-49F8-9510-D078482D6DA4}
+; {#TestAppId} resolves to this exact literal value unless a caller
+; explicitly overrides TestAppId at compile time (see its own doc
+; comment above) - never overridden by a real release build.
+AppId={#TestAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -301,13 +324,14 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:RunLaunchDesc}"; Flags: pos
 const
   // The registry location Inno Setup itself writes real per-user
   // ("HKCU", matching PrivilegesRequired=lowest) uninstall/Apps & Features
-  // metadata to - built from the exact same AppId GUID in [Setup] above,
-  // never a second identity. This is what lets Setup discover a real
+  // metadata to - built from {#TestAppIdBare}, the exact same AppId the
+  // [Setup] section's own AppId={#TestAppId} above resolves to, never a
+  // second identity. This is what lets Setup discover a real
   // previously-installed version without any assumption about process
   // names, folder existence, or any executable other than this one's own
   // Inno-registered identity (docs/windows-packaging.md §2's own explicit
   // requirement).
-  UninstallRegSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{C067013C-D143-49F8-9510-D078482D6DA4}_is1';
+  UninstallRegSubkey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#TestAppIdBare}_is1';
 
 // A real local test against Inno Setup 6.7.3 originally found the
 // uninstall entry registered under HKEY_LOCAL_MACHINE and, at the time,

@@ -1432,3 +1432,86 @@ from this commit.
 - No `CompanyName` in the exe's version-info resource - deliberate, matches
   `buildinfo.CreatorName`'s own established policy of never asserting a real
   legal/company name (docs/product-identity-legal.md).
+
+## 31. Installer test hygiene: the version-detection scenario's own dedicated AppId
+
+A real physical incident on the operator's own machine (Windows Settings
+still listed an unremovable "Streaming Tree for OBS version
+0.9.7-evidence" entry, `HKEY_LOCAL_MACHINE\...\Uninstall\
+{C067013C-D143-49F8-9510-D078482D6DA4}_is1`, blocking a fresh Stage 20E
+install attempt) traced back to real, documented history: the §28
+corrective-audit round's own deliberate admin-mode reproduction of the
+(since-fixed) `PrivilegesRequiredOverridesAllowed` bug used the real
+production AppId with a distinctive throwaway version string
+("0.9.7-evidence", installed to a scratch `isstest2` directory) to
+prove the bug was real. `docs/progress.md`'s own entry for that round
+already recorded that the resulting HKLM key could not be removed
+afterward (`reg delete` correctly refused without elevation) and was
+left as known, harmless test debris - correct at the time, but it
+later collided with a real, unrelated install attempt once the operator
+came back to do physical Stage 20E testing.
+
+**The real, current risk this section closes.** `scripts/
+verify-installer.mjs`'s `testVersionDetectionScenario` - the one
+scenario that compiles its own throwaway-versioned (0.1.0/0.2.0) test
+installers to exercise fresh/update/downgrade-block/repair semantics -
+had never overridden `AppId`, meaning every run of it, including on a
+developer's own local machine, silently reused the real production
+AppId for its own disposable installs. This never regressed into HKLM
+after the §28 fix (confirmed: `PrivilegesRequired=lowest` still holds,
+no admin-mode escalation), but it still meant a mid-run crash could
+leave throwaway-versioned test debris registered under the operator's
+own real per-user (HKCU) application identity - the same class of
+problem, one severity level down.
+
+**Fix.** `scripts/installer/streaming-tree.iss` gained a `TestAppId`
+preprocessor define (`#ifndef`-guarded, defaulting to the one real,
+unchanged production AppId - never overridden by
+`scripts/build-release.ps1`, so every real distributable keeps the
+exact same identity as before) and a derived `TestAppIdBare` (strips
+the `AppId=` directive's own escaping-brace down to the plain form
+`UninstallRegSubkey` in `[Code]` needs) so the installer's own
+existing-install detection logic and the compiled AppId can never
+drift apart, however TestAppId is set. `compileTestInstaller` in
+`verify-installer.mjs` now always passes a dedicated, obviously-fake,
+stable `SCENARIO_TEST_APP_ID`
+(`{DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF}`) - fixed rather than
+per-run-random because the scenario's own fresh/update/downgrade/
+repair sequence genuinely needs the *same* AppId across all three of
+its own compiled installers to exercise Inno's real same-AppId update
+semantics, matching this project's own stated preference for "a
+dedicated stable throwaway scenario AppId" over reusing the real
+production identity merely because update semantics need stability.
+The scenario's own registry-reading helpers and its `finally` cleanup
+(including a new explicit, narrowly-targeted `reg delete` backstop
+against exactly this one dedicated AppId, for the case where a failure
+happens before the compiled test installer's own uninstaller can run)
+were updated to match. Verified for real: the fixed scenario's full
+fresh/update/downgrade-block/repair sequence still passes end-to-end
+against the throwaway AppId, and the real production AppId's own
+registry state was directly confirmed untouched before and after that
+run.
+
+**What was NOT changed.** Every other scenario in this script installs
+the real, already-built production installer (never a throwaway
+recompile) into a hermetic directory, which legitimately needs the
+real production AppId to test the real shipped artifact's own
+uninstall/purge/upgrade behavior - this is accepted, necessary,
+mitigated by hermetic install directories and existing `finally`-block
+cleanup, not something this section's fix touches. The installer's own
+existing-install-conflict refusal (§28) is unchanged and correctly
+still refuses to proceed when it finds a conflicting HKLM/HKCU entry -
+this is a safety feature, not the defect this section fixes.
+
+**What was found, and left alone.** The historical incident's own
+residue - the HKLM registry entry itself (now confirmed restored to
+its exact original recorded values after an unrelated verification
+misstep touched it during this investigation - see docs/progress.md),
+one orphaned all-users Start Menu uninstall shortcut
+(`C:\ProgramData\...\Streaming Tree for OBS\Uninstall Streaming Tree
+for OBS.lnk`), and ordinary Windows shell "recent item" cache entries
+under `HKCU\...\UFH\SHC` referencing it - was inspected, not deleted.
+Windows' own shell history cache is not this product's ownership
+boundary; the HKLM entry and orphaned shortcut are real historical
+test debris the operator will clean up manually, once, after reviewing
+the corrective task's own proposed-cleanup report.
