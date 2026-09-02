@@ -637,13 +637,22 @@ desktop-packaging.md §22) produces
 | 20D2A | Linux headless service foundation: loopback-only unattended systemd operation, secure encrypted headless secret storage (§9, §11, see [linux-headless-server.md](linux-headless-server.md)) | **Completed** |
 | 20D2B | Secure remote management/control plane: single-administrator authentication, opaque sessions, CSRF, strict Origin/forwarded-header contract, login rate limiting, remote-safe shutdown - no remote overlay/ingest exposure yet (§9, see [remote-management.md](remote-management.md)) | **Completed** |
 | 20D2C | Remote OBS ingest/data plane: MediaMTX-native authenticated/encrypted RTMPS ingest, the remote-overlay capability-token system, final combined self-hosted validation (§10) | **Completed** — stage 20D2 (and stage 20D) as a whole is now complete |
-| 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Planned |
+| 20E | Logs/diagnostics, final release hardening, and final manual/platform verification | Automated scope **Completed**; the single consolidated manual/physical verification gate is still pending |
 
 Stage 20 as a whole remains **Incomplete**: 20A, 20B, 20C1, 20D1,
-20D2A, 20D2B, and 20D2C are Completed; 20C2 and 20E remain Planned.
-20C2 is externally gated on real Apple Developer signing/notarization
+20D2A, 20D2B, and 20D2C are Completed; 20C2 remains Planned and
+externally gated on real Apple Developer signing/notarization
 credentials this project does not have - it is not blocked on any
-further engineering decision.
+further engineering decision. 20E's automated scope (diagnostics
+backend, redaction, support bundle, frontend Logs UI, dependency/
+license/version/release-manifest audits, UX polish, native Windows
+package-verification CI gate, full automated regression, and a
+bounded resource-stability soak check) is complete; only its single
+consolidated manual/physical verification gate (see
+[manual-verification.md](manual-verification.md)) remains pending -
+this is a real, materially different state from 20C2's own near-
+zero-progress "Planned" status, so the two are no longer grouped
+under the same word.
 
 ## 18. What the cross-platform portability baseline milestone explicitly did not do (historical)
 

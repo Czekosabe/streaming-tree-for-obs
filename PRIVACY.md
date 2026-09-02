@@ -188,8 +188,8 @@ restore feature (Stage 23, see
 file capturing your destinations, output settings, connected-account
 list, chat overlays/schedules/commands, alert profiles/rules, visual
 templates/designs and their managed images/sounds, audio settings,
-goals/dashboard widgets, metadata presets, the donation-source list,
-and update preferences.
+goals/dashboard widgets, metadata presets, stream setup profiles
+(Stage 25), the donation-source list, and update preferences.
 
 **Created only when you explicitly ask for it.** A backup is generated
 only when you click "Download backup" in Settings - never automatically,

@@ -51584,3 +51584,79 @@ This is documentation-only; no code changed, no tests affected.
 `docs/progress.md` itself was explicitly out of scope for this
 drift pass (it is an append-only historical journal, not a living
 reference doc) and was not touched beyond this new entry.
+
+## docs: correct third-party notices, privacy, and Stage 20 status drift across living docs
+
+A completion pass closing gaps a reconciliation of the product-polish
+audit had explicitly flagged as skipped: startup/fatal-error/browser-
+launch UX (Area X) and tray/menu UX (Area Y) were audited now, source-
+level, against `apps/server/cmd/server/main.go`,
+`internal/runtime/nativealert`, `internal/runtime/tray`, and
+`docs/windows-tray.md` - both came back clean. The fatal-error path
+(headless: structured log only; packaged desktop: a native
+`MessageBoxW` alert, never a secret in its text) and the single-
+instance/port-bind-conflict/browser-launch-failure paths are all
+already correct, tested by the existing packaging integration suite,
+and the tray menu's English-only text is explicitly, already
+documented as an intentional decision (`docs/windows-tray.md` §6,
+mirroring `nativealert`'s own precedent) - correctly left unchanged
+per this task's own instruction not to alter intentional, documented
+behavior.
+
+Areas Z (About/Legal/Privacy) and AB (living documentation) surfaced
+five real, concrete drift findings this pass, each verified directly
+against current source before being changed:
+
+1. `THIRD_PARTY_NOTICES.md`'s "Go dependencies" table was missing
+   `golang.org/x/crypto` entirely - a real, directly-imported
+   dependency (`internal/auth/password.go`'s `argon2.IDKey`, the
+   Stage 20D2B remote-management administrator password hashing) with
+   no notice at all. `golang.org/x/term` was misdescribed as "unused
+   by Streaming Tree, which never prompts," when `cmd/server/
+   provision.go` directly calls `term.ReadPassword` for the
+   `-provision-admin-password` flow - moved from the keyring-
+   transitive-dependency table into the main direct-dependency table
+   with its real purpose. `golang.org/x/sys`'s recorded version
+   (v0.46.0) no longer matched `go.mod` (v0.47.0) - corrected.
+2. `PRIVACY.md`'s "Configuration backup and restore" section listed
+   everything a backup contains except stream setup profiles (Stage
+   25) - confirmed via `internal/domain/backup/model.go`/`export.go`/
+   `restore_commit.go` that the feature genuinely does include them
+   (Stage 25 was correctly wired into Stage 23's backup/restore; this
+   was a documentation-only omission) - added to the list.
+3. `docs/product-identity-legal.md` §2 stated `apps/web/src/data/
+   app-info.ts` "is left untouched by this milestone" - stale since
+   Stage 20E's dashboard-realignment work removed that file entirely
+   (confirmed absent from the current tree); added a dated correction
+   rather than silently rewriting the original claim.
+4. `docs/platform-support.md` and `docs/engagement-architecture.md`
+   both still carried genuinely stale Stage 20 status: platform-
+   support.md flatly called Stage 20E "Planned" (the same word used
+   for Stage 20C2's near-zero-progress state), when 20E's automated
+   scope has been complete for some time with only its manual/physical
+   gate pending; engagement-architecture.md's own roadmap table was
+   far more stale still, calling Stage 20C, 20D1 and 20D2 all
+   "Planned" even though 20C1, 20D1, 20D2A, 20D2B and 20D2C are all
+   Completed (only 20C2 remains genuinely Planned) - both corrected to
+   match the accurate framing `README.md`/`docs/project-overview.md`
+   already use, split 20C into 20C1 (Completed) and 20C2 (Planned,
+   externally gated), and 20E into its completed automated scope and
+   its still-pending manual gate.
+
+No product code was touched by this pass; `go build -tags integration
+./cmd/testserver/...` (the current canonical integration-test-server
+build, confirmed via its use across every `scripts/verify-*.mjs`
+script) was run standalone as this task's own requested reconciliation
+of that build contract and succeeded. The decision not to run the
+full 33-script `scripts/verify-*.mjs` suite for this reconciliation
+was checked against the repository's own real enforced contract - its
+CI workflow path filters - rather than assumed: `PRIVACY.md` and
+`THIRD_PARTY_NOTICES.md` are explicitly named in the Windows/macOS/
+Linux/Linux-headless package-verification workflows' own `paths:`
+filters, so pushing this commit lets CI itself run exactly the
+relevant subset each workflow already runs (for Windows:
+`verify-packaged-app.mjs`, `verify-installer.mjs`,
+`verify-updater.mjs` - confirmed by reading `windows-package.yml`
+directly, not assumed) - the same real mechanism this repository
+already uses to decide which of the 33 scripts a given change needs,
+not a manual approximation of it.

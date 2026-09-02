@@ -52,8 +52,16 @@ for this milestone (no database migration, no saved user configuration, no
 per-component literal to hunt down).
 
 The pre-existing frontend `apps/web/src/data/app-info.ts` (`APP_INFO.name`/
-`APP_INFO.version`) is a narrower, unrelated concern - the sidebar footer's
-own local chrome label - and is left untouched by this milestone.
+`APP_INFO.version`) was, at the time this contract was written, a
+narrower, unrelated concern - the sidebar footer's own local chrome
+label - left untouched by this milestone. **Correction (final
+product-polish audit, 2026-09-02):** that file was later removed
+entirely during the Stage 20E dashboard-realignment work
+(`docs/dashboard-design.md` §6) - its hardcoded `version: '0.1.0'` was
+found stale, and `SidebarFooter` now reads real build identity from
+`useAboutQuery()`/`GET /api/about` the same as this page does, so the
+"single canonical source of truth" this section describes now holds
+for the sidebar footer too, not just the About & Legal page.
 
 ## 3. Creator support - what it is and is not
 

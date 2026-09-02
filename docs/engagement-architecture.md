@@ -1553,10 +1553,11 @@ that table.
 | 19 | TikTok LIVE connector, conditional on an official integration existing (§16) — **Deferred**, feasibility-gated: no official TikTok LIVE engagement event API/scope exists, Embed Player is playback-only, and Desktop Login Kit's token exchange requires a confidential `client_secret` with no public-client alternative (see [tiktok-live.md](provider-integrations/tiktok-live.md)). Stage 19 is not implemented |
 | 20A | Production runtime and Windows packaging foundation (embedded frontend, packaged-mode lifecycle, Inno Setup installer) — **Completed**, see [windows-packaging.md](windows-packaging.md) |
 | 20B | Application update system (GitHub Releases check, update UI, real Windows installer/updater handoff, see [updater.md](updater.md)); uses the cross-platform artifact-identity concept in [platform-support.md](platform-support.md) §15 — **Completed** |
-| 20C | macOS desktop portability, packaging, signing, notarization, automated macOS verification (see [platform-support.md](platform-support.md) §5) — Planned |
-| 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) — Planned |
-| 20D2 | Linux headless/self-hosted server mode and remote security (see [platform-support.md](platform-support.md) §9-§11) — Planned |
-| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D — Planned |
+| 20C1 | macOS packaged runtime: unsigned `.app`/DMG, native macOS CI package verification (see [platform-support.md](platform-support.md) §5) — **Completed** |
+| 20C2 | macOS Developer ID signing, hardened runtime, notarization, stapling, updater install handoff (see [platform-support.md](platform-support.md) §5) — Planned, externally gated on real Apple Developer credentials |
+| 20D1 | Linux local/desktop runtime and packaging (see [platform-support.md](platform-support.md) §8) — **Completed** |
+| 20D2 | Linux headless/self-hosted server mode and remote security: service foundation, remote management/control plane, and remote OBS ingest/data plane (see [platform-support.md](platform-support.md) §9-§11) — **Completed** |
+| 20E | Logs, diagnostics, and final release hardening/manual verification not covered by 20A-20D — Automated scope **Completed**; the single consolidated manual/physical verification gate is still pending |
 
 > **Roadmap decision (recorded when stage 8A began):** stage 8A starts
 > before stage 7C is implemented. 7C (Kick/TikTok accounts) is not a
