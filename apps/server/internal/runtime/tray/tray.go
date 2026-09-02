@@ -1,5 +1,5 @@
 // Package tray implements the Stage 20E Windows notification-area
-// (system tray) icon for desktop mode - see docs/windows-tray.md for
+// (system tray) icon for desktop mode - see docs/windows-packaging.md §30 for
 // the full contract.
 //
 // This exists because closing the browser tab does not stop the

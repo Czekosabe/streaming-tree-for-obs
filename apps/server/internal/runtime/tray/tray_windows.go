@@ -224,7 +224,7 @@ type handle struct {
 // to carry a Go closure directly, so the running handle is looked up
 // via the window's own GWLP_USERDATA-equivalent: here, simply a
 // package-level pointer, since this application only ever runs one
-// tray icon at a time (docs/windows-tray.md: exactly one per desktop
+// tray icon at a time (docs/windows-packaging.md §30: exactly one per desktop
 // instance).
 var (
 	activeMu sync.Mutex
@@ -360,7 +360,7 @@ func (h *handle) setup() error {
 // addIcon issues NIM_ADD followed by NIM_SETVERSION(NOTIFYICON_VERSION_4)
 // - the exact two-call sequence setup uses once at startup, and the
 // TaskbarCreated handler in wndProc reuses identically to restore the
-// icon after Explorer itself restarts (docs/windows-tray.md; see
+// icon after Explorer itself restarts (docs/windows-packaging.md §30; see
 // taskbarCreatedMsg's own doc comment).
 // addIconFlags is the exact UFlags value the icon is added with -
 // pulled out as its own pure function so the tooltip regression this

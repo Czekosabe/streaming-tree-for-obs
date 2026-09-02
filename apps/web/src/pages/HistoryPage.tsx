@@ -195,7 +195,7 @@ function DestinationInsightRow({ destination }: { destination: StreamInsightsDes
 }
 
 /**
- * Stage 27: stream insights (docs/stream-insights.md) - a read-only
+ * Stage 27: stream insights (docs/stream-session-history.md §14) - a read-only
  * aggregation of Stage 24's own operational history, never a new
  * data source. A different view of the exact same data the session
  * list above already owns, not a duplicate of it.

@@ -104,7 +104,7 @@ func durationOf(start time.Time, end *time.Time, now time.Time) time.Duration {
 
 // destinationKey groups by real platform id when the destination
 // still exists, or by its own provider/display-name snapshot when it
-// has since been deleted (docs/stream-insights.md §2).
+// has since been deleted (docs/stream-session-history.md §14.2).
 func destinationKey(d streamsession.Destination) string {
 	if d.PlatformID != nil {
 		return "id:" + *d.PlatformID

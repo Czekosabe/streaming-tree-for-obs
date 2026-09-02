@@ -557,10 +557,7 @@ hiding (blocked terms exist only per public overlay, §7.3, not here) and
 any second provider's messages. The public-vs-operator distinction this
 paragraph originally deferred is now real - see §7.3: the OBS chat
 overlay is genuinely more permissive-to-hide than operator chat, with
-its own separate hidden-user and blocked-term lists. See the README's
-own
-[Unified operator chat](../README.md#unified-operator-chat) section for
-the full user-facing description and
+its own separate hidden-user and blocked-term lists. See
 [progress.md](progress.md) for the design decisions.
 
 > **Factual status update (stage 11A, completed):** a **Reply** action
@@ -625,10 +622,10 @@ authoritative regardless.
 The overlay is a **rendering and filtering layer** over operator chat's
 own revision stream (§7.2), not the Event Bus directly - it holds no
 separate connection to any provider, and duplicates none of operator
-chat's own lifecycle/deduplication logic. See the README's own
-[OBS Browser Source chat overlay](../README.md#obs-browser-source-chat-overlay)
-section for the full user-facing description and
-[progress.md](progress.md) for the design decisions.
+chat's own lifecycle/deduplication logic. See
+[`docs/obs-browser-source.md`](obs-browser-source.md) for the shared
+public hydration contract and [progress.md](progress.md) for the
+design decisions.
 
 ## 8. Outbound chat and bot automation
 
@@ -674,10 +671,8 @@ build directly on stage 11A's own dispatcher and sending abstraction
 (the dispatcher's `Source` type already reserves `command`/`scheduled`
 values it does not yet implement) rather than replacing them - see
 [`docs/provider-integrations/twitch-outbound-chat.md`](provider-integrations/twitch-outbound-chat.md)
-and the README's own
-[Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
-section for the full design and user-facing behavior of what stage 11A
-actually implemented, and [progress.md](progress.md) for the design
+for the full design of what stage 11A actually implemented, and
+[progress.md](progress.md) for the design
 decisions.
 
 > **Update (stage 11B, implemented):** §8.1 and §8.2 below are no
@@ -724,10 +719,8 @@ per scheduled message:
 > counted per target account, a maximum-sends-per-hour ceiling, a
 > manual **Send now** override, and a live next-run/state/skip-reason
 > preview are all real - see
-> [`apps/server/internal/chatautomation/scheduler.go`](../apps/server/internal/chatautomation/scheduler.go)
-> and the README's own
-> [Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
-> section. Three deliberate simplifications from the plan above: there
+> [`apps/server/internal/chatautomation/scheduler.go`](../apps/server/internal/chatautomation/scheduler.go).
+> Three deliberate simplifications from the plan above: there
 > is no "allowed streaming hours" time-of-day window (only the
 > ingest-receiving gate), no per-platform cooldown separate from the
 > hourly cap (Twitch is still the only outbound provider), and "suspend

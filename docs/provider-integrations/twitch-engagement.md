@@ -220,9 +220,7 @@ continuity there.
   already-normalized Engagement Event Bus this stage produces - the
   same bus stage 9's operator chat and stage 10's overlay already
   consume - never to this connector's WebSocket directly, and never a
-  second EventSub connection. See the README's own
-  [Scheduled messages and chat commands](../../README.md#scheduled-messages-and-chat-commands)
-  section for the full design.
+  second EventSub connection.
 - **Stage 12A (alerts, now implemented):** rule matching against these
   events. Like stage 11B, the alert engine (`internal/alerts`) is
   **unchanged** by this connector - it subscribes to the same already-
@@ -233,10 +231,8 @@ continuity there.
   document already lists: follow, subscription, resubscription, gifted
   subscription, subscription gift batch, Bits (`channel.cheer`), raid,
   and channel-point redemption - `channel.chat.message` and every
-  moderation event stay chat-only and never become an alert. See the
-  README's own [Alerts](../../README.md#alerts) section for the full
-  design. Stage 12B (mid-alert preemption, bounded alert grouping)
-  remains planned.
+  moderation event stay chat-only and never become an alert. Stage 12B
+  (mid-alert preemption, bounded alert grouping) remains planned.
 - **Badge image resolution, per-message avatar fetching:** stage 8A carries
   badge/emote **IDs** in the normalized model but does not resolve them to
   image URLs or fetch a chatter's avatar per message (avoiding one profile

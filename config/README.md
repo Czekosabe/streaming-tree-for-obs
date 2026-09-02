@@ -110,9 +110,8 @@ with no transcoding, is this stage's deliberate scope.
    binary (`apps/server/cmd/testserver`) and are read directly via
    `os.Getenv`, never through the shared config loader - a production build
    cannot recognize them even if they happened to be set. See
-   [Connected accounts and Twitch metadata](../README.md#connected-accounts-and-twitch-metadata)
-   and
-   [Connected accounts and YouTube metadata](../README.md#connected-accounts-and-youtube-metadata).
+   [`docs/connecting-platforms.md`](../docs/connecting-platforms.md) for
+   the Twitch/YouTube account-connection contract.
 6. YouTube's OAuth callback listener (a temporary `127.0.0.1` HTTP server
    bound to a dynamically-assigned port, open only for the lifetime of one
    authorization attempt) is **pure runtime state**, exactly like the

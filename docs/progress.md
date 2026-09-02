@@ -51660,3 +51660,146 @@ relevant subset each workflow already runs (for Windows:
 directly, not assumed) - the same real mechanism this repository
 already uses to decide which of the 33 scripts a given change needs,
 not a manual approximation of it.
+
+## docs: reorganize documentation structure and simplify the public README
+
+A newly authorized, bounded documentation information-architecture
+cleanup - not a new Stage, no product code changed. The root
+`README.md` had grown to 4,503 lines - an engineering encyclopedia
+duplicating a large fraction of `docs/`'s own content (full REST API
+tables, complete engagement/chat/overlay/alerts/audio/goals feature
+prose, exhaustive Twitch/YouTube setup walkthroughs, a full historical
+roadmap) - rather than a short pitch a first-time visitor could read
+in a few minutes.
+
+**Inventory before touching anything.** Four parallel research passes
+read every file under `docs/` (32 top-level docs plus 8
+`provider-integrations/` docs) in full and reported purpose, audience,
+current-vs-historical content ratio, real inbound references (grepped,
+not assumed), and a KEEP SEPARATE / MERGE / REDUCE / MOVE
+recommendation for each. The dominant finding: this documentation set
+is unusually disciplined about cross-referencing rather than
+duplicating - the Windows/macOS/Linux packaging trio, the three-layer
+Linux remote-ops trio, the three independent Twitch OAuth-scope
+contracts, and the visual-design/template/package schema trio are each
+genuinely distinct technical contracts encoding real, different
+persistence/security boundaries, not the same content split by
+filename convention. Most of the 40 files were confirmed KEEP
+SEPARATE; only two were genuine, low-risk merge candidates with a
+demonstrably light inbound-reference footprint.
+
+**README.md rewritten from 4,503 to 164 lines** (96% reduction),
+restructured around what a first-time visitor actually needs: what the
+app is, a highlights list of currently-real features (no historical
+stage numbers), quick start, connecting OBS, a platform-support
+summary table, a pointer to the documentation index, current
+limitations, and privacy/legal/licence links. Every claim in the new
+README is something already true in the current code or an existing
+canonical doc - nothing was invented to fill space.
+
+**New `docs/README.md`** - the documentation landing page the root
+README now points to, grouping every remaining document conceptually
+(getting started, architecture/product state, streaming/destinations,
+engagement/chat/overlays, visual design/audio, data/backup/updates,
+platform packaging, verification, project history) rather than
+requiring a reader to guess from a flat directory listing or from
+Stage numbers.
+
+**Content moved out of the README, not deleted:**
+- `docs/development.md` (new) - requirements, the two-process dev
+  workflow, data storage, production builds, linting/testing, the full
+  REST API reference, and a repository layout overview (deliberately
+  shortened from the README's own exhaustive, already-stale
+  Stage-tagged package tree to a maintainable top-level map).
+- `docs/connecting-platforms.md` (new) - receiving a stream via
+  MediaMTX, sending it onward with FFmpeg, and the full Twitch/YouTube
+  account-registration and connection walkthroughs (genuinely
+  operator-facing setup content, distinct from
+  `provider-integrations/*.md`'s developer/protocol-contract framing).
+- `docs/troubleshooting.md` (new) - the former "Common problems"
+  section verbatim.
+
+The README's own exhaustive engagement/chat/overlay/alerts/TTS/goals
+feature prose (~1,450 lines) was not duplicated into a new file -
+`docs/engagement-architecture.md` and the dedicated feature docs
+(`obs-browser-source.md`, `alert-audio.md`, `audio-tts.md`,
+`goals-widgets.md`, `supporter-widgets.md`, and the
+`provider-integrations/` set) already cover this ground and remain the
+canonical source; the README now links to them instead of restating
+them a second time.
+
+**Two files merged, both confirmed low-risk** (light inbound-reference
+footprint, tightly-coupled content, real overlap with their target):
+- `docs/windows-tray.md` -> `docs/windows-packaging.md` §30 (System
+  tray icon). Only 5 inbound references (three Go source comments, one
+  manual-verification.md entry, plus this journal), all updated to the
+  new `§30.N` location.
+- `docs/stream-insights.md` -> `docs/stream-session-history.md` §14
+  (Stream insights). Insights has no persisted state of its own and is
+  a pure, read-only aggregation over session-history's own data,
+  already presented as a tab on the same History page. 9 inbound
+  references (5 Go/TS source comments, `main.go`, `router.go`,
+  `project-overview.md`) updated to the new `§14` location.
+
+Both merges preserved every word of the original content (only heading
+numbers changed, `## N` -> `### <parent>.N`), and both original files'
+own opening framing was replaced with a one-line "merged from" note in
+their new home rather than silently absorbed with no trace.
+
+**Identified as further opportunities, not executed in this pass** (to
+keep the change bounded and reviewable, and because none is as
+low-risk as the two merges above): `alert-audio.md` §10.2 and
+`visual-template-packages.md` §5a both carry a near-identical ~60-line
+copy of the audio-manifest-v2 JSON schema; `obs-browser-source.md` is
+~55% a chain of per-stage "Factual status update" append-blocks that
+could collapse into one current-state table; `config/README.md`'s
+numbered historical-items list has grown into a second, informal
+chronicle duplicating this journal's own role; `dashboard-design.md`
+is now ~75% historical UI-redesign narration with a thin remaining
+useful core (a backend-data-availability table, a version-source fix
+note) that would need folding into `project-overview.md` before the
+file itself could be safely retired. None of these carry real
+technical-contract information at risk of being lost by leaving them
+as-is a while longer.
+
+**Link integrity.** Every Markdown link in the repository (406 local
+links across 51 files, `docs/progress.md` correctly excluded as
+historical) was checked with a small script against the real
+filesystem after every move/merge. Real breakage found and fixed: four
+docs (`engagement-architecture.md`, `project-overview.md`,
+`provider-integrations/twitch-engagement.md`,
+`provider-integrations/twitch-outbound-chat.md`) and `config/README.md`
+linked into now-removed README sections by anchor - each pointed at
+its correct new home, or had the dangling cross-reference clause
+removed where the linked content wasn't preserved verbatim anywhere
+(superseded by an existing canonical doc instead, per the point
+above); `docs/development.md` and `docs/connecting-platforms.md`
+initially carried `docs/`-prefixed link targets inherited from the old
+root-level README - real sibling-path bugs, found and fixed by the
+same link checker, since both files now live inside `docs/` itself.
+The only remaining "broken" links the checker found are inside
+`apps/server/internal/webassets/legal/{PRIVACY,THIRD_PARTY_NOTICES}.md`
+- confirmed gitignored build artifacts from an earlier local build,
+not real repository content.
+
+**Documentation file count**: `docs/*.md` went from 32 to 35 (net +3:
+-2 merged away, +4 new organizational files (`README.md`,
+`development.md`, `connecting-platforms.md`, `troubleshooting.md`) -
+one file more than a naive "-2+4" because the count started at 32 and
+`provider-integrations/` (8 files, unchanged) is counted separately
+throughout). The file count did not shrink - the goal was fewer
+*unnecessary* and *overlapping* documents plus a navigable structure,
+not the minimum possible file count, and the inventory concluded most
+of the existing 40 files are genuinely distinct canonical contracts
+that would lose real information if force-merged.
+
+No product code was changed; the only non-Markdown edits are doc-path
+references in Go/TS comments (`main.go`, `router.go`,
+`streaminsights.go`, `model.go`, `service.go`, `tray.go`,
+`tray_windows.go`, `stream-insights.ts`, `HistoryPage.tsx`), each a
+single-line comment-only change following the two merges above.
+Frontend `i18n:check`/`typecheck`/`lint` (1 pre-existing, unrelated
+warning) clean; focused `HistoryPage.test.tsx` (8 tests) passing.
+Backend `gofmt -l .`/`go vet ./...`/`go build ./...` clean; focused
+tests for every touched package (`streaminsights`, `httpapi`, `tray`)
+passing. `npm run build` succeeds.

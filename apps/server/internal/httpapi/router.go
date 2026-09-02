@@ -51,9 +51,9 @@ type Options struct {
 	// API (docs/stream-preflight.md). When nil, GET /api/preflight is
 	// not registered.
 	Preflight PreflightService
-	// StreamInsights serves the Stage 27 stream insights API (docs/
-	// stream-insights.md). When nil, GET /api/stream-insights is not
-	// registered.
+	// StreamInsights serves the Stage 27 stream insights API
+	// (docs/stream-session-history.md §14). When nil, GET
+	// /api/stream-insights is not registered.
 	StreamInsights StreamInsightsService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,

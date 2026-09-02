@@ -336,7 +336,7 @@ var newUpdaterClient = func(installedVersion string) *updater.Client {
 }
 
 // trayIngestStatusLabel maps a runtime snapshot onto the tray's own
-// concise status item (docs/windows-tray.md) - the same underlying
+// concise status item (docs/windows-packaging.md §30) - the same underlying
 // truth internal/httpapi's /api/runtime response and the web
 // dashboard's SystemStatusPill already read, just condensed into one
 // short native-menu line instead of a translated web component.
@@ -358,7 +358,7 @@ func trayIngestStatusLabel(snapshot mediamtx.Snapshot) string {
 
 // trayUpdatesLabel reports the tray's "Check for updates" item text and
 // whether it should be enabled - disabled (grayed, per
-// docs/windows-tray.md) for exactly the three permanent, non-
+// docs/windows-packaging.md §30) for exactly the three permanent, non-
 // actionable updater states (docs/updater.md §11/§35/§43), so the
 // tray never offers an action the updater would just refuse.
 func trayUpdatesLabel(state updater.State) (string, bool) {
@@ -1175,7 +1175,7 @@ func run() error {
 	// implementation of destination/account/setup-profile readiness.
 	preflightService := preflight.NewService(branchManager, platformService, accountService, streamSetupService)
 
-	// Stage 27: stream insights (docs/stream-insights.md). Reuses the
+	// Stage 27: stream insights (docs/stream-session-history.md §14). Reuses the
 	// same streamSessionRepo Stage 24 already constructed - never a
 	// second read path over stream session history.
 	streamInsightsService := streaminsights.NewService(streamSessionRepo)
@@ -1421,7 +1421,7 @@ func run() error {
 	// assigned yet) so shutdownRuntime always stops the tray icon on
 	// every shutdown path (web UI Quit, tray Quit, Ctrl+C/SIGTERM, and
 	// the updater's install handoff all converge on this one function),
-	// exactly like every manager below it (docs/windows-tray.md).
+	// exactly like every manager below it (docs/windows-packaging.md §30).
 	var trayHandle tray.Handle
 
 	shutdownRuntime := func(shutdownCtx context.Context) {
@@ -1492,7 +1492,7 @@ func run() error {
 		// docs/windows-packaging.md §26's own manual-running-app
 		// upgrade integration test needs the real tray window's
 		// cooperative-shutdown IPC mechanism to exist). the Stage 20E
-		// tray icon (docs/windows-tray.md): closing the browser tab
+		// tray icon (docs/windows-packaging.md §30): closing the browser tab
 		// does not stop the backend, and this is the one persistent
 		// piece of desktop UI that lets an operator reopen it, see its
 		// status, or quit it without Task Manager. A failure to create

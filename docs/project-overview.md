@@ -1137,7 +1137,7 @@ it is architected; this table only tracks status and dependencies.
 | 24 | Stream session / operational history: when a session ran and which destinations participated, with a coarse closed-category outcome - never chat, donation, or other engagement content (see [stream-session-history.md](stream-session-history.md)) | **Completed** |
 | 25 | Stream setup profiles: a reusable local preparation of destinations and an optional metadata-preset reference for a particular kind of show, distinct from stage 23's full-snapshot backup and stage 22's own preset storage (see [stream-setup-profiles.md](stream-setup-profiles.md)) | **Completed** |
 | 26 | Stream preflight and launch readiness: a single derived readiness check over the existing branch/FFmpeg/MediaMTX/metadata state before going live, surfaced on the Dashboard (see [stream-preflight.md](stream-preflight.md)) | **Completed** |
-| 27 | Stream insights: aggregate stats (session count, total/average duration, longest session, per-destination outcome breakdown) computed on demand from stage 24's existing session-history store, with no new persisted data category (see [stream-insights.md](stream-insights.md)) | **Completed** |
+| 27 | Stream insights: aggregate stats (session count, total/average duration, longest session, per-destination outcome breakdown) computed on demand from stage 24's existing session-history store, with no new persisted data category (see [stream-session-history.md](stream-session-history.md) §14) | **Completed** |
 
 Key dependencies:
 
@@ -1761,8 +1761,7 @@ that bus: a provider-independent projection
 (`apps/server/internal/operatorchat`), persisted non-content
 preferences, Twitch chat-badge/emote resolution, and a working Chat
 page in the frontend - see [engagement-architecture.md](engagement-architecture.md)
-and the README's own [Unified operator chat](../README.md#unified-operator-chat)
-section for the full design and user-facing behavior. Stage 10 implemented
+for the full design. Stage 10 implemented
 a real, public OBS Browser Source chat overlay built on top of that same
 projection: persisted overlay profiles
 (`apps/server/internal/domain/chatoverlay`), a public per-overlay
@@ -1770,9 +1769,8 @@ projection (`apps/server/internal/chatoverlay`) that consumes operator
 chat's own revision stream rather than the Event Bus directly, a public
 unauthenticated HTTP + SSE API, a frontend renderer shared between the
 public route and the management preview, and the Overlays management
-page - see the README's own
-[OBS Browser Source chat overlay](../README.md#obs-browser-source-chat-overlay)
-section for the full design and user-facing behavior. Stage 11A
+page - see [`docs/obs-browser-source.md`](obs-browser-source.md) for the
+shared public hydration contract. Stage 11A
 implemented real, manual outbound Twitch chat sending and replying: a
 third, independently assessed capability profile on the same connected
 account (`AssessOutboundChatCapability`, requesting only
@@ -1782,11 +1780,9 @@ that never persists a queued or sent message, a real Twitch Send Chat
 Message adapter, and a composer built into the Chat page with no
 optimistic local echo - the sent message reappears through the same
 Event Bus / operator-chat pipeline stage 9 already built, once Twitch's
-own EventSub delivers it back - see the README's own
-[Sending Twitch chat manually](../README.md#sending-twitch-chat-manually)
-section and
+own EventSub delivers it back - see
 [docs/provider-integrations/twitch-outbound-chat.md](provider-integrations/twitch-outbound-chat.md)
-for the full design, contract and user-facing behavior. Stage 11B
+for the full design and contract. Stage 11B
 implemented real scheduled bot messages and safe chat commands on top
 of that same dispatcher and capability profile: persisted schedule and
 command definitions (`apps/server/internal/domain/chatautomation`), a
@@ -1799,9 +1795,7 @@ direct call into the Twitch client from scheduler or command code. All
 of this runtime's own state (next-run times, cooldowns, activity
 counters, rolling send counts) stays in memory only, resetting cleanly
 on every backend restart with no missed-run catch-up, exactly like the
-Event Bus and the dispatcher it builds on. See the README's own
-[Scheduled messages and chat commands](../README.md#scheduled-messages-and-chat-commands)
-section for the full design and user-facing behavior. At the time this
+Event Bus and the dispatcher it builds on. At the time this
 sentence was first written (immediately after stage 11B), everything
 else this section describes (alerts, TTS, goal widgets, further
 providers, a visual overlay designer, overlay templates) remained

@@ -1,5 +1,5 @@
 // Package streaminsights is Stage 27's read-only aggregation domain
-// (docs/stream-insights.md): "how has my streaming actually gone?",
+// (docs/stream-session-history.md §14): "how has my streaming actually gone?",
 // computed entirely from Stage 24's already-recorded, already-
 // authorized operational history. It persists nothing of its own -
 // every Insights value is derived at request time from

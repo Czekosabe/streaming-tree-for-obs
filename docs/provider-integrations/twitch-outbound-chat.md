@@ -287,9 +287,7 @@ limits (interval, jitter, activity gating, hourly cap, per-user/global
 cooldowns) sit **above** this contract as an automation-behavior
 control, not a replacement for it - the dispatcher's local rate limiter
 and Twitch's own `429` response remain the authoritative safety ceiling
-either way. See the README's own
-[Scheduled messages and chat commands](../../README.md#scheduled-messages-and-chat-commands)
-section for the full design.
+either way.
 
 ## Exact non-goals for this document/stage
 

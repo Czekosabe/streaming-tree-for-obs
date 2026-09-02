@@ -66,7 +66,7 @@ func toStreamInsightsResponse(in streaminsights.Insights) streamInsightsResponse
 }
 
 // registerStreamInsightsRoutes wires the Stage 27 stream insights API
-// (docs/stream-insights.md §4). Never registered under /api/public/*:
+// (docs/stream-session-history.md §14.4). Never registered under /api/public/*:
 // management only, the same route-namespace convention as Stage 24/25/26.
 func registerStreamInsightsRoutes(mux *http.ServeMux, logger *slog.Logger, service StreamInsightsService) {
 	mux.HandleFunc("GET /api/stream-insights", handleGetStreamInsights(logger, service))
