@@ -50973,3 +50973,70 @@ was made. Continuing directly into 26A (the `internal/domain/preflight`
 domain package and `branch.Manager.EvaluateReadiness`) per the
 governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## feat(server): Stage 26A - the preflight readiness domain and branch.Manager.EvaluateReadiness
+
+`branch.Manager.EvaluateReadiness(ctx, platformID) ([]string, error)`
+is a new, thin, read-only wrapper around the already-pure-reads
+`computeBlockers` - the exact same blocker computation `StartBranch`
+runs internally, now externally reachable without starting anything.
+As a side effect this closes a real gap the Stage 26 audit found in
+the existing `StartEnabledConfirmDialog` (its own "eligible" preview
+trusts possibly-stale/absent cached `Snapshot.Blockers`, which are
+only ever populated once a real start attempt has run once) - the new
+method gives any caller a genuinely live answer instead.
+
+`internal/domain/preflight` is the new Stage 26 domain package.
+`Service.Evaluate(ctx, profileID *string) (Report, error)` composes
+four narrow, already-existing ports - never a parallel truth for any
+of them:
+
+- `BranchPort.EvaluateReadiness` per destination → every
+  `SeverityBlocker` finding, using the exact `branch.Blocker*`
+  identifiers verbatim as `Finding.Code`.
+- `platform.ValidateMetadata` (the same pure, local, capability-table
+  check `metadatapreset.ApplyPreview` already reuses) against each
+  destination's own currently-stored metadata → a `SeverityWarning`
+  only, never a blocker - metadata validity affects Publish, never
+  Start.
+- `AccountPort` → a `reconnect_required` linked account is a
+  `SeverityWarning` only. Confirmed by this stage's own audit that
+  `branch.Manager` never imports `internal/domain/account` at all, so
+  this is a structural guarantee, not a policy applied on top.
+- `StreamSetupPort.Preview` (Stage 25, reused unchanged) → a missing
+  destination or metadata-preset reference in the selected profile
+  becomes its own warning, never silently dropped.
+
+`profileID == nil` preflights every currently-`Enabled` destination
+(Stage 25 never persists an "active profile," so this transient
+selection is the correct default, matching §3 of the contract);
+`profileID` given preflights exactly that profile's own destination
+set. `Status` is computed deterministically from blocker/warning
+counts (`not_ready` > `ready_with_warnings` > `ready`) - no score.
+`updater.StreamingActive` is reused verbatim for `Report.StreamingActive`,
+never a third copy of the active-state set.
+
+`actionForBlocker` maps each blocker identifier to an existing
+corrective action (`add_stream_key`, `open_destination_settings`,
+`install_ffmpeg`, `start_mediamtx`) or `nil` when there is genuinely
+nothing to click (`credential_store_unavailable` is OS-level;
+`ingest_not_receiving` requires the operator to start OBS themselves)
+- preflight never invents a UI form of its own.
+
+14 new tests: 3 for `EvaluateReadiness` (all-ready with no process
+launched, the same blocker `StartBranch` would report also produced
+read-only with no process launched, unknown-platform NotFound) and 11
+for `preflight.Service` (no-profile uses the enabled set, all-ready,
+a blocker drives `not_ready` with the right action, `ingest_not_
+receiving` has no action, account-reconnect is a warning never a
+blocker, invalid local metadata is a warning never a blocker,
+profile-scoped evaluation, missing profile destination/preset
+warnings, an unknown profile's error propagates, `StreamingActive`
+reflects a live branch) plus a structural secret-exclusion proof
+mirroring `streamsetup`/`metadatapreset`'s own pattern. Whole-backend
+`gofmt`/`go vet`/`go build`/`go test ./...` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 26B (the HTTP API and `main.go`
+wiring) per the governing task's own explicit authorization and "do
+not AskUserQuestion between substages."

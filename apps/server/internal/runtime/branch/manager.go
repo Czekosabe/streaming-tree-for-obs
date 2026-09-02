@@ -394,6 +394,23 @@ func (m *Manager) getOrCreateLocked(platformID string) *branchState {
 	return b
 }
 
+// EvaluateReadiness computes the same blockers StartBranch would
+// encounter for platformID right now, without starting anything -
+// computeBlockers is already pure reads with no side effects, so this
+// is a thin read-only wrapper rather than a second implementation
+// (docs/stream-preflight.md §4). Used by the Stage 26 preflight
+// domain to answer "would this destination actually start" live,
+// rather than trusting a possibly-stale cached Snapshot.Blockers from
+// a destination that has never been started.
+func (m *Manager) EvaluateReadiness(ctx context.Context, platformID string) ([]string, error) {
+	p, err := m.opts.Platforms.Get(ctx, platformID)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	blockers, _, err := m.computeBlockers(ctx, p)
+	return blockers, err
+}
+
 // StartBranch explicitly starts one destination. This is a real, deliberate
 // user action: it begins actual outgoing transmission once eligible.
 func (m *Manager) StartBranch(ctx context.Context, platformID string) (Outcome, error) {

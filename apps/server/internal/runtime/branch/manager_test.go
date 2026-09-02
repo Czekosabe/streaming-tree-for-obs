@@ -476,6 +476,52 @@ func TestStartOnAnUnknownPlatformReturnsNotFound(t *testing.T) {
 	}
 }
 
+// --- EvaluateReadiness -------------------------------------------------------
+
+func TestEvaluateReadinessReturnsNoBlockersWhenEverythingIsReady(t *testing.T) {
+	m, _, _, _, _, recorder := newTestManager(t, "pf_1")
+
+	blockers, err := m.EvaluateReadiness(context.Background(), "pf_1")
+	if err != nil {
+		t.Fatalf("EvaluateReadiness() error = %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Errorf("blockers = %v, want none", blockers)
+	}
+	if recorder.count() != 0 {
+		t.Error("EvaluateReadiness must never launch a process - it is read-only")
+	}
+}
+
+func TestEvaluateReadinessReportsTheSameBlockerStartBranchWouldWithoutStartingAnything(t *testing.T) {
+	m, platforms, _, _, _, recorder := newTestManager(t, "pf_1")
+	platforms.setEnabled("pf_1", false)
+
+	blockers, err := m.EvaluateReadiness(context.Background(), "pf_1")
+	if err != nil {
+		t.Fatalf("EvaluateReadiness() error = %v", err)
+	}
+	if !containsStr(blockers, BlockerPlatformDisabled) {
+		t.Errorf("blockers = %v, want %s", blockers, BlockerPlatformDisabled)
+	}
+	if recorder.count() != 0 {
+		t.Error("EvaluateReadiness must never launch a process - it is read-only")
+	}
+
+	snap := snapshotFor(t, m, "pf_1")
+	if snap.State != StateIdle {
+		t.Errorf("branch State = %s after EvaluateReadiness, want idle (unchanged)", snap.State)
+	}
+}
+
+func TestEvaluateReadinessOnAnUnknownPlatformReturnsNotFound(t *testing.T) {
+	m, _, _, _, _, _ := newTestManager(t, "pf_1")
+	_, err := m.EvaluateReadiness(context.Background(), "pf_does_not_exist")
+	if err != ErrNotFound {
+		t.Errorf("EvaluateReadiness() error = %v, want ErrNotFound", err)
+	}
+}
+
 // --- start / live / stop ---------------------------------------------------
 
 func TestStartTransitionsToStartingThenLiveOnlyAfterAdvancingProgress(t *testing.T) {
