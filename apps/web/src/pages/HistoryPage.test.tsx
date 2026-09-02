@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as streamInsightsApi from '@/api/stream-insights';
 import * as streamSessionsApi from '@/api/stream-sessions';
 import { i18n } from '@/i18n';
 import { renderWithProviders } from '@/test/render';
@@ -10,6 +11,7 @@ import { renderWithProviders } from '@/test/render';
 import { HistoryPage } from './HistoryPage';
 
 vi.mock('@/api/stream-sessions');
+vi.mock('@/api/stream-insights');
 
 const CLOSED_SESSION = {
   id: 'sess_closed',
@@ -53,6 +55,10 @@ describe('HistoryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(streamSessionsApi).fetchStreamSessionSettings.mockResolvedValue({ retentionDays: 90 });
+    vi.mocked(streamInsightsApi).fetchStreamInsights.mockResolvedValue({
+      totalSessions: 0, totalDurationSeconds: 0, averageDurationSeconds: 0,
+      longestSession: null, sessionsByEndReason: {}, destinations: [],
+    });
   });
 
   afterEach(() => {
@@ -128,5 +134,35 @@ describe('HistoryPage', () => {
     await user.click(within(dialog).getByRole('button', { name: /clear history/i }));
 
     await waitFor(() => expect(streamSessionsApi.clearStreamSessionHistory).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows an empty insights state when no sessions have ever been recorded', async () => {
+    vi.mocked(streamSessionsApi).fetchStreamSessions.mockResolvedValue([]);
+    renderPage();
+
+    expect(await screen.findByText(/insights appear once your first session is recorded/i)).toBeInTheDocument();
+  });
+
+  it('shows aggregate stats and a per-destination breakdown', async () => {
+    vi.mocked(streamSessionsApi).fetchStreamSessions.mockResolvedValue([CLOSED_SESSION]);
+    vi.mocked(streamInsightsApi).fetchStreamInsights.mockResolvedValue({
+      totalSessions: 3, totalDurationSeconds: 3 * 3600, averageDurationSeconds: 3600,
+      longestSession: { sessionId: 'sess_1', startedAt: '2026-08-01T12:00:00Z', durationSeconds: 2 * 3600 },
+      sessionsByEndReason: { ingest_stopped: 3 },
+      destinations: [
+        {
+          platformId: 'pf_1', providerId: 'twitch', displayName: 'My Twitch',
+          sessionCount: 3, durationSeconds: 3 * 3600, outcomeCounts: { completed: 2, error: 1 },
+        },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText('Insights')).toBeInTheDocument();
+    expect(await screen.findByText('3')).toBeInTheDocument();
+    expect(screen.getAllByText('3h 00m').length).toBeGreaterThan(0);
+    expect(screen.getByText('1h 00m')).toBeInTheDocument();
+    expect(screen.getAllByText('My Twitch').length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 completed, 1 error/i)).toBeInTheDocument();
   });
 });

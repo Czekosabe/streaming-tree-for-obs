@@ -16,6 +16,23 @@
     "error": "błąd",
     "live": "na żywo"
   },
+  "insights": {
+    "heading": "Statystyki",
+    "empty": "Brak jeszcze sesji transmisji - statystyki pojawią się po zapisaniu pierwszej sesji.",
+    "totalSessions": "Łączna liczba sesji",
+    "totalDuration": "Łączny czas transmisji",
+    "averageDuration": "Średnia długość sesji",
+    "longestSession": "Najdłuższa sesja: {{duration}}, {{date}}",
+    "destinationsHeading": "Według miejsca docelowego",
+    "destinationSessions_one": "{{count}} sesja",
+    "destinationSessions_few": "{{count}} sesje",
+    "destinationSessions_many": "{{count}} sesji",
+    "destinationSessions_other": "{{count}} sesji",
+    "outcomeCount_one": "{{count}} {{outcome}}",
+    "outcomeCount_few": "{{count}} {{outcome}}",
+    "outcomeCount_many": "{{count}} {{outcome}}",
+    "outcomeCount_other": "{{count}} {{outcome}}"
+  },
   "settings": {
     "heading": "Ustawienia historii",
     "retentionLabel": "Przechowuj historię przez",

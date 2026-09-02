@@ -16,6 +16,19 @@
     "error": "error",
     "live": "live"
   },
+  "insights": {
+    "heading": "Insights",
+    "empty": "No stream sessions yet - insights appear once your first session is recorded.",
+    "totalSessions": "Total sessions",
+    "totalDuration": "Total streaming time",
+    "averageDuration": "Average session length",
+    "longestSession": "Longest session: {{duration}} on {{date}}",
+    "destinationsHeading": "By destination",
+    "destinationSessions_one": "{{count}} session",
+    "destinationSessions_other": "{{count}} sessions",
+    "outcomeCount_one": "{{count}} {{outcome}}",
+    "outcomeCount_other": "{{count}} {{outcome}}"
+  },
   "settings": {
     "heading": "History settings",
     "retentionLabel": "Keep history for",

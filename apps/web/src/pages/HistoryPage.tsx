@@ -1,9 +1,11 @@
-import { History as HistoryIcon, Loader2 } from 'lucide-react';
+import { History as HistoryIcon, Loader2, TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { StreamInsightsDestination } from '@/api/stream-insights-schemas';
 import type { StreamSession, StreamSessionDestination } from '@/api/stream-sessions-schemas';
 import { AppShell } from '@/components/layout/AppShell';
+import { ProviderBrand } from '@/components/providers/ProviderBrand';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/Panel';
@@ -14,11 +16,20 @@ import {
   useStreamSessionSettingsQuery,
   useStreamSessionsQuery,
 } from '@/hooks/use-stream-sessions';
+import { useStreamInsightsQuery } from '@/hooks/use-stream-insights';
 import { useLanguage } from '@/i18n/use-language';
 import { resolveApiErrorMessage } from '@/lib/api-error-message';
 import { formatTimestamp, toDurationParts } from '@/lib/format';
 
 const RETENTION_OPTIONS = [7, 30, 90, 180, 365] as const;
+
+/** "Xh Ym" - a friendlier, coarser format than durationLabel's H:MM:SS
+ * clock face, used for cumulative/aggregate durations that can span
+ * many hours. */
+function hoursMinutesLabel(totalSeconds: number): string {
+  const parts = toDurationParts(totalSeconds);
+  return `${parts.hours}h ${parts.minutes}m`;
+}
 
 function durationLabel(startedAt: string, endMs: number): string {
   const startMs = new Date(startedAt).getTime();
@@ -145,6 +156,125 @@ function RetentionSettings() {
   );
 }
 
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function DestinationInsightRow({ destination }: { destination: StreamInsightsDestination }) {
+  const { t } = useTranslation('history');
+  const outcomeEntries = Object.entries(destination.outcomeCounts).filter(([, count]) => count > 0);
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+      <ProviderBrand
+        providerId={destination.providerId}
+        fallbackLabel={destination.providerId.slice(0, 2).toUpperCase()}
+        size="sm"
+      />
+      <span className="min-w-0 flex-1 truncate text-ink">{destination.displayName}</span>
+      <span className="text-xs text-ink-muted">
+        {t('insights.destinationSessions', { count: destination.sessionCount })}
+      </span>
+      <span className="text-xs text-ink-muted">{hoursMinutesLabel(destination.durationSeconds)}</span>
+      {outcomeEntries.length > 0 && (
+        <span className="text-xs text-ink-faint">
+          {outcomeEntries
+            .map(([outcome, count]) =>
+              t('insights.outcomeCount', { count, outcome: t(`outcome.${outcome || 'live'}`, outcome) }),
+            )
+            .join(', ')}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Stage 27: stream insights (docs/stream-insights.md) - a read-only
+ * aggregation of Stage 24's own operational history, never a new
+ * data source. A different view of the exact same data the session
+ * list above already owns, not a duplicate of it.
+ */
+function InsightsSection() {
+  const { t } = useTranslation(['history', 'errors']);
+  const tErrors = useTranslation('errors').t;
+  const { locale } = useLanguage();
+  const insightsQuery = useStreamInsightsQuery();
+
+  return (
+    <Panel>
+      <PanelHeader title={t('history:insights.heading')} icon={<TrendingUp className="size-4" />} />
+      <PanelBody className="space-y-3">
+        {insightsQuery.isPending && (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink-muted">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            {t('history:list.loading')}
+          </div>
+        )}
+
+        {insightsQuery.isError && (
+          <p className="py-4 text-center text-sm text-status-error">
+            {resolveApiErrorMessage(tErrors, insightsQuery.error)}
+          </p>
+        )}
+
+        {insightsQuery.isSuccess && insightsQuery.data.totalSessions === 0 && (
+          <p className="py-6 text-center text-sm text-ink-muted">{t('history:insights.empty')}</p>
+        )}
+
+        {insightsQuery.isSuccess && insightsQuery.data.totalSessions > 0 && (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <StatTile
+                label={t('history:insights.totalSessions')}
+                value={String(insightsQuery.data.totalSessions)}
+              />
+              <StatTile
+                label={t('history:insights.totalDuration')}
+                value={hoursMinutesLabel(insightsQuery.data.totalDurationSeconds)}
+              />
+              <StatTile
+                label={t('history:insights.averageDuration')}
+                value={hoursMinutesLabel(insightsQuery.data.averageDurationSeconds)}
+              />
+            </div>
+
+            {insightsQuery.data.longestSession !== null && (
+              <p className="text-xs text-ink-muted">
+                {t('history:insights.longestSession', {
+                  duration: hoursMinutesLabel(insightsQuery.data.longestSession.durationSeconds),
+                  date: formatTimestamp(insightsQuery.data.longestSession.startedAt, locale),
+                })}
+              </p>
+            )}
+
+            {insightsQuery.data.destinations.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                  {t('history:insights.destinationsHeading')}
+                </p>
+                <ul className="space-y-1.5">
+                  {insightsQuery.data.destinations.map((destination, index) => (
+                    <DestinationInsightRow
+                      key={destination.platformId ?? `${destination.providerId}-${destination.displayName}-${index}`}
+                      destination={destination}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </PanelBody>
+    </Panel>
+  );
+}
+
 /**
  * Stage 24: stream session / operational history (docs/stream-session-
  * history.md). A record of when Streaming Tree observed a stream
@@ -161,6 +291,8 @@ export function HistoryPage() {
   return (
     <AppShell title={t('history:page.title')} description={t('history:page.description')}>
       <div className="mx-auto max-w-3xl space-y-4">
+        <InsightsSection />
+
         <Panel>
           <PanelHeader title={t('history:page.title')} icon={<HistoryIcon className="size-4" />} />
           <PanelBody className="space-y-3">

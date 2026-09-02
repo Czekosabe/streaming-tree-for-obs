@@ -51285,3 +51285,46 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 27B (the History page's new
 Insights section) per the governing task's own explicit authorization
 and "do not AskUserQuestion between substages."
+
+## feat(web): Stage 27B - the History page Insights section
+
+Adds the Stage 27 frontend: `apps/web/src/api/stream-insights-schemas.ts`/
+`stream-insights.ts` (Zod contract and transport for `GET /api/stream-
+insights`) and `hooks/use-stream-insights.ts` (a plain
+`useStreamInsightsQuery` - no polling; this view is opened
+deliberately, not something that needs to track live runtime state
+the way Preflight does).
+
+A new "Insights" panel on the existing `HistoryPage.tsx`, placed above
+the individual-session list - a different view of the exact same data
+that page already owns, not a duplicate of it and not a new top-level
+navigation entry. Shows total sessions, total streaming time, average
+session length (a coarser "Xh Ym" format than the individual-session
+list's own H:MM:SS clock face, appropriate for a cumulative total),
+the longest session with its date, and a per-destination reliability
+list reusing `ProviderBrand` and the exact `outcome.*` i18n keys the
+session list's own `DestinationChip` already uses - no second
+vocabulary for the same three outcomes. A destination groups by its
+real platform id when it still exists, by its own snapshot when it
+does not (inherited directly from the backend's own grouping, not
+re-derived here).
+
+EN/PL: new `insights.*` keys added to the existing `history` namespace
+rather than a new one, since this is additional content on the same
+page, not a new surface - full EN/PL plural forms including Polish's
+`_few`/`_many`/`_other`. `npm run i18n:check` passes with 0
+differences across all 29 namespaces.
+
+2 new tests in `HistoryPage.test.tsx` (mocking the new
+`@/api/stream-insights` module alongside the page's existing
+`@/api/stream-sessions` mock): the honest empty state before any
+session has ever been recorded, and aggregate stats + a per-
+destination outcome breakdown rendering correctly once populated.
+Whole-frontend `npm run typecheck`/`lint`/`test -- --run` (134 files,
+1567 tests)/`build` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Stage 27 (selection audit, contract, 27A domain/HTTP API,
+27B History page UI) is now genuinely complete per the governing
+task's own §44 criteria, pending final CI confirmation on this exact
+commit.
