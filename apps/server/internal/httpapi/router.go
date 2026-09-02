@@ -47,6 +47,10 @@ type Options struct {
 	// profiles.md). When nil, none of the /api/stream-setups routes
 	// are registered.
 	StreamSetups StreamSetupService
+	// Preflight serves the Stage 26 stream preflight/launch-readiness
+	// API (docs/stream-preflight.md). When nil, GET /api/preflight is
+	// not registered.
+	Preflight PreflightService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -338,6 +342,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.StreamSetups != nil {
 		registerStreamSetupRoutes(mux, logger, opts.StreamSetups)
+	}
+
+	if opts.Preflight != nil {
+		registerPreflightRoutes(mux, logger, opts.Preflight)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"

@@ -51081,3 +51081,38 @@ was made. Continuing directly into 26B (the HTTP API and `main.go`
 wiring, already implemented and tested in the working tree, committed
 next) per the governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## feat(server): Stage 26B - the stream preflight HTTP API and main.go wiring
+
+`internal/httpapi/preflight.go` exposes `preflight.Service` over REST
+(docs/stream-preflight.md §6): `GET /api/preflight?profileId={optional}`
+→ `Report`. Response DTOs (`preflightReportResponse`/
+`preflightFindingResponse`/`preflightActionResponse`/
+`preflightDestinationResponse`) are explicit structs, never a
+wholesale serialization of the domain type - `Action` serializes as
+`omitempty` so a finding with nothing to click (`credential_store_
+unavailable`, `ingest_not_receiving`) simply omits the field rather
+than sending a null placeholder. `writePreflightError` maps
+`streamsetup.ErrNotFound` (an unknown `profileId`) onto the existing
+404 contract; every other error is a 500, logged.
+
+`main.go` constructs `preflight.NewService` from the same
+`branchManager`, `platformService`, `accountService`, and
+`streamSetupService` this process already builds - never a second
+implementation of destination/account/setup-profile readiness -
+wired into `httpapi.Options.Preflight`. Compiling this wiring is
+itself a structural proof that `branchManager`/`platformService`/
+`accountService`/`streamSetupService` each genuinely satisfy the
+narrow port interfaces `preflight.Service` declared in 26A.
+
+5 new HTTP-layer tests (`internal/httpapi/preflight_test.go`): the
+report round-trips, the `profileId` query parameter passes through
+(including its absence as `nil`), findings/actions serialize
+correctly, an unknown profile maps to 404, and a wrong method maps to
+405. Whole-backend `gofmt`/`go vet`/`go build`/`go test ./...` all
+clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 26C (the Dashboard Preflight
+frontend) per the governing task's own explicit authorization and "do
+not AskUserQuestion between substages."

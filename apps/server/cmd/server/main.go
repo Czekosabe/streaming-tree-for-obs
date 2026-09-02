@@ -44,6 +44,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/preflight"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsession"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
@@ -1167,6 +1168,12 @@ func run() error {
 	// active".
 	streamSetupService := streamsetup.NewService(sqlite.NewStreamSetupProfileRepository(db.DB), platformService, metadataPresetService, branchManager)
 
+	// Stage 26: stream preflight / launch readiness (docs/stream-
+	// preflight.md). Composes platformService, accountService,
+	// branchManager and streamSetupService unchanged - never a second
+	// implementation of destination/account/setup-profile readiness.
+	preflightService := preflight.NewService(branchManager, platformService, accountService, streamSetupService)
+
 	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
 	// branchStreamingGuard adapts the SAME "is a broadcast active" rule
 	// the application updater already uses (updater.StreamingActive) -
@@ -1318,6 +1325,7 @@ func run() error {
 		Backup:          backupService,
 		StreamSessions:  streamSessionRepo,
 		StreamSetups:    streamSetupService,
+		Preflight:       preflightService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,
