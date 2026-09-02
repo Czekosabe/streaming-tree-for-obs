@@ -124,8 +124,95 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; packaging.md §20):
 ; SignTool=signtool /f "$qpath-to.pfx$q" /p "$qpassword$q" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $f
 
+; Two installer languages: English (canonical/source) and Polish,
+; matching the application UI's own two supported languages
+; (docs/windows-packaging.md §29). "polish" is Inno Setup's own
+; officially-shipped translation (compiler:Languages\Polish.isl,
+; distributed with the compiler itself, maintained by its own listed
+; translators) - never a vendored or third-party-downloaded copy.
+; ShowLanguageDialog/LanguageDetectionMethod/UsePreviousLanguage are
+; all left at their documented defaults (yes / uilanguage / yes):
+; real-machine testing during this work (docs/windows-packaging.md
+; §29) confirmed a fresh install with no /LANG correctly detects the
+; real Windows UI language and falls back to the first language listed
+; here (English) when no match exists, an interactive run still offers
+; both languages with an explicit override, and - because AppId above
+; is a fixed literal GUID, never a runtime-computed constant -
+; UsePreviousLanguage's own fixed-AppId precondition holds, so a later
+; update of a Polish install defaults back to Polish automatically,
+; with no custom [Code] needed for any of this.
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+
+; Every project-owned, end-user-visible string below has both an
+; english.* and a polish.* value - never left to mix a localized Inno
+; wizard page with an English-only custom message (docs/windows-
+; packaging.md §29). {#MyAppName}/{#MyAppVersion} are preprocessor
+; substitutions resolved identically for every language at compile
+; time - the product name itself is never translated (governing
+; requirement). Dynamic values (a version string, an exit code) are
+; substituted at runtime via Pascal's FmtMessage(CustomMessage(...),
+; [...]) - see [Code] below - never string concatenation, so every
+; localized sentence stays grammatically whole in either language.
+[CustomMessages]
+english.TaskShortcutsGroup=Shortcuts:
+polish.TaskShortcutsGroup=Skróty:
+english.TaskStartMenuDesc=Create a &Start Menu shortcut
+polish.TaskStartMenuDesc=Utwórz &skrót w menu Start
+english.TaskDesktopDesc=Create a &desktop shortcut
+polish.TaskDesktopDesc=Utwórz &skrót na pulpicie
+english.RunLaunchDesc=Launch {#MyAppName}
+polish.RunLaunchDesc=Uruchom {#MyAppName}
+english.IconUninstallDesc=Uninstall {#MyAppName}
+polish.IconUninstallDesc=Odinstaluj {#MyAppName}
+
+english.DualInstallDetectedError={#MyAppName} appears to be registered both as a per-user install (version %1) and as an administrative/all-users install (version %2).%n%nThis installer only supports a per-user install and cannot safely resolve this automatically. Please uninstall the administrative/all-users copy first (from an elevated "Apps & Features"), then run this installer again.
+polish.DualInstallDetectedError=Wygląda na to, że {#MyAppName} jest zarejestrowany zarówno jako instalacja dla jednego użytkownika (wersja %1), jak i instalacja administracyjna dla wszystkich użytkowników (wersja %2).%n%nTen instalator obsługuje wyłącznie instalację dla jednego użytkownika i nie może bezpiecznie rozwiązać tego automatycznie. Odinstaluj najpierw kopię administracyjną (z poziomu podniesionych uprawnień, z "Aplikacje i funkcje"), a następnie uruchom ten instalator ponownie.
+
+english.HklmInstallFoundError=An existing administrative/all-users installation of {#MyAppName} (version %1) was found.%n%nThis installer only supports a per-user install and cannot upgrade an administrative install. Please uninstall it first (from an elevated "Apps & Features"), then run this installer again.
+polish.HklmInstallFoundError=Znaleziono istniejącą instalację administracyjną (dla wszystkich użytkowników) programu {#MyAppName} (wersja %1).%n%nTen instalator obsługuje wyłącznie instalację dla jednego użytkownika i nie może zaktualizować instalacji administracyjnej. Odinstaluj ją najpierw (z poziomu podniesionych uprawnień, z "Aplikacje i funkcje"), a następnie uruchom ten instalator ponownie.
+
+english.DowngradeConfirm=A newer version of {#MyAppName} (%1) is already installed.%nThis installer is for version {#MyAppVersion}, which is older than what is currently installed.%n%nInstalling it anyway will downgrade your installation. Continue anyway?
+polish.DowngradeConfirm=Nowsza wersja programu {#MyAppName} (%1) jest już zainstalowana.%nTen instalator jest przeznaczony dla wersji {#MyAppVersion}, która jest starsza niż obecnie zainstalowana.%n%nZainstalowanie jej mimo to spowoduje obniżenie wersji instalacji. Kontynuować mimo to?
+
+english.CooperativeShutdownFailedSetup=Streaming Tree for OBS could not be closed automatically. Please open the application and use "Quit Streaming Tree" from its tray icon, then run this installer again.
+polish.CooperativeShutdownFailedSetup=Nie udało się automatycznie zamknąć aplikacji Streaming Tree for OBS. Otwórz aplikację i użyj opcji "Zamknij Streaming Tree" z jej ikony w zasobniku systemowym, a następnie uruchom ten instalator ponownie.
+
+english.MemoOperationRepair=Repair / reinstall (same version already installed)
+polish.MemoOperationRepair=Napraw / zainstaluj ponownie (ta sama wersja jest już zainstalowana)
+english.MemoOperationUpdate=Update
+polish.MemoOperationUpdate=Aktualizacja
+english.MemoOperationDowngrade=Downgrade
+polish.MemoOperationDowngrade=Obniżenie wersji
+english.MemoOperationFresh=Fresh install
+polish.MemoOperationFresh=Nowa instalacja
+english.MemoInstalledVersionLabel=Installed version: %1
+polish.MemoInstalledVersionLabel=Zainstalowana wersja: %1
+english.MemoInstallerVersionLabel=Installer version: {#MyAppVersion}
+polish.MemoInstallerVersionLabel=Wersja instalatora: {#MyAppVersion}
+english.MemoOperationLabel=Operation: %1
+polish.MemoOperationLabel=Operacja: %1
+
+english.UninstallFormCaption=Uninstall {#MyAppName}
+polish.UninstallFormCaption=Odinstaluj {#MyAppName}
+english.UninstallConfirmMessage=Do you want to uninstall {#MyAppName}?%nYour destinations, connected accounts, and saved credentials are kept by default.
+polish.UninstallConfirmMessage=Czy chcesz odinstalować program {#MyAppName}?%nTwoje cele transmisji, połączone konta i zapisane dane uwierzytelniające są domyślnie zachowywane.
+english.UninstallPurgeCheckboxLabel=Also remove all Streaming Tree settings, local data, and saved credentials
+polish.UninstallPurgeCheckboxLabel=Usuń również wszystkie ustawienia, dane lokalne i zapisane dane uwierzytelniające programu Streaming Tree
+english.UninstallCannotBeUndoneWarning=This cannot be undone.
+polish.UninstallCannotBeUndoneWarning=Tej operacji nie można cofnąć.
+english.UninstallBtnCancel=Cancel
+polish.UninstallBtnCancel=Anuluj
+english.UninstallBtnUninstall=Uninstall
+polish.UninstallBtnUninstall=Odinstaluj
+
+english.UninstallShutdownFailedError=Streaming Tree for OBS could not be closed automatically. Please open the application and use "Quit Streaming Tree" from its tray icon, then run this uninstaller again.
+polish.UninstallShutdownFailedError=Nie udało się automatycznie zamknąć aplikacji Streaming Tree for OBS. Otwórz aplikację i użyj opcji "Zamknij Streaming Tree" z jej ikony w zasobniku systemowym, a następnie uruchom ten dezinstalator ponownie.
+english.UninstallPurgeExecFailedError=Streaming Tree for OBS could not remove its saved data: the purge helper could not be started. The application itself will still be uninstalled.
+polish.UninstallPurgeExecFailedError=Nie udało się usunąć zapisanych danych programu Streaming Tree for OBS: nie udało się uruchomić narzędzia usuwającego dane. Sama aplikacja mimo to zostanie odinstalowana.
+english.UninstallPurgeExitCodeError=Streaming Tree for OBS could not fully remove its saved data (exit code %1). The application itself will still be uninstalled.
+polish.UninstallPurgeExitCodeError=Nie udało się w pełni usunąć zapisanych danych programu Streaming Tree for OBS (kod zakończenia %1). Sama aplikacja mimo to zostanie odinstalowana.
 
 [Files]
 Source: "{#StagingDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -150,12 +237,12 @@ Source: "{#StagingDir}\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 ; this; a prior round's own RegisterPreviousData/GetPreviousData
 ; reimplementation of exactly this native behavior has been removed.
 [Tasks]
-Name: "startmenuicon"; Description: "Create a &Start Menu shortcut"; GroupDescription: "Shortcuts:"
-Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+Name: "startmenuicon"; Description: "{cm:TaskStartMenuDesc}"; GroupDescription: "{cm:TaskShortcutsGroup}"
+Name: "desktopicon"; Description: "{cm:TaskDesktopDesc}"; GroupDescription: "{cm:TaskShortcutsGroup}"; Flags: unchecked
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startmenuicon
-Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
+Name: "{group}\{cm:IconUninstallDesc}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
 ; {userdesktop} always resolves to the real current user's Desktop, even
 ; under a custom {app} install path (docs/windows-packaging.md §1/§8) -
 ; Inno's own uninstaller removes an [Icons]-declared shortcut
@@ -175,7 +262,7 @@ Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; not race the application's own default-browser self-launch
 ; (docs/windows-packaging.md §6): that happens once its own HTTP
 ; listener is ready, same as any other launch of the installed exe.
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall skipifsilent nowait
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:RunLaunchDesc}"; Flags: postinstall skipifsilent nowait
 
 ; No [UninstallRun] section: four real Windows CI attempts (docs/
 ; progress.md) to run the purge helper declaratively through
@@ -379,10 +466,7 @@ begin
   if HkcuInstalledFound and HklmInstalledFound then
   begin
     if not WizardSilent() then
-      MsgBox('{#MyAppName} appears to be registered both as a per-user install (version ' + HkcuInstalledVersion +
-        ') and as an administrative/all-users install (version ' + HklmInstalledVersion + ').' + #13#10#13#10 +
-        'This installer only supports a per-user install and cannot safely resolve this automatically. ' +
-        'Please uninstall the administrative/all-users copy first (from an elevated "Apps & Features"), then run this installer again.',
+      MsgBox(FmtMessage(CustomMessage('DualInstallDetectedError'), [HkcuInstalledVersion, HklmInstalledVersion]),
         mbError, MB_OK);
     Log('Refusing to proceed: both HKCU (' + HkcuInstalledVersion + ') and HKLM (' + HklmInstalledVersion + ') uninstall entries exist for this AppId.');
     Result := False;
@@ -397,10 +481,7 @@ begin
     // than silently creating a second, parallel per-user registration
     // alongside it.
     if not WizardSilent() then
-      MsgBox('An existing administrative/all-users installation of {#MyAppName} (version ' + HklmInstalledVersion + ') was found.' + #13#10#13#10 +
-        'This installer only supports a per-user install and cannot upgrade an administrative install. ' +
-        'Please uninstall it first (from an elevated "Apps & Features"), then run this installer again.',
-        mbError, MB_OK);
+      MsgBox(FmtMessage(CustomMessage('HklmInstallFoundError'), [HklmInstalledVersion]), mbError, MB_OK);
     Log('Refusing to proceed: an administrative/all-users install (' + HklmInstalledVersion + ') was found under HKLM.');
     Result := False;
     exit;
@@ -423,10 +504,7 @@ begin
     exit;
   end;
 
-  if MsgBox(
-    'A newer version of {#MyAppName} (' + DetectedPrevVersion + ') is already installed.' + #13#10 +
-    'This installer is for version {#MyAppVersion}, which is older than what is currently installed.' + #13#10#13#10 +
-    'Installing it anyway will downgrade your installation. Continue anyway?',
+  if MsgBox(FmtMessage(CustomMessage('DowngradeConfirm'), [DetectedPrevVersion]),
     mbConfirmation, MB_YESNO) = IDNO then
     Result := False;
 end;
@@ -447,17 +525,17 @@ begin
   begin
     Cmp := CompareAppVersions(DetectedPrevVersion, '{#MyAppVersion}');
     if Cmp = 0 then
-      OperationLine := 'Repair / reinstall (same version already installed)'
+      OperationLine := CustomMessage('MemoOperationRepair')
     else if Cmp < 0 then
-      OperationLine := 'Update'
+      OperationLine := CustomMessage('MemoOperationUpdate')
     else
-      OperationLine := 'Downgrade';
-    Result := 'Installed version: ' + DetectedPrevVersion + NewLine +
-      'Installer version: {#MyAppVersion}' + NewLine +
-      'Operation: ' + OperationLine + NewLine + NewLine;
+      OperationLine := CustomMessage('MemoOperationDowngrade');
+    Result := FmtMessage(CustomMessage('MemoInstalledVersionLabel'), [DetectedPrevVersion]) + NewLine +
+      CustomMessage('MemoInstallerVersionLabel') + NewLine +
+      FmtMessage(CustomMessage('MemoOperationLabel'), [OperationLine]) + NewLine + NewLine;
   end else begin
-    Result := 'Installer version: {#MyAppVersion}' + NewLine +
-      'Operation: Fresh install' + NewLine + NewLine;
+    Result := CustomMessage('MemoInstallerVersionLabel') + NewLine +
+      FmtMessage(CustomMessage('MemoOperationLabel'), [CustomMessage('MemoOperationFresh')]) + NewLine + NewLine;
   end;
 
   Result := Result + MemoDirInfo + NewLine + NewLine + MemoGroupInfo + NewLine + NewLine + MemoTasksInfo;
@@ -569,9 +647,7 @@ begin
   if RequestCooperativeShutdownIfRunning() then
     Result := ''
   else
-    Result := 'Streaming Tree for OBS could not be closed automatically. ' +
-      'Please open the application and use "Quit Streaming Tree" from its ' +
-      'tray icon, then run this installer again.';
+    Result := CustomMessage('CooperativeShutdownFailedSetup');
 end;
 
 // Lets an automated test drive the silent-uninstall purge path (there
@@ -630,55 +706,77 @@ begin
   begin
     PurgeUserDataChecked := ShouldPurgeUserDataForTest();
   end else begin
-  Form := CreateCustomForm(ScaleX(420), ScaleY(220), False, False);
+  // 460x240, wider/taller than the original 420x220: the Polish
+  // translations of this dialog's own text (e.g. the purge checkbox
+  // label) run noticeably longer than English, and every control
+  // below uses AutoSize:=False/WordWrap:=True precisely so a longer
+  // translation wraps within its own box rather than clipping -
+  // verified visually in both languages via a real compiled installer
+  // (docs/windows-packaging.md §29).
+  Form := CreateCustomForm(ScaleX(460), ScaleY(240), False, False);
   try
-    Form.Caption := 'Uninstall ' + '{#MyAppName}';
+    Form.Caption := CustomMessage('UninstallFormCaption');
 
+    // A real, pre-existing (not introduced by localization) layout gap
+    // found and fixed while visually verifying this exact dialog in
+    // both languages: neither Message nor PurgeCheck below had an
+    // explicit Height, so each silently clipped to a single line
+    // regardless of language - Message's own second sentence ("Your
+    // destinations... are kept by default.") was never actually
+    // visible even in the original English dialog. Every control here
+    // now gets an explicit, generous two-line height.
     Message := TNewStaticText.Create(Form);
     Message.Parent := Form;
     Message.Left := ScaleX(8);
     Message.Top := ScaleY(8);
     Message.Width := Form.ClientWidth - ScaleX(16);
+    Message.Height := ScaleY(36);
     Message.AutoSize := False;
     Message.WordWrap := True;
-    Message.Caption :=
-      'Do you want to uninstall {#MyAppName}?' + #13#10 +
-      'Your destinations, connected accounts, and saved credentials are kept by default.';
+    Message.Caption := CustomMessage('UninstallConfirmMessage');
 
     PurgeCheck := TNewCheckBox.Create(Form);
     PurgeCheck.Parent := Form;
     PurgeCheck.Left := ScaleX(8);
-    PurgeCheck.Top := ScaleY(64);
+    PurgeCheck.Top := ScaleY(56);
     PurgeCheck.Width := Form.ClientWidth - ScaleX(16);
-    PurgeCheck.Caption := 'Also remove all Streaming Tree settings, local data, and saved credentials';
+    // TNewCheckBox has no WordWrap property (confirmed - the compiler
+    // itself rejects it as an unknown identifier), but a standard
+    // Win32 checkbox control still wraps its own label text onto a
+    // second line automatically once Height is tall enough for one -
+    // verified visually against a real compiled installer in both
+    // languages (docs/windows-packaging.md §29), since the Polish
+    // translation of this label runs longer than English.
+    PurgeCheck.Height := ScaleY(36);
+    PurgeCheck.Caption := CustomMessage('UninstallPurgeCheckboxLabel');
     PurgeCheck.Checked := False; // Unchecked by default - the operator's own explicit requirement.
 
     Warning := TNewStaticText.Create(Form);
     Warning.Parent := Form;
     Warning.Left := ScaleX(8);
-    Warning.Top := ScaleY(92);
+    Warning.Top := ScaleY(100);
     Warning.Width := Form.ClientWidth - ScaleX(16);
     Warning.AutoSize := False;
     Warning.WordWrap := True;
-    Warning.Caption := 'This cannot be undone.';
+    Warning.Caption := CustomMessage('UninstallCannotBeUndoneWarning');
 
     BtnCancel := TNewButton.Create(Form);
     BtnCancel.Parent := Form;
-    BtnCancel.Width := ScaleX(75);
+    BtnCancel.Width := ScaleX(90);
     BtnCancel.Height := ScaleY(23);
     BtnCancel.Left := Form.ClientWidth - ScaleX(8) - BtnCancel.Width;
     BtnCancel.Top := Form.ClientHeight - ScaleY(8) - BtnCancel.Height;
-    BtnCancel.Caption := 'Cancel';
+    BtnCancel.Caption := CustomMessage('UninstallBtnCancel');
     BtnCancel.ModalResult := mrCancel;
     BtnCancel.Cancel := True;
 
     BtnUninstall := TNewButton.Create(Form);
     BtnUninstall.Parent := Form;
-    BtnUninstall.Width := ScaleX(75);
+    BtnUninstall.Width := ScaleX(90);
     BtnUninstall.Height := ScaleY(23);
     BtnUninstall.Left := BtnCancel.Left - ScaleX(8) - BtnUninstall.Width;
     BtnUninstall.Top := BtnCancel.Top;
-    BtnUninstall.Caption := 'Uninstall';
+    BtnUninstall.Caption := CustomMessage('UninstallBtnUninstall');
     BtnUninstall.ModalResult := mrOk;
     // The DEFAULT button (responds to a bare Enter press) always maps
     // to the checkbox's own current state, which starts unchecked -
@@ -706,9 +804,7 @@ begin
     // exercising this failure path can never hang waiting for a click
     // nobody will make; the interactive operator still sees it.
     if not UninstallSilent() then
-      MsgBox('Streaming Tree for OBS could not be closed automatically. ' +
-        'Please open the application and use "Quit Streaming Tree" from its ' +
-        'tray icon, then run this uninstaller again.', mbError, MB_OK);
+      MsgBox(CustomMessage('UninstallShutdownFailedError'), mbError, MB_OK);
     Result := False;
     exit;
   end;
@@ -725,13 +821,11 @@ begin
       0, ewWaitUntilTerminated, PurgeExitCode) then
     begin
       if not UninstallSilent() then
-        MsgBox('Streaming Tree for OBS could not remove its saved data: the purge helper ' +
-          'could not be started. The application itself will still be uninstalled.', mbError, MB_OK);
+        MsgBox(CustomMessage('UninstallPurgeExecFailedError'), mbError, MB_OK);
     end else if PurgeExitCode <> 0 then
     begin
       if not UninstallSilent() then
-        MsgBox('Streaming Tree for OBS could not fully remove its saved data (exit code ' +
-          IntToStr(PurgeExitCode) + '). The application itself will still be uninstalled.', mbError, MB_OK);
+        MsgBox(FmtMessage(CustomMessage('UninstallPurgeExitCodeError'), [IntToStr(PurgeExitCode)]), mbError, MB_OK);
     end;
   end;
 

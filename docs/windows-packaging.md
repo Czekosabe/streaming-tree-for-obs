@@ -952,3 +952,153 @@ memo text, clicking through the shortcut tasks page) remain part of
 `docs/manual-verification.md`'s physical Windows sessions - this
 section closes the automatable, evidence-based gaps the operator's
 corrective audit identified, not the physical gate itself.
+
+## 29. Multilingual installer (English/Polish)
+
+The application's own web UI has offered English/Polish for some time
+(its own separate i18next resources under `apps/web/src/i18n/resources`).
+The Windows installer had never received the same treatment - this
+section documents the installer-language work, using only Inno Setup's
+own native mechanisms (no custom Pascal language page, no Inno version
+upgrade, no third-party or vendored `.isl` file).
+
+### Supported languages
+Exactly English and Polski - `[Languages]`:
+
+```
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+```
+
+Both are Inno Setup's own official, compiler-shipped translation files -
+`Default.isl` (English, built in) and `Languages\Polish.isl` (Inno's
+own official Polish translation, resolved from the installed compiler's
+own `Languages\` subdirectory at compile time - confirmed via a real
+`ISCC.exe` compile log: `Reading file: ...\Inno Setup 6\Languages\
+Polish.isl`). Neither is vendored into this repository. English remains
+the canonical/source language; no other language is offered (no German/
+Spanish/French/etc. - out of scope).
+
+### Default-language detection and interactive override
+`ShowLanguageDialog`, `LanguageDetectionMethod`, and `UsePreviousLanguage`
+are all left at Inno's own documented defaults (`yes` / `uilanguage` /
+`yes` respectively) - no override was needed for this project's exact
+setup (a plain fixed-literal `AppId`, two languages, English listed
+first as the eventual fallback). Practical effect: a fresh interactive
+install shows Inno's native Select Language dialog, defaulting to
+whichever of the two offered languages matches the current Windows UI
+language (Polish on a Polish-language Windows session, English
+otherwise, including for any other unsupported UI language - never
+forced to Polish merely because the installer itself was built by a
+Polish-speaking developer). The user can always override the default
+and pick either language from the dialog.
+
+### Update/repair language preservation
+`UsePreviousLanguage` (native default `yes`) looks up the language an
+existing same-`AppId` install already used and pre-selects it as the
+new wizard's default, silently skipping the dialog when a command-line
+override isn't given. Confirmed via a real local install+update cycle
+(a throwaway `AppId`, never the real project's registered one) reading
+the real registry value Inno itself records:
+
+```
+Inno Setup: Language    REG_SZ    polish
+```
+
+A Polish-language install, updated later with no `/LANG` flag at all,
+stayed Polish; an English-language install, updated the same way,
+stayed English. Both directions verified for real, not assumed from
+documentation alone.
+
+### Silent built-in updater behavior
+The application's own built-in updater
+(`apps/server/internal/updater/helper_windows.go`) always launches the
+installer with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...`.
+This exact flag combination was run for real, timed, against an
+existing Polish-language install with no `/LANG` override - it
+completed in well under a second, registered `Inno Setup: Language` as
+still `polish` (native `UsePreviousLanguage` preservation, not a
+dialog), and at no point waited for input. A silent/very-silent
+installer invocation never shows the Select Language dialog regardless
+of `/LANG` presence, by Inno's own documented `ShowLanguageDialog`
+behavior in an unattended run.
+
+### Uninstaller localization
+`Uninstall.exe` has no `/LANG=` command-line parameter of its own
+(confirmed against `jrsoftware.org/ishelp/topic_uninstcmdline.htm`'s
+full parameter list) - it purely inherits the language the matching
+install used, read back from the same registry value above. No `[Code]`
+was needed for this; it is native Inno behavior. Every custom string
+the project's own `InitializeUninstall` dialog shows (caption,
+confirmation message, the destructive-purge checkbox, the "cannot be
+undone" warning, both buttons, and every failure `MsgBox`) is now
+sourced from `[CustomMessages]` via `CustomMessage(...)`/
+`FmtMessage(...)`, so it renders fully in whichever language the
+install used - confirmed via real side-by-side screenshots in both
+languages during development, which also caught and fixed a pre-
+existing (not localization-introduced) single-line clipping bug in the
+dialog's `Message` control, present in both languages beforehand
+(`Message.Height` was never explicitly set).
+
+### Every project-owned string is localized
+All `[Tasks]`/`[Icons]`/`[Run]` `Description:`/`GroupDescription:`
+values, every `[Code]`-driven `MsgBox` (dual/administrative-install
+conflicts, downgrade confirmation, cooperative-shutdown failure,
+uninstall shutdown/purge failures), and the entire `UpdateReadyMemo`
+text (fresh/update/repair/downgrade operation lines, installed/installer
+version labels) route through `[CustomMessages]` - 25 `english.*` keys,
+each with a `polish.*` counterpart, no orphan on either side (enforced
+by an automated structural check - see below). `{#MyAppName}`/
+`{#MyAppVersion}` preprocessor substitutions are baked into both
+language values at compile time and never translated; the product name
+itself is never translated, per the glossary the operator supplied
+(Install→Zainstaluj, Update→Zaktualizuj, Repair/Reinstall→Napraw /
+Zainstaluj ponownie, etc.), adapted to fit each actual wizard context
+rather than applied as literal machine translation.
+
+### Installer language vs. application UI language are separate
+Choosing Polski in Setup does **not** change the web app's own EN/PL UI
+language, and vice versa. The installer never writes browser
+`localStorage`, never invents registry state to steer the React UI, and
+never depends on a specific browser profile - the two settings remain
+two independent, unlinked preferences, exactly as before this task. No
+existing code linked them prior to this work, and this task introduced
+no such linkage.
+
+### Automated verification
+`scripts/verify-installer.mjs`'s `testLocalizationScenario`:
+
+- **Structural** (parses the real `.iss` source text, not a compiled
+  artifact): `[Languages]` contains exactly `english` → `compiler:
+  Default.isl` and `polish` → `compiler:Languages\Polish.isl`, no third
+  language; every `english.*` `[CustomMessages]` key has a matching
+  `polish.*` key and vice versa (no orphan in either direction).
+- **Real language selection**: a real `/LANG=english` and a real
+  `/LANG=polish` silent install each register the matching `Inno Setup:
+  Language` value.
+- **Real update-preservation**: a real update with no `/LANG` flag over
+  an existing Polish install stays Polish, and the same over an English
+  install stays English (native `UsePreviousLanguage`).
+- **Real silent-never-blocks proof**: the exact real updater-compatible
+  flags (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...`) complete
+  in a measured, bounded time over an existing Polish install with no
+  `/LANG` override - proof, not assumption, that a second installer
+  language never makes the built-in silent updater stop at a language
+  dialog.
+- Every pre-existing silent-install invocation in this script was
+  pinned to `/LANG=english`, so the rest of the regression suite (Start
+  Menu/desktop shortcuts, version-detection, ordinary uninstall/
+  reinstall, explicit purge, upgrade-while-running) stays deterministic
+  and independent of whatever UI language the CI runner itself happens
+  to report - no existing assertion (hardcoded-English artifact names
+  like `Uninstall Streaming Tree for OBS.lnk` included) was weakened to
+  accommodate the second language.
+
+### What remains manual
+Real interactive Select Language dialog appearance in both languages,
+full Polish wizard-page/diacritics rendering with no clipped controls,
+and a real previously-installed-language default surviving a real
+interactive update, are recorded as pending physical verification in
+`docs/manual-verification.md` - not claimed here without human
+evidence.

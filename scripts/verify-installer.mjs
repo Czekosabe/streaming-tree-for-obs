@@ -236,6 +236,20 @@ function parseRegDisplayVersion(regQueryOutput) {
   return match ? match[1] : null;
 }
 
+/** Reads the real Inno-registered "Inno Setup: Language" value under
+ * HKEY_CURRENT_USER for this AppId, or null if not present - the exact
+ * [Languages] Name: value (e.g. "english"/"polish"), never a display
+ * name. Confirmed via a real local install+registry read during
+ * development (docs/windows-packaging.md §29) - this is the one place
+ * Inno records which language an install actually used, read back here
+ * by both a fresh /LANG=-driven install and a language-less update to
+ * prove UsePreviousLanguage's native preservation for real. */
+async function queryHkcuLanguage() {
+  const hkcu = await run('reg', ['query', `HKCU\\${UNINSTALL_REG_SUBKEY}`, '/v', 'Inno Setup: Language']);
+  const match = hkcu.out.match(/Inno Setup: Language\s+REG_SZ\s+(\S+)/);
+  return match ? match[1] : null;
+}
+
 /** Reads a .lnk shortcut's real target path via the standard WScript.Shell
  * COM object (the normal Windows mechanism for this - Node has no native
  * .lnk parser), or null if the file does not exist / cannot be read. */
@@ -304,7 +318,7 @@ async function testShortcutTasksScenario(installerPath) {
 
   try {
     step('Fresh install with default task selection (no /MERGETASKS)');
-    const fresh = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`]);
+    const fresh = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`]);
     expect(fresh.code === 0, 'default-task fresh install exits 0', fresh);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu app shortcut exists (startmenuicon is checked by default)');
     expect(existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut exists');
@@ -317,7 +331,7 @@ async function testShortcutTasksScenario(installerPath) {
       'the Start Menu shortcut target resolves to the actual installed executable', startMenuComparison);
 
     step('Update over the same install with no /MERGETASKS - previous (default) choices must remain stable');
-    const update = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`]);
+    const update = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`]);
     expect(update.code === 0, 'update exits 0', update);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists after update (native UsePreviousTasks kept it selected)');
     expect(!existsSync(desktopShortcutPath()), 'desktop shortcut still does NOT exist after update - the previous "off" choice was not silently turned on');
@@ -331,7 +345,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(!existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut was removed by uninstall');
 
     step('Fresh install with the desktop task explicitly selected (/MERGETASKS="desktopicon")');
-    const withDesktop = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`, '/MERGETASKS=desktopicon']);
+    const withDesktop = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`, '/MERGETASKS=desktopicon']);
     expect(withDesktop.code === 0, 'install with desktopicon merged exits 0', withDesktop);
     expect(existsSync(desktopShortcutPath()), 'desktop shortcut exists when the task is explicitly selected');
     const desktopTarget = await resolveShortcutTarget(desktopShortcutPath());
@@ -350,7 +364,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(!existsSync(desktopShortcutPath()), 'desktop shortcut was removed by uninstall');
 
     step('Fresh install with Start Menu explicitly deselected (/MERGETASKS="!startmenuicon")');
-    const noStartMenu = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', `/DIR=${installDir}`, '/MERGETASKS=!startmenuicon']);
+    const noStartMenu = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`, '/MERGETASKS=!startmenuicon']);
     expect(noStartMenu.code === 0, 'install with startmenuicon deselected exits 0', noStartMenu);
     expect(!existsSync(startMenuAppShortcutPath()), 'no Start Menu shortcut was created when the task is deselected');
     expect(existsSync(join(installDir, 'streaming-tree-server.exe')), 'the application itself still installed correctly with no Start Menu shortcut');
@@ -389,24 +403,24 @@ async function testVersionDetectionScenario(isccPath) {
     const v2exe = await compileTestInstaller(isccPath, '0.2.0', join(compileDir, 'v2'));
 
     step('Fresh install of 0.1.0');
-    const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(fresh.code === 0, 'fresh install of 0.1.0 exits 0', fresh);
     expect(await queryHkcuDisplayVersion() === '0.1.0', 'the registered version is 0.1.0 under HKEY_CURRENT_USER after fresh install');
     expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE gained NO registration - the install stayed per-user, not administrative');
 
     step('Update to 0.2.0 over the same install directory');
-    const update = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const update = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(update.code === 0, 'update to 0.2.0 exits 0', update);
     expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is 0.2.0 under HKEY_CURRENT_USER after update');
     expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after update');
 
     step('Attempt a silent downgrade back to 0.1.0 - must be refused, not silently applied');
-    const downgrade = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const downgrade = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(downgrade.code !== 0, 'the silent downgrade attempt does NOT exit 0', downgrade);
     expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 - the downgrade did not apply');
 
     step('Same-version reinstall of 0.2.0 (repair) - must succeed, not be treated as a downgrade');
-    const repair = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const repair = await run(v2exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(repair.code === 0, 'same-version reinstall exits 0', repair);
     expect(await queryHkcuDisplayVersion() === '0.2.0', 'the registered version is still 0.2.0 after repair');
     expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after repair');
@@ -438,7 +452,7 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
 
   try {
     step('Silent install into the hermetic directory');
-    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
 
     step('Verify the installed files exist');
@@ -492,7 +506,7 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
     expect(existsSync(markerPath), 'the test data-directory marker file was NOT deleted by uninstall');
 
     step('Reinstall over the same location');
-    const reinstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const reinstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(reinstall.code === 0, 'reinstall exits 0', reinstall);
     expect(existsSync(exePath), 'streaming-tree-server.exe exists again after reinstall');
     expect(existsSync(markerPath), 'the marker file is still present after reinstall');
@@ -537,7 +551,7 @@ async function testExplicitPurgeScenario(installerPath) {
 
   try {
     step('Silent install into a second hermetic directory');
-    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
 
     const exePath = join(installDir, 'streaming-tree-server.exe');
@@ -638,7 +652,7 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
 
   try {
     step('Silent install into a third hermetic directory (manual-upgrade-while-running scenario)');
-    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
 
     const exePath = join(installDir, 'streaming-tree-server.exe');
@@ -653,7 +667,7 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
     // evidence rather than guessed, the same discipline the purge
     // scenario's own diagnostic already used successfully.
     const upgradeLogPath = join(tmpdir(), `streaming-tree-upgrade-install-${Date.now()}.log`);
-    const upgrade = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`, `/LOG=${upgradeLogPath}`]);
+    const upgrade = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`, `/LOG=${upgradeLogPath}`]);
     if (upgrade.code !== 0 && existsSync(upgradeLogPath)) {
       console.log('--- Inno install log (diagnostic, upgrade-while-running did not complete) ---');
       console.log(readFileSync(upgradeLogPath, 'utf8'));
@@ -692,6 +706,102 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
   }
 }
 
+/** Scenario G (docs/windows-packaging.md §29): the installer's English/
+ * Polish localization contract. Two parts:
+ *   1. Structural - parses the real .iss SOURCE TEXT (not a compiled
+ *      artifact) to prove [Languages] offers exactly English (Inno's
+ *      own built-in compiler:Default.isl) + Polish (Inno's own shipped
+ *      compiler:Languages\Polish.isl), and that every english.<key> has
+ *      a matching polish.<key> [CustomMessages] pair in both languages
+ *      with no orphan on either side.
+ *   2. Real language selection and persistence, driven the same way a
+ *      real user or the real built-in updater would: a real
+ *      /LANG=english and a real /LANG=polish silent install each
+ *      register the matching "Inno Setup: Language" value (confirmed
+ *      empirically during development - see queryHkcuLanguage's own
+ *      doc comment), a real update with NO /LANG flag at all preserves
+ *      whichever language the existing install already had (native
+ *      UsePreviousLanguage) in both directions, and the exact real
+ *      updater-compatible silent flags from
+ *      apps/server/internal/updater/helper_windows.go
+ *      (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...) complete
+ *      quickly over an existing Polish-language install with no /LANG
+ *      override - i.e. the update never sits waiting on a language
+ *      dialog - measured directly, not assumed from the absence of a
+ *      hang. */
+async function testLocalizationScenario(installerPath) {
+  step('Structural: [Languages] offers exactly English + Polish, via Inno\'s own shipped .isl files');
+  const issSource = readFileSync(INNO_SCRIPT, 'utf8');
+  const languagesSection = issSource.match(/\[Languages\]\r?\n([\s\S]*?)\r?\n\[/);
+  expect(languagesSection !== null, '[Languages] section found in the .iss source');
+  const languagesBody = languagesSection[1];
+  expect(/Name:\s*"english";\s*MessagesFile:\s*"compiler:Default\.isl"/.test(languagesBody),
+    "english maps to Inno's own built-in compiler:Default.isl");
+  expect(/Name:\s*"polish";\s*MessagesFile:\s*"compiler:Languages\\Polish\.isl"/.test(languagesBody),
+    "polish maps to Inno's own shipped compiler:Languages\\Polish.isl");
+  const languageEntries = [...languagesBody.matchAll(/^Name:\s*"(\w+)"/gm)].map((m) => m[1]);
+  expect(languageEntries.length === 2 && languageEntries.includes('english') && languageEntries.includes('polish'),
+    'exactly two languages are offered - no accidental third language', languageEntries);
+
+  step('Structural: every english.* [CustomMessages] key has a polish.* counterpart and vice versa - no orphans');
+  const customMessageMatches = [...issSource.matchAll(/^(english|polish)\.([A-Za-z0-9_]+)\s*=/gm)];
+  const englishKeys = new Set(customMessageMatches.filter((m) => m[1] === 'english').map((m) => m[2]));
+  const polishKeys = new Set(customMessageMatches.filter((m) => m[1] === 'polish').map((m) => m[2]));
+  const englishOnly = [...englishKeys].filter((k) => !polishKeys.has(k));
+  const polishOnly = [...polishKeys].filter((k) => !englishKeys.has(k));
+  expect(englishOnly.length === 0 && polishOnly.length === 0,
+    'no orphan [CustomMessages] key exists in only one language', { englishOnly, polishOnly });
+  expect(englishKeys.size >= 20, `a realistic number of custom messages were localized (${englishKeys.size} keys)`, [...englishKeys].sort());
+
+  const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-locale-verify-')), 'app');
+  console.log(`Hermetic install directory: ${installDir}`);
+
+  try {
+    step('Real fresh install with /LANG=polish registers Polish');
+    const polishInstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=polish', '/NOICONS', `/DIR=${installDir}`]);
+    expect(polishInstall.code === 0, 'the /LANG=polish install exits 0', polishInstall);
+    expect(await queryHkcuLanguage() === 'polish', 'the installed language is registered as "polish"');
+
+    step('Real update with NO /LANG flag preserves Polish (native UsePreviousLanguage)');
+    const preservePolish = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(preservePolish.code === 0, 'the language-less update over a Polish install exits 0', preservePolish);
+    expect(await queryHkcuLanguage() === 'polish', 'the language remains "polish" after an update with no /LANG override');
+
+    step('Real proof the exact updater-compatible silent flags never block on language selection, over an existing Polish install');
+    const updaterLogPath = join(tmpdir(), `streaming-tree-locale-updater-${Date.now()}.log`);
+    const startedAt = Date.now();
+    const updaterFlagsRun = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', `/LOG=${updaterLogPath}`, '/NOICONS', `/DIR=${installDir}`]);
+    const elapsedMs = Date.now() - startedAt;
+    expect(updaterFlagsRun.code === 0, 'the exact real updater command line exits 0 over a Polish install with no /LANG', updaterFlagsRun);
+    expect(elapsedMs < 60_000, `the updater-compatible install completed in ${elapsedMs}ms - it did not sit waiting on a language dialog`, elapsedMs);
+    expect(await queryHkcuLanguage() === 'polish', 'the language is still "polish" after the updater-flags run');
+
+    step('Uninstall the Polish install before proving the English direction');
+    let uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
+    expect(uninstallerFile !== undefined, 'uninstaller exists', readdirSync(installDir));
+    let uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    expect(uninstall.code === 0, 'uninstall exits 0', uninstall);
+
+    step('Real fresh install with /LANG=english registers English');
+    const englishInstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
+    expect(englishInstall.code === 0, 'the /LANG=english install exits 0', englishInstall);
+    expect(await queryHkcuLanguage() === 'english', 'the installed language is registered as "english"');
+
+    step('Real update with NO /LANG flag preserves English (native UsePreviousLanguage)');
+    const preserveEnglish = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
+    expect(preserveEnglish.code === 0, 'the language-less update over an English install exits 0', preserveEnglish);
+    expect(await queryHkcuLanguage() === 'english', 'the language remains "english" after an update with no /LANG override');
+  } finally {
+    const uninstallerFile = existsSync(installDir)
+      ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
+      : undefined;
+    if (uninstallerFile !== undefined) {
+      await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    }
+    rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  }
+}
+
 async function main() {
   console.log('Stage 20A/20E installer smoke verification');
 
@@ -721,6 +831,7 @@ async function main() {
   expect(isccPath !== undefined, 'ISCC.exe found', 'Install it: winget install --id JRSoftware.InnoSetup --scope user');
   await testVersionDetectionScenario(isccPath);
   await testShortcutTasksScenario(installerPath);
+  await testLocalizationScenario(installerPath);
 
   console.log(`\n${stepCount} steps passed. PASS`);
 }

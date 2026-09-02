@@ -51375,3 +51375,106 @@ establish.
 No product code was changed for this audit; no rebuild was performed
 beyond the `git log`/`git rev-list` inspection this correction is
 based on.
+
+## feat(installer): Windows installer localization - English and Polish
+
+A newly authorized, bounded release-polish task, separate from the
+Stage 25/26/27 roadmap work above and not filed as a new Stage: the
+Windows Inno Setup installer had never received the same English/
+Polish treatment the web app's own UI has had for some time. This
+entry covers only the installer's own language - the application's UI
+language selection is unchanged and remains a separate, unlinked
+preference (docs/windows-packaging.md §29).
+
+**Research first.** Read current official Inno Setup 6 documentation
+(jrsoftware.org) for `[Languages]`/`MessagesFile`, `ShowLanguageDialog`,
+`LanguageDetectionMethod`, `UsePreviousLanguage`, `/LANG=`, and
+`Uninstall.exe`'s own command-line parameters (it has none for
+language) before writing any code - not from memory. No Inno Setup
+version upgrade was made or needed.
+
+**`scripts/installer/streaming-tree.iss`:**
+- `[Languages]` added: `english` → Inno's own built-in
+  `compiler:Default.isl`; `polish` → Inno's own officially shipped
+  `compiler:Languages\Polish.isl` (resolved from the installed
+  compiler itself at compile time - confirmed via a real ISCC compile
+  log). No third-party or vendored `.isl` file.
+- A new `[CustomMessages]` section: 25 `english.*` keys, each with a
+  `polish.*` counterpart - every project-owned visible string
+  (`[Tasks]`/`[Icons]`/`[Run]` descriptions, every `[Code]` `MsgBox`,
+  the whole `UpdateReadyMemo` text, and the entire custom
+  `InitializeUninstall` dialog including the destructive purge
+  checkbox and its warning) now routes through `CustomMessage(...)`/
+  `FmtMessage(...)` instead of hardcoded English literals.
+  `{#MyAppName}`/`{#MyAppVersion}` stay as compile-time substitutions
+  in both languages; the product name is never translated. Polish
+  wording follows normal installer terminology (Zainstaluj,
+  Zaktualizuj, Napraw / Zainstaluj ponownie, etc.), not literal machine
+  translation.
+- `ShowLanguageDialog`/`LanguageDetectionMethod`/`UsePreviousLanguage`
+  left at Inno's documented defaults (`yes`/`uilanguage`/`yes`) - all
+  three already do the right thing for this project's fixed-literal
+  `AppId`, confirmed empirically, not just from documentation.
+- A pre-existing (not localization-introduced) clipping bug in the
+  uninstall dialog's `Message` control was found and fixed in the same
+  pass (missing explicit `Height`, present in both languages
+  beforehand) - caught by taking real side-by-side screenshots in both
+  languages during development.
+
+**Real empirical proof, not just documentation-reading**, all
+performed against throwaway `AppId` GUIDs so the real project's own
+registered `AppId`/registry state was never touched: a real
+`/LANG=polish` install registers `Inno Setup: Language = polish` in
+the uninstall registry key; a real `/LANG=english` install registers
+`english`; a real update with no `/LANG` flag at all preserves
+whichever language the existing install already had, in both
+directions; the exact real updater-compatible silent flags
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...`, matching
+`apps/server/internal/updater/helper_windows.go`) complete in well
+under a second over an existing Polish install with no `/LANG`
+override - never sitting on a language dialog; `Uninstall.exe` purely
+inherits the install-time language with no `/LANG=` mechanism of its
+own (confirmed against the official parameter list and empirically).
+
+**`scripts/verify-installer.mjs`:** every pre-existing silent-install
+invocation pinned to `/LANG=english` so the rest of the regression
+suite stays deterministic and independent of the CI runner's own
+detected UI language - no existing assertion was weakened. A new
+`testLocalizationScenario` added: structurally parses the real `.iss`
+source to prove `[Languages]` offers exactly English + Polish via
+Inno's own official files and that every `english.*`/`polish.*`
+`[CustomMessages]` pair has no orphan on either side; then drives real
+`/LANG=english` and `/LANG=polish` installs and real language-less
+updates to prove the registry-recorded language and its
+`UsePreviousLanguage` preservation in both directions; then times the
+exact real updater-compatible flags over an existing Polish install as
+direct proof they never block on a language dialog. The structural
+half and the underlying Inno registry mechanism were both verified for
+real in this environment; a full local end-to-end run of the whole
+script (this new scenario included) is currently blocked by a known,
+pre-existing, non-localization HKLM registry test residue on this
+machine (`0.9.7-evidence`, undeletable without admin rights this
+session correctly did not attempt to acquire) that now refuses every
+fresh install regardless of language - the same limitation already
+recorded earlier in this document, unrelated to this task. The
+Windows package-verification CI workflow, on a clean runner, is the
+authoritative full end-to-end proof for this change.
+
+**Docs:** `docs/windows-packaging.md` §29 documents the full
+multilingual installer contract (supported languages, default
+detection, interactive override, update/repair preservation, silent
+updater behavior, uninstaller inheritance, and the installer-language-
+vs-application-UI-language separation) - written only after each
+behavior was verified above. `README.md`'s Windows bullet gained one
+concise sentence pointing at §29. `docs/manual-verification.md`
+Session A gained A-20 through A-23 (English fresh install, Polish
+fresh install, Polish uninstall, and interactive+silent-updater
+language-preservation across an update) - recorded as pending physical
+verification, not marked PASS.
+
+No scope beyond installer localization was added: no other language,
+no application i18n change, no Stage 28, no AppId/install-scope/
+updater-security change, no telemetry, no public release/tag. Stage
+20E remains pending physical/manual verification; Stage 20C2 remains
+externally gated; Stage 20 remains Incomplete - unaffected by this
+task's completion.

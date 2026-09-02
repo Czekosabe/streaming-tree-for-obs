@@ -376,7 +376,10 @@ version:
   update flow against the canonical GitHub repository, with mandatory
   SHA-256 verification and a real Windows installer/restart handoff.
   Release artifacts remain honestly unsigned (no Authenticode certificate
-  yet).
+  yet). The installer itself offers English and Polski (see
+  [`docs/windows-packaging.md`](docs/windows-packaging.md) §29) -
+  independent of, and never linked to, the app's own separate English/
+  Polish UI language.
 - **macOS** — Stage 20C1 (**Completed**, see
   [`docs/macos-packaging.md`](docs/macos-packaging.md)): a real,
   **unsigned and not notarized** `.app` bundle inside a DMG, built and
