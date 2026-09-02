@@ -50905,3 +50905,71 @@ complete per the governing task's own §25 criteria. Continuing
 directly into Stage 26 (Stream Preflight & Launch Readiness) per the
 governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## docs: define the Stage 26 stream preflight & launch readiness contract
+
+`docs/stream-preflight.md` is the full Stage 26 contract, written
+after a dedicated research pass reading the real
+`internal/runtime/branch`/`ffmpeg`/`mediamtx`,
+`internal/domain/{platform,output,credential,account,metadatapreset,
+streamsetup}`, `internal/updater`, `internal/sysresources`, and
+existing frontend Dashboard/status-hook source - not inferred from the
+governing task's own suggestive language.
+
+Key findings that directly settle open questions the governing task
+itself flagged as needing real evidence rather than a guess:
+
+- **Ingest/OBS-connection semantics (§33's own question, resolved)**:
+  for a destination that has never been started, "ingest not
+  receiving" (OBS not yet publishing to the local MediaMTX ingest) is
+  a genuine BLOCKER - `branch.Manager.StartBranch` refuses to launch
+  FFmpeg while it holds and leaves `desiredRunning=false`, so nothing
+  auto-resumes; the real workflow is start MediaMTX → start OBS → THEN
+  start a destination branch. Only once a branch has already gone live
+  at least once does losing the publisher become the softer,
+  self-healing `waiting_for_ingest` state the reconciliation loop
+  resumes automatically. Preflight must report this distinction
+  precisely rather than treating every "OBS not connected" the same
+  way.
+- **Connected-account health is confirmed to never gate video routing**:
+  `branch.Manager` never imports `internal/domain/account` at all;
+  every real consumer of account status is metadata/chat/engagement/
+  alerts/goals. A `reconnect_required` account is a warning for
+  optional features only, never a stream-start blocker.
+- **`computeBlockers` (the real, single source of "would this
+  destination actually start") is pure reads with no HTTP-exposed
+  equivalent today** - §4 adds a thin, read-only
+  `branch.Manager.EvaluateReadiness` wrapper around it rather than a
+  second implementation, which also happens to fix a real,
+  independently-found gap in the existing `StartEnabledConfirmDialog`
+  (it currently trusts stale/absent cached blockers for a never-
+  started destination).
+- **No real disk/resource threshold exists anywhere in the backend** -
+  only a frontend display-color convention with no semantic meaning -
+  so Stage 26 v1 deliberately excludes a disk/resource blocker or
+  warning rather than inventing a fake one.
+- **No persisted "restart required after restore" flag exists** -
+  `RestoreResult.RestartRequired` is a one-shot HTTP response field the
+  frontend only holds in transient component state. Adding a persisted
+  flag purely to serve this one preflight check would be new product
+  surface beyond "aggregate existing state," so Stage 26 v1
+  deliberately excludes this check too - documented as an acknowledged
+  gap rather than silently invented or silently dropped without
+  explanation.
+
+The contract defines the `Report`/`Finding`/`Action`/
+`DestinationReadiness` model (deterministic ready/ready-with-warnings/
+not-ready status, no fake score), profile-aware preflight (Stage 25
+never persists an "active profile," so preflight accepts a transient,
+unpersisted `profileId` selection rather than inventing that concept
+too), the `preflight.Service` composing existing ports only, the
+`GET /api/preflight` surface, live-stream label-swap semantics reusing
+`updater.StreamingActive`, and explicit reuse of the existing
+`POST /api/runtime/branches/start-enabled` action for launch - no new
+start path, no auto-start, no auto-publish.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 26A (the `internal/domain/preflight`
+domain package and `branch.Manager.EvaluateReadiness`) per the
+governing task's own explicit authorization and "do not
+AskUserQuestion between substages."
