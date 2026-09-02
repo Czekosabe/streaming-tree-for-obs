@@ -506,6 +506,40 @@ async function main() {
     const settingsSet = await request('PUT', '/api/stream-sessions/settings', { retentionDays: 45 });
     expect(settingsSet.status === 200 && settingsSet.body.retentionDays === 45, 'PUT .../settings accepts a new retention value', settingsSet.body);
 
+    step('Stage 25: create, preview and apply a stream setup profile on the packaged binary');
+    // Proves the Stage 25 routes are actually registered and reachable in
+    // the real production binary, and that Apply's local destination-
+    // membership + metadata-preset write really lands - the deep CRUD/
+    // preview/apply/active-stream-safety/backup-integration matrix already
+    // has dedicated Go coverage (internal/domain/streamsetup,
+    // internal/storage/sqlite, internal/httpapi, internal/domain/backup).
+    const setupCreate = await request('POST', '/api/stream-setups', {
+      name: 'Packaged verification setup', note: '',
+      destinationIds: ['pf_seed_twitch'], metadataPresetId: presetId,
+    });
+    expect(setupCreate.status === 201, 'POST /api/stream-setups returns 201', setupCreate.body);
+    const setupId = setupCreate.body.id;
+    expect(
+      setupCreate.body.destinations.length === 1 && setupCreate.body.destinations[0].platformId === 'pf_seed_twitch',
+      'the created setup resolved a real destination snapshot',
+      setupCreate.body,
+    );
+
+    const setupPreview = await request('GET', `/api/stream-setups/${setupId}/preview`);
+    expect(setupPreview.status === 200, 'GET .../preview returns 200', setupPreview.body);
+    expect(setupPreview.body.blocked === false, 'the preview is not blocked (nothing is streaming)', setupPreview.body);
+
+    const setupApply = await request('POST', `/api/stream-setups/${setupId}/apply`);
+    expect(setupApply.status === 200, 'POST .../apply returns 200', setupApply.body);
+    expect(setupApply.body.metadataApplied === true, 'the referenced metadata preset was actually applied', setupApply.body);
+
+    const destinationAfterSetupApply = await request('GET', '/api/platforms/pf_seed_twitch');
+    expect(
+      destinationAfterSetupApply.body.enabled === true,
+      'applying the setup actually enabled its real destination',
+      destinationAfterSetupApply.body,
+    );
+
     step('A second launch detects the running instance and does not start another backend');
     // The second process is expected to exit entirely on its own (that is
     // exactly what this scenario proves) - there is nothing left to force-

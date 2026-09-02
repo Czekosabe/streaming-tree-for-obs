@@ -23,6 +23,7 @@ export const backupObjectCountsSchema = z.object({
   goals: z.number(),
   widgetProfiles: z.number(),
   metadataPresets: z.number(),
+  streamSetupProfiles: z.number(),
   donationSources: z.number(),
 });
 export type BackupObjectCounts = z.infer<typeof backupObjectCountsSchema>;

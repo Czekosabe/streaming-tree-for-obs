@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -206,6 +207,12 @@ func (f fakeMetadataPresets) List(context.Context) ([]metadatapreset.Preset, err
 	return f.rows, nil
 }
 
+type fakeStreamSetupProfiles struct{ rows []streamsetup.Profile }
+
+func (f fakeStreamSetupProfiles) List(context.Context) ([]streamsetup.Profile, error) {
+	return f.rows, nil
+}
+
 type fakeDonationSources struct{ rows []donationsource.Source }
 
 func (f fakeDonationSources) ListSources(context.Context) ([]donationsource.Source, error) {
@@ -237,17 +244,18 @@ func emptySources() Sources {
 			accounts: map[string][]string{}, hidden: map[string][]chatoverlay.HiddenUser{},
 			blocked: map[string][]chatoverlay.BlockedTerm{}, activityTypes: map[string][]string{},
 		},
-		ChatAutomation:    fakeChatAutomation{},
-		Alerts:            fakeAlerts{rules: map[string][]alerts.Rule{}},
-		VisualDesigns:     fakeVisualDesigns{byOwner: map[string]visualdesign.Record{}},
-		VisualTemplates:   fakeVisualTemplates{},
-		VisualAssets:      fakeVisualAssets{},
-		AudioAssets:       fakeAudioAssets{},
-		AudioSettings:     fakeAudioSettings{},
-		Goals:             fakeGoals{},
-		MetadataPresets:   fakeMetadataPresets{},
-		DonationSources:   fakeDonationSources{},
-		UpdatePreferences: fakeUpdatePreferences{},
+		ChatAutomation:      fakeChatAutomation{},
+		Alerts:              fakeAlerts{rules: map[string][]alerts.Rule{}},
+		VisualDesigns:       fakeVisualDesigns{byOwner: map[string]visualdesign.Record{}},
+		VisualTemplates:     fakeVisualTemplates{},
+		VisualAssets:        fakeVisualAssets{},
+		AudioAssets:         fakeAudioAssets{},
+		AudioSettings:       fakeAudioSettings{},
+		Goals:               fakeGoals{},
+		MetadataPresets:     fakeMetadataPresets{},
+		StreamSetupProfiles: fakeStreamSetupProfiles{},
+		DonationSources:     fakeDonationSources{},
+		UpdatePreferences:   fakeUpdatePreferences{},
 	}
 }
 
@@ -411,6 +419,7 @@ func TestExportReadsEverySingletonWhenPresent(t *testing.T) {
 func TestExportListsMetadataPresetsAndDonationSourcesAndChatAutomation(t *testing.T) {
 	src := emptySources()
 	src.MetadataPresets = fakeMetadataPresets{rows: []metadatapreset.Preset{{ID: "mp_1", Name: "Coding"}}}
+	src.StreamSetupProfiles = fakeStreamSetupProfiles{rows: []streamsetup.Profile{{ID: "setup_1", Name: "Gaming"}}}
 	src.DonationSources = fakeDonationSources{rows: []donationsource.Source{{ID: "donsrc_1", Label: "Main"}}}
 	src.ChatAutomation = fakeChatAutomation{
 		schedules: []chatautomation.Schedule{{ID: "sch_1", Name: "Reminder"}},
@@ -424,7 +433,7 @@ func TestExportListsMetadataPresetsAndDonationSourcesAndChatAutomation(t *testin
 	if err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
-	if len(cfg.MetadataPresets) != 1 || len(cfg.DonationSources) != 1 || len(cfg.ChatSchedules) != 1 ||
+	if len(cfg.MetadataPresets) != 1 || len(cfg.StreamSetupProfiles) != 1 || len(cfg.DonationSources) != 1 || len(cfg.ChatSchedules) != 1 ||
 		len(cfg.ChatCommands) != 1 || len(cfg.VisualTemplates) != 1 || len(cfg.VisualAssets) != 1 || len(cfg.AudioAssets) != 1 {
 		t.Errorf("one or more flat-list domains missing from export: %+v", cfg)
 	}

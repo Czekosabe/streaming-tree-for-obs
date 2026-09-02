@@ -13,39 +13,41 @@ const PreviewTTL = 10 * time.Minute
 // - never raw database records (docs/backup-restore.md §18's "bounded
 // summary").
 type ObjectCounts struct {
-	Platforms         int `json:"platforms"`
-	ConnectedAccounts int `json:"connectedAccounts"`
-	ChatOverlays      int `json:"chatOverlays"`
-	ChatSchedules     int `json:"chatSchedules"`
-	ChatCommands      int `json:"chatCommands"`
-	AlertProfiles     int `json:"alertProfiles"`
-	AlertRules        int `json:"alertRules"`
-	VisualTemplates   int `json:"visualTemplates"`
-	VisualAssets      int `json:"visualAssets"`
-	AudioAssets       int `json:"audioAssets"`
-	Goals             int `json:"goals"`
-	WidgetProfiles    int `json:"widgetProfiles"`
-	MetadataPresets   int `json:"metadataPresets"`
-	DonationSources   int `json:"donationSources"`
+	Platforms           int `json:"platforms"`
+	ConnectedAccounts   int `json:"connectedAccounts"`
+	ChatOverlays        int `json:"chatOverlays"`
+	ChatSchedules       int `json:"chatSchedules"`
+	ChatCommands        int `json:"chatCommands"`
+	AlertProfiles       int `json:"alertProfiles"`
+	AlertRules          int `json:"alertRules"`
+	VisualTemplates     int `json:"visualTemplates"`
+	VisualAssets        int `json:"visualAssets"`
+	AudioAssets         int `json:"audioAssets"`
+	Goals               int `json:"goals"`
+	WidgetProfiles      int `json:"widgetProfiles"`
+	MetadataPresets     int `json:"metadataPresets"`
+	StreamSetupProfiles int `json:"streamSetupProfiles"`
+	DonationSources     int `json:"donationSources"`
 }
 
 // countObjects builds ObjectCounts from a validated Config - the exact
 // domains docs/backup-restore.md §1 marks "Yes".
 func countObjects(cfg Config) ObjectCounts {
 	counts := ObjectCounts{
-		Platforms:         len(cfg.Platforms),
-		ConnectedAccounts: len(cfg.ConnectedAccounts),
-		ChatOverlays:      len(cfg.ChatOverlays),
-		ChatSchedules:     len(cfg.ChatSchedules),
-		ChatCommands:      len(cfg.ChatCommands),
-		AlertProfiles:     len(cfg.AlertProfiles),
-		VisualTemplates:   len(cfg.VisualTemplates),
-		VisualAssets:      len(cfg.VisualAssets),
-		AudioAssets:       len(cfg.AudioAssets),
-		Goals:             len(cfg.Goals),
-		WidgetProfiles:    len(cfg.WidgetProfiles),
-		MetadataPresets:   len(cfg.MetadataPresets),
-		DonationSources:   len(cfg.DonationSources),
+		Platforms:           len(cfg.Platforms),
+		ConnectedAccounts:   len(cfg.ConnectedAccounts),
+		ChatOverlays:        len(cfg.ChatOverlays),
+		ChatSchedules:       len(cfg.ChatSchedules),
+		ChatCommands:        len(cfg.ChatCommands),
+		AlertProfiles:       len(cfg.AlertProfiles),
+		VisualTemplates:     len(cfg.VisualTemplates),
+		VisualAssets:        len(cfg.VisualAssets),
+		AudioAssets:         len(cfg.AudioAssets),
+		Goals:               len(cfg.Goals),
+		WidgetProfiles:      len(cfg.WidgetProfiles),
+		MetadataPresets:     len(cfg.MetadataPresets),
+		StreamSetupProfiles: len(cfg.StreamSetupProfiles),
+		DonationSources:     len(cfg.DonationSources),
 	}
 	for _, p := range cfg.AlertProfiles {
 		counts.AlertRules += len(p.Rules)

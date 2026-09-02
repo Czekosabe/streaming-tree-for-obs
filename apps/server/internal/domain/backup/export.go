@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -105,6 +106,9 @@ type Sources struct {
 	}
 	MetadataPresets interface {
 		List(ctx context.Context) ([]metadatapreset.Preset, error)
+	}
+	StreamSetupProfiles interface {
+		List(ctx context.Context) ([]streamsetup.Profile, error)
 	}
 	DonationSources interface {
 		ListSources(ctx context.Context) ([]donationsource.Source, error)
@@ -317,6 +321,9 @@ func Export(ctx context.Context, src Sources) (Config, error) {
 
 	if cfg.MetadataPresets, err = src.MetadataPresets.List(ctx); err != nil {
 		return Config{}, fmt.Errorf("list metadata presets: %w", err)
+	}
+	if cfg.StreamSetupProfiles, err = src.StreamSetupProfiles.List(ctx); err != nil {
+		return Config{}, fmt.Errorf("list stream setup profiles: %w", err)
 	}
 	if cfg.DonationSources, err = src.DonationSources.ListSources(ctx); err != nil {
 		return Config{}, fmt.Errorf("list donation sources: %w", err)

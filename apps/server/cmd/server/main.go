@@ -1209,6 +1209,7 @@ func run() error {
 	backupAudioSettings := sqlite.NewAudioSettingsRepository(db.DB)
 	backupGoals := sqlite.NewGoalsRepository(db.DB)
 	backupMetadataPresets := sqlite.NewMetadataPresetRepository(db.DB)
+	backupStreamSetupProfiles := sqlite.NewStreamSetupProfileRepository(db.DB)
 	backupDonationSources := sqlite.NewDonationSourceRepository(db.DB)
 	backupUpdatePreferences := sqlite.NewUpdateSettingsRepository(db.DB)
 
@@ -1220,7 +1221,8 @@ func run() error {
 		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
 		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
 		AudioSettings: backupAudioSettings, Goals: backupGoals,
-		MetadataPresets: backupMetadataPresets, DonationSources: backupDonationSources,
+		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
+		DonationSources:   backupDonationSources,
 		UpdatePreferences: backupUpdatePreferences,
 	}
 	backupSinks := backupdomain.Sinks{
@@ -1231,7 +1233,8 @@ func run() error {
 		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
 		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
 		AudioSettings: backupAudioSettings, Goals: backupGoals,
-		MetadataPresets: backupMetadataPresets, DonationSources: backupDonationSources,
+		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
+		DonationSources:   backupDonationSources,
 		UpdatePreferences: backupUpdatePreferences,
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -73,6 +74,8 @@ type fakeSinks struct {
 
 	presets map[string]metadatapreset.Preset
 
+	streamSetups map[string]streamsetup.Profile
+
 	donationSources map[string]donationsource.Source
 
 	updatePrefs *updatersettings.Preferences
@@ -93,6 +96,7 @@ func newFakeSinks() *fakeSinks {
 		visualAssets: map[string]visualasset.Asset{}, audioAssetBlobs: map[string]audioasset.Blob{},
 		audioAssets: map[string]audioasset.Asset{}, goals: map[string]goals.Goal{},
 		widgets: map[string]goals.WidgetProfile{}, presets: map[string]metadatapreset.Preset{},
+		streamSetups:    map[string]streamsetup.Profile{},
 		donationSources: map[string]donationsource.Source{},
 	}
 }
@@ -106,7 +110,8 @@ func (f *fakeSinks) sinks() Sinks {
 		VisualDesigns: fakeVisualDesignSink{f}, VisualTemplates: fakeVisualTemplateSink{f},
 		VisualAssets: fakeVisualAssetSink{f}, AudioAssets: fakeAudioAssetSink{f},
 		AudioSettings: fakeAudioSettingsSink{f}, Goals: fakeGoalsSink{f},
-		MetadataPresets: fakeMetadataPresetSink{f}, DonationSources: fakeDonationSourceSink{f},
+		MetadataPresets: fakeMetadataPresetSink{f}, StreamSetupProfiles: fakeStreamSetupProfileSink{f},
+		DonationSources:   fakeDonationSourceSink{f},
 		UpdatePreferences: fakeUpdatePreferencesSink{f},
 	}
 }
@@ -122,7 +127,8 @@ func (f *fakeSinks) sources() Sources {
 		VisualTemplates: fakeVisualTemplatesListOnly{f}, VisualAssets: fakeVisualAssetsListOnly{f},
 		AudioAssets: fakeAudioAssetsListOnly{f}, AudioSettings: fakeAudioSettingsGetOnly{f},
 		Goals: fakeGoalsListOnly{f}, MetadataPresets: fakeMetadataPresetsListOnly{f},
-		DonationSources: fakeDonationSourcesListOnly{f}, UpdatePreferences: fakeUpdatePreferencesGetOnly{f},
+		StreamSetupProfiles: fakeStreamSetupProfilesListOnly{f},
+		DonationSources:     fakeDonationSourcesListOnly{f}, UpdatePreferences: fakeUpdatePreferencesGetOnly{f},
 	}
 }
 
@@ -371,6 +377,17 @@ func (s fakeMetadataPresetSink) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+type fakeStreamSetupProfileSink struct{ f *fakeSinks }
+
+func (s fakeStreamSetupProfileSink) Create(_ context.Context, p streamsetup.Profile) error {
+	s.f.streamSetups[p.ID] = p
+	return nil
+}
+func (s fakeStreamSetupProfileSink) Delete(_ context.Context, id string) error {
+	delete(s.f.streamSetups, id)
+	return nil
+}
+
 type fakeDonationSourceSink struct{ f *fakeSinks }
 
 func (s fakeDonationSourceSink) CreateSource(_ context.Context, src donationsource.Source) error {
@@ -578,6 +595,16 @@ func (s fakeMetadataPresetsListOnly) List(context.Context) ([]metadatapreset.Pre
 	return out, nil
 }
 
+type fakeStreamSetupProfilesListOnly struct{ f *fakeSinks }
+
+func (s fakeStreamSetupProfilesListOnly) List(context.Context) ([]streamsetup.Profile, error) {
+	out := make([]streamsetup.Profile, 0, len(s.f.streamSetups))
+	for _, p := range s.f.streamSetups {
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 type fakeDonationSourcesListOnly struct{ f *fakeSinks }
 
 func (s fakeDonationSourcesListOnly) ListSources(context.Context) ([]donationsource.Source, error) {
@@ -686,6 +713,7 @@ func TestClearExistingRemovesEveryIncludedDomain(t *testing.T) {
 	sinks.goals["goal_1"] = goals.Goal{ID: "goal_1"}
 	sinks.widgets["wp_1"] = goals.WidgetProfile{ID: "wp_1", GoalID: "goal_1"}
 	sinks.presets["mp_1"] = metadatapreset.Preset{ID: "mp_1"}
+	sinks.streamSetups["setup_1"] = streamsetup.Profile{ID: "setup_1"}
 	sinks.donationSources["donsrc_1"] = donationsource.Source{ID: "donsrc_1"}
 
 	if err := clearExisting(context.Background(), sinks.sources(), sinks.sinks()); err != nil {
@@ -694,7 +722,101 @@ func TestClearExistingRemovesEveryIncludedDomain(t *testing.T) {
 
 	if len(sinks.platforms) != 0 || len(sinks.accounts) != 0 || len(sinks.alertProfiles) != 0 ||
 		len(sinks.alertRules) != 0 || len(sinks.overlays) != 0 || len(sinks.goals) != 0 ||
-		len(sinks.widgets) != 0 || len(sinks.presets) != 0 || len(sinks.donationSources) != 0 {
+		len(sinks.widgets) != 0 || len(sinks.presets) != 0 || len(sinks.streamSetups) != 0 ||
+		len(sinks.donationSources) != 0 {
 		t.Errorf("clearExisting left rows behind: %+v", sinks)
+	}
+}
+
+// TestApplyConfigRemapsStreamSetupProfileReferences proves the fix to
+// the bug this stage found: metadata-preset restore previously never
+// recorded its own old->new id into ids, so a stream setup profile -
+// the first thing to reference a metadata preset id across domains -
+// would have restored with a dangling, un-remapped preset reference.
+// Also proves a destination's PlatformID remaps to the platform's own
+// new id, and that an already-missing destination/preset reference
+// (nil PlatformID / nil MetadataPresetID with only the name snapshot
+// carried) survives restore unchanged rather than being dropped or
+// resurrected.
+func TestApplyConfigRemapsStreamSetupProfileReferences(t *testing.T) {
+	sinks := newFakeSinks()
+	pid := "pf_old_1"
+	presetID := "mp_old_1"
+	cfg := Config{
+		FormatVersion: FormatVersion,
+		Platforms: []PlatformExport{
+			{Platform: platform.Platform{ID: "pf_old_1", DisplayName: "Main"}},
+		},
+		MetadataPresets: []metadatapreset.Preset{
+			{ID: "mp_old_1", Name: "Gaming preset"},
+		},
+		StreamSetupProfiles: []streamsetup.Profile{
+			{
+				ID: "setup_old_1", Name: "Gaming",
+				Destinations: []streamsetup.Destination{
+					{PlatformID: &pid, ProviderID: "twitch", DisplayName: "Main"},
+					{PlatformID: nil, ProviderID: "youtube", DisplayName: "Deleted destination"},
+				},
+				MetadataPresetID: &presetID, MetadataPresetName: "Gaming preset",
+			},
+			{
+				ID: "setup_old_2", Name: "Already missing preset",
+				MetadataPresetID: nil, MetadataPresetName: "Long-gone preset",
+			},
+		},
+	}
+
+	err := applyConfig(context.Background(), cfg, map[string][]byte{}, sinks.sinks(), fakeBlobWriter{}, fakeBlobWriter{}, func() time.Time { return time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC) })
+	if err != nil {
+		t.Fatalf("applyConfig() error = %v", err)
+	}
+
+	if len(sinks.platforms) != 1 || len(sinks.presets) != 1 || len(sinks.streamSetups) != 2 {
+		t.Fatalf("got %d platforms, %d presets, %d stream setups, want 1, 1, 2", len(sinks.platforms), len(sinks.presets), len(sinks.streamSetups))
+	}
+	var newPlatformID, newPresetID string
+	for id := range sinks.platforms {
+		newPlatformID = id
+	}
+	for id := range sinks.presets {
+		newPresetID = id
+	}
+
+	var gaming, missingPreset streamsetup.Profile
+	for _, p := range sinks.streamSetups {
+		if p.Name == "Gaming" {
+			gaming = p
+		} else {
+			missingPreset = p
+		}
+	}
+
+	if gaming.ID == "setup_old_1" {
+		t.Error("stream setup profile id was not remapped")
+	}
+	if gaming.MetadataPresetID == nil || *gaming.MetadataPresetID != newPresetID {
+		t.Errorf("MetadataPresetID = %v, want the remapped preset id %q", gaming.MetadataPresetID, newPresetID)
+	}
+	if len(gaming.Destinations) != 2 {
+		t.Fatalf("got %d destinations, want 2", len(gaming.Destinations))
+	}
+	if gaming.Destinations[0].PlatformID == nil || *gaming.Destinations[0].PlatformID != newPlatformID {
+		t.Errorf("Destinations[0].PlatformID = %v, want the remapped platform id %q", gaming.Destinations[0].PlatformID, newPlatformID)
+	}
+	if gaming.Destinations[1].PlatformID != nil {
+		t.Errorf("Destinations[1].PlatformID = %v, want nil (was already missing before backup)", *gaming.Destinations[1].PlatformID)
+	}
+	if gaming.Destinations[1].DisplayName != "Deleted destination" {
+		t.Errorf("Destinations[1].DisplayName = %q, want the snapshot preserved", gaming.Destinations[1].DisplayName)
+	}
+
+	if missingPreset.MetadataPresetID != nil {
+		t.Errorf("MetadataPresetID = %v, want nil (was already missing before backup)", *missingPreset.MetadataPresetID)
+	}
+	if missingPreset.MetadataPresetName != "Long-gone preset" {
+		t.Errorf("MetadataPresetName = %q, want the snapshot preserved", missingPreset.MetadataPresetName)
+	}
+	if !missingPreset.MetadataPresetMissing() {
+		t.Error("MetadataPresetMissing() = false, want true")
 	}
 }

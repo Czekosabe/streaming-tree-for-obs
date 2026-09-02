@@ -19,6 +19,7 @@
     "audio": "Ustawienia dźwięku",
     "goals": "Cele i widżety pulpitu",
     "metadataPresets": "Presety metadanych",
+    "streamSetups": "Profile konfiguracji transmisji",
     "donationSources": "Listę źródeł dotacji (po przywróceniu wymagane jest ponowne wprowadzenie danych uwierzytelniających)"
   },
   "excludes": {
@@ -70,6 +71,10 @@
       "metadataPresets_few": "{{count}} presety metadanych",
       "metadataPresets_many": "{{count}} presetów metadanych",
       "metadataPresets_other": "{{count}} presetu metadanych",
+      "streamSetupProfiles_one": "{{count}} profil konfiguracji transmisji",
+      "streamSetupProfiles_few": "{{count}} profile konfiguracji transmisji",
+      "streamSetupProfiles_many": "{{count}} profili konfiguracji transmisji",
+      "streamSetupProfiles_other": "{{count}} profilu konfiguracji transmisji",
       "donationSources_one": "{{count}} źródło dotacji",
       "donationSources_few": "{{count}} źródła dotacji",
       "donationSources_many": "{{count}} źródeł dotacji",

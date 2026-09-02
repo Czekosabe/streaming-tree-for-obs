@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/metadatapreset"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
@@ -141,6 +142,14 @@ func clearExisting(ctx context.Context, src Sources, sink Sinks) error {
 		}
 	} else {
 		return fmt.Errorf("list metadata presets for clear: %w", err)
+	}
+
+	if setups, err := src.StreamSetupProfiles.List(ctx); err == nil {
+		for _, p := range setups {
+			_ = sink.StreamSetupProfiles.Delete(ctx, p.ID)
+		}
+	} else {
+		return fmt.Errorf("list stream setup profiles for clear: %w", err)
 	}
 
 	// Accounts before platforms: platform_account_links references
@@ -547,11 +556,47 @@ func applyConfig(ctx context.Context, cfg Config, assets map[string][]byte, sink
 		if err != nil {
 			return fmt.Errorf("generate metadata preset id: %w", err)
 		}
+		// Recorded into ids: Stage 25 stream setup profiles are the
+		// first thing to reference a metadata preset id across domains,
+		// so this restore is the first one that needs the mapping.
+		ids[p.ID] = newID
 		t := now().UTC()
 		p.ID = newID
 		p.CreatedAt, p.UpdatedAt = t, t
 		if err := sink.MetadataPresets.Create(ctx, p); err != nil {
 			return fmt.Errorf("restore metadata preset: %w", err)
+		}
+	}
+
+	// --- stream setup profiles (docs/stream-setup-profiles.md §8) -----------
+	// Restored after platforms and metadata presets, so both a
+	// destination's PlatformID and a MetadataPresetID reference already
+	// have a real new id in ids to remap through. A destination or
+	// preset reference that was already nil/missing at export time
+	// stays nil/missing here too - never recreated, never rebound.
+	for _, p := range cfg.StreamSetupProfiles {
+		newID, err := streamsetup.NewID()
+		if err != nil {
+			return fmt.Errorf("generate stream setup profile id: %w", err)
+		}
+		t := now().UTC()
+		p.ID = newID
+		if p.MetadataPresetID != nil {
+			remapped := ids.remap(*p.MetadataPresetID)
+			p.MetadataPresetID = &remapped
+		}
+		destinations := make([]streamsetup.Destination, len(p.Destinations))
+		for i, d := range p.Destinations {
+			if d.PlatformID != nil {
+				remapped := ids.remap(*d.PlatformID)
+				d.PlatformID = &remapped
+			}
+			destinations[i] = d
+		}
+		p.Destinations = destinations
+		p.CreatedAt, p.UpdatedAt = t, t
+		if err := sink.StreamSetupProfiles.Create(ctx, p); err != nil {
+			return fmt.Errorf("restore stream setup profile: %w", err)
 		}
 	}
 

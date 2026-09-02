@@ -41,6 +41,7 @@ const PREVIEW = {
     goals: 0,
     widgetProfiles: 0,
     metadataPresets: 0,
+    streamSetupProfiles: 0,
     donationSources: 0,
   },
   assetCount: 0,

@@ -79,6 +79,7 @@ func newInstallation(t *testing.T) *installation {
 	audioSettingsRepo := sqlite.NewAudioSettingsRepository(db.DB)
 	goalsRepo := sqlite.NewGoalsRepository(db.DB)
 	metadataPresetRepo := sqlite.NewMetadataPresetRepository(db.DB)
+	streamSetupProfileRepo := sqlite.NewStreamSetupProfileRepository(db.DB)
 	donationSourceRepo := sqlite.NewDonationSourceRepository(db.DB)
 	updatePreferencesRepo := sqlite.NewUpdateSettingsRepository(db.DB)
 
@@ -90,7 +91,8 @@ func newInstallation(t *testing.T) *installation {
 		VisualDesigns: visualDesignRepo, VisualTemplates: visualTemplateRepo,
 		VisualAssets: visualAssetRepo, AudioAssets: audioAssetRepo,
 		AudioSettings: audioSettingsRepo, Goals: goalsRepo,
-		MetadataPresets: metadataPresetRepo, DonationSources: donationSourceRepo,
+		MetadataPresets: metadataPresetRepo, StreamSetupProfiles: streamSetupProfileRepo,
+		DonationSources:   donationSourceRepo,
 		UpdatePreferences: updatePreferencesRepo,
 	}
 	sinks := backup.Sinks{
@@ -101,7 +103,8 @@ func newInstallation(t *testing.T) *installation {
 		VisualDesigns: visualDesignRepo, VisualTemplates: visualTemplateRepo,
 		VisualAssets: visualAssetRepo, AudioAssets: audioAssetRepo,
 		AudioSettings: audioSettingsRepo, Goals: goalsRepo,
-		MetadataPresets: metadataPresetRepo, DonationSources: donationSourceRepo,
+		MetadataPresets: metadataPresetRepo, StreamSetupProfiles: streamSetupProfileRepo,
+		DonationSources:   donationSourceRepo,
 		UpdatePreferences: updatePreferencesRepo,
 	}
 

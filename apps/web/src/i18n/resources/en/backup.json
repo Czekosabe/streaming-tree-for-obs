@@ -19,6 +19,7 @@
     "audio": "Audio settings",
     "goals": "Goals and dashboard widgets",
     "metadataPresets": "Metadata presets",
+    "streamSetups": "Stream setup profiles",
     "donationSources": "Donation source list (re-entering the credential is required after a restore)"
   },
   "excludes": {
@@ -56,6 +57,8 @@
       "goals_other": "{{count}} goals",
       "metadataPresets_one": "{{count}} metadata preset",
       "metadataPresets_other": "{{count}} metadata presets",
+      "streamSetupProfiles_one": "{{count}} stream setup profile",
+      "streamSetupProfiles_other": "{{count}} stream setup profiles",
       "donationSources_one": "{{count}} donation source",
       "donationSources_other": "{{count}} donation sources"
     },

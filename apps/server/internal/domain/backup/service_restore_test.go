@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 )
 
 type fakeStreamingGuard struct {
@@ -53,9 +54,16 @@ func TestRestoreClearsAndAppliesEndToEnd(t *testing.T) {
 	sinks := newFakeSinks()
 	svc := newRestoreTestService(t, sinks, fakeStreamingGuard{active: false}, &memSafetyStore{})
 
+	pid := "pf_old"
 	cfg := Config{
 		FormatVersion: FormatVersion,
 		Platforms:     []PlatformExport{{Platform: platform.Platform{ID: "pf_old", DisplayName: "Main"}}},
+		StreamSetupProfiles: []streamsetup.Profile{
+			{
+				ID: "setup_old", Name: "Gaming",
+				Destinations: []streamsetup.Destination{{PlatformID: &pid, ProviderID: "twitch", DisplayName: "Main"}},
+			},
+		},
 	}
 	data, err := WriteArchive(cfg, "0.1.0-test", "windows", time.Now(), memBlobSource{}, memBlobSource{})
 	if err != nil {
@@ -73,15 +81,32 @@ func TestRestoreClearsAndAppliesEndToEnd(t *testing.T) {
 	if result.Counts.Platforms != 1 {
 		t.Errorf("RestoreResult.Counts.Platforms = %d, want 1", result.Counts.Platforms)
 	}
+	if result.Counts.StreamSetupProfiles != 1 {
+		t.Errorf("RestoreResult.Counts.StreamSetupProfiles = %d, want 1", result.Counts.StreamSetupProfiles)
+	}
 	if !result.RestartRequired {
 		t.Error("RestoreResult.RestartRequired = false, want true (chat automation/alerts/engagement connectors only reload at process start)")
 	}
 	if len(sinks.platforms) != 1 {
 		t.Fatalf("got %d platforms after restore, want 1", len(sinks.platforms))
 	}
+	var newPlatformID string
 	for id := range sinks.platforms {
+		newPlatformID = id
 		if id == "pf_old" {
 			t.Error("the restored platform kept its backup-supplied id")
+		}
+	}
+
+	if len(sinks.streamSetups) != 1 {
+		t.Fatalf("got %d stream setup profiles after restore, want 1", len(sinks.streamSetups))
+	}
+	for _, p := range sinks.streamSetups {
+		if p.ID == "setup_old" {
+			t.Error("the restored stream setup profile kept its backup-supplied id")
+		}
+		if len(p.Destinations) != 1 || p.Destinations[0].PlatformID == nil || *p.Destinations[0].PlatformID != newPlatformID {
+			t.Errorf("stream setup profile destination was not remapped to the new platform id %q: %+v", newPlatformID, p.Destinations)
 		}
 	}
 

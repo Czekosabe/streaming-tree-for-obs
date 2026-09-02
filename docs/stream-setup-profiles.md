@@ -236,9 +236,13 @@ discovery-card conventions - never onboarding bloat.
 
 Stream setup profiles are ordinary non-secret creator configuration -
 included in Stage 23 backups. `internal/domain/backup.Config` gains
-`StreamSetupProfiles []StreamSetupProfileExport`. Restore mints a
-fresh id for every profile and every destination-membership row, and
-remaps `MetadataPresetID`/`PlatformID` through the exact same `idMap`
+`StreamSetupProfiles []streamsetup.Profile` directly - unlike
+`ChatOverlayExport`/`AlertProfileExport`, `Profile` is already fully
+self-contained (its own destinations are an embedded field, not a
+separate child table export needs to compose), so no dedicated export
+wrapper type was needed. Restore mints a fresh id for every profile
+and remaps `MetadataPresetID`/each destination's own `PlatformID`
+through the exact same `idMap`
 every other domain already uses - closing off the identical id-
 collision class Stage 23's own §4 already established, applied here
 without exception. Restored the same way every other domain is:

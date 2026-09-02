@@ -50832,3 +50832,76 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 25D (the Stage 23 backup/restore
 integration) per the governing task's own explicit authorization and
 "do not AskUserQuestion between substages."
+
+## feat(server): Stage 25D - stream setup profiles join the Stage 23 backup/restore inventory
+
+`internal/domain/backup.Config` gains `StreamSetupProfiles
+[]streamsetup.Profile` - a direct slice of the domain type, not a
+dedicated export wrapper, since `Profile` already embeds its own
+destinations and needs no child-table composition (unlike
+`ChatOverlayExport`/`AlertProfileExport`). `Sources.StreamSetupProfiles`/
+`Sinks.StreamSetupProfiles` follow the exact `List`/`Create`+`Delete`
+shape `MetadataPresets` already established; `sqlite.StreamSetupProfileRepository`
+satisfies both directly, wired into `main.go`'s existing
+`backupSources`/`backupSinks` construction.
+
+`applyConfig` restores stream setup profiles after platforms and
+metadata presets, remapping each destination's own `PlatformID` and
+the profile's `MetadataPresetID` through `idMap` - a reference already
+missing before the backup was taken stays missing, never recreated or
+rebound. This is the first thing in the codebase to reference a
+metadata preset id across domains, which surfaced a real,
+previously-undetected bug: metadata-preset restore built a fresh id
+for every preset but never recorded `ids[oldID] = newID`, so any
+future cross-domain reference to a restored preset would have resolved
+to the stale backup-supplied id instead of the real new one. Fixed by
+recording the mapping, exactly like every other domain's own restore
+block already does. `clearExisting` gained the matching delete-all
+step, and `ObjectCounts`/`countObjects` gained `StreamSetupProfiles`
+so restore previews and results report it like every other domain.
+
+Two round-trip tests prove the fix and the remapping end to end:
+`TestApplyConfigRemapsStreamSetupProfileReferences` (a profile
+referencing both a live and an already-missing destination, plus a
+live and an already-missing metadata preset, all four cases correctly
+either remapped or preserved-as-missing) and an extension of
+`TestRestoreClearsAndAppliesEndToEnd` exercising the real
+`WriteArchive` → `RestorePreview` → `Restore` pipeline. All existing
+backup fakes (`export_test.go`, `restore_commit_test.go`) and the
+real-SQLite `security_integration_test.go` installation now wire
+`StreamSetupProfiles` alongside every other domain.
+
+Frontend: `BackupObjectCounts` gains `streamSetupProfiles`;
+`BackupRestorePanel` lists "Stream setup profiles" among what a backup
+includes and reports the count in a restore preview, with full EN/PL
+plural forms. `npm run i18n:check` passes with 0 differences.
+
+docs/backup-restore.md's own domain-inventory table gains a Stream
+setup profiles row; docs/stream-setup-profiles.md §8 corrected to
+describe the actual shipped shape (`[]streamsetup.Profile` directly,
+not a wrapper type) rather than what was speculated before
+implementation.
+
+`scripts/verify-packaged-app.mjs` gains a Stage 25 step, in the same
+spirit as its existing Stage 22/23/24 ones: create a setup referencing
+the script's real seeded destination and the preset created earlier in
+the same run, preview it (unblocked - nothing is streaming), apply it,
+and confirm both the destination's `enabled` state and the metadata
+preset actually landed on the real packaged binary - proving the
+routes are genuinely registered and reachable there, not repeating the
+deep CRUD/preview/apply/backup-integration matrix Go-level tests
+already cover.
+
+Whole-backend `gofmt`/`go vet`/`go build`/`go test ./...` and
+whole-frontend `typecheck`/`lint`/`test -- --run` (133 files, 1561
+tests)/`build` all clean; `node --check` confirms the packaged-
+verification script edit parses correctly (the script itself runs only
+under the CI packaging workflows, per docs/ci-reliability.md).
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Stage 25 (contract, 25A domain/migration, 25B HTTP API, 25C
+Dashboard UI, 25D backup/restore integration) is now genuinely
+complete per the governing task's own §25 criteria. Continuing
+directly into Stage 26 (Stream Preflight & Launch Readiness) per the
+governing task's own explicit authorization and "do not
+AskUserQuestion between substages."

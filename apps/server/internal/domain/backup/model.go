@@ -26,6 +26,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -128,6 +129,12 @@ type Config struct {
 	Goals                       []goals.Goal                   `json:"goals"`
 	WidgetProfiles              []goals.WidgetProfile          `json:"widgetProfiles"`
 	MetadataPresets             []metadatapreset.Preset        `json:"metadataPresets"`
-	DonationSources             []donationsource.Source        `json:"donationSources"`
-	UpdatePreferences           *updatersettings.Preferences   `json:"updatePreferences,omitempty"`
+	// StreamSetupProfiles are Stage 25 reusable stream setup profiles
+	// (docs/stream-setup-profiles.md §8) - ordinary non-secret creator
+	// configuration, restored after Platforms and MetadataPresets so
+	// both a profile's destination membership and its metadata-preset
+	// reference can be remapped to their own freshly restored ids.
+	StreamSetupProfiles []streamsetup.Profile        `json:"streamSetupProfiles"`
+	DonationSources     []donationsource.Source      `json:"donationSources"`
+	UpdatePreferences   *updatersettings.Preferences `json:"updatePreferences,omitempty"`
 }

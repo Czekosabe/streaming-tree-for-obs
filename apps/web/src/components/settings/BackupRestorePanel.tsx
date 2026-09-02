@@ -26,6 +26,7 @@ const INCLUDES_KEYS = [
   'audio',
   'goals',
   'metadataPresets',
+  'streamSetups',
   'donationSources',
 ] as const;
 
@@ -45,6 +46,7 @@ const COUNT_ROWS = [
   'visualTemplates',
   'goals',
   'metadataPresets',
+  'streamSetupProfiles',
   'donationSources',
 ] as const satisfies readonly CountKey[];
 

@@ -18,6 +18,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualdesign"
@@ -113,6 +114,10 @@ type Sinks struct {
 	}
 	MetadataPresets interface {
 		Create(ctx context.Context, p metadatapreset.Preset) error
+		Delete(ctx context.Context, id string) error
+	}
+	StreamSetupProfiles interface {
+		Create(ctx context.Context, p streamsetup.Profile) error
 		Delete(ctx context.Context, id string) error
 	}
 	DonationSources interface {
