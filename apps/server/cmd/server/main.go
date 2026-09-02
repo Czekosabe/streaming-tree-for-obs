@@ -46,6 +46,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsession"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
@@ -1159,6 +1160,13 @@ func run() error {
 	// Stage 22: reusable stream metadata presets (docs/metadata-presets.md).
 	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
 
+	// Stage 25: reusable stream setup profiles (docs/stream-setup-
+	// profiles.md). Reuses platformService, metadataPresetService and
+	// branchManager unchanged - never a second implementation of
+	// destination membership, metadata apply, or "is a broadcast
+	// active".
+	streamSetupService := streamsetup.NewService(sqlite.NewStreamSetupProfileRepository(db.DB), platformService, metadataPresetService, branchManager)
+
 	// Stage 23: safe configuration backup/restore (docs/backup-restore.md).
 	// branchStreamingGuard adapts the SAME "is a broadcast active" rule
 	// the application updater already uses (updater.StreamingActive) -
@@ -1306,6 +1314,7 @@ func run() error {
 		MetadataPresets: metadataPresetService,
 		Backup:          backupService,
 		StreamSessions:  streamSessionRepo,
+		StreamSetups:    streamSetupService,
 		Credentials:     credentialService,
 		Outputs:         outputService,
 		FFmpegRuntime:   branchManager,

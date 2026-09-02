@@ -42,6 +42,11 @@ type Options struct {
 	// history API (docs/stream-session-history.md). When nil, none of
 	// the /api/stream-sessions routes are registered.
 	StreamSessions StreamSessionService
+	// StreamSetups serves the Stage 25 stream setup profile CRUD/
+	// duplicate/save-current/preview/apply API (docs/stream-setup-
+	// profiles.md). When nil, none of the /api/stream-setups routes
+	// are registered.
+	StreamSetups StreamSetupService
 	// Resources serves the local host-resource snapshot (CPU/memory/disk)
 	// for the Dashboard's "System resources" card. When nil,
 	// GET /api/system/resources is not registered.
@@ -329,6 +334,10 @@ func NewRouter(opts Options) http.Handler {
 
 	if opts.StreamSessions != nil {
 		registerStreamSessionRoutes(mux, logger, opts.StreamSessions)
+	}
+
+	if opts.StreamSetups != nil {
+		registerStreamSetupRoutes(mux, logger, opts.StreamSetups)
 	}
 
 	// Local host-resource snapshot for the Dashboard's "System resources"

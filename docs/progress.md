@@ -50680,3 +50680,52 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 25B (the HTTP API and `main.go`
 wiring) per the governing task's own explicit authorization and "do
 not AskUserQuestion between substages."
+
+## feat(server): Stage 25B - the stream setup profile HTTP API and main.go wiring
+
+`internal/httpapi/streamsetup.go` exposes the Stage 25 domain over
+REST (docs/stream-setup-profiles.md §10): GET/POST
+`/api/stream-setups`, GET/PUT/DELETE `/api/stream-setups/{id}`, POST
+`/api/stream-setups/{id}/duplicate`, POST `/api/stream-setups/save-
+current`, GET `/api/stream-setups/{id}/preview`, and POST
+`/api/stream-setups/{id}/apply`. Response DTOs are explicit structs
+(`streamSetupProfileResponse`/`streamSetupPreviewResponse`/
+`applyStreamSetupResponse`), never a wholesale serialization of a
+domain type - the preview response reuses `applyDestinationResponse`/
+`toDestinationPreviewResponse` from the Stage 22 metadata-preset
+handler unchanged for the embedded metadata-preset compatibility
+preview, rather than a second copy of that shape. `writeStreamSetupError`
+maps every domain sentinel (`streamsetup.ErrNotFound`/
+`ErrDuplicateName`/`ErrActiveStreamBlocksApply`, plus
+`platform.ErrNotFound`/`metadatapreset.ErrNotFound` surfacing directly
+from destination/preset-reference validation) onto the existing
+ErrorBody contract.
+
+A route-registration bug surfaced immediately by the new handler
+tests and fixed before commit: `POST /api/stream-setups/save-current`
+and `GET /api/stream-setups/{id}` are the same segment depth, so
+registering a bare any-method 405 catch-all for `.../save-current`
+made Go's ServeMux panic at startup on an ambiguous method/path
+overlap - the exact same conflict class `streamsession.go`'s own
+`.../settings` route already documents hitting. Fixed the same way:
+the bare catch-all for `.../save-current` is not registered, so a
+genuinely wrong method there now falls through to Go's own built-in
+405 instead of this package's custom JSON body.
+
+`main.go` constructs `streamsetup.NewService` from the same
+`platformService`, `metadataPresetService`, and `branchManager` this
+process already builds - never a second implementation of destination
+membership, metadata apply, or "is a broadcast active" - backed by the
+new `sqlite.NewStreamSetupProfileRepository`, and wires it into
+`httpapi.Options.StreamSetups`.
+
+10 new HTTP-layer tests (`internal/httpapi/streamsetup_test.go`)
+cover list/get/create/update/delete/duplicate/save-current/preview/
+apply against a stub service, including the duplicate-name-conflict
+and active-stream-blocks-apply error mappings. Whole-backend
+`gofmt`/`go vet`/`go build`/`go test ./...` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 25C (the Dashboard frontend) per
+the governing task's own explicit authorization and "do not
+AskUserQuestion between substages."
