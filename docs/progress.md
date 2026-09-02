@@ -51328,3 +51328,50 @@ was made. Stage 27 (selection audit, contract, 27A domain/HTTP API,
 27B History page UI) is now genuinely complete per the governing
 task's own §44 criteria, pending final CI confirmation on this exact
 commit.
+
+## docs: correction - exact commit count and Stage 27 privacy wording for the Stage 25/26/27 report
+
+A reporting/roadmap-consistency audit found two inaccuracies in this
+session's own chat-level final report (not in any prior journal
+entry's own substance, which stands as written) and corrects them
+here per the append-only discipline.
+
+**Exact commit count.** The report stated "thirteen logical commits
+this session." The real count, verified directly
+(`git rev-list --count 7b1d010..1c641da`), is **15**:
+`git log --oneline --reverse 7b1d010..1c641da` gives, in order:
+`27bc054` (Stage 24 CI-status correction, docs-only), `05d1cfd`
+(Stage 25 contract), `7cb9993` (25A), `7311589` (25B), `80930f1`
+(Stage 25 validation fix), `8255184` (25C), `901b81b` (25D),
+`91bd0f7` (Stage 26 contract), `a30c264` (26A), `85186e1` (a fix to
+Stage 25D's own packaged-verification script, landed chronologically
+during Stage 26 work but not itself Stage 26 product work), `215fdf9`
+(26B), `4904cc2` (26C), `c12f1e8` (Stage 27 audit/contract), `74e393b`
+(27A), `1c641da` (27B). By category: Stage 24 correction = 1; Stage 25
+= 6 (contract, 25A, 25B, validation fix, 25C, 25D); the packaged-
+verification CI fix = 1 (a fix to Stage 25's own script, not Stage 26
+product work); Stage 26 = 4 (contract, 26A, 26B, 26C); Stage 27 = 3
+(audit/contract, 27A, 27B). 1+6+1+4+3 = 15. The "13" figure in the
+chat report undercounted by omitting the Stage 25 contract commit and
+the Stage 24 correction commit from its own tally.
+
+**Stage 27 privacy wording.** The report described Stream Insights as
+introducing "zero new privacy surface." `GET /api/stream-insights`
+and its History-page UI section are, literally, new local application
+surfaces - a new HTTP route and a new rendered view. The properties
+actually proven by the implementation and its tests are narrower and
+more precise: no new persisted data category (`streaminsights.Service`
+writes nothing; every `Insights` value is computed at request time);
+no new event/chat/message/donation content persisted or exposed
+(structurally proven by `content_exclusion_test.go`, mirroring
+`streamsession`'s own proof exactly); no new external telemetry or
+network transmission to any third party; no new credential or secret
+exposure; the aggregation is read-only over the existing Stage 24
+session-history store (`streamsession.Repository.ListSessions`,
+reused unchanged). "Zero new privacy surface" overclaimed; the
+corrected, narrower claim is what the source and tests actually
+establish.
+
+No product code was changed for this audit; no rebuild was performed
+beyond the `git log`/`git rev-list` inspection this correction is
+based on.
