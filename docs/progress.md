@@ -51184,3 +51184,56 @@ Dashboard UI) is now genuinely complete per the governing task's own
 Continuing directly into the Stage 27 selection audit per the
 governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## docs: Stage 27 selection audit and the stream insights contract
+
+Per the governing task's own §44, a bounded evidence-based audit
+compared its four named candidates against the real current product
+state (after onboarding/metadata presets/backup-restore/operational
+history/stream setup profiles/preflight all already ship):
+
+- (A) Scheduling/planned stream preparation would require a wholly new
+  domain (dates, reminders, notification delivery) with no existing
+  state to derive from - the highest-risk, most new-surface option.
+- (B) Operational insights/statistics derived only from Stage 24's own
+  non-engagement history: `HistoryPage.tsx` already lists individual
+  sessions but nothing aggregates across them, and
+  `streamsession.Repository.ListSessions` already returns everything
+  needed - genuinely valuable, with zero new persisted state and zero
+  new privacy surface.
+- (C) A recovery/repair assistant materially overlaps Stage 26, which
+  already surfaces every real blocker/warning with a pointer to its
+  existing corrective action - lower marginal value now that Preflight
+  exists.
+- (D) No other concrete, evidence-backed gap of comparable value was
+  found.
+
+**Selected: (B).** The only option requiring no new persisted domain
+and no new privacy-boundary decision - the governing task's own §44
+already drew that boundary explicitly (no audience analytics, no
+chat/donation persistence, no feasibility-gated provider connectors),
+and (B) never approaches either line. No consequential product-
+direction fork remains to report; implementation proceeds directly
+per the governing task's own explicit instruction for this exact
+situation.
+
+`docs/stream-insights.md` is the full Stage 27 contract: a read-only
+`streaminsights.Service.Compute` aggregating
+`streamsession.Repository.ListSessions` (SQLite's own documented
+`LIMIT -1` "unbounded" convention - already safe, since
+`PruneSessionsBefore` already bounds the table by the operator's own
+retention setting) into total/average/longest session duration, an
+end-reason breakdown, and per-destination reliability (grouped by
+platform id when the destination still exists, by its own snapshot
+when it does not) - never a new data source, never anything an
+engagement-content-shaped field could carry, mirroring
+`streamsession`'s own content-exclusion proof exactly. Surfaced as a
+new "Insights" section on the existing History page, not a new
+top-level navigation entry - it is a different view of the exact same
+data that page already owns.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 27A (the `streaminsights` domain
+package, already implemented and tested in the working tree, committed
+next) per the governing task's own explicit authorization and "do not
+AskUserQuestion between substages."
