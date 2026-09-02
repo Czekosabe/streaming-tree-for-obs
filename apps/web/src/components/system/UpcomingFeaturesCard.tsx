@@ -23,7 +23,6 @@ export function UpcomingFeaturesCard() {
 
   const items = [
     t('pages:platforms.planned.encoding'),
-    t('pages:metadata.planned.presets'),
     t('pages:metadata.planned.history'),
   ];
 

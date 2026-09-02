@@ -56,10 +56,17 @@ Read in full before any code changed:
   icon on each tab (§4).
 - `PlaceholderPage.tsx` / `PlannedPages.tsx` - `/platforms` and
   `/metadata` routes are genuinely still placeholder pages for **future,
-  narrower** sub-features (per-branch encoding profiles; reusable
-  metadata presets/history). Their copy already says the general
-  functionality "already works from the Dashboard's platform cards" -
-  this is accurate, not stale, and their `planned` nav badges stay.
+  narrower** sub-features (per-branch encoding profiles; a title/category
+  history). Their copy already says the general functionality "already
+  works from the Dashboard's platform cards" - this is accurate, not
+  stale, and their `planned` nav badges stay. **Correction (final
+  product-polish audit, 2026-09-02):** reusable metadata presets, listed
+  here as still-planned, have since shipped (`MetadataEditor.tsx`'s
+  "Presets" button, `ManagePresetsDialog`/`ApplyPresetDialog`/
+  `SavePresetDialog`) - the `metadata.planned.presets` i18n key and its
+  reference in `UpcomingFeaturesCard.tsx` were stale and have been
+  removed; only the title/category history sub-feature remains genuinely
+  planned.
 - `AboutLegalPage.tsx` / `useAboutQuery` / `GET /api/about` - the real,
   already-existing authoritative source for product version/build
   identity (`AboutResponse.version`, `isReleaseBuild`, `commit`,

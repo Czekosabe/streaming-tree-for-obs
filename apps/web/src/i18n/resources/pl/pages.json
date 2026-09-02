@@ -10,33 +10,16 @@
       "encoding": "Profil kodowania dla każdej gałęzi (bitrate, rozdzielczość, odstęp klatek kluczowych)"
     }
   },
-  "streams": {
-    "title": "Transmisje",
-    "description": "Sterowanie odbiorem strumienia i każdą gałęzią wychodzącą na żywo.",
-    "planned": {
-      "ingest": "Stan odbioru w MediaMTX i szczegóły połączenia z OBS",
-      "processControl": "Uruchamianie i zatrzymywanie pojedynczych procesów FFmpeg dla gałęzi",
-      "metrics": "Bieżący bitrate, zgubione klatki i liczniki ponownych połączeń",
-      "restartPolicy": "Polityka automatycznego restartu gałęzi po awarii"
-    }
-  },
   "metadata": {
     "title": "Metadane",
-    "description": "Edycja i wysyłanie metadanych tytułu/kategorii dla poszczególnych platform działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok, z zestawami wielokrotnego użytku współdzielonymi przez platformy, nie jest jeszcze zbudowany.",
+    "description": "Edycja i wysyłanie metadanych tytułu/kategorii dla poszczególnych platform, w tym zestawów wielokrotnego użytku stosowanych na kilku platformach naraz, działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok nie jest jeszcze zbudowany.",
     "planned": {
-      "presets": "Zestawy wielokrotnego użytku stosowane na kilku platformach naraz",
       "history": "Historia wcześniej używanych tytułów i kategorii"
     }
   },
   "settings": {
     "title": "Ustawienia",
     "description": "Globalna konfiguracja aplikacji i routera transmisji.",
-    "planned": {
-      "ingest": "Konfiguracja lokalnego odbioru (port RTMP, ścieżka, uwierzytelnianie)",
-      "binaries": "Ścieżki do plików wykonywalnych MediaMTX i FFmpeg",
-      "backendAddress": "Adres backendu, na potrzeby przyszłego wdrożenia zdalnego routera",
-      "credentialStore": "Zarządzanie magazynem poświadczeń"
-    },
     "language": {
       "heading": "Język interfejsu",
       "description": "Zmiana działa natychmiast i jest zapamiętywana w tej przeglądarce.",
@@ -79,15 +62,6 @@
   "chat": {
     "title": "Czat",
     "description": "Ujednolicony, połączony czat Twitch ze wszystkich podłączonych kont - działający widok operatora. Diagnostykę łącznika znajdziesz w Zaangażowaniu."
-  },
-  "logs": {
-    "title": "Logi",
-    "description": "Diagnostyka routera transmisji i każdej gałęzi.",
-    "planned": {
-      "backendLogs": "Strukturalne logi backendu przesyłane przez SSE lub WebSocket",
-      "ffmpegOutput": "Wyjście FFmpeg dla każdej gałęzi z filtrowaniem po ważności",
-      "diagnosticBundle": "Eksport pakietu diagnostycznego z usuniętymi sekretami"
-    }
   },
   "notFound": {
     "title": "Nie znaleziono",

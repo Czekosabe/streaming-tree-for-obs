@@ -29,7 +29,7 @@ export function MetadataPage() {
       titleKey="metadata.title"
       descriptionKey="metadata.description"
       icon={SlidersHorizontal}
-      plannedKeys={['metadata.planned.presets', 'metadata.planned.history']}
+      plannedKeys={['metadata.planned.history']}
     />
   );
 }

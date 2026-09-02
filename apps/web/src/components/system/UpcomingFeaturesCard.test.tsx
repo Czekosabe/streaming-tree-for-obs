@@ -11,10 +11,11 @@ describe('UpcomingFeaturesCard', () => {
 
     // Sourced from pages:platforms.planned.encoding / pages:metadata.planned.*
     // - never invented marketing copy, and never something already shipped.
+    // Metadata presets are already shipped (Dashboard's Metadata editor),
+    // so they were removed from this list - see docs/progress.md.
     expect(
       screen.getByText(/per-branch encoding profile/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/reusable presets/i)).toBeInTheDocument();
     expect(screen.getByText(/history of previously used titles/i)).toBeInTheDocument();
   });
 

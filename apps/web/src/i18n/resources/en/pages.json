@@ -10,33 +10,16 @@
       "encoding": "Per-branch encoding profile (bitrate, resolution, keyframe interval)"
     }
   },
-  "streams": {
-    "title": "Streams",
-    "description": "Live control of the ingest and of every outgoing branch.",
-    "planned": {
-      "ingest": "MediaMTX ingest state and OBS connection details",
-      "processControl": "Start/stop of individual FFmpeg processes per branch",
-      "metrics": "Live bitrate, dropped frames and reconnect counters",
-      "restartPolicy": "Automatic restart policy for a failed branch"
-    }
-  },
   "metadata": {
     "title": "Metadata",
-    "description": "Editing and pushing per-platform title/category metadata already works from the Dashboard's platform cards. This dedicated view, with reusable presets shared across platforms, is not built yet.",
+    "description": "Editing and pushing per-platform title/category metadata, including reusable presets applied across platforms, already works from the Dashboard's platform cards. This dedicated view is not built yet.",
     "planned": {
-      "presets": "Reusable presets applied to several platforms at once",
       "history": "History of previously used titles and categories"
     }
   },
   "settings": {
     "title": "Settings",
     "description": "Global application and router configuration.",
-    "planned": {
-      "ingest": "Local ingest configuration (RTMP port, path, authentication)",
-      "binaries": "Paths to the MediaMTX and FFmpeg binaries",
-      "backendAddress": "Backend address, for the future remote-router deployment",
-      "credentialStore": "Credential store management"
-    },
     "language": {
       "heading": "Interface language",
       "description": "Applies immediately and is remembered in this browser.",
@@ -79,15 +62,6 @@
   "chat": {
     "title": "Chat",
     "description": "Unified, merged Twitch chat across your connected accounts - the working operator view. For connector diagnostics, see Engagement."
-  },
-  "logs": {
-    "title": "Logs",
-    "description": "Diagnostics from the router and from every branch.",
-    "planned": {
-      "backendLogs": "Structured backend logs streamed over SSE or WebSocket",
-      "ffmpegOutput": "Per-branch FFmpeg output with severity filtering",
-      "diagnosticBundle": "Export of a diagnostic bundle with secrets stripped"
-    }
   },
   "notFound": {
     "title": "Not found",

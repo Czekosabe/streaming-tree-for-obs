@@ -51478,3 +51478,78 @@ updater-security change, no telemetry, no public release/tag. Stage
 20E remains pending physical/manual verification; Stage 20C2 remains
 externally gated; Stage 20 remains Incomplete - unaffected by this
 task's completion.
+
+## fix(web): remove stale "reusable metadata presets" planned-feature copy
+
+A newly authorized, bounded final user-facing product-polish audit
+before a future public release - not a new Stage. Systematically
+audited current user-facing surfaces (i18n parity, branding/identity,
+first-run/error UX, accessibility, development residue, documentation
+drift, and an installer-localization sanity check) against the real
+current implementation, not old chat reports.
+
+**The one concrete defect found:** the `/metadata` placeholder route
+(`PlannedPages.tsx`, `pages:metadata.*`) and the Dashboard's own
+`UpcomingFeaturesCard` both still listed "Reusable presets applied to
+several platforms at once" as a still-planned, not-yet-built feature.
+It is not - Stage 22's metadata presets have been fully implemented
+and shipped for some time, reachable today via the "Presets" button in
+the Dashboard's `MetadataEditor` (`ManagePresetsDialog`/
+`ApplyPresetDialog`/`SavePresetDialog`), confirmed by direct source
+inspection before making any change. A real user reading the
+Dashboard's "Upcoming features" card, or the `/metadata` route's
+`[PLANNED]`-badged sidebar entry, would be told a capability they
+already have is not built yet.
+
+Fixed at the source: removed the `metadata.planned.presets` key (and
+its now-inaccurate clause in `metadata.description`) from
+`apps/web/src/i18n/resources/{en,pl}/pages.json`, removed its
+reference from `PlannedPages.tsx`'s `MetadataPage` and from
+`UpcomingFeaturesCard.tsx`'s planned-items list, and updated that
+component's own test. The remaining `/metadata` planned item (a
+title/category history) and `/platforms`' planned item (per-branch
+encoding profiles) were verified to still be genuinely unbuilt and are
+unchanged. `docs/dashboard-design.md` §"Stale-copy corrections" - the
+design contract that had explicitly signed off on this exact copy as
+"accurate, not stale" when written (2026-08-28) - now carries a dated
+correction note explaining what changed and why, rather than being
+silently edited into looking like it was always right.
+
+**Everything else audited came back clean, verified directly rather
+than assumed:** `npm run i18n:check` passes (2 languages, 29
+namespaces, en/pl parity, no orphan keys) both before and after this
+fix; no raw hardcoded English/Polish UI literals found bypassing i18n
+in a targeted search of recently-added feature areas; no `TODO`/
+`FIXME`/fake-metric/mock-identity residue found in either the frontend
+or backend (a large initial grep hit was entirely `toDomain`/
+placeholder-feature-name false positives, confirmed by reading every
+match); the shared `Modal.tsx` already implements a correct focus
+trap, focus restore-on-close, Escape-to-dismiss, a portal to avoid
+stacking-context bugs, and full ARIA labeling - no defect found;
+product-identity strings (window title, favicon, `BrandMark`, the
+About page's creator name/repository URL) all resolve to the real,
+correct, consistent values (`buildinfo.CreatorName`/`RepositoryURL`),
+verified in both source and a real production build's embedded
+`index.html`; the seeded example destinations
+(`0002_seed_default_platforms.sql`) are deliberately disabled and
+already documented as intentional bootstrap content, not accidental
+residue; the fake-host-metrics removal and other stale-copy fixes
+`dashboard-design.md` §5/§7 record were independently re-verified as
+still true today (`ResourcesCard.tsx`/`demo-system.ts` genuinely gone,
+`SystemResourcesCard` genuinely real, `noRuntimeState` key genuinely
+absent).
+
+The installer-localization corrective check (previous task) was
+re-verified structurally: `[Languages]` still offers exactly English +
+Polish via Inno's own official files, all 25 `english.*`/`polish.*`
+`[CustomMessages]` keys still pair with no orphan, the fixed `AppId`
+is unchanged, no `/LANG` forcing exists in the updater path, and the
+installer never touches application-language state - left untouched,
+no regression found.
+
+Frontend regression after the fix: `npm run typecheck`/`i18n:check`/
+`lint` (1 pre-existing warning, unrelated) all clean; `npx vitest run`
+- 134 files, 1567 tests, all passing; `npm run build` succeeds. Backend
+`gofmt -l .` and `go vet ./...` clean (no backend files were touched).
+No Stage 28 invented; no Stage 20C2/20E work attempted; those statuses
+are unchanged by this task.
