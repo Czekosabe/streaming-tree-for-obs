@@ -12,6 +12,9 @@ var ErrNotFound = errors.New("stream setup profile not found")
 // already exists.
 var ErrDuplicateName = errors.New("a stream setup profile with that name already exists")
 
+// ErrTooMany means creating a profile would exceed MaxProfiles.
+var ErrTooMany = errors.New("too many stream setup profiles")
+
 // Repository is the persistence port this domain depends on.
 type Repository interface {
 	List(ctx context.Context) ([]Profile, error)
@@ -21,4 +24,7 @@ type Repository interface {
 	// destination list in one transaction.
 	Update(ctx context.Context, p Profile) error
 	Delete(ctx context.Context, id string) error
+	// Count returns the total number of profiles, for enforcing
+	// MaxProfiles before Create.
+	Count(ctx context.Context) (int, error)
 }

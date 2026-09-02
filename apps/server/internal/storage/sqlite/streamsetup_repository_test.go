@@ -241,6 +241,31 @@ func TestStreamSetupProfileDeleteRemovesDestinationsToo(t *testing.T) {
 	}
 }
 
+func TestStreamSetupProfileCountReflectsCreatesAndDeletes(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewStreamSetupProfileRepository(db.DB)
+	ctx := context.Background()
+	now := time.Now()
+
+	if count, err := repo.Count(ctx); err != nil || count != 0 {
+		t.Fatalf("Count() on a fresh database = %d, %v, want 0, nil", count, err)
+	}
+
+	if err := repo.Create(ctx, streamsetup.Profile{ID: "setup_1", Name: "Gaming", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if count, err := repo.Count(ctx); err != nil || count != 1 {
+		t.Fatalf("Count() after one create = %d, %v, want 1, nil", count, err)
+	}
+
+	if err := repo.Delete(ctx, "setup_1"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if count, err := repo.Count(ctx); err != nil || count != 0 {
+		t.Fatalf("Count() after delete = %d, %v, want 0, nil", count, err)
+	}
+}
+
 func TestStreamSetupProfileDeleteUnknownIDReturnsNotFound(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewStreamSetupProfileRepository(db.DB)

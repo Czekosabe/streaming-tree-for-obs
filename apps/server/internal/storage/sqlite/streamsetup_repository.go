@@ -213,6 +213,14 @@ func (r *StreamSetupProfileRepository) Update(ctx context.Context, p streamsetup
 	return nil
 }
 
+func (r *StreamSetupProfileRepository) Count(ctx context.Context) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stream_setup_profiles`).Scan(&count); err != nil {
+		return 0, streamSetupStorageErr("count", err)
+	}
+	return count, nil
+}
+
 func (r *StreamSetupProfileRepository) Delete(ctx context.Context, id string) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM stream_setup_profiles WHERE id = ?`, id)
 	if err != nil {

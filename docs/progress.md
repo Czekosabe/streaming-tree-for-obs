@@ -50729,3 +50729,43 @@ No operator-only blocker exists for this work. No AskUserQuestion call
 was made. Continuing directly into 25C (the Dashboard frontend) per
 the governing task's own explicit authorization and "do not
 AskUserQuestion between substages."
+
+## fix(server): Stage 25 - bound stream setup profile name/note text and cap profile count
+
+The governing task's own §13 required bounded user text on the
+profile model, but 25A's initial `Create`/`Update`/`Duplicate` never
+enforced it - a name could be empty or unbounded, and nothing capped
+how many profiles an installation could accumulate, unlike Stage 22's
+own `metadatapreset.NameMaxLength`/`NoteMaxLength`/`MaxPresets`. Found
+and fixed before this gap reached any frontend form.
+
+`internal/domain/streamsetup/validation.go` (new) mirrors
+`metadatapreset/validation.go`'s identical `NameMaxLength`(100)/
+`NoteMaxLength`(280) bounds and its `ValidateCreate`/`ValidateUpdate`
+shape exactly - the same kind of short local-configuration text
+deserves the same limits for the same reason. `MaxProfiles` (200)
+mirrors `MaxPresets`. `Repository` gained `Count`, implemented in
+`sqlite.StreamSetupProfileRepository` as a plain `COUNT(*)`.
+`Service.Create`/`Update` now validate and normalize (trim) the name
+before touching the repository; `Create` and `Duplicate` both check
+`Count` against `MaxProfiles` before writing (`Duplicate` previously
+bypassed validation and the count check entirely, calling
+`repo.Create` directly with an unvalidated caller-supplied name - now
+fixed to validate the new name and check the same cap). The HTTP layer
+maps `platform.ValidationError` and the new `ErrTooMany` sentinel onto
+the existing contract, exactly like the metadata-preset handler
+already does.
+
+9 new tests across `internal/domain/streamsetup` (empty/overlong
+name, overlong note, name trimming, at-MaxProfiles rejection on both
+Create and Duplicate) and `internal/storage/sqlite` (Count reflects
+create/delete). docs/stream-setup-profiles.md §2 gained an
+implementation addendum documenting both this bound and the earlier
+`metadata_preset_name` snapshot-column decision, so the contract
+matches what actually shipped. Whole-backend `gofmt`/`go vet`/`go
+build`/`go test ./...` all clean.
+
+No operator-only blocker exists for this work. No AskUserQuestion call
+was made. Continuing directly into 25C (the Dashboard frontend) per
+the governing task's own explicit authorization and "do not
+AskUserQuestion between substages."

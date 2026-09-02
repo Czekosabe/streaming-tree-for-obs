@@ -107,6 +107,26 @@ type Destination struct {
 every other configured destination (§3), matching the governing task's
 own worked example precisely.
 
+**Implementation addendum** (discovered while building 25A, not
+foreseeable from this contract alone): a bare `metadata_preset_id ...
+ON DELETE SET NULL` column cannot distinguish "never referenced a
+preset" from "referenced one that has since been deleted" - both read
+as `NULL`. A `metadata_preset_name TEXT NOT NULL DEFAULT ''` column
+was added, snapshotting the preset's name at write time and never
+cleared by the FK action, mirroring `stream_setup_profile_destinations`'s
+own `provider_id`/`display_name` snapshot pattern above but applied to
+a preset reference for the first time. `Profile.MetadataPresetMissing()`
+returns `MetadataPresetID == nil && MetadataPresetName != ""`.
+
+**Bounds** (§13's "bound user text", mirroring
+`metadatapreset.NameMaxLength`/`NoteMaxLength` exactly, since a setup
+profile's own name/note are the same kind of short local-configuration
+text): `Name` is required, trimmed, and capped at 100 characters;
+`Note` is capped at 280 characters; an installation may hold at most
+200 profiles (`MaxProfiles`, mirroring `metadatapreset.MaxPresets`) -
+generous, not arbitrary, and enforced identically on Create,
+Duplicate, and Save-current (which itself calls Create).
+
 ## 3. Apply semantics
 
 Applying a profile is a **preview-then-confirm** flow, mirroring Stage

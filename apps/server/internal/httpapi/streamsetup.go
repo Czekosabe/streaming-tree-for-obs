@@ -299,12 +299,21 @@ func handleApplyStreamSetup(logger *slog.Logger, service StreamSetupService) htt
 }
 
 func writeStreamSetupError(w http.ResponseWriter, logger *slog.Logger, r *http.Request, err error) {
+	if verr, ok := platform.AsValidationError(err); ok {
+		writeValidationError(w, logger, verr)
+		return
+	}
+
 	switch {
 	case errors.Is(err, streamsetup.ErrNotFound):
 		writeError(w, logger, http.StatusNotFound, "not_found", "The requested stream setup profile does not exist.")
 
 	case errors.Is(err, streamsetup.ErrDuplicateName):
 		writeError(w, logger, http.StatusConflict, "duplicate_name", "A stream setup profile with this name already exists.")
+
+	case errors.Is(err, streamsetup.ErrTooMany):
+		writeError(w, logger, http.StatusUnprocessableEntity, "too_many_stream_setups",
+			"The maximum number of stream setup profiles has been reached.")
 
 	case errors.Is(err, platform.ErrNotFound):
 		writeError(w, logger, http.StatusUnprocessableEntity, "unknown_destination", "One or more selected destinations do not exist.")

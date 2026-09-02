@@ -64,6 +64,10 @@ func (f *fakeRepo) Update(_ context.Context, p Profile) error {
 	return nil
 }
 
+func (f *fakeRepo) Count(context.Context) (int, error) {
+	return len(f.profiles), nil
+}
+
 func (f *fakeRepo) Delete(_ context.Context, id string) error {
 	p, ok := f.profiles[id]
 	if !ok {
@@ -286,6 +290,80 @@ func TestDuplicateCopiesEverythingIncludingAMissingPresetSnapshot(t *testing.T) 
 	}
 	if dup.ID == original.ID {
 		t.Error("duplicate kept the original's own id")
+	}
+}
+
+func TestCreateRejectsAnEmptyName(t *testing.T) {
+	svc := testService(newFakeRepo(), newFakePlatforms(), newFakePresets(), &fakeBranches{})
+	_, err := svc.Create(context.Background(), CreateInput{Name: "   "})
+	if _, ok := platform.AsValidationError(err); !ok {
+		t.Fatalf("Create() with a blank name error = %v, want a ValidationError", err)
+	}
+}
+
+func TestCreateRejectsAnOverlongNameOrNote(t *testing.T) {
+	svc := testService(newFakeRepo(), newFakePlatforms(), newFakePresets(), &fakeBranches{})
+	ctx := context.Background()
+
+	longName := make([]byte, NameMaxLength+1)
+	for i := range longName {
+		longName[i] = 'a'
+	}
+	_, nameErr := svc.Create(ctx, CreateInput{Name: string(longName)})
+	if _, ok := platform.AsValidationError(nameErr); !ok {
+		t.Errorf("Create() with an overlong name error = %v, want a ValidationError", nameErr)
+	}
+
+	longNote := make([]byte, NoteMaxLength+1)
+	for i := range longNote {
+		longNote[i] = 'a'
+	}
+	_, noteErr := svc.Create(ctx, CreateInput{Name: "Gaming", Note: string(longNote)})
+	if _, ok := platform.AsValidationError(noteErr); !ok {
+		t.Fatalf("Create() with an overlong note error = %v, want a ValidationError", noteErr)
+	}
+}
+
+func TestCreateTrimsTheName(t *testing.T) {
+	svc := testService(newFakeRepo(), newFakePlatforms(), newFakePresets(), &fakeBranches{})
+	p, err := svc.Create(context.Background(), CreateInput{Name: "  Gaming  "})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if p.Name != "Gaming" {
+		t.Errorf("Name = %q, want trimmed %q", p.Name, "Gaming")
+	}
+}
+
+func TestCreateRejectsWhenAtMaxProfiles(t *testing.T) {
+	repo := newFakeRepo()
+	svc := testService(repo, newFakePlatforms(), newFakePresets(), &fakeBranches{})
+	ctx := context.Background()
+
+	for i := 0; i < MaxProfiles; i++ {
+		if _, err := svc.Create(ctx, CreateInput{Name: "Setup " + strconv.Itoa(i)}); err != nil {
+			t.Fatalf("seed Create() #%d error = %v", i, err)
+		}
+	}
+
+	_, err := svc.Create(ctx, CreateInput{Name: "One too many"})
+	if !errors.Is(err, ErrTooMany) {
+		t.Fatalf("Create() at MaxProfiles error = %v, want ErrTooMany", err)
+	}
+}
+
+func TestDuplicateRejectsAnEmptyNewName(t *testing.T) {
+	repo := newFakeRepo()
+	svc := testService(repo, newFakePlatforms(), newFakePresets(), &fakeBranches{})
+	ctx := context.Background()
+
+	p, err := svc.Create(ctx, CreateInput{Name: "Gaming"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	_, err = svc.Duplicate(ctx, p.ID, "   ")
+	if _, ok := platform.AsValidationError(err); !ok {
+		t.Fatalf("Duplicate() with a blank name error = %v, want a ValidationError", err)
 	}
 }
 

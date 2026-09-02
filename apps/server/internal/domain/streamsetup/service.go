@@ -110,6 +110,18 @@ func (s *Service) resolveDestinations(ctx context.Context, platformIDs []string)
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Profile, error) {
+	input, err := ValidateCreate(input)
+	if err != nil {
+		return Profile{}, err
+	}
+	count, err := s.repo.Count(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	if count >= MaxProfiles {
+		return Profile{}, fmt.Errorf("%w: at most %d stream setup profiles are allowed", ErrTooMany, MaxProfiles)
+	}
+
 	dests, err := s.resolveDestinations(ctx, input.DestinationIDs)
 	if err != nil {
 		return Profile{}, err
@@ -135,6 +147,10 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Profile, error
 }
 
 func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Profile, error) {
+	input, err := ValidateUpdate(input)
+	if err != nil {
+		return Profile{}, err
+	}
 	existing, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return Profile{}, err
@@ -166,10 +182,26 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // useful workflow for iterating on a setup without losing the
 // original.
 func (s *Service) Duplicate(ctx context.Context, id, newName string) (Profile, error) {
+	newName = NormalizeName(newName)
+	v := &platform.ValidationError{}
+	validateName(newName, v)
+	if err := v.OrNil(); err != nil {
+		return Profile{}, err
+	}
+
 	existing, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return Profile{}, err
 	}
+
+	count, err := s.repo.Count(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	if count >= MaxProfiles {
+		return Profile{}, fmt.Errorf("%w: at most %d stream setup profiles are allowed", ErrTooMany, MaxProfiles)
+	}
+
 	newID, err := s.newID()
 	if err != nil {
 		return Profile{}, err
