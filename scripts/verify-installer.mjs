@@ -4,11 +4,27 @@
  *
  * A separate helper, not integration script #23 (that is
  * scripts/verify-packaged-app.mjs) - see docs/windows-packaging.md §23.
- * Drives the REAL Inno Setup-produced installer through its own documented
- * silent-install flags into a throwaway, non-default location - never the
- * operator's real per-user install path - then a real silent uninstall.
  *
- * Two scenarios (docs/windows-packaging.md §26):
+ * Every scenario below that installs/updates/uninstalls anything compiles
+ * its OWN throwaway Inno Setup installer, under its OWN dedicated,
+ * obviously-fake, stable AppId (never the real product's AppId, never
+ * shared between scenarios) - see the per-scenario AppId constants near
+ * the top of this file. This is the installer-test-hygiene corrective
+ * fix (docs/progress.md) for a real physical incident: an earlier
+ * version of this suite installed the real production installer
+ * (compiled with no AppId override) for these same scenarios, which
+ * worked, but meant every run shared the operator's own real per-user
+ * registry identity with a disposable test - exactly the class of risk
+ * that, combined with a since-fixed admin-mode installer bug, once left
+ * real orphaned residue on the operator's actual machine. The one place
+ * the real production AppId is still referenced at all is
+ * testProductionIdentityStructuralScenario, which proves its stable
+ * value, install scope, and absence of the historical admin-mode
+ * directive directly from the .iss SOURCE TEXT - never by compiling or
+ * installing under it.
+ *
+ * Two uninstall behaviors are proven, each with its own dedicated
+ * throwaway installer (docs/windows-packaging.md §26):
  *   A. Ordinary uninstall (no purge flag) - install, run, uninstall,
  *      verify program files are gone but the data directory survives,
  *      then reinstall over the same location and verify the
@@ -25,17 +41,21 @@
  *      verify the data directory is fully removed, and that a
  *      sentinel file outside it is never touched.
  *
- * Both scenarios use only hermetic, throwaway install/data directories
- * - the real per-user install location and real AppData are never
- * touched. Neither scenario stores a real OS-credential-store secret
- * (the purge helper's own credential-deletion correctness is unit-
- * tested hermetically against a fake store in
+ * Every scenario uses only hermetic, throwaway install/data directories
+ * and its own dedicated throwaway AppId - the real per-user install
+ * location, the real per-user registry identity, and real AppData are
+ * never touched. Neither uninstall scenario stores a real OS-credential-
+ * store secret (the purge helper's own credential-deletion correctness
+ * is unit-tested hermetically against a fake store in
  * apps/server/internal/userdatapurge - see that package's own tests -
  * so this script never has to touch the real Windows Credential
  * Manager to prove it).
  *
  * Requires an installer to already exist at build/release/output/*.exe -
- * run scripts/build-release.ps1 first (without -SkipInstaller).
+ * run scripts/build-release.ps1 first (without -SkipInstaller) - purely
+ * to prove that real release artifact's own existence/hash are intact;
+ * it is never itself installed by this script. Also requires ISCC.exe
+ * (findIscc()) - every scenario now compiles its own test installer.
  *
  * Usage:  node scripts/verify-installer.mjs
  * Exits non-zero on the first failed expectation.
@@ -73,8 +93,30 @@ const UNINSTALL_REG_SUBKEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Unin
 // and streaming-tree.iss's own TestAppId override it drives, is the
 // structural fix: this scenario can never again touch the real AppId's
 // own registry key, not even transiently while a test is running.
+// Every scenario below that installs/updates/uninstalls a real compiled
+// installer gets its OWN dedicated, obviously-fake, stable throwaway
+// AppId - never the real product's AppId above, and never shared
+// between scenarios (so two scenarios can never collide with each
+// other, and neither can ever collide with the operator's own real
+// installed copy or with historical test residue under the real
+// AppId - the exact class of incident this whole mechanism exists to
+// prevent, see docs/progress.md's "give the throwaway version-
+// detection test scenario its own dedicated AppId" and its own
+// corrective-pass follow-up entry). Fixed rather than randomly
+// generated per run, because a scenario that installs/updates/repairs
+// more than once genuinely needs the *same* AppId across its own
+// steps to exercise Inno's real same-AppId semantics - "stable within
+// one isolated scenario," never "the operator's own real identity."
+function subkeyFor(appId) {
+  return `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${appId}_is1`;
+}
 const SCENARIO_TEST_APP_ID = '{DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF}';
-const SCENARIO_TEST_UNINSTALL_REG_SUBKEY = `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${SCENARIO_TEST_APP_ID}_is1`;
+const SCENARIO_TEST_UNINSTALL_REG_SUBKEY = subkeyFor(SCENARIO_TEST_APP_ID);
+const ORDINARY_UNINSTALL_TEST_APP_ID = '{BAADF00D-BAAD-F00D-BAAD-F00DBAADF00D}';
+const PURGE_TEST_APP_ID = '{FEEDFACE-FEED-FACE-FEED-FACEFEEDFACE}';
+const UPGRADE_WHILE_RUNNING_TEST_APP_ID = '{C0FFEE00-C0FF-EE00-C0FF-EE00C0FFEE00}';
+const SHORTCUT_TASKS_TEST_APP_ID = '{ABADCAFE-ABAD-CAFE-ABAD-CAFEABADCAFE}';
+const LOCALIZATION_TEST_APP_ID = '{B105F00D-B105-F00D-B105-F00DB105F00D}';
 const PORT = 8298;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
@@ -210,22 +252,25 @@ function findIscc() {
 }
 
 /** Compiles scripts/installer/streaming-tree.iss at a fixed test
- * `version`, reusing the real staged executable/legal documents
- * scripts/build-release.ps1 already produced at STAGING_DIR (built once
- * per CI run, before this script) - never a second `go build`/`npm run
- * build` pass. Always overrides TestAppId to SCENARIO_TEST_APP_ID (its
- * own doc comment above) - this function's only caller,
- * testVersionDetectionScenario, must never compile against the real
- * product AppId. Returns the path to the compiled installer .exe. */
-async function compileTestInstaller(isccPath, version, outputDir) {
+ * `version` and a given throwaway `appId`, reusing the real staged
+ * executable/legal documents scripts/build-release.ps1 already
+ * produced at STAGING_DIR (built once per CI run, before this script)
+ * - never a second `go build`/`npm run build` pass. Every caller in
+ * this file passes one of the dedicated per-scenario throwaway AppId
+ * constants above - never the real product AppId - so every scenario
+ * that installs/updates/uninstalls a real compiled installer is fully
+ * isolated from the real product's own registry identity, and from
+ * every other scenario. Returns the path to the compiled installer
+ * .exe. */
+async function compileTestInstaller(isccPath, version, outputDir, appId) {
   const result = await run(isccPath, [
     `/DMyAppVersion=${version}`,
     `/DStagingDir=${STAGING_DIR}`,
     `/DOutputDir=${outputDir}`,
-    `/DTestAppId=${SCENARIO_TEST_APP_ID.replace(/^\{/, '{{')}`,
+    `/DTestAppId=${appId.replace(/^\{/, '{{')}`,
     INNO_SCRIPT,
   ]);
-  expect(result.code === 0, `ISCC compiles a test installer for version ${version}`, result);
+  expect(result.code === 0, `ISCC compiles a test installer for version ${version} (AppId ${appId})`, result);
   const exe = readdirSync(outputDir).find((f) => f.endsWith('.exe'));
   expect(exe !== undefined, `ISCC produced an installer for version ${version}`, readdirSync(outputDir));
   return join(outputDir, exe);
@@ -237,11 +282,13 @@ async function compileTestInstaller(isccPath, version, outputDir) {
  * ever writes to (docs/windows-packaging.md §28) - PrivilegesRequired=
  * lowest with no PrivilegesRequiredOverridesAllowed override, confirmed
  * by a real Inno /LOG capture ("Administrative install mode: No /
- * Install mode root key: HKEY_CURRENT_USER"). `subkey` defaults to the
- * real product's own registry subkey; testVersionDetectionScenario
- * always passes SCENARIO_TEST_UNINSTALL_REG_SUBKEY instead, since its
- * own compiled installers never use the real product AppId. */
-async function queryHkcuDisplayVersion(subkey = UNINSTALL_REG_SUBKEY) {
+ * Install mode root key: HKEY_CURRENT_USER"). `subkey` is required,
+ * deliberately with no default - every caller must explicitly pass
+ * the one dedicated per-scenario throwaway subkey it is checking, so
+ * this function can never silently fall back to the real product's
+ * own registry subkey (UNINSTALL_REG_SUBKEY exists only for the
+ * structural scenario's own comparison, never as a default here). */
+async function queryHkcuDisplayVersion(subkey) {
   const hkcu = await run('reg', ['query', `HKCU\\${subkey}`, '/v', 'DisplayVersion']);
   return parseRegDisplayVersion(hkcu.out);
 }
@@ -252,9 +299,9 @@ async function queryHkcuDisplayVersion(subkey = UNINSTALL_REG_SUBKEY) {
  * behaving per-user build of this installer must NEVER write here - see
  * queryHkcuDisplayVersion's own doc comment. Used only to assert absence,
  * i.e. that the installer under test has not regressed into
- * administrative/all-users install mode. `subkey` defaults the same way
- * queryHkcuDisplayVersion's own does. */
-async function queryHklmDisplayVersion(subkey = UNINSTALL_REG_SUBKEY) {
+ * administrative/all-users install mode. `subkey` is required, with no
+ * default - same reasoning as queryHkcuDisplayVersion's own. */
+async function queryHklmDisplayVersion(subkey) {
   const hklm = await run('reg', ['query', `HKLM\\${subkey}`, '/reg:32', '/v', 'DisplayVersion']);
   return parseRegDisplayVersion(hklm.out);
 }
@@ -271,9 +318,11 @@ function parseRegDisplayVersion(regQueryOutput) {
  * development (docs/windows-packaging.md §29) - this is the one place
  * Inno records which language an install actually used, read back here
  * by both a fresh /LANG=-driven install and a language-less update to
- * prove UsePreviousLanguage's native preservation for real. */
-async function queryHkcuLanguage() {
-  const hkcu = await run('reg', ['query', `HKCU\\${UNINSTALL_REG_SUBKEY}`, '/v', 'Inno Setup: Language']);
+ * prove UsePreviousLanguage's native preservation for real. `subkey`
+ * is required, with no default - testLocalizationScenario always
+ * passes its own dedicated LOCALIZATION_TEST_APP_ID subkey. */
+async function queryHkcuLanguage(subkey) {
+  const hkcu = await run('reg', ['query', `HKCU\\${subkey}`, '/v', 'Inno Setup: Language']);
   const match = hkcu.out.match(/Inno Setup: Language\s+REG_SZ\s+(\S+)/);
   return match ? match[1] : null;
 }
@@ -319,8 +368,29 @@ function comparePaths(a, b) {
 const DESKTOP_LNK_NAME = 'Streaming Tree for OBS.lnk';
 const START_MENU_GROUP = 'Streaming Tree for OBS';
 
-function desktopShortcutPath() {
-  return join(process.env.USERPROFILE ?? '', 'Desktop', DESKTOP_LNK_NAME);
+/** Resolves the REAL current desktop directory via .NET's own
+ * Environment.GetFolderPath (the same Known Folder API Inno Setup's own
+ * {userdesktop} constant resolves through internally) - never a
+ * hardcoded `%USERPROFILE%\Desktop`. A real local run on this project's
+ * own development machine found that guess wrong: this machine's
+ * desktop is OneDrive-redirected to `%USERPROFILE%\OneDrive\Pulpit`
+ * (a real, pre-existing, unrelated machine configuration - Known
+ * Folder Move, not something this project or this script created), so
+ * a hardcoded path silently checked the wrong location and reported a
+ * real shortcut as missing when Inno had, correctly, already created
+ * it exactly where Windows itself considers the desktop to be. */
+async function resolveRealDesktopDir() {
+  const result = await run('powershell', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    '[Environment]::GetFolderPath("Desktop")',
+  ]);
+  const dir = result.out.trim();
+  expect(dir.length > 0, 'the real current-user desktop directory resolves to a real path', result);
+  return dir;
+}
+
+function desktopShortcutPath(desktopDir) {
+  return join(desktopDir, DESKTOP_LNK_NAME);
 }
 function startMenuAppShortcutPath() {
   return join(process.env.APPDATA ?? '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', START_MENU_GROUP, DESKTOP_LNK_NAME);
@@ -338,19 +408,25 @@ function startMenuUninstallShortcutPath() {
  * exact literal app/group name above - never a wildcard or prefix
  * match - and every created shortcut is removed again before this
  * function returns, on every path including failure. */
-async function testShortcutTasksScenario(installerPath) {
+async function testShortcutTasksScenario(isccPath) {
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-shortcuts-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-shortcuts-verify-')), 'app');
+  const desktopDir = await resolveRealDesktopDir();
   console.log(`Hermetic install directory: ${installDir}`);
-  console.log(`Desktop shortcut path under test: ${desktopShortcutPath()}`);
+  console.log(`Real desktop directory resolved to: ${desktopDir}`);
+  console.log(`Desktop shortcut path under test: ${desktopShortcutPath(desktopDir)}`);
   console.log(`Start Menu group under test: ${START_MENU_GROUP}`);
 
   try {
+    step('Compile a throwaway test installer under a dedicated AppId');
+    const installerPath = await compileTestInstaller(isccPath, '0.1.0-shortcut-tasks-test', compileDir, SHORTCUT_TASKS_TEST_APP_ID);
+
     step('Fresh install with default task selection (no /MERGETASKS)');
     const fresh = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`]);
     expect(fresh.code === 0, 'default-task fresh install exits 0', fresh);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu app shortcut exists (startmenuicon is checked by default)');
     expect(existsSync(startMenuUninstallShortcutPath()), 'Start Menu uninstall shortcut exists');
-    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut does NOT exist (desktopicon is unchecked by default)');
+    expect(!existsSync(desktopShortcutPath(desktopDir)), 'desktop shortcut does NOT exist (desktopicon is unchecked by default)');
     const startMenuTarget = await resolveShortcutTarget(startMenuAppShortcutPath());
     const startMenuComparison = startMenuTarget !== null
       ? comparePaths(startMenuTarget, join(installDir, 'streaming-tree-server.exe'))
@@ -362,7 +438,7 @@ async function testShortcutTasksScenario(installerPath) {
     const update = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`]);
     expect(update.code === 0, 'update exits 0', update);
     expect(existsSync(startMenuAppShortcutPath()), 'Start Menu shortcut still exists after update (native UsePreviousTasks kept it selected)');
-    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut still does NOT exist after update - the previous "off" choice was not silently turned on');
+    expect(!existsSync(desktopShortcutPath(desktopDir)), 'desktop shortcut still does NOT exist after update - the previous "off" choice was not silently turned on');
 
     step('Uninstall - both installer-owned Start Menu shortcuts must be removed');
     let uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
@@ -375,8 +451,8 @@ async function testShortcutTasksScenario(installerPath) {
     step('Fresh install with the desktop task explicitly selected (/MERGETASKS="desktopicon")');
     const withDesktop = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`, '/MERGETASKS=desktopicon']);
     expect(withDesktop.code === 0, 'install with desktopicon merged exits 0', withDesktop);
-    expect(existsSync(desktopShortcutPath()), 'desktop shortcut exists when the task is explicitly selected');
-    const desktopTarget = await resolveShortcutTarget(desktopShortcutPath());
+    expect(existsSync(desktopShortcutPath(desktopDir)), 'desktop shortcut exists when the task is explicitly selected');
+    const desktopTarget = await resolveShortcutTarget(desktopShortcutPath(desktopDir));
     const desktopComparison = desktopTarget !== null
       ? comparePaths(desktopTarget, join(installDir, 'streaming-tree-server.exe'))
       : { same: false };
@@ -389,7 +465,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(uninstallerFile !== undefined, 'uninstaller exists', readdirSync(installDir));
     uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
     expect(uninstall.code === 0, 'uninstall exits 0', uninstall);
-    expect(!existsSync(desktopShortcutPath()), 'desktop shortcut was removed by uninstall');
+    expect(!existsSync(desktopShortcutPath(desktopDir)), 'desktop shortcut was removed by uninstall');
 
     step('Fresh install with Start Menu explicitly deselected (/MERGETASKS="!startmenuicon")');
     const noStartMenu = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', `/DIR=${installDir}`, '/MERGETASKS=!startmenuicon']);
@@ -397,7 +473,7 @@ async function testShortcutTasksScenario(installerPath) {
     expect(!existsSync(startMenuAppShortcutPath()), 'no Start Menu shortcut was created when the task is deselected');
     expect(existsSync(join(installDir, 'streaming-tree-server.exe')), 'the application itself still installed correctly with no Start Menu shortcut');
   } finally {
-    if (existsSync(desktopShortcutPath())) rmSync(desktopShortcutPath(), { force: true });
+    if (existsSync(desktopShortcutPath(desktopDir))) rmSync(desktopShortcutPath(desktopDir), { force: true });
     const groupDir = join(process.env.APPDATA ?? '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', START_MENU_GROUP);
     if (existsSync(groupDir)) rmSync(groupDir, { recursive: true, force: true });
     const uninstallerFile = existsSync(installDir)
@@ -406,6 +482,10 @@ async function testShortcutTasksScenario(installerPath) {
     if (uninstallerFile !== undefined) {
       await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
     }
+    const shortcutTasksTestSubkey = subkeyFor(SHORTCUT_TASKS_TEST_APP_ID);
+    await run('reg', ['delete', `HKCU\\${shortcutTasksTestSubkey}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${shortcutTasksTestSubkey}`, '/reg:32', '/f']);
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
 }
@@ -427,8 +507,8 @@ async function testVersionDetectionScenario(isccPath) {
 
   try {
     step('Compile throwaway test installers at 0.1.0 and 0.2.0');
-    const v1exe = await compileTestInstaller(isccPath, '0.1.0', join(compileDir, 'v1'));
-    const v2exe = await compileTestInstaller(isccPath, '0.2.0', join(compileDir, 'v2'));
+    const v1exe = await compileTestInstaller(isccPath, '0.1.0', join(compileDir, 'v1'), SCENARIO_TEST_APP_ID);
+    const v2exe = await compileTestInstaller(isccPath, '0.2.0', join(compileDir, 'v2'), SCENARIO_TEST_APP_ID);
 
     step('Fresh install of 0.1.0');
     const fresh = await run(v1exe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
@@ -478,8 +558,13 @@ async function testVersionDetectionScenario(isccPath) {
  * with no purge flag, preserves the data directory - then a fresh
  * reinstall over the same location starts up healthy against that
  * preserved data, proving recovery is real and functional, not just
- * "a file happened to still exist." */
-async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
+ * "a file happened to still exist." Compiles its own throwaway
+ * installer under ORDINARY_UNINSTALL_TEST_APP_ID (never the real
+ * product AppId) - this scenario's own install/uninstall/reinstall
+ * behavior does not depend on which AppId is compiled in, only that
+ * the same one is used consistently across its own steps. */
+async function testOrdinaryUninstallAndReinstallScenario(isccPath) {
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-install-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-install-verify-')), 'app');
   const dataDir = mkdtempSync(join(tmpdir(), 'streaming-tree-install-data-'));
   console.log(`Hermetic install directory: ${installDir}`);
@@ -489,6 +574,9 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
   let appProcess = null;
 
   try {
+    step('Compile a throwaway test installer under a dedicated AppId');
+    const installerPath = await compileTestInstaller(isccPath, '0.1.0-ordinary-uninstall-test', compileDir, ORDINARY_UNINSTALL_TEST_APP_ID);
+
     step('Silent install into the hermetic directory');
     const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
@@ -559,6 +647,15 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
       await new Promise((r) => setTimeout(r, 500));
     }
+    // Failure-path backstop (same pattern as testVersionDetectionScenario):
+    // this scenario's own dedicated ORDINARY_UNINSTALL_TEST_APP_ID subkey
+    // must never survive a mid-scenario failure into the next run. A
+    // non-zero exit here just means the key is already gone - never
+    // treated as a scenario failure.
+    const ordinaryUninstallTestSubkey = subkeyFor(ORDINARY_UNINSTALL_TEST_APP_ID);
+    await run('reg', ['delete', `HKCU\\${ordinaryUninstallTestSubkey}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${ordinaryUninstallTestSubkey}`, '/reg:32', '/f']);
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
@@ -569,8 +666,12 @@ async function testOrdinaryUninstallAndReinstallScenario(installerPath) {
  * uninstaller's own environment, InitializeUninstall's own documented
  * automated-test hook for the path a GUI checkbox click would
  * otherwise gate under /VERYSILENT - removes the whole data directory,
- * and never touches anything outside it. */
-async function testExplicitPurgeScenario(installerPath) {
+ * and never touches anything outside it. Compiles its own throwaway
+ * installer under PURGE_TEST_APP_ID (never the real product AppId) -
+ * purge behavior is driven entirely by STREAMING_TREE_DATA_DIR and the
+ * test-only env-var hook, never by which AppId is compiled in. */
+async function testExplicitPurgeScenario(isccPath) {
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-purge-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-purge-verify-')), 'app');
   const dataDir = mkdtempSync(join(tmpdir(), 'streaming-tree-purge-data-'));
   // A sentinel file OUTSIDE dataDir, in its own throwaway directory -
@@ -588,6 +689,9 @@ async function testExplicitPurgeScenario(installerPath) {
   const purgePort = PORT + 1;
 
   try {
+    step('Compile a throwaway test installer under a dedicated AppId');
+    const installerPath = await compileTestInstaller(isccPath, '0.1.0-purge-test', compileDir, PURGE_TEST_APP_ID);
+
     step('Silent install into a second hermetic directory');
     const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
@@ -659,6 +763,11 @@ async function testExplicitPurgeScenario(installerPath) {
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
       await new Promise((r) => setTimeout(r, 500));
     }
+    // Failure-path backstop, same pattern as every other scenario here.
+    const purgeTestSubkey = subkeyFor(PURGE_TEST_APP_ID);
+    await run('reg', ['delete', `HKCU\\${purgeTestSubkey}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${purgeTestSubkey}`, '/reg:32', '/f']);
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(outsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
@@ -679,7 +788,8 @@ async function testExplicitPurgeScenario(installerPath) {
  * AppSingleInstanceMutex, requested cooperative shutdown through the
  * tray's hidden window, and waited for it to actually exit - all
  * without any manual intervention. */
-async function testManualUpgradeWhileRunningScenario(installerPath) {
+async function testManualUpgradeWhileRunningScenario(isccPath) {
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-upgrade-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-upgrade-verify-')), 'app');
   const dataDir = mkdtempSync(join(tmpdir(), 'streaming-tree-upgrade-data-'));
   console.log(`Hermetic install directory: ${installDir}`);
@@ -689,6 +799,9 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
   const upgradePort = PORT + 2;
 
   try {
+    step('Compile a throwaway test installer under a dedicated AppId');
+    const installerPath = await compileTestInstaller(isccPath, '0.1.0-upgrade-while-running-test', compileDir, UPGRADE_WHILE_RUNNING_TEST_APP_ID);
+
     step('Silent install into a third hermetic directory (manual-upgrade-while-running scenario)');
     const install = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(install.code === 0, 'silent install exits 0', install);
@@ -739,6 +852,23 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
       spawn('taskkill', ['/pid', String(appProcess.pid), '/T', '/F'], { stdio: 'ignore' });
       await new Promise((r) => setTimeout(r, 500));
     }
+    // This scenario's own cleanup previously deleted only the install/
+    // data directories, never actually running the compiled test
+    // installer's own uninstaller - a real gap, found during the
+    // installer-test-hygiene corrective pass (docs/progress.md), that
+    // left this scenario's own registry registration behind after
+    // every run. Uninstall for real first, then the same registry
+    // failure-path backstop every other scenario here uses.
+    const uninstallerFile = existsSync(installDir)
+      ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
+      : undefined;
+    if (uninstallerFile !== undefined) {
+      await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    }
+    const upgradeWhileRunningTestSubkey = subkeyFor(UPGRADE_WHILE_RUNNING_TEST_APP_ID);
+    await run('reg', ['delete', `HKCU\\${upgradeWhileRunningTestSubkey}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${upgradeWhileRunningTestSubkey}`, '/reg:32', '/f']);
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
@@ -767,7 +897,7 @@ async function testManualUpgradeWhileRunningScenario(installerPath) {
  *      override - i.e. the update never sits waiting on a language
  *      dialog - measured directly, not assumed from the absence of a
  *      hang. */
-async function testLocalizationScenario(installerPath) {
+async function testLocalizationScenario(isccPath) {
   step('Structural: [Languages] offers exactly English + Polish, via Inno\'s own shipped .isl files');
   const issSource = readFileSync(INNO_SCRIPT, 'utf8');
   const languagesSection = issSource.match(/\[Languages\]\r?\n([\s\S]*?)\r?\n\[/);
@@ -791,19 +921,24 @@ async function testLocalizationScenario(installerPath) {
     'no orphan [CustomMessages] key exists in only one language', { englishOnly, polishOnly });
   expect(englishKeys.size >= 20, `a realistic number of custom messages were localized (${englishKeys.size} keys)`, [...englishKeys].sort());
 
+  const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-locale-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-locale-verify-')), 'app');
   console.log(`Hermetic install directory: ${installDir}`);
+  const localizationTestSubkey = subkeyFor(LOCALIZATION_TEST_APP_ID);
 
   try {
+    step('Compile a throwaway test installer under a dedicated AppId');
+    const installerPath = await compileTestInstaller(isccPath, '0.1.0-localization-test', compileDir, LOCALIZATION_TEST_APP_ID);
+
     step('Real fresh install with /LANG=polish registers Polish');
     const polishInstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=polish', '/NOICONS', `/DIR=${installDir}`]);
     expect(polishInstall.code === 0, 'the /LANG=polish install exits 0', polishInstall);
-    expect(await queryHkcuLanguage() === 'polish', 'the installed language is registered as "polish"');
+    expect(await queryHkcuLanguage(localizationTestSubkey) === 'polish', 'the installed language is registered as "polish"');
 
     step('Real update with NO /LANG flag preserves Polish (native UsePreviousLanguage)');
     const preservePolish = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(preservePolish.code === 0, 'the language-less update over a Polish install exits 0', preservePolish);
-    expect(await queryHkcuLanguage() === 'polish', 'the language remains "polish" after an update with no /LANG override');
+    expect(await queryHkcuLanguage(localizationTestSubkey) === 'polish', 'the language remains "polish" after an update with no /LANG override');
 
     step('Real proof the exact updater-compatible silent flags never block on language selection, over an existing Polish install');
     const updaterLogPath = join(tmpdir(), `streaming-tree-locale-updater-${Date.now()}.log`);
@@ -812,7 +947,7 @@ async function testLocalizationScenario(installerPath) {
     const elapsedMs = Date.now() - startedAt;
     expect(updaterFlagsRun.code === 0, 'the exact real updater command line exits 0 over a Polish install with no /LANG', updaterFlagsRun);
     expect(elapsedMs < 60_000, `the updater-compatible install completed in ${elapsedMs}ms - it did not sit waiting on a language dialog`, elapsedMs);
-    expect(await queryHkcuLanguage() === 'polish', 'the language is still "polish" after the updater-flags run');
+    expect(await queryHkcuLanguage(localizationTestSubkey) === 'polish', 'the language is still "polish" after the updater-flags run');
 
     step('Uninstall the Polish install before proving the English direction');
     let uninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
@@ -823,12 +958,12 @@ async function testLocalizationScenario(installerPath) {
     step('Real fresh install with /LANG=english registers English');
     const englishInstall = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
     expect(englishInstall.code === 0, 'the /LANG=english install exits 0', englishInstall);
-    expect(await queryHkcuLanguage() === 'english', 'the installed language is registered as "english"');
+    expect(await queryHkcuLanguage(localizationTestSubkey) === 'english', 'the installed language is registered as "english"');
 
     step('Real update with NO /LANG flag preserves English (native UsePreviousLanguage)');
     const preserveEnglish = await run(installerPath, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NOICONS', `/DIR=${installDir}`]);
     expect(preserveEnglish.code === 0, 'the language-less update over an English install exits 0', preserveEnglish);
-    expect(await queryHkcuLanguage() === 'english', 'the language remains "english" after an update with no /LANG override');
+    expect(await queryHkcuLanguage(localizationTestSubkey) === 'english', 'the language remains "english" after an update with no /LANG override');
   } finally {
     const uninstallerFile = existsSync(installDir)
       ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
@@ -836,8 +971,53 @@ async function testLocalizationScenario(installerPath) {
     if (uninstallerFile !== undefined) {
       await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
     }
+    await run('reg', ['delete', `HKCU\\${localizationTestSubkey}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${localizationTestSubkey}`, '/reg:32', '/f']);
+    rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
+}
+
+/** Scenario H (installer-test-hygiene corrective pass, docs/
+ * progress.md): proves the production identity's own stable
+ * properties directly from the real .iss SOURCE TEXT - never by
+ * compiling or installing anything under the real production AppId,
+ * per this project's own explicit preference for structural/build-
+ * time assertions over installing the real identity merely to prove
+ * a literal. Every other scenario in this file now installs only
+ * under its own dedicated throwaway AppId (see the per-scenario
+ * constants above); this is the one place the real production AppId
+ * value itself is verified, and it never leaves the source file. */
+function testProductionIdentityStructuralScenario() {
+  step('Structural: the real production AppId literal is the documented, stable value');
+  const issSource = readFileSync(INNO_SCRIPT, 'utf8');
+  const defaultAppIdMatch = issSource.match(/#ifndef TestAppId\s*\n\s*#define TestAppId "([^"]+)"/);
+  expect(defaultAppIdMatch !== null, 'TestAppId has a documented #ifndef default in the .iss source', issSource.slice(0, 200));
+  const defaultAppIdLiteral = defaultAppIdMatch?.[1] ?? '';
+  expect(defaultAppIdLiteral === UNINSTALL_REG_SUBKEY.match(/\{[0-9A-Fa-f-]+\}/)?.[0].replace(/^\{/, '{{'),
+    'TestAppId\'s own #ifndef default resolves to exactly the one real product AppId this file itself references',
+    { defaultAppIdLiteral, expected: UNINSTALL_REG_SUBKEY });
+  expect(/^AppId=\{#TestAppId\}$/m.test(issSource),
+    'the [Setup] section\'s own AppId directive resolves through {#TestAppId} - never a second, independently hardcoded literal');
+
+  step('Structural: no test-only AppId override leaks into how a real release is built');
+  const buildScript = readFileSync(join(REPO_ROOT, 'scripts', 'build-release.ps1'), 'utf8');
+  expect(!/TestAppId/.test(buildScript),
+    'scripts/build-release.ps1 - the only thing that produces a real distributable installer - never mentions TestAppId, so it can never override it');
+
+  step('Structural: the production install scope is per-user, with no admin-mode override present');
+  expect(/^PrivilegesRequired=lowest$/m.test(issSource),
+    'PrivilegesRequired=lowest is present - the real product never requires or requests elevation');
+  // Matches only an ACTIVE [Setup] directive assignment at the start of
+  // a line - never a mention of the directive's own name inside a `;`
+  // comment (this file's own §28 corrective-history comments correctly
+  // discuss the historical directive by name; that is not a regression).
+  expect(!/^PrivilegesRequiredOverridesAllowed\s*=/m.test(issSource),
+    'PrivilegesRequiredOverridesAllowed is absent as an active directive - the exact directive that caused the historical admin-mode HKLM incident (docs/windows-packaging.md §28) has not regressed back into the source (comments discussing that history by name are expected and fine)');
+
+  step('Structural: UninstallRegSubkey derives from the same TestAppId, never a second independent copy of the GUID');
+  expect(/UninstallRegSubkey = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\\{#TestAppIdBare\}_is1';/.test(issSource),
+    'the [Code] section\'s own UninstallRegSubkey constant is built from {#TestAppIdBare}, not a hardcoded GUID literal of its own');
 }
 
 async function main() {
@@ -859,17 +1039,26 @@ async function main() {
     recomputed: recomputedHash,
     recorded: recordedHash,
   });
+  // installerPath/installerFile are deliberately never passed to any
+  // scenario below - every scenario that installs/updates/uninstalls
+  // something now compiles its own throwaway-AppId installer instead
+  // (see the per-scenario AppId constants above). This step's own
+  // existence+hash check still verifies the real release artifact
+  // build-release.ps1 produced is intact; it is simply never installed
+  // by this script.
 
-  await testOrdinaryUninstallAndReinstallScenario(installerPath);
-  await testExplicitPurgeScenario(installerPath);
-  await testManualUpgradeWhileRunningScenario(installerPath);
+  testProductionIdentityStructuralScenario();
 
-  step('Locate ISCC.exe for the version-detection scenario');
+  step('Locate ISCC.exe - every remaining scenario compiles its own throwaway-AppId installer');
   const isccPath = findIscc();
   expect(isccPath !== undefined, 'ISCC.exe found', 'Install it: winget install --id JRSoftware.InnoSetup --scope user');
+
+  await testOrdinaryUninstallAndReinstallScenario(isccPath);
+  await testExplicitPurgeScenario(isccPath);
+  await testManualUpgradeWhileRunningScenario(isccPath);
   await testVersionDetectionScenario(isccPath);
-  await testShortcutTasksScenario(installerPath);
-  await testLocalizationScenario(installerPath);
+  await testShortcutTasksScenario(isccPath);
+  await testLocalizationScenario(isccPath);
 
   console.log(`\n${stepCount} steps passed. PASS`);
 }

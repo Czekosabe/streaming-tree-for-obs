@@ -1492,26 +1492,81 @@ against the throwaway AppId, and the real production AppId's own
 registry state was directly confirmed untouched before and after that
 run.
 
-**What was NOT changed.** Every other scenario in this script installs
-the real, already-built production installer (never a throwaway
-recompile) into a hermetic directory, which legitimately needs the
-real production AppId to test the real shipped artifact's own
-uninstall/purge/upgrade behavior - this is accepted, necessary,
-mitigated by hermetic install directories and existing `finally`-block
-cleanup, not something this section's fix touches. The installer's own
-existing-install-conflict refusal (§28) is unchanged and correctly
-still refuses to proceed when it finds a conflicting HKLM/HKCU entry -
-this is a safety feature, not the defect this section fixes.
+**Correction (mandatory corrective pass, same day): every remaining
+scenario was migrated too.** The paragraph above originally said every
+*other* scenario legitimately needed the real production AppId. On
+review that reasoning did not hold: `testOrdinaryUninstallAndReinstallScenario`,
+`testExplicitPurgeScenario`, `testManualUpgradeWhileRunningScenario`,
+`testShortcutTasksScenario` and `testLocalizationScenario` all install/
+update/uninstall behavior that is entirely independent of *which*
+AppId is compiled in - none of them need the real identity, they had
+simply never been given their own. Each now compiles its own
+throwaway installer under its own dedicated, obviously-fake, stable
+AppId (`ORDINARY_UNINSTALL_TEST_APP_ID`, `PURGE_TEST_APP_ID`,
+`UPGRADE_WHILE_RUNNING_TEST_APP_ID`, `SHORTCUT_TASKS_TEST_APP_ID`,
+`LOCALIZATION_TEST_APP_ID`), each with the same `reg delete`
+failure-path backstop `testVersionDetectionScenario` already had.
+`compileTestInstaller` now takes an explicit `appId` parameter instead
+of always using `SCENARIO_TEST_APP_ID`, and `queryHkcuDisplayVersion`/
+`queryHklmDisplayVersion`/`queryHkcuLanguage` all require an explicit
+subkey argument now - no default, so none of them can silently fall
+back to the real product's own registry subkey. The one place the real
+AppId is still referenced at all is a new
+`testProductionIdentityStructuralScenario`, which proves the AppId
+literal, `PrivilegesRequired=lowest`, and the absence of
+`PrivilegesRequiredOverridesAllowed` directly from the .iss **source
+text** - never by compiling or installing under it (this project's own
+stated preference: structural assertions over installing the real
+identity merely to prove a literal).
+
+A real, separate, second bug was found and fixed along the way:
+`testManualUpgradeWhileRunningScenario`'s own cleanup never actually
+ran the compiled installer's uninstaller - only `rmSync` on the
+install/data directories - meaning every historical local run of that
+one scenario left its own registry registration behind (harmlessly,
+under the real AppId, before this fix; harmlessly, under its own
+throwaway AppId, after it). Fixed to uninstall for real in `finally`,
+matching every other scenario.
+
+A third, unrelated, genuinely pre-existing bug was found and fixed
+while proving the full suite passes end to end:
+`testShortcutTasksScenario`'s desktop-shortcut path was hardcoded to
+`%USERPROFILE%\Desktop`, which is wrong on any machine where the
+desktop is redirected (this project's own development machine has
+OneDrive Known Folder Move active, redirecting it to
+`%USERPROFILE%\OneDrive\Pulpit`) - Inno Setup's own `{userdesktop}`
+constant correctly created the shortcut at the real, redirected
+location throughout; the test script was checking the wrong path and
+reporting a false failure. Fixed to resolve the real desktop directory
+via `[Environment]::GetFolderPath("Desktop")` (the same Known Folder
+API `{userdesktop}` itself resolves through) instead of guessing.
+
+The installer's own existing-install-conflict refusal (§28) is
+unchanged and correctly still refuses to proceed when it finds a
+conflicting HKLM/HKCU entry under the *real* AppId - this is a safety
+feature, and none of the scenarios above ever exercise it anymore,
+since none of them touch the real AppId at all.
+
+**Full-suite proof.** With every scenario migrated, the complete
+`node scripts/verify-installer.mjs` was run end to end for real: all
+52 steps passed, including every scenario listed above, while the
+historical `0.9.7-evidence` HKLM entry remained present throughout - a
+read-only snapshot taken immediately before the run and another
+immediately after are byte-for-byte identical across every field. No
+scenario needs, requests, or depends on that entry being absent,
+repaired, or cleaned up.
 
 **What was found, and left alone.** The historical incident's own
-residue - the HKLM registry entry itself (now confirmed restored to
-its exact original recorded values after an unrelated verification
-misstep touched it during this investigation - see docs/progress.md),
-one orphaned all-users Start Menu uninstall shortcut
-(`C:\ProgramData\...\Streaming Tree for OBS\Uninstall Streaming Tree
-for OBS.lnk`), and ordinary Windows shell "recent item" cache entries
-under `HKCU\...\UFH\SHC` referencing it - was inspected, not deleted.
-Windows' own shell history cache is not this product's ownership
-boundary; the HKLM entry and orphaned shortcut are real historical
-test debris the operator will clean up manually, once, after reviewing
-the corrective task's own proposed-cleanup report.
+residue - the HKLM registry entry itself (confirmed restored to its
+exact original recorded values after an unrelated verification misstep
+touched it during the first corrective pass, and confirmed byte-for-
+byte unchanged by this second pass's own full-suite run - see
+docs/progress.md), one orphaned all-users Start Menu uninstall
+shortcut (`C:\ProgramData\...\Streaming Tree for OBS\Uninstall
+Streaming Tree for OBS.lnk`, also confirmed unchanged), and ordinary
+Windows shell "recent item" cache entries under `HKCU\...\UFH\SHC`
+referencing it - was inspected, not deleted. Windows' own shell
+history cache is not this product's ownership boundary; the HKLM entry
+and orphaned shortcut are real historical test debris the operator
+will clean up manually, once, after reviewing the corrective task's
+own proposed-cleanup report.

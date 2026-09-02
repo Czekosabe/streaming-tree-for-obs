@@ -51991,3 +51991,129 @@ above - it was caught and corrected within this same task using only
 already-authorized read-only-investigation-plus-current-run-cleanup
 tools, consistent with this task's own explicit instruction not to ask
 before cleaning up state this task's own current run created.
+
+## fix(installer): migrate every disposable installer scenario to its own dedicated throwaway AppId
+
+Mandatory corrective pass on the previous entry: that pass's own final
+report said "every other scenario correctly still uses the real AppId"
+and treated being blocked locally by the preserved historical evidence
+as acceptable. Neither was correct. A historical registration on the
+operator's own machine must never gate the hermetic verifier's own
+disposable scenarios, and none of those scenarios ever needed the real
+identity in the first place - they had simply never been given their
+own.
+
+### Read-only discipline for this pass
+A single read-only snapshot of the preserved
+`HKLM\...\Uninstall\{C067013C-D143-49F8-9510-D078482D6DA4}_is1` key was
+taken before touching anything, and a second one after the complete
+verifier run below - compared byte-for-byte, identical in every field.
+No `reg add`/`reg delete`/elevation/installer execution ever targeted
+the real production AppId at any point in this pass. The one accidental
+mutation of that evidence happened in the *previous* pass, already
+corrected there; this pass made no further changes to it.
+
+### Scenario inventory (built before changing anything)
+`scripts/verify-installer.mjs` read in full. Of its 6 scenarios that
+install/update/uninstall something, 5 compiled the real, already-built
+production installer (real AppId, hermetic directories only) and 1
+(`testVersionDetectionScenario`) already used a dedicated throwaway
+AppId from the previous pass. None of the 5 has any technical
+dependency on the specific AppId value - fresh install, custom-path
+install, existing-install detection, update-in-place, repair,
+downgrade-block, Start Menu/desktop shortcuts, task preservation,
+running-app cooperative shutdown, normal uninstall, purge uninstall,
+and EN/PL localization/language-preservation are all AppId-independent
+behaviors. No scenario justified keeping the real identity.
+
+### Fix
+Each of the 5 remaining scenarios now compiles its own throwaway
+installer (`compileTestInstaller`, generalized to take an explicit
+`appId` parameter instead of always using the version-detection
+scenario's own constant) under its own dedicated, obviously-fake,
+stable AppId: `ORDINARY_UNINSTALL_TEST_APP_ID`
+(`{BAADF00D-BAAD-F00D-BAAD-F00DBAADF00D}`), `PURGE_TEST_APP_ID`
+(`{FEEDFACE-FEED-FACE-FEED-FACEFEEDFACE}`),
+`UPGRADE_WHILE_RUNNING_TEST_APP_ID`
+(`{C0FFEE00-C0FF-EE00-C0FF-EE00C0FFEE00}`),
+`SHORTCUT_TASKS_TEST_APP_ID`
+(`{ABADCAFE-ABAD-CAFE-ABAD-CAFEABADCAFE}`), and
+`LOCALIZATION_TEST_APP_ID` (`{B105F00D-B105-F00D-B105-F00DB105F00D}`).
+Each gained the same `reg delete` failure-path backstop
+`testVersionDetectionScenario` already had, targeted only at its own
+dedicated subkey. `queryHkcuDisplayVersion`/`queryHklmDisplayVersion`/
+`queryHkcuLanguage` all had their `subkey` parameter's default (the
+real product's own subkey) removed entirely - it is now a required
+argument, so none of them can ever silently fall back to checking the
+real identity again.
+
+A new `testProductionIdentityStructuralScenario` is the one place the
+real AppId is still referenced: it proves the AppId literal,
+`PrivilegesRequired=lowest`, and the absence of an active
+`PrivilegesRequiredOverridesAllowed` directive directly from the real
+`.iss` **source text** - never by compiling or installing under the
+real identity, matching this project's own stated preference for
+structural/build-time assertions over installing the real identity
+merely to prove a literal. Also asserts `scripts/build-release.ps1`
+never mentions `TestAppId`, so a real release build can never pick up
+a test override.
+
+### Two further real bugs found and fixed while proving the full suite
+1. `testManualUpgradeWhileRunningScenario`'s own `finally` block never
+   actually ran the compiled installer's uninstaller - only `rmSync`
+   on the install/data directories - meaning every historical local
+   run of that one scenario left its own registry registration behind
+   (harmlessly, under the real AppId, before this pass; harmlessly,
+   under its own new throwaway AppId, after it, until this fix).
+   Fixed to uninstall for real in `finally`, matching every other
+   scenario.
+2. `testShortcutTasksScenario`'s desktop-shortcut path was hardcoded
+   to `%USERPROFILE%\Desktop`, wrong on any machine with a redirected
+   desktop - this project's own development machine has OneDrive Known
+   Folder Move active, redirecting it to
+   `%USERPROFILE%\OneDrive\Pulpit` (a real, pre-existing, unrelated
+   machine configuration, not something this project or this pass
+   created). Inno Setup's own `{userdesktop}` constant correctly
+   created the shortcut at the real, redirected location the whole
+   time - confirmed directly via a real `/LOG=` capture showing
+   `Successfully created the icon` at
+   `C:\Users\kacpe\OneDrive\Pulpit\Streaming Tree for OBS.lnk` while
+   the test script checked the wrong, non-redirected path and reported
+   a false failure. Fixed to resolve the real desktop directory via
+   `[Environment]::GetFolderPath("Desktop")` (the same Known Folder API
+   `{userdesktop}` itself resolves through) instead of guessing -
+   verified via a real, isolated, immediately-cleaned-up diagnostic
+   install before the fix, and again as part of the full-suite run
+   after it.
+
+### Full-suite proof (mandatory - this is the completion criterion)
+`node scripts/verify-installer.mjs`, the complete suite, run end to
+end for real: **52 of 52 steps passed** - installer-existence/hash
+check, the new structural production-identity scenario, ordinary
+uninstall/reinstall, explicit purge, upgrade-while-running, version
+detection (fresh/update/downgrade-block/repair), Start Menu/desktop
+shortcut tasks, and EN/PL localization/language-preservation - all in
+one run, with the historical `0.9.7-evidence` HKLM entry present and
+untouched throughout (confirmed by the before/after snapshot above).
+Every one of the six throwaway AppIds used during the run was fully
+uninstalled by its own scenario's cleanup - confirmed by direct
+registry query after the run, zero remaining. `node --check
+scripts/verify-installer.mjs` clean throughout every edit.
+
+### Conclusion on product-defect classification (unchanged from the previous pass, now on stronger evidence)
+**(A) Test-harness-only defect.** The real installer bug that
+originally caused HKLM registration (`PrivilegesRequiredOverridesAllowed`)
+was already found and fixed in §28, and this pass's own structural
+scenario now proves that fact directly from source on every run, not
+merely by prior investigation. No current production install/uninstall/
+purge defect was found or reproduced by the fully isolated suite - the
+two bugs found this pass (missing uninstall-in-finally, wrong desktop
+path) are both entirely inside the test harness itself, never in
+`streaming-tree.iss`'s own installer/uninstaller behavior.
+
+### Continuous-execution rule compliance
+No operator-only blocker exists for this work's own scope. No
+AskUserQuestion call was made. No elevation, no `-Verb RunAs`, no
+installer/uninstaller execution against the real production AppId, no
+registry write against the preserved evidence, and no deletion of
+pre-existing residue occurred anywhere in this pass.
