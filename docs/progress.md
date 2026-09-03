@@ -52681,3 +52681,49 @@ scenarios) used an isolated throwaway AppId. The one interaction with
 the real production AppId was three read-only `reg query` snapshots,
 proven identical. No UAC, no elevation, no cleanup of pre-existing
 state.
+
+## fix(installer): make the new build-release.ps1 structural regex CRLF-tolerant
+
+CI (`windows-package.yml`, commit `47c2a97`) failed "Verify the installer
+(pass 1)" immediately - a real regression from the previous commit's own
+new structural check, not caught locally.
+
+### Root cause
+The new `testAppIdGuard` regex added to
+`testProductionIdentityStructuralScenario`
+(`if \(\$TestAppId\) \{([\s\S]*?)\n\}\n\n\$IsccArgs \+= \$InnoScript`)
+used bare `\n` literals to span from the guard's opening brace to the
+known `$IsccArgs += $InnoScript` anchor line. This repository's own
+working copy has LF line endings (confirmed: `scripts/build-release.ps1`
+on disk has no `\r` at all), so the regex matched fine in every local
+run. `actions/checkout@v4` on the Windows CI runner checks the same file
+out with CRLF line endings - a real, environment-specific difference a
+local-only run could never surface, only a real CI failure. Confirmed,
+not guessed: reproduced by simulating a CRLF copy of the real file and
+running both the old and new regex against it directly before trusting
+the fix (`old regex vs CRLF: false`, `new regex vs CRLF: true`).
+
+Every *pre-existing* multi-line regex in this file already tolerated
+this correctly, just via a different mechanism than an explicit `\r?`:
+`^...$` with the `/m` flag naturally treats a bare `\r` as its own valid
+line-terminator boundary in JavaScript's regex engine, and the one
+older multi-line literal match (`#ifndef TestAppId\s*\n\s*#define
+TestAppId ...`) happens to tolerate CRLF too, because `\s*` already
+absorbs a stray `\r` before the literal `\n`. My new regex used neither
+pattern - a real, narrow gap, not a systemic one.
+
+### Fix
+`\n` replaced with `\r?\n` at both of the new regex's line-boundary
+positions. Re-verified directly against a simulated CRLF copy of the
+real file (now: `true`) before re-running anything.
+
+### Verification
+`node scripts/verify-installer.mjs`: **59/59 steps passed** locally
+again (LF working copy, so this alone could not have caught the original
+bug - included for completeness, not as proof of the fix). The real
+proof is the standalone CRLF-simulation script above, plus this fix's
+own CI run reaching terminal SUCCESS (see the commit note below).
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No operator-machine state touched -
+this was a pure regex/text-matching fix to a JS test script.

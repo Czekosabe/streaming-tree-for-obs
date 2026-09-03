@@ -1068,8 +1068,13 @@ function testProductionIdentityStructuralScenario() {
   // Matches up to the blank line immediately before "$IsccArgs +=
   // $InnoScript" (not just the first "}", which would stop at the
   // guard's own nested GUID-validation "if" block instead of its real,
-  // outer closing brace).
-  const testAppIdGuard = buildScript.match(/if \(\$TestAppId\) \{([\s\S]*?)\n\}\n\n\$IsccArgs \+= \$InnoScript/);
+  // outer closing brace). `\r?\n` throughout, never a bare `\n` -
+  // scripts/build-release.ps1 is checked out with CRLF line endings on
+  // a real Windows CI runner, and a bare `\n` here would never match
+  // there even though it matches fine against this repository's own
+  // on-disk LF working copy - a real gap a bare local run could not
+  // have caught, only found by a real CI failure.
+  const testAppIdGuard = buildScript.match(/if \(\$TestAppId\) \{([\s\S]*?)\r?\n\}\r?\n\r?\n\$IsccArgs \+= \$InnoScript/);
   expect(testAppIdGuard !== null,
     'the ISCC /DTestAppId= argument is added only inside an explicit "if ($TestAppId)" guard block');
   const dTestAppIdOccurrences = buildScript.match(/\/DTestAppId=/g) ?? [];
