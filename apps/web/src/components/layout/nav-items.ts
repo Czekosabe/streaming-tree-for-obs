@@ -28,9 +28,9 @@ export type NavItem = {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/', labelKey: 'items.dashboard', icon: LayoutDashboard, planned: false },
-  { to: '/platforms', labelKey: 'items.platforms', icon: Tv, planned: true },
+  { to: '/platforms', labelKey: 'items.platforms', icon: Tv, planned: false },
   { to: '/streams', labelKey: 'items.streams', icon: Radio, planned: false },
-  { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: true },
+  { to: '/metadata', labelKey: 'items.metadata', icon: SlidersHorizontal, planned: false },
   { to: '/engagement', labelKey: 'items.engagement', icon: Activity, planned: false },
   { to: '/chat', labelKey: 'items.chat', icon: MessageSquare, planned: false },
   { to: '/overlays', labelKey: 'items.overlays', icon: MonitorPlay, planned: false },

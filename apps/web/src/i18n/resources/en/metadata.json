@@ -1,4 +1,10 @@
 {
+  "managementPage": {
+    "manageDestinations": "Manage destinations",
+    "emptyTitle": "No destinations yet",
+    "emptyMessage": "Add a destination on the Platforms page before editing its metadata.",
+    "goToPlatforms": "Go to Platforms"
+  },
   "editor": {
     "heading": "Stream details",
     "description": "Title, category and other details for the selected destination",

@@ -66,7 +66,18 @@ Read in full before any code changed:
   `SavePresetDialog`) - the `metadata.planned.presets` i18n key and its
   reference in `UpcomingFeaturesCard.tsx` were stale and have been
   removed; only the title/category history sub-feature remains genuinely
-  planned.
+  planned. **Correction (Stage 20E "complete Platforms/Metadata",
+  2026-09-03):** `/platforms` and `/metadata` are no longer placeholder
+  pages at all - `PlaceholderPage.tsx` and `PlannedPages.tsx` are deleted,
+  replaced by real `PlatformsPage.tsx` (reuses `PlatformGrid`,
+  `AddPlatformDialog`, `PlatformSettingsDialog` - the same components and
+  the same `usePlatformsQuery`/`usePlatformDefinitionsQuery` cache
+  Dashboard uses, plus a real Total/Configured/Enabled/Active summary) and
+  `MetadataPage.tsx` (reuses `MetadataEditor` exactly, presets included).
+  Their nav `planned` badges are gone. The narrower sub-features named
+  above (`pages:platforms.planned.encoding`, `pages:metadata.planned.
+  history`) remain genuinely unbuilt and are unaffected by this
+  correction - `UpcomingFeaturesCard.tsx` still lists them.
 - `AboutLegalPage.tsx` / `useAboutQuery` / `GET /api/about` - the real,
   already-existing authoritative source for product version/build
   identity (`AboutResponse.version`, `isReleaseBuild`, `commit`,

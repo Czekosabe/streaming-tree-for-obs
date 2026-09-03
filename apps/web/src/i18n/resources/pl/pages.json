@@ -5,14 +5,14 @@
   },
   "platforms": {
     "title": "Platformy",
-    "description": "Dodawanie, łączenie i konfiguracja celów działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok nie jest jeszcze zbudowany.",
+    "description": "Wszystkie skonfigurowane cele w jednym miejscu: dodawaj nowe, sprawdzaj konfigurację, poświadczenia oraz stan włączenia/aktywności i otwieraj ustawienia każdego celu.",
     "planned": {
       "encoding": "Profil kodowania dla każdej gałęzi (bitrate, rozdzielczość, odstęp klatek kluczowych)"
     }
   },
   "metadata": {
     "title": "Metadane",
-    "description": "Edycja i wysyłanie metadanych tytułu/kategorii dla poszczególnych platform, w tym zestawów wielokrotnego użytku stosowanych na kilku platformach naraz, działa już z poziomu kart platform na Pulpicie. Ten dedykowany widok nie jest jeszcze zbudowany.",
+    "description": "Edytuj tytuł, kategorię i inne metadane transmisji dla każdego celu oraz stosuj, zapisuj i zarządzaj zestawami wielokrotnego użytku.",
     "planned": {
       "history": "Historia wcześniej używanych tytułów i kategorii"
     }

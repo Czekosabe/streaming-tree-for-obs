@@ -1,4 +1,14 @@
 {
+  "managementPage": {
+    "summary": {
+      "heading": "Podsumowanie celów",
+      "total": "Łącznie",
+      "configured": "Skonfigurowane",
+      "enabled": "Włączone",
+      "active": "Aktywne"
+    },
+    "manageAccounts": "Połączone konta"
+  },
   "status": {
     "offline": "Offline",
     "starting": "Uruchamianie",

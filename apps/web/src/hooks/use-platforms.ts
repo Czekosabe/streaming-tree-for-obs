@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   useMutation,
   useQuery,
@@ -127,6 +128,43 @@ export function useUpdatePlatformMetadataMutation(): UseMutationResult<
       );
     },
   });
+}
+
+/**
+ * Which destination's metadata tab is open, kept valid as the platform list
+ * changes - shared by `DashboardPage` and `MetadataPage` so both pick the
+ * same destination on load and never drift into two competing selection
+ * behaviours (Stage 20E "complete Platforms/Metadata" work).
+ *
+ * Picks the first platform once the list loads, and moves off a platform
+ * that no longer exists (e.g. just deleted) onto the new first one. An
+ * `initialId` (e.g. a specific destination the operator arrived from - see
+ * `PlatformsPage`'s "Edit metadata" action) is honoured on the first render
+ * and falls back the same way if that id turns out not to exist.
+ *
+ * Deliberately does nothing while `platforms` is empty, rather than
+ * resetting `activeId` to `null`: an empty array is indistinguishable here
+ * from "the query has not resolved yet", and a real `initialId` must
+ * survive that brief window instead of being clobbered before the real
+ * list arrives. Once the list is non-empty, a stale/deleted/never-real id
+ * (including the default `null`) is replaced by the first platform, same
+ * as before.
+ */
+export function useActiveMetadataSelection(
+  platforms: readonly ConfiguredPlatform[],
+  initialId: string | null = null,
+): { activeId: string | null; setActiveId: (id: string | null) => void } {
+  const [activeId, setActiveId] = useState<string | null>(initialId);
+
+  useEffect(() => {
+    if (platforms.length === 0) return;
+    const stillExists = platforms.some((platform) => platform.id === activeId);
+    if (!stillExists) {
+      setActiveId(platforms[0]?.id ?? null);
+    }
+  }, [platforms, activeId]);
+
+  return { activeId, setActiveId };
 }
 
 /**

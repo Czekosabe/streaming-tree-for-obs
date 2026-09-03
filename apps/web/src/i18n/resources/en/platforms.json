@@ -1,4 +1,14 @@
 {
+  "managementPage": {
+    "summary": {
+      "heading": "Destination summary",
+      "total": "Total",
+      "configured": "Configured",
+      "enabled": "Enabled",
+      "active": "Active"
+    },
+    "manageAccounts": "Connected accounts"
+  },
   "status": {
     "offline": "Offline",
     "starting": "Starting",

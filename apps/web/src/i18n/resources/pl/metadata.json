@@ -1,4 +1,10 @@
 {
+  "managementPage": {
+    "manageDestinations": "Zarządzaj celami",
+    "emptyTitle": "Brak jeszcze celów",
+    "emptyMessage": "Dodaj cel na stronie Platformy, zanim zaczniesz edytować jego metadane.",
+    "goToPlatforms": "Przejdź do Platform"
+  },
   "editor": {
     "heading": "Szczegóły transmisji",
     "description": "Tytuł, kategoria i inne szczegóły dla wybranego celu",

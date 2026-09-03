@@ -52297,3 +52297,151 @@ No AskUserQuestion call was made. No installer/uninstaller was compiled
 or executed in this pass. No registry, shortcut, or other operator
 Windows state was read or written. The operator's already-installed
 Stage 20E copy was never touched.
+
+## fix(web): complete the Platforms and Metadata pages, remove their Soon badges
+
+Product-completion work, explicitly authorized: `/platforms` and
+`/metadata` were still `PlaceholderPage` placeholders even though the
+underlying destination-management and metadata functionality has existed
+for stages, reachable only from Dashboard. This turns both into real
+pages, reusing that existing functionality rather than building a second
+copy of it.
+
+### Inventory before any change
+Read `App.tsx`, `Sidebar.tsx`/`nav-items.ts`, `PlannedPages.tsx`/
+`PlaceholderPage.tsx`, `DashboardPage.tsx`, `PlatformGrid.tsx`/
+`PlatformCard.tsx`, `AddPlatformDialog.tsx`, `PlatformSettingsDialog.tsx`
+(and its `StreamKeySection`/`OutputSettingsSection`/`AccountLinkSection`/
+`BroadcastSelectSection`), `hooks/use-platforms.ts`, `MetadataEditor.tsx`/
+`MetadataForm.tsx`/`PlatformTabs.tsx`/`PublishPanel.tsx`, all three preset
+dialogs, `hooks/use-metadata-presets.ts`, `hooks/use-accounts.ts`,
+`hooks/use-credentials.ts`, `platform-grid-columns.ts`, `pages.json`/
+`platforms.json`/`metadata.json` (en+pl), and `docs/dashboard-design.md`.
+
+Finding that shaped the whole design: **the Dashboard's own destination
+and metadata management is already fully-featured, componentised, and
+canonical.** `PlatformGrid`/`AddPlatformDialog`/`PlatformSettingsDialog`
+are the one real destination-management implementation; `MetadataEditor`
+already contains the complete metadata surface, presets included (its
+"Presets" button opens `ManagePresetsDialog`, which lists every saved
+preset with a real Apply action opening `ApplyPresetDialog`; its own
+"Save as preset" button opens `SavePresetDialog`). `columnClassesFor`
+already scales `PlatformGrid` correctly past four destinations. So both
+new pages are built by *reusing* these exact components against the same
+`usePlatformsQuery`/`usePlatformDefinitionsQuery` cache Dashboard already
+uses - never a second, competing implementation that could drift.
+
+### /platforms - new `PlatformsPage.tsx`
+Canonical detailed destination-management surface. A real
+Total/Configured/Enabled/Active summary strip (`role="group"`,
+Configured computed via a new `usePlatformsConfiguredCount` call - the
+same real-credential-status semantics Stage 20E batch 1 established for
+onboarding, never destination existence), then `PlatformGrid` (unchanged),
+`AddPlatformDialog` and `PlatformSettingsDialog` wired exactly like
+Dashboard. "Edit metadata" on a card now navigates to `/metadata` with
+`{ state: { platformId } }` instead of scrolling to an inline editor,
+since metadata editing itself now lives on its own page. A "Connected
+accounts" action links to `/settings` (the canonical account-management
+surface - `ConnectedAccountsPanel`) rather than duplicating account
+linking; the per-destination link status inside `PlatformSettingsDialog`
+(`AccountLinkSection`) is unchanged and already keeps that concept
+distinct from a destination's own stream-key configuration.
+
+### /metadata - new `MetadataPage.tsx`
+Canonical detailed metadata surface: renders `MetadataEditor` exactly as
+Dashboard does (same tabs, same form, same Save/Reset/Save-as-preset,
+same Manage/Apply-preset dialogs, same `PublishPanel`), with a real empty
+state ("no destinations yet" + a button to `/platforms`) when there is
+nothing to edit yet, instead of only the editor's own terse inline
+message. Reads `location.state.platformId` (from Platforms' "Edit
+metadata" action) to preselect the right tab on arrival. A "Manage
+destinations" action links back to `/platforms`.
+
+### Shared selection state, extracted rather than duplicated
+`DashboardPage.tsx`'s inline "which metadata tab is active, kept valid as
+the platform list changes" effect is now `useActiveMetadataSelection`
+(`hooks/use-platforms.ts`), used by both `DashboardPage` (behaviour
+unchanged - verified by the full test suite) and `MetadataPage` (with an
+optional `initialId` for the Platforms hand-off). One real bug fixed
+while extracting it: the original effect reset the selection to `null`
+whenever the platform list was empty - harmless when `initialId` was
+always `null` (Dashboard's only prior use), but it silently clobbered a
+real requested `initialId` during the query's own loading window, before
+the real list arrived (caught by `MetadataPage.test.tsx`'s preselection
+test, which failed against the first, literally-copied version of the
+effect). Fixed by never touching `activeId` while the list is still
+empty; a stale or never-real id is still replaced by the first real
+platform once the list actually loads, unchanged from before.
+
+### Domain distinction preserved
+Destination configuration (stream key stored) and connected account
+(OAuth) remain two separate facts everywhere touched: the new
+Total/Configured/Enabled/Active summary is computed purely from
+`usePlatformsConfiguredCount`\+`platforms`/branch state, never from
+`useAccountsQuery`; `PlatformsPage.test.tsx` has a dedicated regression
+test proving a connected account never moves the Configured count.
+`AccountLinkSection`'s own honest per-provider behaviour (only
+twitch/youtube show a real link control; every other provider states
+plainly it is not implemented) is unchanged and reused as-is inside
+`PlatformSettingsDialog`.
+
+### Soon badges and placeholder residue
+`nav-items.ts`: `/platforms` and `/metadata` both now `planned: false` -
+`SidebarNav` only renders its "Soon" badge when `item.planned` is true, so
+both badges are gone. `PlaceholderPage.tsx` and `PlannedPages.tsx` are
+deleted (zero remaining call sites once both routes point at real pages).
+`pages.json` (en+pl): `platforms.description`/`metadata.description`
+rewritten from "this dedicated view is not built yet" to describe what
+the real page now does. `UpcomingFeaturesCard.tsx`'s doc comment and
+`docs/dashboard-design.md` corrected (living-doc "Correction" style, nothing
+rewritten) to state both routes are real pages now. The narrower,
+genuinely-still-unbuilt sub-features these pages name
+(`pages:platforms.planned.encoding` - per-branch encoding profile;
+`pages:metadata.planned.history` - title/category history) are explicitly
+untouched: still true, still listed in `UpcomingFeaturesCard`, per the
+governing task's own instruction not to remove a truthful planned marker
+for something this task does not build.
+
+### Tests added
+`PlatformsPage.test.tsx` (9 cases): real page not placeholder; a seeded/
+disabled/uncredentialed destination renders as "Disabled"/"Missing", never
+as configured; the Configured summary count reflects real credential
+status, not existence; a connected account never moves that count; Add
+platform opens the real `AddPlatformDialog`; a card's settings action
+opens the real `PlatformSettingsDialog`; a card's Edit-metadata action
+navigates to `/metadata`; Connected accounts links to `/settings`; error
+state with retry. `MetadataPage.test.tsx` (8 cases): real page not
+placeholder; current metadata renders; a save goes through the real
+`savePlatformMetadata` mutation and shows the real saved state; a failed
+save stays visible via `role="alert"` instead of silently discarding the
+edit; Manage presets and Save-as-preset are both reachable and open the
+real dialogs; an unsupported provider field (per real capability flags)
+is never rendered; the Platforms hand-off preselects the right
+destination; the empty state links to `/platforms`.
+`nav-items.test.ts` (2 cases): both routes' `planned` flag is `false`.
+
+### Frontend verification (complete, real, final run)
+- `npm run i18n:check`: **passed** - 2 languages, 29 namespaces, no
+  differences against "en".
+- `npm run typecheck` (`tsc -b`): one real type error caught and fixed
+  (`useActiveMetadataSelection`'s `setActiveId` needed to accept `string |
+  null` to match `DashboardPage`'s existing `onDeleted` callback), then
+  **passed** clean.
+- `npm run lint`: **0 errors**, the same one pre-existing, untouched
+  warning as before (`src/app/auth-context.tsx`).
+- `npx vitest run`: **1594 tests passed, 139 test files passed**, 0
+  failed - up from 1575/136 before this pass. Same pre-existing jsdom
+  `HTMLMediaElement` "not implemented" console noise from unrelated
+  `AudioRenderer` tests.
+- `npm run build` (`tsc -b && vite build`): **succeeded**. Same
+  pre-existing "chunk larger than 500 kB" advisory warning.
+
+Backend untouched (`git status` shows no `apps/server` file changed) - no
+backend checks were applicable, per this task's own scope rule.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No new provider/OAuth integration, no
+protocol change, no installer/updater/AppId change, no Dashboard gutting -
+Dashboard keeps its own platform grid and inline metadata editor exactly
+as before, unchanged in behaviour (only its internal selection-state
+logic moved into a shared hook). No Stage 28 invented.

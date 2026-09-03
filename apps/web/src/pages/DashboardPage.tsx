@@ -1,5 +1,5 @@
 import { ClipboardCheck, Layers, Loader2, Plus, RefreshCw, Settings, Tv } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,7 +15,11 @@ import { StreamSetupsDialog } from '@/components/stream-setup/StreamSetupsDialog
 import { SystemStatusRail } from '@/components/system/SystemStatusRail';
 import { Button } from '@/components/ui/Button';
 import { Panel, PanelBody } from '@/components/ui/Panel';
-import { usePlatformDefinitionsQuery, usePlatformsQuery } from '@/hooks/use-platforms';
+import {
+  useActiveMetadataSelection,
+  usePlatformDefinitionsQuery,
+  usePlatformsQuery,
+} from '@/hooks/use-platforms';
 import { resolveApiErrorMessage } from '@/lib/api-error-message';
 
 /**
@@ -36,7 +40,6 @@ export function DashboardPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
-  const [activeMetadataId, setActiveMetadataId] = useState<string | null>(null);
   const [metadataDirty, setMetadataDirty] = useState(false);
   const [streamSetupsOpen, setStreamSetupsOpen] = useState(false);
   const [preflightOpen, setPreflightOpen] = useState(false);
@@ -49,18 +52,10 @@ export function DashboardPage() {
     [platformsQuery.data],
   );
 
-  // Keep the selected metadata tab valid as the list changes: pick the first
-  // platform initially, and move off a platform that was just deleted.
-  useEffect(() => {
-    if (platforms.length === 0) {
-      if (activeMetadataId !== null) setActiveMetadataId(null);
-      return;
-    }
-    const stillExists = platforms.some((platform) => platform.id === activeMetadataId);
-    if (!stillExists) {
-      setActiveMetadataId(platforms[0]?.id ?? null);
-    }
-  }, [platforms, activeMetadataId]);
+  // Keeps the selected metadata tab valid as the list changes - shared with
+  // MetadataPage so both pick the same destination the same way.
+  const { activeId: activeMetadataId, setActiveId: setActiveMetadataId } =
+    useActiveMetadataSelection(platforms);
 
   const settingsPlatform = platforms.find((platform) => platform.id === settingsId) ?? null;
 

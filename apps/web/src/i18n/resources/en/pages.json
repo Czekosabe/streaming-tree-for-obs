@@ -5,14 +5,14 @@
   },
   "platforms": {
     "title": "Platforms",
-    "description": "Adding, connecting and configuring destinations already works from the Dashboard's platform cards. This dedicated view is not built yet.",
+    "description": "Every configured destination in one place: add new ones, check configuration, credential and enabled/active state, and open a destination's own settings.",
     "planned": {
       "encoding": "Per-branch encoding profile (bitrate, resolution, keyframe interval)"
     }
   },
   "metadata": {
     "title": "Metadata",
-    "description": "Editing and pushing per-platform title/category metadata, including reusable presets applied across platforms, already works from the Dashboard's platform cards. This dedicated view is not built yet.",
+    "description": "Edit stream title, category and other metadata for each destination, and apply, save or manage reusable presets.",
     "planned": {
       "history": "History of previously used titles and categories"
     }

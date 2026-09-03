@@ -5,13 +5,14 @@ import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
 
 /**
  * Bottom-right rail panel: genuinely planned, already-documented roadmap
- * items - not invented marketing copy. Sourced from the exact same
- * `pages:platforms.planned.*`/`pages:metadata.planned.*` translation keys
- * `PlaceholderPage` already shows on the real `/platforms` and `/metadata`
- * routes, so this list can never drift out of sync with what those pages
- * themselves promise, and never lists something already shipped (a
- * feature that ships loses its `planned` flag in `nav-items.ts` and its
- * `PlaceholderPage` entry - see docs/dashboard-design.md).
+ * items - not invented marketing copy. Sourced from the
+ * `pages:platforms.planned.*`/`pages:metadata.planned.*` translation keys -
+ * specific sub-features of the now-real `/platforms` and `/metadata` pages
+ * that are not built yet (per-branch encoding profiles, title/category
+ * history), distinct from those pages' own top-level `title`/`description`
+ * copy. A feature that ships loses its entry here, the same way the two
+ * pages themselves lost their placeholder state and `nav-items.ts`'s
+ * `planned` flag once they became real (see docs/dashboard-design.md).
  *
  * Deliberately no rocket illustration: the reference concept's rocket
  * asset is not available to this codebase, and this stage does not
