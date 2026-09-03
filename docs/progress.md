@@ -52727,3 +52727,72 @@ own CI run reaching terminal SUCCESS (see the commit note below).
 ### Continuous-execution rule compliance
 No AskUserQuestion call was made. No operator-machine state touched -
 this was a pure regex/text-matching fix to a JS test script.
+
+## fix(updater): prove verify-updater.mjs cleanup never deletes pre-existing test state
+
+A narrow follow-up safety audit of the updater-test cleanup ownership
+found a real gap: `verify-updater.mjs`'s `finally` block ran its
+`reg delete` backstop against `UPDATER_TEST_UNINSTALL_REG_SUBKEY`
+**unconditionally**, in both hives, on every run - success or failure -
+with no check for whether the current run actually created what was
+there. Since `UPDATER_TEST_APP_ID` is deterministic (never randomly
+generated, by design, so the real same-AppId update lifecycle can be
+proven), a prior run interrupted by a hard process kill (which skips
+every `finally`, unlike a normal thrown-error failure) could leave a
+stale registration behind that a later run would then delete without
+ever having created it.
+
+### Fix
+Two layers, matching "pre-run absence plus tracked creation":
+- **Preflight**: `main()` now checks both hives for an existing
+  registration under `UPDATER_TEST_UNINSTALL_REG_SUBKEY` before doing
+  anything else (before even creating its own staging directory) and
+  refuses to proceed if either is present - a precise diagnostic, no
+  attempt to guess whose it is or clean it up automatically.
+- **Ownership flag**: a new `ownsRegistration` boolean, false by
+  default, flips true only once this run's own install has been
+  confirmed (a real registry read, not an assumption) to hold exactly
+  `OLD_VERSION`. The `finally` block's `reg delete` backstop is now
+  gated on this flag - a run that never reaches that confirmation
+  (including one refused at the preflight) never touches the registry.
+
+### Regression added
+A new first step in `main()` itself (real, not a separate test file -
+this repository has no established runner for top-level `scripts/*.mjs`
+logic): writes a synthetic `DisplayVersion` under the same dedicated
+AppId via a plain `reg add` (never a real Inno install), then spawns a
+real, separate nested invocation of this exact script and proves it (a)
+refuses to proceed, naming the pre-existing registration as the reason,
+and (b) leaves that simulated registration byte-unchanged. The
+regression then removes its own simulated state itself, never through
+the real ownership-gated cleanup path. Guarded by a
+`STREAMING_TREE_VERIFY_UPDATER_SKIP_REGRESSION` env var passed only to
+the nested child, so that child does not itself re-run the regression
+and spawn a further nested child without bound - caught and fixed
+before ever running this for real, by reasoning through the nested-
+invocation design before executing it.
+
+### Verification
+`node scripts/verify-updater.mjs`: **17/17 steps passed** (up from 15 -
+two new steps), run locally against this operator's own machine. The
+regression's own five assertions directly prove the exact property
+required: simulated pre-existing state is recognized, the nested run's
+cleanup never touches it, and the real run's own current-run-created
+state remains fully cleanable (proven by the existing final "no
+registration left after uninstall" step, now reached via the
+ownership-gated path). Real production registration
+(`{C067013C-D143-49F8-9510-D078482D6DA4}`, `DisplayVersion
+0.9.9-stage20e-manualtest-batch1`) confirmed unchanged via a read-only
+`reg query` immediately after. `build-release.ps1` and
+`verify-installer.mjs` were not touched this pass, so the complete
+`verify-installer.mjs` suite was not re-run (no shared isolation
+infrastructure changed - only `verify-updater.mjs`'s own local
+preflight/cleanup logic). No production artifact bytes/behavior
+affected - no new Stage 20E manual artifact built.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No production-AppId state touched -
+confirmed via read-only registry check. Every real registry write this
+pass performed (both the regression's simulated entry and the real
+E2E lifecycle) used the same dedicated, pre-existing throwaway AppId,
+never the real product's.

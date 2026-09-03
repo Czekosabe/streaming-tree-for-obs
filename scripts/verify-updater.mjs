@@ -191,9 +191,76 @@ async function fetchStatus() {
   return res.json();
 }
 
+/** Whether UPDATER_TEST_UNINSTALL_REG_SUBKEY currently has a registration
+ * in either hive - the one query this script's own safety contract is
+ * built on. The AppId is deterministic (never randomly generated), so
+ * its mere presence proves nothing about *which* run created it; this
+ * function only ever answers "is anything there right now", never "did
+ * I put it there". */
+async function hasPreexistingRegistration() {
+  const hkcu = await queryHkcuDisplayVersion();
+  const hklm = await queryHklmDisplayVersion();
+  return { present: hkcu !== null || hklm !== null, hkcu, hklm };
+}
+
+// Set on the nested child this script's own regression below spawns, so
+// that child does not itself re-run the regression (and spawn a further
+// nested child, and so on - unbounded recursion). Never set by a real
+// invocation (CI, or a developer running this script directly), which
+// is exactly what makes the nested child in the regression a faithful
+// stand-in for a genuinely-recovering second run after a crash: it
+// takes the same code path a real one would, skipping only the
+// regression step itself.
+const IS_NESTED_REGRESSION_CHILD = process.env.STREAMING_TREE_VERIFY_UPDATER_SKIP_REGRESSION === '1';
+
 async function main() {
   console.log('Stage 20B application-updater end-to-end verification');
   console.log(`Old version: ${OLD_VERSION}  New version: ${NEW_VERSION}`);
+
+  if (!IS_NESTED_REGRESSION_CHILD) {
+    step('Regression: a simulated pre-existing registration under the dedicated updater-test AppId is recognized, and never deleted by this script');
+    // Simulates a previous run of this exact script having been killed
+    // (not merely failed - a hard process kill skips every `finally`
+    // this script has, including its own cleanup) between creating this
+    // registration and removing it - the concrete scenario this whole
+    // safety property exists for. A plain `reg add` under the SAME
+    // deterministic UPDATER_TEST_APP_ID, never a real Inno install -
+    // proving the ownership logic itself needs no build/install cycle.
+    await run('reg', ['add', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/v', 'DisplayVersion', '/t', 'REG_SZ', '/d', 'REGRESSION-SIMULATED-PRE-EXISTING', '/f']);
+    const simulatedWriteOk = await queryHkcuDisplayVersion();
+    expect(simulatedWriteOk === 'REGRESSION-SIMULATED-PRE-EXISTING', 'test setup: the simulated pre-existing registration was actually written', simulatedWriteOk);
+
+    // A real, separate, nested invocation of this exact script - not a
+    // reimplementation of its preflight/cleanup logic, the real thing,
+    // run against the real registry, exactly as a genuinely-recovering
+    // second run after a crash would be. It must fail immediately
+    // (before any build/install work) because the preflight below now
+    // finds the simulated registration. STREAMING_TREE_VERIFY_UPDATER_
+    // SKIP_REGRESSION=1 stops it from repeating this same regression
+    // itself (which would otherwise spawn a further nested child, and
+    // so on, without bound).
+    const nestedRun = await run(process.execPath, [fileURLToPath(import.meta.url)], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, STREAMING_TREE_VERIFY_UPDATER_SKIP_REGRESSION: '1' },
+    });
+    expect(nestedRun.code !== 0, 'a nested run of this script refuses to proceed while a pre-existing registration exists under this AppId', nestedRun);
+    expect(/pre-existing/i.test(nestedRun.out) || /pre-existing/i.test(nestedRun.err), 'the nested run\'s own failure names the pre-existing registration as the reason', { out: nestedRun.out, err: nestedRun.err });
+    const stillPresent = await queryHkcuDisplayVersion();
+    expect(stillPresent === 'REGRESSION-SIMULATED-PRE-EXISTING', 'the simulated pre-existing registration is UNCHANGED - the nested run\'s own cleanup did not touch it', stillPresent);
+
+    // Removed by the regression itself, deliberately never through the
+    // real ownership-gated cleanup path below (which must never fire for
+    // state it did not create) - this is test-controlled state this
+    // regression is fully responsible for.
+    await run('reg', ['delete', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/f']);
+    expect(await queryHkcuDisplayVersion() === null, 'the regression\'s own simulated registration was removed by the regression itself');
+  }
+
+  step('Preflight: the dedicated updater-test AppId has no pre-existing registration before this real run does anything');
+  const preflight = await hasPreexistingRegistration();
+  expect(!preflight.present,
+    'no pre-existing registration exists for the dedicated updater-test AppId - safe to proceed',
+    preflight);
 
   const stagingDir = mkdtempSync(join(tmpdir(), 'streaming-tree-updater-verify-'));
   const installDir = join(stagingDir, 'app');
@@ -203,6 +270,12 @@ async function main() {
 
   let appProcess = null;
   let fakeGithub = null;
+  // Only ever flips to true once THIS run has itself confirmed (via a
+  // real registry read, not an assumption) that its own install put the
+  // OLD_VERSION registration there - "pre-run absence plus tracked
+  // creation", never the deterministic AppId alone. Cleanup below is
+  // gated on this, never unconditional.
+  let ownsRegistration = false;
 
   try {
     step(`Build the OLD release (${OLD_VERSION}, -IntegrationTest, throwaway AppId)`);
@@ -239,6 +312,10 @@ async function main() {
     expect(existsSync(join(installDir, 'unins000.dat')), 'Inno Setup created the unins000.dat installed-context marker');
     expect(await queryHkcuDisplayVersion() === OLD_VERSION, 'the dedicated throwaway AppId is registered with the real OLD version under HKEY_CURRENT_USER', await queryHkcuDisplayVersion());
     expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE gained no registration - the install stayed per-user, not administrative');
+    // Ownership proof complete: the preflight above confirmed absence,
+    // and this run's own install just confirmed presence with exactly
+    // the version it expects - only now is cleanup allowed to touch it.
+    ownsRegistration = true;
 
     step('Launch the installed OLD version, redirected to the fake GitHub server');
     appProcess = spawn(exePath, [], {
@@ -385,8 +462,18 @@ async function main() {
     // AppId, never a pattern-based sweep of the real registry. A non-zero
     // exit here just means the key is already gone (the normal, expected
     // case) - never treated as a scenario failure.
-    await run('reg', ['delete', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/f']);
-    await run('reg', ['delete', `HKLM\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/f']);
+    //
+    // Gated on ownsRegistration: the AppId is deterministic, never proof
+    // by itself that THIS run created whatever is under it right now -
+    // only a run that has itself confirmed (preflight: absent: install:
+    // present with the expected version) that it is the one that put it
+    // there may delete it. A run that never got that far (including the
+    // regression above's own nested run, which fails at the preflight
+    // step before this variable is ever set) leaves the registry alone.
+    if (ownsRegistration) {
+      await run('reg', ['delete', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/f']);
+      await run('reg', ['delete', `HKLM\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/f']);
+    }
     // The install directory may still have a lingering helper/installer
     // process releasing file handles - retry the removal briefly rather
     // than failing the whole run over cleanup.
