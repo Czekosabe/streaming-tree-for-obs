@@ -174,3 +174,49 @@ jobs:
       - run: npm run lint
       - run: npm run test -- --run
       - run: npm run build
+
+  # Real-browser regression suite (docs/development.md's "Real-browser E2E
+  # tests" section has the full contract). A separate job, not folded into
+  # `frontend` above: it needs both a Go toolchain (to build the same
+  # `-tags integration` test server every scripts/verify-*.mjs script
+  # already uses) and a real Chromium binary, so keeping it isolated keeps
+  # an ordinary lint/typecheck/build failure in `frontend` easy to tell
+  # apart from a real-browser regression here. One Chromium download, one
+  # job - not one per platform-package workflow.
+  e2e:
+    name: e2e (chromium, linux-amd64)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run the real-browser E2E suite
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/e2e/report
+            apps/web/test-results
+          retention-days: 5
+          if-no-files-found: ignore

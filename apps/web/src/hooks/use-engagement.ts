@@ -50,6 +50,12 @@ export function useAccountEngagementQuery(
   return useQuery({
     queryKey: engagementKeys.account(accountId),
     queryFn: ({ signal }) => fetchAccountEngagement(accountId, signal),
+    // A caller with no account currently selected (e.g. OutboundChatComposer
+    // before an account is picked) passes an empty string rather than
+    // omitting the hook call entirely - without this guard that fired a
+    // real request against the malformed `/api/connected-accounts//
+    // engagement` (a missing id segment), a real browser-discovered defect.
+    enabled: accountId !== '',
     refetchInterval: STATUS_POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   });

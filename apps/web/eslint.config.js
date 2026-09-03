@@ -44,4 +44,18 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // The Playwright E2E harness (e2e/) is Node test infrastructure, not
+    // React application code - `react-hooks/rules-of-hooks` misfires on
+    // Playwright's own `use` fixture-setup parameter, which merely
+    // shares a name with the unrelated React `use()` hook.
+    files: ['e2e/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'no-console': 'off',
+    },
+  },
 );

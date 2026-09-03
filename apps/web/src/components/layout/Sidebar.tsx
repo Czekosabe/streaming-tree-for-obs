@@ -28,7 +28,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: (() => void) | undefined 
       >
         <BrandMark />
       </Link>
-      <div className="flex-1 overflow-y-auto py-4">
+      <div data-testid="sidebar-scroll-region" className="flex-1 overflow-y-auto py-4">
         <SidebarNav onNavigate={onNavigate} />
       </div>
       <SidebarFooter />

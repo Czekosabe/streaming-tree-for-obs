@@ -391,6 +391,37 @@ npm run test        # unit tests (Vitest), plus a set of rendered-component test
 npm run build       # production build
 ```
 
+**Real-browser E2E tests** (from `apps/web`, Playwright + a real Chromium):
+
+```bash
+npx playwright install chromium   # one-time browser download
+npm run test:e2e                  # builds/starts a hermetic backend + Vite dev server, then runs the suite
+```
+
+This is a real-browser regression layer on top of the Vitest/RTL suite
+above, not a replacement for it - it exists because jsdom cannot prove real
+scroll position, focus, CSS stacking-context/paint order, or actual
+viewport layout, all of which a prior Stage 20E manual pass found real
+defects in. `npm run test:e2e` needs nothing configured: it builds and
+runs the same `-tags integration` test server every
+`scripts/verify-*.mjs` script already uses
+(`apps/server/cmd/testserver`, requiring `go` on `PATH`) against a
+fresh temporary data directory, starts the real Vite dev server pointed
+at it, and runs every spec in `apps/web/e2e/specs/` against real
+Chromium - never the operator's installed application, real credentials,
+real OBS, or a production build. It covers: sidebar scroll preservation
+across navigation, layout at representative viewport heights, the OBS
+connection panel's disclosure/error behavior, brand→Dashboard
+navigation, the Platforms/Metadata pages, modal stacking/focus-trapping,
+both onboarding outcomes (success and a deterministically forced
+failure), and a route smoke matrix across every current primary route -
+each with an automatic console/page-error gate. It deliberately does
+**not** replace eventual manual Stage 20E verification of the real
+Windows installer, tray, OBS Browser Source, audio devices, or real
+provider accounts - see `apps/web/e2e/playwright.config.ts`'s own doc
+comment and each spec file for the exact scope. Runs in CI as the `e2e`
+job in `cross-platform.yml`.
+
 **Backend** (from `apps/server`):
 
 ```bash
@@ -863,6 +894,7 @@ responses ever echoes a rendered alert's own text or username.
 .
 ├── apps/
 │   ├── web/              # Operator panel (React + TypeScript + Vite)
+│   │   ├── e2e/            # Real-browser Playwright regression suite (specs/, fixtures.ts)
 │   │   └── src/
 │   │       ├── api/        # Zod contracts + transport per feature area
 │   │       ├── components/ # UI grouped by feature (platforms, chat, overlays,

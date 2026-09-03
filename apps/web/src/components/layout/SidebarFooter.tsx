@@ -46,7 +46,7 @@ export function SidebarFooter() {
   const lastError = runtimeErrorMessage(t, mediaMtx?.lastError);
 
   return (
-    <div className="mt-auto space-y-3 border-t border-line p-3">
+    <div data-testid="sidebar-footer" className="mt-auto space-y-3 border-t border-line p-3">
       <section
         aria-label={t('runtime:ingest.heading')}
         className="rounded-lg border border-line bg-surface-sunken p-3"

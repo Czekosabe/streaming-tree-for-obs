@@ -72,6 +72,13 @@ Thumbs.db
 .vite/
 coverage/
 
+# --- Playwright E2E harness output (apps/web/e2e) ---
+# Anchored under apps/web/ so an unrelated top-level "test-results" or
+# "playwright-report" directory elsewhere is never accidentally hidden.
+apps/web/test-results/
+apps/web/e2e/report/
+apps/web/blob-report/
+
 # --- Stage 20A embedded release assets ---
 # The release build script stages the real production frontend build and
 # the canonical legal documents into these directories immediately before

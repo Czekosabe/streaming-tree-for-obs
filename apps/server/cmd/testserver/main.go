@@ -50,10 +50,15 @@ import (
 	"github.com/streaming-tree/server/internal/domain/donationsource"
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	domaingoals "github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/domain/metadatapreset"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/streaminsights"
+	"github.com/streaming-tree/server/internal/domain/streamsession"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/domain/visualpackage"
 	"github.com/streaming-tree/server/internal/domain/visualtemplate"
@@ -79,6 +84,7 @@ import (
 	"github.com/streaming-tree/server/internal/storage/sqlite"
 	"github.com/streaming-tree/server/internal/support"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
+	"github.com/streaming-tree/server/internal/sysresources"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -132,6 +138,12 @@ func run() error {
 	}
 
 	platformService := platform.NewService(sqlite.NewPlatformRepository(db.DB))
+
+	// Stage 21: the first-run onboarding-state preference
+	// (docs/onboarding.md §4) - identical wiring to cmd/server, see its
+	// own comment. Wired unconditionally, exactly like every other
+	// singleton-preference domain in this codebase.
+	onboardingService := onboarding.NewService(sqlite.NewOnboardingRepository(db.DB), nil)
 
 	// The one deliberate difference from cmd/server: a single in-memory
 	// fake store backs both destination stream keys and connected-account
@@ -522,6 +534,40 @@ func run() error {
 	})
 	branchManager.Start(ctx)
 
+	// Stage 24: stream session / operational history (docs/stream-
+	// session-history.md) - identical wiring to cmd/server, see its own
+	// comment. Stopped before branchManager/supervisor in shutdown below:
+	// it only ever reads their snapshots, so it must stop polling before
+	// either of them tears down, never the other way around.
+	streamSessionRepo := sqlite.NewStreamSessionRepository(db.DB)
+	streamSessionManager := streamsession.NewManager(streamSessionRepo, branchManager, supervisor, platformService, logger)
+	if err := streamSessionManager.Start(ctx); err != nil {
+		return err
+	}
+
+	// Stage 27: stream insights (docs/stream-session-history.md §14) -
+	// identical wiring to cmd/server, see its own comment. Reuses the
+	// same streamSessionRepo Stage 24 already constructed above - never a
+	// second one.
+	streamInsightsService := streaminsights.NewService(streamSessionRepo)
+
+	// Stage 22: reusable stream metadata presets (docs/metadata-presets.md)
+	// - identical wiring to cmd/server, see its own comment.
+	metadataPresetService := metadatapreset.NewService(sqlite.NewMetadataPresetRepository(db.DB), platformService)
+
+	// Stage 25: stream setup profiles (docs/stream-setup-profiles.md) -
+	// identical wiring to cmd/server, see its own comment.
+	streamSetupService := streamsetup.NewService(sqlite.NewStreamSetupProfileRepository(db.DB), platformService, metadataPresetService, branchManager)
+
+	// Stage 20E: local host-resource snapshot for the Dashboard's "System
+	// resources" card - identical wiring to cmd/server, see its own
+	// comment. Not one of the remote-management/remote-ingest/updater
+	// fields this integration twin deliberately never constructs (those
+	// three depend on real Windows install/OS-service state this test
+	// server never has); this one is plain local host introspection, the
+	// same on every platform this binary runs on.
+	resourcesCollector := sysresources.NewCollector(cfg.DataDir, logger, 5*time.Second)
+
 	// Stage 20E support bundle - identical wiring to cmd/server, minus
 	// the remote-management/remote-ingest/updater fields this simpler
 	// integration twin never constructs.
@@ -559,6 +605,7 @@ func run() error {
 		FFmpegRuntime:   branchManager,
 		Branches:        branchManager,
 		Accounts:        accountService,
+		Onboarding:      onboardingService,
 		DeviceFlow:      deviceFlowManager,
 		TwitchMetadata:  twitchMetadataService,
 		YouTubeAuth:     youtubeAuthManager,
@@ -597,6 +644,12 @@ func run() error {
 
 		Diagnostics:       diagnosticsRecorder,
 		DiagnosticsBundle: diagnosticsBundleBuilder,
+
+		MetadataPresets: metadataPresetService,
+		StreamSetups:    streamSetupService,
+		Resources:       resourcesCollector,
+		StreamSessions:  streamSessionRepo,
+		StreamInsights:  streamInsightsService,
 	})
 	// Test-only fake-TTS-provider control routes - see
 	// audio_testonly.go's own doc comment; never present in cmd/server.
@@ -627,6 +680,9 @@ func run() error {
 	select {
 	case err := <-serverErrors:
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		// Stopped before branchManager/supervisor: it only ever reads
+		// their snapshots, see its own construction comment above.
+		streamSessionManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)
@@ -653,6 +709,9 @@ func run() error {
 		defer cancel()
 
 		httpErr := server.Shutdown(shutdownCtx)
+		// Stopped before branchManager/supervisor: it only ever reads
+		// their snapshots, see its own construction comment above.
+		streamSessionManager.Shutdown(shutdownCtx)
 		branchManager.Shutdown(shutdownCtx)
 		deviceFlowManager.Shutdown(shutdownCtx)
 		youtubeAuthManager.Shutdown(shutdownCtx)

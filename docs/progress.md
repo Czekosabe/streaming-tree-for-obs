@@ -52962,3 +52962,194 @@ result.
 
 ### Continuous-execution rule compliance
 No AskUserQuestion call was made for permission, merges, or waiting.
+
+## feat(web): add a real-browser Playwright E2E regression suite, fix the testserver API gaps and one query bug it found
+
+The operator deliberately postponed further physical Stage 20E testing
+for lack of supervision time. This authorizes automating the
+browser/UI portion of Stage 20E with a real browser engine, bounded:
+never a replacement for Vitest, backend tests, package verification,
+or eventual manual verification, and never touching the operator's own
+installed application, credentials, or OBS.
+
+### Infrastructure inventory and decision
+Repository-wide search found no existing Playwright/Puppeteer/Cypress/
+Webdriver usage and no `e2e/` directory - only Vitest+jsdom+RTL for the
+frontend, and `scripts/verify-*.mjs` Node scripts that drive the Go
+backend directly over HTTP/SSE (never a real DOM or browser). Playwright
+was selected as the smallest mature real-browser framework for a
+Vite/React project with no existing equivalent to extend, per the
+task's own explicit "don't select it blindly, but it's a strong
+candidate" guidance. `@playwright/test` (1.62.1) added as an
+`apps/web` devDependency; Chromium installed via `npx playwright
+install chromium` (one Chromium lane only - the task's own guidance
+against a large multi-browser matrix for a local desktop web UI).
+
+### Hermetic architecture
+`apps/web/e2e/playwright.config.ts` starts two `webServer` entries on
+fixed, non-default loopback ports (48765/45173, distinct from the
+repo's own dev-server defaults so this suite never collides with a
+running `npm run dev`):
+- `scripts/run-backend.mjs` builds and runs the same `-tags
+  integration` test server every `scripts/verify-*.mjs` script already
+  uses (`apps/server/cmd/testserver`) against a fresh temp data
+  directory - the in-memory fake credential store and fake TTS
+  provider that binary already provides, never the real OS keychain or
+  real SAPI.
+- `scripts/run-frontend.mjs` runs the real Vite dev server (`vite.js`
+  directly via `node`, not `npx`, which resolves to a Windows `.cmd`
+  shim `spawn` cannot exec without a shell) with
+  `VITE_DEV_API_PROXY_TARGET` pointed at the hermetic backend - the
+  same dev-only proxy mechanism `apps/web/vite.config.ts` already
+  supports, so the browser only ever sees same-origin `/api/...`.
+
+A single worker serializes every spec against the one shared backend/
+database this suite starts (a bounded regression suite, not a large
+parallel matrix - an explicit, deliberate trade for reliability and CI
+cost). `apps/web/e2e/helpers/backend-api.ts` provides small direct-
+fetch helpers (`setOnboardingStatus`, `listPlatforms`) specs use to put
+the backend into known state before a browser interaction, mirroring
+the existing verify-script `fetch` convention. Console/page-error
+gating lives in `apps/web/e2e/fixtures.ts`: any `pageerror` or
+`console.error` fails the test unless it matches a narrow, individually
+justified allowlist (Vite's own HMR log line; the three fields
+`cmd/testserver`'s own doc comment already says it deliberately never
+constructs - `/api/auth/session`, `/api/updates/status`, `/api/
+remote-ingest/status`, `/api/remote-overlay/*/status`) or a per-test
+`expectFailedResource(pattern)` opt-in a spec calls only when it
+deliberately provokes a failure itself (scoped to that one test, so it
+can never mask a real regression on the same endpoint elsewhere).
+
+### Real defects found and fixed
+Running the suite against the hermetic backend surfaced three real,
+bounded defects, all fixed (governing task's own bounded bug-fix
+authorization):
+1. **`cmd/testserver` never wired the Stage 21 onboarding-state
+   service** into its router at all (`GET/PUT /api/onboarding` 404d
+   unconditionally) - the one gap that had gone unnoticed because no
+   existing `verify-*.mjs` script exercises onboarding. Fixed by
+   constructing and wiring `onboarding.NewService` exactly like
+   `cmd/server` already does.
+2. **The same testserver/cmd-server parity gap existed for three more
+   already-shipped features**: Stage 22 metadata presets, Stage 25
+   stream setup profiles, Stage 20E system-resources, and Stage 24/27
+   stream session history/insights (the last needing its own `Start`/
+   `Shutdown` lifecycle wiring, ordered before `branchManager`/
+   `supervisor` exactly like `cmd/server`'s own comment specifies,
+   since it only ever reads their snapshots). Fixed the same way -
+   construct and wire each exactly as `cmd/server` already does.
+3. **A real frontend bug**: `useAccountEngagementQuery` had no
+   `enabled` guard, so `OutboundChatComposer` rendering before an
+   account is selected fired a real request against the malformed
+   `/api/connected-accounts//engagement` (an empty id segment). Fixed
+   with `enabled: accountId !== ''` in the shared hook
+   (`apps/web/src/hooks/use-engagement.ts`), so every current and
+   future caller is protected, not just the one call site that
+   happened to trigger it.
+
+Two `data-testid` attributes were added (`sidebar-scroll-region`,
+`sidebar-footer`) where no ARIA role uniquely identifies a genuinely
+needed scroll/layout target - the task's own "stable test IDs only
+where semantics are insufficient" guidance.
+
+### Suite contents (9 spec files, 23 tests)
+`sidebar-scroll.spec.ts` (1): real `scrollTop` survives two real route
+changes, forcing genuine overflow at a 640px viewport height rather
+than asserting on a non-scrolling container.
+`responsive-height.spec.ts` (4): real DOM geometry (no overlap, no
+horizontal overflow, every nav link reachable) at 900/768/600px, plus
+proof that collapsing the OBS panel measurably grows the nav region's
+`clientHeight`.
+`obs-panel.spec.ts` (3): collapsed-by-default, mouse and keyboard
+disclosure toggling, and a forced error (via `page.route` intercepting
+`GET /api/runtime`) staying visible through collapse and a route
+change.
+`brand-navigation.spec.ts` (2): real semantic focusable link, and a
+client-side (never full-reload) navigation to Dashboard proven with a
+`window` marker that would not survive a real reload.
+`platforms.spec.ts` (2) / `metadata.spec.ts` (3): both routes render
+with no placeholder, the four seeded destinations (Twitch/YouTube
+Live/Kick/TikTok Live), the destination summary strip, tab switching,
+the Platforms→Metadata "Edit metadata" handoff, and a correctly
+layered settings dialog.
+`modal-stacking.spec.ts` (2): a real `page.mouse.click` at an
+underlying animated card's own screen coordinates proves the modal/
+backdrop - not the card - receives it (the exact Stage 20E stacking-
+context defect the portal fix addressed), plus a real Tab-trap/
+Escape/focus-restore proof.
+`onboarding.spec.ts` (3): full step-through to a real completion
+(verifying the deterministic "4 destinations, 0 configured, 0 enabled,
+0 active" summary and the Dashboard banner's disappearance), a
+deterministically forced 500 that must neither navigate away nor lose
+the retry error, and the genuinely-fresh (`pending`) auto-redirect to
+`/onboarding`.
+`route-smoke.spec.ts` (3): all fourteen `ShellLayout` routes built
+directly from the real `NAV_ITEMS`/`navigation.json` source (so this
+test can never drift from the actual nav), `/settings/about`, and an
+unknown route rendering `NotFoundPage`. Documented exclusions: the
+four `/overlay/*` standalone Browser Source routes (need a real seeded
+public slug) and the two full-viewport designer routes (need an
+already-selected rule/overlay id).
+
+Every spec runs under the shared console/page-error gate; every
+assertion prefers ARIA roles/accessible names/real geometry over CSS
+selectors.
+
+### Verification
+Local: `npm run test:e2e` - **23/23 passed**. Frontend canonical
+checks: `npm run i18n:check` (29 namespaces, en/pl, no diff), `npm run
+typecheck`, `npm run lint` (0 errors - one pre-existing, unrelated
+warning in `auth-context.tsx`; a new `e2e/**/*.ts` ESLint override
+added to `eslint.config.js` since `react-hooks/rules-of-hooks` was
+misfiring on Playwright's own `use` fixture-setup parameter, unrelated
+to React), `npm run test -- --run` (1594/1594, 139 files), `npm run
+build`. Backend: `gofmt -l .` (clean), `go vet ./...` and `go vet -tags
+integration ./...` (clean), `go test -count=1 ./...` (all packages
+pass, including the new `internal/domain/streamsession`/
+`streaminsights` coverage the testserver wiring now reaches), `go
+build ./...` (clean - the testserver changes are invisible to a normal
+build, exactly as designed).
+
+### CI
+Added a new `e2e` job to `.github/workflows/cross-platform.yml`
+(ubuntu-latest, ~one Chromium download): `actions/setup-go` +
+`actions/setup-node`, `npx playwright install --with-deps chromium`,
+`npm run test:e2e`, with the Playwright report/traces uploaded as a
+build artifact on failure. Kept separate from the existing `frontend`
+job so an ordinary lint/typecheck/build failure stays easy to tell
+apart from a real-browser regression. No new workflow file - the
+existing `apps/server/**`/`apps/web/**` path filters on
+`cross-platform.yml` already cover everything this job depends on, so
+no filter changes were needed, and no packaging workflow downloads a
+browser binary.
+
+### Documentation
+Added a concise "Real-browser E2E tests" section to
+`docs/development.md`'s existing "Lint, typecheck, tests and other
+checks" section (no new documentation file), covering how to run it
+locally, what it covers, and what it explicitly does not replace. Added
+one line for `apps/web/e2e/` to the existing directory-structure tree.
+
+### Stage 20E manual-test artifact
+A real `apps/web` bug was fixed (the `useAccountEngagementQuery`
+guard), which the governing task's own rule says requires a fresh
+Stage 20E manual-test artifact built from the exact final commit.
+Inno Setup is not installed in this environment, so that artifact
+could not be built locally this session; `windows-package.yml`'s own
+CI run against this push (triggered by the `apps/web/**` change) is
+the fresh, automated build/verification of this exact commit, but a
+dedicated operator-labelled manual-test artifact for physical
+click-through testing was not produced. Flagged explicitly rather than
+silently skipped or fabricated.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made for framework choice, permission to
+continue, browser downloads, tests, builds, CI, waiting, or whether to
+fix a bounded real-browser defect discovered during this authorized
+task. Every long-running command (Playwright browser download, the Go
+test suite, the frontend build, CI) was run and monitored to terminal
+completion. No Stage 28 invented. No Windows physical installer/tray/
+OBS testing was attempted on the operator's behalf. No operator-machine
+state was touched - every backend instance ran against a temp data
+directory this session created and never the operator's real
+application data directory, real credentials, or real OBS.
