@@ -52445,3 +52445,143 @@ protocol change, no installer/updater/AppId change, no Dashboard gutting -
 Dashboard keeps its own platform grid and inline metadata editor exactly
 as before, unchanged in behaviour (only its internal selection-state
 logic moved into a shared hook). No Stage 28 invented.
+
+## fix(installer): compare prerelease build identity, not just its presence, when classifying an install operation
+
+Real physical finding: the operator had `0.9.9-stage20e-manualtest`
+installed, ran the newer `0.9.9-stage20e-manualtest-batch1` installer,
+and the Ready-to-Install page called it "Repair / reinstall (same
+version already installed)" despite the two full version strings being
+visibly different.
+
+### Root cause
+`CompareAppVersions` (scripts/installer/streaming-tree.iss) already split
+each version into a numeric core and a prerelease tag and compared cores
+exactly, but for the prerelease tag it only checked whether each side's
+tag was empty or not - never what the tag actually said. Two different,
+non-empty prerelease tags sharing a core always compared equal. Not
+cosmetic: the identical defect would misclassify a real future case too,
+e.g. `1.0.0-beta.1` installed over an already-installed `1.0.0-rc.1`.
+
+### Fix
+`CompareAppVersions` now requires exact string equality of the
+prerelease tag for two versions to compare equal. Two different
+non-empty prerelease tags sharing a core are a new, explicit,
+"unordered" case: never a downgrade block in either direction (this
+installer does not assume a strict-SemVer prerelease precedence scheme -
+`beta.1` < `rc.1` - the project has never actually adopted; inventing
+one would be guessing), but a new `ClassifyVersionOperation` function
+gives the Ready-page memo its own honest "Reinstall (a different build
+of version %1 - order could not be determined)" wording
+(`MemoOperationDifferentBuild`, EN/PL) instead of falsely claiming it is
+the same version. `CompareAppVersions` keeps its original -1/0/1 shape
+for `InitializeSetup`'s downgrade gate (the conservative choice: an
+unordered pair is never treated as a downgrade); `ClassifyVersionOperation`
+is the separate, richer four-way classifier only `UpdateReadyMemo` uses.
+Full reasoning and the version-ordering contract: docs/windows-packaging.md §32.
+
+### Updater-consistency audit
+Could the installer's comparison and the built-in updater's comparison
+ever disagree for the same pair? No - their domains do not overlap on
+the case that changed. `apps/server/internal/updater/manifest/
+version.go`'s `ParseVersion` rejects outright any version string that is
+not a strict `MAJOR.MINOR.PATCH` (matching docs/updater.md §4's explicit
+rejection list, including `"1.0.0-rc1"`), and `check.go`'s
+`UpdateAvailable` fails the whole check closed if the currently-running
+version does not parse - a prerelease-suffixed version never reaches a
+comparison there at all. For the one shape both sides actually compare
+(two strict release versions), `Version.Compare` and the installer's
+`CompareVersionCores` are the same algorithm. No Go code changed.
+
+### Regression coverage
+`scripts/verify-installer.mjs`'s `testVersionDetectionScenario` extended
+with real, hermetic, Inno-driven steps: a prerelease over an
+already-installed real release of the same core is still blocked
+(unchanged); installing a differently-labelled prerelease over another
+prerelease of the same core - the operator's exact scenario - now
+genuinely succeeds and `DisplayVersion` becomes the new distinct full
+string; the reverse direction is equally never blocked. One real test
+bug fixed while adding this: the two new steps initially shared the
+scenario's existing install directory/AppId without first uninstalling,
+so the "fresh install" attempt silently collided with the still-registered
+prior version and failed - fixed by adding an explicit uninstall step
+between the two sub-sequences (caught by re-running the suite, not
+assumed).
+
+### A related, newly-discovered, unresolved hazard - NOT fixed under this task
+Auditing `scripts/verify-updater.mjs` (for the updater-consistency
+question above) required running it locally once. It failed at its very
+first silent-install step. Investigation found why, and confirmed no
+harm: unlike `verify-installer.mjs` (already migrated to dedicated
+throwaway AppIds in an earlier pass), `verify-updater.mjs` still builds
+its own old/new release pair via a plain `build-release.ps1` call with
+no AppId override, so it compiles under the **real production AppId**.
+This operator's machine already has a real install registered under
+that AppId (from physical Stage 20E testing) - the failed run's silent
+install was correctly refused by the installer's own downgrade gate
+(the script's hardcoded `OLD_VERSION` "0.9.0" has a lower core than the
+real installed `0.9.9`-cored build), which is what protected the real
+registry entry, confirmed intact via a read-only registry read
+immediately after
+(`DisplayVersion = 0.9.9-stage20e-manualtest-batch1`, exactly the
+operator's own real installed copy, untouched). Had a future OLD/NEW
+version pair had an equal-or-higher core than whatever is really
+installed locally at the time, this same script could silently
+overwrite the operator's real Apps & Features registration. This script
+runs safely in CI (clean runner, nothing pre-installed) - the hazard is
+local-execution-only. Not fixed here: it would require plumbing a
+throwaway-AppId override through `build-release.ps1` itself, a shared
+script every real release build also uses - a larger, separate change
+needing its own explicit authorization, not something this bounded
+version-comparison task expands into. `verify-updater.mjs` was not run
+again locally after this discovery; the real end-to-end updater proof
+for this commit comes from its CI run instead (`windows-package.yml`).
+Full detail: docs/windows-packaging.md §32's own "related hazard"
+subsection.
+
+### User-facing placeholder sweep
+Searched every EN/PL i18n resource file and every `.tsx` file for
+"SOON"/"coming soon"/"not implemented"/"planned"/"placeholder"/"TODO"/
+"stub" and Polish equivalents, plus the current route table
+(`App.tsx`), navigation (`nav-items.ts`), Settings, Dashboard actions,
+onboarding links, and empty-state CTAs. Result: **zero live Category
+A/B findings.** Every `nav-items.ts` entry is already `planned: false`
+(Platforms/Metadata's own prior fix), so `SidebarNav`'s "Soon" badge
+JSX and its `navigation:plannedBadge`/`plannedBadgeTooltip` and
+`pages:placeholder.*` i18n keys are now dead/unreachable - orphaned
+infrastructure from the deleted `PlaceholderPage.tsx`, not a
+currently-visible user-facing lie (no live nav item can trigger them),
+so per this task's own explicit instruction ("do not treat ... unless
+the user can actually encounter them") this was not touched. Every
+other "unavailable"/"not implemented" string found (`accounts:
+link.notImplementedNote` for non-Twitch/YouTube providers, credential-
+store-unavailable messages, etc.) is a real, honest, currently-accurate
+capability/error statement, not stale residue.
+
+### Verification
+- `node scripts/verify-installer.mjs`: **58/58 steps passed** (up from
+  52 before this pass - 6 new steps for the version-comparison fix, plus
+  the pre-existing suite unchanged). Re-run 4 times total during this
+  pass (2 to fix a Pascal `case...else` syntax error needing an explicit
+  `begin/end` block, then a test-sequencing bug, then a transient,
+  non-reproducible desktop-shortcut-timing failure on step 44 that
+  passed clean on immediate re-run - confirmed unrelated to this
+  change, since re-running the identical suite a fourth time passed all
+  58 steps with no code changed in between).
+- `scripts/verify-updater.mjs`: run once, stopped after discovering the
+  local-AppId hazard above - not a pass/fail result for this task;
+  real end-to-end coverage relies on its CI run instead.
+- Backend: untouched (`git status` shows no `apps/server` file changed) -
+  no Go checks were applicable.
+- Frontend: untouched this pass - no `apps/web` file changed.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No installer/uninstaller was executed
+against the real production AppId by this pass's own code (every
+`verify-installer.mjs` scenario used its existing dedicated throwaway
+AppIds). `verify-updater.mjs`'s one local run did compile under the
+real production AppId (a pre-existing characteristic of that script,
+not something this pass did), but its failed install never wrote to the
+registry - confirmed via a read-only check, not assumed - and the
+script was not run again. No registry, shortcut, or other real
+operator Windows state was written by this pass.

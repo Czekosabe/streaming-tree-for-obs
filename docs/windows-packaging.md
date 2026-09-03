@@ -1570,3 +1570,132 @@ history cache is not this product's ownership boundary; the HKLM entry
 and orphaned shortcut are real historical test debris the operator
 will clean up manually, once, after reviewing the corrective task's
 own proposed-cleanup report.
+
+## 32. Version-comparison defect: differing prerelease builds of the same core silently compared equal
+
+A real physical finding: the operator had `0.9.9-stage20e-manualtest`
+installed, then ran the newer `0.9.9-stage20e-manualtest-batch1`
+installer. Both `DisplayVersion` strings were shown correctly on the
+Ready-to-Install page, but the "Operation" line read "Repair / reinstall
+(same version already installed)" - despite the two full version strings
+being visibly different.
+
+### Root cause
+`CompareAppVersions` (§27) already split each version into a numeric
+`Core` and a `Prerelease` tag via `SplitVersion`, and already compared
+cores exactly. For the prerelease tag, though, it only checked whether
+each side's tag was **empty or not** - never what the tag actually said:
+
+```
+if (APre = '') and (BPre <> '') then Result := 1
+else if (APre <> '') and (BPre = '') then Result := -1
+else Result := 0;   // <- both non-empty: ALWAYS equal, regardless of content
+```
+
+So `"stage20e-manualtest"` and `"stage20e-manualtest-batch1"` - two
+different, non-empty tags sharing the `0.9.9` core - compared equal. This
+was not merely a manual-test-suffix cosmetic issue: the identical bug
+would misclassify any two real prereleases sharing a core, e.g. a future
+`"1.0.0-beta.1"` installed over an already-installed `"1.0.0-rc.1"`.
+
+### The version ordering contract
+Documented directly in `CompareAppVersions`'s own doc comment
+(`scripts/installer/streaming-tree.iss`), and now actually implemented,
+not just claimed:
+
+- Cores are compared first, exact integer comparison per component
+  (unchanged, already correct - `"10.0.0"` > `"9.0.0"`).
+- Equal cores, both released (no prerelease tag): **EQUAL** (repair).
+- Equal cores, one released and one a prerelease: the **release always
+  outranks** the prerelease of the identical core (unchanged from §27) -
+  e.g. `"0.1.0"` > `"0.1.0-manualtest+abc"`.
+- Equal cores, both prerelease, **identical tag** (build metadata after
+  `+` was already discarded): **EQUAL** (repair) - the fix. Two builds of
+  the literal same labelled prerelease are a repair.
+- Equal cores, both prerelease, **different tags**: a new, explicit
+  fourth case, `voDifferentBuild`. This project's version shape (§10:
+  `MAJOR.MINOR.PATCH-<label>+<commit>`) never embeds a monotonic build
+  counter in the label itself, only an opaque human-chosen string, and
+  this installer does not assume a strict-SemVer prerelease precedence
+  scheme (`beta.1` < `rc.1`) the project has never actually adopted -
+  inventing one would be guessing, not evidence. Such a pair is
+  therefore **unordered**: never treated as a downgrade requiring
+  confirmation/block in either direction (the gate,
+  `CompareAppVersions`, returns -1 for it - "not proven newer"), but the
+  Ready-page wording (`ClassifyVersionOperation`, a separate, richer
+  four-way classifier `UpdateReadyMemo` now uses) gives it its own
+  honest "Reinstall (a different build of version %1 - order could not
+  be determined)" label, never claiming it is the same version already
+  installed.
+
+### Why gating and wording are two separate functions
+`CompareAppVersions` keeps its original -1/0/1 shape because
+`InitializeSetup`'s downgrade gate only ever needs "is this provably a
+downgrade" - folding `voDifferentBuild` into "not a downgrade" (-1) there
+is the conservative, safe choice (never blocks a build that cannot be
+proven older). `ClassifyVersionOperation` is the separate, four-way
+classifier the interactive Ready-to-Install memo needs to word this
+honestly. Both are implemented directly in `scripts/installer/
+streaming-tree.iss`; see that file for the exact Pascal.
+
+### Updater-consistency audit (no disagreement possible)
+Audited whether the built-in application updater
+(`apps/server/internal/updater/manifest/version.go`) could ever disagree
+with the installer's comparison. It cannot, because their domains do not
+overlap on the case that changed: `manifest.ParseVersion` **rejects
+outright** any version string that is not a strict `MAJOR.MINOR.PATCH`
+(its own doc comment explicitly rejects `"1.0-beta"`/`"1.0.0-rc1"`/etc.,
+matching docs/updater.md §4), and `apps/server/internal/updater/
+check.go`'s `UpdateAvailable` fails the whole check closed
+(`StateError`) if the currently-running version does not parse - it
+never falls through to a comparison at all for a prerelease-suffixed
+version. For the one shape both sides ever actually compare (two strict
+release versions), `Version.Compare` and the installer's
+`CompareVersionCores` are the same algorithm (exact integer
+component-by-component comparison), so they cannot disagree there
+either. No Go code changed.
+
+### Regression coverage
+`scripts/verify-installer.mjs`'s `testVersionDetectionScenario` gained
+real, hermetic Inno-driven coverage for exactly the reported scenario and
+its logical neighbors: a prerelease over an already-installed real
+release of the same core is still blocked (release-outranks-prerelease,
+unchanged); installing a differently-labelled prerelease over another
+prerelease of the same core - the operator's exact real-world case - now
+genuinely succeeds and the registered `DisplayVersion` becomes the new,
+distinct full string (never silently treated as a same-version no-op);
+and the reverse direction is equally never blocked, proving the
+"unordered, safe both ways" contract directly rather than only in one
+direction. All of it against this scenario's own existing dedicated
+throwaway `SCENARIO_TEST_APP_ID` - never the real product AppId.
+
+### A related, newly-discovered, unresolved local-execution hazard (out of scope for this fix)
+While investigating this defect, running `scripts/verify-updater.mjs`
+locally on the operator's development machine to audit updater
+consistency (above) surfaced a real, separate hazard: unlike
+`verify-installer.mjs` (§31, migrated to dedicated throwaway AppIds),
+`verify-updater.mjs` still builds its own old/new release pair via a
+plain `scripts/build-release.ps1` invocation with no AppId override,
+which compiles under the **real production AppId**. On a machine that
+already has a real install registered under that AppId - exactly this
+operator's machine, from physical Stage 20E testing - a
+`verify-updater.mjs` run writes to the SAME real HKCU registry key the
+operator's genuine installed copy uses. A local run during this task
+failed at its very first silent-install step (refused as a downgrade,
+since the script's hardcoded `OLD_VERSION` "0.9.0" has a lower core than
+the operator's real installed `0.9.9`-cored build) - confirmed via a
+read-only registry check that the operator's real entry was left
+completely intact, and this was the downgrade-block *protecting* the
+real entry, not a coincidence of this fix. Had a future `OLD_VERSION`/
+`NEW_VERSION` pair had an equal-or-higher core than whatever happens to
+be really installed locally at the time, this same script could
+overwrite the operator's real Apps & Features registration with a
+hermetic temp-directory path that gets deleted when the script's own
+cleanup runs. This script runs safely in CI (`windows-package.yml`,
+clean runner, nothing pre-installed) - the hazard is specific to local
+execution on a machine that already has a real install. **Not fixed
+under this task's scope** (would require plumbing a throwaway-AppId
+override through `build-release.ps1` itself, a shared script every real
+release build also uses - a larger, separate change needing its own
+authorization). `scripts/verify-updater.mjs` was not run again locally
+after this discovery.

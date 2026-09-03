@@ -210,6 +210,8 @@ english.MemoOperationDowngrade=Downgrade
 polish.MemoOperationDowngrade=Obniżenie wersji
 english.MemoOperationFresh=Fresh install
 polish.MemoOperationFresh=Nowa instalacja
+english.MemoOperationDifferentBuild=Reinstall (a different build of version %1 - order could not be determined)
+polish.MemoOperationDifferentBuild=Instalacja ponowna (inna kompilacja wersji %1 - nie udało się ustalić kolejności)
 english.MemoInstalledVersionLabel=Installed version: %1
 polish.MemoInstalledVersionLabel=Zainstalowana wersja: %1
 english.MemoInstallerVersionLabel=Installer version: {#MyAppVersion}
@@ -438,18 +440,36 @@ begin
   end;
 end;
 
-// CompareAppVersions is the one narrow, correct installer-side version
-// comparison this project needs (docs/windows-packaging.md §13): -1/0/1
-// as A is older/equal/newer than B. A release version outranks a
-// prerelease of the identical core (e.g. "0.1.0" > "0.1.0-manualtest+
-// abc"), matching the operator's own explicit "manual-test versions must
-// not accidentally be treated as Stable production updates" requirement
-// stated the other direction - a manual-test build must never look newer
-// than the real release it was cut from. Two versions sharing the same
-// core AND the same prerelease tag (regardless of build metadata) compare
-// EQUAL - two different manual-test builds of the nominal same version
-// are a same-version reinstall/repair, never an "update" or "downgrade"
-// against each other.
+// CompareAppVersions is the installer-side comparison used for exactly
+// one purpose: deciding whether to gate a downgrade in InitializeSetup.
+// -1/0/1 as A is not-proven-newer / exactly-the-same-build / a real
+// downgrade, relative to B. A release version outranks a prerelease of
+// the identical core (e.g. "0.1.0" > "0.1.0-manualtest+abc"), matching
+// the operator's own explicit "manual-test versions must not accidentally
+// be treated as Stable production updates" requirement stated the other
+// direction - a manual-test build must never look newer than the real
+// release it was cut from.
+//
+// Two versions compare EQUAL only when both the core AND the prerelease
+// tag match exactly (build metadata after "+" was already discarded by
+// SplitVersion). Two DIFFERENT non-empty prerelease tags sharing a core -
+// two distinct manual-test build labels, or a real future case like
+// "1.0.0-beta.1" vs "1.0.0-rc.1" - are NOT the same build and must never
+// compare equal (a real, general defect fixed here: the previous version
+// of this function only checked whether each side's tag was empty or
+// not, so ANY two differently-labelled prereleases of the same core
+// silently compared equal). They also cannot be reliably ordered from
+// the version string alone: this project's version shape (docs/windows-
+// packaging.md §10) never embeds a monotonic build counter in the
+// prerelease tag, only an opaque human-chosen label, and this installer
+// does not assume a strict-SemVer prerelease precedence scheme the
+// project has never actually adopted (docs/windows-packaging.md §27's
+// own "MAJOR.MINOR.PATCH-<label>+<commit>" is the only prerelease shape
+// this codebase produces). Such a pair returns -1 here - never treated
+// as a downgrade requiring confirmation/block, since that cannot be
+// proven - but UpdateReadyMemo gives it its own honest "different build"
+// label via ClassifyVersionOperation below, instead of misreporting it
+// as "Repair / reinstall (same version already installed)".
 function CompareAppVersions(const A, B: String): Integer;
 var
   ACore, APre, BCore, BPre: String;
@@ -461,12 +481,51 @@ begin
   if Result <> 0 then
     exit;
 
-  if (APre = '') and (BPre <> '') then
+  if APre = BPre then
+    Result := 0
+  else if (APre = '') and (BPre <> '') then
     Result := 1
   else if (APre <> '') and (BPre = '') then
     Result := -1
   else
-    Result := 0;
+    // Same core, two different non-empty prerelease tags: unordered: see
+    // this function's own doc comment - never a downgrade block.
+    Result := -1;
+end;
+
+const
+  voRepair = 0;
+  voUpdate = 1;
+  voDowngrade = 2;
+  // Same numeric core, two different non-empty prerelease tags - a real,
+  // distinct build identity that is not provably newer or older than the
+  // other from the version string alone. See CompareAppVersions's own
+  // doc comment for why this cannot be treated as a repair.
+  voDifferentBuild = 3;
+
+// ClassifyVersionOperation is the richer, four-way classification
+// UpdateReadyMemo's wording needs - CompareAppVersions's plain -1/0/1
+// exists only to gate the downgrade prompt/block and deliberately folds
+// voDifferentBuild into "not a downgrade" (-1); this function keeps that
+// case distinct instead, so the Ready-to-Install page never claims two
+// differently-labelled builds are "the same version already installed".
+function ClassifyVersionOperation(const Installed, Installer: String): Integer;
+var
+  ICore, IPre, RCore, RPre: String;
+  CoreCmp: Integer;
+begin
+  SplitVersion(Installed, ICore, IPre);
+  SplitVersion(Installer, RCore, RPre);
+  CoreCmp := CompareVersionCores(ICore, RCore);
+
+  if CoreCmp < 0 then begin Result := voUpdate; exit; end;
+  if CoreCmp > 0 then begin Result := voDowngrade; exit; end;
+
+  // Equal core.
+  if IPre = RPre then begin Result := voRepair; exit; end;
+  if (IPre <> '') and (RPre = '') then begin Result := voUpdate; exit; end;
+  if (IPre = '') and (RPre <> '') then begin Result := voDowngrade; exit; end;
+  Result := voDifferentBuild;
 end;
 
 // InitializeSetup implements docs/windows-packaging.md §2/§3/§13: reads
@@ -542,18 +601,22 @@ end;
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 var
-  OperationLine: String;
-  Cmp: Integer;
+  OperationLine, InstalledCore, InstalledPre: String;
+  Op: Integer;
 begin
   if DetectedPrevVersionFound then
   begin
-    Cmp := CompareAppVersions(DetectedPrevVersion, '{#MyAppVersion}');
-    if Cmp = 0 then
-      OperationLine := CustomMessage('MemoOperationRepair')
-    else if Cmp < 0 then
-      OperationLine := CustomMessage('MemoOperationUpdate')
+    Op := ClassifyVersionOperation(DetectedPrevVersion, '{#MyAppVersion}');
+    case Op of
+      voRepair: OperationLine := CustomMessage('MemoOperationRepair');
+      voUpdate: OperationLine := CustomMessage('MemoOperationUpdate');
+      voDowngrade: OperationLine := CustomMessage('MemoOperationDowngrade');
     else
-      OperationLine := CustomMessage('MemoOperationDowngrade');
+      begin
+        SplitVersion(DetectedPrevVersion, InstalledCore, InstalledPre);
+        OperationLine := FmtMessage(CustomMessage('MemoOperationDifferentBuild'), [InstalledCore]);
+      end;
+    end;
     Result := FmtMessage(CustomMessage('MemoInstalledVersionLabel'), [DetectedPrevVersion]) + NewLine +
       CustomMessage('MemoInstallerVersionLabel') + NewLine +
       FmtMessage(CustomMessage('MemoOperationLabel'), [OperationLine]) + NewLine + NewLine;

@@ -498,12 +498,31 @@ async function testShortcutTasksScenario(isccPath) {
  * them through a real fresh install, a real update, a real BLOCKED
  * silent downgrade attempt, and a real same-version repair/reinstall -
  * all against one hermetic install directory, verified against the real
- * Inno-registered DisplayVersion each step, never assumed. */
+ * Inno-registered DisplayVersion each step, never assumed.
+ *
+ * A second, real-world-driven part below this proves the fix for a real
+ * physical finding: installing a differently-labelled prerelease build
+ * sharing the SAME numeric core (e.g. "0.2.0-manualtest-batch1" over an
+ * already-installed "0.2.0-manualtest") used to compare EQUAL under the
+ * old CompareAppVersions (it only checked whether each side's prerelease
+ * tag was empty, never what the tag actually said) - see
+ * CompareAppVersions's own doc comment in the .iss. Exercises the real
+ * Inno-driven behavioral consequence this project's silent installer path
+ * can actually prove hermetically: such a pair must never be refused as
+ * a downgrade in EITHER direction (neither can be proven older than the
+ * other from the version string alone), while a real release still
+ * outranks - and blocks - a prerelease of the identical core, unchanged.
+ * (ClassifyVersionOperation's richer "Repair vs different build" wording
+ * only reaches the interactive Ready-to-Install page, which Inno itself
+ * skips entirely under /VERYSILENT - not something this hermetic,
+ * always-silent harness can observe; its own doc comment says so.) */
 async function testVersionDetectionScenario(isccPath) {
   const compileDir = mkdtempSync(join(tmpdir(), 'streaming-tree-version-compile-'));
   const installDir = join(mkdtempSync(join(tmpdir(), 'streaming-tree-version-verify-')), 'app');
+  const installDir2 = join(mkdtempSync(join(tmpdir(), 'streaming-tree-version-verify2-')), 'app');
   console.log(`Hermetic compile directory: ${compileDir}`);
   console.log(`Hermetic install directory: ${installDir}`);
+  console.log(`Second hermetic install directory: ${installDir2}`);
 
   try {
     step('Compile throwaway test installers at 0.1.0 and 0.2.0');
@@ -532,12 +551,45 @@ async function testVersionDetectionScenario(isccPath) {
     expect(repair.code === 0, 'same-version reinstall exits 0', repair);
     expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0', 'the registered version is still 0.2.0 after repair');
     expect(await queryHklmDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === null, 'HKEY_LOCAL_MACHINE still has no registration after repair');
+
+    step('Compile two more throwaway installers sharing the 0.2.0 core with different prerelease labels');
+    const v2PreAExe = await compileTestInstaller(isccPath, '0.2.0-manualtest', join(compileDir, 'v2-pre-a'), SCENARIO_TEST_APP_ID);
+    const v2PreBExe = await compileTestInstaller(isccPath, '0.2.0-manualtest-batch1', join(compileDir, 'v2-pre-b'), SCENARIO_TEST_APP_ID);
+
+    step('A prerelease of the SAME core as an already-installed real release is still a blocked downgrade');
+    const preOverRelease = await run(v2PreAExe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir}`]);
+    expect(preOverRelease.code !== 0, 'installing "0.2.0-manualtest" over the installed real "0.2.0" release does NOT exit 0', preOverRelease);
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0', 'the registered version is still the real release "0.2.0" - the release-outranks-prerelease rule still holds');
+
+    step('Uninstall from the first hermetic directory - the two remaining steps below share this scenario\'s AppId, so the registry must be genuinely empty before treating the second directory\'s install as fresh');
+    const firstUninstallerFile = readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f));
+    expect(firstUninstallerFile !== undefined, 'uninstaller exists in the first hermetic directory', readdirSync(installDir));
+    const firstUninstall = await run(join(installDir, firstUninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    expect(firstUninstall.code === 0, 'uninstall of the first hermetic directory exits 0', firstUninstall);
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === null, 'no version is registered for this AppId after uninstalling the first hermetic directory');
+
+    step('Fresh install of "0.2.0-manualtest" into a second hermetic directory');
+    const freshPreA = await run(v2PreAExe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir2}`]);
+    expect(freshPreA.code === 0, 'fresh install of "0.2.0-manualtest" exits 0', freshPreA);
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0-manualtest', 'the registered version is the full string "0.2.0-manualtest"');
+
+    step('The real physical finding, reproduced and proven fixed: a differently-labelled prerelease of the same core is never refused as a downgrade');
+    const toBatch1 = await run(v2PreBExe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir2}`]);
+    expect(toBatch1.code === 0, 'installing "0.2.0-manualtest-batch1" over "0.2.0-manualtest" exits 0 - not blocked as a downgrade', toBatch1);
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0-manualtest-batch1', 'the registered version genuinely became the full, distinct string "0.2.0-manualtest-batch1" - never silently treated as a no-op "same version"');
+
+    step('The reverse direction is equally never refused - neither build can be proven older than the other');
+    const backToPreA = await run(v2PreAExe, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/LANG=english', '/NOICONS', `/DIR=${installDir2}`]);
+    expect(backToPreA.code === 0, 'installing "0.2.0-manualtest" back over "0.2.0-manualtest-batch1" exits 0 - not blocked as a downgrade', backToPreA);
+    expect(await queryHkcuDisplayVersion(SCENARIO_TEST_UNINSTALL_REG_SUBKEY) === '0.2.0-manualtest', 'the registered version reverted to the full, distinct string "0.2.0-manualtest"');
   } finally {
-    const uninstallerFile = existsSync(installDir)
-      ? readdirSync(installDir).find((f) => /^unins\d+\.exe$/.test(f))
-      : undefined;
-    if (uninstallerFile !== undefined) {
-      await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+    for (const dir of [installDir, installDir2]) {
+      const uninstallerFile = existsSync(dir)
+        ? readdirSync(dir).find((f) => /^unins\d+\.exe$/.test(f))
+        : undefined;
+      if (uninstallerFile !== undefined) {
+        await run(join(dir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
+      }
     }
     // Failure-path backstop: if a scenario failure happened before the
     // uninstaller above could run (or the uninstaller itself failed),
@@ -551,6 +603,7 @@ async function testVersionDetectionScenario(isccPath) {
     await run('reg', ['delete', `HKLM\\${SCENARIO_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/f']);
     rmSync(compileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     rmSync(dirname(installDir), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    rmSync(dirname(installDir2), { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   }
 }
 
