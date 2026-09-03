@@ -52796,3 +52796,169 @@ confirmed via read-only registry check. Every real registry write this
 pass performed (both the regression's simulated entry and the real
 E2E lifecycle) used the same dedicated, pre-existing throwaway AppId,
 never the real product's.
+
+## docs: consolidate historical living docs into current-state truth, reduce documentation surface
+
+A documentation-only consolidation pass, authorized as a standalone
+polish task independent of any Stage's own scope: reduce total
+documentation file count and line count, remove duplicated technical
+content, and rewrite "Stage N did X" chronological narration in living
+docs as direct present-tense statements of current behavior - without
+touching `docs/progress.md` (this journal stays append-only, the sole
+historical record) or destroying any real technical/security/protocol/
+legal contract.
+
+### Dispositions of the six named candidate documents
+
+- **`docs/dashboard-design.md` - RETIRED (deleted).** A pre-
+  implementation design contract almost entirely superseded by what
+  actually shipped. Its one remaining current, non-duplicated fact -
+  the real `GET /api/system/resources` endpoint
+  (`internal/sysresources`) - was folded into `project-overview.md`
+  §7.3 before deletion. The two files that referenced it
+  (`UpcomingFeaturesCard.tsx`'s doc comment,
+  `product-identity-legal.md`) were updated to drop the dead
+  cross-reference.
+- **`config/README.md` - REDUCED (503 → 156 lines, 69%).** Its 24-item
+  Stage-by-Stage "Rules" list (each item narrating which migration a
+  specific historical Stage added) was replaced with a concise,
+  timeless 9-item rules list covering the same real constraints
+  (secrets never on disk, templates-only config, `docs/progress.md` as
+  the file-provenance record, no credential in exported packages,
+  Client ID/Secret handling, `-tags integration`-only test env vars,
+  runtime state never persisted, content-addressed managed assets,
+  build-time version identity). Zero remaining Stage-number
+  references.
+- **`docs/obs-browser-source.md` - REWRITTEN CURRENT-STATE (537 → 342
+  lines, 36%).** Dropped a 96-line "Factual status update (stage N,
+  completed)" blockquote and per-route "Stage NA/NB: the X Browser
+  Source route" headings in favor of a direct contract description
+  (sources, recommended setup, shutdown/reload/reconnect behavior,
+  CEF differences, performance) plus a new "Current contract per
+  route" section per overlay kind. Zero remaining Stage-number
+  references.
+- **`docs/alert-audio.md` - REDUCED (1242 → 1139 lines) + duplication
+  resolved.** Title/intro reworded to drop "Stage 17B" framing. §10
+  "Package/template audio" restructured: the full manifest-schema JSON
+  block and its validation/ID-rewrite description (~90 lines,
+  duplicated verbatim in `visual-template-packages.md`) collapsed into
+  one summary paragraph pointing to that file as the canonical owner;
+  the alert-domain-specific subsections that are genuinely not
+  duplicated elsewhere (template-audio persistence, draft-first
+  application, export/JSON interaction) were kept and renumbered
+  §10.2-§10.4 (confirmed via a repository-wide search that no other
+  file cross-referenced the old §10.5-§10.7 anchors before
+  renumbering). The remainder of the file's dense WAV-codec-
+  research/validation/security content and its many inline "Stage
+  17B" identifiers were deliberately left untouched - a full
+  Stage-language rewrite of that material was judged higher-risk than
+  its line-count value, consistent with this task's "quality over
+  artificial line-count reduction" instruction.
+- **`docs/visual-template-packages.md` - KEPT, established as the
+  canonical owner of the `alertAudio`/`audioAssets` package-manifest
+  JSON schema** (previously duplicated in full in both this file and
+  `alert-audio.md`). While resolving the duplication, a real,
+  source-verified factual bug was found and fixed: §5a claimed "max
+  one audio asset entry per package," contradicting
+  `alert-audio.md`'s correct "max 4." Confirmed via
+  `apps/server/internal/domain/visualpackage/manifest.go`'s
+  `MaxAudioAssets = 4` constant and corrected. Net +2 lines from the
+  correction alone.
+- **`docs/project-overview.md` - REDUCED (1860 → 1111 lines, 40%).**
+  Deleted: a ~148-line near-full duplicate of the Windows
+  packaging/updater docs (§12.1/§12.1.1), replaced with a ~20-line
+  condensed section that links both; a ~255-line purely historical
+  "Key dependencies" build-order narrative with zero current-state
+  value; a ~125-line set of per-stage implementation deep-dives
+  (§13.1-§13.4) each duplicating its own already-linked specialized
+  doc; and a ~282-line "Engagement and overlay platform (partly
+  implemented)" section containing an ~88-line single-paragraph
+  stage-by-stage narration, replaced with a ~25-line current-state
+  section (no longer "partly implemented," since the platform has
+  since shipped in full) that defers exact per-feature status to the
+  roadmap table. Separately, a chain of "Stage N added/introduced..."
+  openers in §8.1's "Connected account" and "Runtime stream state"
+  subsections were reworded to direct present-tense statements without
+  touching the surrounding technical detail (table/column names,
+  migration references). Stage-number references in this file dropped
+  from 80 to 26, nearly all of the remainder inside the roadmap table
+  itself (§13), which this task explicitly treats as a sanctioned
+  current-status location, not narrative.
+
+### Scope note on the other ~40 documentation files
+
+No other document was rewritten by this pass. Provider docs
+(Twitch/YouTube/StreamElements/Kick/TikTok) and platform-packaging
+docs (Windows/macOS/Linux/headless/remote-management/remote-ingest)
+remain separate by design - each is a distinct technical contract, not
+duplicated content, and this task's own instructions were explicit
+that file count should not be forced down by merging unrelated
+contracts. Legal documents (`LICENSE`, `PRIVACY.md`, `LEGAL.md`,
+`THIRD_PARTY_NOTICES.md`) were not touched. `docs/README.md` was
+reviewed last, as required, and needed no changes: it already listed
+only current documents (it never linked `dashboard-design.md`), had no
+stale links, and does not expose Stage numbers as primary navigation.
+Root `README.md` needed no changes either.
+
+The optional, narrowly-scoped dead-i18n-placeholder cleanup this
+task's instructions permitted (but did not require) was deliberately
+not attempted: any dead placeholder strings are a dead-code question,
+not a documentation-text question, and this task's own instructions
+say to leave optional scope alone when uncertain rather than expand
+it.
+
+### Metrics (identical methodology, before and after)
+
+Scope: root `README.md`/`LEGAL.md`/`PRIVACY.md`/
+`THIRD_PARTY_NOTICES.md`, `config/README.md`, and every `docs/**.md`
+file (48 files before this pass, 47 after `dashboard-design.md`'s
+deletion), excluding `docs/progress.md` from the reduction target
+(this journal is explicitly out of scope and was not rewritten -
+only appended to, by this very entry) and excluding gitignored
+build-artifact copies of the legal docs.
+
+| Metric | Before | After |
+| --- | --- | --- |
+| In-scope files (excl. progress.md) | 47 | 46 |
+| Total lines (excl. progress.md) | 27,419 | 25,823 |
+| Total lines (incl. progress.md) | 80,217 | 78,621 (progress.md itself unchanged until this entry) |
+| Docs over 300 lines | 37 | 36 |
+| Docs over 500 lines | 24 | 22 |
+| Docs over 1000 lines | 5 | 5 |
+
+Every threshold moved down or stayed flat; none increased, so the
+task's own stop condition ("if total documentation becomes larger,
+stop and reassess") was never triggered. A whole-repository,
+case-insensitive "Stage N" reference count was also computed before
+(1056) and after (1198) using the same regex across all 46 remaining
+files; the increase is fully attributable to the ~40 files this task
+did not touch (their own reference counts did not change) and to the
+count's own breadth (it also matches the sanctioned roadmap table and
+in-code identifier comments such as "Stage 17B" used as a stable
+subsystem name, not narrative) rather than to any regression - the
+per-file counts in the five files this task actually edited all
+dropped (`config/README.md` 24→0, `docs/obs-browser-source.md` many→0,
+`docs/dashboard-design.md` deleted entirely, `docs/project-overview.md`
+80→26), which is the metric actually under this task's control.
+
+### Link and reference validation
+Repository-wide search confirmed no remaining reference to
+`docs/dashboard-design.md` outside `docs/progress.md`'s own historical
+entries (which are correctly left untouched). No file cross-references
+`alert-audio.md`'s renumbered §10.5-§10.7 anchors, nor
+`project-overview.md`'s collapsed §12.1.1/§13.1-§13.4/§16 subsection
+anchors - the two still-referenced anchors from other docs
+(`project-overview.md#10-stream-key-security`,
+`project-overview.md#13-roadmap`) both remain intact under their
+original headings.
+
+### CI
+This is a documentation-only change, except for one doc-comment edit
+in `UpcomingFeaturesCard.tsx` (removing a dead cross-reference, no
+functional change) - which falls under `apps/web/**` and therefore
+does trigger `cross-platform.yml` and all three platform-package
+workflows. Monitored to completion; see the commit note for the run
+result.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made for permission, merges, or waiting.

@@ -1,15 +1,12 @@
-# Stage 17B — persistent alert audio, per-alert-rule TTS, and alert/audio synchronization
+# Alert audio: persistent sounds, per-alert-rule TTS, and alert/audio synchronization
 
-This is the canonical Stage 17B contract, written before any product code in
-this milestone, exactly as [`docs/audio-tts.md`](audio-tts.md) preceded Stage
-17A. It records the primary-source research this milestone's format decision
-rests on, resolves every open question Stage 17A and Stage 14B deliberately
-left for "Stage 17B's own, later, separately-scoped decision," and the
-runtime/protocol contracts every later commit in this milestone implements
-against.
-
-Stage 17B closes Stage 17 as a whole. It does **not** start Stage 18
-(goal/counter widgets).
+The canonical contract for persistent alert audio: the accepted audio
+format and why, the managed audio-asset domain, per-alert-rule sound/TTS
+configuration, synchronization between rule-owned audio and alert
+playback/visibility, and the package/template audio extension. See
+[`docs/audio-tts.md`](audio-tts.md) for the separate, underlying shared
+audio runtime and text-to-speech foundation this contract builds on -
+one audio subsystem, never two.
 
 ## 0. Non-negotiable constraints, restated
 
@@ -954,122 +951,22 @@ unaffected by this stage).
 
 ## 10. Package/template audio (task §4.10)
 
-### 10.1 Manifest schema C moves from v1 to v2
+### 10.1 Manifest schema, validation, and ID rewrite: owned by `docs/visual-template-packages.md`
 
-`visualpackage.CurrentManifestSchemaVersion` moves from `1` to `2`.
+The package manifest's `schemaVersion` 1→2 transition, the optional
+`alertAudio`/`audioAssets` objects (JSON shape, bidirectional cross-
+check, the `audio/<segment>` path grammar, bounds, validator reuse, and
+package-local-ID rewrite on import/export) are specified once, in full,
+in [visual-template-packages.md §5a](visual-template-packages.md) - this
+section does not repeat that schema. In short: a v2 manifest is written
+only when the template being exported carries a configured alert-audio
+preset (sound and/or TTS); a v1 manifest, and every existing v1 package,
+remain fully, identically valid; an unrecognized future version is
+rejected the same way an unrecognized version already is. Audio entries
+are validated by the exact same `audioasset` validator §7 below uses for
+a manual upload - never a second, weaker package-path validator.
 
-- **v1 packages remain fully, identically importable** - `ReadArchive`/
-  `Import` branch on the manifest's own declared `schemaVersion`; a `v1`
-  manifest is parsed by the exact existing v1 path, unchanged in any way, and
-  produces an audio-free template exactly as it always has.
-- **v1 export remains valid** for a purely visual template with no
-  `RuleAudio`-equivalent template preset (§10.2) - `ExportTemplate`
-  continues to write a `schemaVersion: 1` manifest whenever the template
-  carries no alert-audio preset, so an operator's existing purely-visual
-  template library exports byte-shape-identically to before this stage.
-- **v2 is written only when the template being exported carries an
-  alert-audio preset** (§10.2) - explicit and versioned, never silently
-  upgrading a visual-only template's own export format.
-- **An unrecognized future version (3+) is rejected** exactly like an
-  unrecognized version already is today (`visual_template_package_version_
-  unsupported`) - never guessed at, never coerced.
-
-### 10.2 The optional `alertAudio` manifest object
-
-Legal **only** in a `schemaVersion: 2` manifest, and **only** when the
-contained `template.json`'s own `target` is `alert` (task's own explicit
-requirement - a `chat`-target package containing this object is rejected
-outright with a new stable error, `visual_template_package_audio_target_
-invalid`, before any asset is even staged):
-
-```json
-{
-  "format": "streaming-tree-template-package",
-  "schemaVersion": 2,
-  "templatePath": "template.json",
-  "assets": [ /* unchanged v1 shape, image/video/font entries as before */ ],
-  "alertAudio": {
-    "soundEnabled": true,
-    "soundAssetId": "pkgaudio_a1b2c3d4",
-    "soundVolume": 1.0,
-    "ttsEnabled": true,
-    "ttsTemplate": "{username} says: {message}",
-    "ttsVolume": 0.8
-  },
-  "audioAssets": [
-    {
-      "id": "pkgaudio_a1b2c3d4",
-      "path": "audio/pkgaudio_a1b2c3d4.wav",
-      "mediaType": "audio/wav",
-      "sha256": "…64 hex chars…",
-      "sizeBytes": 654321,
-      "durationMs": 4200,
-      "displayName": "Coin chime"
-    }
-  ]
-}
-```
-
-- `alertAudio` is entirely optional (a v2 package may still carry zero audio
-  - e.g. a template author who only wants to bump schema version for some
-  future unrelated v2 field would still be valid, though this stage defines
-  no such other field yet). When present, `alertAudio.soundEnabled`/
-  `ttsEnabled`/bounds are validated with the **exact same** validator §7
-  uses for a live rule's `audio` object - never a second, weaker validator.
-- `audioAssets` is a **separate, sibling array** from the existing `assets`
-  array (visual assets) - kept structurally distinct rather than widening
-  `assets[].kind` to include `sound`, since audio assets have their own
-  bound family (§5.3: duration, `MaxSoundBytes`) and their own package-local
-  ID namespace (`pkgaudio_` prefix, disjoint from `pkgasset_`, so a
-  manifest-parsing bug can never accidentally cross-resolve a visual
-  reference against an audio entry or vice versa).
-- `alertAudio.soundAssetId`, when present, **must** reference an entry in
-  `audioAssets` (cross-checked bidirectionally, mirroring §9 of `docs/
-  visual-template-packages.md`'s existing visual-asset cross-check
-  exactly: every referenced audio asset ID must exist in `audioAssets`, and
-  every `audioAssets` entry must be referenced by `alertAudio` - a package
-  never contains audio bytes it doesn't use).
-- Archive path grammar (§7 of `docs/visual-template-packages.md`) gains one
-  new legal root pattern, `audio/<segment>`, validated by the identical
-  `validateAssetPath` machinery already used for `assets/<segment>` (bounded
-  ASCII filename, extension agreement, no traversal/absolute/drive/backslash/
-  reserved-name/trailing-dot-or-space, case-insensitive duplicate
-  rejection) - no new path-grammar code, one more accepted prefix.
-- Bounds table (§10 of `docs/visual-template-packages.md`) gains: max single
-  audio asset `8 MiB` (matching `audioasset.MaxSoundBytes`, §5.3), max audio
-  assets per package `4` (an alert template needs at most one sound; four is
-  a generous ceiling against a future multi-preset feature without inviting
-  abuse today), and the existing aggregate bounds (max total uncompressed
-  bytes, max entries, max decompression ratio) already cover a package that
-  happens to also carry audio without needing a separate aggregate audio
-  bound.
-
-### 10.3 Audio imported through the exact same validator as manual uploads
-
-A package's `audio/<segment>` entry is streamed through **the same**
-`audioasset` structural/type-agreement validator §5.3 defines for a manual
-upload - never a separately-implemented, potentially weaker package-path
-validator. `ReadArchive`'s existing streamed-bytes/hash/decompression-ratio
-protections (§9 of `docs/visual-template-packages.md`, reused verbatim) wrap
-the audio entries exactly as they already wrap image/video/font entries;
-only the final signature/structural check branches by declared `kind`
-(visual asset validator for `assets[]`, audio asset validator for
-`audioAssets[]`).
-
-### 10.4 Package-local ID rewrite
-
-Import: fresh local `audioasset_` IDs are generated for every accepted
-`audioAssets` entry (via `audioasset.Service.Upload(..., Source: "package")`
-- Stage 17B's own `Source` value distinct from `"upload"`, mirroring
-`visualasset.SourcePackage`/`SourceUpload`'s own distinction exactly),
-building an `idMap[pkgaudioID] = realAssetID`, then the imported template's
-own stored `alertAudio.soundAssetId`-equivalent field is rewritten to the
-real local ID before persistence - a package-supplied `pkgaudio_` ID is
-never written into `alert_rule_audio_asset_refs`/`audioasset` tables.
-Export: the reverse remap to deterministic `pkgaudio_%04d` IDs, sorted by
-local ID, mirroring §6 of `docs/visual-template-packages.md` exactly.
-
-### 10.5 Template-level audio preset persistence
+### 10.2 Template-level audio preset persistence
 
 `visualtemplate.Template` gains one new, optional, embedded field,
 `AlertAudio *alerts.RuleAudioPreset` (a template-scoped variant of §6's
@@ -1083,7 +980,7 @@ alerts implementation map). `nil` for every existing template (built-in or
 previously-imported) - migrated with no behavior change. Reference rows live
 in `alert_template_audio_asset_refs` (§5.5).
 
-### 10.6 Applying a template/package stays draft-first
+### 10.3 Applying a template/package stays draft-first
 
 Applying an alert template (JSON or package) changes the Alert Designer's
 **unsaved visual draft** (existing behavior, unchanged) **and** its
@@ -1100,7 +997,7 @@ pair). The rule's own separate, pre-existing Save action remains the only
 thing that ever persists either half - applying a template/package, by
 itself, still saves nothing.
 
-### 10.7 Export/JSON interaction
+### 10.4 Export/JSON interaction
 
 - An audio-bearing template (via `AlertAudio` referencing a real asset)
   **cannot** be exported through Stage 14A's asset-free JSON path -

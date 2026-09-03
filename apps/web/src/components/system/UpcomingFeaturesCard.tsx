@@ -12,7 +12,7 @@ import { Panel, PanelBody, PanelHeader } from '../ui/Panel';
  * history), distinct from those pages' own top-level `title`/`description`
  * copy. A feature that ships loses its entry here, the same way the two
  * pages themselves lost their placeholder state and `nav-items.ts`'s
- * `planned` flag once they became real (see docs/dashboard-design.md).
+ * `planned` flag once they became real.
  *
  * Deliberately no rocket illustration: the reference concept's rocket
  * asset is not available to this codebase, and this stage does not

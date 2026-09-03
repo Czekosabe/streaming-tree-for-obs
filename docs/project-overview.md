@@ -182,7 +182,14 @@ The backend is the only place where decisions are made:
   for each FFmpeg branch (implemented, §7.5) - the same principle that
   already governs MediaMTX supervision, applied per destination so one
   branch failing cannot affect another,
-- in later stages it pushes live state over SSE or WebSocket.
+- it pushes live state to public overlay/widget routes over Server-Sent
+  Events (chat, alerts, audio, goal/supporter widgets - see
+  `docs/engagement-architecture.md`),
+- it reports its own real, local-only, bounded-sampling host CPU/memory/
+  disk usage (`GET /api/system/resources`, `internal/sysresources`) for
+  the Dashboard's System Resources card - never network throughput, and
+  never anything that leaves this process; no fake/demo numbers are ever
+  shown in their place.
 
 Go was chosen for three reasons: distribution as a single binary with no
 runtime to install, good support for supervising child processes, and a simple
@@ -470,7 +477,7 @@ account happens to be connected and linked to it, and vice versa.
 Connecting or linking an account never starts, stops, or otherwise touches
 a branch, and linking never validates or replaces a stream key.
 
-**Stage 7B added a sixth, YouTube-specific fact for a destination: its
+**A destination also carries a sixth, YouTube-specific fact: its
 remote broadcast target** (`internal/domain/remotetarget`,
 `platform_remote_targets` - `platform_id` primary key cascading from
 `platforms`, `provider_id`, `resource_type`, `resource_id`,
@@ -484,8 +491,8 @@ table (any future provider needing the same "which remote resource"
 concept reuses it) rather than a YouTube-only column bolted onto
 `connected_accounts` or `platforms`.
 
-**Stage 8A added a seventh fact, this one about a connected account rather
-than a destination: its engagement-connector configuration**
+**A connected account, rather than a destination, carries a seventh
+fact: its engagement-connector configuration**
 (`internal/domain/engagementsettings`,
 `connected_account_engagement_settings` - `account_id` primary key
 cascading from `connected_accounts`, one `enabled` boolean, timestamps;
@@ -504,9 +511,9 @@ conflated, so an account can be perfectly healthy for metadata while
 still needing an explicit permission upgrade before engagement can
 enable at all.
 
-**Stage 9 added an eighth fact, this one not about any single account
-but about the operator's own presentation preferences: unified-
-operator-chat settings** (`internal/domain/operatorchatprefs`,
+**An eighth fact is not about any single account at all, but about
+the operator's own presentation preferences: unified-operator-chat
+settings** (`internal/domain/operatorchatprefs`,
 `operator_chat_preferences` - a singleton row of presentation toggles;
 `operator_chat_account_visibility` - per-account visibility overrides;
 `operator_chat_hidden_users`/`operator_chat_bot_users` - operator-
@@ -518,15 +525,14 @@ content - the merged timeline itself - is transient, in-memory-only
 projection state, described below alongside the Event Bus's own
 runtime state, and is gone on every backend restart exactly like it.
 
-**Stage 10 added a ninth fact, this one about a persisted, public-facing
-presentation profile rather than the operator's own preferences: chat-
-overlay profiles** (`internal/domain/chatoverlay`, five tables -
+**A ninth fact is a persisted, public-facing presentation profile
+rather than the operator's own preferences: chat-overlay profiles** (`internal/domain/chatoverlay`, five tables -
 `chat_overlays` itself holding layout/visibility/filter/typography/color/
 animation/role-highlighting settings as explicit columns, never a JSON
 settings blob; `chat_overlay_accounts`, `chat_overlay_hidden_users`,
 `chat_overlay_blocked_terms` and `chat_overlay_activity_types` as its
 child tables). An overlay's own hidden-user list is a genuinely separate
-table from stage 9's `operator_chat_hidden_users` above - a user may
+table from the operator's own `operator_chat_hidden_users` above - a user may
 stay visible to the operator while being hidden from one specific public
 overlay. Each overlay's public slug (a separate, higher-entropy value
 from its management id) is documented explicitly as an unguessable
@@ -537,10 +543,10 @@ nothing that constitutes actual chat content is ever stored here either
 - only the operator's own presentation and filtering choices for that
 overlay.
 
-**Stage 11A added no new persisted fact of its own.** Manual
-outbound-chat permission is a third, independently assessed capability
-profile on the same connected-account row already described under
-stage 8A above - `internal/provider/twitch.AssessOutboundChatCapability`
+**Manual outbound-chat permission adds no new persisted fact of its
+own.** It is a third, independently assessed capability
+profile on the same connected-account row already described above -
+`internal/provider/twitch.AssessOutboundChatCapability`
 computes it on demand from the account's already-stored granted
 scopes (this time checking for `user:write:chat`), exactly the way
 `AssessEngagementCapability` already does for the five inbound scopes.
@@ -580,8 +586,8 @@ destination URL, an FFmpeg command line, a process id, or process
 environment - inventing or exposing any of those would defeat the point of
 reporting real state at all.
 
-What is tracked per Twitch engagement connector (stage 8A,
-`internal/runtime/twitchengagement`): an explicit state (`disabled`,
+What is tracked per Twitch engagement connector
+(`internal/runtime/twitchengagement`): an explicit state (`disabled`,
 `blocked`, `connecting`, `waiting_for_welcome`, `subscribing`,
 `connected`, `reconnecting`, `stopping`, `error` - never independent
 booleans for mutually exclusive facts), blocker codes, connected/last-
@@ -598,8 +604,8 @@ like MediaMTX's and a branch's own runtime state above - see
 [docs/engagement-architecture.md](engagement-architecture.md) §5-6 for
 the normalized event model and bus design themselves.
 
-**The unified-operator-chat projection (stage 9,
-`internal/operatorchat`) is the same kind of fact one layer up**: a
+**The unified-operator-chat projection
+(`internal/operatorchat`) is the same kind of fact one layer up**: a
 second, independently bounded, in-memory-only ring buffer (default
 capacity 500, `STREAMING_TREE_OPERATOR_CHAT_BUFFER_SIZE`-configurable),
 holding chat-shaped items derived from the Event Bus's own normalized
@@ -614,7 +620,7 @@ preferences) and *what is happening right now* (transient, in-memory,
 provider-derived - here, the actual chat timeline) are never the same
 storage.
 
-**Stage 10's public chat-overlay projection (`internal/chatoverlay`) is a
+**The public chat-overlay projection (`internal/chatoverlay`) is a
 second, independent consumer of this same rule, one layer further out
 again**: for every overlay profile it holds its own filtered, bounded,
 in-memory-only current-item view plus a separate revision ring (a fixed
@@ -622,13 +628,13 @@ capacity, not environment-configurable, unlike the Event Bus's and
 operator-chat's own buffer sizes above) for live Server-Sent Events
 replay. It deliberately does **not** subscribe to the Engagement Event
 Bus directly - it consumes `internal/operatorchat`'s own already-
-lifecycle-correct revision stream instead, so none of stage 9's
-deduplication, deletion or moderation-filtering logic is duplicated a
-second time. Like every runtime projection in this section, it begins
+lifecycle-correct revision stream instead, so none of the operator-chat
+projection's own deduplication, deletion or moderation-filtering logic
+is duplicated a second time. Like every runtime projection in this section, it begins
 empty on every backend start and tracks only its own sequence/capacity/
 subscriber counts, never a raw provider payload.
 
-**Stage 11A's outbound-chat dispatcher (`internal/outboundchat`) is
+**The outbound-chat dispatcher (`internal/outboundchat`) is
 runtime state of the same kind, at the opposite end of the pipeline**:
 one bounded, in-memory-only send queue per connected account (not
 persisted, not shared with any other account's queue), tracking only
@@ -721,8 +727,8 @@ This is complemented by **limits** (maximum title length, number of tags) and an
 **option vocabulary** (the type of the category field, the available visibility
 levels and latency modes).
 
-Stage 7A added one field the capability table alone could not express: a
-provider may declare `categoryRequiresRemoteId`, meaning its category is not
+One field the capability table alone could not express is
+`categoryRequiresRemoteId`, which a provider may declare, meaning its category is not
 free text but a selection from the provider's own catalog (Twitch: a
 game/category ID from its Search Categories endpoint). Stored metadata then
 carries both `category` (display text, shown even for a provider this
@@ -857,9 +863,9 @@ Rules in force for this project:
    on a transient outage. See `docs/progress.md` for the full reasoning and
    the accepted, documented risk this trade-off carries.
 
-The same `SecretStore` abstraction backing destination stream keys now also
-backs a connected account's OAuth token bundle - Twitch's since stage 7A,
-YouTube's since stage 7B, both under the same secret type
+The same `SecretStore` abstraction backing destination stream keys also
+backs a connected account's OAuth token bundle, for both Twitch and
+YouTube, under the same secret type
 (`oauth-token-bundle:<connected-account-id>`) and key namespace, subject
 to every rule above: no plaintext fallback, never re-displayed through
 the API, never in a log line. Unlike a stream key, an OAuth token bundle
@@ -933,155 +939,31 @@ The server version will additionally require panel authentication, TLS
 transport and a considered model for storing secrets server-side. None of these
 is implemented yet.
 
-## 12.1 Windows packaging (Stage 20A - Completed)
+## 12.1 Windows packaging and the application updater
 
-This subsection originally stated the intended end-user distribution target
-ahead of implementation, so architecture decisions made in the meantime
-(Stage 14A onward) would never accidentally fight it. **Stage 20A has since
-implemented it for real** - see
-[windows-packaging.md](windows-packaging.md) for the complete, current
-contract (production routing, packaged-mode lifecycle, the Inno Setup
-installer comparison and choice, GPL packaging obligations, and known
-limitations). This section now records what actually shipped, at the level
-of a project-overview summary; `windows-packaging.md` is authoritative for
-detail.
+Both are implemented; this overview does not restate their contracts.
 
-**The two-process development workflow (Go backend + separate Vite dev
-server) remains fully supported and unchanged** - Stage 20A is additive, not
-a replacement. It is simply no longer the *only* way to run the project: a
-Windows release build now also exists.
-
-**Normal packaged end-user workflow, as implemented:**
-
-1. install via the Inno Setup-produced installer (per-user, no elevation),
-2. launch **one** normal Windows application (no console window),
-3. that application starts its own local Go backend,
-4. the production React frontend is served by that same application, embedded
-   into the single executable - no separate frontend process,
-5. the system browser opens the local management UI automatically, once the
-   server is actually ready to accept connections,
-6. every managed child process (MediaMTX, per-destination FFmpeg) is
-   supervised by that same application, exactly as in the development
-   workflow,
-7. the in-app "Quit Streaming Tree" action (About & Legal) stops every
-   process it owns; a second launch while one is already running detects it
-   and focuses its management URL instead of starting a second backend.
-
-**Distribution, as implemented:**
-
-- Windows-first, per-user install, Inno Setup (chosen over WiX/NSIS - see
-  `windows-packaging.md` §12 for the comparison),
-- no Node.js, no npm, and no Go installation required for an end user,
-- no Vite development server involved in the packaged product,
-- unsigned (no production Authenticode certificate exists yet -
-  `windows-packaging.md` §20).
-
-**Production architecture, as implemented:** the React frontend is built
-once at release time and embedded (`//go:embed`) directly into the Go
-executable alongside the four canonical legal documents, so the packaged
-application is a single file; the Go process serves both the frontend and
-the API from one loopback origin. Electron (or any other bundled-browser-
-engine approach) was **not** used, as originally intended - the packaged
-application is still fundamentally the same Go process plus the user's own
-default browser.
-
-**Application data across an upgrade, as implemented:** the existing
-per-user application data location (see "Data storage" in the README) is
-used unchanged; the installer never installs anything there, so an ordinary
-upgrade (install a newer version over an older one, via the installer's
-fixed `AppId`) preserves the SQLite database/configuration and the managed
-MediaMTX installation automatically - there was nothing installer-specific
-to build for this. Uninstall removes only installed program files; it never
-deletes application data or an OS credential-store entry.
-
-**MediaMTX** keeps its existing managed-installation model unchanged
-(downloaded on explicit user request, checksum-verified, supervised as a
-child process) - not bundled into the installer.
-
-**FFmpeg remains operator-provided, unchanged** - not bundled, not
-downloaded by the installer or the application. The packaged application
-starts and is fully usable without it; only outgoing streaming to
-destination platforms needs a compatible FFmpeg the operator supplies.
-
-### 12.1.1 Application update system (Stage 20B - implemented)
-
-This subsection originally stated the intended end-user application update
-system ahead of implementation, so Stage 20A's own packaging work (which
-this subsection long predates) never had to accidentally build something
-that would conflict with it. **Stage 20B has since implemented it for
-real** - see [updater.md](updater.md) for the complete, current contract
-(the fixed release source, the current GitHub Releases API research, the
-release manifest schema, the streaming-active guard, the real Windows
-external-installer handoff, and known limitations). This section now
-records what actually shipped, at the level of a project-overview summary;
-`updater.md` is authoritative for detail.
-
-**Release source, as implemented:** fixed as a Go constant to the
-canonical `Czekosabe/streaming-tree-for-obs` repository's GitHub Releases -
-never configurable by any setting, environment variable, or web page.
-Branch `main`, arbitrary commit artifacts, and user-supplied URLs were
-never candidates and remain structurally unreachable.
-
-**Versioning and channel, as implemented:** strict `major.minor.patch`,
-compared as exact integers, never a downgrade. Stable is the only channel.
-A development build never checks for updates regardless of settings,
-reported honestly in Settings rather than pretending the feature does not
-exist.
-
-**Automatic and manual checks, as implemented:** a packaged release build
-checks shortly after startup and roughly hourly thereafter, gated by a
-persisted "Automatically check for updates" preference (default on);
-"Check for updates" remains available manually either way. Checking is
-metadata-only and never affects streaming.
-
-**Update-available UI, as implemented:** a non-blocking global banner plus
-a dedicated Settings → About & Legal → Updates panel, showing bounded
-plain-text release notes (never HTML), with "Later" and "Update now".
-
-**Active-stream guard, as implemented:** checking and downloading are
-allowed while streaming; installing is not, re-checked again immediately
-before the final shutdown/handoff commitment to close the gap between
-enabling the button and clicking it.
-
-**Download and verification, as implemented:** a project-controlled
-release manifest (no download URL of its own - the actual asset is always
-resolved from the same GitHub Release's own assets array by exact name),
-mandatory SHA-256 verification, and an additional cross-check against
-GitHub's own documented per-asset digest field where present. Windows
-release artifacts remain unsigned (`windows-packaging.md` §20, unchanged
-by Stage 20B) - the updater's integrity boundary is the manifest plus
-SHA-256, not code-signing, and this is stated honestly rather than implied
-otherwise.
-
-**Installation, as implemented:** a small first-party helper process (never
-a generated shell/PowerShell script), copied into the update-staging
-subtree and launched by the running application, which waits for the
-original process to actually exit (a real Windows `OpenProcess`/
-`WaitForSingleObject` wait, race-free against PID reuse), re-verifies the
-staged installer, runs the real Inno Setup installer silently
-(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, never `/DIR=` - the same
-fixed `AppId` from Stage 20A gives it real in-place upgrade identity),
-verifies the resulting installed version via `--version` rather than
-trusting the installer's exit code alone, and restarts the application.
-
-**Failure model, as implemented:** a failure before shutdown leaves the
-current app running untouched; a failure after the handoff has begun makes
-a best effort to restart the existing installation, and a small one-shot
-result (no secrets) is shown once after restart, then cleared.
-
-**Privacy, as implemented:** documented in [PRIVACY.md](../PRIVACY.md)'s
-own "Updater" section - only a descriptive User-Agent leaves the machine,
-never a stream key, OAuth token, chat content, or machine identity.
-
-**Verified for real:** integration script 24
-(`scripts/verify-updater.mjs`) drives the complete real cycle - a real
-Inno Setup silent install, a real fake-GitHub-redirected check/download/
-verify, manifest-mismatch and tampered-installer rejection, the real
-helper handoff, a real silent in-place Inno Setup upgrade, a real restart,
-and the real post-update result - against real locally-built artifacts,
-never mocked at the OS/process level.
-
----
+- **Packaging**: a per-user Inno Setup installer with no elevation, no
+  Node/npm/Go required at the end-user's machine, the production React
+  frontend and the four legal documents embedded directly into a single
+  Go executable (`//go:embed`) served from one loopback origin - no
+  Electron or other bundled-browser-engine layer. MediaMTX keeps its
+  existing managed-installation model (downloaded on request, checksum-
+  verified); FFmpeg remains operator-provided, never bundled. Unsigned -
+  no production Authenticode certificate exists yet. See
+  [windows-packaging.md](windows-packaging.md) for the complete contract
+  (installer comparison and choice, packaged-mode lifecycle, GPL
+  packaging obligations, and known limitations).
+- **Updater**: checks the fixed, canonical `Czekosabe/streaming-tree-for-obs`
+  GitHub Releases repository only - never configurable, never a branch or
+  arbitrary artifact. Strict `major.minor.patch` versioning, Stable-only,
+  never a downgrade. A project-controlled release manifest plus mandatory
+  SHA-256 verification is the integrity boundary (not code-signing, stated
+  honestly). Checking/downloading are allowed while streaming; installing
+  is not. See [updater.md](updater.md) for the complete contract (the
+  external-helper handoff, the active-stream guard, the failure model, and
+  known limitations) and [PRIVACY.md](../PRIVACY.md) for what the updater
+  does and does not send.
 
 ## 13. Roadmap
 
@@ -1139,387 +1021,6 @@ it is architected; this table only tracks status and dependencies.
 | 26 | Stream preflight and launch readiness: a single derived readiness check over the existing branch/FFmpeg/MediaMTX/metadata state before going live, surfaced on the Dashboard (see [stream-preflight.md](stream-preflight.md)) | **Completed** |
 | 27 | Stream insights: aggregate stats (session count, total/average duration, longest session, per-destination outcome breakdown) computed on demand from stage 24's existing session-history store, with no new persisted data category (see [stream-session-history.md](stream-session-history.md) §14) | **Completed** |
 
-Key dependencies:
-
-- Stage 6 (FFmpeg) needed and used stage 5's credential store; stage 7A
-  (Twitch OAuth) reused the same storage abstraction for a different secret
-  type, and stage 7B (YouTube OAuth) reused it again unchanged - a
-  destination stream key and each provider's OAuth token bundle are
-  different secret types behind one abstraction, and all three now exist.
-  Stage 7C will add one more secret type for its own providers, not a new
-  abstraction.
-- Stage 7B split `internal/domain/account.Provider` into a base interface
-  (the four methods `account.Service` itself calls) and a
-  `DeviceFlowProvider` extension (Twitch's two device-flow-specific
-  methods), specifically so YouTube's Authorization-Code-Flow adapter was
-  never forced to implement methods that make no sense for it - see
-  §8.1's connected-account description and
-  [docs/provider-integrations/youtube.md](provider-integrations/youtube.md).
-  Stage 7C's own adapters will need the same judgment call: implement the
-  base `Provider` interface, and only `DeviceFlowProvider` too if the
-  provider's own OAuth flow is genuinely device-code-shaped.
-- Stage 8A (Event Bus) is a prerequisite for every stage from 9 onward, and
-  reuses stage 7A's Twitch adapter (`internal/provider/twitch`) for its own
-  inbound connector rather than building a new one - see §16. Stage 15A did
-  the same for stage 7B's YouTube adapter (`internal/provider/youtube`):
-  a second, parallel inbound connector
-  (`internal/runtime/youtubeengagement`) publishing onto the exact same
-  Event Bus, reusing the operator chat/chat overlay/alerts/outbound-chat
-  pipelines unchanged - never a parallel YouTube-only copy of any of
-  them. Messages are received over YouTube's official `streamList` gRPC
-  server-streaming transport, a real long-lived push connection (not
-  polling) - see [youtube-engagement.md](provider-integrations/youtube-engagement.md)
-  §4b for the full verified contract, including the vendored `.proto`
-  and generated Go client
-  (`apps/server/internal/provider/youtube/streamlistpb`). An earlier
-  version of this stage shipped REST polling (`liveChatMessages.list`)
-  instead, on a since-corrected conclusion that the gRPC transport
-  wasn't practically implementable - §0 of that same document records
-  the correction. Outbound sending and metadata calls stay REST. A
-  baseline-first cutover (a genuinely fresh stream's first response is
-  never published, only its continuation token is kept - a resumed
-  stream that still holds a valid token is different, and is treated as
-  live immediately) prevents YouTube's own recent-chat-history replay
-  from ever being mistaken for live activity, including across a
-  connector restart. Stage 15A also added this application's first real
-  monetary value
-  (`internal/domain/engagement.Money`: integer micros, uppercased
-  currency, no floating-point arithmetic anywhere, no currency
-  conversion ever) for Super Chat/Super Sticker alerts.
-- Stage 8A is started before stage 7C is implemented, deliberately. Stage
-  7C (additional provider accounts) is not a dependency of the Event Bus -
-  the bus and its Twitch connector need only the Twitch adapter that
-  already exists - while every stage from 9 onward genuinely cannot begin
-  without the bus. Deferring 7C costs nothing on the critical path; deferring
-  8A further would have blocked the rest of the engagement platform for no
-  reason.
-- Stage 11A (manual outbound chat) needed connector send-message
-  capability, declared as its own independent capability profile
-  (`AssessOutboundChatCapability`) reusing stage 8A's own
-  capability-assessment pattern rather than widening the inbound
-  profile. Stage 11B (scheduled bot messages, chat commands) built
-  directly on stage 11A's own in-memory dispatcher and provider-
-  independent sending abstraction (`internal/outboundchat`) rather than
-  replacing them - the dispatcher's `Source` type had already reserved
-  the `command`/`scheduled` values stage 11B went on to use, unused by
-  stage 11A itself. Stage 11B's own runtime
-  (`internal/chatautomation`) never calls the Twitch client directly;
-  every send still goes through that same dispatcher.
-- Stage 12A (alert engine and queue) needs stage 8's normalized events, and
-  mirrors stage 11B's own domain/runtime split
-  (`internal/domain/alerts` for persisted profiles/rules,
-  `internal/alerts` for the in-memory matcher/queue/playback that never
-  imports `internal/provider/twitch` directly) rather than inventing a new
-  pattern. Its capability table (which condition/placeholder applies to
-  which of the 8 supported event types) was built by reading the real
-  Twitch normalization code, not the aspirational event list in §16 - see
-  [`docs/progress.md`](progress.md)'s Stage 12A persistence entry. Mid-alert
-  preemption and bounded alert grouping were deliberately deferred to stage
-  12B rather than widening 12A's own scope further, and are now complete
-  too: grouping reuses `internal/domain/alerts`' own closed capability
-  table (3 of the 8 event types are safely groupable, each for a
-  documented reason) and preemption is opt-in on both the incoming and
-  current rule, strictly-higher-priority-only, with no resume of an
-  interrupted alert - see [`docs/progress.md`](progress.md)'s Stage 12B
-  `feat(server): group and preempt queued alerts` entry.
-- Stage 13A (alert designer) needed a stable overlay shape, which only
-  existed once stages 9/10 (chat) and 12A (alerts) established what an
-  overlay renders - it reuses stage 12A/12B's own domain/runtime split
-  pattern again: `internal/domain/visualdesign` is the shared, generic,
-  persisted document (never importing Twitch/EventSub/alerts internals),
-  while alert-specific binding-capability and legacy-draft logic lives
-  in `internal/domain/alerts` beside it rather than inside it. Stage 13B
-  reused that exact same pattern a second time for chat overlays
-  (`internal/domain/chatoverlay`'s own binding-capability/data-needs/
-  legacy-draft logic, beside the shared package rather than inside it) -
-  the document schema moved from version 1 to version 2 to add two
-  shared layer kinds chat needed (`message_fragments`, `badge_list`),
-  with a lossless, trivial migration proven by
-  `internal/domain/visualdesign/migration_test.go`; every Stage 13A
-  alert design keeps loading and rendering identically. Stage 13 as a
-  whole is now complete - see [`docs/progress.md`](progress.md)'s
-  Stage 13A and 13B entries and [`docs/visual-designs.md`](visual-designs.md)
-  for the document contract itself.
-- Stage 14A (the reusable template library) needed stage 13's own
-  document format as its embedded payload - the visual-design document
-  itself is unchanged by stage 14A, wrapped in an independently
-  versioned template-interchange schema (its own `schemaVersion`
-  counter, distinct from the document's own `version`; see
-  `docs/visual-templates.md`). Templates are strictly **draft-first**:
-  "Use as draft" only ever changes the Designer's own unsaved draft,
-  and there is no foreign key or live reference from a saved
-  `visual_designs` row back to whatever template it may once have come
-  from - deleting a template can never change an already-created
-  design. Stage 14B (portable archive packages, managed assets, image/
-  video/font primitives) is now complete too - the visual-design
-  document moved from version 2 to version 3 to add the two new shared
-  layer kinds (`image`/`video`) and an optional custom-font reference,
-  again a lossless relabel-only migration chained after Version1→
-  Version2; a fourth, independently versioned schema (the package
-  manifest, `streaming-tree-template-package`) wraps schema B's own
-  template file inside a ZIP archive alongside a bounded set of
-  content-addressed, independently-signature-validated assets - see
-  [`docs/visual-template-packages.md`](visual-template-packages.md) for
-  the full contract and [`docs/progress.md`](progress.md)'s own Stage
-  14B entries for what was actually built/tested. Stage 14 as a whole
-  is now complete.
-- Stage 20's own future one-launch Windows packaging target is now
-  documented (§12.1) ahead of implementation, specifically so stage
-  14A's own asset-free, single-JSON-file design (no archive, no bundled
-  process model) was chosen with that eventual target already in mind.
-- Stage 17 (TTS) and stage 18 (goals/widgets) consume stage 8's bus directly
-  and do not depend on the designers.
-
-The full dependency reasoning and the normalized event model behind stages
-8–19 are in [docs/engagement-architecture.md](engagement-architecture.md).
-
-Stage 3 was marked completed only after all automated checks passed, including
-the scripted verification that configuration and metadata survive a backend
-restart.
-
-Stage 4 was marked completed only after all automated checks passed, including a
-scripted verification that installs and supervises the real MediaMTX binary. One
-limitation is recorded honestly: the `waiting -> receiving -> waiting` ingest
-transition is covered against a fake Control API and captured real responses,
-but was **not** verified end to end with a real RTMP publisher. See the
-`feat(server): supervise MediaMTX runtime and ingest` entry in
-[progress.md](progress.md).
-
-Stage 5 was marked completed only after all automated checks passed across
-both commits that implement it (backend and frontend) — see the
-`feat(server): add system credential store` and
-`feat(web): manage destination stream keys` entries in
-[progress.md](progress.md). Two limitations are recorded honestly there: the
-OS-backed store was built and tested on Windows only (the macOS and Linux
-backends were verified at the source level, not by running them), and the
-frontend controls were not exercised in a real browser, only typechecked,
-linted and covered by pure-logic tests — this project's frontend test suite
-has no component-rendering harness.
-
-Stage 6 was marked completed only after all automated checks passed across
-every commit that implements it, **including a real, loopback-only
-integration script that exercises actual FFmpeg and actual MediaMTX
-binaries end to end** — a synthetic publisher, the real local ingest, real
-independent branch FFmpeg processes, and real MediaMTX instances standing in
-for two destination platforms, with no real platform account or credential
-and no traffic leaving loopback. See the four commits from
-`fix(docs): correct stage 5 project status` through
-`test: verify FFmpeg branches against real FFmpeg and MediaMTX` in
-[progress.md](progress.md). That real-timing run caught and fixed two
-genuine bugs the millisecond-scale unit tests could not have caught (an
-ingest-loss/restart race, and a restart-limit cap that could be defeated
-forever after one stable run) — recorded there as the clearest demonstration
-so far of why this stage's real-integration requirement exists. The frontend
-branch controls were, like stage 5's, typechecked, linted and covered by
-pure-logic tests but not exercised in a real browser.
-
-Stage 7A was marked completed only after all automated checks passed across
-every commit that implements it — see `docs: define Twitch account
-integration scope` through `test: verify Twitch account integration
-locally` in [progress.md](progress.md) — **including a local integration
-script that exercises the real backend end to end against two small fake
-Twitch servers** reproducing only the OAuth and Helix response shapes this
-application actually parses (device-code authorization, account
-finalization, linking, category search, publish, a forced token expiry and
-its single-flight refresh, reconnect, and disconnect/revocation, with a
-final scan for token leakage). Unlike stages 5 and 6, this stage's frontend
-also gained this project's first rendered-component test harness
-(`@testing-library/react` + `user-event`), used for a representative subset
-of the OAuth-modal and confirmation-dialog interactions - see the
-`feat(web): manage and publish Twitch connected accounts` entry in
-[progress.md](progress.md) for exactly which interactions are covered and
-which are not. Two limitations are recorded honestly there: no real Twitch
-account or application was ever contacted (an explicit task requirement,
-not an oversight), and the rendered-component test coverage is a
-deliberately narrow subset of the interactions this stage's UI has, not
-exhaustive.
-
-Stage 7B was marked completed only after all automated checks passed
-across every commit that implements it — see `fix(docs): correct stage
-7A documentation drift` through `test: verify YouTube account
-integration locally` in [progress.md](progress.md) — **including a local
-integration script that exercises the real backend end to end against
-two small fake Google servers** (an `oauth2.googleapis.com` equivalent
-and a `www.googleapis.com/youtube/v3` equivalent) reproducing only the
-response shapes this application actually parses: Authorization Code +
-PKCE authorization through the backend's own temporary loopback callback
-listener, a wrong-CSRF-state callback left harmless, explicit multi-
-channel selection, account finalization, linking, broadcast selection,
-category/region, publish, a forced token expiry and its single-flight
-refresh (including Google's own omitted-refresh-token response), restart
-persistence, reconnect, and disconnect/revocation/cascade, with a final
-scan for token and CSRF-state leakage. That script caught and fixed one
-genuine bug unit tests had not exercised: a YouTube destination's
-selected broadcast (`platform_remote_targets`, which has no foreign key
-to `connected_accounts` by the schema's own design) was never cleared
-when the account behind it was disconnected - see the `test: verify
-YouTube account integration locally` entry in
-[progress.md](progress.md) for the fix. Frontend interaction coverage
-follows stage 7A's own precedent - the same rendered-component test
-harness, used for a representative subset of the YouTube OAuth-modal
-(including multi-channel selection) and confirmation-dialog interactions,
-not an exhaustive one. No real Google account, Google Cloud project, or
-network request to Google/YouTube was ever contacted at any point in this
-stage - an explicit task requirement, not an oversight.
-
-Stage 8A was marked completed only after all automated checks passed
-across every commit that implements it — see `fix(docs): correct
-post-YouTube project status` through `test: verify Twitch engagement
-locally` in [progress.md](progress.md) — **including a local
-integration script that exercises the real backend end to end against a
-hand-rolled fake Twitch EventSub WebSocket server** (Node has no
-built-in WebSocket server, and this project takes no new npm dependency
-to add one - see the script's own header comment) plus fake OAuth/Helix
-servers: the identity-bound permission-upgrade scope union, exact
-subscription creation, event normalization and deduplication across
-follow/chat/gift-batch/gifted-subscription/anonymous-cheer/stream-online-
-offline, and - the two hardest behaviors in the whole stage - the
-official `session_reconnect` handoff (verified to cause no
-resubscription and no data-gap marker) and an ordinary abrupt
-disconnect (verified to cause both). On the Go side,
-`internal/runtime/twitchengagement`'s own tests run the identical
-connector code against a real, in-process WebSocket protocol exchange
-(built on the same `coder/websocket` library the production connector
-uses, not a mocked transport) and caught a genuine deadlock during
-development: the access-denied callback path in an earlier YouTube-stage
-component had established the pattern of running a terminal-state
-transition inside its own goroutine specifically to avoid a graceful-
-shutdown handler blocking on itself; the Twitch connector's
-`session_reconnect` handoff needed - and received - the same treatment
-for the same reason. Frontend interaction coverage follows stages 7A/7B's
-own precedent: the same rendered-component test harness, covering a
-representative subset (connector enable/disable with confirmation,
-permission-upgrade action, restart, the SSE-backed recent-event feed
-including duplicate/out-of-order rejection and gap detection), not an
-exhaustive one. No real Twitch account, application, or network request
-to Twitch was ever contacted at any point in this stage.
-
-### 13.1 Stage 21 — first-run onboarding + OBS setup experience (Completed, automated scope)
-
-A real, additive product stage - see [`docs/onboarding.md`](onboarding.md)
-for the full contract. It turns the already-implemented architecture
-above into a coherent first-run experience (a persisted onboarding flow
-explaining OBS → Streaming Tree → destinations, real local-engine/OBS-
-connection readiness, real destinations/accounts/creator-tools discovery,
-and a real per-category readiness summary) rather than inventing new
-streaming architecture - every step reuses existing hooks/components
-(`ServicesCard`, `RuntimeControls`, `CopyableValue`, `AddPlatformDialog`,
-`OverlayUrlPanel`, `SystemStatusPill`) rather than a second
-implementation of any of them. Proven against the real embedded
-production frontend and backend by `scripts/verify-packaged-app.mjs`
-(fresh state → onboarding API available → status persisted → restart →
-status survives). **No physical/manual browser or accessibility pass has
-been performed** - Stage 21's "Completed" status covers its automated
-contract only, matching the same automated-vs-physical distinction
-`docs/manual-verification.md` already applies to the rest of the
-product. **Stage 21 development proceeded while Stage 20E physical
-verification remained deferred** - the two are independent; Stage 21
-completing does not change Stage 20's own status (§20C2 remains
-Planned/externally gated, Stage 20 as a whole remains Incomplete until
-Stage 20E's physical gate actually runs).
-
-### 13.2 Stage 22 — reusable stream metadata presets
-
-A real, additive product stage - see [`docs/metadata-presets.md`](metadata-presets.md)
-for the full contract. Reuses the existing capability-driven metadata
-architecture (§9 above) rather than inventing a second one: a preset
-stores the same shared, capability-gated fields (`title`/`description`/
-`tags`/`language`/`visibility`/`matureContent`/`dvr`/`latencyMode`) plus
-provider-scoped category data, keyed by the exact provider it was
-captured from - a Twitch category ID is never applied to a YouTube
-destination. Applying a preset only ever writes local metadata through
-the existing validated save path; publishing to a provider remains the
-same separate, explicit, unchanged action it already was. Applying to
-several destinations at once is atomic (`platform.Service.SaveMetadataBatch`,
-one transaction) and all-or-nothing: if any selected destination's
-projected values fail that destination's own validation, nothing is
-written for any of them. Verified end to end against the real HTTP
-API and a real restart by `node scripts/verify-metadata-presets.mjs`,
-and against the real packaged production binary by the Stage 22
-addition to `node scripts/verify-packaged-app.mjs`.
-
-### 13.3 Stage 23 — safe configuration backup and restore
-
-A real, additive product stage - see
-[`docs/backup-restore.md`](backup-restore.md) for the full contract.
-Resolves two product-policy questions explicitly: backups are **safe
-configuration backups, never full-machine clones including
-credentials** (stream keys, OAuth tokens, donation-source credentials,
-remote-management/ingest/overlay security material are structurally
-excluded, not merely redacted) - and there is no password-encrypted
-secret-backup mode in v1. Restore is REPLACE-only (never merged with
-the current configuration) and every restored object is always given a
-freshly minted local identity, never reusing an identifier from the
-backup file itself - the mechanism that makes a crafted or coincidental
-id collision with a pre-existing local secret structurally impossible,
-not merely unlikely, proven by
-`TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExistingSecret`
-(explicitly the release-blocking test in this stage's own suite).
-Restore is not one database transaction spanning every included domain
-(a deliberate, documented tradeoff - see §7 of the contract document);
-recoverability instead comes from a single-slot pre-restore safety
-snapshot taken immediately before every restore's clear phase, itself
-restorable through the exact same restore flow. A real, independently-
-found bug surfaced during this stage's own integration-testing pass:
-`Export` read visual/audio assets straight from the repository, which
-never resolves an asset's own blob reference (that join only happened
-at the Service layer other read paths already use) - every real backup
-would have silently included an asset's metadata row while quietly
-losing its actual image/sound content. Fixed in
-`internal/domain/backup/export.go`, and now guarded by a real content-
-hash round-trip test. Because several runtime managers (chat
-automation, alerts, the Twitch/YouTube/StreamElements engagement
-connectors) only reload their working state at process start, a
-restore always reports `restartRequired: true` and the Settings UI
-tells the operator to restart immediately after a restore completes -
-an honest signal rather than a claim of a live, seamless refresh that
-does not actually happen for every domain today. Verified end to end
-against the real HTTP API and a real restart by
-`node scripts/verify-backup-restore.mjs`, against the real packaged
-production binary by the Stage 23 addition to
-`node scripts/verify-packaged-app.mjs`, and at the Go level by 43
-tests in `internal/domain/backup` including several against a real
-SQLite database and a real (in-memory) SecretStore - a hermetic real-
-secret export scan, the secret-collision restore attack, and a managed-
-asset content-hash round trip among them.
-
-### 13.4 Stage 24 — stream session / operational history
-
-A real, additive product stage - see
-[`docs/stream-session-history.md`](stream-session-history.md) for the
-full contract. A session's boundary is derived from real local
-MediaMTX ingest state (`IngestReceiving`), deliberately never from
-destination-branch state: a branch can sit `WaitingForIngest`
-indefinitely with nothing flowing, and can only ever reach `StateLive`
-once ingest is already receiving in the first place, so ingest state
-alone is both necessary and sufficient - branch state is still read,
-but only to build per-destination participation records inside a
-session's already-determined bounds. Neither `branch.Manager` nor
-`mediamtx.Supervisor` exposes a push/event mechanism (confirmed by
-direct source review, not assumed), so the feature's own `Manager`
-polls both on a 5-second timer. A 60-second grace window absorbs a
-normal OBS reconnect blip without fragmenting one real session into
-several; a closed session's own end time is always the last real
-moment ingest was actually receiving, never the later moment the
-grace window happened to expire. A session or destination-
-participation row left open across a crash or an operator quitting
-Streaming Tree without stopping OBS first is recovered honestly at the
-next startup using its own last real heartbeat, never a fabricated
-time. Destination-participation rows snapshot the destination's own
-provider/display name at the moment they are created and use
-`ON DELETE SET NULL` (never `CASCADE`) against the platform row, so
-deleting or renaming a destination later never deletes or rewrites its
-own recorded history. Retention defaults to 90 days (configurable),
-enabled by default since - unlike a possible future engagement-content
-history - nothing third-party or personally identifying is ever stored
-here. Verified by 12 Go tests in `internal/domain/streamsession`
-(including a real-SQLite integration test driving the poll loop
-through a full session lifecycle end to end, and a reflection-based
-structural proof that no field anywhere in the feature's data model
-could ever hold chat/donation/engagement content), a dedicated HTTP
-test suite, a frontend test suite for the new History page, and the
-Stage 24 addition to `node scripts/verify-packaged-app.mjs`.
-
 ## 14. The manual testing rule
 
 **Manual testing is the final stage and is performed only after the application
@@ -1575,286 +1076,36 @@ In practice this means:
 - an entry in `docs/progress.md` does not mark a feature as completed if it is
   only an interface placeholder.
 
-## 16. Engagement and overlay platform (partly implemented)
+## 16. Engagement and overlay platform
 
-**Status: fifteen pieces of this section are real as of stage 18B - the
-normalized Event Bus (stage 8A), a unified operator chat consuming it
-(stage 9), a public OBS Browser Source chat overlay consuming that same
-operator-chat projection (stage 10), manual outbound chat
-sending/replying as the connected account itself (stage 11A), scheduled
-bot messages plus safe chat commands built on that same dispatcher
-(stage 11B), a real alert engine plus alert queue consuming that same
-Event Bus (stage 12A/12B) - persisted alert rules, matching, a bounded
-queue, bounded grouping of compatible queued alerts, and opt-in,
-deterministic mid-alert preemption - a real, shared,
-provider-independent visual-design engine with a real Alert Overlay
-Designer editor for that same alert presentation (stage 13A) and a real
-Chat Overlay Designer reusing that same shared document/renderer for
-the chat overlay (stage 13B, stage 13 as a whole complete), a real,
-shared, reusable visual-template library on top of that same document
-(stage 14A) plus portable archive template packages with managed
-image/video/font assets (stage 14B, stage 14 as a whole complete) -
-built-in immutable templates, a persisted user template gallery,
-backend-authoritative target/owner-instance compatibility, closed,
-asset-free JSON import/export, and (14B) self-contained
-`.streaming-tree-template` archives bundling those same designs with
-their own managed assets,
-with a strict draft-first application model (using a template only
-ever changes a Designer's own unsaved draft; the owner's saved design
-changes only through the Designer's own pre-existing Save) - a
-second real inbound engagement connector, for YouTube (stage 15A),
-publishing onto that exact same Event Bus and reusing every pipeline
-above completely unchanged (never a parallel YouTube-only copy of
-operator chat, chat overlay, alerts, or outbound chat), plus this
-platform's first real monetary alert capability (Super Chat/Super
-Sticker, integer-micros money, no currency conversion) - and a real
-external-donation connector, StreamElements (stage 16A), a
-provider-independent `donationsource` domain (deliberately separate
-from `connected_accounts`) publishing a real `donation` event onto that
-exact same Event Bus, reusing operator chat and alerts unchanged, with
-exact integer-micros money and moderation-aware publish semantics - and
-a real, shared audio runtime and text-to-speech foundation (stage
-17A): a provider-independent `Provider` abstraction with a real
-Windows SAPI implementation, a bounded audio queue consuming that same
-Event Bus (cooldowns, manual approval, per-source/per-currency/
-per-Bits filtering, text preprocessing), and a real, public,
-unauthenticated OBS Browser Source audio route (see
-[audio-tts.md](audio-tts.md)) - and, on top of that exact same audio
-subsystem, persistent alert sound assets, per-alert-rule TTS, and
-synchronization between rule-owned audio and alert visibility (stage
-17B, stage 17 as a whole complete): a managed audio-asset domain
-(16-bit PCM WAV only), rule-owned sound/TTS configuration validated the
-same way every other rule field is, deterministic arbitration against
-the global TTS queue, a bounded visual hold so an alert stays visible
-while its own audio is still playing, and a Stage 14B package manifest
-v2 extension (`alertAudio`/`audioAssets`) carrying that same
-configuration through a portable template package (see
-[alert-audio.md](alert-audio.md)) - and, on top of the same normalized
-Event Bus, a persistent, provider-independent goals/counters foundation
-with four core goal families (followers, subscriptions, donations,
-Bits) and real public OBS goal widgets (stage 18A): a deterministic,
-provider-independent contribution table over the normalized event
-model, operator-supplied baseline/current management (this application
-never claims to know a provider's own complete historical total),
-durable per-goal duplicate protection, and one generic public widget
-route sharing the established overlay SSE conventions (see
-[goals-widgets.md](goals-widgets.md)) - and, on top of that exact same
-`WidgetProfile` model widened from one kind to nine, the full
-supporter/activity widget suite (stage 18B, stage 18 as a whole
-complete): latest follower/subscriber/donation, a largest-donation
-widget with an exact-micros tie rule, a bounded recent-supporters list
-and event ticker built from two independently closed event-family
-tables, eight closed session-counter metrics, and bounded multi-widget
-dashboards (1-4 columns, 1-8 children, never nested) - every such
-widget's own event-derived content (a display name, a donation
-message, a ticker row) is deliberately runtime-only, clearing on
-restart or explicit reset, preserving this project's own standing
-"never persist engagement content" rule (see
-[supporter-widgets.md](supporter-widgets.md)). Every
-existing alert rule or chat overlay with no saved design still renders
-through its original fixed/legacy presentation unchanged; a chat
-overlay's own filtering, lifecycle, moderation and stack ownership
-(stage 10) stays entirely authoritative in both rendering modes. Stage
-15 as a whole is **not** complete: stage 15B (a Kick engagement
-connector) remains feasibility-gated, not implemented (§13's own
-roadmap table). Stage 16 as a whole is **not** complete either: stage
-16B (Streamlabs, Ko-fi) remains feasibility-gated, not implemented, for
-its own separate reasons (see
-[external-donations.md](provider-integrations/external-donations.md)).
-Stage 17 as a whole is now complete. Stage 18 as a whole is now
-complete: stage 18B (richer goal widgets - latest follower/subscriber/
-donation, largest donation, recent supporters, event ticker, session
-counters, multi-widget dashboards) shipped alongside stage 18A.**
+Streaming Tree is also a **local streaming engagement and overlay
+platform**, built on top of the router above: normalized chat/events
+from multiple platforms, a unified operator chat, OBS Browser Source
+overlays, outbound chat with scheduled bot messages and commands, an
+alert engine and queue with visual overlay designers and a safe
+portable template/package format, text-to-speech and persistent alert
+audio, and goal/counter/supporter widgets. Every one of those pieces is
+implemented and running today, over a single normalized Engagement
+Event Bus that every consuming subsystem shares - never a
+provider-specific or feature-specific parallel copy of chat, alerts, or
+outbound sending.
 
-The product's long-term scope is larger than a streaming router. Streaming
-Tree is also planned to become a **local streaming engagement and overlay
-platform**: normalized chat and events from multiple platforms, a unified
-operator chat, OBS Browser Source overlays, outbound chat with scheduled
-bot messages and commands, alerts and an alert queue, visual overlay
-designers with a safe template format, text-to-speech, and goal/counter
-widgets. Every item in that list is now implemented as of stage 18B.
+The full architecture - the normalized event model, the connector
+interface and capability model, deduplication and ordering rules, the
+operator-chat vs. overlay distinction, bot automation, the alert and
+queue design, the template security model, TTS, and per-provider
+capability status - is documented separately in
+[docs/engagement-architecture.md](engagement-architecture.md), so this
+overview is not doubled in length by detail that has no bearing on
+architecture. Exact per-provider/feature completion and deferral status
+(e.g. Kick and TikTok engagement, additional donation providers) is
+tracked in §13's roadmap table above, not repeated here.
 
-The full architecture — the normalized event model, the connector interface
-and capability model, deduplication and ordering rules, the operator-chat vs.
-overlay distinction, bot automation, the alert and queue design, the template
-security model, TTS, and the staged implementation order — is documented
-separately in **[docs/engagement-architecture.md](engagement-architecture.md)**,
-so this overview is not doubled in length by planning detail that has no
-bearing on what is running today.
+One thing worth stating plainly, because it shapes decisions throughout
+this whole platform: **the credential-store foundation (§10) is a hard
+prerequisite for it.** A destination stream key, every connected
+account's OAuth token bundle, and a donation source's own credential all
+depend on the exact same `SecretStore` abstraction, distinguished only
+by secret type - never a second, parallel secret mechanism for
+engagement-platform credentials.
 
-Three things are worth stating plainly here, because they shape decisions
-made from stage 5 onward:
-
-1. **The credential-store foundation implemented in stage 5 (§10) is a hard
-   prerequisite for this entire second era of the product.** FFmpeg
-   destination stream keys, OAuth tokens for connected accounts, and any
-   future outbound-bot credential all depend on the same `SecretStore`
-   abstraction, distinguished only by secret type. The destination stream
-   key and both Twitch's and YouTube's connected-account OAuth token
-   bundles exist today (stages 5, 7A and 7B); any further secret type this
-   era needs remains planned.
-2. **A connected account (§8.1) is already a real, provider-independent
-   concept as of stage 7A, extended to a second provider in stage 7B, and
-   now (stage 15A) reads real chat/events through both.** The engagement
-   Event Bus (stage 8A) reads chat/events through a Twitch connection,
-   and, as of stage 15A, a YouTube one too, and reuses this same
-   connected-account concept and the `internal/provider/twitch` /
-   `internal/provider/youtube` adapters for its own authorization, rather
-   than introducing a second, competing notion of "a Twitch account" or
-   "a YouTube channel." See engagement-architecture.md §4.
-3. **Provider support is planned honestly**: Twitch first (stage 7A,
-   account and metadata only, extended in stage 8A with a real inbound
-   engagement connector requesting additional, separately-tracked scopes on
-   the same account, then in stage 11A with a real, independently-scoped
-   **manual** outbound-sending capability on that same account, then in
-   stage 11B with real **scheduled and command-triggered** sending built
-   on that same capability and dispatcher - no further scope, no second
-   bot identity), then YouTube (stage 7B, account, broadcast selection and
-   metadata only, extended in stage 15A with a real inbound Live Chat
-   connector receiving over YouTube's official `liveChatMessages.
-   streamList` gRPC server-streaming RPC - a long-lived push connection,
-   not polling - on the same already-granted scope, with no separate
-   engagement identity and no separate permission-upgrade step, unlike
-   Twitch's - reusing the exact same operator chat/chat overlay/alerts/
-   outbound-chat pipelines Twitch's own connector already established,
-   plus Super Chat/Super Sticker monetary alerts and membership-family
-   events; outbound sending and metadata calls stay REST, where that was
-   already the correct transport. An earlier version of stage 15A briefly
-   shipped REST polling instead, on a since-corrected conclusion that
-   gRPC wasn't practically implementable - see
-   [youtube-engagement.md §0](provider-integrations/youtube-engagement.md).
-   Stage 16A then added the platform's first **external donation**
-   source - StreamElements - as a deliberately separate
-   `donationsource` domain (never `connected_accounts`: a StreamElements
-   personal JWT has no OAuth shape, no login, no scopes, no refresh
-   flow), received over the real Astro WebSocket protocol, publishing a
-   real `donation` event type onto that exact same Event Bus and reusing
-   operator chat/alerts unchanged, with exact integer-micros money
-   conversion and moderation-aware (pending/allowed/rejected) publish
-   semantics; a StreamElements donation source is never a chat-outbound
-   target and is never presented as a streaming destination. See
-   [external-donations.md](provider-integrations/external-donations.md).
-   Streamlabs and Ko-fi remain feasibility-gated (stage 16B).) Kick and TikTok
-   account integration (stage 7C) are deliberately **deferred** rather
-   than blocking: they are not a dependency of the Event Bus, which only
-   needs the Twitch adapter that already exists. Kick's own engagement
-   feasibility was researched in stage 15B and found feasibility-gated
-   (its currently-documented event delivery is webhook-only, requiring a
-   public inbound endpoint) - see
-   [kick-engagement.md](provider-integrations/kick-engagement.md); Kick
-   account integration remains deferred alongside it. TikTok's own
-   engagement feasibility was researched in stage 19 and found
-   feasibility-gated (no official LIVE engagement event API/scope exists,
-   and Desktop Login Kit's token exchange requires a confidential
-   `client_secret` with no public-client alternative) - see
-   [tiktok-live.md](provider-integrations/tiktok-live.md); TikTok account
-   integration remains deferred alongside it - never via scraping as a
-   core feature. See engagement-architecture.md §16.
-
-This section is updated, and marked accordingly, only as each roadmap stage
-from §13 is actually completed - not before. Stages 5, 7A and 7B built
-foundations this era reuses without implementing anything in this
-section themselves. Stage 8A implemented the normalized Event Bus and
-a real Twitch inbound connector - the first genuine piece of this
-section. Stage 9 implemented a real, unified operator chat consuming
-that bus: a provider-independent projection
-(`apps/server/internal/operatorchat`), persisted non-content
-preferences, Twitch chat-badge/emote resolution, and a working Chat
-page in the frontend - see [engagement-architecture.md](engagement-architecture.md)
-for the full design. Stage 10 implemented
-a real, public OBS Browser Source chat overlay built on top of that same
-projection: persisted overlay profiles
-(`apps/server/internal/domain/chatoverlay`), a public per-overlay
-projection (`apps/server/internal/chatoverlay`) that consumes operator
-chat's own revision stream rather than the Event Bus directly, a public
-unauthenticated HTTP + SSE API, a frontend renderer shared between the
-public route and the management preview, and the Overlays management
-page - see [`docs/obs-browser-source.md`](obs-browser-source.md) for the
-shared public hydration contract. Stage 11A
-implemented real, manual outbound Twitch chat sending and replying: a
-third, independently assessed capability profile on the same connected
-account (`AssessOutboundChatCapability`, requesting only
-`user:write:chat`), a provider-independent sending abstraction and
-in-memory per-account dispatcher (`apps/server/internal/outboundchat`)
-that never persists a queued or sent message, a real Twitch Send Chat
-Message adapter, and a composer built into the Chat page with no
-optimistic local echo - the sent message reappears through the same
-Event Bus / operator-chat pipeline stage 9 already built, once Twitch's
-own EventSub delivers it back - see
-[docs/provider-integrations/twitch-outbound-chat.md](provider-integrations/twitch-outbound-chat.md)
-for the full design and contract. Stage 11B
-implemented real scheduled bot messages and safe chat commands on top
-of that same dispatcher and capability profile: persisted schedule and
-command definitions (`apps/server/internal/domain/chatautomation`), a
-single centralized in-memory runtime (`apps/server/internal/chatautomation`)
-combining a drift-free interval/jitter scheduler, a command matcher
-subscribed once to the Event Bus, and a closed, declarative placeholder
-language — with every actual send still going through stage 11A's own
-`internal/outboundchat` dispatcher, never a second pipeline and never a
-direct call into the Twitch client from scheduler or command code. All
-of this runtime's own state (next-run times, cooldowns, activity
-counters, rolling send counts) stays in memory only, resetting cleanly
-on every backend restart with no missed-run catch-up, exactly like the
-Event Bus and the dispatcher it builds on. At the time this
-sentence was first written (immediately after stage 11B), everything
-else this section describes (alerts, TTS, goal widgets, further
-providers, a visual overlay designer, overlay templates) remained
-planned, unaffected by stage 9's, stage 10's, stage 11A's or stage 11B's
-own completion.
-
-> **Factual status update (stage 16A, completed):** of that list,
-> alerts (stage 12A/12B), the visual overlay designer (stage 13A/13B),
-> overlay templates (stage 14A/14B), and a further provider - YouTube
-> engagement (stage 15A) and, since then, a first external-donation
-> provider, StreamElements (stage 16A) - are now real, exactly as
-> described earlier in this section's own "Status" paragraph. Only TTS,
-> goal/counter widgets, and additional providers (Kick engagement,
-> TikTok, Streamlabs, Ko-fi - all separately feasibility-gated or
-> conditional, see §13's roadmap table) remain planned as of this
-> writing.
->
-> **Factual status update (stage 17A, completed):** TTS is now real too
-> - a shared audio runtime and text-to-speech foundation (stage 17A),
-> exactly as described earlier in this section's own "Status"
-> paragraph. Only goal/counter widgets and the same feasibility-gated/
-> conditional providers remain planned as of this writing (persistent
-> alert sound assets and per-alert-rule TTS are Stage 17B's own, later,
-> separately-scoped decision - see [audio-tts.md](audio-tts.md)).
->
-> **Factual status update (stage 17B, completed):** that decision has
-> since been made - persistent alert sound assets, per-alert-rule TTS,
-> deterministic arbitration against the global TTS queue, a bounded
-> visual hold, and a Stage 14B package manifest v2 audio extension are
-> all real now too, on that exact same audio subsystem, exactly as
-> described earlier in this section's own "Status" paragraph. Stage 17
-> as a whole is complete. Only goal/counter widgets and the same
-> feasibility-gated/conditional providers remain planned as of this
-> writing - see [alert-audio.md](alert-audio.md).
->
-> **Factual status update (stage 18A, completed):** goal/counter
-> widgets' own persistent foundation is now real too - a provider-
-> independent accumulation engine on that same Event Bus, four core
-> goal families (followers, subscriptions, donations, Bits), operator
-> baseline/current management, and real public OBS goal widgets,
-> exactly as described earlier in this section's own "Status"
-> paragraph. Stage 18 as a whole is **not yet** complete: stage 18B's
-> own richer widgets (latest follower/subscriber/donation, largest
-> donation, recent supporters, event ticker, multi-widget composition)
-> and the same feasibility-gated/conditional providers remain planned
-> as of this writing - see [goals-widgets.md](goals-widgets.md).
->
-> **Factual status update (stage 18B, completed):** those richer
-> widgets are now real too, on top of that exact same `WidgetProfile`
-> model widened from one kind to nine - latest follower/subscriber/
-> donation, a largest-donation widget with an exact-micros tie rule, a
-> bounded recent-supporters list and event ticker, eight closed
-> session-counter metrics, and bounded (1-4 column, 1-8 child, never
-> nested) multi-widget dashboards, exactly as described earlier in this
-> section's own "Status" paragraph. Every such widget's own
-> event-derived content is deliberately runtime-only, never persisted,
-> clearing on restart or explicit reset - the same "never persist
-> engagement content" boundary this project has held since chat
-> overlays first shipped. **Stage 18 as a whole is now complete.** Only
-> the same feasibility-gated/conditional providers (Kick, TikTok,
-> Streamlabs, Ko-fi) remain planned as of this writing - see
-> [supporter-widgets.md](supporter-widgets.md).

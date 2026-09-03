@@ -56,8 +56,8 @@ The pre-existing frontend `apps/web/src/data/app-info.ts` (`APP_INFO.name`/
 narrower, unrelated concern - the sidebar footer's own local chrome
 label - left untouched by this milestone. **Correction (final
 product-polish audit, 2026-09-02):** that file was later removed
-entirely during the Stage 20E dashboard-realignment work
-(`docs/dashboard-design.md` §6) - its hardcoded `version: '0.1.0'` was
+entirely during a Stage 20E dashboard-realignment pass (see
+`docs/progress.md`) - its hardcoded `version: '0.1.0'` was
 found stale, and `SidebarFooter` now reads real build identity from
 `useAboutQuery()`/`GET /api/about` the same as this page does, so the
 "single canonical source of truth" this section describes now holds

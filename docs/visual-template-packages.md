@@ -204,8 +204,10 @@ field always is (§5's own strict-JSON rule).
   `alertAudio` - the same bidirectional cross-check §6/§20 already apply
   to `assets`, extended to this sibling array (a package never contains
   audio bytes it doesn't use).
-- Bounds (§10): max one audio asset entry per package today (a preset
-  carries at most one sound), max single audio asset size 8 MiB
+- Bounds (§10): max 4 audio asset entries per package
+  (`visualpackage.MaxAudioAssets` - a preset carries at most one sound
+  today; four is a generous ceiling against a future multi-preset
+  feature without inviting abuse), max single audio asset size 8 MiB
   (matching `audioasset.MaxSoundBytes`) - the existing aggregate bounds
   (total uncompressed bytes, entry count, decompression ratio) already
   cover the rest without a separate audio-specific aggregate bound.
