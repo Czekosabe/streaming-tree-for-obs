@@ -35,6 +35,25 @@
     that script exercises the staged executable directly, not the
     installer.
 
+.PARAMETER TestAppId
+    TEST-ONLY. Overrides the compiled installer's Inno Setup AppId via
+    scripts/installer/streaming-tree.iss's own `#ifndef TestAppId` /
+    TestAppIdBare mechanism - the exact same mechanism
+    scripts/verify-installer.mjs already uses directly against ISCC.exe
+    (see that script's own compileTestInstaller). Must be a well-formed
+    GUID in braces, e.g. "{DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF}" -
+    anything else fails validation before Inno Setup ever runs.
+
+    Never set by a real release build. Omitting this parameter (the
+    default, empty string) leaves the installer's own compiled-in
+    default completely untouched - the real, stable production AppId
+    (docs/windows-packaging.md §14) - so ordinary invocation of this
+    script is byte-for-byte unaffected by this parameter's existence.
+    Exists so scripts/verify-updater.mjs (docs/updater.md §41) can build
+    its own real, full release pair under a dedicated throwaway identity
+    instead of the real production one - a real local-execution hazard
+    fixed by this parameter (docs/windows-packaging.md §33).
+
 .EXAMPLE
     powershell -File scripts/build-release.ps1 -Version "0.1.0-dev+local"
 #>
@@ -53,7 +72,13 @@ param(
     # cmd/server/updater_testhook_integration.go). Used only by
     # scripts/verify-updater.mjs (docs/updater.md §41) - never set for a
     # real release build, and never the default.
-    [switch]$IntegrationTest
+    [switch]$IntegrationTest,
+
+    # See .PARAMETER TestAppId above. Left as a plain string (not
+    # validated by a [ValidatePattern] attribute) so an invalid value
+    # produces this script's own clear Fail() message rather than a
+    # generic PowerShell parameter-binding error.
+    [string]$TestAppId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -232,11 +257,30 @@ Write-Step 'Building the Windows installer (Inno Setup)'
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 Get-ChildItem -Path $OutputDir -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
 
-& $IsccPath `
-    "/DMyAppVersion=$Version" `
-    "/DStagingDir=$StagingDir" `
-    "/DOutputDir=$OutputDir" `
-    $InnoScript
+$IsccArgs = @(
+    "/DMyAppVersion=$Version",
+    "/DStagingDir=$StagingDir",
+    "/DOutputDir=$OutputDir"
+)
+
+# TEST-ONLY override, never present for a real release build - see
+# .PARAMETER TestAppId above. $TestAppId defaults to an empty string, so
+# this block - and therefore the ISCC define it adds below - is
+# structurally absent from an ordinary invocation, not merely unused.
+if ($TestAppId) {
+    if ($TestAppId -notmatch '^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$') {
+        Fail "TestAppId '$TestAppId' is not a well-formed GUID in braces, e.g. '{DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF}'."
+    }
+    # Inno Setup Preprocessor escaping: a literal '{' must be written as
+    # '{{' - mirrors scripts/verify-installer.mjs's own compileTestInstaller.
+    $EscapedTestAppId = $TestAppId -replace '^\{', '{{'
+    $IsccArgs += "/DTestAppId=$EscapedTestAppId"
+    Write-Host "  TestAppId:  $TestAppId (TEST-ONLY override - never used for a real release build)" -ForegroundColor Yellow
+}
+
+$IsccArgs += $InnoScript
+
+& $IsccPath @IsccArgs
 if ($LASTEXITCODE -ne 0) { Fail 'Inno Setup compilation failed.' }
 
 $Installer = Get-ChildItem -Path $OutputDir -Filter '*.exe' | Select-Object -First 1

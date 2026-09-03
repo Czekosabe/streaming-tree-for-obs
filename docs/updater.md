@@ -1025,6 +1025,23 @@ creates, exactly like `verify-packaged-app.mjs` and `verify-installer.mjs`
 already do — never touching a real developer install or a real GitHub
 repository.
 
+**Correction (updater test harness isolation pass, docs/windows-
+packaging.md §33):** the paths above were always isolated, but the two
+compiled test installers' own Windows *identity* was not — both
+compiled under the real production Inno Setup AppId
+(`{C067013C-D143-49F8-9510-D078482D6DA4}`), so a local run's real silent
+install wrote to the same per-user registry key a real installed copy
+on the same machine uses. `scripts/build-release.ps1` gained an
+explicit, test-only `-TestAppId` override (default: unset, producing
+the unchanged real production AppId) that this script now passes its
+own dedicated `UPDATER_TEST_APP_ID`
+(`{FEE1DEAD-FEE1-DEAD-FEE1-DEADFEE1DEAD}`) through. Local updater
+verification is now safe to run on a machine that already has the real
+application installed — proven, not merely argued: run to completion
+locally against this operator's own real installed copy, with a
+read-only before/after registry snapshot confirming it byte-for-byte
+unchanged.
+
 ## 42. Known limitations after Stage 20B
 
 - Windows x64 only — no macOS/Linux artifact is ever offered or

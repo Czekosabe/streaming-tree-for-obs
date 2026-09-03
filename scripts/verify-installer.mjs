@@ -1053,10 +1053,35 @@ function testProductionIdentityStructuralScenario() {
   expect(/^AppId=\{#TestAppId\}$/m.test(issSource),
     'the [Setup] section\'s own AppId directive resolves through {#TestAppId} - never a second, independently hardcoded literal');
 
-  step('Structural: no test-only AppId override leaks into how a real release is built');
+  step('Structural: build-release.ps1\'s test-only AppId override cannot affect an ordinary invocation');
+  // scripts/verify-updater.mjs (docs/windows-packaging.md §33) needs
+  // build-release.ps1 itself to be able to compile under a throwaway
+  // AppId - a real local-execution hazard fix, since that script's own
+  // old/new test builds previously compiled under the real production
+  // AppId. Rather than the stronger-but-now-obsolete "the string
+  // TestAppId never appears at all", this proves the weaker, correct
+  // invariant that change actually requires: the override exists, but
+  // is structurally inert unless a caller explicitly passes it.
   const buildScript = readFileSync(join(REPO_ROOT, 'scripts', 'build-release.ps1'), 'utf8');
-  expect(!/TestAppId/.test(buildScript),
-    'scripts/build-release.ps1 - the only thing that produces a real distributable installer - never mentions TestAppId, so it can never override it');
+  expect(/\[string\]\$TestAppId/.test(buildScript),
+    'build-release.ps1 declares an optional $TestAppId parameter - no [Parameter(Mandatory...)], so its default is an empty string');
+  // Matches up to the blank line immediately before "$IsccArgs +=
+  // $InnoScript" (not just the first "}", which would stop at the
+  // guard's own nested GUID-validation "if" block instead of its real,
+  // outer closing brace).
+  const testAppIdGuard = buildScript.match(/if \(\$TestAppId\) \{([\s\S]*?)\n\}\n\n\$IsccArgs \+= \$InnoScript/);
+  expect(testAppIdGuard !== null,
+    'the ISCC /DTestAppId= argument is added only inside an explicit "if ($TestAppId)" guard block');
+  const dTestAppIdOccurrences = buildScript.match(/\/DTestAppId=/g) ?? [];
+  expect(dTestAppIdOccurrences.length === 1,
+    'the literal "/DTestAppId=" appears exactly once in the whole script', dTestAppIdOccurrences.length);
+  expect(testAppIdGuard !== null && /\/DTestAppId=/.test(testAppIdGuard[1]),
+    'that one "/DTestAppId=" occurrence is the one inside the "if ($TestAppId)" guard, never unconditional');
+
+  step('Structural: the Windows package CI workflow never passes -TestAppId - real production/package builds always get the default (production) identity');
+  const windowsWorkflow = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'windows-package.yml'), 'utf8');
+  expect(!/-TestAppId/.test(windowsWorkflow),
+    '.github/workflows/windows-package.yml never passes -TestAppId to build-release.ps1');
 
   step('Structural: the production install scope is per-user, with no admin-mode override present');
   expect(/^PrivilegesRequired=lowest$/m.test(issSource),

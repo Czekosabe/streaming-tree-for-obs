@@ -23,6 +23,21 @@
  * runs, and the only way Inno Setup's own installed content is ever
  * produced).
  *
+ * Both builds also compile under UPDATER_TEST_APP_ID below (via
+ * `build-release.ps1 -TestAppId`, docs/windows-packaging.md §33) -
+ * never the real product's own AppId. A real local-execution hazard,
+ * found and fixed by this: before this fix, both builds compiled under
+ * the real production AppId, so this script's own real silent install
+ * step wrote to the SAME per-user registry identity a real installed
+ * copy on the same machine uses - on a machine with one already
+ * installed (as happened during real Stage 20E physical testing), that
+ * collided with it. `build-release.ps1`'s own default (no `-TestAppId`
+ * passed) is completely unaffected - see that script's own doc comment.
+ * This is the identical isolation `scripts/verify-installer.mjs` already
+ * applies to its own scenarios; UPDATER_TEST_APP_ID is dedicated to this
+ * script alone, never shared with any of that file's own throwaway
+ * AppIds.
+ *
  * Requires: Go, npm, and Inno Setup's ISCC.exe on PATH (the same
  * requirements scripts/build-release.ps1 itself already documents).
  * Builds two full releases (~1-2 minutes each) - this script takes
@@ -50,6 +65,22 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTPUT_DIR = join(REPO_ROOT, 'build', 'release', 'output');
 const APP_PORT = 18199;
 const APP_BASE_URL = `http://127.0.0.1:${APP_PORT}`;
+
+// A dedicated, obviously-fake, stable throwaway AppId used ONLY by this
+// script's own old/new compiled test installers - never the real
+// product's AppId, and never one of scripts/verify-installer.mjs's own
+// per-scenario throwaway AppIds either (each isolated test surface gets
+// its own dedicated identity, never shared - the same discipline that
+// file's own AppId constants already document). The full same-AppId
+// update-in-place lifecycle this script proves (old install -> real
+// silent Inno upgrade over it) genuinely needs the *same* identity
+// across both compiled installers, so this is fixed, not randomly
+// generated per run.
+const UPDATER_TEST_APP_ID = '{FEE1DEAD-FEE1-DEAD-FEE1-DEADFEE1DEAD}';
+function subkeyFor(appId) {
+  return `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${appId}_is1`;
+}
+const UPDATER_TEST_UNINSTALL_REG_SUBKEY = subkeyFor(UPDATER_TEST_APP_ID);
 
 const OLD_VERSION = '0.9.0';
 const NEW_VERSION = '0.9.1';
@@ -84,6 +115,32 @@ function run(command, args, options = {}) {
   });
 }
 
+function parseRegDisplayVersion(regQueryOutput) {
+  const match = regQueryOutput.match(/DisplayVersion\s+REG_SZ\s+(\S+)/);
+  return match ? match[1] : null;
+}
+
+/** Reads the real Inno-registered DisplayVersion under HKEY_CURRENT_USER
+ * for UPDATER_TEST_UNINSTALL_REG_SUBKEY, or null if not present - the
+ * same per-user-only convention scripts/verify-installer.mjs's own
+ * identically-named helper documents. Used here to prove the real
+ * update-in-place lifecycle directly: the SAME registry identity holds
+ * OLD_VERSION right after the fresh install, then NEW_VERSION right
+ * after the real silent Inno upgrade - never a second, separate entry. */
+async function queryHkcuDisplayVersion() {
+  const hkcu = await run('reg', ['query', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/v', 'DisplayVersion']);
+  return parseRegDisplayVersion(hkcu.out);
+}
+
+/** Reads the real Inno-registered DisplayVersion under HKEY_LOCAL_MACHINE
+ * (32-bit view) for UPDATER_TEST_UNINSTALL_REG_SUBKEY, or null if not
+ * present. Used only to assert absence throughout - a correctly-behaving
+ * per-user build must never write here. */
+async function queryHklmDisplayVersion() {
+  const hklm = await run('reg', ['query', `HKLM\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/v', 'DisplayVersion']);
+  return parseRegDisplayVersion(hklm.out);
+}
+
 /** Resolves a full, unambiguous path to powershell.exe rather than
  * relying on a bare 'powershell' name and Node's own PATH lookup
  * inside spawn() - a real `spawn powershell ENOENT` was observed from
@@ -102,10 +159,11 @@ function resolvePowerShellExecutable() {
   return existsSync(fullPath) ? fullPath : 'powershell';
 }
 
-async function buildRelease(version) {
+async function buildRelease(version, testAppId) {
   const result = await run(resolvePowerShellExecutable(), [
     '-ExecutionPolicy', 'Bypass', '-File', 'scripts/build-release.ps1',
     '-Version', version, '-IntegrationTest',
+    '-TestAppId', testAppId,
   ], { cwd: REPO_ROOT });
   if (result.code !== 0) {
     // Full detail, not a tail slice: this failure has previously been
@@ -147,16 +205,16 @@ async function main() {
   let fakeGithub = null;
 
   try {
-    step(`Build the OLD release (${OLD_VERSION}, -IntegrationTest)`);
-    await buildRelease(OLD_VERSION);
+    step(`Build the OLD release (${OLD_VERSION}, -IntegrationTest, throwaway AppId)`);
+    await buildRelease(OLD_VERSION, UPDATER_TEST_APP_ID);
     const oldInstaller = readdirSync(OUTPUT_DIR).find((f) => f.endsWith('.exe'));
     expect(oldInstaller !== undefined, 'old installer produced');
     const oldInstallerPath = join(stagingDir, oldInstaller);
     copyFileSync(join(OUTPUT_DIR, oldInstaller), oldInstallerPath);
     pass(`old installer staged at ${oldInstallerPath}`);
 
-    step(`Build the NEW release (${NEW_VERSION}, -IntegrationTest)`);
-    await buildRelease(NEW_VERSION);
+    step(`Build the NEW release (${NEW_VERSION}, -IntegrationTest, same throwaway AppId)`);
+    await buildRelease(NEW_VERSION, UPDATER_TEST_APP_ID);
     const newInstaller = readdirSync(OUTPUT_DIR).find((f) => f.endsWith('.exe'));
     const newManifestPath = join(OUTPUT_DIR, 'streaming-tree-release.json');
     expect(newInstaller !== undefined, 'new installer produced');
@@ -179,6 +237,8 @@ async function main() {
     const exePath = join(installDir, 'streaming-tree-server.exe');
     expect(existsSync(join(installDir, 'unins000.exe')), 'Inno Setup created the unins000.exe installed-context marker');
     expect(existsSync(join(installDir, 'unins000.dat')), 'Inno Setup created the unins000.dat installed-context marker');
+    expect(await queryHkcuDisplayVersion() === OLD_VERSION, 'the dedicated throwaway AppId is registered with the real OLD version under HKEY_CURRENT_USER', await queryHkcuDisplayVersion());
+    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE gained no registration - the install stayed per-user, not administrative');
 
     step('Launch the installed OLD version, redirected to the fake GitHub server');
     appProcess = spawn(exePath, [], {
@@ -269,6 +329,10 @@ async function main() {
     const about = await fetch(`${APP_BASE_URL}/api/about`).then((r) => r.json());
     expect(about.version === NEW_VERSION, 'restarted app reports the new version', about);
 
+    step('The SAME throwaway registry identity now holds the new version - a real in-place update, not a second install');
+    expect(await queryHkcuDisplayVersion() === NEW_VERSION, 'the dedicated throwaway AppId is registered with the real NEW version under HKEY_CURRENT_USER - the same identity the OLD install used', await queryHkcuDisplayVersion());
+    expect(await queryHklmDisplayVersion() === null, 'HKEY_LOCAL_MACHINE still has no registration after the real silent upgrade');
+
     step('The one-shot post-update result is surfaced exactly once');
     const postUpdateStatus = await fetchStatus();
     expect(postUpdateStatus.postUpdateOutcome === 'ok', 'post-update outcome is ok', postUpdateStatus);
@@ -303,6 +367,7 @@ async function main() {
     expect(uninstallerFile !== undefined, 'uninstaller is present');
     const uninstall = await run(join(installDir, uninstallerFile), ['/VERYSILENT', '/SUPPRESSMSGBOXES']);
     expect(uninstall.code === 0, 'silent uninstall exits 0', uninstall);
+    expect(await queryHkcuDisplayVersion() === null, 'the throwaway AppId has no registration left after uninstall', await queryHkcuDisplayVersion());
 
     console.log(`\n${stepCount} steps passed. PASS`);
   } finally {
@@ -312,6 +377,16 @@ async function main() {
     if (fakeGithub !== null) {
       await fakeGithub.close();
     }
+    // Failure-path backstop (same pattern as scripts/verify-installer.mjs's
+    // own scenarios): if a failure happened before the graceful uninstall
+    // step above could run (or that step itself failed), this script's own
+    // dedicated UPDATER_TEST_UNINSTALL_REG_SUBKEY must never survive into
+    // the next run - explicitly targeted at this one known throwaway
+    // AppId, never a pattern-based sweep of the real registry. A non-zero
+    // exit here just means the key is already gone (the normal, expected
+    // case) - never treated as a scenario failure.
+    await run('reg', ['delete', `HKCU\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/f']);
+    await run('reg', ['delete', `HKLM\\${UPDATER_TEST_UNINSTALL_REG_SUBKEY}`, '/reg:32', '/f']);
     // The install directory may still have a lingering helper/installer
     // process releasing file handles - retry the removal briefly rather
     // than failing the whole run over cleanup.

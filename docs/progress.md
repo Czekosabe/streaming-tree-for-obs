@@ -52585,3 +52585,99 @@ not something this pass did), but its failed install never wrote to the
 registry - confirmed via a read-only check, not assumed - and the
 script was not run again. No registry, shortcut, or other real
 operator Windows state was written by this pass.
+
+## fix(updater): isolate local updater verification from the real production installation
+
+Fixes the hazard the previous version-classification pass discovered and
+explicitly deferred: `scripts/verify-updater.mjs` compiled its own
+old/new test releases under the real production Inno Setup AppId, so a
+local run's real silent install wrote to the same per-user registry
+identity the operator's real installed copy uses on this machine. The
+previous pass's own run was only saved by the downgrade gate refusing
+its lower-cored `OLD_VERSION`; that was luck, not a safety boundary.
+
+### Fix
+`scripts/build-release.ps1` gained one new optional, TEST-ONLY parameter,
+`-TestAppId`, plumbing straight through to Inno Setup's existing
+`#ifndef TestAppId`/`TestAppIdBare` mechanism
+(`scripts/installer/streaming-tree.iss`) - reused, not duplicated. No
+`[Parameter(Mandatory)]`, so its default is an empty string; the whole
+`/DTestAppId=` ISCC argument lives inside one `if ($TestAppId) { ... }`
+guard, so an ordinary invocation (every real release build, every CI
+package-workflow build) is byte-for-byte unaffected and still compiles
+the installer's own unchanged default: the real, stable production
+AppId. A non-GUID value fails immediately via this script's own `Fail()`,
+before Inno Setup ever runs.
+
+`scripts/verify-updater.mjs` now defines its own dedicated
+`UPDATER_TEST_APP_ID` (`{FEE1DEAD-FEE1-DEAD-FEE1-DEADFEE1DEAD}` - never
+shared with any of `verify-installer.mjs`'s own six per-scenario
+throwaway AppIds, never the real product's) and passes it to both its
+OLD and NEW `build-release.ps1` calls. New registry assertions
+(`queryHkcuDisplayVersion`/`queryHklmDisplayVersion`, mirroring
+`verify-installer.mjs`'s own helpers) prove the real same-AppId
+update-in-place lifecycle directly: the throwaway identity's
+`DisplayVersion` reads the real OLD version right after the fresh
+install, then the real NEW version right after the real silent Inno
+upgrade - the same registry key both times - and `HKEY_LOCAL_MACHINE`
+stays empty throughout. A failure-path `reg delete` backstop (both
+hives, targeted only at this one throwaway subkey) was added to
+`finally`, matching `verify-installer.mjs`'s own established pattern.
+
+Nothing about the updater's own runtime behavior, manifest verification,
+hash/signature rules, silent-install flags, or fail-closed error
+handling was touched - the defect was exclusively the test harness's
+own installer identity, never product code, per this task's own explicit
+instruction not to change updater behavior without a reproduced product
+defect (none was found).
+
+### Structural verification updated
+`scripts/verify-installer.mjs`'s `testProductionIdentityStructuralScenario`
+had one now-obsolete check ("build-release.ps1 never mentions TestAppId
+at all") replaced with the correct, weaker invariant this real change
+actually requires: the parameter exists and is optional; the literal
+`/DTestAppId=` appears exactly once in the whole script, inside the
+`if ($TestAppId)` guard, never unconditional; and (new)
+`.github/workflows/windows-package.yml` never passes `-TestAppId` to any
+of its own `build-release.ps1` invocations, so every CI-produced
+installer keeps the real production identity. One real regex bug fixed
+while writing this: a naive `if (\$TestAppId) \{...\n\}` brace-match
+matched the guard's own *nested* GUID-validation `if` block first,
+never reaching the real `/DTestAppId=` line - caught immediately by a
+standalone dry-run of the regex against the real file before trusting
+it, fixed by anchoring the match on the known trailing `$IsccArgs +=
+$InnoScript` line instead of bare brace-counting.
+
+### Verification (complete, real, both scripts, against the real installation)
+- **`node scripts/verify-updater.mjs`: 15/15 steps passed**, run
+  locally on this operator's own machine while the real production
+  installation (`DisplayVersion 0.9.9-stage20e-manualtest-batch1`)
+  remained present throughout.
+- **`node scripts/verify-installer.mjs`: 59/59 steps passed** (up from
+  58 - the two new/updated structural steps), including a fresh, real,
+  *ordinary* (no `-TestAppId`) `build-release.ps1` invocation that
+  succeeded normally, corroborating the structural proof with a real
+  build.
+- **Production registration proof**: `reg query` of the real
+  `{C067013C-D143-49F8-9510-D078482D6DA4}` key was captured read-only
+  before the updater run, after it, and again after the installer run -
+  all three byte-for-byte identical. No pre-existing operator-machine
+  state was modified at any point.
+- Backend: untouched (no Go source changed - only PowerShell/JS test
+  harness and documentation). Frontend: untouched.
+
+### Documentation
+`docs/windows-packaging.md` gained §33 (this fix's own full design and
+verification record). `docs/updater.md` §41 gained a "Correction"
+subsection (living-doc style, nothing rewritten) noting the paths were
+always isolated but the compiled installers' own AppId identity was
+not, now fixed.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made. No production-AppId install/
+uninstall/registry-write occurred anywhere in this pass - every real
+silent install/uninstall this pass performed (both scripts, all
+scenarios) used an isolated throwaway AppId. The one interaction with
+the real production AppId was three read-only `reg query` snapshots,
+proven identical. No UAC, no elevation, no cleanup of pre-existing
+state.

@@ -1699,3 +1699,90 @@ override through `build-release.ps1` itself, a shared script every real
 release build also uses - a larger, separate change needing its own
 authorization). `scripts/verify-updater.mjs` was not run again locally
 after this discovery.
+
+## 33. Updater test harness isolation: `build-release.ps1 -TestAppId`
+
+The hazard §32 found and deferred ("not fixed under this task's scope")
+is fixed here, under its own explicit authorization.
+
+### The fix
+`scripts/build-release.ps1` gained one new, optional, TEST-ONLY
+parameter, `-TestAppId`, that plumbs straight through to Inno Setup's
+existing `#ifndef TestAppId` / `TestAppIdBare` mechanism
+(`scripts/installer/streaming-tree.iss`, §31) - the exact same
+mechanism `scripts/verify-installer.mjs` already used directly against
+`ISCC.exe`, now reachable from a full `build-release.ps1` build too
+(needed because `scripts/verify-updater.mjs` builds two full, real
+releases with different injected versions, not just a bare ISCC
+compile against an already-staged executable).
+
+- **Default behavior is completely unaffected.** `$TestAppId` has no
+  `[Parameter(Mandatory...)]`, so its default is an empty string; the
+  entire `/DTestAppId=` ISCC argument lives inside a single `if
+  ($TestAppId) { ... }` guard, so an ordinary invocation - every real
+  release build, every CI package-workflow build - produces byte-for-
+  byte the same ISCC command line as before this change, which
+  therefore compiles the installer's own unchanged `#ifndef` default:
+  the real, stable production AppId
+  (`{C067013C-D143-49F8-9510-D078482D6DA4}`).
+- **Validated, not merely trusted.** A non-empty `-TestAppId` that is
+  not a well-formed `{GUID}` fails this script's own `Fail()` immediately,
+  before Inno Setup ever runs - a copy-paste error can't silently
+  compile something unexpected.
+- **Proven structurally**, not just by inspection:
+  `scripts/verify-installer.mjs`'s `testProductionIdentityStructuralScenario`
+  now asserts (a) the parameter exists and is optional, (b) the literal
+  `/DTestAppId=` appears exactly once in the whole script, and that one
+  occurrence is inside the `if ($TestAppId)` guard - never unconditional,
+  and (c) `.github/workflows/windows-package.yml` never passes
+  `-TestAppId` to any of its own `build-release.ps1` invocations, so
+  every CI-produced installer (both packaging passes, the manual-test-
+  artifact upload) keeps the real production identity.
+
+### The dedicated updater-test AppId
+`scripts/verify-updater.mjs` defines its own `UPDATER_TEST_APP_ID`
+(`{FEE1DEAD-FEE1-DEAD-FEE1-DEADFEE1DEAD}`) - dedicated to this one
+script, never shared with any of `verify-installer.mjs`'s own six
+per-scenario throwaway AppIds (§31), and never the real product's. Both
+its OLD and NEW compiled test releases use it, so the real same-AppId
+update-in-place lifecycle this script exists to prove is still genuinely
+exercised: a real silent Inno install under the throwaway identity, a
+real check/download/verify against a local fake GitHub server, a real
+external-helper handoff, a real silent Inno *upgrade* of that same
+throwaway identity, a real restart. New registry assertions
+(`queryHkcuDisplayVersion`/`queryHklmDisplayVersion`, mirroring
+`verify-installer.mjs`'s own identically-named helpers) prove this
+directly: the throwaway AppId's `DisplayVersion` reads the real OLD
+version right after the fresh install, then the real NEW version right
+after the real silent upgrade - the same registry key both times, never
+a second one - and `HKEY_LOCAL_MACHINE` stays empty throughout (still
+per-user, never administrative). A failure-path `reg delete` backstop
+(mirroring `verify-installer.mjs`'s own scenarios) targets only
+`UPDATER_TEST_UNINSTALL_REG_SUBKEY`, both hives, in `finally` - a
+non-zero exit there just means the key is already gone.
+
+### What did not change
+Every existing isolation `scripts/verify-updater.mjs` already had -
+its own hermetic temp staging directory for both the install location
+and `STREAMING_TREE_DATA_DIR`, the local fake GitHub server, the
+manifest-rejection/tampered-download failure paths, the real
+external-helper handoff and silent Inno upgrade mechanism, the
+`-tags integration` build gate that makes the fake-GitHub redirection
+possible at all - is unchanged. Nothing about the updater's own runtime
+behavior, manifest verification, hash/signature rules, or fail-closed
+error handling was touched; the defect was exclusively the test
+harness's own installer identity, never product code.
+
+### Verification
+Both `scripts/verify-updater.mjs` (15/15 steps, including the new
+same-AppId assertions) and the complete `scripts/verify-installer.mjs`
+(59/59 steps, including the three new/updated structural checks) were
+run to completion locally, on this operator's own machine, **while its
+real production installation
+(`{C067013C-D143-49F8-9510-D078482D6DA4}`, `DisplayVersion
+0.9.9-stage20e-manualtest-batch1`) remained present throughout**. A
+read-only `reg query` of that real key was captured before and after
+both runs and found byte-for-byte identical every time - the acceptance
+criterion §26's governing task set (`verify-updater.mjs` must reach
+terminal PASS while the operator's real installation is present and
+unchanged) is met, not merely argued.
