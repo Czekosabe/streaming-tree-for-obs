@@ -28,7 +28,10 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: 'e2e/report' }]] : 'list',
+  // Relative to this config file's own directory (apps/web/e2e/), not the
+  // repo root - 'e2e/report' here would have resolved to the doubled-up
+  // apps/web/e2e/e2e/report.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: 'report' }]] : 'list',
   timeout: 30_000,
   expect: { timeout: 5_000 },
 
@@ -37,6 +40,22 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
+    // A real, already-supported user preference this app's own CSS
+    // explicitly honors (apps/web/src/index.css's
+    // `@media (prefers-reduced-motion: reduce)` rule forces every
+    // animation/transition to ~0 duration) - not a test-only hack. Set
+    // here because a headless Linux Chromium CI run showed a `heading`
+    // inside an `animate-fade-rise`-animated platform card as
+    // persistently "hidden" to a strict visibility check (a known class
+    // of headless-CI flake: a CSS animation's compositor frame callback
+    // occasionally never advances past its `from` keyframe in a
+    // sandboxed/headless environment), never reproduced locally. Forcing
+    // reduced motion removes animation-compositor timing as a variable
+    // entirely, which is more robust than chasing a specific animation
+    // duration/frame-callback flake, and exercises real, supported
+    // application behavior rather than working around a test-only
+    // artifact.
+    contextOptions: { reducedMotion: 'reduce' },
   },
 
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
