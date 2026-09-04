@@ -608,8 +608,9 @@ func run() error {
 		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
 		AudioSettings: backupAudioSettings, Goals: backupGoals,
 		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
-		DonationSources:   backupDonationSources,
-		UpdatePreferences: backupUpdatePreferences,
+		DonationSources:       backupDonationSources,
+		UpdatePreferences:     backupUpdatePreferences,
+		StreamSessionSettings: streamSessionRepo,
 	}
 	backupSinks := backupdomain.Sinks{
 		Platforms: backupPlatforms, Output: outputService, RemoteTarget: backupRemoteTarget, Accounts: backupAccounts,
@@ -620,9 +621,10 @@ func run() error {
 		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
 		AudioSettings: backupAudioSettings, Goals: backupGoals,
 		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
-		DonationSources:   backupDonationSources,
-		UpdatePreferences: backupUpdatePreferences,
-		Onboarding:        backupOnboarding,
+		DonationSources:       backupDonationSources,
+		UpdatePreferences:     backupUpdatePreferences,
+		Onboarding:            backupOnboarding,
+		StreamSessionSettings: streamSessionRepo,
 	}
 	backupService := backupdomain.NewService(
 		backupSources, backupSinks,

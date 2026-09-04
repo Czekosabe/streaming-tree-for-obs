@@ -84,6 +84,8 @@ type fakeSinks struct {
 	updatePrefs *updatersettings.Preferences
 
 	onboardingStatus onboarding.Status
+
+	streamSessionRetentionDays *int
 }
 
 func newFakeSinks() *fakeSinks {
@@ -118,9 +120,10 @@ func (f *fakeSinks) sinks() Sinks {
 		VisualAssets: fakeVisualAssetSink{f}, AudioAssets: fakeAudioAssetSink{f},
 		AudioSettings: fakeAudioSettingsSink{f}, Goals: fakeGoalsSink{f},
 		MetadataPresets: fakeMetadataPresetSink{f}, StreamSetupProfiles: fakeStreamSetupProfileSink{f},
-		DonationSources:   fakeDonationSourceSink{f},
-		UpdatePreferences: fakeUpdatePreferencesSink{f},
-		Onboarding:        fakeOnboardingSink{f},
+		DonationSources:       fakeDonationSourceSink{f},
+		UpdatePreferences:     fakeUpdatePreferencesSink{f},
+		Onboarding:            fakeOnboardingSink{f},
+		StreamSessionSettings: fakeStreamSessionSettingsSink{f},
 	}
 }
 
@@ -136,8 +139,10 @@ func (f *fakeSinks) sources() Sources {
 		VisualTemplates: fakeVisualTemplatesListOnly{f}, VisualAssets: fakeVisualAssetsListOnly{f},
 		AudioAssets: fakeAudioAssetsListOnly{f}, AudioSettings: fakeAudioSettingsGetOnly{f},
 		Goals: fakeGoalsListOnly{f}, MetadataPresets: fakeMetadataPresetsListOnly{f},
-		StreamSetupProfiles: fakeStreamSetupProfilesListOnly{f},
-		DonationSources:     fakeDonationSourcesListOnly{f}, UpdatePreferences: fakeUpdatePreferencesGetOnly{f},
+		StreamSetupProfiles:   fakeStreamSetupProfilesListOnly{f},
+		DonationSources:       fakeDonationSourcesListOnly{f},
+		UpdatePreferences:     fakeUpdatePreferencesGetOnly{f},
+		StreamSessionSettings: fakeStreamSessionSettingsGetOnly{f},
 	}
 }
 
@@ -427,6 +432,13 @@ func (s fakeUpdatePreferencesSink) SetPreferences(_ context.Context, p updaterse
 	return p, nil
 }
 
+type fakeStreamSessionSettingsSink struct{ f *fakeSinks }
+
+func (s fakeStreamSessionSettingsSink) SetRetentionDays(_ context.Context, days int, _ time.Time) error {
+	s.f.streamSessionRetentionDays = &days
+	return nil
+}
+
 type fakeOnboardingSink struct{ f *fakeSinks }
 
 func (s fakeOnboardingSink) SetStatus(_ context.Context, status onboarding.Status, schemaVersion int, now time.Time) (onboarding.State, error) {
@@ -641,6 +653,15 @@ func (s fakeDonationSourcesListOnly) ListSources(context.Context) ([]donationsou
 		out = append(out, src)
 	}
 	return out, nil
+}
+
+type fakeStreamSessionSettingsGetOnly struct{ f *fakeSinks }
+
+func (s fakeStreamSessionSettingsGetOnly) GetRetentionDays(context.Context) (int, bool, error) {
+	if s.f.streamSessionRetentionDays == nil {
+		return 0, false, nil
+	}
+	return *s.f.streamSessionRetentionDays, true, nil
 }
 
 type fakeUpdatePreferencesGetOnly struct{ f *fakeSinks }

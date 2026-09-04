@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -255,4 +256,76 @@ func addDeflatedEntry(t *testing.T, data []byte, name string, content []byte) []
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+// TestReadArchiveRejectsTooManyEntries proves MaxArchiveEntries
+// (manifest.go) is actually enforced, not merely declared - the
+// governing task's resource-bound requirement, section 10. 20,001 tiny
+// entries is cheap to build and read; the point is the COUNT, not the
+// size, so real content is not needed.
+func TestReadArchiveRejectsTooManyEntries(t *testing.T) {
+	buf := &bytes.Buffer{}
+	zw := zip.NewWriter(buf)
+	for i := 0; i < MaxArchiveEntries+1; i++ {
+		w, err := zw.Create(fmt.Sprintf("assets/entry-%d", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReadArchive(buf.Bytes()); !errors.Is(err, ErrTooManyEntries) {
+		t.Fatalf("ReadArchive() error = %v, want ErrTooManyEntries", err)
+	}
+}
+
+// TestReadArchiveRejectsExcessiveCumulativeUncompressedSize proves
+// MaxTotalUncompressedBytes (manifest.go) is enforced across the WHOLE
+// archive, not just per-entry - the governing task's resource-bound
+// requirement, section 10, for the specific "many entries, each
+// individually within the decompression-ratio bound, but summing past
+// the total bound" scenario TestReadArchiveRejectsDecompressionBomb
+// does not cover.
+//
+// Uses zip.Writer.CreateRaw to declare each entry's UncompressedSize64
+// directly, writing only a few real bytes per entry - proving the
+// SUMMATION check itself (reader.go's own running totalUncompressed
+// counter, evaluated from each entry's declared size in the central
+// directory) without needing to actually generate/compress a
+// multi-hundred-megabyte fixture, which would only slow this suite
+// down for no extra proof: the check reads declared sizes before ever
+// opening an entry's content.
+func TestReadArchiveRejectsExcessiveCumulativeUncompressedSize(t *testing.T) {
+	buf := &bytes.Buffer{}
+	zw := zip.NewWriter(buf)
+	const perEntry = MaxTotalUncompressedBytes/2 + 1 // two entries already exceed the total bound
+	raw := []byte{0x00, 0x01, 0x02, 0x03}
+	// Sha256-hex-shaped names: this test targets the CUMULATIVE-size
+	// check specifically, which runs after the per-entry filename-shape
+	// validation every asset entry must already pass regardless.
+	names := []string{strings.Repeat("a", 64), strings.Repeat("b", 64)}
+	for _, name := range names {
+		w, err := zw.CreateRaw(&zip.FileHeader{
+			Name: "assets/" + name, Method: zip.Store,
+			UncompressedSize64: uint64(perEntry), CompressedSize64: uint64(len(raw)),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReadArchive(buf.Bytes()); !errors.Is(err, ErrDecompressionLimit) {
+		t.Fatalf("ReadArchive() error = %v, want ErrDecompressionLimit", err)
+	}
 }

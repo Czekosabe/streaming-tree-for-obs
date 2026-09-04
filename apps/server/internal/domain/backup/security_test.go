@@ -34,6 +34,11 @@ var allowedSecretShapedFields = map[string]string{
 	// (matched only because "Token" contains the substring "token").
 	"Config.VisualAssets.Blob.PublicToken": "unguessable content locator, not a bearer credential (docs/backup-restore.md §3)",
 	"Config.AudioAssets.Blob.PublicToken":  "unguessable content locator, not a bearer credential (docs/backup-restore.md §3)",
+	// streamsession: StreamSessionRetentionDays is a plain integer
+	// retention-days preference (how long to keep operational history),
+	// matched only because "Session" contains the substring "session" -
+	// never a session token/cookie/credential of any kind.
+	"Config.StreamSessionRetentionDays": "retention-days preference, not a session token or credential",
 }
 
 func assertNoSecretShapedFields(t *testing.T, typ reflect.Type, path string, seen map[reflect.Type]bool) {

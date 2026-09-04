@@ -152,4 +152,13 @@ type Config struct {
 	StreamSetupProfiles []streamsetup.Profile        `json:"streamSetupProfiles"`
 	DonationSources     []donationsource.Source      `json:"donationSources"`
 	UpdatePreferences   *updatersettings.Preferences `json:"updatePreferences,omitempty"`
+	// StreamSessionRetentionDays is the persisted stream-session-
+	// history retention preference in days (docs/stream-session-
+	// history.md §6, `stream_session_settings`) - nil when never
+	// explicitly set (the operational default applies). This is a
+	// PREFERENCE about how long to keep history, never the history
+	// itself: stream_sessions/stream_session_destinations are
+	// deliberately excluded from every backup (history/observability,
+	// not configuration).
+	StreamSessionRetentionDays *int `json:"streamSessionRetentionDays,omitempty"`
 }

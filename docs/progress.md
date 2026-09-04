@@ -53805,3 +53805,175 @@ and temporary data directory (`t.TempDir()`, or this session's own
 hermetic `-tags integration` test server with its own temp data dir),
 never the operator's real installed application, real credentials, or
 real provider accounts.
+
+## fix(server): complete the persisted-data-integrity audit - a third real backup-coverage gap, a rich cross-installation round trip, and resource-limit/atomicity/migration proof coverage
+
+Continuation of the persisted-data-integrity governing task from `d2370fd`
+(preserved unchanged: `platform_remote_targets` coverage, onboarding-
+state recompute, testserver backup wiring, the translated preview-
+error fix, the safety-snapshot failure-injection test, the future-
+migration tolerance test, the E2E smoke). This pass completes the full
+inventory/classification audit and answers every remaining section of
+the governing task, rather than adding another isolated slice.
+
+### Inventory result
+A complete cross-reference was rebuilt from the real code: 22 SQLite
+repositories, `internal/secrets` (2 fixed-subject singleton secrets +
+3 per-object secret types), `internal/config` (env-var-only process
+bootstrap, never persisted to disk, correctly out of backup's scope
+entirely), and the visual/audio asset FileStores. Every domain now has
+an explicit MUST-BACK-UP / MUST-NOT-BACK-UP(secret) / RUNTIME-CACHE /
+HISTORY-OBSERVABILITY classification (full table in this session's
+final report). `internal/domain/preflight`, `engagement`, `credential`,
+and `visualpackage` were confirmed to own no persisted state of their
+own (pure composition/computation over other domains' real repositories) -
+never candidates in the first place.
+
+### Third real defect found and fixed: stream-session retention preference
+`stream_session_settings` (migration `0032`, singleton `retention_days`)
+was completely absent from `backup.Sources`/`Sinks` - not merely
+excluded for a documented reason like its sibling `stream_sessions`/
+`stream_session_destinations` tables, just never wired at all, and
+never mentioned in `docs/backup-restore.md`'s own inventory table
+either. This is a genuine PREFERENCE (how long to keep operational
+history), never the history itself - the history tables stay
+correctly excluded. Added `Sources.StreamSessionSettings`/
+`Sinks.StreamSessionSettings` (narrow `GetRetentionDays`/
+`SetRetentionDays` ports, mirroring `UpdatePreferences`'s exact
+singleton shape), a `Config.StreamSessionRetentionDays *int` field,
+wiring in `export.go`/`restore_commit.go`, the real
+`sqlite.StreamSessionRepository` reused (already constructed for
+`streamsession.Manager`/`streaminsights.Service`) in both
+`cmd/server/main.go` and `cmd/testserver/main.go`, and a justified
+entry in `security_test.go`'s secret-shaped-field-name allowlist (the
+existing structural denylist flagged `StreamSessionRetentionDays`
+purely because it contains the substring "session" - never a session
+token). `docs/backup-restore.md` gained two new inventory rows: the
+history tables (explicitly `No`, cross-referencing §0's existing
+exclusion statement) and the retention preference (`Yes`), so the
+distinction between "history" and "a preference about history" is
+explicit rather than implied.
+
+### Rich cross-installation round trip (§6 of the governing task)
+`TestRichStateRoundTripsAcrossTwoIndependentRealInstallations`
+(`security_integration_test.go`) is new: one hand-authored fixture
+spanning platforms+output+remote target, provider integration
+settings, connected accounts+links+region+engagement, chat overlays+
+hidden users+blocked terms+activity types, chat automation schedules+
+commands, alert profiles+rules, goals+widget profiles, metadata
+presets, stream setup profiles, donation sources, operator chat
+preferences, update preferences, and the stream-session retention
+preference - restored for real into installation A (seeding it
+through production `Restore`, never a hand-written repository seed),
+exported for real, restored into a completely independent installation
+B, exported again, and compared field-by-field. Proves, against real
+SQLite (never mocks): fresh local ids on every restore, every cross-
+domain reference (`RemoteTarget.PlatformID`, account links, alert-rule
+account references, widget-profile `GoalID`, stream-setup destination/
+metadata-preset references) re-resolves correctly against B's own new
+ids, `RemoteTarget.ResourceID` (an external provider id) survives
+verbatim un-remapped, and every forced-safe field (`DonationSources[].
+Enabled=false`, `Account.Status=reconnect_required`) stays forced
+across a SECOND restore, not just the first. Visual designs/templates/
+managed assets were deliberately left out of this fixture -
+`TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContentHash`
+and the chat-overlay/alert-profile composition tests already give that
+domain dedicated, real-content-hash coverage a combined fixture would
+only dilute.
+
+### Resource-limit coverage completed (§10)
+`MaxArchiveEntries` (20,000) and `MaxTotalUncompressedBytes` (768 MiB,
+checked as a running total across every entry, not just per-entry
+ratio) were both already enforced in `reader.go` but had zero direct
+test coverage - every other declared bound already had one.
+`TestReadArchiveRejectsTooManyEntries` proves the first with 20,001
+cheap real entries. `TestReadArchiveRejectsExcessiveCumulativeUncompressedSize`
+proves the second using `zip.Writer.CreateRaw` to declare two entries'
+`UncompressedSize64` directly (~384 MiB each) with only 4 real bytes
+written per entry - the check reads declared central-directory
+metadata before ever opening an entry's content, so a genuinely multi-
+hundred-megabyte fixture would prove nothing extra while materially
+slowing the suite down.
+
+### Atomicity/recovery, migration, and future-schema sections re-audited, not re-built
+Re-read `docs/backup-restore.md` §7's own documented restore-lifecycle
+model (validate → safety snapshot → clear → apply → restart-required)
+against the real code and the failure-injection test added at
+`d2370fd`; it already matches exactly, honestly documents that restore
+is NOT one database transaction, and the "recover via the safety
+snapshot" contract is proven end-to-end (not just "cancel and
+recover," but the harder "fail partway through commit and recover").
+Re-examined the future-migration-tolerance test added at `d2370fd`
+against `internal/domain/backup/reader.go`'s own strict
+`FormatVersion` equality check + `DisallowUnknownFields()`: the two
+are different, both correct, layers - the BACKUP ARCHIVE format is
+fail-closed on anything but exactly the one supported version (already
+proven by `TestReadArchiveRejectsUnknownFormatVersion`), while the
+DATABASE MIGRATION bookkeeping only needs to not crash on an
+unrecognized already-applied row, which is a narrower and already-
+accurate claim its own doc comment makes no larger promise than.
+Confirmed (via `internal/storage/sqlite/migrations_test.go`'s existing
+`TestMigrateIsIdempotent`/`TestFailedMigrationIsNotRecordedAsApplied`/
+`TestDeletedSeedDataIsNotRecreated` and
+`internal/domain/visualdesign/migration_test.go`'s existing Version1→
+current/idempotence tests) that every real migration mechanism this
+codebase has - SQL schema migrations and the one JSON-document-version
+compatibility transform - already has dedicated idempotence and old-
+state-compatibility coverage, built from this repository's own real
+migration SQL/version-transform code, never an invented fake legacy
+format. No corrections were needed to either.
+
+### Confirmed via reading, not rebuilt
+Archive path safety (§9): `internal/archivesafety`'s
+`ValidateNoTraversal` already rejects `../`, an absolute Unix path, a
+Windows drive path, and (structurally, since ANY backslash is
+rejected outright) every UNC/mixed-separator variant, plus control
+characters and reserved Windows device names - shared by
+`visualpackage` and `backup`, one implementation, already dedicated-
+tested in `archivesafety_test.go`. Duplicate/ambiguous entries (§11):
+`reader.go`'s `seenNormalized` map runs over every entry (not only
+`manifest.json`) and rejects a case-insensitive duplicate anywhere,
+fail-closed, already proven by `TestReadArchiveRejectsDuplicateArchiveEntries`.
+Symlink/special entries: `!f.Mode().IsRegular()` rejects them
+outright - no archive-link semantics exist to exploit. Settings/
+machine-specific classification (§21): re-read every backed-up
+domain's own model for a device-id/filesystem-path-shaped field;
+found none - `internal/config`'s real machine-specific bootstrap state
+(paths, ports) is env-var-only and was never a backup candidate.
+Malformed-data safety beyond migrations (§19): `visualdesign_repository.go`'s
+JSON-document parse path already wraps a corrupt `document_json` value
+in a typed `visualdesign.ErrStorage`, never a panic, confirmed by
+reading. User-facing errors (§24): `internal/httpapi/backup.go`'s
+`writeBackupError` already maps every known error to a friendly code/
+message and logs anything unrecognized server-side only, returning a
+generic `internal_error` to the client - the one place the previous
+slice found bypassing this (the frontend's raw `error.message` leak)
+is already fixed and regression-tested.
+
+### Verification
+Backend: `go build ./...`, `go build -tags integration ./...`,
+`go vet ./...`, `go vet -tags integration ./...`, `gofmt -l .` (clean),
+`go test ./...` (every package, all passing, run repeatedly across
+this session). `node scripts/verify-backup-restore.mjs` (14/14 steps)
+re-run against the testserver after every backend change. Real-
+browser: the existing `e2e/specs/backup-restore.spec.ts` (2/2) re-run
+unchanged and still green after the testserver wiring changed again.
+No other frontend files changed this pass, so the broader frontend
+suite was not re-run (nothing to verify).
+
+### Documentation
+`docs/backup-restore.md` §1: two new inventory rows (stream-session
+history, explicitly excluded; the retention preference, now included).
+No new documentation file; no Stage chronology added to the canonical
+doc itself.
+
+### Scope note
+Fixes only real, evidence-based persistence/backup/restore/migration
+defects and closes out the remaining audit sections the governing task
+listed - no Stage 28, no new provider, no frontend redesign, no
+reopening prior tasks' already-merged work. No operator-machine state
+was touched: every test ran against a fresh temporary SQLite database
+and temp data directory (`t.TempDir()` or this session's own hermetic
+`-tags integration` test server with its own temp data dir), never the
+operator's real installed application, real credentials, or real
+provider accounts.

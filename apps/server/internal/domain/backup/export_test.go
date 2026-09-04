@@ -238,6 +238,15 @@ func (f fakeUpdatePreferences) GetPreferences(context.Context) (updatersettings.
 	return f.prefs, f.has, nil
 }
 
+type fakeStreamSessionSettings struct {
+	days int
+	has  bool
+}
+
+func (f fakeStreamSessionSettings) GetRetentionDays(context.Context) (int, bool, error) {
+	return f.days, f.has, nil
+}
+
 // emptySources returns a fully-wired Sources with every fake empty -
 // the baseline every test in this file starts from and overrides one
 // field of, so an unrelated Sources field can never be left nil and
@@ -255,18 +264,19 @@ func emptySources() Sources {
 			accounts: map[string][]string{}, hidden: map[string][]chatoverlay.HiddenUser{},
 			blocked: map[string][]chatoverlay.BlockedTerm{}, activityTypes: map[string][]string{},
 		},
-		ChatAutomation:      fakeChatAutomation{},
-		Alerts:              fakeAlerts{rules: map[string][]alerts.Rule{}},
-		VisualDesigns:       fakeVisualDesigns{byOwner: map[string]visualdesign.Record{}},
-		VisualTemplates:     fakeVisualTemplates{},
-		VisualAssets:        fakeVisualAssets{},
-		AudioAssets:         fakeAudioAssets{},
-		AudioSettings:       fakeAudioSettings{},
-		Goals:               fakeGoals{},
-		MetadataPresets:     fakeMetadataPresets{},
-		StreamSetupProfiles: fakeStreamSetupProfiles{},
-		DonationSources:     fakeDonationSources{},
-		UpdatePreferences:   fakeUpdatePreferences{},
+		ChatAutomation:        fakeChatAutomation{},
+		Alerts:                fakeAlerts{rules: map[string][]alerts.Rule{}},
+		VisualDesigns:         fakeVisualDesigns{byOwner: map[string]visualdesign.Record{}},
+		VisualTemplates:       fakeVisualTemplates{},
+		VisualAssets:          fakeVisualAssets{},
+		AudioAssets:           fakeAudioAssets{},
+		AudioSettings:         fakeAudioSettings{},
+		Goals:                 fakeGoals{},
+		MetadataPresets:       fakeMetadataPresets{},
+		StreamSetupProfiles:   fakeStreamSetupProfiles{},
+		DonationSources:       fakeDonationSources{},
+		UpdatePreferences:     fakeUpdatePreferences{},
+		StreamSessionSettings: fakeStreamSessionSettings{},
 	}
 }
 
@@ -411,6 +421,7 @@ func TestExportReadsEverySingletonWhenPresent(t *testing.T) {
 	src.AudioSettings = fakeAudioSettings{settings: audio.Settings{Enabled: true}, has: true}
 	src.UpdatePreferences = fakeUpdatePreferences{prefs: updatersettings.Preferences{AutoCheck: false}, has: true}
 	src.OperatorChatPrefs = fakeOperatorChatPrefs{prefs: operatorchatprefs.Preferences{ShowBadges: true}, hasPrefs: true}
+	src.StreamSessionSettings = fakeStreamSessionSettings{days: 30, has: true}
 
 	cfg, err := Export(context.Background(), src)
 	if err != nil {
@@ -424,6 +435,26 @@ func TestExportReadsEverySingletonWhenPresent(t *testing.T) {
 	}
 	if cfg.OperatorChatPreferences == nil || !cfg.OperatorChatPreferences.Preferences.ShowBadges {
 		t.Errorf("OperatorChatPreferences = %+v, want ShowBadges=true", cfg.OperatorChatPreferences)
+	}
+	if cfg.StreamSessionRetentionDays == nil || *cfg.StreamSessionRetentionDays != 30 {
+		t.Errorf("StreamSessionRetentionDays = %v, want 30", cfg.StreamSessionRetentionDays)
+	}
+}
+
+// TestExportOmitsStreamSessionRetentionDaysWhenNeverSet proves the
+// absent-row-means-default convention (streamsession.Repository's own
+// doc comment) survives Export - a never-configured retention
+// preference must stay nil in the backup, never a guessed
+// DefaultRetentionDays value baked in as if the operator had chosen it.
+func TestExportOmitsStreamSessionRetentionDaysWhenNeverSet(t *testing.T) {
+	src := emptySources()
+
+	cfg, err := Export(context.Background(), src)
+	if err != nil {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if cfg.StreamSessionRetentionDays != nil {
+		t.Errorf("StreamSessionRetentionDays = %v, want nil when never explicitly set", *cfg.StreamSessionRetentionDays)
 	}
 }
 

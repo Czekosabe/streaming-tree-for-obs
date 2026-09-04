@@ -649,6 +649,13 @@ func applyConfig(ctx context.Context, cfg Config, assets map[string][]byte, sink
 		}
 	}
 
+	// --- stream session retention preference (singleton) -----------------
+	if cfg.StreamSessionRetentionDays != nil {
+		if err := sink.StreamSessionSettings.SetRetentionDays(ctx, *cfg.StreamSessionRetentionDays, now().UTC()); err != nil {
+			return fmt.Errorf("restore stream session retention days: %w", err)
+		}
+	}
+
 	// --- onboarding state (recomputed, last) -----------------------------
 	// Must run after every domain above: it reads cfg, the same config
 	// this whole function has been restoring, so its answer already

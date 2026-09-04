@@ -120,6 +120,16 @@ type Sources struct {
 	UpdatePreferences interface {
 		GetPreferences(ctx context.Context) (updatersettings.Preferences, bool, error)
 	}
+	// StreamSessionSettings is the one PORTABLE preference in the
+	// operational-history domain - how many days to keep session
+	// history, not the history itself (streamsession's Session/
+	// Destination rows are deliberately excluded - docs/backup-
+	// restore.md's history/observability classification). Mirrors
+	// UpdatePreferences/AudioSettings' own singleton-preference shape
+	// exactly.
+	StreamSessionSettings interface {
+		GetRetentionDays(ctx context.Context) (days int, found bool, err error)
+	}
 }
 
 // knownAccountProviders lists every account.ProviderID this
@@ -343,6 +353,12 @@ func Export(ctx context.Context, src Sources) (Config, error) {
 		return Config{}, fmt.Errorf("get update preferences: %w", err)
 	} else if ok {
 		cfg.UpdatePreferences = &prefs
+	}
+
+	if days, ok, err := src.StreamSessionSettings.GetRetentionDays(ctx); err != nil {
+		return Config{}, fmt.Errorf("get stream session retention days: %w", err)
+	} else if ok {
+		cfg.StreamSessionRetentionDays = &days
 	}
 
 	return cfg, nil

@@ -13,12 +13,21 @@ import (
 	"time"
 
 	"github.com/streaming-tree/server/internal/domain/account"
+	"github.com/streaming-tree/server/internal/domain/alerts"
 	"github.com/streaming-tree/server/internal/domain/backup"
+	"github.com/streaming-tree/server/internal/domain/chatautomation"
+	"github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
+	"github.com/streaming-tree/server/internal/domain/goals"
+	"github.com/streaming-tree/server/internal/domain/metadatapreset"
 	"github.com/streaming-tree/server/internal/domain/onboarding"
+	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
+	"github.com/streaming-tree/server/internal/domain/streamsetup"
+	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
 	"github.com/streaming-tree/server/internal/secrets"
 	"github.com/streaming-tree/server/internal/secrets/secretstest"
@@ -85,6 +94,7 @@ func newInstallation(t *testing.T) *installation {
 	donationSourceRepo := sqlite.NewDonationSourceRepository(db.DB)
 	updatePreferencesRepo := sqlite.NewUpdateSettingsRepository(db.DB)
 	onboardingRepo := sqlite.NewOnboardingRepository(db.DB)
+	streamSessionRepo := sqlite.NewStreamSessionRepository(db.DB)
 
 	sources := backup.Sources{
 		Platforms: platformRepo, Output: outputSvc, RemoteTarget: remoteTargetRepo, Accounts: accountRepo,
@@ -95,8 +105,9 @@ func newInstallation(t *testing.T) *installation {
 		VisualAssets: visualAssetRepo, AudioAssets: audioAssetRepo,
 		AudioSettings: audioSettingsRepo, Goals: goalsRepo,
 		MetadataPresets: metadataPresetRepo, StreamSetupProfiles: streamSetupProfileRepo,
-		DonationSources:   donationSourceRepo,
-		UpdatePreferences: updatePreferencesRepo,
+		DonationSources:       donationSourceRepo,
+		UpdatePreferences:     updatePreferencesRepo,
+		StreamSessionSettings: streamSessionRepo,
 	}
 	sinks := backup.Sinks{
 		Platforms: platformRepo, Output: outputSvc, RemoteTarget: remoteTargetRepo, Accounts: accountRepo,
@@ -107,9 +118,10 @@ func newInstallation(t *testing.T) *installation {
 		VisualAssets: visualAssetRepo, AudioAssets: audioAssetRepo,
 		AudioSettings: audioSettingsRepo, Goals: goalsRepo,
 		MetadataPresets: metadataPresetRepo, StreamSetupProfiles: streamSetupProfileRepo,
-		DonationSources:   donationSourceRepo,
-		UpdatePreferences: updatePreferencesRepo,
-		Onboarding:        onboardingRepo,
+		DonationSources:       donationSourceRepo,
+		UpdatePreferences:     updatePreferencesRepo,
+		Onboarding:            onboardingRepo,
+		StreamSessionSettings: streamSessionRepo,
 	}
 
 	visualStore := visualasset.NewFileStore(filepath.Join(dir, "assets", "visual"))
@@ -526,3 +538,321 @@ func TestRestoreRecomputesOnboardingStateAgainstRealDatabase(t *testing.T) {
 		}
 	})
 }
+
+// TestRichStateRoundTripsAcrossTwoIndependentRealInstallations is the
+// governing task's §6 rich-state round trip: one deterministic fixture
+// spanning every MUST-BACK-UP domain that has a simple, flat shape
+// (platforms+output+remote target, provider integration settings,
+// connected accounts+links+region+engagement, chat overlays+hidden
+// users+blocked terms+activity types, chat automation schedules+
+// commands, alert profiles+rules, goals+widget profiles, metadata
+// presets, stream setup profiles, donation sources, operator chat
+// preferences, update preferences, the stream-session retention
+// preference) - exercised through two genuinely independent real
+// SQLite installations and the real Service (never a mock), proving
+// portability end to end:
+//
+//	rich fixture -> restore into A (seeds A for real) -> Export A
+//	(STATE A) -> restore STATE A into a DIFFERENT installation B ->
+//	Export B (STATE B) -> STATE B must semantically equal STATE A.
+//
+// Visual designs/templates/managed assets are deliberately left out of
+// THIS fixture - TestExportComposesChatOverlayWithChildRowsAndVisual
+// Design, TestExportComposesAlertProfileWithRulesAndVisualDesign, and
+// TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContentHash
+// already give that domain dedicated, real-content-hash coverage
+// stronger than folding it into this already-large fixture would add.
+func TestRichStateRoundTripsAcrossTwoIndependentRealInstallations(t *testing.T) {
+	a := newInstallation(t)
+	b := newInstallation(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	pid := "pf_1"
+	fixture := backup.Config{
+		FormatVersion: backup.FormatVersion,
+		Platforms: []backup.PlatformExport{
+			{
+				Platform: platform.Platform{
+					ID: "pf_1", ProviderID: platform.ProviderYouTube, DisplayName: "Rich YouTube",
+					Enabled: true, SortOrder: 0, CreatedAt: now, UpdatedAt: now,
+					Metadata: platform.Metadata{Tags: []string{}, UpdatedAt: now},
+				},
+				Output: output.Settings{ServerURL: "rtmp://example.invalid/live", AutoRestart: true},
+				RemoteTarget: &remotetarget.Target{
+					PlatformID: "pf_1", ProviderID: "youtube", ResourceType: remotetarget.ResourceTypeLiveBroadcast,
+					ResourceID: "yt-external-broadcast-id-999", DisplayName: "My Live Broadcast",
+					CreatedAt: now, UpdatedAt: now,
+				},
+			},
+		},
+		ProviderIntegrationSettings: []account.IntegrationSettings{
+			{ProviderID: account.ProviderTwitch, ClientID: "rich-twitch-client-id", UpdatedAt: now},
+		},
+		ConnectedAccounts: []backup.ConnectedAccountExport{
+			{
+				Account: account.Account{
+					ID: "acct_1", ProviderID: account.ProviderTwitch, ProviderUserID: "pu_rich",
+					Login: "richuser", DisplayName: "Rich User", AvatarURL: "https://example.invalid/a.png",
+					Status: account.StatusConnected, CreatedAt: now, UpdatedAt: now, Scopes: []string{"chat:read"},
+				},
+				PlatformLinks: []string{"pf_1"}, YouTubeRegion: "US", EngagementEnabled: boolPtr(true),
+			},
+		},
+		ChatOverlays: []backup.ChatOverlayExport{
+			{
+				Profile: func() chatoverlay.Profile {
+					p := chatoverlay.Default("Main overlay")
+					p.ID, p.PublicSlug = "ov_1", "slug-rich-1"
+					return p
+				}(),
+				AccountIDs: []string{"acct_1"},
+				HiddenUsers: []chatoverlay.HiddenUser{
+					{OverlayID: "ov_1", ProviderID: chatoverlay.ProviderTwitch, ConnectedAccountID: "acct_1", ProviderUserID: "hidden_pu", Label: "Hidden", CreatedAt: now},
+				},
+				BlockedTerms:  []chatoverlay.BlockedTerm{{ID: "bt_1", OverlayID: "ov_1", Value: "badword", MatchMode: chatoverlay.MatchContains, CreatedAt: now, UpdatedAt: now}},
+				ActivityTypes: []string{"follow", "subscription"},
+			},
+		},
+		ChatSchedules: []chatautomation.Schedule{
+			{ID: "sch_1", Name: "Reminder", Enabled: true, IntervalSeconds: 600, Targets: []chatautomation.Target{{AccountID: "acct_1", PlatformID: "pf_1"}}, CreatedAt: now, UpdatedAt: now},
+		},
+		ChatCommands: []chatautomation.Command{
+			{
+				ID: "cmd_1", Name: "discord", Enabled: true, ResponseTemplate: "join us!",
+				RequiredRole: chatautomation.RoleEveryone,
+				Targets:      []chatautomation.Target{{AccountID: "acct_1", PlatformID: "pf_1"}},
+				CreatedAt:    now, UpdatedAt: now,
+			},
+		},
+		AlertProfiles: []backup.AlertProfileExport{
+			{
+				Profile: func() alerts.Profile {
+					p := alerts.DefaultProfile("Main alerts")
+					p.ID, p.PublicSlug = "alp_1", "alert-slug-1"
+					return p
+				}(),
+				Rules: []alerts.Rule{
+					{
+						ID: "alr_1", ProfileID: "alp_1", Name: "Follow", Enabled: true,
+						EventType: alerts.EventFollow, Priority: 50, DurationMS: 5000,
+						RequiredRole: alerts.RoleEveryone, ShowPlatform: true, ShowUsername: true,
+						EntryAnimation: alerts.AnimationNone, ExitAnimation: alerts.AnimationNone, AnimationDurationMS: 400,
+						GroupWindowMS: 5000, InterruptMode: alerts.InterruptNever,
+						Audio:    alerts.RuleAudio{SoundVolume: 1.0, TTSVolume: 1.0},
+						Accounts: []string{"acct_1"}, CreatedAt: now, UpdatedAt: now,
+					},
+				},
+			},
+		},
+		Goals: []goals.Goal{
+			func() goals.Goal {
+				g := goals.DefaultGoal("Follower goal", goals.KindFollowers, 1000)
+				g.ID, g.Current, g.CreatedAt, g.UpdatedAt, g.StartedAt = "goal_1", 250, now, now, now
+				return g
+			}(),
+		},
+		WidgetProfiles: []goals.WidgetProfile{
+			func() goals.WidgetProfile {
+				w := goals.DefaultWidgetProfileOfKind(goals.WidgetProfileKindGoal, "goal_1", "Goal widget")
+				w.ID, w.PublicSlug, w.CreatedAt, w.UpdatedAt = "wp_1", "widget-slug-1", now, now
+				return w
+			}(),
+		},
+		MetadataPresets: []metadatapreset.Preset{
+			{ID: "mp_1", Name: "Coding preset", Note: "for dev streams", CreatedAt: now, UpdatedAt: now},
+		},
+		StreamSetupProfiles: []streamsetup.Profile{
+			{
+				ID: "setup_1", Name: "Gaming", MetadataPresetID: strPtr("mp_1"), MetadataPresetName: "Coding preset",
+				Destinations: []streamsetup.Destination{{PlatformID: &pid, ProviderID: "youtube", DisplayName: "Rich YouTube"}},
+				CreatedAt:    now, UpdatedAt: now,
+			},
+		},
+		DonationSources: []donationsource.Source{
+			{ID: "donsrc_1", ProviderID: donationsource.ProviderStreamElements, Label: "Main donations", Enabled: true, RemoteChannelID: "5ad23dcc18fff500d78c5348", CreatedAt: now, UpdatedAt: now},
+		},
+		OperatorChatPreferences: &backup.OperatorChatPreferencesExport{
+			Preferences:       operatorchatprefs.Preferences{ShowBadges: true, CompactMode: true, CreatedAt: now, UpdatedAt: now},
+			AccountVisibility: []operatorchatprefs.AccountVisibility{{AccountID: "acct_1", Visible: true, CreatedAt: now, UpdatedAt: now}},
+			HiddenUsers:       []operatorchatprefs.UserRef{{ID: "ur_1", ProviderID: operatorchatprefs.ProviderTwitch, ConnectedAccountID: "acct_1", ProviderUserID: "hidden_op", Label: "Hidden op", CreatedAt: now}},
+			BotUsers:          []operatorchatprefs.UserRef{{ID: "ur_2", ProviderID: operatorchatprefs.ProviderTwitch, ConnectedAccountID: "acct_1", ProviderUserID: "bot_op", Label: "Bot op", CreatedAt: now}},
+		},
+		UpdatePreferences:          &updatersettings.Preferences{AutoCheck: false, CreatedAt: now, UpdatedAt: now},
+		StreamSessionRetentionDays: intPtr(30),
+	}
+
+	archive, err := backup.WriteArchive(fixture, "0.1.0-test", "windows", now, noAssets{}, noAssets{})
+	if err != nil {
+		t.Fatalf("WriteArchive(fixture) error = %v", err)
+	}
+
+	// Seed installation A for real, through the real production Restore
+	// path - never a hand-written repository seed.
+	previewA, err := a.svc.RestorePreview(ctx, archive)
+	if err != nil {
+		t.Fatalf("installation A RestorePreview() error = %v", err)
+	}
+	if _, err := a.svc.Restore(ctx, previewA.Token); err != nil {
+		t.Fatalf("installation A Restore() error = %v", err)
+	}
+
+	archiveA, err := a.svc.Export(ctx)
+	if err != nil {
+		t.Fatalf("installation A Export() error = %v", err)
+	}
+	validatedA, err := backup.ReadArchive(archiveA)
+	if err != nil {
+		t.Fatalf("ReadArchive(installation A's own export) error = %v", err)
+	}
+	stateA := validatedA.Config
+	assertRichStateShape(t, "A", stateA)
+
+	// Restore installation A's own real export directly into a
+	// DIFFERENT real installation - the actual portability path an
+	// operator moving to a new machine exercises, never a re-serialized
+	// copy of the same bytes.
+	previewB, err := b.svc.RestorePreview(ctx, archiveA)
+	if err != nil {
+		t.Fatalf("installation B RestorePreview() error = %v", err)
+	}
+	if _, err := b.svc.Restore(ctx, previewB.Token); err != nil {
+		t.Fatalf("installation B Restore() error = %v", err)
+	}
+
+	archiveB, err := b.svc.Export(ctx)
+	if err != nil {
+		t.Fatalf("installation B Export() error = %v", err)
+	}
+	validatedB, err := backup.ReadArchive(archiveB)
+	if err != nil {
+		t.Fatalf("ReadArchive(installation B's own export) error = %v", err)
+	}
+	stateB := validatedB.Config
+	assertRichStateShape(t, "B", stateB)
+
+	// The real proof: B is a semantic copy of A, on a completely
+	// independent database - never merely "some data exists".
+	if stateA.Platforms[0].Platform.DisplayName != stateB.Platforms[0].Platform.DisplayName {
+		t.Errorf("platform DisplayName drifted: A=%q B=%q", stateA.Platforms[0].Platform.DisplayName, stateB.Platforms[0].Platform.DisplayName)
+	}
+	if stateA.Platforms[0].Platform.ID == stateB.Platforms[0].Platform.ID {
+		t.Error("platform id was not re-minted on B's own restore")
+	}
+	if stateA.Platforms[0].Output.ServerURL != stateB.Platforms[0].Output.ServerURL {
+		t.Errorf("output ServerURL drifted: A=%q B=%q", stateA.Platforms[0].Output.ServerURL, stateB.Platforms[0].Output.ServerURL)
+	}
+	if stateA.Platforms[0].RemoteTarget == nil || stateB.Platforms[0].RemoteTarget == nil {
+		t.Fatal("RemoteTarget missing on A or B")
+	}
+	if stateA.Platforms[0].RemoteTarget.ResourceID != stateB.Platforms[0].RemoteTarget.ResourceID {
+		t.Errorf("RemoteTarget.ResourceID (an EXTERNAL provider id, never remapped) drifted: A=%q B=%q", stateA.Platforms[0].RemoteTarget.ResourceID, stateB.Platforms[0].RemoteTarget.ResourceID)
+	}
+	if stateA.Platforms[0].RemoteTarget.PlatformID == stateB.Platforms[0].RemoteTarget.PlatformID {
+		t.Error("RemoteTarget.PlatformID (a LOCAL backup-local reference) was not re-minted on B - it must track the new platform id")
+	}
+	if stateB.Platforms[0].RemoteTarget.PlatformID != stateB.Platforms[0].Platform.ID {
+		t.Error("RemoteTarget.PlatformID does not point at B's own restored platform - cross-reference broken")
+	}
+
+	if len(stateB.ConnectedAccounts) != 1 || stateB.ConnectedAccounts[0].Account.Status != account.StatusReconnectRequired {
+		t.Errorf("ConnectedAccounts[0] = %+v, want exactly one, status reconnect_required", stateB.ConnectedAccounts)
+	}
+	if len(stateB.ConnectedAccounts[0].PlatformLinks) != 1 || stateB.ConnectedAccounts[0].PlatformLinks[0] != stateB.Platforms[0].Platform.ID {
+		t.Errorf("ConnectedAccounts[0].PlatformLinks = %v, want [%s] (B's own platform id)", stateB.ConnectedAccounts[0].PlatformLinks, stateB.Platforms[0].Platform.ID)
+	}
+	if stateB.ConnectedAccounts[0].EngagementEnabled == nil || !*stateB.ConnectedAccounts[0].EngagementEnabled {
+		t.Error("ConnectedAccounts[0].EngagementEnabled did not survive the round trip")
+	}
+
+	newAccountID := stateB.ConnectedAccounts[0].Account.ID
+	if len(stateB.ChatOverlays) != 1 || len(stateB.ChatOverlays[0].AccountIDs) != 1 || stateB.ChatOverlays[0].AccountIDs[0] != newAccountID {
+		t.Errorf("ChatOverlays[0].AccountIDs = %+v, want [%s]", stateB.ChatOverlays, newAccountID)
+	}
+	if len(stateB.AlertProfiles) != 1 || len(stateB.AlertProfiles[0].Rules) != 1 || len(stateB.AlertProfiles[0].Rules[0].Accounts) != 1 || stateB.AlertProfiles[0].Rules[0].Accounts[0] != newAccountID {
+		t.Errorf("AlertProfiles[0].Rules[0].Accounts = %+v, want [%s]", stateB.AlertProfiles, newAccountID)
+	}
+	if stateB.AlertProfiles[0].Rules[0].ProfileID != stateB.AlertProfiles[0].Profile.ID {
+		t.Error("alert rule ProfileID does not point at B's own restored profile - cross-reference broken")
+	}
+
+	if len(stateB.Goals) != 1 || len(stateB.WidgetProfiles) != 1 {
+		t.Fatalf("got %d goals, %d widget profiles, want 1, 1", len(stateB.Goals), len(stateB.WidgetProfiles))
+	}
+	if stateB.WidgetProfiles[0].GoalID != stateB.Goals[0].ID {
+		t.Error("widget profile GoalID does not point at B's own restored goal - cross-reference broken")
+	}
+	if stateB.Goals[0].Target != stateA.Goals[0].Target || stateB.Goals[0].Current != stateA.Goals[0].Current {
+		t.Errorf("goal Target/Current drifted: A={%d,%d} B={%d,%d}", stateA.Goals[0].Target, stateA.Goals[0].Current, stateB.Goals[0].Target, stateB.Goals[0].Current)
+	}
+
+	if len(stateB.StreamSetupProfiles) != 1 {
+		t.Fatalf("got %d stream setup profiles, want 1", len(stateB.StreamSetupProfiles))
+	}
+	setup := stateB.StreamSetupProfiles[0]
+	if setup.MetadataPresetID == nil || *setup.MetadataPresetID != stateB.MetadataPresets[0].ID {
+		t.Errorf("StreamSetupProfiles[0].MetadataPresetID = %v, want B's own restored preset id %q", setup.MetadataPresetID, stateB.MetadataPresets[0].ID)
+	}
+	if len(setup.Destinations) != 1 || setup.Destinations[0].PlatformID == nil || *setup.Destinations[0].PlatformID != stateB.Platforms[0].Platform.ID {
+		t.Errorf("StreamSetupProfiles[0].Destinations[0].PlatformID = %v, want B's own restored platform id %q", setup.Destinations, stateB.Platforms[0].Platform.ID)
+	}
+
+	if len(stateB.DonationSources) != 1 || stateB.DonationSources[0].Enabled {
+		t.Errorf("DonationSources[0] = %+v, want exactly one, Enabled=false (never auto-enabled by restore)", stateB.DonationSources)
+	}
+	if stateB.DonationSources[0].Label != stateA.DonationSources[0].Label {
+		t.Errorf("donation source Label drifted: A=%q B=%q", stateA.DonationSources[0].Label, stateB.DonationSources[0].Label)
+	}
+
+	if stateB.OperatorChatPreferences == nil || !stateB.OperatorChatPreferences.Preferences.ShowBadges {
+		t.Error("OperatorChatPreferences did not survive the round trip")
+	}
+	if stateB.UpdatePreferences == nil || stateB.UpdatePreferences.AutoCheck != stateA.UpdatePreferences.AutoCheck {
+		t.Errorf("UpdatePreferences drifted: A=%+v B=%+v", stateA.UpdatePreferences, stateB.UpdatePreferences)
+	}
+	if stateB.StreamSessionRetentionDays == nil || *stateB.StreamSessionRetentionDays != 30 {
+		t.Errorf("StreamSessionRetentionDays = %v, want 30", stateB.StreamSessionRetentionDays)
+	}
+	if len(stateB.ChatSchedules) != 1 || stateB.ChatSchedules[0].Targets[0].AccountID != newAccountID {
+		t.Errorf("ChatSchedules[0].Targets = %+v, want AccountID %s", stateB.ChatSchedules, newAccountID)
+	}
+	if len(stateB.ChatCommands) != 1 || stateB.ChatCommands[0].Targets[0].PlatformID != stateB.Platforms[0].Platform.ID {
+		t.Errorf("ChatCommands[0].Targets = %+v, want PlatformID %s", stateB.ChatCommands, stateB.Platforms[0].Platform.ID)
+	}
+}
+
+// assertRichStateShape is the common "every domain this fixture touches
+// actually round-tripped at all" sanity check, shared between STATE A
+// (seeded from the hand-authored fixture) and STATE B (seeded from
+// STATE A) - fails fast and clearly if either export came back
+// unexpectedly empty, before the more detailed field-level assertions
+// run.
+func assertRichStateShape(t *testing.T, label string, cfg backup.Config) {
+	t.Helper()
+	counts := map[string]int{
+		"Platforms": len(cfg.Platforms), "ProviderIntegrationSettings": len(cfg.ProviderIntegrationSettings),
+		"ConnectedAccounts": len(cfg.ConnectedAccounts), "ChatOverlays": len(cfg.ChatOverlays),
+		"ChatSchedules": len(cfg.ChatSchedules), "ChatCommands": len(cfg.ChatCommands),
+		"AlertProfiles": len(cfg.AlertProfiles), "Goals": len(cfg.Goals), "WidgetProfiles": len(cfg.WidgetProfiles),
+		"MetadataPresets": len(cfg.MetadataPresets), "StreamSetupProfiles": len(cfg.StreamSetupProfiles),
+		"DonationSources": len(cfg.DonationSources),
+	}
+	for name, n := range counts {
+		if n != 1 {
+			t.Errorf("state %s: %s has %d entries, want 1", label, name, n)
+		}
+	}
+	if cfg.OperatorChatPreferences == nil {
+		t.Errorf("state %s: OperatorChatPreferences is nil, want present", label)
+	}
+	if cfg.UpdatePreferences == nil {
+		t.Errorf("state %s: UpdatePreferences is nil, want present", label)
+	}
+	if cfg.StreamSessionRetentionDays == nil {
+		t.Errorf("state %s: StreamSessionRetentionDays is nil, want present", label)
+	}
+}
+
+func boolPtr(b bool) *bool    { return &b }
+func strPtr(s string) *string { return &s }
+func intPtr(i int) *int       { return &i }

@@ -136,6 +136,12 @@ type Sinks struct {
 	UpdatePreferences interface {
 		SetPreferences(ctx context.Context, p updatersettings.Preferences, now time.Time) (updatersettings.Preferences, error)
 	}
+	// StreamSessionSettings is the write side of Sources'
+	// StreamSessionSettings - see its own doc comment. Never touches
+	// stream_sessions/stream_session_destinations themselves.
+	StreamSessionSettings interface {
+		SetRetentionDays(ctx context.Context, days int, now time.Time) error
+	}
 	// Onboarding is never populated FROM the backup - Config carries no
 	// onboarding field at all (docs/backup-restore.md §1). Restore calls
 	// SetStatus itself, once, after every other domain above has been
