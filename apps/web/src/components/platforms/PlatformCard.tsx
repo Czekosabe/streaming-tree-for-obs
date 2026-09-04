@@ -152,7 +152,20 @@ export function PlatformCard({ platform, onOpenSettings, onEditMetadata }: Platf
       <div className="flex items-start justify-between gap-3 p-4 pb-3">
         <div className="flex min-w-0 items-center gap-3">
           <ProviderBrand providerId={platform.providerId} fallbackLabel={shortLabel} size="lg" />
-          <div className="min-w-0">
+          {/*
+           * `min-w-16` (not `min-w-0`): the destination name is this
+           * card's own primary identity, and a bare `min-w-0` sibling
+           * next to the `shrink-0` status badge below has no floor at
+           * all - under a wide enough badge label (e.g. "NOT
+           * CONFIGURED") and/or a wider fallback UI font, flexbox
+           * happily shrinks it to a sub-pixel width rather than
+           * truncating legibly, a real geometry defect a headless-
+           * Linux real-browser test caught. `min-w-16` still lets this
+           * column shrink well below its natural content width - long
+           * names still truncate exactly as before - it only
+           * guarantees a few real, non-zero characters always render.
+           */}
+          <div className="min-w-16">
             {/* User-chosen destination name; brand name sits underneath it. */}
             <h3
               id={`platform-${platform.id}-name`}

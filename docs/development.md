@@ -148,6 +148,38 @@ values.
 > `VITE_` is compiled into the public JavaScript bundle and is visible to anyone
 > who opens the page.
 
+### Typography and static assets
+
+The UI font is the native system-font stack (`--font-sans` in
+`apps/web/src/index.css`: `ui-sans-serif, system-ui, -apple-system,
+"Segoe UI", Roboto, Helvetica, Arial, sans-serif`) - deliberately never
+a remote or bundled web font. This local-first desktop application must
+render correctly with no internet access, on a clean OS install, using
+only whatever real UI font that platform already ships; it holds itself
+to the same "no arbitrary/remote font" principle the public-overlay
+visual-design contract already commits to (`docs/visual-designs.md`).
+An earlier, undocumented `'Inter'` entry predated this decision and was
+never actually loaded anywhere (no `@font-face`, no bundled font file,
+no CDN link) - it silently fell through to this same fallback stack on
+every machine that didn't happen to already have Inter installed for
+an unrelated reason, until a real-browser CI run on headless Linux
+caught the one environment where that fallback produced a visibly
+different, more cramped layout. Removed for that reason.
+
+The same rule applies to every other static UI asset: the brand
+logo/emblem (`src/assets/brand-emblem.png`) and the four provider brand
+marks (Twitch/YouTube/Kick/TikTok, inline SVG path data in
+`src/components/providers/ProviderBrand.tsx` - see its own doc comment
+and `docs/provider-branding.md` for provenance) are bundled through
+Vite's normal asset pipeline or embedded directly in the component,
+never loaded from an external host. `apps/web/e2e/specs/
+typography.spec.ts` proves this contract in a real browser: no font
+network request is ever made, the app shell renders with all outbound
+internet access blocked, `document.fonts` settles without ever
+resolving the declared family to `"Inter"`, and a representative
+heading (the exact element a prior CI run found collapsed to a
+sub-pixel width) renders with real, non-zero content width.
+
 ---
 
 ## Go backend — running it
@@ -414,9 +446,10 @@ across navigation, layout at representative viewport heights, the OBS
 connection panel's disclosure/error behavior, brand→Dashboard
 navigation, the Platforms/Metadata pages, modal stacking/focus-trapping,
 both onboarding outcomes (success and a deterministically forced
-failure), and a route smoke matrix across every current primary route -
-each with an automatic console/page-error gate. It deliberately does
-**not** replace eventual manual Stage 20E verification of the real
+failure), a route smoke matrix across every current primary route, and
+the typography/static-asset determinism contract (see "Typography and
+static assets" above) - each with an automatic console/page-error gate.
+It deliberately does **not** replace eventual manual Stage 20E verification of the real
 Windows installer, tray, OBS Browser Source, audio devices, or real
 provider accounts - see `apps/web/e2e/playwright.config.ts`'s own doc
 comment and each spec file for the exact scope. Runs in CI as the `e2e`

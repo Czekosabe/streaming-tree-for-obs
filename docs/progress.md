@@ -53299,3 +53299,116 @@ running, and abandoned in favor of the trace-viewer approach above
 rather than starting Docker Desktop or otherwise expanding the
 environment - the trace-based diagnosis was conclusive on its own. No
 operator-machine state touched.
+
+## fix(web): remove the never-loaded Inter font declaration, fix the layout defect it was masking
+
+Follow-up to the real-browser E2E harness task: that work traced a
+CI-only layout flake to a genuine packaged-product determinism defect,
+not a test artifact - `apps/web/src/index.css` declared `'Inter'` as
+the UI's primary font, but the repository never actually loaded it
+anywhere (no `@font-face`, no bundled font file, no CDN link). Every
+environment that happens to already have Inter installed for an
+unrelated reason (this developer's own Windows machine, evidently)
+rendered as if the declaration were real; headless Linux CI does not,
+fell back further down the stack to a wider-metric generic sans-serif,
+and a destination card's name heading collapsed to a real 0.75px
+rendered width as a direct, measured result.
+
+### Evidence: intentional Inter, or accidental?
+Audited git history, `docs/progress.md` (all ~53,000 lines - zero
+mentions of Inter as a font, ever), `THIRD_PARTY_NOTICES.md` (no
+anticipated licence entry), and `package.json` (no font package).
+`'Inter'` first appears, unexplained, in the very first bootstrap
+commit and was never revisited. Meanwhile this project's own existing
+visual-design contract for public overlays already commits to the
+opposite principle in writing (`docs/visual-designs.md`: font family is
+a "closed allowlist: system-ui, sans-serif, serif, monospace - never an
+arbitrary family string, never an uploaded/remote font") - and
+`ProviderBrand.tsx`'s own doc comment shows the same team already
+reasoned through and rejected a comparable determinism risk for the
+provider brand marks (inline SVG path data instead of a CSS
+`mask-image` asset URL, specifically to avoid "a real dependency on how
+the bundler resolves and serves... the asset URL"). No design mockup,
+issue, or commit message ever named Inter as a deliberate choice.
+Conclusion: accidental scaffolding artifact, not product intent.
+
+### Fix - typography
+`--font-sans` in `apps/web/src/index.css` now reads `ui-sans-serif,
+system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+sans-serif` - the exact same fallback chain that was already the true
+behavior everywhere Inter wasn't separately installed, now declared
+honestly. No font files added; no third-party font asset entered the
+distributed product, so `THIRD_PARTY_NOTICES.md` needed no change.
+
+### Fix - the underlying layout defect
+Removing the false declaration alone does not fix the *mechanism* that
+let a wide enough fallback squeeze the name column to nothing:
+`PlatformCard.tsx`'s icon+name flex row sits next to a `shrink-0`
+status badge (label text is "NOT CONFIGURED" for every seeded
+platform) inside a fixed ~230px header row, and the name column's
+`min-w-0` had no floor at all - flexbox is fully entitled to shrink a
+`min-w-0` item to a literal sub-pixel width when a `shrink-0` sibling
+claims the rest. Changed that one wrapper from `min-w-0` to `min-w-16`
+(a real, bounded fix, not a redesign): the column can still shrink well
+below its natural content width - long names still truncate exactly as
+before - but a real, legible few characters are now always guaranteed,
+regardless of which UI font a given OS resolves the stack to.
+
+### Real-browser proof
+New `apps/web/e2e/specs/typography.spec.ts` (4 tests):
+1. No request for a font (by resource type or file extension) is ever
+   made while navigating the app.
+2. The basic app shell (logo, sidebar/nav, Dashboard heading, and a
+   route whose cards render the inline-SVG provider marks) renders
+   correctly with every non-loopback network request aborted - a
+   hermetic stand-in for "no internet access."
+3. `document.fonts.ready` settles (`status === 'loaded'`) and the
+   computed `body` font-family never contains `"inter"`. Deliberately
+   does *not* assert on `document.fonts.check('Inter')`: whether a face
+   named Inter happens to be resolvable is a property of the machine's
+   own OS font inventory, not of this product's code, and would make
+   the test pass or fail depending on who runs it.
+4. The exact regression this task fixes, proven directly rather than
+   only inferred from `toBeVisible()`: the "Twitch" destination-name
+   heading on `/platforms` renders with a real bounding-box width
+   (`> 20px`), not a sub-pixel collapse.
+
+### Static-asset determinism sweep (bounded, per this task's own scope)
+Searched frontend source for remote font/icon/CSS/image URLs,
+developer-machine paths, and localhost-only assets. Findings: the
+brand logo (`src/assets/brand-emblem.png`) and favicon are Vite-bundled
+local files (confirmed hashed into `dist/assets/` at build time); the
+four provider brand marks are inline SVG path data embedded in
+`ProviderBrand.tsx` itself, sourced from Simple Icons (CC0), with
+`docs/provider-branding.md` as the existing provenance record - not a
+runtime asset load at all. The only `https://` literals anywhere in
+frontend source are YouTube OAuth scope identifiers in test fixtures
+(Category B: a real, deliberate identifier string, not an asset load).
+No other Category C (accidental runtime dependency) or Category D
+(dead/unreachable source) findings. Font-family was the sole
+Category-C defect, now fixed above.
+
+### Verification
+Local: `npm run test:e2e` - **27/27 passed** (23 existing + 4 new).
+`npm run i18n:check` (29 namespaces, no diff), `npm run typecheck`,
+`npm run lint` (0 errors - 1 pre-existing, unrelated warning), `npm run
+test -- --run` (139 files / 1594 tests, unchanged), `npm run build`
+(clean). Backend untouched this task (no `apps/server` changes - a pure
+frontend/static-asset/test fix, consistent with the governing task's
+own "should not require production backend changes").
+
+### Production build asset inspection
+Fresh `npm run build` output inspected directly (not inferred from
+source): `dist/index.html`'s only external-looking reference is its
+own locally-hashed favicon/script/stylesheet paths - no font `<link>`,
+no `@font-face` rule anywhere in the built CSS, and the built CSS's own
+`--font-sans` value confirms the system stack. The built JS bundle
+contains 95 raw substring matches of "Inter" - individually inspected;
+every one is `refetchInterval`/`setInterval`/`IntersectionObserver`/
+`Interlinia` (Polish)/similar unrelated identifiers, never the literal
+font-family token.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made for the font-strategy decision (fully
+resolved from repository evidence), tests, builds, or waiting. No
+backend/production Go code touched. No operator-machine state modified.
