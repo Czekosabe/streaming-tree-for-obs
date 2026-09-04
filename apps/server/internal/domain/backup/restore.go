@@ -15,9 +15,11 @@ import (
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/goals"
 	"github.com/streaming-tree/server/internal/domain/metadatapreset"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -42,6 +44,13 @@ type Sinks struct {
 	}
 	Output interface {
 		Update(ctx context.Context, platformID string, input output.UpdateInput) (output.Settings, error)
+	}
+	RemoteTarget interface {
+		// Set is enough on its own for restore: no explicit clear step is
+		// needed (clearExisting's own doc comment) because
+		// platform_remote_targets cascades on its platform's own
+		// deletion (migration 0007), exactly like output settings.
+		Set(ctx context.Context, t remotetarget.Target, now time.Time) (remotetarget.Target, error)
 	}
 	Accounts interface {
 		CreateAccount(ctx context.Context, acc account.Account) error
@@ -126,6 +135,17 @@ type Sinks struct {
 	}
 	UpdatePreferences interface {
 		SetPreferences(ctx context.Context, p updatersettings.Preferences, now time.Time) (updatersettings.Preferences, error)
+	}
+	// Onboarding is never populated FROM the backup - Config carries no
+	// onboarding field at all (docs/backup-restore.md §1). Restore calls
+	// SetStatus itself, once, after every other domain above has been
+	// written, with a status RECOMPUTED from what actually just landed
+	// in the database - never the backup-time value verbatim - so a
+	// restored install's onboarding-auto-show behavior always stays
+	// consistent with its own just-restored configuration (see
+	// recomputeOnboardingState in restore_commit.go for why).
+	Onboarding interface {
+		SetStatus(ctx context.Context, status onboarding.Status, schemaVersion int, now time.Time) (onboarding.State, error)
 	}
 }
 

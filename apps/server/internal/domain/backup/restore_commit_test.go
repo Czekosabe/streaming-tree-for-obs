@@ -18,9 +18,11 @@ import (
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/goals"
 	"github.com/streaming-tree/server/internal/domain/metadatapreset"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -33,13 +35,14 @@ import (
 // applyConfig/clearExisting/Restore's real behavior without a
 // database.
 type fakeSinks struct {
-	platforms   map[string]platform.Platform
-	output      map[string]output.Settings
-	accounts    map[string]account.Account
-	links       map[string][]account.Link
-	integration map[account.ProviderID]account.IntegrationSettings
-	regions     map[string]string
-	engagement  map[string]engagementsettings.Settings
+	platforms     map[string]platform.Platform
+	output        map[string]output.Settings
+	remoteTargets map[string]remotetarget.Target
+	accounts      map[string]account.Account
+	links         map[string][]account.Link
+	integration   map[account.ProviderID]account.IntegrationSettings
+	regions       map[string]string
+	engagement    map[string]engagementsettings.Settings
 
 	operatorPrefs      operatorchatprefs.Preferences
 	operatorVisibility map[string]bool
@@ -79,12 +82,15 @@ type fakeSinks struct {
 	donationSources map[string]donationsource.Source
 
 	updatePrefs *updatersettings.Preferences
+
+	onboardingStatus onboarding.Status
 }
 
 func newFakeSinks() *fakeSinks {
 	return &fakeSinks{
 		platforms: map[string]platform.Platform{}, output: map[string]output.Settings{},
-		accounts: map[string]account.Account{}, links: map[string][]account.Link{},
+		remoteTargets: map[string]remotetarget.Target{},
+		accounts:      map[string]account.Account{}, links: map[string][]account.Link{},
 		integration: map[account.ProviderID]account.IntegrationSettings{}, regions: map[string]string{},
 		engagement: map[string]engagementsettings.Settings{}, operatorVisibility: map[string]bool{},
 		overlays: map[string]chatoverlay.Profile{}, overlayAccounts: map[string][]string{},
@@ -103,7 +109,8 @@ func newFakeSinks() *fakeSinks {
 
 func (f *fakeSinks) sinks() Sinks {
 	return Sinks{
-		Platforms: fakePlatformSink{f}, Output: fakeOutputSink{f}, Accounts: fakeAccountSink{f},
+		Platforms: fakePlatformSink{f}, Output: fakeOutputSink{f}, RemoteTarget: fakeRemoteTargetSink{f},
+		Accounts:      fakeAccountSink{f},
 		YouTubeRegion: fakeYouTubeRegionSink{f}, EngagementSettings: fakeEngagementSink{f},
 		OperatorChatPrefs: fakeOperatorChatPrefsSink{f}, ChatOverlays: fakeChatOverlaySink{f},
 		ChatAutomation: fakeChatAutomationSink{f}, Alerts: fakeAlertsSink{f},
@@ -113,13 +120,15 @@ func (f *fakeSinks) sinks() Sinks {
 		MetadataPresets: fakeMetadataPresetSink{f}, StreamSetupProfiles: fakeStreamSetupProfileSink{f},
 		DonationSources:   fakeDonationSourceSink{f},
 		UpdatePreferences: fakeUpdatePreferencesSink{f},
+		Onboarding:        fakeOnboardingSink{f},
 	}
 }
 
 func (f *fakeSinks) sources() Sources {
 	return Sources{
 		Platforms: fakePlatformsListOnly{f}, Output: fakeOutput{byPlatform: f.output},
-		Accounts: fakeAccountsListOnly{f}, YouTubeRegion: fakeYouTubeRegion{byAccount: f.regions},
+		RemoteTarget: fakeRemoteTarget{byPlatform: f.remoteTargets},
+		Accounts:     fakeAccountsListOnly{f}, YouTubeRegion: fakeYouTubeRegion{byAccount: f.regions},
 		EngagementSettings: fakeEngagementSettings{byAccount: f.engagement},
 		OperatorChatPrefs:  fakeOperatorChatPrefsListOnly{f},
 		ChatOverlays:       fakeChatOverlaysListOnly{f}, ChatAutomation: fakeChatAutomationListOnly{f},
@@ -143,6 +152,7 @@ func (s fakePlatformSink) Create(_ context.Context, p platform.Platform) error {
 func (s fakePlatformSink) Delete(_ context.Context, id string) error {
 	delete(s.f.platforms, id)
 	delete(s.f.output, id)
+	delete(s.f.remoteTargets, id)
 	return nil
 }
 
@@ -152,6 +162,17 @@ func (s fakeOutputSink) Update(_ context.Context, platformID string, in output.U
 	settings := output.Settings{ServerURL: in.ServerURL, AutoRestart: in.AutoRestart}
 	s.f.output[platformID] = settings
 	return settings, nil
+}
+
+type fakeRemoteTargetSink struct{ f *fakeSinks }
+
+func (s fakeRemoteTargetSink) Set(_ context.Context, t remotetarget.Target, now time.Time) (remotetarget.Target, error) {
+	t.UpdatedAt = now
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = now
+	}
+	s.f.remoteTargets[t.PlatformID] = t
+	return t, nil
 }
 
 type fakeAccountSink struct{ f *fakeSinks }
@@ -404,6 +425,13 @@ type fakeUpdatePreferencesSink struct{ f *fakeSinks }
 func (s fakeUpdatePreferencesSink) SetPreferences(_ context.Context, p updatersettings.Preferences, _ time.Time) (updatersettings.Preferences, error) {
 	s.f.updatePrefs = &p
 	return p, nil
+}
+
+type fakeOnboardingSink struct{ f *fakeSinks }
+
+func (s fakeOnboardingSink) SetStatus(_ context.Context, status onboarding.Status, schemaVersion int, now time.Time) (onboarding.State, error) {
+	s.f.onboardingStatus = status
+	return onboarding.State{Status: status, SchemaVersion: schemaVersion, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 // --- read-side (Sources) adapters over the same fakeSinks state, used so
@@ -818,5 +846,90 @@ func TestApplyConfigRemapsStreamSetupProfileReferences(t *testing.T) {
 	}
 	if !missingPreset.MetadataPresetMissing() {
 		t.Error("MetadataPresetMissing() = false, want true")
+	}
+}
+
+// TestRecomputeOnboardingStatus proves the three real signals migration
+// 0029 uses to decide "did this database ever see real prior use"
+// (docs/onboarding.md §4.3) still classify a restored config correctly,
+// and that a restored-but-untouched seed set - the case the migration's
+// own fourth, id-based check can never see post-restore, since every
+// restored platform always gets a freshly minted id - lands on pending,
+// exactly like a genuinely fresh install.
+func TestRecomputeOnboardingStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want onboarding.Status
+	}{
+		{
+			name: "empty config",
+			cfg:  Config{},
+			want: onboarding.StatusPending,
+		},
+		{
+			name: "untouched seed platforms only (disabled, no server url)",
+			cfg: Config{
+				Platforms: []PlatformExport{
+					{Platform: platform.Platform{ID: "pf_1", Enabled: false}},
+					{Platform: platform.Platform{ID: "pf_2", Enabled: false}},
+				},
+			},
+			want: onboarding.StatusPending,
+		},
+		{
+			name: "a connected account exists",
+			cfg: Config{
+				ConnectedAccounts: []ConnectedAccountExport{
+					{Account: account.Account{ID: "acct_1", ProviderID: account.ProviderTwitch}},
+				},
+			},
+			want: onboarding.StatusDismissed,
+		},
+		{
+			name: "an enabled platform exists",
+			cfg: Config{
+				Platforms: []PlatformExport{{Platform: platform.Platform{ID: "pf_1", Enabled: true}}},
+			},
+			want: onboarding.StatusDismissed,
+		},
+		{
+			name: "an output server url was actually configured",
+			cfg: Config{
+				Platforms: []PlatformExport{{
+					Platform: platform.Platform{ID: "pf_1", Enabled: false},
+					Output:   output.Settings{ServerURL: "rtmp://example.invalid/live"},
+				}},
+			},
+			want: onboarding.StatusDismissed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := recomputeOnboardingStatus(tt.cfg); got != tt.want {
+				t.Errorf("recomputeOnboardingStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestApplyConfigRecomputesOnboardingStateFromRestoredConfig proves the
+// recompute is actually wired into applyConfig's own write path (not just
+// correct in isolation) - restoring a config with real configured
+// destinations must leave the onboarding sink dismissed, never whatever
+// the fake sink's zero value happens to be.
+func TestApplyConfigRecomputesOnboardingStateFromRestoredConfig(t *testing.T) {
+	sinks := newFakeSinks()
+	cfg := Config{
+		FormatVersion: FormatVersion,
+		Platforms: []PlatformExport{
+			{Platform: platform.Platform{ID: "pf_old_1", Enabled: true}},
+		},
+	}
+	if err := applyConfig(context.Background(), cfg, map[string][]byte{}, sinks.sinks(), fakeBlobWriter{}, fakeBlobWriter{}, func() time.Time { return time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC) }); err != nil {
+		t.Fatalf("applyConfig() error = %v", err)
+	}
+	if sinks.onboardingStatus != onboarding.StatusDismissed {
+		t.Errorf("onboardingStatus = %q, want %q", sinks.onboardingStatus, onboarding.StatusDismissed)
 	}
 }

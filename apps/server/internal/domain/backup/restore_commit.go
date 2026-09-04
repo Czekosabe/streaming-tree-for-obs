@@ -15,6 +15,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/engagementsettings"
 	"github.com/streaming-tree/server/internal/domain/goals"
 	"github.com/streaming-tree/server/internal/domain/metadatapreset"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
@@ -217,6 +218,17 @@ func applyConfig(ctx context.Context, cfg Config, assets map[string][]byte, sink
 			ServerURL: pe.Output.ServerURL, AutoRestart: pe.Output.AutoRestart,
 		}); err != nil {
 			return fmt.Errorf("restore platform output settings: %w", err)
+		}
+		if pe.RemoteTarget != nil {
+			rt := *pe.RemoteTarget
+			rt.PlatformID = newID
+			// ResourceID (the YouTube broadcast id) is an external
+			// provider identifier, never a backup-local id - preserved
+			// verbatim, never remapped (model.go's own PlatformExport
+			// doc comment).
+			if _, err := sink.RemoteTarget.Set(ctx, rt, t); err != nil {
+				return fmt.Errorf("restore platform remote target: %w", err)
+			}
 		}
 	}
 
@@ -637,7 +649,47 @@ func applyConfig(ctx context.Context, cfg Config, assets map[string][]byte, sink
 		}
 	}
 
+	// --- onboarding state (recomputed, last) -----------------------------
+	// Must run after every domain above: it reads cfg, the same config
+	// this whole function has been restoring, so its answer already
+	// accounts for every platform/account this call just wrote.
+	if _, err := sink.Onboarding.SetStatus(ctx, recomputeOnboardingStatus(cfg), onboarding.CurrentSchemaVersion, now().UTC()); err != nil {
+		return fmt.Errorf("restore onboarding state: %w", err)
+	}
+
 	return nil
+}
+
+// recomputeOnboardingStatus derives the post-restore onboarding status from
+// the config a restore just wrote, rather than trusting any backup-time
+// label - onboarding is never part of Config at all (Sinks.Onboarding's own
+// doc comment). This mirrors migration 0029's own "did this database ever
+// see real prior use" rule (docs/onboarding.md §4.3: a connected account, an
+// output server actually configured, or an enabled destination) so a
+// restored install's onboarding-auto-show behavior stays internally
+// consistent with the configuration that now actually sits in its database,
+// regardless of what the operator's onboarding flow happened to say at
+// backup time.
+//
+// Deliberately omits that migration's fourth check ("any platform id
+// outside the four fixed seed ids"): restore always mints a fresh id for
+// every platform it writes (docs/backup-restore.md §4), so no restored
+// platform is ever literally one of those four ids and the check would be
+// true for every restore, unconditionally - useless as a signal here. The
+// three checks below still classify a restored-but-untouched seed set
+// correctly: an unmodified seed platform keeps enabled=false and
+// server_url="" by construction (migrations 0002/0003), exactly like a
+// fresh install's own seed rows.
+func recomputeOnboardingStatus(cfg Config) onboarding.Status {
+	if len(cfg.ConnectedAccounts) > 0 {
+		return onboarding.StatusDismissed
+	}
+	for _, pe := range cfg.Platforms {
+		if pe.Platform.Enabled || pe.Output.ServerURL != "" {
+			return onboarding.StatusDismissed
+		}
+	}
+	return onboarding.StatusPending
 }
 
 func remapChatAutomationTargets(targets []chatautomation.Target, ids idMap) []chatautomation.Target {

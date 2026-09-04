@@ -16,6 +16,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/backup"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
+	"github.com/streaming-tree/server/internal/domain/onboarding"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -65,6 +66,7 @@ func newInstallation(t *testing.T) *installation {
 
 	platformRepo := sqlite.NewPlatformRepository(db.DB)
 	outputSvc := output.NewService(sqlite.NewOutputRepository(db.DB))
+	remoteTargetRepo := sqlite.NewRemoteTargetRepository(db.DB)
 	accountRepo := sqlite.NewAccountRepository(db.DB)
 	youtubeRegionRepo := sqlite.NewYouTubeRegionRepository(db.DB)
 	engagementSettingsRepo := sqlite.NewEngagementSettingsRepository(db.DB)
@@ -82,9 +84,10 @@ func newInstallation(t *testing.T) *installation {
 	streamSetupProfileRepo := sqlite.NewStreamSetupProfileRepository(db.DB)
 	donationSourceRepo := sqlite.NewDonationSourceRepository(db.DB)
 	updatePreferencesRepo := sqlite.NewUpdateSettingsRepository(db.DB)
+	onboardingRepo := sqlite.NewOnboardingRepository(db.DB)
 
 	sources := backup.Sources{
-		Platforms: platformRepo, Output: outputSvc, Accounts: accountRepo,
+		Platforms: platformRepo, Output: outputSvc, RemoteTarget: remoteTargetRepo, Accounts: accountRepo,
 		YouTubeRegion: youtubeRegionRepo, EngagementSettings: engagementSettingsRepo,
 		OperatorChatPrefs: operatorChatPrefsRepo, ChatOverlays: chatOverlayRepo,
 		ChatAutomation: chatAutomationRepo, Alerts: alertsRepo,
@@ -96,7 +99,7 @@ func newInstallation(t *testing.T) *installation {
 		UpdatePreferences: updatePreferencesRepo,
 	}
 	sinks := backup.Sinks{
-		Platforms: platformRepo, Output: outputSvc, Accounts: accountRepo,
+		Platforms: platformRepo, Output: outputSvc, RemoteTarget: remoteTargetRepo, Accounts: accountRepo,
 		YouTubeRegion: youtubeRegionRepo, EngagementSettings: engagementSettingsRepo,
 		OperatorChatPrefs: operatorChatPrefsRepo, ChatOverlays: chatOverlayRepo,
 		ChatAutomation: chatAutomationRepo, Alerts: alertsRepo,
@@ -106,6 +109,7 @@ func newInstallation(t *testing.T) *installation {
 		MetadataPresets: metadataPresetRepo, StreamSetupProfiles: streamSetupProfileRepo,
 		DonationSources:   donationSourceRepo,
 		UpdatePreferences: updatePreferencesRepo,
+		Onboarding:        onboardingRepo,
 	}
 
 	visualStore := visualasset.NewFileStore(filepath.Join(dir, "assets", "visual"))
@@ -447,4 +451,78 @@ func TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContentHash(t *tes
 	if string(got) != string(imageBytes) {
 		t.Errorf("restored blob content = %q, want the original %q", got, imageBytes)
 	}
+}
+
+// TestRestoreRecomputesOnboardingStateAgainstRealDatabase is the real-
+// database counterpart to service_restore_test.go's fake-sink onboarding
+// coverage: proves the recompute (restore_commit.go's
+// recomputeOnboardingStatus) actually reaches the real onboarding_state
+// row through sqlite.OnboardingRepository, end to end, across two
+// genuinely different restores into the SAME installation - not merely
+// set once and left alone.
+func TestRestoreRecomputesOnboardingStateAgainstRealDatabase(t *testing.T) {
+	inst := newInstallation(t)
+	ctx := context.Background()
+	onboardingRepo := sqlite.NewOnboardingRepository(inst.db.DB)
+
+	st, found, err := onboardingRepo.GetState(ctx)
+	if err != nil || !found {
+		t.Fatalf("GetState() = %+v, %v, %v", st, found, err)
+	}
+	if st.Status != onboarding.StatusPending {
+		t.Fatalf("initial onboarding status = %q, want %q (fresh installation with its seed platforms removed, docs/onboarding.md §4.3)", st.Status, onboarding.StatusPending)
+	}
+
+	// A backup taken of this genuinely untouched installation.
+	emptyBackup, err := inst.svc.Export(ctx)
+	if err != nil {
+		t.Fatalf("Export() (empty) error = %v", err)
+	}
+
+	// Now configure and enable a real destination, and back THAT up too.
+	now := time.Now().UTC()
+	if err := inst.platformRepo.Create(ctx, platform.Platform{
+		ID: "pf_configured", ProviderID: platform.ProviderTwitch, DisplayName: "Real destination",
+		Enabled: true, SortOrder: 1, CreatedAt: now, UpdatedAt: now,
+		Metadata: platform.Metadata{Tags: []string{}, UpdatedAt: now},
+	}); err != nil {
+		t.Fatalf("PlatformRepository.Create() error = %v", err)
+	}
+	configuredBackup, err := inst.svc.Export(ctx)
+	if err != nil {
+		t.Fatalf("Export() (configured) error = %v", err)
+	}
+
+	restore := func(t *testing.T, data []byte) {
+		t.Helper()
+		preview, err := inst.svc.RestorePreview(ctx, data)
+		if err != nil {
+			t.Fatalf("RestorePreview() error = %v", err)
+		}
+		if _, err := inst.svc.Restore(ctx, preview.Token); err != nil {
+			t.Fatalf("Restore() error = %v", err)
+		}
+	}
+
+	t.Run("restoring the configured backup dismisses onboarding", func(t *testing.T) {
+		restore(t, configuredBackup)
+		st, _, err := onboardingRepo.GetState(ctx)
+		if err != nil {
+			t.Fatalf("GetState() error = %v", err)
+		}
+		if st.Status != onboarding.StatusDismissed {
+			t.Errorf("onboarding status = %q, want %q", st.Status, onboarding.StatusDismissed)
+		}
+	})
+
+	t.Run("restoring the empty backup afterward resets onboarding to pending", func(t *testing.T) {
+		restore(t, emptyBackup)
+		st, _, err := onboardingRepo.GetState(ctx)
+		if err != nil {
+			t.Fatalf("GetState() error = %v", err)
+		}
+		if st.Status != onboarding.StatusPending {
+			t.Errorf("onboarding status = %q, want %q (the second restore's own config has no real prior use, regardless of what the first restore left behind)", st.Status, onboarding.StatusPending)
+		}
+	})
 }

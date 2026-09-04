@@ -106,6 +106,19 @@ describe('BackupRestorePanel', () => {
     expect(within(preview).getByText(/2 destinations will need their stream keys re-entered/i)).toBeInTheDocument();
   });
 
+  it('shows the translated preview-error copy, never the raw request-failure message, when the uploaded file is not a valid backup', async () => {
+    vi.mocked(backupApi).previewRestoreBackup.mockRejectedValue(
+      new ApiError('http', 'Request to /api/backup/restore/preview failed with 422.', { status: 422 }),
+    );
+    renderPanel();
+
+    await chooseFile();
+
+    expect(await screen.findByText('This file could not be read as a backup.')).toBeInTheDocument();
+    expect(screen.queryByText(/request to .* failed with/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('backup-restore-preview')).not.toBeInTheDocument();
+  });
+
   it('cancels a staged preview server-side and returns to the choose-file state', async () => {
     vi.mocked(backupApi).previewRestoreBackup.mockResolvedValue(PREVIEW);
     vi.mocked(backupApi).cancelRestoreBackupPreview.mockResolvedValue(undefined);

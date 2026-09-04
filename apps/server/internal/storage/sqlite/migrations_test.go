@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func tableExists(t *testing.T, db *DB, name string) bool {
@@ -224,6 +225,69 @@ func TestSeedGivesTwitchOrderedTags(t *testing.T) {
 		if tags[i] != want[i] {
 			t.Errorf("tag %d = %q, want %q - order must be preserved", i, tags[i], want[i])
 		}
+	}
+}
+
+// TestMigrateToleratesAnAlreadyAppliedFutureMigration is the governing
+// task's "future schema version" scenario for the database layer itself
+// (distinct from the backup archive's own FormatVersion check,
+// docs/backup-restore.md §5): a database a NEWER release already
+// migrated further, then opened by an OLDER binary that only knows the
+// migrations up to its own release (e.g. after a manual downgrade).
+// Migrate only ever applies migrations it itself knows about and has
+// not yet recorded (this file's own doc comment) - it never re-applies
+// or errors on a schema_migrations row whose version it does not
+// recognize, so this proves that scenario is safe at the migration
+// layer specifically: no crash, no duplicate/corrupted rows, and every
+// migration this binary DOES know about is still correctly recorded as
+// already applied. (A genuinely incompatible future schema would
+// instead surface as an ordinary repository-layer query error the
+// first time this binary reads/writes a column a later migration
+// changed - the same honest, accepted limitation local desktop
+// applications without a formal downgrade contract commonly have; nothing
+// here claims to detect or block that.)
+func TestMigrateToleratesAnAlreadyAppliedFutureMigration(t *testing.T) {
+	db := newTestDB(t) // fully migrated to this binary's own latest version
+	ctx := context.Background()
+
+	before, err := AppliedMigrations(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("AppliedMigrations() error = %v", err)
+	}
+
+	// Simulate a migration a NEWER release already applied and recorded,
+	// which this binary's own LoadMigrations() has never heard of.
+	const futureVersion = 999999
+	if _, err := db.Exec(
+		`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
+		futureVersion, "a_future_release_migration", time.Now().UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("seed a future migration row: %v", err)
+	}
+
+	appliedNow, err := Migrate(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("Migrate() with an unrecognized future migration already applied returned an error: %v", err)
+	}
+	if len(appliedNow) != 0 {
+		t.Errorf("Migrate() applied %v against an already-fully-migrated database, want nothing", appliedNow)
+	}
+
+	after, err := AppliedMigrations(ctx, db.DB)
+	if err != nil {
+		t.Fatalf("AppliedMigrations() error = %v", err)
+	}
+	if len(after) != len(before)+1 {
+		t.Fatalf("got %d applied migrations after, want %d (the original set plus the one seeded future row)", len(after), len(before)+1)
+	}
+	var sawFuture bool
+	for _, record := range after {
+		if record.Version == futureVersion {
+			sawFuture = true
+		}
+	}
+	if !sawFuture {
+		t.Error("the seeded future migration row was lost")
 	}
 }
 

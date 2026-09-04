@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -39,6 +40,9 @@ type Sources struct {
 	}
 	Output interface {
 		Get(ctx context.Context, platformID string) (output.Settings, error)
+	}
+	RemoteTarget interface {
+		Get(ctx context.Context, platformID string) (remotetarget.Target, bool, error)
 	}
 	Accounts interface {
 		ListAccounts(ctx context.Context) ([]account.Account, error)
@@ -141,7 +145,13 @@ func Export(ctx context.Context, src Sources) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("get output settings for platform %s: %w", p.ID, err)
 		}
-		cfg.Platforms = append(cfg.Platforms, PlatformExport{Platform: p, Output: out})
+		pe := PlatformExport{Platform: p, Output: out}
+		if rt, ok, err := src.RemoteTarget.Get(ctx, p.ID); err != nil {
+			return Config{}, fmt.Errorf("get remote target for platform %s: %w", p.ID, err)
+		} else if ok {
+			pe.RemoteTarget = &rt
+		}
+		cfg.Platforms = append(cfg.Platforms, pe)
 	}
 
 	for _, providerID := range knownAccountProviders {

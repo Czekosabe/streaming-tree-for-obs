@@ -53613,3 +53613,195 @@ touched - every measurement ran against this session's own hermetic
 `-tags integration` test server and a locally-served production
 build/preview, never the operator's real installed application, real
 credentials, or real OBS.
+
+## fix(server,web): persisted-data integrity audit - two real backup/restore coverage gaps, one testserver parity gap, one frontend error-message leak
+
+Governing-task audit of the Stage 23 backup/restore contract: build a
+complete cross-reference between `backup.Config` and all 22 real
+SQLite repositories, classify every domain into MUST-BACK-UP/MAY-BACK-
+UP/MUST-NOT-BACK-UP(secret)/RUNTIME-CACHE/HISTORY-OBSERVABILITY against
+the REAL current code (never the old inventory this task explicitly
+warned against trusting), then fix what the audit actually found -
+never adding backup coverage "because the prompt mentioned it."
+
+### Inventory result
+17 of 22 domains were already correctly covered. `engagementsettings`
+was already covered (a prior audit note was stale). `streamsession`
+(operational history, docs/backup-restore.md's own "not a place Stage
+24 history lives") and `remoteoverlaycapability` ("token is the
+capability itself" per its own migration comment) are correctly
+excluded, deliberately, and this entry now says so explicitly rather
+than leaving that undocumented. Two were genuine gaps:
+
+1. **`remotetarget` (YouTube remote broadcast target) was never
+   exported or restored**, despite `docs/backup-restore.md`'s own
+   inventory table already documenting it as "Yes" - the code
+   contradicted its own already-written contract, not the other way
+   around.
+2. **Onboarding state's restore behavior was internally inconsistent**
+   with the product's own stated position ("backup represents full
+   user configuration, onboarding is durable preference state") -
+   restore never touched `onboarding_state` at all, so a restored
+   install could show a fully-configured dashboard behind a "let's set
+   up your first destination" wizard.
+
+### Fix 1 - remote broadcast target
+`PlatformExport` gained an optional `RemoteTarget *remotetarget.Target`
+(`apps/server/internal/domain/backup/model.go`); `Sources`/`Sinks`
+gained narrow `RemoteTarget` ports (`export.go`/`restore.go`, repository-
+layer only, matching every other domain here); `Export`/`applyConfig`
+wire it through, preserving `ResourceID` (an external YouTube broadcast
+id, not a backup-local id) verbatim rather than remapping it. Wired the
+real `sqlite.NewRemoteTargetRepository` into `cmd/server/main.go`'s
+`backupSources`/`backupSinks`.
+
+### Fix 2 - onboarding-state recompute
+Restore never serializes the backup-time `onboarding.Status` verbatim
+(there's no field for it in `Config` at all) - instead,
+`applyConfig`'s new last step (`restore_commit.go`'s
+`recomputeOnboardingStatus`) derives a fresh status from what the
+restore itself just wrote: any connected account, any platform with a
+real `server_url`, or any enabled platform means `dismissed`; otherwise
+`pending`. This mirrors migration `0029`'s own existing-user rule
+exactly, minus its fourth, id-based check ("any platform id outside
+the four fixed seed ids") - restore always mints a fresh id for every
+platform (docs/backup-restore.md §4), so that specific check is true
+for every restore unconditionally and would be useless post-restore;
+an untouched restored seed platform still keeps `enabled=false` and
+`server_url=''` by construction, so the other three checks alone
+classify it correctly. `Sinks` gained a narrow `Onboarding.SetStatus`
+port, wired to the real `sqlite.NewOnboardingRepository` in
+`cmd/server/main.go`. `docs/backup-restore.md`'s existing onboarding
+row already documented this exact "recompute honest state" contract
+in its rationale column - the code just never matched it before now;
+no doc edit was needed for either fix, since both rows already
+described the (now real) intended behavior.
+
+### Testserver parity gap found and fixed
+`cmd/testserver` never wired the backup/restore HTTP API at all (no
+`backup.Sources`/`Sinks`/`Service` construction, `Backup` field left
+nil in `httpapi.Options`) - the same category of gap the E2E-harness
+task found four times over for other domains. Fixed by mirroring
+`cmd/server`'s own wiring exactly (fresh repository-layer instances,
+never a runtime manager's Service) plus a small
+`testserverBranchStreamingGuardAdapter` (package `main` can't be
+imported across the two separate binaries, so it's a same-shaped copy
+of `cmd/server`'s own unexported adapter, not a new design).
+
+### Frontend defect found and fixed
+Verifying the testserver fix with a real E2E round trip surfaced a
+real, separate bug: `BackupRestorePanel`'s restore-preview failure path
+rendered the raw `ApiError.message` ("Request to
+/api/backup/restore/preview failed with 422.") instead of the
+already-written, already-translated, EN/PL-parity `preview.error` copy
+("This file could not be read as a backup." / "Nie udało się odczytać
+tego pliku jako kopii zapasowej.") - a dead translation key sitting
+right next to the bug. One-line fix in `handleFileSelected`'s
+`onError`, mirroring the pattern the commit path already used
+correctly. The backend's own `writeBackupError`
+(`internal/httpapi/backup.go`) was already exemplary here for every
+other case - every known error maps to a friendly code/message, and
+anything unrecognized logs server-side and returns a generic
+`internal_error` to the client, never a raw Go error or stack trace;
+this was the one place the frontend threw that safety away.
+
+### Tests added
+- `internal/domain/backup`: `TestRecomputeOnboardingStatus` (table-
+  driven, all four real signals), `TestApplyConfigRecomputesOnboardingStateFromRestoredConfig`,
+  `TestRestoreRecomputesOnboardingStatusFromRestoredConfigNotFromPriorState`
+  (fake-sink, both directions: dismissed overwrites a stale pending,
+  pending overwrites a stale dismissed), and the real-SQLite
+  counterpart `TestRestoreRecomputesOnboardingStateAgainstRealDatabase`
+  in `security_integration_test.go` (two real restores into the same
+  real database, proving the recompute is live, not "set once at
+  install time").
+- `TestRestoreFailingPartwayThroughCommitRecoversViaTheSafetySnapshot`
+  (`service_restore_test.go`): a deterministic failure-injection proof
+  of docs/backup-restore.md §7 step 7's own documented claim - restore
+  is not one database transaction, so a fault partway through commit
+  (a wrapped fake `ChatOverlays` sink that fails its second
+  `CreateProfile` call, never a real filesystem/database fault) leaves
+  a genuinely partial state, and the pre-restore safety snapshot (saved
+  before any destructive write) recovers it exactly, through the same
+  ordinary restore flow. This is the first test to actually exercise
+  the recovery-from-a-real-failure path; the existing safety-snapshot
+  tests only proved "cancel and recover," never "fail and recover."
+- `internal/storage/sqlite`: `TestMigrateToleratesAnAlreadyAppliedFutureMigration` -
+  confirms `Migrate()` is safe (no crash, no corrupted/duplicated rows,
+  every migration this binary knows about still correctly recorded) if
+  `schema_migrations` already contains a version this binary's own
+  `LoadMigrations()` has never heard of (e.g. after a manual downgrade
+  from a newer release). A genuinely incompatible future schema would
+  still surface as an ordinary repository-layer query error the first
+  time a changed column is touched - an accepted limitation for local
+  desktop software without a formal downgrade contract, documented in
+  the test rather than silently assumed.
+- `apps/web`: `BackupRestorePanel.test.tsx` gained a regression test
+  pinning the translated-copy fix. `e2e/specs/backup-restore.spec.ts`
+  (new) is the bounded real-browser smoke test the governing task
+  requires for a frontend-accessible surface - a real export → real
+  browser download → real restore-preview round trip against the
+  hermetic backend, plus an invalid-file-fails-safely case. Both
+  spec tests deliberately never click "Restore this backup…": a
+  committed restore is REPLACE-destructive and always reports
+  `restartRequired: true`, which this suite's one shared hermetic
+  backend process can never actually perform mid-run - the preview
+  half is exercised for real instead, then cancelled.
+
+### Confirmed via reading/running the existing suite, not rebuilt
+Per the governing task's own "prefer extending the existing contract...
+do not build a second parallel path-validation system" instruction,
+the following were verified already correct and comprehensive rather
+than re-implemented: path-traversal/zip-slip rejection, decompression-
+bomb/entry-count/oversized-package bounds, duplicate-entry and
+unreferenced-asset rejection, wrong-product/unknown-format-version/
+malformed-config rejection (all in `reader.go`'s existing, mature
+`archivesafety`-backed validation, `archive_test.go`); the REPLACE-not-
+merge restore-into-non-existing-state contract
+(`TestRestoreClearsAndAppliesEndToEnd`); real-secret-never-leaks, both
+structurally (`TestConfigStructurallyExcludesSecretShapedFields`) and
+by scanning real serialized bytes for real synthetic-sentinel secret
+values seeded into a real installation's real `SecretStore`
+(`TestExportedBackupNeverContainsAnyRealSecretValue`); the id-collision/
+secret-adoption attack surface
+(`TestRestoreIntoAnIndependentInstallationNeverAdoptsItsPreExistingSecret`);
+asset content-hash round-tripping
+(`TestManagedVisualAssetRoundTripsThroughBackupAndRestoreByContentHash`);
+migration idempotence and failed-migration fail-closed-without-partial-
+state (`TestMigrateIsIdempotent`, `TestFailedMigrationIsNotRecordedAsApplied`);
+and old-state/existing-user compatibility using this repository's own
+real migration SQL re-derived and exercised against real mutated rows
+(`onboarding_repository_test.go`'s `onboardingExistingUserCase` family) -
+never an invented fake legacy database format, consistent with the
+task's explicit "no invented fake legacy formats" instruction and this
+project having no separately-shipped legacy fixture file to draw from.
+The end-to-end `scripts/verify-backup-restore.mjs` integration script
+(14 steps: export, secret-absence, cross-restart persistence, a full
+scan of every captured HTTP body and backend log line for the seeded
+secret) was re-run against the newly-wired testserver and passes
+unchanged.
+
+### Verification
+Backend: `go build ./...`, `go build -tags integration ./...`,
+`go vet ./...`, `go vet -tags integration ./...`, `gofmt -l .` (clean),
+`go test ./...` (every package, all passing) - all run twice, before
+and after the testserver/onboarding changes.
+`node scripts/verify-backup-restore.mjs` (14/14 steps) against the
+rebuilt testserver. Frontend: `npm run typecheck`, `npm run lint` (0
+errors, the same 1 pre-existing unrelated warning), `npm run i18n:check`
+(29 namespaces, no diff), `npm run test` (139 files / 1595 tests),
+`npm run build` (clean). Real-browser: `npm run test:e2e` - **35/35
+passed** (33 pre-existing + 2 new), no unexpected console/page errors.
+
+### Scope note
+This is one bounded slice of the full governing persisted-data-
+integrity task (two real backup-coverage defects, the testserver/
+frontend defects found while proving the fix, and the specific new
+test coverage listed above) - not yet the complete 46-point audit/
+report. No Stage 28, no new provider, no frontend redesign, no
+reopening prior tasks' already-merged work. No operator-machine state
+was touched: every test ran against a fresh temporary SQLite database
+and temporary data directory (`t.TempDir()`, or this session's own
+hermetic `-tags integration` test server with its own temp data dir),
+never the operator's real installed application, real credentials, or
+real provider accounts.

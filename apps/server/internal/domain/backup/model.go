@@ -26,6 +26,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -45,12 +46,26 @@ const FormatVersion = 1
 const Product = "streaming-tree-for-obs-backup"
 
 // PlatformExport is one configured destination's portable
-// configuration: identity/display fields, its stream metadata, and its
-// non-secret output (server URL) settings. Deliberately excludes the
-// stream key itself (internal/secrets, never read by this package).
+// configuration: identity/display fields, its stream metadata, its
+// non-secret output (server URL) settings, and (YouTube destinations
+// only, and only once one has actually been selected) its remote
+// broadcast target. Deliberately excludes the stream key itself
+// (internal/secrets, never read by this package).
+//
+// RemoteTarget carries no token, stream key, or ingestion field
+// (internal/domain/remotetarget's own doc comment) - only which remote
+// resource (a YouTube live broadcast id, today) this destination's
+// metadata reads from and publishes to. Its ResourceID is an external
+// provider identifier, never a backup-local id, so restore preserves it
+// verbatim rather than remapping it: docs/backup-restore.md §1 already
+// documents the accepted risk plainly - "a stale resource_id simply
+// fails to resolve on next use, same as it would today if the
+// broadcast ended". Nil when the destination never had one (most
+// destinations, and every non-YouTube one).
 type PlatformExport struct {
-	Platform platform.Platform `json:"platform"`
-	Output   output.Settings   `json:"output"`
+	Platform     platform.Platform    `json:"platform"`
+	Output       output.Settings      `json:"output"`
+	RemoteTarget *remotetarget.Target `json:"remoteTarget,omitempty"`
 }
 
 // ConnectedAccountExport is one connected account's portable identity.

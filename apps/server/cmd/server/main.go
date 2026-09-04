@@ -1208,6 +1208,7 @@ func run() error {
 	// not trigger), mirroring internal/userdatapurge's own cross-
 	// domain sweep.
 	backupPlatforms := sqlite.NewPlatformRepository(db.DB)
+	backupRemoteTarget := sqlite.NewRemoteTargetRepository(db.DB)
 	backupAccounts := sqlite.NewAccountRepository(db.DB)
 	backupYouTubeRegion := sqlite.NewYouTubeRegionRepository(db.DB)
 	backupEngagementSettings := sqlite.NewEngagementSettingsRepository(db.DB)
@@ -1225,9 +1226,10 @@ func run() error {
 	backupStreamSetupProfiles := sqlite.NewStreamSetupProfileRepository(db.DB)
 	backupDonationSources := sqlite.NewDonationSourceRepository(db.DB)
 	backupUpdatePreferences := sqlite.NewUpdateSettingsRepository(db.DB)
+	backupOnboarding := sqlite.NewOnboardingRepository(db.DB)
 
 	backupSources := backupdomain.Sources{
-		Platforms: backupPlatforms, Output: outputService, Accounts: backupAccounts,
+		Platforms: backupPlatforms, Output: outputService, RemoteTarget: backupRemoteTarget, Accounts: backupAccounts,
 		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
 		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
 		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
@@ -1239,7 +1241,7 @@ func run() error {
 		UpdatePreferences: backupUpdatePreferences,
 	}
 	backupSinks := backupdomain.Sinks{
-		Platforms: backupPlatforms, Output: outputService, Accounts: backupAccounts,
+		Platforms: backupPlatforms, Output: outputService, RemoteTarget: backupRemoteTarget, Accounts: backupAccounts,
 		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
 		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
 		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
@@ -1249,6 +1251,7 @@ func run() error {
 		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
 		DonationSources:   backupDonationSources,
 		UpdatePreferences: backupUpdatePreferences,
+		Onboarding:        backupOnboarding,
 	}
 
 	backupService := backupdomain.NewService(

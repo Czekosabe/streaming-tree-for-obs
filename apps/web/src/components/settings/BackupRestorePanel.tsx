@@ -83,7 +83,11 @@ export function BackupRestorePanel() {
     setPreviewError(null);
     previewMutation.mutate(file, {
       onSuccess: (result) => setPreview(result),
-      onError: (error) => setPreviewError(error.message),
+      // Never the raw ApiError.message (an internal "Request to
+      // /api/backup/restore/preview failed with 422." string) - the
+      // operator-facing, EN/PL-translated copy this file already
+      // carries for exactly this case.
+      onError: () => setPreviewError(t('preview.error')),
     });
   }
 

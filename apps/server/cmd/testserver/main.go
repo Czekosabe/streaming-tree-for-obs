@@ -45,6 +45,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/account"
 	audiodomain "github.com/streaming-tree/server/internal/domain/audio"
 	"github.com/streaming-tree/server/internal/domain/audioasset"
+	backupdomain "github.com/streaming-tree/server/internal/domain/backup"
 	chatoverlaydomain "github.com/streaming-tree/server/internal/domain/chatoverlay"
 	"github.com/streaming-tree/server/internal/domain/credential"
 	"github.com/streaming-tree/server/internal/domain/donationsource"
@@ -85,6 +86,7 @@ import (
 	"github.com/streaming-tree/server/internal/support"
 	supporterwidgetsrt "github.com/streaming-tree/server/internal/supporterwidgets"
 	"github.com/streaming-tree/server/internal/sysresources"
+	"github.com/streaming-tree/server/internal/updater"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -559,6 +561,77 @@ func run() error {
 	// identical wiring to cmd/server, see its own comment.
 	streamSetupService := streamsetup.NewService(sqlite.NewStreamSetupProfileRepository(db.DB), platformService, metadataPresetService, branchManager)
 
+	// Stage 23: safe configuration backup/restore (docs/backup-
+	// restore.md) - identical wiring to cmd/server, see its own comment.
+	// Every repository below is constructed fresh, at the repository
+	// layer, exactly like cmd/server's own backup wiring - never reused
+	// from a runtime manager/service constructed above, so this test
+	// server exercises the exact same restore semantics (REPLACE, fresh
+	// local ids, never through a domain's own business-rule side
+	// effects) real installations get.
+	backupStreamingGuard := testserverBranchStreamingGuardAdapter{branches: branchManager}
+	backupStaging, err := backupdomain.NewFileStaging(filepath.Join(cfg.DataDir, "backup-staging"), backupdomain.PreviewTTL)
+	if err != nil {
+		return err
+	}
+	backupSafetySnapshots, err := backupdomain.NewFileSafetySnapshotStore(filepath.Join(cfg.DataDir, "backup-safety"))
+	if err != nil {
+		return err
+	}
+	backupPlatforms := sqlite.NewPlatformRepository(db.DB)
+	backupRemoteTarget := sqlite.NewRemoteTargetRepository(db.DB)
+	backupAccounts := sqlite.NewAccountRepository(db.DB)
+	backupYouTubeRegion := sqlite.NewYouTubeRegionRepository(db.DB)
+	backupEngagementSettings := sqlite.NewEngagementSettingsRepository(db.DB)
+	backupOperatorChatPrefs := sqlite.NewOperatorChatPrefsRepository(db.DB)
+	backupChatOverlays := sqlite.NewChatOverlayRepository(db.DB)
+	backupChatAutomation := sqlite.NewChatAutomationRepository(db.DB)
+	backupAlerts := sqlite.NewAlertsRepository(db.DB)
+	backupVisualDesigns := sqlite.NewVisualDesignRepository(db.DB)
+	backupVisualTemplates := sqlite.NewVisualTemplateRepository(db.DB)
+	backupVisualAssets := sqlite.NewVisualAssetRepository(db.DB)
+	backupAudioAssets := sqlite.NewAudioAssetRepository(db.DB)
+	backupAudioSettings := sqlite.NewAudioSettingsRepository(db.DB)
+	backupGoals := sqlite.NewGoalsRepository(db.DB)
+	backupMetadataPresets := sqlite.NewMetadataPresetRepository(db.DB)
+	backupStreamSetupProfiles := sqlite.NewStreamSetupProfileRepository(db.DB)
+	backupDonationSources := sqlite.NewDonationSourceRepository(db.DB)
+	backupUpdatePreferences := sqlite.NewUpdateSettingsRepository(db.DB)
+	backupOnboarding := sqlite.NewOnboardingRepository(db.DB)
+
+	backupSources := backupdomain.Sources{
+		Platforms: backupPlatforms, Output: outputService, RemoteTarget: backupRemoteTarget, Accounts: backupAccounts,
+		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
+		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
+		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
+		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
+		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
+		AudioSettings: backupAudioSettings, Goals: backupGoals,
+		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
+		DonationSources:   backupDonationSources,
+		UpdatePreferences: backupUpdatePreferences,
+	}
+	backupSinks := backupdomain.Sinks{
+		Platforms: backupPlatforms, Output: outputService, RemoteTarget: backupRemoteTarget, Accounts: backupAccounts,
+		YouTubeRegion: backupYouTubeRegion, EngagementSettings: backupEngagementSettings,
+		OperatorChatPrefs: backupOperatorChatPrefs, ChatOverlays: backupChatOverlays,
+		ChatAutomation: backupChatAutomation, Alerts: backupAlerts,
+		VisualDesigns: backupVisualDesigns, VisualTemplates: backupVisualTemplates,
+		VisualAssets: backupVisualAssets, AudioAssets: backupAudioAssets,
+		AudioSettings: backupAudioSettings, Goals: backupGoals,
+		MetadataPresets: backupMetadataPresets, StreamSetupProfiles: backupStreamSetupProfiles,
+		DonationSources:   backupDonationSources,
+		UpdatePreferences: backupUpdatePreferences,
+		Onboarding:        backupOnboarding,
+	}
+	backupService := backupdomain.NewService(
+		backupSources, backupSinks,
+		visualAssetStore, audioAssetStore,
+		visualAssetStore, audioAssetStore,
+		backupStaging, backupSafetySnapshots, backupStreamingGuard,
+		buildinfo.EffectiveVersion(), runtime.GOOS,
+	)
+
 	// Stage 20E: local host-resource snapshot for the Dashboard's "System
 	// resources" card - identical wiring to cmd/server, see its own
 	// comment. Not one of the remote-management/remote-ingest/updater
@@ -650,6 +723,7 @@ func run() error {
 		Resources:       resourcesCollector,
 		StreamSessions:  streamSessionRepo,
 		StreamInsights:  streamInsightsService,
+		Backup:          backupService,
 	})
 	// Test-only fake-TTS-provider control routes - see
 	// audio_testonly.go's own doc comment; never present in cmd/server.
@@ -738,4 +812,22 @@ func run() error {
 		}
 		return nil
 	}
+}
+
+// testserverBranchStreamingGuardAdapter implements backup.StreamingGuard -
+// identical to cmd/server's own unexported branchStreamingGuardAdapter
+// (same package name, "main", but a different binary, so it cannot be
+// imported/reused directly), reusing the exact same updater.StreamingActive
+// rule so this test server's restore-refuses-while-streaming behavior is
+// never a second, possibly-diverging definition of "active".
+type testserverBranchStreamingGuardAdapter struct {
+	branches *branch.Manager
+}
+
+func (a testserverBranchStreamingGuardAdapter) Active(ctx context.Context) (bool, error) {
+	snapshots, err := a.branches.Snapshot(ctx)
+	if err != nil {
+		return false, err
+	}
+	return updater.StreamingActive(snapshots), nil
 }

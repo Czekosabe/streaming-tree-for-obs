@@ -17,6 +17,7 @@ import (
 	"github.com/streaming-tree/server/internal/domain/operatorchatprefs"
 	"github.com/streaming-tree/server/internal/domain/output"
 	"github.com/streaming-tree/server/internal/domain/platform"
+	"github.com/streaming-tree/server/internal/domain/remotetarget"
 	"github.com/streaming-tree/server/internal/domain/streamsetup"
 	"github.com/streaming-tree/server/internal/domain/updatersettings"
 	"github.com/streaming-tree/server/internal/domain/visualasset"
@@ -32,6 +33,15 @@ type fakeOutput struct{ byPlatform map[string]output.Settings }
 
 func (f fakeOutput) Get(_ context.Context, platformID string) (output.Settings, error) {
 	return f.byPlatform[platformID], nil
+}
+
+type fakeRemoteTarget struct {
+	byPlatform map[string]remotetarget.Target
+}
+
+func (f fakeRemoteTarget) Get(_ context.Context, platformID string) (remotetarget.Target, bool, error) {
+	t, ok := f.byPlatform[platformID]
+	return t, ok, nil
 }
 
 type fakeAccounts struct {
@@ -236,6 +246,7 @@ func emptySources() Sources {
 	return Sources{
 		Platforms:          fakePlatforms{},
 		Output:             fakeOutput{byPlatform: map[string]output.Settings{}},
+		RemoteTarget:       fakeRemoteTarget{byPlatform: map[string]remotetarget.Target{}},
 		Accounts:           fakeAccounts{links: map[string][]account.Link{}, integration: map[account.ProviderID]account.IntegrationSettings{}},
 		YouTubeRegion:      fakeYouTubeRegion{byAccount: map[string]string{}},
 		EngagementSettings: fakeEngagementSettings{byAccount: map[string]engagementsettings.Settings{}},
