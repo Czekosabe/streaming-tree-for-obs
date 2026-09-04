@@ -399,6 +399,46 @@ Previewing the built version:
 npm run preview
 ```
 
+(`vite.config.ts`'s `preview.proxy` mirrors the dev server's own `/api`
+proxy, so `npm run preview` against a real or hermetic backend behaves
+the same way `npm run dev` does - see `VITE_DEV_API_PROXY_TARGET`
+above.)
+
+**Route-level code splitting.** Every page under `src/pages/` is
+lazy-loaded (`React.lazy`, via the small `src/lib/lazy-page.ts` adapter
+- every page is a named export, and `lazy` only accepts a default one)
+and reached through a `Suspense` boundary scoped to that route's own
+`<Outlet>` content (`src/components/layout/RouteLoadingFallback.tsx`) -
+never around `ShellLayout` itself, which stays mounted and never
+remounts across a route change. Only `DashboardPage` (the first thing a
+returning operator sees) and `NotFoundPage` (the tiny catch-all) stay
+eager. This dropped the single production JS entry chunk from ~1.28 MB
+to ~854 KB (see `docs/progress.md`'s performance-hardening entry for
+the full before/after bundle audit); the remaining size is dominated by
+`react-dom` itself and other framework/library code every route needs
+regardless, not application code, and further splitting it would not
+reduce what a fresh load actually has to fetch before rendering. Adding
+a new page under `ShellLayout` should follow the same pattern rather
+than a plain top-level import in `App.tsx`.
+
+**Live-but-not-instant query data.** A `useQuery` polling a resource
+that changes at most every few seconds (an update-check status, a
+branch/runtime snapshot) should give TanStack Query a small positive
+`staleTime` (seconds, not `0`) even though the data is genuinely live -
+`refetchInterval` is what drives real freshness, `staleTime: 0` only
+means every newly-mounted observer (a dialog reopened, a route
+revisited, a sibling component mounting moments later) re-triggers an
+extra fetch for data that is still correct. Two real, measured
+duplicate-request defects of exactly this shape were found and fixed
+this way - see `src/hooks/use-branches.ts` and `src/hooks/
+use-updates.ts`'s own comments for the specific mechanism each one hit.
+
+**Auditing bundle composition**: `ANALYZE=1 npm run build` (PowerShell:
+`$env:ANALYZE=1; npm run build`) additionally emits
+`dist/bundle-analysis.json` (module/chunk composition data via
+`rollup-plugin-visualizer`, a dev-only dependency) - not part of a
+normal build.
+
 ### Backend
 
 ```bash
@@ -448,7 +488,9 @@ navigation, the Platforms/Metadata pages, modal stacking/focus-trapping,
 both onboarding outcomes (success and a deterministically forced
 failure), a route smoke matrix across every current primary route, and
 the typography/static-asset determinism contract (see "Typography and
-static assets" above) - each with an automatic console/page-error gate.
+static assets" above), and route-level code splitting/startup-request
+hygiene (see "Route-level code splitting" above) - each with an
+automatic console/page-error gate.
 It deliberately does **not** replace eventual manual Stage 20E verification of the real
 Windows installer, tray, OBS Browser Source, audio devices, or real
 provider accounts - see `apps/web/e2e/playwright.config.ts`'s own doc

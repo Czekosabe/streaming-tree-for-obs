@@ -19,5 +19,8 @@
   },
   "values": {
     "empty": "--"
+  },
+  "loading": {
+    "page": "Ładowanie strony…"
   }
 }

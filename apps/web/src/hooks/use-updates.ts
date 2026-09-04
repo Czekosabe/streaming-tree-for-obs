@@ -45,7 +45,17 @@ export function useUpdateStatusQuery(): UseQueryResult<UpdateStatus, Error> {
     queryFn: ({ signal }) => fetchUpdateStatus(signal),
     refetchInterval: (query) => updatePollIntervalFor(query.state.data?.state),
     refetchIntervalInBackground: false,
-    staleTime: 0,
+    // A real, measured startup-performance defect: `UpdateBanner` mounts
+    // fresh inside every page's own `<AppShell>` (unlike `ShellLayout`,
+    // that component is not persistent across route changes), so with
+    // `staleTime: 0` every single route navigation re-triggered this
+    // fetch - confirmed via a real-browser capture (4 route mounts, 4
+    // separate `/api/updates/status` requests). The backend's own check
+    // cadence is hourly outside an active download (this hook's own
+    // comment above), so a query mounted moments ago is never
+    // meaningfully stale; `refetchInterval` still drives the real 1s
+    // cadence during an active download/install regardless of this.
+    staleTime: 10_000,
   });
 }
 

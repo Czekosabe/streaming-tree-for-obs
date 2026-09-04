@@ -69,8 +69,24 @@ export function useBranchRuntimeQuery(): UseQueryResult<BranchSnapshot[], Error>
     queryFn: ({ signal }) => fetchBranches(signal),
     refetchInterval: (query) => branchPollIntervalFor(query.state.data),
     refetchIntervalInBackground: false,
-    // Runtime state is always "now"; a cached value is never worth reusing.
-    staleTime: 0,
+    // A real, measured startup-performance defect (not merely a hunch):
+    // on Dashboard, `SystemStatusRail` (StreamCountersCard/
+    // QuickActionsCard) mounts immediately, before `platformsQuery`
+    // resolves, while `PlatformGrid`'s own `PlatformCard`s - the other
+    // caller of this same hook - only mount once it has (gated on
+    // `platformsQuery.isSuccess`). With `staleTime: 0`, that second,
+    // slightly-later wave of observers found the already-fetched data
+    // instantly "stale" and each triggered its own extra network
+    // request for state that had not actually changed in the
+    // intervening tens of milliseconds - confirmed via a real-browser
+    // network capture against a real production build, not development
+    // duplication. `refetchInterval` above already drives real
+    // liveness (as fast as every second while any branch is active);
+    // this small positive `staleTime` only prevents a same-page-load
+    // remount from re-triggering a fetch the interval will already
+    // repeat within a second or two regardless - never a "cached value
+    // is fine" argument for this genuinely live data.
+    staleTime: 2_000,
   });
 }
 

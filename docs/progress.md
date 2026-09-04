@@ -53412,3 +53412,204 @@ font-family token.
 No AskUserQuestion call was made for the font-strategy decision (fully
 resolved from repository evidence), tests, builds, or waiting. No
 backend/production Go code touched. No operator-machine state modified.
+
+## perf(web): route-level code splitting and two real duplicate-request fixes
+
+Release-hardening pass using the real-browser E2E harness (previous two
+tasks) to audit and improve actual startup/runtime performance before
+physical Stage 20E verification resumes - not to silence Vite's own
+historical ">500 kB chunk" advisory, but to investigate whether it
+reflected real waste.
+
+### Baseline
+Production build before this pass: **one JS entry chunk, 1,280.71 kB
+raw / 344.92 kB gzip**, plus a 61.60 kB CSS file - the entire
+application (every route, every designer, every dialog) in a single
+file, because `App.tsx` statically imported every page. Composition
+audited directly (not guessed from `package.json`) via a temporary
+`ANALYZE=1 npm run build` pass emitting `rollup-plugin-visualizer`'s
+raw module/chunk JSON, parsed to map each module to its real rendered/
+gzip size and destination chunk. Largest contributors: `react-dom`
+(552.9 kB raw), `react-router` (82.9 kB), `i18next` (81.4 kB), `zod`
+(~154 kB summed across its core/classic/to-json-schema/util/checks
+files), then a long tail of per-page and per-feature components
+(`RuleManager.tsx` 38.2 kB, `SupporterWidgetManager.tsx` 28.6 kB,
+`TemplateGallery.tsx` 27.2 kB, `DesignerPropertiesPanel.tsx` 25.3 kB,
+`ScheduleManager.tsx` 21.9 kB, and more) - each reachable only from one
+specific route, none needed to render Dashboard.
+
+A real-browser network capture of a fresh Dashboard load against a
+**real production build** (`vite preview`, not the dev server, to keep
+React `<StrictMode>`'s dev-only double-effect-invocation out of the
+numbers) found two endpoints firing more than once, and every other
+endpoint firing exactly once.
+
+### Route-level code splitting
+`App.tsx`: every page under `src/pages/` is now `React.lazy`-loaded
+(`src/lib/lazy-page.ts` - a small adapter, since every page is a named
+export and `lazy` only accepts a default one) except `DashboardPage`
+(the first thing a returning operator sees - kept eager per the
+governing task's own "display useful UI promptly" requirement) and the
+tiny `NotFoundPage` catch-all. Each lazy route is wrapped in a
+`Suspense` boundary scoped to that route's own `<Outlet>` content only
+(`src/components/layout/RouteLoadingFallback.tsx` - a small, centered,
+accessible `role="status"` spinner with a `min-h-40` floor so it never
+collapses the content area) - never around `ShellLayout`, which stays
+mounted and never remounts across a route change, verified directly
+(see the new E2E spec below). The four standalone OBS Browser Source
+public overlay routes get `fallback={null}` instead: they render as a
+quiet/transparent canvas regardless once their own real content
+streams in, and a visible spinner would only add an unwanted flash on
+stream. Added a `"loading.page"` key to `common.json` (en/pl) for the
+fallback's accessible text.
+
+### Two real, measured duplicate-request defects (fixed)
+Both follow the identical shape: a `useQuery` with `staleTime: 0`
+polling genuinely live data via `refetchInterval` - correct for
+ongoing freshness - but `staleTime: 0` also means *any* newly-mounted
+observer (not just the first) immediately treats existing data as
+stale and re-fetches it, even when that data is only milliseconds old.
+
+1. **`useBranchRuntimeQuery`** (`src/hooks/use-branches.ts`):
+   `SystemStatusRail`'s cards (`StreamCountersCard`/`QuickActionsCard`)
+   mount immediately on Dashboard, before `platformsQuery` resolves;
+   `PlatformGrid`'s own `PlatformCard`s - the other caller of this same
+   hook - only mount once it has. The second, slightly-later wave of
+   observers found the already-fetched branch list instantly "stale"
+   and re-fetched it. Confirmed non-deterministic before the fix (2 of
+   3 clean production-build runs showed 2 requests to `GET /api/
+   runtime/branches`, 1 of 3 showed 1 - genuine timing-dependent race,
+   not always reproducible) and deterministically fixed after (0 of 4
+   runs showed a duplicate). Fix: `staleTime: 2_000` - small enough to
+   never meaningfully delay real change detection (the existing
+   1 s/10 s dynamic `refetchInterval` already drives that), large
+   enough to absorb the real mount-timing gap between the two waves of
+   observers.
+2. **`useUpdateStatusQuery`** (`src/hooks/use-updates.ts`):
+   `UpdateBanner` mounts fresh inside every page's own `<AppShell>`
+   (unlike `ShellLayout`, `AppShell` is not persistent across route
+   changes), so every single route navigation re-triggered this fetch.
+   Confirmed via a real-browser capture across 4 route mounts
+   (Dashboard→Platforms→Settings→Dashboard) with the endpoint's real
+   200 response mocked (this suite's hermetic testserver legitimately
+   never wires the updater subsystem at all - an intentional, already-
+   documented gap - so an unmocked capture would 404 and separately
+   retry, confounding the measurement): **4 requests unfixed, 1 fixed**,
+   reproducibly. Fix: `staleTime: 10_000` - the backend's own check
+   cadence is hourly outside an active download/install (this hook's
+   own pre-existing comment), so data fetched moments ago is never
+   meaningfully stale.
+
+Both are narrow, evidence-based, per-query fixes - never a blanket
+`staleTime` increase, and neither reduces `refetchInterval`-driven
+liveness during an actually-active state (a live/starting branch, an
+in-progress download).
+
+### Other audit findings (checked, not changed)
+- **`zod`** contributes ~154 kB to the entry chunk across its core/
+  classic/JSON-schema-conversion modules; `z.toJSONSchema` is never
+  called anywhere in this codebase, yet its ~29 kB conversion module is
+  still bundled (likely inherent to importing from the top-level `zod`
+  package rather than a narrower subpath). Not changed: `zod` backs 48
+  files' worth of API-response validation across this codebase: an
+  import-path change with "equivalent behavior" is a real, broader
+  refactor this bounded pass does not have clear enough evidence to
+  justify (per the governing task's own explicit "no generic dependency
+  modernization project" instruction) - noted here for a future,
+  dedicated look instead.
+- **Dashboard's own eagerly-imported dialogs**
+  (`AddPlatformDialog`/`PlatformSettingsDialog`/`StreamSetupsDialog`/
+  `PreflightDialog`, ~50 kB combined) are real "large dialog opened
+  later" candidates per the governing task's own item 5, but every one
+  of them is always-mounted today (visibility toggled internally via
+  an `open` prop, matching `Modal`'s own `if (!open) return null`
+  pattern) rather than conditionally rendered - lazy-loading them
+  correctly would mean changing that mount pattern too, a real
+  behavior change (remount-on-reopen state-reset semantics) this
+  bounded pass chose not to risk for a ~13 kB gzip return. Deferred,
+  not fixed.
+- Icon usage (`lucide-react`, named per-icon imports throughout - the
+  library's own intended tree-shakeable usage), CSS size (61.65 kB raw
+  / 10.98 kB gzip, no bundler-visible duplication), and static assets
+  (already audited in the previous typography/static-asset pass) were
+  all re-checked and found already efficient - no changes made.
+- Bounded memory/listener check: repeated navigation through
+  Platforms/Streams/Alerts/Dashboard, three full cycles, then a final
+  distinct navigation - the app remained genuinely interactive
+  throughout and DOM node count stayed well within a generous 3×
+  structural bound (see the new E2E spec).
+
+### Real-browser regression coverage
+New `apps/web/e2e/specs/performance.spec.ts` (6 tests): a route module
+is not requested before its route is visited and is requested once it
+is; the persistent shell never remounts across a lazy route transition
+(a per-element JS marker survives four navigations); a lazy route's
+Suspense fallback is accessible and never collapses the content area
+to zero height, with the shell still visible alongside it; the two
+fixed duplicate-request defects, bounded at "at most 2" (not 1) to
+correctly account for this suite's own dev-server `<StrictMode>`
+double-mount - still a real regression guard, since either bug
+returning would add further requests on top of, not instead of,
+StrictMode's fixed one; and the bounded navigation-churn smoke check
+above. All 6 pass; full suite now **11 spec files, 33 tests** (up from
+10/27 at the start of this task).
+
+### After
+Production build: **entry chunk 854.06 kB raw / 250.98 kB gzip**
+(down from 1,280.71 kB / 344.92 kB - a 33% raw / 27% gzip reduction in
+what a fresh load must download before rendering), plus **41 further
+on-demand chunks** (0.21 kB–50.11 kB each) loaded only as their own
+route/feature is actually visited. Total JS across every chunk:
+1,269.59 kB (essentially unchanged from before, ~1,280 kB - splitting
+redistributes code, it does not remove any; the real win is what a
+*single* Dashboard load now needs). CSS unchanged (61.65 kB / 10.98 kB
+gzip - not a JS-splitting concern). Dashboard startup request count:
+`/api/runtime/branches` and `/api/updates/status` no longer duplicate;
+every other endpoint was already firing exactly once and stays that
+way.
+
+Vite's own ">500 kB chunk" advisory **still fires**, on the entry
+chunk alone (854 kB > 500 kB threshold) - not silenced, not raised via
+`chunkSizeWarningLimit`. Investigated rather than dismissed: `react-
+dom` alone (552.9 kB raw) is ~65% of the remaining entry chunk;
+`react-router`+`i18next`+`zod`+`@tanstack/query-core` (all genuinely
+needed by every route, Dashboard included) account for most of the
+rest, leaving only a small, irreducible amount of actual Dashboard-
+specific code. Further splitting the entry chunk (e.g. a hand-written
+`manualChunks` vendor split) would not reduce what a fresh load
+actually fetches before first render - the same total bytes would just
+move into a second file loaded in the same critical path - while
+adding exactly the kind of "manualChunks map that requires maintenance
+every time a dependency changes" the governing task's own guidance
+warns against. This is Outcome C from that guidance: the warning comes
+from an irreducible shared-framework floor, not from unsplit
+application code, and further splitting would trade real maintenance
+cost for no real user-facing benefit.
+
+### Verification
+Frontend: `npm run i18n:check` (29 namespaces, no diff), `npm run
+typecheck`, `npm run lint` (0 errors - 1 pre-existing, unrelated
+warning), `npm run test -- --run` (139 files / 1594 tests, unchanged),
+`npm run build` (clean). Real-browser: `npm run test:e2e` - **33/33
+passed**, no unexpected console/page errors. Backend: untouched this
+task (no `apps/server` changes at all - a pure frontend/query-
+lifecycle/test change) - no Go verification needed or run.
+
+### Documentation
+Extended `docs/development.md`'s existing "Production build" → "Frontend"
+subsection with the route-splitting/`Suspense` contract, the live-
+query `staleTime` rule (with a pointer to both fixed hooks' own
+comments for the exact mechanism), and how to run the bundle-
+composition analyzer. Extended the existing "Real-browser E2E tests"
+list with the new coverage. No new documentation file.
+
+### Continuous-execution rule compliance
+No AskUserQuestion call was made for bundle analysis, lazy-loading a
+clearly-independent route, tests, browser runs, builds, or waiting.
+`rollup-plugin-visualizer` was added as a devDependency only (gated
+behind `ANALYZE=1`, never shipped in the actual product bundle) - no
+`THIRD_PARTY_NOTICES.md` change needed. No operator-machine state was
+touched - every measurement ran against this session's own hermetic
+`-tags integration` test server and a locally-served production
+build/preview, never the operator's real installed application, real
+credentials, or real OBS.
